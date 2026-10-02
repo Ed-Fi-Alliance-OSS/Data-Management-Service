@@ -28,8 +28,6 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// </summary>
 internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePipeline) : IPipelineStep
 {
-    private const string IfNoneMatchHeaderName = "If-None-Match";
-
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug("Entering GetByIdHandler - {TraceId}", requestInfo.FrontendRequest.TraceId.Value);
@@ -199,7 +197,12 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
     {
         response = null!;
 
-        if (!requestInfo.FrontendRequest.Headers.TryGetValue(IfNoneMatchHeaderName, out var rawHeaderValue))
+        if (
+            !requestInfo.FrontendRequest.Headers.TryGetValue(
+                WritePreconditionFactory.IfNoneMatchHeaderName,
+                out var rawHeaderValue
+            )
+        )
         {
             return false;
         }

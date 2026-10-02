@@ -14,7 +14,4 @@ public enum ETagPreconditionFailureReason
     /// <summary>No current representation exists to satisfy the precondition (bare If-Match: * on a
     /// missing target, or If-Match on a resource that resolves to an insert).</summary>
     TargetDoesNotExist,
-
-    /// <summary>A current representation matches the client's If-None-Match precondition.</summary>
-    CurrentRepresentationMatchesIfNoneMatch,
 }

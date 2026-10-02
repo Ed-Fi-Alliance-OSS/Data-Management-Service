@@ -22,6 +22,9 @@ stamp triggers; see [Amendment (2026-07-08, final ContentVersion read)](#amendme
 **Amended 2026-07-08:** the `variantKey` `profileCode` is a SHA-256 prefix of the profile *name*, not
 a compile-time index — this hashes the profile descriptor, never the representation, so it upholds the
 original no-representation-hash decision; see [Amendment (2026-07-08, profileCode hash)](#amendment-2026-07-08-profilecode-encodes-a-hash-of-the-profile-name). \
+**Amended 2026-09-30:** `If-None-Match` is a conditional-read (GET) validator only; the 2026-07-06 write
+create-guard is withdrawn and POST, PUT, and DELETE ignore the header, matching the legacy ODS/API — see
+[Amendment (2026-09-30)](#amendment-2026-09-30-if-none-match-is-a-conditional-read-validator-only). \
 **Deciders:** Development team (signed off 2026-07-08). \
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
 
@@ -345,6 +348,13 @@ Unlike the 2026-07-04 (`profileCode`) and earlier 2026-07-05 (unquoted) amendmen
 **Date:** 2026-07-06 \
 **Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
 
+> [!WARNING]
+> **Partly superseded 2026-09-30.** The write create-guard (POST/PUT `412`) was withdrawn; see the
+> [Supersedes list](#supersedes) in the
+> [2026-09-30 amendment](#amendment-2026-09-30-if-none-match-is-a-conditional-read-validator-only) for
+> exactly what changed. The conditional-GET content stands, and the text below is kept as the historical
+> record.
+
 ### What changed
 
 The ADR's original analysis and every prior amendment addressed only `If-Match`. `If-None-Match` — advertised as an OpenAPI `header` parameter on GET-by-id in the API schema, but never read or enforced by the DMS — was left unimplemented. As a result a conditional GET silently returns `200` with a full body where a client would expect `304 Not Modified`, and there is no create-guard on writes. This amendment adopts **full `If-None-Match` support** per RFC 9110 §13.1.2 and §13.2.2, covering both of the header's roles.
@@ -635,7 +645,162 @@ because they do not enclose a content-coded resource representation.
 ### Consequence
 
 Identity and compressed byte representations no longer share a strong validator, while optimistic
-concurrency and write-side `If-None-Match` remain content-coding-insensitive.
+concurrency and write-side `If-None-Match` remain content-coding-insensitive. (Write-side
+`If-None-Match` was later withdrawn; see
+[Amendment (2026-09-30)](#amendment-2026-09-30-if-none-match-is-a-conditional-read-validator-only).)
+
+## Amendment (2026-09-30): `If-None-Match` is a conditional-read validator only
+
+**Status:** Accepted — supersedes the write-side behavior of the 2026-07-06 amendment (DMS-1576). \
+**Date:** 2026-09-30 \
+**Author:** Stephen Fuqua, with analysis assistance from Claude Opus 5.5 (Claude Code).
+
+### What changed
+
+The 2026-07-06 amendment gave `If-None-Match` two jobs: a conditional read (GET `304`) and a write
+create-guard (POST/PUT `412`). This amendment keeps the first and **withdraws the second**.
+`If-None-Match` is now a conditional-read validator only. POST, PUT, and DELETE **ignore** the header,
+whatever its value, and process the request as if it were absent.
+
+The trigger was a defect report ([DMS-1576](https://edfi.atlassian.net/browse/DMS-1576)): Skyward
+Qmlativ sends `If-None-Match: *` on every POST. Against the DMS that returned `412` for any record that
+already existed, so the client could no longer re-send (upsert) existing records.
+
+Testing against the legacy ODS/API (2026-09-30) found that it never had a write create-guard:
+
+- **POST** ignores `If-None-Match` and upserts: `200` for an existing record.
+- **PUT** ignores `If-None-Match`: `204` for every value tried.
+- **GET** is the only operation that honors it: `304` on a match.
+
+The 2026-07-06 amendment's Decision 6 called the create-guard an "additive, non-breaking enhancement"
+because "no existing DMS client can depend on the current non-behavior." That held for the DMS in
+isolation but not for the clients migrating from the ODS/API, which already send the header on POST
+because the ODS/API tolerates it. For POST it was a breaking change in practice.
+
+### RFC 9110 gray area for POST
+
+RFC 9110 §13.1.2 defines `If-None-Match` against the "target resource" selected by the request URI. For
+a POST upsert, the request URI is the **collection** (for example `/ed-fi/students`), not the resource
+that the body's natural key resolves to. The collection exists, so the `*` precondition ("no current
+representation of the target") is not clearly false, and the RFC does not say that a server must
+evaluate the identity-resolved document. The 2026-07-06 reading, that `*` means "insert only," was a
+defensible extension, not a requirement. Ignoring the header on POST is therefore a reasonable reading
+of the RFC, and it matches the installed behavior of the ODS/API.
+
+### Behavior
+
+- **GET-by-id is unchanged.** Full served-tag comparison, weak comparison with `W/` stripping,
+  comma-separated lists, bare `*` meaning "no current representation" (`304` when the resource exists),
+  and unquoted acceptance for ODS-6853 all stand.
+- **POST, PUT, and DELETE ignore `If-None-Match`.** The request is evaluated exactly as if the header
+  were absent, including when `If-Match` is also present (it governs alone, as before).
+- **Debug logging.** When a write request carries `If-None-Match`, the DMS logs at `Debug` that the
+  header was ignored. The entry has the HTTP method and the trace id. It deliberately omits the header
+  value.
+- **A POST that loses a create race** now gets the ordinary identity-conflict result, with or without
+  the header. Previously a guarded create mapped the race to a `WriteConflict` retry so the header could
+  be evaluated against the winning row; that exists no more.
+
+### Per-operation summary
+
+This table replaces the 2026-07-06 table. The GET rows are unchanged.
+
+| Operation | `If-None-Match: *` | `If-None-Match: "<tag>"` or `"<tag1>", "<tag2>", ...` |
+|---|---|---|
+| GET-by-id, resource exists | `304` | `304` if **any** tag in the list matches the **full served tag**; else `200` |
+| GET-by-id, resource absent | `404` (normal) | `404` (normal) |
+| POST upsert → existing document | header ignored; proceeds (update) | header ignored; proceeds (update) |
+| POST upsert → insert | header ignored; proceeds (create) | header ignored; proceeds (create) |
+| PUT, target exists | header ignored; proceeds (update) | header ignored; proceeds (update) |
+| PUT, target absent | header ignored; `404` (unchanged) | header ignored; `404` (unchanged) |
+| DELETE | header ignored (unchanged) | header ignored (unchanged) |
+
+### Why
+
+1. **Interoperability with the installed client base.** Qmlativ, and any client written against the
+   ODS/API, can send `If-None-Match: *` on POST and expect an upsert. A `412` makes the DMS unusable for
+   them with no workaround on their side.
+2. **Legacy parity.** The ODS/API ignores the header on every write. The DMS follows it, as it does for
+   `If-Match` projection (2026-07-04), unquoted values (2026-07-05), and ODS-6853.
+3. **The RFC does not require it.** See the gray area above. The create-guard was an optional extension
+   whose cost fell on real clients.
+4. **No loss of optimistic-concurrency protection.** The guard was an existence test, not a change
+   detector. `If-Match`, which does the lost-update protection, is untouched.
+5. **Less code.** The guard required `If-None-Match` handling at several layers (the precondition
+   factory, the relational checker, the state resolver and evaluator, the descriptor handler, and the
+   create-race mapping), each needing integration proof on both engines.
+
+### Decisions
+
+1. **`If-None-Match` is honored on GET only.** POST, PUT, and DELETE ignore it, with the same result as
+   when it is absent.
+2. **PUT ignores it too**, even though a PUT against an existing target is a plainer fit for the RFC
+   than a POST. The ODS/API returns `204` for every value, so ignoring it is the compatible choice.
+3. **The ignored header is logged at `Debug`**, with method and trace id and without the value.
+4. **The unreachable write-side code is removed** in the same change rather than left dormant (see
+   "Scope of the code change").
+5. **Announce the change in the 8.1.0 changelog.** The create-guard shipped in v8.0.0 (PR #1095), and
+   the defect report came from a client on DMS 8.0. A client that relied on `If-None-Match: *` as a
+   create-only guard now upserts silently, so the change is listed under "Breaking changes" in
+   `docs/changelog/8.1.0.md`, with the `If-Match: *` difference from the ODS/API.
+
+### `If-Match: *` divergence from the ODS/API (record)
+
+The same testing showed that the ODS/API returns `412` for a POST with `If-Match: *`, because it
+compares `*` as a literal entity-tag, which never matches. The DMS **keeps** the RFC 9110 §13.1.1
+wildcard semantics adopted in the 2026-07-05 wildcard amendment: `If-Match: *` succeeds when the target
+resource exists and returns `412` when it does not. This is an intentional difference. No working
+client can depend on an always-`412` response, so the DMS behavior is only more permissive than the
+ODS/API's. No change is made to `If-Match`.
+
+### Supersedes
+
+This amendment supersedes the following parts of the 2026-07-06 amendment. The rest of that amendment,
+the conditional-GET behavior, stands.
+
+- The **write rows** of its per-operation summary table (POST and PUT), replaced by the table above.
+- The **"Write create-guard"** bullet under "Two behaviors," and the matching write-side statements: the
+  write-side projection comparison, the write-side wildcard (`412` if the resource exists), and the
+  write-side list semantics.
+- **Decision 6**, "Additive, non-breaking enhancement," which was wrong for POST in practice.
+- The **"Parse"** scope note, so `WritePreconditionFactory` no longer produces an `IfNoneMatch` arm.
+- The **"Write checkers"** scope note, and the **"DELETE is out of scope"** note, whose conclusion
+  (DELETE ignores the header) is now the rule for every write.
+- The 2026-07-06 **Consequence** statement that `If-None-Match` is a "working write create-guard."
+
+Of the 2026-07-06 decisions, the weak comparison, list support, and inverted wildcard (2 to 4) now apply
+to GET only, and the write-time projection in Decision 1 applies to `If-Match` alone. Decision 5
+(`If-Match` precedence) is moot for `If-None-Match` on writes, since the header is ignored.
+
+### Scope of the code change
+
+The change is a removal. Behavior is corrected at the source, then the unreachable code is deleted so
+the compiler proves nothing still depends on it.
+
+- **Stop at the source.** `WritePreconditionFactory.Create` (`Core/Backend/WritePreconditionFactory.cs`)
+  no longer reads `If-None-Match`, so POST, PUT, and DELETE all ignore it in one place. The POST,
+  PUT-by-id, and DELETE handlers log the `Debug` entry through a shared helper.
+- **Removed from the contract.** The `WritePrecondition.IfNoneMatch` arm, the
+  `ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch` failure reason, and the
+  `412` response body `urn:ed-fi:api:precondition-failed:if-none-match`.
+- **Removed from the relational backend.** `If-None-Match` handling in `EtagPreconditionEvaluator`,
+  `RelationalWriteExecutionStateResolver`, `DefaultRelationalWriteExecutor` (the before-authorization
+  gate) and `RelationalCurrentEtagPreconditionChecker`. The gates that had to admit both headers now
+  admit `If-Match` alone.
+- **Removed from the descriptor path.** The `If-None-Match` handling in `DescriptorWriteHandler`.
+- **Removed: the guarded-create race mapping.** `RelationalWriteDatabaseFailureResultMapper` no longer
+  maps a lost `If-None-Match` create race to a `WriteConflict` retry.
+- **Unchanged.** `GetByIdHandler`, `EtagValue.ParseConditionalTagList`, the frontend header-combining
+  list, and all conditional-GET tests. Nothing on the GET path used `WritePrecondition`.
+- **Tests.** The write-side integration and E2E scenarios for `If-None-Match` were rewritten to prove
+  the header is ignored on POST, PUT, and DELETE.
+
+### Consequence
+
+`If-None-Match` is a conditional-read validator only: `304 Not Modified` on a cache hit for GET, and
+ignored on POST, PUT, and DELETE. A client that sends `If-None-Match: *` on every POST, such as
+Qmlativ, gets the same upsert behavior as against the ODS/API. `If-Match` behavior, including the `*`
+wildcard, and the emitted `ETag` contract are unchanged.
 
 ## References
 
