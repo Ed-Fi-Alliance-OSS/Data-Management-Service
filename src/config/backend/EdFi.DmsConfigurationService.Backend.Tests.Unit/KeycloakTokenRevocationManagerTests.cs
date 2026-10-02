@@ -942,6 +942,44 @@ public class KeycloakTokenRevocationManagerTests
             Unavailable("provider-status")
         );
 
+        // Undecodable member names: any one makes the body unparseable, because it could be either member.
+        yield return Case(
+            "400 lone high surrogate as a name before error",
+            400,
+            """{"\uD800":0,"error":"invalid_request"}""",
+            unparseable
+        );
+        yield return Case(
+            "400 lone low surrogate as an unrelated name beside an ownership mismatch",
+            400,
+            """{"\uDC00":"SECRET-PROVIDER-SENTINEL","error":"invalid_request","error_description":"Unmatching clients"}""",
+            unparseable
+        );
+        yield return Case(
+            "400 malformed unrelated name after the recognized members",
+            400,
+            """{"error":"invalid_request","error_description":"Unmatching clients","x\uD800":"SECRET-PROVIDER-SENTINEL"}""",
+            unparseable
+        );
+        yield return Case(
+            "400 lone low surrogate inside a name resembling error",
+            400,
+            """{"error\uDC00":"invalid_client","error_description":"Unmatching clients"}""",
+            unparseable
+        );
+        yield return Case(
+            "401 lone high surrogate as a name before invalid_client",
+            401,
+            """{"\uD800":0,"error":"invalid_client"}""",
+            unparseable
+        );
+        yield return Case(
+            "500 lone high surrogate as a name",
+            500,
+            """{"\uD800SECRET-PROVIDER-SENTINEL":0,"error":"server_error"}""",
+            Unavailable("provider-status")
+        );
+
         // Controls: well-formed escapes still decode and map as before.
         yield return Case(
             "400 valid surrogate pair in error_description",
@@ -960,6 +998,30 @@ public class KeycloakTokenRevocationManagerTests
             400,
             """{"error":"invalid\u005Frequest","error_description":"Unmatching\u0020clients"}""",
             new TokenRevocationResult.Completed()
+        );
+        yield return Case(
+            "400 ownership mismatch with escaped member names",
+            400,
+            """{"\u0065rror":"invalid_request","\u0065rror_description":"Unmatching clients"}""",
+            new TokenRevocationResult.Completed()
+        );
+        yield return Case(
+            "401 invalid_client under an escaped error name",
+            401,
+            """{"\u0065rror":"invalid_client","error_description":"x"}""",
+            new TokenRevocationResult.InvalidClient()
+        );
+        yield return Case(
+            "400 valid surrogate pair as an unrelated name",
+            400,
+            """{"\uD83D\uDE00":0,"error":"invalid_request","error_description":"Unmatching clients"}""",
+            new TokenRevocationResult.Completed()
+        );
+        yield return Case(
+            "400 error repeated through an escaped name",
+            400,
+            """{"error":"invalid_client","\u0065rror":"invalid_request","error_description":"Unmatching clients"}""",
+            unparseable
         );
     }
 

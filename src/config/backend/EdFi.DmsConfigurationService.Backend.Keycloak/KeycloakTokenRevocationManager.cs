@@ -386,9 +386,10 @@ public sealed class KeycloakTokenRevocationManager(
 
     /// <summary>
     /// Extracts <c>error</c> and <c>error_description</c> from an RFC 6749 §5.2 object. A body
-    /// that is missing, oversized, not UTF-8, not JSON, not an object, repeats either member, or
-    /// holds either member as a string that cannot be decoded is unparseable: a duplicated member would make the exact-match normalization ambiguous. A
-    /// member that is not a string is treated as absent.
+    /// that is missing, oversized, not UTF-8, not JSON, not an object, has any member name that
+    /// cannot be decoded, repeats either member, or holds either member as a string that cannot be
+    /// decoded is unparseable: a duplicated or undecodable member would make the exact-match
+    /// normalization ambiguous. A member that is not a string is treated as absent.
     /// </summary>
     private static ProviderErrorBody ParseErrorBody(byte[]? body)
     {
@@ -413,7 +414,12 @@ public sealed class KeycloakTokenRevocationManager(
             bool descriptionSeen = false;
             foreach (JsonProperty property in document.RootElement.EnumerateObject())
             {
-                if (property.NameEquals("error"))
+                if (!TryIdentifyMember(property, out ErrorBodyMember member))
+                {
+                    return ProviderErrorBody.Unparseable;
+                }
+
+                if (member == ErrorBodyMember.Error)
                 {
                     if (errorSeen)
                     {
@@ -426,7 +432,7 @@ public sealed class KeycloakTokenRevocationManager(
                         return ProviderErrorBody.Unparseable;
                     }
                 }
-                else if (property.NameEquals("error_description"))
+                else if (member == ErrorBodyMember.Description)
                 {
                     if (descriptionSeen)
                     {
@@ -447,6 +453,44 @@ public sealed class KeycloakTokenRevocationManager(
         {
             return ProviderErrorBody.Unparseable;
         }
+    }
+
+    /// <summary>
+    /// Which of the two members a property is. False when its name cannot be decoded: an escaped,
+    /// unpaired surrogate such as <c>"\uD800"</c> in a name is valid UTF-8 and valid JSON syntax,
+    /// and decoding the name rejects it with <see cref="InvalidOperationException"/>. Every name is
+    /// decoded through <see cref="JsonProperty.Name"/> rather than compared with <c>NameEquals</c>,
+    /// which can answer "not equal" without decoding, so the outcome never depends on which
+    /// comparison happened to run. Such a name could be either member, so the body is unparseable
+    /// even when the name sits beside well-formed members. Only the decoding is guarded.
+    /// </summary>
+    private static bool TryIdentifyMember(JsonProperty property, out ErrorBodyMember member)
+    {
+        string name;
+        try
+        {
+            name = property.Name;
+        }
+        catch (InvalidOperationException)
+        {
+            member = ErrorBodyMember.Other;
+            return false;
+        }
+
+        member = name switch
+        {
+            "error" => ErrorBodyMember.Error,
+            "error_description" => ErrorBodyMember.Description,
+            _ => ErrorBodyMember.Other,
+        };
+        return true;
+    }
+
+    private enum ErrorBodyMember
+    {
+        Other,
+        Error,
+        Description,
     }
 
     /// <summary>
