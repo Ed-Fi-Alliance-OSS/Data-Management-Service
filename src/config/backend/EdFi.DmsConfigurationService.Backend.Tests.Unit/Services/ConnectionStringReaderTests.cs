@@ -1119,7 +1119,7 @@ public class ConnectionStringReaderTests
             // Waits until the late outcome has been handled, so a seam that let it reach the cache
             // fails this test every time rather than only when the handling happens to run first.
             late.SetResult("stale");
-            await timedOutReader.AbandonedCall!.WaitAsync(SafetyBound);
+            await timedOutReader.AbandonedCallObserved.WaitAsync(SafetyBound);
             string? read = await CreateReader().ReadAsync(stored, DataStoreRow);
             _passwordAfterLateReturn = (string)_postgresql.CreateBuilder(Decrypted(read!))["Password"];
         }

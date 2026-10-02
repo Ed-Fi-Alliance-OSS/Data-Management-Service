@@ -435,12 +435,13 @@ public sealed class ConnectionStringReader(
         // callbacks are done with it. Until a call that never completes does, this continuation, the
         // source and the call's state stay reachable from whatever the resolver keeps pending.
         Task cancelled = cancellation.CancelAsync();
-        AbandonedCall = Task.WhenAll(call, cancelled)
+        _ = Task.WhenAll(call, cancelled)
             .ContinueWith(
                 completed =>
                 {
                     _ = completed.Exception;
                     cancellation.Dispose();
+                    AbandonedCallSignal().TrySetResult();
                 },
                 CancellationToken.None,
                 TaskContinuationOptions.None,
@@ -450,11 +451,20 @@ public sealed class ConnectionStringReader(
         throw new SecretResolveTimeoutException();
     }
 
+    private TaskCompletionSource? _abandonedCallObserved;
+
     /// <summary>
-    /// Completes once the outcome of the last call this reader stopped waiting for has been observed
-    /// and dropped, so a test can wait for it instead of guessing when it ran.
+    /// Completes once the outcome of a call this reader stopped waiting for has been observed and
+    /// dropped, so a test can wait for it instead of guessing when it ran. The signal is created on
+    /// first use by either side, so it is the same one whichever comes first.
     /// </summary>
-    internal Task? AbandonedCall { get; private set; }
+    internal Task AbandonedCallObserved => AbandonedCallSignal().Task;
+
+    private TaskCompletionSource AbandonedCallSignal() =>
+        LazyInitializer.EnsureInitialized(
+            ref _abandonedCallObserved,
+            () => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)
+        );
 
     /// <summary>
     /// The host's own deadline passing, kept apart from any <see cref="TimeoutException"/> a resolver
