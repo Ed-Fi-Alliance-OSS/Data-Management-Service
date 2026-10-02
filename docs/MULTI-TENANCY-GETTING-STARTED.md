@@ -5,7 +5,7 @@ This guide walks you through deploying and configuring a multi-tenant Ed-Fi API
 
 ## Overview
 
-Multi-tenancy in DMS provides two layers of data isolation:
+Multi-tenancy in DMS provides two layers of data partitioning:
 
 1. **Tenant Isolation** - Configuration data is isolated between tenants via the
    `Tenant` HTTP header in Configuration Service requests. Vendors, applications
@@ -18,6 +18,11 @@ Multi-tenancy in DMS provides two layers of data isolation:
    already uses is rejected with 409 even though it is not listed
 2. **Instance Routing** - Each tenant can have multiple data stores (databases),
    accessible via URL-based routing or credential-based routing
+
+> [!IMPORTANT]
+> The `Tenant` header is a **routing mechanism, not a security boundary**. Every
+> Configuration Service client can address every tenant. See
+> [Tenant Header](#tenant-header) before issuing Configuration Service credentials.
 
 ## Prerequisites
 
@@ -177,7 +182,7 @@ host=dms-postgresql;port=5432;username=postgres;password={your_password};databas
 For the databases created above:
 
 | Database | Connection String |
-|----------|-------------------|
+| ---------- | ------------------- |
 | edfi_dms_districta_2024 | `host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_dms_districta_2024;` |
 | edfi_dms_districta_2025 | `host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_dms_districta_2025;` |
 | edfi_dms_districtb_2024 | `host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_dms_districtb_2024;` |
@@ -382,7 +387,7 @@ docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2025 \
 ### Environment Variables
 
 | Variable | Description | Default |
-|----------|-------------|---------|
+| ---------- | ------------- | --------- |
 | `DMS_MULTI_TENANCY` | Enable multi-tenancy in DMS | `false` |
 | `DMS_CONFIG_MULTI_TENANCY` | Enable multi-tenancy in Configuration Service | `false` |
 | `ROUTE_QUALIFIER_SEGMENTS` | Comma-separated route qualifiers (e.g., `schoolYear` or `districtId,schoolYear`) | (empty) |
@@ -390,7 +395,7 @@ docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2025 \
 ### API Endpoints
 
 | Endpoint | Method | Description |
-|----------|--------|-------------|
+| ---------- | -------- | ------------- |
 | `/v3/tenants/` | GET, POST | List/create tenants |
 | `/tenancy` | GET | List tenant names; requires no authentication and no Tenant header |
 | `/v3/dataStores` | GET, POST, PUT, DELETE | Manage data stores |
@@ -403,7 +408,7 @@ docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2025 \
 For tenant-scoped Configuration Service requests (the `/v3/*` resources),
 include:
 
-```
+```text
 Tenant: {tenant-name}
 ```
 
@@ -422,6 +427,35 @@ A client that does not yet know a tenant name reads `GET /`, follows
 
 `/v3/tenants/` also needs no `Tenant` header, but unlike the discovery
 endpoints it does require authentication.
+
+#### The tenant header selects data, it does not restrict access
+
+The `Tenant` header tells the Configuration Service **which tenant's configuration
+data a request operates on**. It does not limit which tenants a client may reach,
+and it is not an access control mechanism. This is a deliberate design decision:
+
+- Configuration Service access tokens carry no tenant claim.
+- Any Configuration Service client with the appropriate scope may set any valid
+  `Tenant` value and administer that tenant's vendors, applications, API clients,
+  claim sets, and data store connection strings.
+- `GET /v3/tenants` is answerable without a `Tenant` header, so the set of tenant
+  names is discoverable by any authenticated client.
+
+**Treat every Configuration Service credential as a platform-wide administrative
+credential.** Do not issue Configuration Service client credentials to a party who
+should only be able to administer a single tenant — there is no per-tenant
+Configuration Service credential, and the header will not stop them from reaching
+other tenants.
+
+This applies only to the Configuration Service. Vendor credentials issued *by* the
+Configuration Service for the DMS resource API are separately constrained: DMS
+enforces claim set, education organization, namespace prefix, and data store
+authorization per request.
+
+If you require a hard security boundary between tenants — for example, because
+different organizations administer their own configuration — run a separate
+Configuration Service deployment, with its own database and its own credentials,
+per boundary.
 
 ## Step 7: Access Swagger UI with Multi-Tenancy
 
