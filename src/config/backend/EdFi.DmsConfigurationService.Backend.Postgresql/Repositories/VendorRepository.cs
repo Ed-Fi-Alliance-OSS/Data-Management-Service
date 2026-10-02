@@ -27,32 +27,80 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
 
         private long? TenantId => TenantContext is TenantContext.Multitenant mt ? mt.TenantId : null;
 
-        public async Task<VendorInsertResult> InsertVendor(VendorInsertCommand command)
+        public Task<VendorInsertResult> InsertVendor(VendorInsertCommand command) =>
+            InsertVendor(command, updateExisting: true);
+
+        public async Task<VendorInsertResult> InsertVendor(VendorInsertCommand command, bool updateExisting)
         {
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
             await connection.OpenAsync();
             await using var transaction = await connection.BeginTransactionAsync();
             try
             {
-                // Create-only: a company that already exists in the caller's tenant violates
-                // UX_Vendor_TenantId_Company, caught below, and nothing is written.
-                var sql = """
-                    INSERT INTO "dmscs"."Vendor" ("Company", "ContactName", "ContactEmailAddress", "CreatedBy", "TenantId")
-                    VALUES (@Company, @ContactName, @ContactEmailAddress, @CreatedBy, @TenantId)
-                    RETURNING "Id";
-                    """;
+                int id = 0;
+                bool isNewVendor = false;
+                // Check for existing vendor by Company (and TenantId if multi-tenancy is enabled)
+                var sql =
+                    $"SELECT \"Id\" FROM \"dmscs\".\"Vendor\" WHERE \"Company\" = @Company AND {TenantContext.TenantWhereClause()}";
 
-                int id = await connection.ExecuteScalarAsync<int>(
+                var existingVendorId = await connection.ExecuteScalarAsync<int?>(
                     sql,
-                    new
-                    {
-                        command.Company,
-                        command.ContactName,
-                        command.ContactEmailAddress,
-                        CreatedBy = auditContext.GetCurrentUser(),
-                        TenantId,
-                    }
+                    new { command.Company, TenantId }
                 );
+
+                if (existingVendorId.HasValue)
+                {
+                    if (!updateExisting)
+                    {
+                        await transaction.CommitAsync();
+                        return new VendorInsertResult.Success(existingVendorId.Value, IsNewVendor: false);
+                    }
+
+                    sql = $"""
+                        UPDATE "dmscs"."Vendor"
+                        SET "ContactName"=@ContactName, "ContactEmailAddress"=@ContactEmailAddress,
+                            "LastModifiedAt"=@LastModifiedAt, "ModifiedBy"=@ModifiedBy
+                        WHERE "Id" = @Id AND {TenantContext.TenantWhereClause()};
+                        """;
+
+                    await connection.ExecuteAsync(
+                        sql,
+                        new
+                        {
+                            command.ContactName,
+                            command.ContactEmailAddress,
+                            Id = existingVendorId.Value,
+                            LastModifiedAt = auditContext.GetCurrentTimestamp(),
+                            ModifiedBy = auditContext.GetCurrentUser(),
+                            TenantId,
+                        }
+                    );
+
+                    sql = "DELETE FROM \"dmscs\".\"VendorNamespacePrefix\" WHERE \"VendorId\" = @VendorId";
+                    await connection.ExecuteAsync(sql, new { VendorId = existingVendorId.Value });
+                    id = existingVendorId.Value;
+                }
+                else
+                {
+                    sql = """
+                        INSERT INTO "dmscs"."Vendor" ("Company", "ContactName", "ContactEmailAddress", "CreatedBy", "TenantId")
+                        VALUES (@Company, @ContactName, @ContactEmailAddress, @CreatedBy, @TenantId)
+                        RETURNING "Id";
+                        """;
+
+                    id = await connection.ExecuteScalarAsync<int>(
+                        sql,
+                        new
+                        {
+                            command.Company,
+                            command.ContactName,
+                            command.ContactEmailAddress,
+                            CreatedBy = auditContext.GetCurrentUser(),
+                            TenantId,
+                        }
+                    );
+                    isNewVendor = true;
+                }
 
                 sql = """
                     INSERT INTO "dmscs"."VendorNamespacePrefix" ("VendorId", "NamespacePrefix", "CreatedBy")
@@ -75,7 +123,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 await connection.ExecuteAsync(sql, namespacePrefixes);
                 await transaction.CommitAsync();
 
-                return new VendorInsertResult.Success(id);
+                return new VendorInsertResult.Success(id, isNewVendor);
             }
             catch (PostgresException ex)
                 when (ex.SqlState == PostgresErrorCodes.UniqueViolation

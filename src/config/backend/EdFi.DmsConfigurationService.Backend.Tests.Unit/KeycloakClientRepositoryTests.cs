@@ -1178,10 +1178,6 @@ public class KeycloakClientRepositoryTests
             ClaimValue(AppliedClient(), "namespacePrefixes").Should().Be(NewPrefixes);
 
         [Test]
-        public void It_keeps_non_empty_namespace_prefixes_as_a_string_claim() =>
-            NamespaceClaims(AppliedClient()).Single().Config["jsonType.label"].Should().Be("String");
-
-        [Test]
         public void It_leaves_exactly_one_namespace_claim() =>
             NamespaceClaims(AppliedClient()).Should().ContainSingle();
 
@@ -1989,8 +1985,8 @@ public class KeycloakClientRepositoryTests
 
     /// <summary>
     /// The shape <c>IdentityModule.RegisterClient</c> uses: a caller-chosen key and secret, the
-    /// configuration-service role, the admin scope, and no namespace or education-organization
-    /// claims. It provisions by the same contract, so its failures compensate the same way.
+    /// configuration-service role, the admin scope, and empty namespace and education-organization
+    /// inputs. It provisions by the same contract, so its failures compensate the same way.
     /// </summary>
     [TestFixture]
     public class Given_a_registration_shaped_client_creation_that_succeeds : CreateClientTestBase

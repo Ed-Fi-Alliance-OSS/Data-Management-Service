@@ -454,9 +454,10 @@ public class KeycloakClientRepository(
 
     /// <summary>
     /// Sets the client's namespace-prefixes claim to the requested value, preserving every
-    /// unrelated mapper. The first matching mapper keeps its identity and configuration and only
-    /// its value changes; any further duplicates are removed so exactly one mapper carries the
-    /// claim. A client carrying no such mapper receives the fully configured one.
+    /// unrelated mapper. The first matching mapper keeps its identity and unrelated configuration;
+    /// its value and JSON type are updated for the requested claim shape. Any further duplicates
+    /// are removed so exactly one mapper carries the claim. A client carrying no such mapper
+    /// receives the fully configured one.
     /// </summary>
     private void UpsertNamespacePrefixesClaim(
         List<ClientProtocolMapper> protocolMappers,

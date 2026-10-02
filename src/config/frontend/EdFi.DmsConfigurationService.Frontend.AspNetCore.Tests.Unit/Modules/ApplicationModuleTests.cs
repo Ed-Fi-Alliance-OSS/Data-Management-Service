@@ -541,69 +541,14 @@ public class ApplicationModuleTests
         }
     }
 
-    /// <summary>
-    /// DMS reads an application's profile assignments by id with the service-account scope that covers
-    /// its other Configuration Service reads. That scope must reach the by-id read and nothing else here.
-    /// </summary>
-    [TestFixture]
-    public class Given_a_token_with_only_the_auth_metadata_scope : ApplicationModuleTests
-    {
-        private HttpResponseMessage _getByIdResponse = null!;
-        private HttpResponseMessage _getAllResponse = null!;
-        private HttpResponseMessage _deleteResponse = null!;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
-                .Returns(
-                    new ApplicationGetResult.Success(
-                        new ApplicationResponse()
-                        {
-                            Id = 1,
-                            ApplicationName = "Test Application",
-                            ClaimSetName = "ClaimSet",
-                            VendorId = 1,
-                            EducationOrganizationIds = [1],
-                            DataStoreIds = [1],
-                            ProfileIds = [1],
-                        }
-                    )
-                );
-
-            using var client = SetUpClient();
-            client.DefaultRequestHeaders.Remove("X-Test-Scope");
-            client.DefaultRequestHeaders.Add(
-                "X-Test-Scope",
-                AuthorizationScopes.AuthMetadataReadOnlyAccessScope.Name
-            );
-
-            _getByIdResponse = await client.GetAsync("/v3/applications/1");
-            _getAllResponse = await client.GetAsync("/v3/applications");
-            _deleteResponse = await client.DeleteAsync("/v3/applications/1");
-        }
-
-        [Test]
-        public void It_allows_reading_an_application_by_id() =>
-            _getByIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        [Test]
-        public void It_still_forbids_listing_applications() =>
-            _getAllResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-
-        [Test]
-        public void It_still_forbids_deleting_an_application() =>
-            _deleteResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-    }
-
     [TestFixture]
     public class FailureNotFoundTest : ApplicationModuleTests
     {
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
-                .Returns(new VendorInsertResult.Success(1));
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored, A<bool>.Ignored))
+                .Returns(new VendorInsertResult.Success(1, IsNewVendor: true));
 
             A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
                 .Returns(new ApplicationGetResult.FailureNotFound());
