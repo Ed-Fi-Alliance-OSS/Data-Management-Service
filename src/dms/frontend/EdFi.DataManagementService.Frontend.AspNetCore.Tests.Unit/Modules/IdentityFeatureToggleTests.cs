@@ -29,6 +29,29 @@ public class IdentityFeatureToggleTests
     private static WebApplicationFactory<Program> CreateFactory(bool enableIdentityManagement)
     {
         var apiService = A.Fake<IApiService>();
+        A.CallTo(() => apiService.GetIdentityOpenApiSpecification(A<JsonArray>._))
+            .Returns(
+                JsonNode.Parse(
+                    """
+                    {
+                      "openapi": "3.0.0",
+                      "components": {
+                        "securitySchemes": {
+                          "oauth2_client_credentials": {
+                            "type": "oauth2",
+                            "flows": {
+                              "clientCredentials": {
+                                "tokenUrl": "https://internal-auth.example/oauth/token",
+                                "scopes": {}
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                    """
+                )!
+            );
 
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
