@@ -141,7 +141,13 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
 
         Task<string?> GetTokenStatusAsync(Guid tokenId);
 
-        Task<bool> RevokeTokenAsync(Guid tokenId);
+        /// <summary>
+        /// Marks the token revoked only when it is still unrevoked and stored for
+        /// <paramref name="applicationId"/>; both conditions are enforced by the UPDATE itself, so a
+        /// repeated revocation keeps the original redemption timestamp.
+        /// </summary>
+        /// <returns>True if a row changed; false for an unknown, already revoked, or foreign token.</returns>
+        Task<bool> RevokeTokenAsync(Guid tokenId, Guid applicationId);
 
         Task<int> DeleteExpiredTokensAsync(DateTimeOffset expiredBefore);
 
