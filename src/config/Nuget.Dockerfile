@@ -7,7 +7,13 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0.3-alpine3.23@sha256:258b939d6d684ff05a
 
 LABEL maintainer="Ed-Fi Alliance, LLC and Contributors <techsupport@ed-fi.org>"
 
-RUN apk --no-cache add postgresql16-client
+# ICU because Microsoft.Data.SqlClient does not support globalization-invariant mode, which the
+# Alpine base enables by default. Without it the published image cannot use the SQL Server
+# backend at all (DbUp fails at startup with "Globalization Invariant Mode is not supported").
+# Mirrors the source-build Dockerfile's runtimebase.
+RUN apk --no-cache add postgresql16-client icu-libs=~76 icu-data-full=~76
+
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 
 FROM runtimebase AS setup
 
