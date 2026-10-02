@@ -100,7 +100,11 @@ public class Given_a_host_with_the_plugin_startup_check
             .Subject;
 
         task.Order.Should().Be(260);
-        task.Order.Should().BeInRange(200, DmsStartupTaskOrderRanges.ApiSchemaInitializationMaximum);
+        task.Order.Should()
+            .BeInRange(
+                DmsStartupTaskOrderRanges.PluginRegistrationValidationMinimum,
+                DmsStartupTaskOrderRanges.PluginRegistrationValidationMaximum
+            );
         task.Order.Should().BeGreaterThan(250);
     }
 

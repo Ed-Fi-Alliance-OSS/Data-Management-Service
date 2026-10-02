@@ -216,13 +216,18 @@ public class Given_the_startup_check_the_seam_registered
     public void TearDown() => _provider.Dispose();
 
     /// <summary>
-    /// Inside the 200-299 window Program.cs executes, and above the custom validator guard at 250, so
-    /// these checks read a collection that audit has already accepted.
+    /// Inside the 250-299 window the ValidatePluginRegistrations phase executes, and above the custom
+    /// validator guard at 250, so these checks read a collection that audit has already accepted.
     /// </summary>
     [Test]
     public void It_runs_inside_the_executed_window_and_above_the_custom_validator_guard()
     {
-        _task.Order.Should().BeInRange(200, DmsStartupTaskOrderRanges.ApiSchemaInitializationMaximum);
+        _task
+            .Order.Should()
+            .BeInRange(
+                DmsStartupTaskOrderRanges.PluginRegistrationValidationMinimum,
+                DmsStartupTaskOrderRanges.PluginRegistrationValidationMaximum
+            );
         _task.Order.Should().BeGreaterThan(250);
         _task.Order.Should().Be(260);
     }

@@ -209,6 +209,13 @@ if (invalidConfigurationException is null)
         () => InitializeApiSchemas(app)
     );
     await startupPhaseExecutor.RunFatalAsync(
+        DmsStartupPhases.ValidatePluginRegistrations,
+        "Validating custom validator and plugin service registrations.",
+        "Custom validator and plugin service registration validation completed successfully.",
+        "Custom validator or plugin registration validation failed. DMS cannot start with invalid custom validator or plugin service registrations.",
+        () => ValidatePluginRegistrations(app)
+    );
+    await startupPhaseExecutor.RunFatalAsync(
         DmsStartupPhases.InitializeBackendMappings,
         "Compiling backend mappings from initialized effective schemas.",
         "Backend mapping initialization completed successfully.",
@@ -361,6 +368,20 @@ async Task InitializeApiSchemas(WebApplication app)
     );
     app.Logger.LogInformation(
         "API schema loading and effective schema initialization completed successfully"
+    );
+}
+
+async Task ValidatePluginRegistrations(WebApplication app)
+{
+    app.Logger.LogInformation("Validating custom validator and plugin service registrations at startup");
+    var orchestrator = app.Services.GetRequiredService<DmsStartupOrchestrator>();
+    await orchestrator.RunByOrderRangeAsync(
+        DmsStartupTaskOrderRanges.PluginRegistrationValidationMinimum,
+        DmsStartupTaskOrderRanges.PluginRegistrationValidationMaximum,
+        CancellationToken.None
+    );
+    app.Logger.LogInformation(
+        "Custom validator and plugin service registration validation completed successfully"
     );
 }
 
