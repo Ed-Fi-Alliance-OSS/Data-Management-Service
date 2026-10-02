@@ -2177,22 +2177,25 @@ here.
 **Stacks.** 16 merged captures (12 cold, 4 warm) and 12 control captures. Every
 thread-pool worker is parked, with **0 resolver waits, 0 authentication frames in a
 synchronous wait and 0 other synchronous waits**. As in 4.1, each round 1 ends inside its
-0 s capture.
+0 s capture. **Limitation:** the bursts ended within the first capture interval, so parked
+workers do not prove the workers' state throughout the burst.
 
 **Round-1 latency: investigated.** No plateau returned: the slowest response in any round
 was 1.33 s, against Phase 0's 13–16 s. Round 1 was, however, about 0.5 s slower than in
 4.1, and the warm round 1 about 0.2–0.35 s slower.
 
-- **Ruled out by inspection:** the request path, the build and the stall's signature. The
-  stacks are clean, the number of connections created is unchanged, and the Dockerfile's
-  publish and runtime settings are unchanged.
+- **Not found by inspection:** a cause in the request path, the build, or the stall's
+  signature. The stacks are clean (within the limitation above), the number of connections
+  created is unchanged, and the Dockerfile's publish and runtime settings are unchanged.
 - **Matched control.** The pre-merge image, rebuilt from the same source with layers
   cache-identical to 4.1's, ran in the same environment immediately after: 3 cold runs.
   - It shows the same shift: round-1 p50 914–976 ms against the merged image's 958–1,147 ms,
     handshake p50 281–299 ms against 299–377 ms.
   - It used the same CPU: PostgreSQL 137–157 % on both images, against 68–76 % in 4.1.
-  - **The difference from 4.1 is environmental, not the merged code.** The same work costs
-    about twice the CPU it did at 4.1.
+  - **Conclusion (corrected at the push-readiness review):** the pre-merge control
+    reproduced most of the latency shift, supporting an environmental contribution. These
+    runs do not establish the precise cause or exclude a smaller merge-related effect. In
+    these runs the same work cost about twice the CPU it did at 4.1.
 - **Environment differences from 4.1:**
   - host free memory was 2.6–2.7 GB of 31 GB;
   - four containers of other sessions were running, idle at about 2 % CPU each:
@@ -2255,8 +2258,10 @@ was 1.33 s, against Phase 0's 13–16 s. Round 1 was, however, about 0.5 s slowe
 ### Status for the push-readiness review
 
 - **On the merged tree:** integration (both engines), CMS E2E, DMS shards 1 and 2, and the
-  catalog runtime are green, with no blocked-authentication evidence. The round-1 shift
-  from 4.1 is shown by the matched control to be environmental.
+  catalog runtime are green, with no blocked-authentication evidence in the stacks (within
+  their limitation). The pre-merge control reproduced most of the round-1 shift from 4.1,
+  supporting an environmental contribution. It does not establish the precise cause or
+  exclude a smaller merge-related effect.
 - **Still in force:** the default stress gate stays FAILED as a ticket-scoped exception, and
   the seven mutants stay *UNRUN — execution requirement waived*.
 - **Open:**
@@ -2266,3 +2271,18 @@ was 1.33 s, against Phase 0's 13–16 s. Round 1 was, however, about 0.5 s slowe
   - the cause of the environmental round-1 shift;
   - the nine CSharpier failures inherited from `main` (accepted).
 - **Nothing is pushed.** The PR stays a draft, and DMS-1556 stays open.
+
+### Review disposition (2026-10-02)
+
+The reviewer checked the trx results, the 1,740-response catalog totals, and all 21 archive
+hashes and entry counts. The source tree is unchanged, and no tests were rerun.
+
+- **Approved for push and ready-for-review,** after the documentation-only wording
+  correction applied above: the latency conclusion and the stack limitation.
+- **The local validation is sufficient;** no further workloads are required now.
+- **Documented observations:** the round-1 latency shift and the transient startup-token
+  401s. Neither is investigated further unless CI exposes a related failure, and neither
+  uncertainty blocks the ticket.
+- **Before merge or closing:** CI results, then the Jira archival of the evidence bundle
+  with the archived copies verified. Fixes prompted by CI stay focused and return for
+  review.
