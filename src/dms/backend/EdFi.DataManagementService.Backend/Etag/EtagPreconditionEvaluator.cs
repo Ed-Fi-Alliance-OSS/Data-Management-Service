@@ -9,8 +9,8 @@ namespace EdFi.DataManagementService.Backend.Etag;
 
 /// <summary>
 /// Decides whether a write may proceed under an HTTP conditional precondition, given the target's
-/// current state-significant ETag projection. If-Match
-/// compares the projection (ContentVersion, schemaEpoch). Reads use full-tag comparison and are handled in the read handler, not here.
+/// current state-significant ETag projection. If-Match compares the projection (ContentVersion,
+/// schemaEpoch). Reads use full-tag comparison and are handled in the read handler, not here.
 /// </summary>
 internal static class EtagPreconditionEvaluator
 {

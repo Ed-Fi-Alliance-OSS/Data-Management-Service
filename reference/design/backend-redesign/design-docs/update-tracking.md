@@ -299,9 +299,8 @@ Comparison basis summary:
 | Served `_etag` / `ETag` emission | N/A; compose full strong validator | Included | Included | Included | Included | Included | Included | Distinct tag per served byte-representation |
 | Conditional GET `If-None-Match` | RFC weak comparison against full served tag | Significant | Significant | Significant | Significant | Significant | Significant | Any match returns `304` |
 | Write `If-Match` | RFC strong comparison over state-significant projection | Significant | Significant | Ignored | Ignored | Ignored | Ignored | Mismatch returns `412` |
-| Write `If-None-Match` (POST, PUT, DELETE) | Header ignored (DMS-1576) | Not compared | Not compared | Not compared | Not compared | Not compared | Not compared | No effect; request proceeds as if the header were absent |
+| Write `If-None-Match` (any value, including `*`; POST, PUT, DELETE) | Header ignored (DMS-1576) | Not compared | Not compared | Not compared | Not compared | Not compared | Not compared | No effect; the request proceeds as if the header were absent (POST upserts) |
 | Bare `If-Match: *` | Existence precondition | Not compared | Not compared | Not compared | Not compared | Not compared | Not compared | Missing current representation returns `412` |
-| Bare `If-None-Match: *` on a write | Header ignored (DMS-1576) | Not compared | Not compared | Not compared | Not compared | Not compared | Not compared | No effect; upsert or update proceeds |
 
 - GET returns `_etag` as `"{ContentVersion}-{variantKey}"` for the representation actually served
   (see "Serving API metadata"). It is a strong validator under RFC 9110 §8.8.1.
