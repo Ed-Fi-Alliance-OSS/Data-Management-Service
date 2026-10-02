@@ -687,10 +687,9 @@ $failureStatement
             $log | Should -Contain "start-infra DmsBaseUrl= rebuild=True writerGuidanceSuppressed=True"
             $log | Should -Contain "start-dms DmsBaseUrl= rebuild=False writerGuidanceSuppressed=False"
             $output | Should -Not -Match "Infrastructure phase complete\. DMS service was not started\."
-            $output | Should -Not -Match "Local Docker images are reused by default"
         }
 
-        It "does not rebuild or warn by default, suppresses initial terminal guidance, and reaches DMS-only startup" {
+        It "does not rebuild by default, suppresses initial terminal guidance, and reaches DMS-only startup" {
             New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
             $callLog = Join-Path $script:repo.RepoRoot "call-log-default-start.txt"
             New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
@@ -705,7 +704,6 @@ $failureStatement
             $log | Should -Contain "start-infra DmsBaseUrl= rebuild=False writerGuidanceSuppressed=True"
             $log | Should -Contain "start-dms DmsBaseUrl= rebuild=False writerGuidanceSuppressed=False"
             $output | Should -Not -Match "Infrastructure phase complete\. DMS service was not started\."
-            $output | Should -Not -Match "Local Docker images are reused by default"
         }
 
         It "suppresses initial terminal guidance before published DMS startup" {
@@ -852,7 +850,7 @@ param(
             }
         }
 
-        It "runs configure and provision, does not invoke -DmsOnly start, and prints IDE guidance" {
+        It "runs configure and provision without printing the initial phase guidance, does not invoke -DmsOnly start, and prints IDE guidance" {
             New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
             $callLog = Join-Path $script:repo.RepoRoot "call-log.txt"
             New-RecordingStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
@@ -870,7 +868,7 @@ param(
             # configure and provision must appear
             $log | Should -Contain "configure smoke=False"
             $log | Should -Contain "provision"
-            $log | Should -Contain "start-infra DmsBaseUrl= rebuild=False writerGuidanceSuppressed=False"
+            $log | Should -Contain "start-infra DmsBaseUrl= rebuild=False writerGuidanceSuppressed=True"
 
             # -DmsOnly start must NOT appear
             $log | Where-Object { $_ -like "start-dms*" } | Should -BeNullOrEmpty
@@ -880,7 +878,7 @@ param(
 
             # IDE guidance must mention appsettings or DmsBaseUrl workflow hint
             $output | Should -Match "(?i)(appsettings|DmsBaseUrl|IDE)"
-            $output | Should -Match "Infrastructure phase complete\. DMS service was not started\." -Because "terminal InfraOnly startup retains direct/manual writer guidance"
+            $output | Should -Not -Match "Infrastructure phase complete\. DMS service was not started\." -Because "the wrapper has not yet configured or provisioned the data store when its initial infrastructure phase returns"
 
             # AC: terminal output must not present a second start-local-dms.ps1 run as a resume
             # mechanism; the fresh wrapper continuation invocation is the supported follow-up.

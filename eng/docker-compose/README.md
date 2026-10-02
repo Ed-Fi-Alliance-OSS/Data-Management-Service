@@ -104,6 +104,9 @@ infrastructure starts:
 ./bootstrap-local-dms.ps1 -Rebuild
 ```
 
+Because `-d -v` removes `.bootstrap/`, republish `api-schema-tools` as described under
+[Standard mode](#standard-mode-package-backed) before the next bootstrap.
+
 By default, authentication uses the Self-Contained (OpenIddict) identity provider. The environment and startup scripts are pre-configured for Self-Contained mode, and Keycloak is not required unless explicitly selected.
 
 When an E2E environment file defines `E2E_DATABASE_NAME`, that database must be
@@ -486,8 +489,9 @@ listed extension packages (the DS 5.2 default stages core + TPDM); custom or unp
 sets use Expert mode below.
 
 > **Requirement - `api-schema-tools` tool:** `prepare-dms-schema.ps1` needs the in-repo `api-schema-tools`
-> CLI published as a native executable. Build it once before running the prepare command (the
-> publish step is safe to re-run after branch switches).
+> CLI published as a native executable. Publish it before running the prepare command. The step is
+> safe to re-run and is required again after a branch switch changes the tool or after `-d -v`
+> removes the `.bootstrap/` workspace.
 
 ```pwsh
 # 1. Publish the api-schema-tools tool (required on a clean checkout)

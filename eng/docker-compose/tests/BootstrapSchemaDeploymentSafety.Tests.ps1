@@ -476,6 +476,15 @@ exit $ExitCode
     }
 
     Context "staged schema workspace validation" {
+        It "preserves backslashes in a missing bootstrap manifest path" {
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-schema-workspace.psm1") -Force
+            $missingManifest = Join-Path $script:repo.RepoRoot "state\missing\bootstrap-manifest.json"
+            $expectedPath = [System.IO.Path]::GetFullPath($missingManifest)
+
+            { Resolve-BootstrapSchemaWorkspace -BootstrapManifestPath $missingManifest } |
+                Should -Throw -ExpectedMessage "*$expectedPath*"
+        }
+
         It "returns core first and extensions in manifest order" {
             New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
             Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-schema-workspace.psm1") -Force
