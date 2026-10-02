@@ -114,6 +114,18 @@ public static class SetupHooks
         }
     }
 
+    // Single-tenant expectations, such as an exact empty tenant list, don't hold on a
+    // multi-tenant stack. Skip scenarios tagged @SingleTenantOnly when multi-tenancy is enabled.
+    [BeforeScenario("SingleTenantOnly")]
+    public static void SkipIfMultiTenancyEnabled()
+    {
+        var multiTenancy = Environment.GetEnvironmentVariable("DMS_CONFIG_MULTI_TENANCY");
+        if (string.Equals(multiTenancy, "true", StringComparison.OrdinalIgnoreCase))
+        {
+            Assert.Ignore($"Requires a single-tenant CMS; DMS_CONFIG_MULTI_TENANCY is '{multiTenancy}'.");
+        }
+    }
+
     [BeforeFeature]
     public static async Task BeforeFeature(PlaywrightContext context)
     {

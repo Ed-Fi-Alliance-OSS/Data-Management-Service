@@ -39,10 +39,18 @@ public class ApiInformation
 
 public class ApiUrls
 {
-    public ApiUrls(string openApiMetadata)
+    public ApiUrls(string openApiMetadata, string tenancy)
     {
         OpenApiMetadata = openApiMetadata;
+        Tenancy = tenancy;
     }
 
     public string OpenApiMetadata { get; }
+
+    public string Tenancy { get; }
 }
+
+/// <summary>
+/// The anonymous GET /tenancy response: configured tenant names only, empty when multi-tenancy is off.
+/// </summary>
+public record ApiTenancy(IReadOnlyList<string> Tenants);
