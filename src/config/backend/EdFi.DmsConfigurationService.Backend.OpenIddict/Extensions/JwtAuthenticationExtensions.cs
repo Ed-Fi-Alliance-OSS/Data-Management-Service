@@ -5,6 +5,7 @@
 
 using System.Security.Claims;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -70,53 +71,6 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
 
                         options.Events = new JwtBearerEvents
                         {
-                            OnTokenValidated = async context =>
-                            {
-                                // Use enhanced token validator for additional validation
-                                var enhancedValidator =
-                                    context.HttpContext.RequestServices.GetService<IEnhancedTokenValidator>();
-
-                                if (enhancedValidator != null)
-                                {
-                                    var token = context
-                                        .Request.Headers["Authorization"]
-                                        .ToString()
-                                        .Replace("Bearer ", "");
-
-                                    var validationResult = await enhancedValidator.ValidateTokenAsync(token);
-                                    if (!validationResult.IsValid)
-                                    {
-                                        context.Fail(
-                                            $"Enhanced validation failed: {validationResult.ErrorDescription}"
-                                        );
-                                    }
-                                }
-
-                                // Additional validation using existing token manager (backward compatibility)
-                                var tokenManager =
-                                    context.HttpContext.RequestServices.GetService<ITokenManager>();
-                                if (tokenManager != null)
-                                {
-                                    var token = context
-                                        .Request.Headers["Authorization"]
-                                        .ToString()
-                                        .Replace("Bearer ", "");
-
-                                    // Check if the token manager supports validation
-                                    var validationMethod = tokenManager
-                                        .GetType()
-                                        .GetMethod("ValidateTokenAsync");
-                                    if (validationMethod != null)
-                                    {
-                                        var result = await (Task<bool>)
-                                            validationMethod.Invoke(tokenManager, new object[] { token })!;
-                                        if (!result)
-                                        {
-                                            context.Fail("Token has been revoked or is invalid");
-                                        }
-                                    }
-                                }
-                            },
                             OnChallenge = context =>
                             {
                                 var logger = context.HttpContext.RequestServices.GetRequiredService<
@@ -141,35 +95,17 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                     }
                 );
 
-            // Configure JWT options post-configuration to resolve signing keys at runtime
+            // Validation keys come from the shared signing-key snapshot through its configuration manager, and the
+            // shared request boundary classifies dependency failures as 503, as on the default Bearer scheme (spec
+            // D-2, D-3, step 3.2). The shared token-validated handler is the one uncached token-status check, in place
+            // of the enhanced-validator pre-check and the reflective ValidateTokenAsync call this scheme made before.
+            // The challenge and authentication-failed logging above still runs for every non-dependency failure. The
+            // manager and events come from AddSigningKeyServices, which every caller of this method registers.
             services
                 .AddOptions<JwtBearerOptions>(JwtSchemeName)
-                .Configure<ITokenManager>(
-                    (options, tokenManager) =>
-                    {
-                        // Configure dynamic key resolution using IssuerSigningKeyResolver
-                        options.TokenValidationParameters.IssuerSigningKeyResolver = (
-                            token,
-                            securityToken,
-                            kid,
-                            validationParameters
-                        ) =>
-                        {
-                            // This resolver will be called when a token needs to be validated
-                            // Using ConfigureAwait(false) to avoid deadlocks in the sync context
-                            var keysTask = tokenManager.GetPublicKeysAsync();
-                            var publicKeysList = keysTask.ConfigureAwait(false).GetAwaiter().GetResult();
-
-                            return publicKeysList.Select(rsaParams =>
-                            {
-                                var key = new RsaSecurityKey(rsaParams.RsaParameters)
-                                {
-                                    KeyId = rsaParams.KeyId,
-                                };
-                                return (SecurityKey)key;
-                            });
-                        };
-                    }
+                .Configure<SigningKeyConfigurationManager, SigningKeyBearerEvents>(
+                    (options, configurationManager, bearerEvents) =>
+                        options.UseSigningKeySnapshot(configurationManager, bearerEvents)
                 );
 
             return services;

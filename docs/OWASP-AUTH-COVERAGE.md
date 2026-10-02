@@ -196,10 +196,14 @@ externally-issued tokens), the following compensating controls bound the risk:
 - **Bounded clock skew.** Lifetime validation allows only a small, fixed clock-skew
   tolerance, limiting acceptance of marginally-expired tokens.
 - **Signing-key rotation (measurable app-side control).** Retiring a signing key
-  makes every token issued under it fail signature validation, which cuts short the
-  acceptance window for tokens already in circulation. Combined with the short TTL
-  above, this is the measurable control on the stateless paths; rotate per IdP
-  guidance.
+  makes every token issued under it fail signature validation once validators have
+  refreshed their keys, which cuts short the acceptance window for tokens already in
+  circulation. Combined with the short TTL above, this is the measurable control on
+  the stateless paths; rotate per IdP guidance. For the CMS self-contained provider,
+  a retired key's tokens are rejected only after each instance reloads its signing-key
+  snapshot: within a bounded delay on a healthy instance, and up to the maximum
+  staleness while an instance cannot read the key store. See
+  [Rotating and retiring a database signing key](../reference/design/configuration-service/CS-AUTH.md#rotating-and-retiring-a-database-signing-key).
 - **IdP-side revocation (constraint, not an app-side control).** Revoking a token at
   the IdP does **not** retroactively reject it on the stateless app paths (DMS for
   all tokens; CMS for externally-issued tokens) — a revoked externally-issued token

@@ -108,11 +108,20 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
         # declares. An overlay block has no image or build of its own, so there is no container
         # for a logging cap to bound. Two of these also declare a container of their own,
         # fetch-plugins and plugin-feed; those services keep the cap, and the file is listed here
-        # only for the overlay blocks beside them.
+        # only for the overlay blocks beside them. The DMS-1556 investigation overlays add keys to
+        # the config and db services; local-config-diagnostics.yml also declares cms-monitor,
+        # which keeps the cap.
         $excludedOverrideFiles = @(
             "eng/docker-compose/bootstrap-dms.yml",
+            "eng/docker-compose/local-config-diagnostics.yml",
+            "eng/docker-compose/local-control-e3-certificates.yml",
+            "eng/docker-compose/local-control-e4-threads.yml",
+            "eng/docker-compose/local-control-e5-pool16.yml",
             "eng/docker-compose/local-dms-document-cache.yml",
             "eng/docker-compose/local-dms-diagnostics.yml",
+            "eng/docker-compose/local-postgresql-diagnostics.yml",
+            "eng/docker-compose/local-postgresql-headroom.yml",
+            "eng/docker-compose/local-resource-runner-approx.yml",
             "eng/docker-compose/mssql-cdc.yml",
             "eng/docker-compose/mssql-tmpfs.yml",
             "eng/docker-compose/plugins-config.yml",
