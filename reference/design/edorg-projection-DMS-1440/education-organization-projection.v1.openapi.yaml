@@ -21,9 +21,11 @@ info:
     `urls.oauth` and `educationOrganizationProjection.contractVersions`
     (schema `DiscoveryProjectionFragment`). Route-qualifier segments the Discovery request
     did not supply appear as `{placeholder}` segments; the client substitutes the data
-    store's context values for them. The members are present only when the deployment
-    enables the endpoint (`AppSettings:EnableEducationOrganizationProjection`, default
-    `true`). The route forms are:
+    store's context values for them. `urls.oauth` is the existing Discovery member and
+    is unaffected by this feature. `urls.educationOrganizationProjection` and the
+    top-level `educationOrganizationProjection` object are present only when the
+    deployment enables the endpoint (`AppSettings:EnableEducationOrganizationProjection`,
+    default `true`); disabling it removes exactly those two members. The route forms are:
 
     | Mode | Path |
     | --- | --- |
@@ -53,7 +55,11 @@ info:
     - When `nextCursor` is not `null`, `items` holds exactly `limit` items.
     - A response has no items only when the whole set is empty; that response is the
       first page and has `nextCursor: null`. No continuation page is ever empty.
-    - Replaying an unexpired cursor returns the same page.
+    - Replaying an unexpired cursor with unchanged request parameters returns the same
+      projected items while the projected content remains unchanged and the request
+      remains authorized. After a committed change to the projected content the replay
+      is answered `409 projection-changed`, and an authorization change is answered
+      with the corresponding 401, 403 or 404.
 
     Each request reads the complete set inside one database transaction, validates it,
     and computes a SHA-256 digest of its projected content. The first page records the
@@ -95,8 +101,12 @@ info:
     Every failure is `application/problem+json` (except the unexpected-condition 500 body
     described on that response). Problem `type` values are stable; `title` and `detail`
     of the problem types this endpoint owns are fixed literals and never contain SQL,
-    object names, connection strings, hashes or other diagnostics. `errors` is empty
-    except for `parameter-validation-failed`. Each problem schema carries
+    object names, connection strings, hashes or other diagnostics. In the problem
+    documents this endpoint owns (schema `FixedProblem`), `errors` is empty;
+    `parameter-validation-failed` names the offending parameters in `errors`. Problem
+    documents produced by existing pipeline steps (authentication, malformed tenant,
+    security configuration and the others marked as inherited) keep their existing
+    bodies, including any `errors` entries. Each problem schema carries
     `x-ed-fi-cms-classification`, the category and code CMS assigns to it.
 
     `409 projection-changed` is the only 409 a client should retry, and only by restarting
@@ -320,8 +330,8 @@ paths:
           description: >-
             A dependency is temporarily unavailable: the tenant or data store catalog could
             not be loaded, the data store's connection is not configured, its database has
-            not been provisioned, or the database could not be reached or did not complete
-            the read.
+            not been provisioned, or the database could not be reached, its schema
+            fingerprint could not be read, or it did not complete the read.
           headers:
             Cache-Control:
               $ref: '#/components/headers/CacheControl'
@@ -466,7 +476,7 @@ components:
         educationOrganizationId:
           type: integer
           format: int64
-          description: Unique across the set.
+          description: Unique across the set. Any int64 value, including zero and negative values.
         nameOfInstitution:
           type: string
           minLength: 1
@@ -490,9 +500,12 @@ components:
     DiscoveryProjectionFragment:
       type: object
       description: >-
-        The members this contract adds to the Ed-Fi API Discovery document; all other
-        Discovery members are unchanged and ignored by projection clients. Present only
-        when the endpoint is enabled. URLs include any path base, carry no query string,
+        The Discovery members a projection client reads. `urls.educationOrganizationProjection`
+        and the top-level `educationOrganizationProjection` object are added by this
+        contract and are present only when the endpoint is enabled; disabling it removes
+        exactly those two members. `urls.oauth` is the existing Discovery member, present
+        whether or not the endpoint is enabled. All other Discovery members are unchanged
+        and ignored by projection clients. URLs include any path base, carry no query string,
         and use a `{name}` segment for each route qualifier the Discovery request did not
         supply. Example: `contract/examples/discovery-fragment.json`.
       required: [urls, educationOrganizationProjection]
@@ -503,10 +516,12 @@ components:
           properties:
             oauth:
               type: string
-              description: Token endpoint for the client-credentials grant.
+              description: >-
+                Existing Discovery member: the token endpoint for the client-credentials
+                grant. Not affected by the projection toggle.
             educationOrganizationProjection:
               type: string
-              description: The projection endpoint URL template.
+              description: The projection endpoint URL template. Absent when the endpoint is disabled.
         educationOrganizationProjection:
           type: object
           required: [contractVersions]
@@ -767,7 +782,10 @@ components:
             detail: { const: The service is temporarily unable to handle the request. Retry the request later. }
     ServiceConfigurationErrorProblem:
       x-ed-fi-cms-classification: { category: Transient, code: ServiceUnavailable }
-      description: The data store's connection string is missing or cannot be decrypted.
+      description: >-
+        The data store's connection string is missing or cannot be decrypted. Used only
+        for connection configuration; a failure to read the schema fingerprint is
+        `target-unavailable`.
       allOf:
         - $ref: '#/components/schemas/FixedProblem'
         - properties:
@@ -788,7 +806,8 @@ components:
     TargetUnavailableProblem:
       x-ed-fi-cms-classification: { category: Transient, code: ServiceUnavailable }
       description: >-
-        The database could not be reached, or the read did not complete (lock timeout,
+        The database could not be reached, its schema fingerprint could not be read
+        because of a transient failure, or the read did not complete (lock timeout,
         deadlock, command timeout, dropped connection, failed commit, or an unrecognized
         database error).
       allOf:

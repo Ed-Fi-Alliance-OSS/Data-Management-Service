@@ -52,8 +52,13 @@ carries:
 Route-qualifier segments the Discovery request did not supply appear as
 `{name}` placeholders. A client replaces each with the data store's context
 value of the same name, and must not send a request while any placeholder is
-unresolved. Both URLs include any path base and carry no query string. When the
-endpoint is disabled these members are absent and the route is not mapped.
+unresolved. Both URLs include any path base and carry no query string.
+
+`urls.oauth` is the existing Discovery member and is not affected by this
+feature. When the endpoint is disabled, Discovery omits exactly
+`urls.educationOrganizationProjection` and the top-level
+`educationOrganizationProjection` object, keeps every other member including
+`urls.oauth`, and the route is not mapped.
 
 The route forms are:
 
@@ -143,11 +148,16 @@ A read starts without `cursor` and follows `nextCursor` until it is `null`,
 repeating `dataStoreId`, `limit` and `contractVersion` unchanged on every
 request.
 
-- Items are strictly ascending by `educationOrganizationId`, in numeric order.
+- Items are strictly ascending by `educationOrganizationId`, in numeric order;
+  ids are signed int64 values, and zero and negative ids are included.
 - When `nextCursor` is not `null`, the page has exactly `limit` items.
 - A page has no items only when the whole set is empty. That page is the first
   page and has `nextCursor: null`. No continuation page is ever empty.
-- Replaying an unexpired cursor returns the same page.
+- Replaying an unexpired cursor with unchanged request parameters returns the
+  same projected items while the projected content remains unchanged and the
+  request remains authorized. After a committed change to the projected content
+  the replay is answered `409 projection-changed`; after an authorization change
+  it is answered with the corresponding 401, 403 or 404.
 
 For example, a read of the seven education organizations in the
 [worked example](#worked-example) with `limit=2` takes four requests:
@@ -189,12 +199,15 @@ edorg-projection-digest:v1
 
 with one row line per item in ascending id order, each line ending in LF.
 
-- `<id>` and `<rowCount>` are invariant-culture decimal.
+- `<id>` is the signed int64 id in invariant-culture decimal: a leading `-` for
+  negative values, no `+`, no unnecessary leading zeroes (zero is `0`).
+  `<rowCount>` is a nonnegative decimal count.
 - `<tag>` is `SEA`, `ESC`, `LEA` or `SCH`.
 - `S(x)` is `-` when `x` is `null`; otherwise `<n>:<x>`, where `<n>` is the
   UTF-8 byte count of `x` in decimal (`0:` is the empty string). The length
   prefix keeps `;`, `:` and line breaks inside names unambiguous.
-- `P(x)` is `-` when `x` is `null`; otherwise the decimal parent id.
+- `P(x)` is `-` when `x` is `null`; otherwise the parent id, encoded like
+  `<id>`. A lone `-` is unambiguous because a negative id always has digits.
 
 The digest covers the five projected members only. It is a server-side
 consistency check, not part of what clients parse.
@@ -239,12 +252,15 @@ expired, or is dated more than 60 seconds in the future is rejected with
 DMS keeps no state for a read. For reference, format version `1` is the
 unpadded base64url encoding of the comma-separated values
 `1,<dataStoreId>,<lastEducationOrganizationId>,<digest>,<walkIssuedAtUnixSeconds>,<bindingHash>`,
-where `<digest>` is the unpadded base64url digest of the read's first page,
+where `<lastEducationOrganizationId>` is the signed id of the last item
+returned, encoded like `<id>` in the digest, `<digest>` is the unpadded
+base64url digest of the read's first page,
 `<walkIssuedAtUnixSeconds>` is the first page's time, carried unchanged into
 later cursors, and `<bindingHash>` is the first 32 lower-case hexadecimal
 characters of SHA-256 over
 `<tenant>|<contractVersion>|<key1>=<value1>;<key2>=<value2>...`. In that
-binding text the tenant is lower-cased (empty in single-tenant mode), and the
+binding text the tenant is lower-cased and is the empty string in
+single-tenant mode, and the
 route-qualifier pairs are lower-cased and sorted by key. The cursor is not
 signed. Changing it can only move the position, or fail the digest check, within
 a set the caller is already authorized to read in full.
@@ -284,10 +300,16 @@ not `null`, is always the id of another item in the set.
 
 Failures are `application/problem+json` documents with the usual DMS members:
 `type`, `title`, `status`, `detail`, `correlationId`, `errors`, and (except on
-401) `validationErrors`. Classify a failure by its HTTP status and `type` only.
-`errors` is empty except for `parameter-validation-failed`, and no body carries
-SQL, database object names, connection strings, hashes or other internal
-diagnostics.
+401) `validationErrors`. The one exception is the unexpected-exception 500
+described below. Classify a failure by its HTTP status and `type` only.
+
+The problem documents this endpoint owns, listed in the
+[fixed-literal table](#fixed-titles-and-details), have an empty `errors` array.
+`parameter-validation-failed` names the offending parameters in `errors`.
+Responses produced by existing DMS pipeline steps, such as authentication,
+malformed-tenant and security-configuration failures, keep their existing
+bodies, including any `errors` entries. No body carries SQL, database object
+names, connection strings, hashes or other internal diagnostics.
 
 Types under `urn:ed-fi:api:education-organization-projection:` are written below
 by their last segment.
@@ -312,15 +334,17 @@ by their last segment.
 | 500 | `urn:ed-fi:api:system:configuration:security` | The service claim is granted with the wrong authorization strategy | Fix the claim set |
 | 500 | `urn:ed-fi:api:system` | The deployment's configuration is invalid | Retry later |
 | 503 | `urn:ed-fi:api:service-unavailable` | The tenant or data store catalog could not be loaded | Retry later |
-| 503 | `urn:ed-fi:api:service-configuration-error` | The data store's connection string is missing or cannot be decrypted | Retry later |
+| 503 | `urn:ed-fi:api:service-configuration-error` | The data store's connection string is missing or cannot be decrypted (connection configuration only) | Retry later |
 | 503 | `urn:ed-fi:api:database-not-provisioned` | The data store's database has not been provisioned | Retry later |
-| 503 | `target-unavailable` | The database could not be reached or did not complete the read | Retry later |
+| 503 | `target-unavailable` | The database could not be reached, its schema fingerprint could not be read, or it did not complete the read | Retry later |
 
 `projection-changed` is the only 409 worth retrying, and only by restarting the
 read. Every other 409 is permanent for the data store as it stands. A 500
 caused by an unexpected exception keeps the existing DMS body
 `{"message": "...", "traceId": "..."}`, served as `application/json`; treat it
 like any other 500. A 429 or 503 may carry `Retry-After`.
+
+### Fixed titles and details
 
 The problem types this endpoint owns have fixed titles and details:
 

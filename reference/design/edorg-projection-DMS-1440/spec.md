@@ -1,10 +1,26 @@
 # DMS-1440 Implementation Spec — DMS education-organization projection endpoint and CMS HTTP reader
 
-Status: **APPROVED v4 (architect review, 2026-10-02).** Implementation proceeds one step at a time under the §9 checkpoints. The measurement gates in steps 2.5 and 2.6 remain conditions of approval, and the `MaxProjectionRows` (50 000) and `MaximumPageSize` (2 000) defaults stay provisional until those measurements are reviewed. This document is self-contained; it does not depend on earlier drafts.
+Status: **APPROVED v4 (architect review, 2026-10-02), amended by the Phase 0.1 contract review (§0.0) as contract corrections, not a redesign.** Implementation proceeds one step at a time under the §9 checkpoints. The measurement gates in steps 2.5 and 2.6 remain conditions of approval, and the `MaxProjectionRows` (50 000) and `MaximumPageSize` (2 000) defaults stay provisional until those measurements are reviewed. This document is self-contained; it does not depend on earlier drafts.
 
 Branch: `DMS-1440` (created from `main` at `5c964676f`). Before approval only this document was edited.
 
 ## 0. Review history and dispositions
+
+### 0.0 Phase 0.1 contract review (post-approval), 2026-10-02
+
+| # | Finding or decision | Disposition |
+| --- | --- | --- |
+| C1 (P2) | Cursor replay promised the same page whenever unexpired. | §4.2, §4.6 item 3 and the contract: replay with unchanged request parameters returns the same projected items **while the projected content remains unchanged and the request remains authorized**; a committed projected change → 409 `projection-changed`. |
+| C2 (P2) | "`errors` empty" contradicted inherited responses. | §3.6: empty `errors` is guaranteed only for projection-owned fixed problems; inherited responses keep their bodies; shared middleware is not changed. |
+| C3 (P2) | "Members absent when disabled" read as covering `urls.oauth`. | §3.2, D-4 and the contract: the toggle removes only `urls.educationOrganizationProjection` and the top-level `educationOrganizationProjection` object; `urls.oauth` is existing Discovery behavior and stays. |
+| Security-configuration type | The spec named `urn:ed-fi:api:security-configuration`. | Corrected to the existing `urn:ed-fi:api:system:configuration:security` (§3.4, §3.6); CMS matches it exactly (§5.5). |
+| Unexpected-exception 500 | `CoreExceptionLoggingMiddleware` returns `{message, traceId}` as `application/json`. | Accepted as the one exception to the problem-document rule; Transient `ServiceUnavailable` (§3.6, §5.5). |
+| Malformed tenant | Inherited 400 `urn:ed-fi:api:bad-request` was missing. | Added to §3.6; Permanent `InvalidRequest`. |
+| Fingerprint-read failure | No body was specified for a transient fingerprint read failure. | 503 `…:target-unavailable` with its fixed body; `service-configuration-error` is reserved for missing or undecryptable connection configuration (§3.5, step 2.3). |
+| Digest id encoding | "Unsigned decimal" conflicted with int64 ids. | Signed int64, invariant-culture decimal, no `+`, no unnecessary leading zeroes, for ids, parent ids and cursor positions; counts and lengths nonnegative; no negative-id rejection; no zero sentinel (§4.2, §4.4, step 2.2 vectors). |
+| Single-tenant binding | Tenant component unspecified. | Empty string (§4.2). |
+| Service-claim wording | The misconfiguration message names the identity claim. | Step 1.2: requirement-specific wording; identity responses and their pinned fixtures unchanged. |
+| Fixed literals | Titles and details for projection-owned types were proposed in the contract. | Approved; inherited responses keep their existing variability. |
 
 ### 0.1 Round 3 findings (v3 → v4), 2026-10-02
 
@@ -102,9 +118,9 @@ Upstream reader SQL: `COALESCE(scl.localeducationagencyid, lea.parentlocaleducat
 | D-1 | **Authorization = dedicated service claim** `http://ed-fi.org/identity/claims/services/educationOrganizationProjection`, action `Read`, strategies exactly `[NoFurtherAuthorizationRequired]`; granted to no shipped claim set; credential = CMS application API client with empty data-store assignment. | Accepted. |
 | D-2 | **Client-to-tenant binding on**; per-tenant credentials in multi-tenant mode. | Accepted. |
 | D-3 | **Route** `{FixedRoutePattern}/management/education-organizations`; qualifiers must match the store's `RouteContext`; CMS fills placeholders of both templates from the store's contexts. | Accepted. |
-| D-4 | **Discovery**: `urls.educationOrganizationProjection` + top-level `educationOrganizationProjection.contractVersions`, gated by `AppSettings:EnableEducationOrganizationProjection` (default `true`). | Accepted. |
+| D-4 | **Discovery**: `urls.educationOrganizationProjection` + top-level `educationOrganizationProjection.contractVersions`, gated by `AppSettings:EnableEducationOrganizationProjection` (default `true`); the toggle removes only these two members, and the existing `urls.oauth` is unaffected. | Accepted; clarified (§0.0 C3). |
 | D-5 | **Pagination = consistent full read per page + projection digest** under four normative implementation conditions (§4.3). | Accepted. |
-| D-6 | **Cursor** = unsigned canonical base64url CSV with format version, `dataStoreId`, `lastId`, digest, walk issued-at, binding hash; 60-minute lifetime from walk start; future-dated beyond 60 s invalid. | Accepted. |
+| D-6 | **Cursor** = unsigned (not cryptographically signed) canonical base64url CSV with format version, `dataStoreId`, `lastId`, digest, walk issued-at, binding hash; 60-minute lifetime from walk start; future-dated beyond 60 s invalid. | Accepted. |
 | D-7 | **Fail closed on data**, whole set, every page: duplicate ids; any populated core reference not resolving to a row of its expected type; any cycle (length ≥ 1) over LEA parent links. | Accepted. |
 | D-8 | **Fail closed on mapping**: typed incompatibility reasons from a mapping-set-driven compiler; extension arms ignored. | Accepted. |
 | D-9 | **Projection-owned, stage-separated translation** of fingerprint, mapping-set, acquisition, execution/materialization and commit failures (§3.9). | Revised (round 3). |
@@ -178,7 +194,7 @@ Headers: `Authorization: Bearer <token>` required; responses `application/json` 
 }
 ```
 
-Present only when the toggle is on; real-value-or-`{placeholder}` convention; includes `PathBase`; no query string. The ApiSchema-package Discovery OpenAPI document is not modified.
+`urls.oauth` is the existing Discovery member and is unaffected by the toggle. `urls.educationOrganizationProjection` and the top-level `educationOrganizationProjection` object are present only when the toggle is on; turning it off removes exactly those two members. Real-value-or-`{placeholder}` convention; includes `PathBase`; no query string. The ApiSchema-package Discovery OpenAPI document is not modified.
 
 ### 3.3 Success response and size bound
 
@@ -205,7 +221,7 @@ Present only when the toggle is on; real-value-or-`{placeholder}` convention; in
 3. `JwtAuthenticationMiddleware` (401)
 4. `ValidateTenantExistsMiddleware` (`IdentityTenantSnapshot`; 404 / 503)
 5. `ValidateClientTenantBindingMiddleware` (401 / 503; ignores `DataStoreIds`)
-6. `ServiceClaimAuthorizationMiddleware` with `ServiceClaimRequirement(…/services/educationOrganizationProjection, "Read")` (403 / 500 security-configuration)
+6. `ServiceClaimAuthorizationMiddleware` with `ServiceClaimRequirement(…/services/educationOrganizationProjection, "Read")` (403 / 500 `urn:ed-fi:api:system:configuration:security`)
 7. `ParseEducationOrganizationProjectionRequestMiddleware` (400s)
 8. `ResolveEducationOrganizationProjectionTargetMiddleware` (§3.5)
 9. `SelectEffectiveDataStoreTargetMiddleware(ReadOnly, NotApplicable, NotApplicable)`
@@ -233,7 +249,8 @@ Catalog-token ↔ dialect mapping (catalog vocabulary preserved): `postgresql` �
 | `RelationalProviderMetadataStatus == Unknown` | 409 `…:target-provider-unsupported` | Permanent |
 | `Supported` and token maps to a dialect ≠ `registeredDialect` | 409 `…:target-provider-unsupported` | Permanent |
 | `Missing` (legacy row without a token) | proceed, assuming `registeredDialect` (matches current routing) | — |
-| `ConnectionString` null/empty or undecryptable | 503 `service-configuration-error` | Transient |
+| `ConnectionString` null/empty or undecryptable | 503 `service-configuration-error` (connection configuration only) | Transient |
+| fingerprint read fails transiently (connection, timeout, other non-verdict failure) | 503 `…:target-unavailable` (fixed body; not `service-configuration-error`) | Transient |
 | Acquire-stage failure (§3.9) | 503 `…:target-unavailable` | Transient |
 | Prepare/Execute-stage transient failure (lock timeout, deadlock, command timeout, connection drop) | 503 `…:target-unavailable` | Transient |
 | Execute/Materialize-stage schema or type incompatibility (§3.9) | 409 `…:target-schema-incompatible` | Permanent |
@@ -252,6 +269,7 @@ No catalog flag named "disabled" exists; the Jira word maps onto the unsupported
 | 400 | `urn:ed-fi:api:bad-request:parameter-validation-failed` | bad `dataStoreId`/`limit`, repeated parameter | Permanent `InvalidRequest` |
 | 400 | `…:invalid-cursor` | undecodable, mismatched, expired, future-dated | Permanent `InvalidRequest` (one restart allowed) |
 | 400 | `…:unsupported-contract-version` | | Permanent `UnsupportedContract` |
+| 400 | `urn:ed-fi:api:bad-request` | malformed tenant segment (inherited `TenantValidationMiddleware`) | Permanent `InvalidRequest` |
 | 401 | `urn:ed-fi:api:security:authentication` | token or binding failure | Permanent `Unauthorized` after one refresh |
 | 403 | `urn:ed-fi:api:security:authorization:` | claim set lacks `Read` | Permanent `Forbidden` |
 | 404 | `urn:ed-fi:api:not-found` / `…:target-not-found` | tenant / store | Permanent `TargetNotFound` |
@@ -262,11 +280,12 @@ No catalog flag named "disabled" exists; the Jira word maps onto the unsupported
 | 409 | `…:projection-data-invalid` | §6 contradictions | Permanent `DataInvalid` |
 | 409 | `…:projection-changed` | digest differs | **Transient** `ProjectionChanged` (exact type only) |
 | 429 | `urn:ed-fi:api:too-many-requests` | | Transient `RateLimited` |
-| 500 | `urn:ed-fi:api:security-configuration` | strategy misconfiguration | Permanent `Forbidden` |
-| 500 | `urn:ed-fi:api:system` | | Transient `ServiceUnavailable` |
+| 500 | `urn:ed-fi:api:system:configuration:security` | strategy misconfiguration | Permanent `Forbidden` |
+| 500 | `urn:ed-fi:api:system` | invalid deployment configuration (inherited) | Transient `ServiceUnavailable` |
+| 500 | none: `application/json` `{message, traceId}` | unexpected exception (inherited `CoreExceptionLoggingMiddleware`) | Transient `ServiceUnavailable` |
 | 503 | `database-not-provisioned` / `service-configuration-error` / `service-unavailable` / `…:target-unavailable` | §3.5 | Transient |
 
-All problem types are under `urn:ed-fi:api:education-organization-projection:` unless shown with their existing full prefix. Fixed `detail` literals; `errors` empty except parameter validation. No SQL, object names, connection strings, hashes or diagnostics in any body.
+All problem types are under `urn:ed-fi:api:education-organization-projection:` unless shown with their existing full prefix. Every failure is `application/problem+json` except the inherited unexpected-exception 500, which keeps its existing `application/json` `{message, traceId}` body. Projection-owned problems have fixed `title`/`detail` literals (pinned in the contract) and an empty `errors` array; `parameter-validation-failed` names the offending parameters in `errors`. Inherited responses (authentication, malformed tenant, authorization, security configuration, tenant not found, rate limiting, service unavailable, system) keep their existing bodies, including any `errors` entries; shared middleware is not changed to alter them. No SQL, object names, connection strings, hashes or diagnostics in any body.
 
 ### 3.7 Configuration (DMS)
 
@@ -329,9 +348,9 @@ Page *k* reads the complete core set inside one explicit transaction. PostgreSQL
 
 ### 4.2 Cursor and canonical digest encoding
 
-Cursor: `1,<dataStoreId>,<lastEducationOrganizationId>,<digestBase64url>,<walkIssuedAtUnixSeconds>,<bindingHash>`; `bindingHash` = first 32 hex chars of SHA-256 over `tenantLower|contractVersion|k1=v1;k2=v2…` (pairs sorted ordinally by lower-cased key, lower-cased values). Strict decode (`PageTokenCodec` conventions); any failure, `dataStoreId` ≠ query, binding mismatch, `now − walkIssuedAt > CursorLifetimeMinutes`, or `walkIssuedAt > now + 60 s` → 400 `invalid-cursor`. `walkIssuedAt` is set on the first page and copied unchanged into later cursors. Replay of an unexpired cursor is idempotent. No server state; a forged cursor can only move the position or carry a different digest for a store the caller is already authorized to read in full.
+Cursor: `1,<dataStoreId>,<lastEducationOrganizationId>,<digestBase64url>,<walkIssuedAtUnixSeconds>,<bindingHash>`; `lastEducationOrganizationId` is a signed int64 encoded as in the digest below; `bindingHash` = first 32 hex chars of SHA-256 over `tenantLower|contractVersion|k1=v1;k2=v2…` (`tenantLower` is the empty string in single-tenant mode) (pairs sorted ordinally by lower-cased key, lower-cased values). Strict decode (`PageTokenCodec` conventions); any failure, `dataStoreId` ≠ query, binding mismatch, `now − walkIssuedAt > CursorLifetimeMinutes`, or `walkIssuedAt > now + 60 s` → 400 `invalid-cursor`. `walkIssuedAt` is set on the first page and copied unchanged into later cursors. Replay of an unexpired cursor with unchanged request parameters returns the same projected items while the projected content remains unchanged and the request remains authorized; after a committed projected change it is answered 409 `projection-changed`, and after an authorization change with the corresponding 401/403/404. Strict decode rejects non-canonical integers (`+`, unnecessary leading zeroes, `-0`). No server state; a forged cursor can only move the position or carry a different digest for a store the caller is already authorized to read in full.
 
-**Digest** = SHA-256 over the UTF-8 bytes of (LF line endings, no BOM, invariant culture, ids as unsigned decimal, lengths as UTF-8 **byte** counts in decimal):
+**Digest** = SHA-256 over the UTF-8 bytes of (LF line endings, no BOM, invariant culture, ids and parent ids as **signed int64** invariant-culture decimal with a leading `-` for negative values, no `+` and no unnecessary leading zeroes (zero is `0`); the row count and lengths, as UTF-8 **byte** counts, are nonnegative decimal):
 
 ```
 edorg-projection-digest:v1\n
@@ -339,9 +358,9 @@ edorg-projection-digest:v1\n
 <id>;<tag>;<S(nameOfInstitution)>;<S(shortNameOfInstitution)>;<P(parentId)>\n      (one line per row, ascending id)
 ```
 
-`tag` ∈ `SEA`, `ESC`, `LEA`, `SCH`. `S(x)` = `-` when null, otherwise `<byteCount>:<x>` (`0:` is the empty string). `P(parentId)` = `-` when null, otherwise decimal. Length prefixes make `;`, `:` and `\n` inside names unambiguous. The digest covers the five projected fields only.
+`tag` ∈ `SEA`, `ESC`, `LEA`, `SCH`. `S(x)` = `-` when null, otherwise `<byteCount>:<x>` (`0:` is the empty string). `P(parentId)` = `-` when null, otherwise the signed decimal as for ids (a lone `-` is unambiguous because a negative id always has digits). Length prefixes make `;`, `:` and `\n` inside names unambiguous. The digest covers the five projected fields only.
 
-Golden vectors (step 2.2 fixtures with exact text and expected hex digest): empty set (`edorg-projection-digest:v1\n0\n`); one SEA with null short name and null parent; a name containing `;`, `:`, `\n`, `"`; empty-string short name versus null; a name of 75 supplementary characters (byte count 300); ids `1`, `2147483648`, `9007199254740993`; two rows ordered by id regardless of insertion order.
+Golden vectors (step 2.2 fixtures with exact text and expected hex digest): empty set (`edorg-projection-digest:v1\n0\n`); one SEA with null short name and null parent; a name containing `;`, `:`, `\n`, `"`; empty-string short name versus null; a name of 75 supplementary characters (byte count 300); ids `1`, `2147483648`, `9007199254740993`; two rows ordered by id regardless of insertion order; **signed boundaries** `-9223372036854775808`, `-1`, `0`, `9223372036854775807` as ids and as parent ids; a mixed negative/positive set ordered numerically (not lexically); the Phase 0.1 worked example (`docs/EDUCATION-ORGANIZATION-PROJECTION.md`, digest `19ac413c…bffa`).
 
 ### 4.3 Per-page read (provider readers) — normative conditions
 
@@ -360,7 +379,7 @@ observer.Stage(Precedence); select parents per arm
 observer.Stage(Hashing); digest := SHA256(canonical(set))           // checkpoint every 1,000 rows
 if cursor is null: walkIssuedAt := now; fence := digest
 else if cursor.digest != digest → 409 projection-changed
-observer.Stage(Slicing); slice := set.Where(id > lastId).Take(limit + 1)
+observer.Stage(Slicing); slice := (cursor is null ? set : set.Where(id > cursor.lastId)).Take(limit + 1)   // no sentinel: negative and zero ids are included on the first page
 items := slice.Take(limit) mapped through the discriminator allowlist (five wire fields only)
 nextCursor := slice.Count > limit ? Encode(1, dataStoreId, items.Last.id, fence, walkIssuedAt, bindingHash) : null
 observer.Stage(Publishing); ct.ThrowIfCancellationRequested()
@@ -381,7 +400,7 @@ Alternatives weighed: shared server-side snapshot per walk — rejected for cost
 
 1. **Round-1 counterexample**: T1 updates A and B (uncommitted); T2 updates C and commits; page 1 (A on page 1, B later); T1 commits; page 2. Invariant: never A-old with B-new. PostgreSQL: page 1 returns A-old, page 2 → 409. SQL Server: page 1 blocks on T1's locks; the test commits T1 once `sys.dm_exec_requests` shows the reader session blocked by T1's session (state signal); page 1 then returns A-new and B-new and page 2 succeeds.
 2. Delete, identity change, name change, parent change between pages → 409.
-3. Replay of the same cursor → identical page.
+3. Replay of the same cursor with unchanged parameters and unchanged projected content → identical page; replay after a committed projected change → 409 `projection-changed`.
 4. Expired and future-dated cursors → 400; walk timestamp preserved.
 5. Cancellation while blocked by an exclusive lock → `OperationCanceledException`, no response, transaction rolled back, connection disposed.
 6. Lock timeout and command timeout → `TargetUnavailable(Execute)`; only `Describe` output logged.
@@ -503,8 +522,8 @@ Evaluation order per stage: caller cancellation → transport exception → HTTP
 | any | `HttpRequestException`, `IOException`, socket errors | Transient | `NetworkError` |
 | any | 3xx | Permanent | `DiscoveryInvalid` |
 | any | 429 | Transient | `RateLimited` |
-| any | 500 with type `security-configuration` | Permanent | `Forbidden` |
-| any | other 5xx (any or no type) | Transient | `ServiceUnavailable` |
+| any | 500 with type exactly `urn:ed-fi:api:system:configuration:security` (ordinal match) | Permanent | `Forbidden` |
+| any | other 5xx (any or no type, including the non-problem `{message, traceId}` 500 body) | Transient | `ServiceUnavailable` |
 | Discovery | 200 valid | — | continue |
 | Discovery | 200 missing projection entries | Permanent | `Unsupported` |
 | Discovery | 200 malformed / wrong types / containment failure | Permanent | `DiscoveryInvalid` |
@@ -612,15 +631,15 @@ Every step: narrowly bounded edits, tests that fail if the step is reverted, `do
 
 **1.1 CMS: seed the service claim.** Files: `Backend/Claims/Standards/ds52/Claims.json`, `ds61/Claims.json`; new `Backend.Postgresql/Deploy/Scripts/0035_Insert_EducationOrganizationProjection_ResourceClaim.sql` and Mssql twin; `Backend.Postgresql.Tests.Integration/ClaimsHierarchyMetadata.json`, `Backend.Mssql.Tests.Integration/ClaimsHierarchyMetadata.json`; `Tests.E2E/TestData/Claims/authoritative-composition.json`; `eng/CmsHierarchy/ClaimSetFiles/AuthorizationHierarchy.json`; `Given_Embedded_Claims_Json`. Risks: claim-set mutation integrity check; E2E composition fixture drift. Tests: embedded claims contain the claim with exactly `Read` and no claim-set grants; migration idempotent on fresh and pre-populated catalogs on both providers with every pre-existing grant unchanged; grant/revoke of the new claim through the repository; CMS E2E claims composition. Checkpoint.
 
-**1.2 DMS: generalize service-claim authorization.** Files: `Core/Middleware/ServiceClaimAuthorizationMiddleware.cs` (`ServiceClaimRequirement(string ClaimUri, Func<RequestInfo,string> RequiredAction)`), `Core/Security/Conventions.cs` (projection claim constant), `Core/ApiService.cs` (identity wiring only), `Core.Tests.Unit/Middleware/ServiceClaimAuthorizationMiddlewareTests.cs`. Risks: identity behavior change, pinned by existing tests that must pass unchanged. Checkpoint.
+**1.2 DMS: generalize service-claim authorization.** Files: `Core/Middleware/ServiceClaimAuthorizationMiddleware.cs` (`ServiceClaimRequirement(string ClaimUri, Func<RequestInfo,string> RequiredAction)`), `Core/Security/Conventions.cs` (projection claim constant), `Core/ApiService.cs` (identity wiring only), `Core.Tests.Unit/Middleware/ServiceClaimAuthorizationMiddlewareTests.cs`. Each requirement carries its own denial/misconfiguration wording: the projection requirement uses generic service-claim wording, and identity responses keep their current wording and pinned contract fixtures unchanged (no global message change). Risks: identity behavior change, pinned by existing tests that must pass unchanged. Checkpoint.
 
 ### Phase 2 — DMS endpoint
 
 **2.1 Options and toggle.** Files: `Core/Configuration/AppSettings.cs` (toggle + `EducationOrganizationProjection` options record and validation), frontend `AppSettingsValidator`, `appsettings.json`, compose/env files, `docs/CONFIGURATION.md`. Tests: binding/validation; startup failure via `WebApplicationFactory` on out-of-range values. Checkpoint.
 
-**2.2 Request model, cursor codec, digest, problem types, repeated-parameter plumbing.** Files: `Core/EducationOrganizationProjection/{EducationOrganizationProjectionRequest,ProjectionCursor,ProjectionCursorCodec,ProjectionDigest,ProjectionContractVersions}.cs`, `ParseEducationOrganizationProjectionRequestMiddleware.cs`, `Core/External/Frontend/FrontendRequest.cs` (`RepeatedQueryParameterNames`, default empty), `Response/FailureResponse.cs` factories. Tests: codec round-trip and strict-decode rejection table; binding mismatch; expiry, future-dated, preserved walk timestamp (fake clock); digest golden vectors (§4.2); parameter table incl. repeats with mixed case; order-of-operations: cursor binding uses the request's tenant/qualifiers. Checkpoint.
+**2.2 Request model, cursor codec, digest, problem types, repeated-parameter plumbing.** Files: `Core/EducationOrganizationProjection/{EducationOrganizationProjectionRequest,ProjectionCursor,ProjectionCursorCodec,ProjectionDigest,ProjectionContractVersions}.cs`, `ParseEducationOrganizationProjectionRequestMiddleware.cs`, `Core/External/Frontend/FrontendRequest.cs` (`RepeatedQueryParameterNames`, default empty), `Response/FailureResponse.cs` factories. Tests: codec round-trip and strict-decode rejection table; binding mismatch; expiry, future-dated, preserved walk timestamp (fake clock); digest golden vectors (§4.2) incl. the signed-boundary vectors; codec round-trip of negative, zero, `Int64.MinValue` and `Int64.MaxValue` positions and rejection of `+`, leading zeroes and `-0`; a set with negative ids returns them on the first page (no zero sentinel); parameter table incl. repeats with mixed case; order-of-operations: cursor binding uses the request's tenant/qualifiers. Checkpoint.
 
-**2.3 Target resolution, schema and mapping translation.** Files: `Core/Middleware/{ResolveEducationOrganizationProjectionTargetMiddleware,ValidateEducationOrganizationProjectionTargetSchemaMiddleware,ResolveEducationOrganizationProjectionMappingSetMiddleware}.cs`. Tests with fakes: every §3.5 state including matching PostgreSQL, matching SQL Server, both mismatches, `Missing`, `Unknown`; exactly one `LoadDataStores` on a miss; CMS outage → 503 not 404; `MappingSetUnavailableException("hostile", ["Server=…;Password=…"])` → 409 fixed body with neither string in body or Trace logs. Checkpoint.
+**2.3 Target resolution, schema and mapping translation.** Files: `Core/Middleware/{ResolveEducationOrganizationProjectionTargetMiddleware,ValidateEducationOrganizationProjectionTargetSchemaMiddleware,ResolveEducationOrganizationProjectionMappingSetMiddleware}.cs`. Tests with fakes: every §3.5 state including matching PostgreSQL, matching SQL Server, both mismatches, `Missing`, `Unknown`; exactly one `LoadDataStores` on a miss; CMS outage → 503 not 404; transient fingerprint read failure → 503 `target-unavailable`, never `service-configuration-error`; missing/undecryptable connection string → 503 `service-configuration-error`; `MappingSetUnavailableException("hostile", ["Server=…;Password=…"])` → 409 fixed body with neither string in body or Trace logs. Checkpoint.
 
 **2.4 Backend contract and SQL compiler.** Files: `Backend.External/{IEducationOrganizationProjectionSetReader,EducationOrganizationProjectionContracts}.cs` (internal row with reference slots; result union `Set | TooLarge | MappingIncompatible | SchemaIncompatible | TargetUnavailable`); `Backend.Plans/EducationOrganizationProjectionSqlCompiler.cs`. Tests (`Backend.Plans.Tests.Unit`): SQL snapshots per dialect from the ds-5.2 model; incompatibility reasons (missing view, arm, column, binding); extension arm ignored; per-arm slot columns; row cap clause. Checkpoint.
 
