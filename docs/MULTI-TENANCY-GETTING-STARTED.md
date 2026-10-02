@@ -392,6 +392,7 @@ docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2025 \
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/v3/tenants/` | GET, POST | List/create tenants |
+| `/tenancy` | GET | List tenant names; requires no authentication and no Tenant header |
 | `/v3/dataStores` | GET, POST, PUT, DELETE | Manage data stores |
 | `/v3/dataStoreContexts` | GET, POST, PUT, DELETE | Manage data store contexts |
 | `/v3/vendors` | GET, POST, PUT, DELETE | Manage vendors |
@@ -399,7 +400,8 @@ docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2025 \
 
 ### Tenant Header
 
-For multi-tenant Configuration Service requests, include:
+For tenant-scoped Configuration Service requests (the `/v3/*` resources),
+include:
 
 ```
 Tenant: {tenant-name}
@@ -407,6 +409,19 @@ Tenant: {tenant-name}
 
 Tenant names must be alphanumeric with hyphens or underscores only (max 256
 characters).
+
+The discovery endpoints require neither credentials nor a `Tenant` header:
+
+- `GET /`
+- `GET /tenancy`, which also ignores a `Tenant` header if one is supplied
+- `GET /metadata/specifications`
+- `GET /openapi/v1.json`
+
+A client that does not yet know a tenant name reads `GET /`, follows
+`urls.tenancy` to learn the tenant names, and then chooses one.
+
+`/v3/tenants/` also needs no `Tenant` header, but unlike the discovery
+endpoints it does require authentication.
 
 ## Step 7: Access Swagger UI with Multi-Tenancy
 

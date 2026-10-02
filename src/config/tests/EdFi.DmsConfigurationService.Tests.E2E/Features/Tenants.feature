@@ -655,3 +655,67 @@ Feature: Tenants endpoints
                         "profileIds": [{profileIdB}]
                     }
                   """
+
+        # DMS-1508: a client that knows no tenant name discovers them anonymously. GET /tenancy needs no
+        # credentials and no Tenant header, ignores one if supplied, and is advertised by GET /. Tenant
+        # rows persist between scenarios, so the listing is checked by containment.
+        @DMS-1508 @MssqlMultitenantRepresentative @MultitenantOnly
+        Scenario: 07 Ensure tenant names can be discovered without authentication or a Tenant header
+             When a POST request is made to "/v3/tenants" with
+                  """
+                    {
+                        "name": "TenancyA_{scenarioRunId}"
+                    }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/tenants" with
+                  """
+                    {
+                        "name": "TenancyB_{scenarioRunId}"
+                    }
+                  """
+             Then it should respond with 201
+             When an unauthenticated GET request is made to "/tenancy"
+             Then it should respond with 200
+              And the response body lists tenant names including
+                  | Name                     |
+                  | TenancyA_{scenarioRunId} |
+                  | TenancyB_{scenarioRunId} |
+              # The Tenant header is not consulted, so an unknown tenant is not rejected.
+             When a GET request is made to "/tenancy" with header "Tenant" value "Unknown_{scenarioRunId}"
+             Then it should respond with 200
+             When an unauthenticated GET request is made to "/"
+             Then it should respond with 200
+             When the response URLs are extracted
+             Then each metadata URL should be valid
+                  | URL Field |
+                  | tenancy   |
+              # The tenant collection itself still requires authentication.
+             When an unauthenticated GET request is made to "/v3/tenants/"
+             Then it should respond with 401
+
+        # DMS-1506: with multi-tenancy enabled the discovery documents need no Tenant header, while
+        # lookalike paths and tenant-scoped resources still do. The tenant middleware runs before
+        # authentication, so an unauthenticated lookalike gets the tenant 400 rather than a 401.
+        @DMS-1506 @MssqlMultitenantRepresentative @MultitenantOnly
+        Scenario: 08 Ensure discovery documents are served without a Tenant header
+             When an unauthenticated GET request is made to "/"
+             Then it should respond with 200
+             When the response URLs are extracted
+             Then each metadata URL should be valid
+                  | URL Field       |
+                  | openApiMetadata |
+             When a GET request is made to "/metadata/specifications"
+             Then it should respond with 200
+              And the response body contains OpenAPI specification
+                  | Field      | Value                               |
+                  | openapi    | 3.1.1                               |
+                  | info.title | Ed-Fi API Configuration Service API |
+             When an unauthenticated GET request is made to "/openapi/v1.json"
+             Then it should respond with 200
+             When an unauthenticated GET request is made to "/metadataX"
+             Then it should respond with 400
+             When an unauthenticated GET request is made to "/openapiX"
+             Then it should respond with 400
+             When a GET request is made to "/v3/vendors"
+             Then it should respond with 400
