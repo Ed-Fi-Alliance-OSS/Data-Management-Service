@@ -2253,7 +2253,8 @@ was 1.33 s, against Phase 0's 13–16 s. Round 1 was, however, about 0.5 s slowe
   - every archive's entry count matches its checksum list;
   - 92 randomly sampled entries re-hash to `SHA256SUMS.txt`.
 - **Originals retained:** all 3,995 files stay under `artifacts/` until archival is verified.
-- **Not uploaded.** Jira archival remains a separate step.
+- **Uploaded later:** see *Evidence archival and CI on `9bf1bcad0`* below. Two archives
+  were repacked for Jira's size limit.
 
 ### Status for the push-readiness review
 
@@ -2459,6 +2460,71 @@ No load or runtime investigation was repeated, as directed.
 
 **Test correction at the push review (2026-10-02).** The concurrent fixture first started its eight callers with `Task.Run`. `WaitForCallsAsync(2)` proved only that the first refresh reached the store. A caller scheduled after the gate opened could then see the published key and correctly return `AlreadyPresent`, so the test could fail on a constrained runner. The callers are now collected directly while the gate is closed: each call is admitted synchronously before it returns its incomplete task. The assertions are unchanged. Provider fixtures 153/0, the fresh-store pipeline regression 3/0, CSharpier clean. The reviewer approved the production correction and directed the push after this change.
 
-**State:** the correction is committed locally, **not pushed**, for review. When a push is
-approved, the evidence will be the new CI runs triggered by the new head. Rerunning
-`aff38f7e2`'s failed jobs would test the old code. Jira archival is still pending.
+**State at that review:** the correction was committed locally for review. The evidence
+was to be the new CI runs triggered by the new head, because rerunning `aff38f7e2`'s
+failed jobs would have tested the old code. Pushed afterwards; see the next section.
+
+## Evidence archival and CI on `9bf1bcad0` (2026-10-02)
+
+### Push
+
+`DMS-1556` was fast-forwarded `aff38f7e2..9bf1bcad0`:
+
+- `a9408527a`: ClaimsManagement test key store and compose logging;
+- `9a5fee6f1`: bounded bootstrap allowance;
+- `9bf1bcad0`: concurrent-callers test correction.
+
+The production correction was approved, and this exact test change was approved for push
+with no further review round. PR #1317 stays open and ready for review; it is not merged.
+
+### CI on the tested head `9bf1bcad0`
+
+These are new runs triggered by the push. No job from `aff38f7e2` was rerun.
+
+| Workflow (run) | Result |
+| --- | --- |
+| On Config Pull Request (36962859422) | **success**, all 17 jobs |
+| On DMS Pull Request (36962859400) | **success**: 48 jobs, 1 skipped |
+| CodeQL (36962858873) | **success** |
+| PowerShell (36962859388) | **success** |
+
+- **CMS E2E (self-contained): 232 executed, 232 passed, 0 failed** (247 trx entries). The
+  ApiClients 401s of the `aff38f7e2` run are gone. That run is the CI confirmation that the
+  fresh-store bootstrap regression is resolved.
+- **CMS unit and integration:** green.
+  - SQL Server integration: 979 passed, 0 failed.
+  - PostgreSQL integration: 959 passed, 0 failed.
+  - The `JobLeaseRepositoryTests` case that failed on `aff38f7e2`
+    (`Given_an_exhaust_sweep_cancelled_while_waiting_for_a_connection`) passed on both
+    engines, with no change to it. Its earlier failure stays recorded above and is
+    investigated if it recurs.
+- **DMS Bootstrap Pester:** green; the compose-logging rule passes.
+
+### Evidence archival (Jira DMS-1556)
+
+- **Size limit:** Jira rejected the 109 MB (`NOT-EVIDENCE`) and 371 MB (`EV-O41`)
+  archives. The largest accepted was 63.7 MB (`EV-H41`).
+- **Repacked**, with stronger compression and copies only:
+  - `NOT-EVIDENCE` is one 57.4 MB archive;
+  - `EV-O41` is 4 standalone parts of at most 49 MB, `DMS-1556-EV-O41-part0N-of-04.zip`,
+    with each file in exactly one part;
+  - every entry of both was re-hashed against `SHA256SUMS.txt`: none missing, none
+    duplicated, no mismatch.
+- **Index:** `INDEX.md` and `INDEX.json` were regenerated to list the parts.
+  `SHA256SUMS.txt`, which covers the original files, is unchanged.
+- **Attached:** 27 attachments, 24 archives plus the 3 manifests.
+- **Verification: attachment counts and sizes verified; local archive hashes verified.**
+  - Every attachment's size equals its local file's, checked with
+    `acli jira workitem attachment list`, and there are no duplicates.
+  - The SHA-256 of every local archive matches `INDEX.json`.
+  - Jira's copies were not downloaded or hashed.
+  - The archive SHA-256 table is posted on DMS-1556 (comment 99452), for checking a
+    downloaded copy.
+- **Excluded:** the 91 memory dumps (36.2 GiB) stay local only.
+- **Originals:** the original captures under `artifacts/` stay in place.
+
+### State
+
+- **PR #1317:** open and ready for review at `9bf1bcad0`. Every CI workflow is green;
+  merge is blocked only on review.
+- **The ticket stays open.**
