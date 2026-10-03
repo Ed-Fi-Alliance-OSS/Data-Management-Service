@@ -63,6 +63,8 @@ x-dms-common-env: &dms-common-env
   # so the image's effective-schema hash matches exactly what 'api-schema-tools ddl provision' wrote.
   # Opt-in DMS-owned /identity/v2 surface (default off).
   AppSettings__EnableIdentityManagement: "${DMS_ENABLE_IDENTITY_MANAGEMENT:-false}"
+  # Education-organization projection endpoint (default on).
+  AppSettings__EnableEducationOrganizationProjection: "${DMS_ENABLE_EDUCATION_ORGANIZATION_PROJECTION:-true}"
   # Opt-in for troubleshooting / claim-set iteration (default off).
   AppSettings__EnableManagementEndpoints: "${DMS_ENABLE_MANAGEMENT_ENDPOINTS:-false}"
   AppSettings__EnableClaimsetReload: "${DMS_ENABLE_CLAIMSET_RELOAD:-false}"

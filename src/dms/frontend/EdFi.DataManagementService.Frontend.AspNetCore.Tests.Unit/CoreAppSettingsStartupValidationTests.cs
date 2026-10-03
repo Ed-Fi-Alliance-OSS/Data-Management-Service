@@ -82,6 +82,36 @@ public class CoreAppSettingsStartupValidationTests
         nameof(CoreAppSettings.MaximumPageSize),
         TestName = "It_fails_startup_for_a_nonpositive_maximum_page_size"
     )]
+    [TestCase(
+        "AppSettings:EducationOrganizationProjection:MaximumPageSize",
+        "10001",
+        "EducationOrganizationProjection:MaximumPageSize",
+        TestName = "It_fails_startup_for_a_projection_page_size_above_the_supported_range"
+    )]
+    [TestCase(
+        "AppSettings:EducationOrganizationProjection:MaxProjectionRows",
+        "999",
+        "EducationOrganizationProjection:MaxProjectionRows",
+        TestName = "It_fails_startup_for_a_projection_row_cap_below_the_supported_range"
+    )]
+    [TestCase(
+        "AppSettings:EducationOrganizationProjection:CursorLifetimeMinutes",
+        "1441",
+        "EducationOrganizationProjection:CursorLifetimeMinutes",
+        TestName = "It_fails_startup_for_a_projection_cursor_lifetime_above_the_supported_range"
+    )]
+    [TestCase(
+        "AppSettings:EducationOrganizationProjection:ReadLockTimeoutSeconds",
+        "0",
+        "EducationOrganizationProjection:ReadLockTimeoutSeconds",
+        TestName = "It_fails_startup_for_a_projection_lock_timeout_below_the_supported_range"
+    )]
+    [TestCase(
+        "AppSettings:EducationOrganizationProjection:ReadCommandTimeoutSeconds",
+        "601",
+        "EducationOrganizationProjection:ReadCommandTimeoutSeconds",
+        TestName = "It_fails_startup_for_a_projection_command_timeout_above_the_supported_range"
+    )]
     public async Task It_records_the_failed_startup_and_refuses_to_start(
         string settingKey,
         string settingValue,
@@ -196,5 +226,29 @@ public class Given_The_Core_App_Settings_Startup_Validator
         Action validate = () => serviceProvider.GetRequiredService<IStartupValidator>().Validate();
 
         validate.Should().NotThrow();
+    }
+
+    [Test]
+    public void It_reports_a_projection_limit_failure_from_the_startup_validator_when_the_endpoint_is_disabled()
+    {
+        using ServiceProvider serviceProvider = CreateServices(
+            new Dictionary<string, string?>
+            {
+                ["AppSettings:MaximumPageSize"] = "500",
+                ["AppSettings:DefaultPartitionCount"] = "10",
+                ["AppSettings:EnableEducationOrganizationProjection"] = "false",
+                ["AppSettings:EducationOrganizationProjection:MaxProjectionRows"] = "1000001",
+            }
+        );
+
+        Action validate = () => serviceProvider.GetRequiredService<IStartupValidator>().Validate();
+
+        validate
+            .Should()
+            .Throw<OptionsValidationException>()
+            .Which.Failures.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("EducationOrganizationProjection:MaxProjectionRows");
     }
 }
