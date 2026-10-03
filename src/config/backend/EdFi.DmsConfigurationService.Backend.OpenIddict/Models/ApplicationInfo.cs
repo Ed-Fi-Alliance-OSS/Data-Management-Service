@@ -86,4 +86,10 @@ public class ApplicationInfo
     /// Defaults to true when no API clients exist.
     /// </summary>
     public bool IsApproved { get; set; } = true;
+
+    /// <summary>
+    /// Indicates whether the application is exempt from the per-client bearer token limit.
+    /// Defaults to false until the store proves that no API clients reference the application.
+    /// </summary>
+    public bool IsTokenLimitExempt { get; set; }
 }

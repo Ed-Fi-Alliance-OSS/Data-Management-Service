@@ -419,12 +419,15 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
 
             // Store token in database. The repository owns the disable semantics of the limit,
             // so a value below 1 is passed through rather than special-cased here.
+            int maxActiveTokens = applicationInfo.IsTokenLimitExempt
+                ? -1
+                : _identityOptions.Value.BearerTokenPerClientLimit;
             TokenStoreOutcome outcome = await _tokenRepository.StoreTokenAsync(
                 tokenId,
                 applicationInfo.Id,
                 clientId,
                 expiration,
-                _identityOptions.Value.BearerTokenPerClientLimit
+                maxActiveTokens
             );
 
             return (outcome, tokenString);

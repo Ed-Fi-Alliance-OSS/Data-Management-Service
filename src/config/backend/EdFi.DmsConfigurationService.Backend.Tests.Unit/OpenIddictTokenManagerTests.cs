@@ -1504,21 +1504,23 @@ public class OpenIddictTokenManagerTests
     /// Arranges an approved client with a matching secret and a usable signing key, which is what
     /// GetAccessTokenAsync needs before it reaches StoreTokenAsync.
     /// </summary>
-    private Guid ArrangeGrantableClient()
+    private Guid ArrangeGrantableClient(bool isTokenLimitExempt = false)
     {
         Guid applicationId = Guid.NewGuid();
+        ApplicationInfo application = new()
+        {
+            Id = applicationId,
+            ClientId = GrantClientId,
+            ClientSecret = "hashed-secret",
+            IsApproved = true,
+            ProtocolMappers = "[]",
+        };
+        if (isTokenLimitExempt)
+        {
+            application.IsTokenLimitExempt = true;
+        }
 
-        A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(GrantClientId))
-            .Returns(
-                new ApplicationInfo
-                {
-                    Id = applicationId,
-                    ClientId = GrantClientId,
-                    ClientSecret = "hashed-secret",
-                    IsApproved = true,
-                    ProtocolMappers = "[]",
-                }
-            );
+        A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(GrantClientId)).Returns(application);
 
         A.CallTo(() => _secretHasher.VerifySecretAsync(GrantClientSecret, "hashed-secret")).Returns(true);
 
@@ -1606,7 +1608,8 @@ public class OpenIddictTokenManagerTests
         }
 
         [Test]
-        public void It_passes_the_configured_limit() => _call.MaxActiveTokens.Should().Be(ConfiguredLimit);
+        public void It_limits_an_application_with_the_default_classification() =>
+            _call.MaxActiveTokens.Should().Be(ConfiguredLimit);
 
         [Test]
         public void It_passes_the_application_id() => _call.ApplicationId.Should().Be(_applicationId);
@@ -1668,6 +1671,53 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_return_a_token() => _result.Should().NotBeOfType<TokenResult.Success>();
+    }
+
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WhenTheApplicationIsTokenLimitExempt : OpenIddictTokenManagerTests
+    {
+        private StoredTokenCall _call = null!;
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeGrantableClient(isTokenLimitExempt: true);
+            ArrangeStoreOutcome(TokenStoreOutcome.Stored, call => _call = call);
+
+            _result = await CreateTokenManagerWithTokenLimit(3).GetAccessTokenAsync(GrantCredentials());
+        }
+
+        [Test]
+        public void It_passes_the_disabling_value() => _call.MaxActiveTokens.Should().Be(-1);
+
+        [Test]
+        public void It_returns_a_success_result() => _result.Should().BeOfType<TokenResult.Success>();
+    }
+
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WhenTheDefaultTokenLimitIsExceeded : OpenIddictTokenManagerTests
+    {
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeGrantableClient();
+            ArrangeStoreOutcome(TokenStoreOutcome.LimitExceeded, _ => { });
+
+            OpenIddictTokenManager manager = new(
+                Options.Create(new IdentityOptions { EncryptionKey = "test-encryption-key" }),
+                NullLogger<OpenIddictTokenManager>.Instance,
+                _secretHasher,
+                _tokenRepository
+            );
+            _result = await manager.GetAccessTokenAsync(GrantCredentials());
+        }
+
+        [Test]
+        public void It_returns_a_token_limit_failure_carrying_fifteen() =>
+            _result.Should().BeEquivalentTo(new TokenResult.FailureTokenLimitExceeded(15));
     }
 
     // A client deleted between the lookup and the store must get the unknown-client answer, never
