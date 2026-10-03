@@ -17,7 +17,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 /// <b>Admission.</b> Whether a request needs a load at all is decided under the gate lock against the snapshot as it is
 /// then, so a caller that saw no usable snapshot but was overtaken by a publication uses the new snapshot instead of
 /// loading again. A load attempt, whatever its trigger, joins the attempt in flight. Otherwise it is refused while
-/// <c>now &lt; NextAttemptAt</c>, or while an earlier store operation is still running (see <b>Ownership</b>);
+/// the retry delay after a failure has not elapsed, or while an earlier store operation is still running (see
+/// <b>Ownership</b>);
 /// otherwise it starts. A conditional refresh (<see cref="RefreshIfUnchangedAsync"/>) is first refused with
 /// <see cref="SigningKeyRefusalReason.StateChanged"/> when the state version differs from the one its caller observed;
 /// every transition (attempt start, completion, release of an outstanding operation, disposal) changes the version.
@@ -29,6 +30,12 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 /// successful load finds no key, one unknown-key refresh may start inside the cooldown while the snapshot is still
 /// empty, so a fresh store's first key, inserted after startup, is accepted promptly. The allowance is spent when that
 /// refresh starts, whatever it returns, and no later publication restores it.
+/// </item>
+/// <item>
+/// <b>Clocks.</b> The cooldown and the retry delay are measured in elapsed time on the monotonic clock, so a wall-clock
+/// step neither opens nor closes them. A snapshot's state uses the larger of its wall-clock and monotonic age (see
+/// <see cref="SigningKeySnapshot.GetAge"/>). Wall-clock instants (<see cref="NextAttemptAt"/>,
+/// <see cref="SigningKeySnapshot.RetrievedAt"/>) are kept for diagnostics only.
 /// </item>
 /// <item>
 /// <b>Deadline.</b> The store call runs on the thread pool, so synchronous work in a source cannot delay a caller, under
@@ -74,9 +81,11 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
     private Task<SigningKeyRefreshOutcome>? _inFlight;
     private Task<SigningKeySourceResult>? _storeOperation;
     private DateTimeOffset _nextAttemptAt = DateTimeOffset.MinValue;
+    private long _retryDelayStartedAt;
+    private TimeSpan _retryDelay;
     private int _consecutiveFailures;
     private SigningKeyRefreshOutcome? _lastOutcome;
-    private DateTimeOffset? _lastCompletedAt;
+    private long? _lastCompletedAt;
     private bool _firstSuccessRecorded;
     private bool _bootstrapAllowance;
     private long _version;
@@ -157,7 +166,8 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
                     _lastOutcome,
                     _storeOperation is not null,
                     _stateVersion,
-                    _disposed
+                    _disposed,
+                    RetryDelayRemainingUnderLock()
                 );
             }
         }
@@ -282,7 +292,6 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
     {
         lock (_sync)
         {
-            DateTimeOffset now = _timeProvider.GetUtcNow();
             SigningKeySnapshotState state = StateOf(_current);
 
             if (_disposed)
@@ -331,7 +340,7 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
             if (
                 enforceCooldown
                 && _lastCompletedAt is { } lastCompleted
-                && now - lastCompleted < _settings.UnknownKeyRefreshCooldown
+                && _timeProvider.GetElapsedTime(lastCompleted) < _settings.UnknownKeyRefreshCooldown
             )
             {
                 if (!_bootstrapAllowance || _current is not { Keys.Count: 0 })
@@ -342,7 +351,7 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
                 usesBootstrapAllowance = true;
             }
 
-            if (now < _nextAttemptAt)
+            if (RetryDelayRemainingUnderLock() > TimeSpan.Zero)
             {
                 return new Admission(state, Attempt: Refused(SigningKeyRefusalReason.RetryDelay));
             }
@@ -499,6 +508,7 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
                 Volatile.Write(ref _current, succeeded.Snapshot);
                 _consecutiveFailures = 0;
                 _nextAttemptAt = now;
+                _retryDelay = TimeSpan.Zero;
 
                 // Granted once, by the first successful load only, and only when it found no key.
                 if (!_firstSuccessRecorded)
@@ -512,6 +522,8 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
                 _consecutiveFailures++;
                 retryDelay = Backoff(_consecutiveFailures);
                 _nextAttemptAt = now + retryDelay;
+                _retryDelayStartedAt = nowTimestamp;
+                _retryDelay = retryDelay;
             }
 
             if (operationFinished && ReferenceEquals(_storeOperation, attempt.Operation))
@@ -521,7 +533,7 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
 
             consecutiveFailures = _consecutiveFailures;
             _lastOutcome = outcome;
-            _lastCompletedAt = now;
+            _lastCompletedAt = nowTimestamp;
             _inFlight = null;
             _stateVersion++;
             signal = _stateChanged;
@@ -586,6 +598,21 @@ public sealed class SigningKeySnapshotProvider : ISigningKeySnapshotProvider, ID
         snapshot is null
             ? SigningKeySnapshotState.None
             : SigningKeySnapshot.GetState(snapshot.GetAge(_timeProvider), _settings);
+
+    /// <summary>
+    /// The elapsed time still to run before the gate admits an attempt after a failure, or zero. Measured from the
+    /// failure's monotonic timestamp, so the gate opens exactly when the drawn delay has elapsed. Called under the lock.
+    /// </summary>
+    private TimeSpan RetryDelayRemainingUnderLock()
+    {
+        if (_retryDelay <= TimeSpan.Zero)
+        {
+            return TimeSpan.Zero;
+        }
+
+        TimeSpan remaining = _retryDelay - _timeProvider.GetElapsedTime(_retryDelayStartedAt);
+        return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+    }
 
     private void Log(
         SigningKeyRefreshTrigger trigger,

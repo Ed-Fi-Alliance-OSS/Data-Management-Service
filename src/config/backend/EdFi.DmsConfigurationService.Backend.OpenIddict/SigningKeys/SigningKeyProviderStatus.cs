@@ -23,11 +23,13 @@ public sealed record SigningKeyProviderStatus
         SigningKeyRefreshOutcome? lastOutcome,
         bool storeOperationOutstanding = false,
         long stateVersion = 0,
-        bool providerDisposed = false
+        bool providerDisposed = false,
+        TimeSpan retryDelayRemaining = default
     )
     {
         ArgumentOutOfRangeException.ThrowIfNegative(consecutiveFailures);
         ArgumentOutOfRangeException.ThrowIfNegative(stateVersion);
+        ArgumentOutOfRangeException.ThrowIfLessThan(retryDelayRemaining, TimeSpan.Zero);
         if ((state == SigningKeySnapshotState.None) != (current is null))
         {
             throw new ArgumentException(
@@ -45,6 +47,7 @@ public sealed record SigningKeyProviderStatus
         StoreOperationOutstanding = storeOperationOutstanding;
         StateVersion = stateVersion;
         ProviderDisposed = providerDisposed;
+        RetryDelayRemaining = retryDelayRemaining;
     }
 
     public SigningKeySnapshotState State { get; }
@@ -55,7 +58,10 @@ public sealed record SigningKeyProviderStatus
     /// <summary>Failed attempts since the last success.</summary>
     public int ConsecutiveFailures { get; }
 
-    /// <summary>The earliest instant the gate admits a new attempt.</summary>
+    /// <summary>
+    /// The earliest instant the gate admits a new attempt, by the wall clock, for diagnostics. The gate itself counts the
+    /// backoff in elapsed time (<see cref="RetryDelayRemaining"/>).
+    /// </summary>
     public DateTimeOffset NextAttemptAt { get; }
 
     public bool LoadInFlight { get; }
@@ -78,4 +84,10 @@ public sealed record SigningKeyProviderStatus
 
     /// <summary>Whether the provider has been disposed; it then admits no attempt.</summary>
     public bool ProviderDisposed { get; }
+
+    /// <summary>
+    /// Elapsed time still to run, when the status was read, before the gate admits a new attempt after a failure; zero
+    /// when the gate is eligible. Measured on the monotonic clock, so a wall-clock step neither shortens nor extends it.
+    /// </summary>
+    public TimeSpan RetryDelayRemaining { get; }
 }

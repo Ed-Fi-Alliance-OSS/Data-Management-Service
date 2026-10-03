@@ -52,7 +52,10 @@ public interface ISigningKeySnapshotProvider
 
     SigningKeyProviderStatus Status { get; }
 
-    /// <summary>The earliest instant the gate admits a new attempt.</summary>
+    /// <summary>
+    /// The earliest instant the gate admits a new attempt, by the wall clock, for diagnostics. The gate counts the backoff
+    /// in elapsed time; see <see cref="SigningKeyProviderStatus.RetryDelayRemaining"/>.
+    /// </summary>
     DateTimeOffset NextAttemptAt { get; }
 
     /// <summary>

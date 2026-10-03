@@ -163,6 +163,11 @@ internal sealed class LateTimerTimeProvider(DateTimeOffset start) : FakeTimeProv
 internal sealed class SchedulerTimeProvider(DateTimeOffset start) : FakeTimeProvider(start)
 {
     private readonly List<DateTimeOffset> _waits = [];
+    private readonly List<SchedulerWait> _created = [];
+    private readonly List<(
+        Func<SchedulerWait, bool> Matches,
+        TaskCompletionSource<SchedulerWait> Parked
+    )> _parkedWaiters = [];
 
     public IReadOnlyList<DateTimeOffset> Waits
     {
@@ -171,6 +176,18 @@ internal sealed class SchedulerTimeProvider(DateTimeOffset start) : FakeTimeProv
             lock (_waits)
             {
                 return [.. _waits];
+            }
+        }
+    }
+
+    /// <summary>Every scheduler wait created so far, with the instant it was created and its requested duration.</summary>
+    public IReadOnlyList<SchedulerWait> CreatedWaits
+    {
+        get
+        {
+            lock (_waits)
+            {
+                return [.. _created];
             }
         }
     }
@@ -186,13 +203,48 @@ internal sealed class SchedulerTimeProvider(DateTimeOffset start) : FakeTimeProv
         ITimer timer = base.CreateTimer(callback, state, dueTime, period);
         if (state is not CancellationTokenSource && dueTime != Timeout.InfiniteTimeSpan)
         {
+            SchedulerWait wait = new(GetUtcNow(), dueTime);
+            List<TaskCompletionSource<SchedulerWait>> parked = [];
             lock (_waits)
             {
-                _waits.Add(GetUtcNow() + dueTime);
+                _waits.Add(wait.DueAt);
+                _created.Add(wait);
+                foreach (var waiter in _parkedWaiters.Where(waiter => waiter.Matches(wait)).ToList())
+                {
+                    _parkedWaiters.Remove(waiter);
+                    parked.Add(waiter.Parked);
+                }
+            }
+
+            foreach (TaskCompletionSource<SchedulerWait> waiter in parked)
+            {
+                waiter.TrySetResult(wait);
             }
         }
 
         return timer;
+    }
+
+    /// <summary>
+    /// Completes when a scheduler wait that satisfies <paramref name="matches"/> exists: at once if one was already
+    /// created, otherwise when the service creates it. The signal is the wait's creation, not an elapsed delay.
+    /// </summary>
+    public Task<SchedulerWait> Parked(Func<SchedulerWait, bool> matches)
+    {
+        TaskCompletionSource<SchedulerWait> parked = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_waits)
+        {
+            if (_created.Find(wait => matches(wait)) is { } existing)
+            {
+                parked.TrySetResult(existing);
+            }
+            else
+            {
+                _parkedWaiters.Add((matches, parked));
+            }
+        }
+
+        return parked.Task;
     }
 
     /// <summary>Waits (in real time, bounded) until a scheduler wait due at <paramref name="dueAt"/> exists.</summary>
@@ -202,6 +254,12 @@ internal sealed class SchedulerTimeProvider(DateTimeOffset start) : FakeTimeProv
             () =>
                 $"No wait is due at {dueAt:O}; waits: {string.Join(", ", Waits.Select(wait => wait.ToString("O")))}."
         );
+}
+
+/// <summary>One scheduler wait: when it was created, in fake time, and the duration the service asked for.</summary>
+internal sealed record SchedulerWait(DateTimeOffset CreatedAt, TimeSpan DueTime)
+{
+    public DateTimeOffset DueAt => CreatedAt + DueTime;
 }
 
 /// <summary>
@@ -247,12 +305,37 @@ internal sealed class ObservedSnapshotProvider(ISigningKeySnapshotProvider inner
     : ISigningKeySnapshotProvider
 {
     private readonly List<(DateTimeOffset At, SigningKeyRefreshTrigger Trigger)> _refreshes = [];
+    private readonly TaskCompletionSource _spinDetected = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
     private int _statusReads;
+    private int _spinBaseline = -1;
+    private int _spinCap;
     private (Func<SigningKeyProviderStatus, bool> When, Action Action)? _afterStatusRead;
 
     public TimeProvider? Clock { get; init; }
 
     public int StatusReads => Volatile.Read(ref _statusReads);
+
+    /// <summary>
+    /// Completes when the status was read more than the armed cap of times (see <see cref="ArmSpinDetector"/>): the
+    /// service is recomputing without waiting.
+    /// </summary>
+    public Task SpinDetected => _spinDetected.Task;
+
+    /// <summary>Status reads since <see cref="ArmSpinDetector"/> was called.</summary>
+    public int StatusReadsSinceArmed => StatusReads - Volatile.Read(ref _spinBaseline);
+
+    /// <summary>
+    /// From now on, the status read after the first <paramref name="cap"/> completes <see cref="SpinDetected"/> and throws,
+    /// so a service that recomputes without waiting ends its loop instead of hanging the run. A correct service reads the
+    /// status a few times per wake, far below the cap.
+    /// </summary>
+    public void ArmSpinDetector(int cap)
+    {
+        _spinCap = cap;
+        Volatile.Write(ref _spinBaseline, StatusReads);
+    }
 
     public IReadOnlyList<(DateTimeOffset At, SigningKeyRefreshTrigger Trigger)> Refreshes
     {
@@ -275,7 +358,16 @@ internal sealed class ObservedSnapshotProvider(ISigningKeySnapshotProvider inner
     {
         get
         {
-            Interlocked.Increment(ref _statusReads);
+            int reads = Interlocked.Increment(ref _statusReads);
+            int baseline = Volatile.Read(ref _spinBaseline);
+            if (baseline >= 0 && reads - baseline > _spinCap)
+            {
+                _spinDetected.TrySetResult();
+                throw new InvalidOperationException(
+                    $"The status was read {reads - baseline} times since the spin detector was armed: the service is recomputing without waiting."
+                );
+            }
+
             SigningKeyProviderStatus status = inner.Status;
             if (_afterStatusRead is { } hook && hook.When(status))
             {

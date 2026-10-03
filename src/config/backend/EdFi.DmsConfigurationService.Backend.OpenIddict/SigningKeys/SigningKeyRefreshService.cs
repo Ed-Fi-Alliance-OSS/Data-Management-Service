@@ -15,12 +15,18 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 /// then reads its status, and computes when the next attempt is due from the outcome of the last completed attempt:
 /// <list type="bullet">
 /// <item><b>Never loaded</b>: due now; the first attempt is the startup attempt.</item>
-/// <item><b>Last attempt failed</b>: due at <see cref="SigningKeyProviderStatus.NextAttemptAt"/>, also once that is past.</item>
 /// <item>
-/// <b>Last attempt succeeded</b>: due at the snapshot's retrieval time plus
+/// <b>Last attempt failed</b>: due when the retry delay has elapsed
+/// (<see cref="SigningKeyProviderStatus.RetryDelayRemaining"/>), also once that is past.
+/// </item>
+/// <item>
+/// <b>Last attempt succeeded</b>: due when the snapshot's age (see <see cref="SigningKeySnapshot.GetAge"/>) reaches
 /// <see cref="SigningKeySettings.RefreshInterval"/> ± 10 %, drawn once per snapshot version.
 /// </item>
 /// </list>
+/// Every decision uses elapsed time: the monotonic clock for the retry delay, and the snapshot's combined wall-clock and
+/// monotonic age for the refresh deadline, so a wall-clock step can bring a refresh forward but never delays one. A
+/// wall-clock step wakes nothing; it takes effect at the next wake. Wall-clock instants are logged for diagnostics only.
 /// An attempt starts only when it is due, the gate is eligible, no attempt is in flight, and no store operation is
 /// outstanding, and only while the provider is still in the observed state: admission goes through
 /// <see cref="ISigningKeySnapshotProvider.RefreshIfUnchangedAsync"/> with the status's
@@ -29,7 +35,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 /// operation that outlived its deadline is still running, the loop
 /// waits for the state-change signal alone: no load can start before that operation ends, so an expired deadline is
 /// not a reason to wake. Otherwise it waits until the start time or the next signal. A signal only makes the loop
-/// recompute; it never starts a load by itself. A failed attempt, the startup attempt included, never stops the loop,
+/// recompute; it never starts a load by itself. Every wait is rounded up to a whole millisecond, and only a recomputation
+/// that finds nothing left to wait starts an attempt. A failed attempt, the startup attempt included, never stops the loop,
 /// whatever the exception (a source's <see cref="ObjectDisposedException"/> is an ordinary retrieval failure); only
 /// <see cref="SigningKeyProviderStatus.ProviderDisposed"/> does.
 /// </summary>
@@ -101,15 +108,14 @@ public sealed class SigningKeyRefreshService : BackgroundService
                 return;
             }
 
-            DateTimeOffset now = _timeProvider.GetUtcNow();
-            DateTimeOffset dueAt = DueAt(status);
+            TimeSpan dueIn = DueIn(status);
 
             if (wake is { } reason)
             {
                 _logger.LogDebug(
                     "Signing-key refresh service woke ({WakeReason}); next attempt due at {DueAt:O}, attempt in flight {LoadInFlight}, store operation outstanding {StoreOperationOutstanding}",
                     reason,
-                    dueAt,
+                    _timeProvider.GetUtcNow() + dueIn,
                     status.LoadInFlight,
                     status.StoreOperationOutstanding
                 );
@@ -122,8 +128,8 @@ public sealed class SigningKeyRefreshService : BackgroundService
                 continue;
             }
 
-            DateTimeOffset startAt = dueAt > status.NextAttemptAt ? dueAt : status.NextAttemptAt;
-            if (now >= startAt)
+            TimeSpan startIn = dueIn > status.RetryDelayRemaining ? dueIn : status.RetryDelayRemaining;
+            if (startIn <= TimeSpan.Zero)
             {
                 // Refused (StateChanged) when another caller changed the state since the read; the next pass recomputes.
                 await _provider.RefreshIfUnchangedAsync(
@@ -139,7 +145,7 @@ public sealed class SigningKeyRefreshService : BackgroundService
 
             wake = await WaitAsync(
                 signal,
-                startAt - now,
+                RoundUpToWholeMilliseconds(startIn),
                 status.LastOutcome is SigningKeyRefreshOutcome.Failed
                     ? WakeReason.RetryDeadline
                     : WakeReason.Tick,
@@ -148,32 +154,45 @@ public sealed class SigningKeyRefreshService : BackgroundService
         }
     }
 
-    /// <summary>The due time from the outcome of the last completed attempt, never from gate eligibility.</summary>
-    private DateTimeOffset DueAt(SigningKeyProviderStatus status) =>
+    /// <summary>
+    /// The elapsed time until the next attempt is due, from the outcome of the last completed attempt, never from gate
+    /// eligibility. Zero or negative means due now.
+    /// </summary>
+    private TimeSpan DueIn(SigningKeyProviderStatus status) =>
         status.LastOutcome switch
         {
-            null => DateTimeOffset.MinValue,
-            SigningKeyRefreshOutcome.Succeeded succeeded => RefreshDeadlineFor(succeeded.Snapshot),
-            _ => status.NextAttemptAt,
+            null => TimeSpan.Zero,
+            SigningKeyRefreshOutcome.Succeeded succeeded => RefreshAfterFor(succeeded.Snapshot)
+                - succeeded.Snapshot.GetAge(_timeProvider),
+            _ => status.RetryDelayRemaining,
         };
 
     /// <summary>
-    /// The normal refresh deadline of <paramref name="snapshot"/>. The jitter is drawn once per snapshot version, so
-    /// recomputing after a signal never moves the deadline of the same snapshot.
+    /// The age at which <paramref name="snapshot"/> is due for its normal refresh. The jitter is drawn once per snapshot
+    /// version, so recomputing after a signal never moves the deadline of the same snapshot.
     /// </summary>
-    private DateTimeOffset RefreshDeadlineFor(SigningKeySnapshot snapshot)
+    private TimeSpan RefreshAfterFor(SigningKeySnapshot snapshot)
     {
         if (_refreshDeadline is not { } deadline || deadline.Version != snapshot.Version)
         {
             double factor = 1 - RefreshJitterFraction + (2 * RefreshJitterFraction * _random.NextDouble());
-            deadline = new RefreshDeadline(
-                snapshot.Version,
-                snapshot.RetrievedAt + (_settings.RefreshInterval * factor)
-            );
+            deadline = new RefreshDeadline(snapshot.Version, _settings.RefreshInterval * factor);
             _refreshDeadline = deadline;
         }
 
-        return deadline.DueAt;
+        return deadline.RefreshAfter;
+    }
+
+    /// <summary>
+    /// <see cref="Task.Delay(TimeSpan, TimeProvider, CancellationToken)"/> counts whole milliseconds and drops a fraction,
+    /// so a positive wait shorter than one millisecond would complete at once, and the loop would recompute without
+    /// time passing. Rounding up keeps every wait at least one whole millisecond. It never makes a start early: a start
+    /// is admitted only by a recomputation that finds nothing left to wait.
+    /// </summary>
+    private static TimeSpan RoundUpToWholeMilliseconds(TimeSpan delay)
+    {
+        long milliseconds = (delay.Ticks + TimeSpan.TicksPerMillisecond - 1) / TimeSpan.TicksPerMillisecond;
+        return TimeSpan.FromTicks(Math.Max(1, milliseconds) * TimeSpan.TicksPerMillisecond);
     }
 
     /// <summary>Waits until <paramref name="delay"/> elapses or <paramref name="signal"/> completes.</summary>
@@ -192,5 +211,5 @@ public sealed class SigningKeyRefreshService : BackgroundService
         return first == signal ? WakeReason.Signal : deadlineReason;
     }
 
-    private readonly record struct RefreshDeadline(long Version, DateTimeOffset DueAt);
+    private readonly record struct RefreshDeadline(long Version, TimeSpan RefreshAfter);
 }
