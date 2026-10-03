@@ -7,7 +7,9 @@ namespace EdFi.DataManagementService.Core.Startup;
 
 public static class DmsStartupTaskOrderRanges
 {
-    public const int ApiSchemaInitializationMaximum = 299;
+    public const int ApiSchemaInitializationMaximum = 249;
+    public const int PluginRegistrationValidationMinimum = 250;
+    public const int PluginRegistrationValidationMaximum = 299;
     public const int BackendMappingMinimum = 300;
     public const int BackendMappingMaximum = 399;
     public const int AuthInitializationMinimum = 400;
@@ -24,7 +26,9 @@ public interface IDmsStartupTask
     /// The execution order of this task. Lower values run first.
     /// Recommended ranges:
     /// - 100-199: Schema loading and validation
-    /// - 200-299: Schema processing (normalization, hashing)
+    /// - 200-249: Schema processing (normalization, hashing)
+    /// - 250-299: Custom validator and plugin registration validation, run after the schema phase
+    ///   under its own ValidatePluginRegistrations startup phase
     /// - 300-399: Backend mapping initialization and instance validation
     /// - 400-499: Authentication/authorization metadata caches (OIDC, claim sets)
     /// </summary>

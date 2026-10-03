@@ -486,8 +486,8 @@ tmpclaude*
 
 docs/superpowers/
 
-# Local folder feed the custom validation fixture plugins restore their two contract
-# packages from. Written by the integration test project's CustomValidationFixturePlugin.targets.
+# Local folder feed the packed contract fixture plugins restore their contract
+# packages from. Written by the integration test project's PackedContractFixturePlugins.targets.
 /eng/fixtures/plugins/.local-feed/
 
 # CDC execution reports are retained outside source control.

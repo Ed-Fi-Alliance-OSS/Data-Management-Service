@@ -207,11 +207,11 @@ function Convert-ToAssemblyVersion {
 
 <#
 .DESCRIPTION
-Reads one declared version element out of an MSBuild file, for the two contract packages that carry
+Reads one declared version element out of an MSBuild file, for the contract packages that carry
 their own version rather than the DMS release version.
 
-Not exported. The two readers below are the callable surface, because a caller naming its own
-element would be free to read a property the compiler does not use.
+Not exported. The readers below, one per contract, are the callable surface, because a caller
+naming its own element would be free to read a property the compiler does not use.
 
 SelectNodes rather than property access, and a count check rather than SelectSingleNode: property
 access on a file that grew a second PropertyGroup returns an array and stringifies into a version no
@@ -317,6 +317,31 @@ function Get-CustomValidationContractVersion {
         -Path $ProjectPath `
         -ElementName "VersionPrefix" `
         -ContractDescription "custom-validation contract"
+}
+
+<#
+.DESCRIPTION
+Reads the identity contract's own declared version out of its csproj.
+
+The same argument as the siblings above: the identity contract is versioned on its own public
+surface, independently of the DMS release, and every lane reads the version through here so a
+failure to read it names the identity contract rather than the plugin contract.
+
+.EXAMPLE
+Get-IdentityContractVersion
+# Returns: 1.0.0
+#>
+function Get-IdentityContractVersion {
+    param (
+        # The project file declaring the contract version. Defaults to the repository's own.
+        [string]
+        $ProjectPath = (Join-Path $PSScriptRoot "src/dms/core/EdFi.DataManagementService.Identity/EdFi.DataManagementService.Identity.csproj")
+    )
+
+    return Get-DeclaredVersionElement `
+        -Path $ProjectPath `
+        -ElementName "VersionPrefix" `
+        -ContractDescription "identity contract"
 }
 
 <#
@@ -662,6 +687,7 @@ Export-ModuleMember -Function `
     Convert-ToAssemblyVersion, `
     Get-PluginsContractVersion, `
     Get-CustomValidationContractVersion, `
+    Get-IdentityContractVersion, `
     Get-ViewScopedServiceIndexUrl, `
     Test-PackageInView, `
     Get-FeedViewVersion, `

@@ -1218,12 +1218,16 @@ jobs:
 
           # Each contract's own declared version, read from this checkout rather than passed as a
           # literal, so the assertion is made against the versions this release's source declares.
+          # There is a reader per contract, so a version that cannot be read is reported against
+          # the contract it belongs to. The identity contract's is Get-IdentityContractVersion,
+          # which reads the VersionPrefix its own csproj declares.
           Import-Module ./package-helpers.psm1
 
           ./eng/verification/Assert-HostAssemblyManifest.ps1 `
             -ManifestPath "host-assembly-manifest.md" `
             -ExpectedPluginsVersion (Get-PluginsContractVersion) `
-            -ExpectedCustomValidationVersion (Get-CustomValidationContractVersion)
+            -ExpectedCustomValidationVersion (Get-CustomValidationContractVersion) `
+            -ExpectedIdentityVersion (Get-IdentityContractVersion)
 
       - name: Attach Host Assembly Manifest to release
         shell: pwsh

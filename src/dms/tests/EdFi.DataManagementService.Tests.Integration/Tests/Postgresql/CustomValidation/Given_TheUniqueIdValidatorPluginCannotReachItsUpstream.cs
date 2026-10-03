@@ -22,8 +22,7 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql.CustomVa
 /// a stub that is actually listening, and this one needs the opposite.
 /// </remarks>
 [Category("PluginIntegration")]
-public sealed class Given_TheUniqueIdValidatorPluginCannotReachItsUpstream
-    : PostgresqlApiIntegrationTestBase
+public sealed class Given_TheUniqueIdValidatorPluginCannotReachItsUpstream : PostgresqlApiIntegrationTestBase
 {
     private string _pluginRoot = string.Empty;
     private UnreachableAddressHolder _unreachableAddress = null!;
@@ -47,7 +46,7 @@ public sealed class Given_TheUniqueIdValidatorPluginCannotReachItsUpstream
     public void StageThePluginAndChooseADeadAddress()
     {
         _pluginRoot = PluginHostProbe.CreatePluginRootFromSource(
-            PluginHostProbe.CustomValidationFixtureRoot,
+            PluginHostProbe.PackedContractFixtureRoot,
             UniqueIdValidationPluginScenario.PluginName
         );
         _unreachableAddress = UnreachableAddressHolder.Create();
@@ -62,7 +61,5 @@ public sealed class Given_TheUniqueIdValidatorPluginCannotReachItsUpstream
 
     [Test]
     public Task It_fails_the_write_when_the_upstream_is_unreachable() =>
-        UniqueIdValidationPluginScenario.It_fails_the_write_when_the_upstream_is_unreachable(
-            Harness
-        );
+        UniqueIdValidationPluginScenario.It_fails_the_write_when_the_upstream_is_unreachable(Harness);
 }

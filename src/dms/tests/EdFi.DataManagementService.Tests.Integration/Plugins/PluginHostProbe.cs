@@ -5,6 +5,7 @@
 
 using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using Microsoft.AspNetCore.Hosting;
@@ -41,17 +42,18 @@ internal static class PluginHostProbe
     public static string StagedFixtureRoot => Path.Combine(AppContext.BaseDirectory, "PluginFixtures");
 
     /// <summary>
-    /// Where the build staged the custom-validation fixture plugins.
+    /// Where the build staged the fixture plugins built against packed contracts.
     /// </summary>
     /// <remarks>
     /// A second root rather than another directory under <see cref="StagedFixtureRoot"/>, because
     /// that one is produced by the shared staging machinery and these fixtures are produced by
-    /// CustomValidationFixturePlugin.targets, which packs its two contracts into a folder feed
-    /// once and publishes every fixture named there against it. Keeping the roots apart is what
-    /// lets the shared prune remove its whole tree without reaching this one.
+    /// PackedContractFixturePlugins.targets, which packs the plugin, custom-validation and identity
+    /// contracts into a folder feed once and publishes every fixture named there against it.
+    /// Keeping the roots apart is what lets the shared prune remove its whole tree without reaching
+    /// this one.
     /// </remarks>
-    public static string CustomValidationFixtureRoot =>
-        Path.Combine(AppContext.BaseDirectory, "CustomValidationPluginFixture");
+    public static string PackedContractFixtureRoot =>
+        Path.Combine(AppContext.BaseDirectory, "PackedContractPluginFixtures");
 
     /// <summary>A temporary plugin root holding copies of the named staged fixtures.</summary>
     public static string CreatePluginRoot(params string[] fixtureNames) =>
@@ -262,6 +264,26 @@ internal sealed class PluginLogCapture : ILogEventSink
     private readonly ConcurrentQueue<LogEvent> _events = new();
 
     public void Emit(LogEvent logEvent) => _events.Enqueue(logEvent);
+
+    /// <summary>
+    /// A Serilog logger writing every event into this capture.
+    /// </summary>
+    /// <param name="applyIdentityRedaction">
+    /// When true, the logger first runs the log-context and identity redaction stage production
+    /// applies, so a captured event is what a production sink would receive. False keeps the plain
+    /// capture every earlier plugin case relies on.
+    /// </param>
+    public Logger CreateLogger(bool applyIdentityRedaction = false)
+    {
+        LoggerConfiguration configuration = new LoggerConfiguration().MinimumLevel.Verbose();
+
+        if (applyIdentityRedaction)
+        {
+            configuration = LoggingConfigurator.ApplyLogContextAndIdentityRedaction(configuration);
+        }
+
+        return configuration.WriteTo.Sink(this).CreateLogger();
+    }
 
     /// <summary>Everything logged, in the order it was written.</summary>
     public IReadOnlyList<LogEvent> Events => [.. _events];
