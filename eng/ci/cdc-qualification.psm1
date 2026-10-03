@@ -123,12 +123,26 @@ function Get-CdcQualificationReport {
             else { $startupRecoveries++ }
         }
     }
+    $connectFailures = 0; $connectRecoveries = 0
+    $connectInjectedFailures = 0; $connectInjectedRecoveries = 0
+    foreach ($file in Get-ChildItem -LiteralPath (Split-Path -Parent $Path) -Filter 'admission-evidence-connect-readiness-*.json' -Recurse | Sort-Object -Property Name -Unique) {
+        $evidence = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json -AsHashtable
+        if ($evidence.Stage -ne 'connect-readiness') { continue }
+        if ($evidence.Outcome -eq 'TimedOut') {
+            if ($evidence.Injected -eq $true) { $connectInjectedFailures++ } else { $connectFailures++ }
+        }
+        elseif ($evidence.Outcome -eq 'Recovered') {
+            if ($evidence.Injected -eq $true) { $connectInjectedRecoveries++ } else { $connectRecoveries++ }
+        }
+    }
     return [ordered]@{
         Status = $status; Total = $results.Count; Passed = $passed; Failed = $failed
         Skipped = $skipped; EnvironmentFailures = $environmentFailures
         SqlStartupFailures = $startupFailures; SqlStartupRecoveries = $startupRecoveries
         SqlStartupInjectedFailures = $injectedFailures; SqlStartupInjectedRecoveries = $injectedRecoveries
         SqlStartupFailureSignatures = $signatures
+        ConnectReadinessFailures = $connectFailures; ConnectReadinessRecoveries = $connectRecoveries
+        ConnectReadinessInjectedFailures = $connectInjectedFailures; ConnectReadinessInjectedRecoveries = $connectInjectedRecoveries
         Diagnostics = @($results | Where-Object outcome -ne 'Passed' | ForEach-Object {
             [ordered]@{
                 TestId = $_.GetAttribute('testId')

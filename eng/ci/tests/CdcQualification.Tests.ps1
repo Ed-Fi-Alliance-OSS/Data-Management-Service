@@ -226,6 +226,37 @@ Describe 'CDC qualification result boundary' {
         }
     }
 
+    It 'retains and counts Connect readiness recovery evidence once while separating injected timeouts' {
+        $raw = Join-Path $TestDrive 'connect-raw'
+        $published = Join-Path $TestDrive 'connect-published'
+        $copies = Join-Path $raw 'attachments'
+        $null = New-Item -ItemType Directory -Path $copies -Force
+        Write-Report
+        Copy-Item $script:report (Join-Path $raw 'connect.trx')
+        foreach ($injected in @($false, $true)) {
+            foreach ($outcome in @('TimedOut', 'Recovered')) {
+                $readinessEvent = [ordered]@{ Stage = 'connect-readiness'; Outcome = $outcome; Injected = $injected; Attempt = $(if ($outcome -eq 'TimedOut') { 1 } else { 2 }) }
+                $readinessEvent | ConvertTo-Json | Set-Content (Join-Path $raw "admission-evidence-connect-readiness-$([guid]::NewGuid().ToString('N')).json")
+            }
+        }
+        Copy-Item (Join-Path $raw '*.json') $copies
+        $result = Get-CdcQualificationReport (Join-Path $raw 'connect.trx') 0
+        $result.Status | Should -Be 'Passed'
+        $result.ConnectReadinessFailures | Should -Be 1
+        $result.ConnectReadinessRecoveries | Should -Be 1
+        $result.ConnectReadinessInjectedFailures | Should -Be 1
+        $result.ConnectReadinessInjectedRecoveries | Should -Be 1
+        Export-CdcQualificationEvidence -RawDirectory $raw -Destination $published
+        $events = @(Get-ChildItem $published -Filter 'admission-evidence-connect-readiness-*.json' -Recurse)
+        $events.Count | Should -Be 4
+        @($events | ForEach-Object { (Get-Content $_.FullName -Raw | ConvertFrom-Json).Outcome } | Where-Object { $_ -eq 'Recovered' }).Count | Should -Be 2
+        # A later failure cannot be converted into a passing result by a recovered setup.
+        Write-Report -Outcome Failed -Message 'Expected admission refusal'
+        Copy-Item $script:report (Join-Path $raw 'connect.trx') -Force
+        (Get-CdcQualificationReport (Join-Path $raw 'connect.trx') 1).Status | Should -Be 'Failed'
+        Remove-Item $raw, $published -Recurse
+    }
+
     It 'rejects skipped cases instead of counting them as qualification' {
         Write-Report -Outcome NotExecuted
         $result = Get-CdcQualificationReport $script:report 0

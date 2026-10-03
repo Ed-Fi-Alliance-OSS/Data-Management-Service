@@ -84,6 +84,13 @@ function Invoke-QualificationSuite {
     $reports.Add($report)
     & $persistReports
     Export-CdcQualificationEvidence -RawDirectory $suiteDirectory -Destination (Join-Path $destination $Name)
+    if ($report.Contains('ConnectReadinessFailures') -and (
+            $report.ConnectReadinessFailures -gt 0 -or $report.ConnectReadinessInjectedFailures -gt 0
+        )) {
+        $connectSummary = "$Name Connect readiness: $($report.ConnectReadinessFailures) observed timeouts; $($report.ConnectReadinessRecoveries) recovered; $($report.ConnectReadinessInjectedFailures) injected timeouts; $($report.ConnectReadinessInjectedRecoveries) injected recoveries."
+        Write-Output $connectSummary
+        if ($env:GITHUB_STEP_SUMMARY) { "- $connectSummary" >> $env:GITHUB_STEP_SUMMARY }
+    }
     if ($report.Contains('SqlStartupFailures') -and (
             $report.SqlStartupFailures -gt 0 -or
             $report.SqlStartupRecoveries -gt 0 -or
