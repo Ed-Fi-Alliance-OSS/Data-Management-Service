@@ -106,9 +106,10 @@ public sealed class SigningKeySnapshot
         Keys.Any(entry => string.Equals(entry.KeyId, keyId, StringComparison.Ordinal));
 
     /// <summary>
-    /// The snapshot's age: the larger of its wall-clock age and the monotonic time elapsed since
-    /// <see cref="RetrievedAtTimestamp"/>. It is never less than the monotonic elapsed time, so setting the wall clock
-    /// back cannot make the snapshot younger. A wall clock set forward can make it older until the step is reversed.
+    /// The snapshot's age: the larger of its wall-clock age (the time since <see cref="RetrievedAt"/>) and the monotonic
+    /// time elapsed since <see cref="RetrievedAtTimestamp"/>. Whatever the wall clock does, the age never falls below
+    /// the monotonic elapsed time. A wall clock ahead of that baseline, for example after a forward step, makes the age
+    /// larger; reversing such a step reduces the age again, but never below the monotonic elapsed time.
     /// <paramref name="timeProvider"/> must be the one that published the snapshot.
     /// </summary>
     public TimeSpan GetAge(TimeProvider timeProvider)

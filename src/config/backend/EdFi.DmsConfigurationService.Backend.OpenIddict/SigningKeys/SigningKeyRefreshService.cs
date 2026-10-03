@@ -25,8 +25,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 /// </item>
 /// </list>
 /// Every decision uses elapsed time: the monotonic clock for the retry delay, and the snapshot's combined wall-clock and
-/// monotonic age for the refresh deadline, so a wall-clock step can bring a refresh forward but never delays one. A
-/// wall-clock step wakes nothing; it takes effect at the next wake. Wall-clock instants are logged for diagnostics only.
+/// monotonic age for the refresh deadline. A refresh is therefore due no later than its drawn interval of monotonic time
+/// after publication. A wall clock ahead of that baseline makes it due earlier, and reversing that lead returns the
+/// deadline to the baseline. A wall-clock step wakes nothing; it takes effect at the next wake. The logged due instant is
+/// a wall-clock diagnostic.
 /// An attempt starts only when it is due, the gate is eligible, no attempt is in flight, and no store operation is
 /// outstanding, and only while the provider is still in the observed state: admission goes through
 /// <see cref="ISigningKeySnapshotProvider.RefreshIfUnchangedAsync"/> with the status's

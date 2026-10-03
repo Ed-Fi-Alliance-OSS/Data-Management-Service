@@ -252,9 +252,10 @@ database outage](#cached-keys-do-not-keep-the-service-available-through-a-databa
   longer than `SigningKeyLoadTimeoutSeconds` (default 10 s) is canceled and counted as
   failed. If the database call itself does not end at that deadline, no new load starts
   until it does, and its late result is discarded.
-- **Scheduled reload.** After a successful load the next reload is due after
-  `SigningKeyRefreshIntervalSeconds` ±10 % (default 300 s, so 270–330 s). The ±10 % is drawn
-  once per snapshot.
+- **Scheduled reload.** After a successful load the next reload is due once the snapshot's
+  age reaches `SigningKeyRefreshIntervalSeconds` ±10 % (default 300 s, so 270–330 s). The
+  ±10 % is drawn once per snapshot. The age is measured as described under
+  [How time is measured](#how-time-is-measured).
 - **Fresh and overdue.** A snapshot is *fresh* until the refresh interval has passed and
   *overdue* after that. An overdue snapshot is still used, and the first request that finds
   it overdue starts a reload in the background. Whichever comes first, the scheduled reload
@@ -271,10 +272,13 @@ database outage](#cached-keys-do-not-keep-the-service-available-through-a-databa
   failing store and may still fail; its backoff then counts from its own failure, so add
   one load timeout (*R* + 92 s). A database call that outlives its deadline delays the
   next load until it actually ends, so neither bound holds while such a call is
-  outstanding.
-- **Maximum staleness.** A snapshot can be used for `SigningKeyMaxStalenessSeconds` after
-  its last successful load (default 3600 s). After that it has *expired*, and it is not
-  used again until a load succeeds.
+  outstanding. The bounds count elapsed time, not real time across a host suspension; see
+  [How time is measured](#how-time-is-measured).
+- **Maximum staleness.** A snapshot can be used until its age reaches
+  `SigningKeyMaxStalenessSeconds` after its last successful load (default 3600 s). After that it
+  has *expired*, and it is not used while its age stays past the limit; a successful load
+  replaces it. Setting the system clock back does not extend this; see
+  [How time is measured](#how-time-is-measured).
 - **Unknown key id.** A token whose `kid` is not in the snapshot triggers one reload. The
   reload happens only when no backoff is running and the last completed load, of any kind,
   ended at least `SigningKeyUnknownKeyRefreshCooldownSeconds` ago (default 30 s). The
@@ -310,6 +314,47 @@ database outage](#cached-keys-do-not-keep-the-service-available-through-a-databa
     `200 {"keys":[]}` after the insert until the instance's next successful load. A
     consumer that fetches JWKS in that window caches the empty set. See
     [Adding the first key](#adding-the-first-key).
+
+### How time is measured
+
+The intervals above count **elapsed time**, so changing the system clock neither stretches nor
+shrinks them. Two measures are used:
+
+- **Backoff and the unknown-key cooldown** use the process's monotonic clock. A wall-clock step,
+  forward or back, neither opens them early nor keeps them closed.
+- **A snapshot's age** (fresh, overdue, expired, and when its scheduled reload is due) is the
+  larger of two measures: the wall-clock time since the load completed, and the monotonic time
+  elapsed since then.
+  - **Never below elapsed time.** The age never falls below the monotonic elapsed time, whatever
+    the wall clock does. Setting the clock back therefore cannot keep a snapshot fresh, cannot
+    postpone its scheduled reload beyond its interval of elapsed time, and cannot extend trust in
+    a retired key past `SigningKeyMaxStalenessSeconds` of elapsed time.
+  - **A clock ahead of elapsed time ages the snapshot early.** A wall clock ahead of that
+    monotonic baseline, for example after a forward step, makes the snapshot older. A reload can
+    then happen early. On a healthy key store that costs one extra load: the reloaded snapshot
+    starts from the new wall time, so the two measures agree again. With a failing key store, the
+    snapshot can expire early and protected requests answer 503 sooner.
+  - **Expiry is not latched.** If such a forward step is later reversed, the age returns to the
+    monotonic elapsed time. A snapshot that read as expired during the step can then be usable
+    again. That stays within the bound, because its elapsed age has not passed the maximum
+    staleness.
+- **A clock change wakes nothing.** It takes effect at the next request, the next load outcome,
+  or the next timer of the background service, whichever comes first.
+- **Waits are whole milliseconds.** The background service rounds each wait up to whole
+  milliseconds, at least 1 ms. It starts a load only when a fresh check finds nothing left to
+  wait. A scheduled load therefore never starts early. Rounding can make it start up to 1 ms
+  late, and a busy host can delay it further.
+- **Host suspension (Linux).** On Linux, .NET's monotonic clock does not advance while the host or
+  VM is suspended. A backoff or cooldown interrupted by a suspension still has its remaining
+  elapsed time to run after the resume. The recovery bounds above therefore hold in elapsed time,
+  and in real time they lengthen by any suspension that overlaps them. The wall-clock measure
+  does count a suspension, so a snapshot still ages across one. This document makes no claim
+  about other platforms.
+- **Residual case.** Trust in a snapshot can exceed `SigningKeyMaxStalenessSeconds` of real time
+  only when both measures under-count the same interval. An example is a suspended Linux host
+  whose wall clock is also set back.
+- **Token lifetimes are unchanged.** A token's `exp` and `nbf`, with the 5-minute validation clock
+  skew, are still checked against the wall clock.
 
 ### Dependency 503s, ordinary 401s, and an empty JWKS
 

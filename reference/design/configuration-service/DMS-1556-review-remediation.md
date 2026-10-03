@@ -104,7 +104,7 @@ evidence for AC 2–5 are acceptable. This approves the plan, not completed AC v
 | # | Finding (report severity) | Verified? | Disposition | Where |
 | --- | --- | --- | --- | --- |
 | 1 | JWKS lags the key table, and the runbook omits DMS and other JWKS consumers (major) | **Confirmed, with the corrections in §2.1** | **Fix before merge (documentation).** Write operational procedures for: first-key bootstrap in both supported sequences, rotation, early retirement or compromise, certificate replacement, and downstream consumers. No CMS JWKS code change; no DMS change. | R2.1; required drill R4.4 |
-| 2 | Snapshot age and timing gates use the adjustable wall clock (minor) | **Confirmed** | **Fix, as a separate focused phase.** Snapshot state uses the combined age, `max(wall, monotonic)`. Cooldown and backoff use monotonic time. The scheduler uses combined age for normal refresh and monotonic time for retries, with millisecond round-up. UTC timestamps stay for diagnostics. | R3.1–R3.3 |
+| 2 | Snapshot age and timing gates use the adjustable wall clock (minor) | **Confirmed** | **Fix, as a separate focused phase.** Snapshot state uses the combined age, `max(wall, monotonic)`. Cooldown and backoff use monotonic time. The scheduler uses combined age for normal refresh and monotonic time for retries, with millisecond round-up. `NextAttemptAt` stays a UTC diagnostic; `RetrievedAt` is the wall-clock input of the combined age (corrected at R3.3). | R3.1–R3.3 |
 | 3 | `CONFIGURATION.md:896` says "A request does not read the key table" (minor) | **Confirmed** | **Fix the docs:** describe the steady-state fast path and name its exceptions. | R2.2 |
 | 4 | 4-argument `AddPostgresOpenIddictStores(…, JwtSettings)` cannot be resolved (minor, pre-existing) | **Confirmed as pre-existing** (same on `origin/main`; no production caller) | **Defer.** The overload and the fixture stay. The fixture proves registration idempotence, not container validity. Whether to remove or repair is left to a compatibility analysis (draft ticket C). | §3.4 |
 | 5 | Request cancellation produces two authentication Error logs (nit) | **Supported by the call path** (§2.5) | **Deferred** (v1 R4 rejected, §0.1 item 1). Existing behavior kept. | §3.3 |
@@ -360,11 +360,18 @@ snapshot, and each consumer's cache. The substance, not the final wording:
 | Scheduler, normal refresh deadline | **Combined age:** `refreshAfter(version) − snapshot.GetAge(…)`, with `refreshAfter = RefreshInterval × factor` and the factor drawn once per snapshot version | Start when remaining ≤ 0 |
 | Scheduler wait | `startIn = max(refreshRemaining or 0, RetryDelayRemaining)` per the existing due-time rules (never loaded → 0; last failed → retry; last succeeded → refresh) | Start iff `startIn ≤ 0`; otherwise wait `RoundUp(startIn)` or the signal |
 | Load deadline, late-result rejection | Already monotonic | Unchanged |
-| `RetrievedAt`, `NextAttemptAt`, `Refused.NextAttemptAt`, Debug `DueAt` | UTC, diagnostics only; `DueAt` = `now + startIn` | No decision reads them |
+| `RetrievedAt` | UTC, the wall-clock input of the combined age (`wallAge` above) | Read by snapshot state and the normal refresh deadline through `GetAge` |
+| `NextAttemptAt`, `Refused.NextAttemptAt`, Debug `DueAt` | UTC, diagnostics only; `DueAt` = `now + dueIn` | No decision reads them |
+
+*Corrected at R3.3 (2026-10-02):* the earlier table listed `RetrievedAt` among the
+diagnostics-only instants. It is not diagnostic-only: `GetAge` uses it for the wall-clock
+age.
 
 The scheduler is therefore **not** wholly monotonic. Its normal refresh follows the same
-combined age as snapshot state, so a forward wall step can bring a refresh forward. Its
-retries are monotonic only.
+combined age as snapshot state. A refresh is due no later than its drawn interval of
+monotonic time after publication. A wall clock ahead of that baseline makes the refresh due
+earlier, and reversing that lead returns the deadline to the baseline. Its retries are
+monotonic only.
 
 #### Timer resolution
 

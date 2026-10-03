@@ -33,9 +33,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 /// </item>
 /// <item>
 /// <b>Clocks.</b> The cooldown and the retry delay are measured in elapsed time on the monotonic clock, so a wall-clock
-/// step neither opens nor closes them. A snapshot's state uses the larger of its wall-clock and monotonic age (see
-/// <see cref="SigningKeySnapshot.GetAge"/>). Wall-clock instants (<see cref="NextAttemptAt"/>,
-/// <see cref="SigningKeySnapshot.RetrievedAt"/>) are kept for diagnostics only.
+/// step neither opens nor closes them. A snapshot's state uses the larger of its wall-clock age, from
+/// <see cref="SigningKeySnapshot.RetrievedAt"/>, and its monotonic age (see <see cref="SigningKeySnapshot.GetAge"/>).
+/// <see cref="NextAttemptAt"/> is a wall-clock instant kept for diagnostics only.
 /// </item>
 /// <item>
 /// <b>Deadline.</b> The store call runs on the thread pool, so synchronous work in a source cannot delay a caller, under

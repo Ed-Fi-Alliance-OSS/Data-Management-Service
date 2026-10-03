@@ -265,6 +265,22 @@ C-1 all of §4 conditional on G2. C-2 `MetadataAddress` documented inert. C-3 se
 
 ### 4.4 Provider state machine, load gate, scheduling
 
+*Review remediation note (2026-10-02, PR #1317 review round 1, steps R3.1–R3.3).* The
+rules below are written with wall-clock instants such as `now < NextAttemptAt` and
+`lastSuccessAt + RefreshInterval`, and they are kept as approved history. The implementation
+now measures every interval in elapsed time:
+
+- **Snapshot state and the normal refresh deadline** use the snapshot's age. The age is the
+  larger of its wall-clock age, from `RetrievedAt`, and its monotonic age.
+- **The cooldown and the retry delay** use the monotonic clock. `NextAttemptAt` is a
+  wall-clock diagnostic only.
+- **The scheduler's waits** are rounded up to whole milliseconds.
+
+The boundary comparisons are unchanged, and so are the bounds of this section and §4.5,
+measured in elapsed time. On Linux, those bounds lengthen in real time across a host
+suspension. See [the review remediation addendum](./DMS-1556-review-remediation.md) §3.2 and
+`CS-AUTH.md` (*How time is measured*).
+
 States of `Current`: `None`, `Usable` (*fresh* ≤ `RefreshInterval`, *overdue* ≤ `MaxStaleness`), `Expired`. Gate: `InFlight`, `NextAttemptAt`, consecutive failures `n`.
 
 - **Load attempt** (any trigger): join `InFlight` if present; else refused when `now < NextAttemptAt`; else start under a token linked to host shutdown + `LoadTimeout`. Success: publish, `n = 0`, `NextAttemptAt = now` (eligible immediately). Failure: `n++`, `NextAttemptAt = now + backoff(n)`, `backoff = min(5·2^(n−1), 60) s ± 20 %`; `Current` unchanged. Every completed attempt and every release of a store operation that outlived its deadline raises `AttemptStateChanged`; every transition, including attempt start and disposal, changes `StateVersion`. *Corrected at review remediation R2.2 (2026-10-02, PR #1317 review round 1, finding 7): the earlier text said every transition raises `AttemptStateChanged`. Attempt start and disposal only change `StateVersion` (`SigningKeySnapshotProvider` `StartAttemptUnderLock`, `Dispose`); signaling is unchanged.*
