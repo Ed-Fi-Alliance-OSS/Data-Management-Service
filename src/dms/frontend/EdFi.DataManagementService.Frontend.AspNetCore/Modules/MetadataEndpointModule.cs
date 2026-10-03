@@ -33,6 +33,36 @@ public partial class MetadataEndpointModule(
     private const string ChangeQueriesOpenApiRouteBase = "changeQueries/v1";
     private const string IdentityOpenApiRouteBase = "identity/v2";
 
+    private static string GetPublicOAuthTokenUrl(
+        HttpContext httpContext,
+        IOptions<FrontendAppSettings> appSettings
+    )
+    {
+        string prefix = DiscoveryEndpointModule.BuildRouteQualifierPrefix(
+            httpContext,
+            appSettings,
+            useMetadataRouteValues: true
+        );
+        return $"{httpContext.Request.RootUrl()}{prefix}/oauth/token";
+    }
+
+    private static JsonNode WithPublicOAuthTokenUrl(JsonNode content, string tokenUrl)
+    {
+        if (
+            content["components"]
+                ?["securitySchemes"]
+                ?["oauth2_client_credentials"]
+                ?["flows"]
+                ?["clientCredentials"]
+            is JsonObject clientCredentials
+        )
+        {
+            clientCredentials["tokenUrl"] = tokenUrl;
+        }
+
+        return content;
+    }
+
     /// <summary>
     /// Builds servers array for the OpenAPI spec using the configured multi-tenancy and route qualifier settings.
     /// </summary>
@@ -538,7 +568,9 @@ public partial class MetadataEndpointModule(
     {
         JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, DataOpenApiRouteBase);
         JsonNode content = apiService.GetResourceOpenApiSpecification(servers);
-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
+        );
     }
 
     internal static async Task GetDescriptorOpenApiSpec(
@@ -550,7 +582,9 @@ public partial class MetadataEndpointModule(
     {
         JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, DataOpenApiRouteBase);
         JsonNode content = apiService.GetDescriptorOpenApiSpecification(servers);
-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
+        );
     }
 
     internal static async Task GetChangeQueriesOpenApiSpec(
@@ -574,7 +608,9 @@ public partial class MetadataEndpointModule(
             return;
         }
 
-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
+        );
     }
 
     /// <summary>
@@ -591,7 +627,9 @@ public partial class MetadataEndpointModule(
     {
         JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, IdentityOpenApiRouteBase);
         JsonNode content = apiService.GetIdentityOpenApiSpecification(servers);
-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
+        );
     }
 
     /// <summary>
@@ -630,7 +668,9 @@ public partial class MetadataEndpointModule(
             return;
         }
 
-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
+        );
     }
 
     internal static async Task GetSections(
@@ -741,8 +781,8 @@ public partial class MetadataEndpointModule(
         }
 
         string section = sectionValueString.ToLowerInvariant();
-        string? rootUrl = httpContext.Request.RootUrl();
-        string oAuthUrl = options.Value.AuthenticationService;
+        string rootUrl = httpContext.Request.RootUrl();
+        string oAuthUrl = GetPublicOAuthTokenUrl(httpContext, options);
         if (
             Array.Exists(
                 _sections,
@@ -750,7 +790,10 @@ public partial class MetadataEndpointModule(
             )
         )
         {
-            var content = contentProvider.LoadJsonContent(section, rootUrl, oAuthUrl);
+            JsonNode content = WithPublicOAuthTokenUrl(
+                contentProvider.LoadJsonContent(section, rootUrl, oAuthUrl),
+                oAuthUrl
+            );
             content["servers"] = GetServers(httpContext, dataStoreProvider, options, DataOpenApiRouteBase);
             await httpContext.Response.WriteAsSerializedJsonAsync(content);
         }
