@@ -174,6 +174,7 @@ public abstract class SqlDialectBase : ISqlDialect
         {
             ReferentialAction.NoAction => "NO ACTION",
             ReferentialAction.Cascade => "CASCADE",
+            ReferentialAction.Restrict => "RESTRICT",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(action),
                 action,

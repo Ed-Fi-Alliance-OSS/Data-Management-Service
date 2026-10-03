@@ -1581,7 +1581,7 @@ END;
 
 ##### Cascade-ordering requirement for deletes
 
-Because the `_Stamp` trigger's DELETE branch joins `dms.Document` to read `DocumentUuid` and `ContentVersion`, DMS MUST delete the concrete resource row (or the `dms.Descriptor` row for descriptor resources) before deleting the corresponding `dms.Document` row, within the same transaction. If `dms.Document` were deleted first, the `ON DELETE CASCADE` FK from the resource row to `dms.Document(DocumentId)` would remove the resource row inside the same statement, and the resource's `AFTER DELETE` trigger would fire after the parent row is already gone, causing the `INNER JOIN [dms].[Document]` (and the trigger's leading `UPDATE [dms].[Document] SET [ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]`) to match no rows and silently drop the tombstone.
+Because the `_Stamp` trigger's DELETE branch joins `dms.Document` to read `DocumentUuid` and `ContentVersion`, DMS MUST delete the concrete resource row (or the `dms.Descriptor` row for descriptor resources) before deleting the corresponding `dms.Document` row, within the same transaction. The FK from the resource row to `dms.Document(DocumentId)` is `ON DELETE RESTRICT` (`NO ACTION` on SQL Server; DMS-1236), so deleting `dms.Document` first is rejected while the resource row exists. Before DMS-1236 that FK cascaded: deleting `dms.Document` first removed the resource row inside the same statement, and the resource's `AFTER DELETE` trigger fired after the parent row was already gone, causing the `INNER JOIN [dms].[Document]` (and the trigger's leading `UPDATE [dms].[Document] SET [ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]`) to match no rows and silently drop the tombstone.
 
 DMS therefore issues two `DELETE` statements per document deletion, in order, within the same transaction:
 
@@ -1596,7 +1596,7 @@ Root deletes have one additional trigger-ordering contract: a supported resource
 
 Child, nested-child, and `_ext` table deletes caused by database cascades from that root delete MUST NOT create another visible root tombstone, and MUST NOT leave a later visible root stamp that can move a Change Query extraction watermark past the root tombstone. This contract applies to PostgreSQL and SQL Server despite their different trigger and cascade execution behavior.
 
-The `ON DELETE CASCADE` FK from the resource row to `dms.Document` (see [data-model.md](data-model.md)) is retained as a referential-integrity safety net. Any direct `DELETE FROM dms.Document` issued outside the DMS write path will succeed without producing a tombstone; this is acceptable because the supported deletion path is exclusively through DMS.
+The FK from the resource row to `dms.Document` (see [data-model.md](data-model.md)) is a referential-integrity safety net with `ON DELETE RESTRICT` (`NO ACTION` on SQL Server; DMS-1236). A direct `DELETE FROM dms.Document` issued outside the DMS write path fails while the resource row exists, so it cannot silently remove a document without producing a tombstone; the supported deletion path is exclusively through DMS.
 
 There is no `*_Stamp` trigger in `dms.Descriptor`, so we will create one that follows the existing convention.
 

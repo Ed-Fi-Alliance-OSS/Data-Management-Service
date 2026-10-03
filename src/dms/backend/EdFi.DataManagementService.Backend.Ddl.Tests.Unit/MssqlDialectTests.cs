@@ -953,6 +953,53 @@ public class Given_MssqlDialect_Render_Referential_Actions
     {
         _dialect.RenderReferentialAction(ReferentialAction.Cascade).Should().Be("CASCADE");
     }
+
+    /// <summary>
+    /// SQL Server has no RESTRICT keyword; its NO ACTION is already an immediate single-probe check
+    /// compiled into the parent DELETE plan, so the logical Restrict action renders as NO ACTION.
+    /// </summary>
+    [Test]
+    public void It_should_render_restrict_as_no_action()
+    {
+        _dialect.RenderReferentialAction(ReferentialAction.Restrict).Should().Be("NO ACTION");
+    }
+}
+
+[TestFixture]
+public class Given_MssqlDialect_Add_Foreign_Key_Constraint_With_Restrict_Delete_Action
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new MssqlDialect(new MssqlDialectRules());
+        var table = new DbTableName(new DbSchemaName("edfi"), "School");
+        var targetTable = new DbTableName(new DbSchemaName("dms"), "Document");
+        var columns = new[] { new DbColumnName("DocumentId") };
+        var targetColumns = new[] { new DbColumnName("DocumentId") };
+        _ddl = dialect.AddForeignKeyConstraint(
+            table,
+            "FK_School_Document",
+            columns,
+            targetTable,
+            targetColumns,
+            ReferentialAction.Restrict,
+            ReferentialAction.NoAction
+        );
+    }
+
+    [Test]
+    public void It_should_emit_on_delete_no_action()
+    {
+        _ddl.Should().Contain("ON DELETE NO ACTION");
+    }
+
+    [Test]
+    public void It_should_not_emit_the_restrict_keyword()
+    {
+        _ddl.Should().NotContain("RESTRICT");
+    }
 }
 
 [TestFixture]

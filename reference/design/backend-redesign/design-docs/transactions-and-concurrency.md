@@ -726,7 +726,7 @@ remains best effort and never fails an otherwise successful relational response.
    [projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#cache-backed-reads-and-domain-lifecycle).
 4. Rely on FK constraints from referencing resource tables to prevent deleting referenced records.
 
-Steps 2 and 3 execute in this order within the same transaction. The reverse order (deleting `dms.Document` first and relying on `ON DELETE CASCADE` to remove the resource row) would silently lose `/deletes` tombstones because the resource row’s `AFTER DELETE` stamping trigger would fire after `dms.Document` was already gone, causing its `INNER JOIN dms.Document` to match no rows. See `change-queries.md` §"Cascade-ordering requirement for deletes" and DMS-1180 (`epics/10-update-tracking-change-queries/17-delete-by-id-tombstone-ordering.md`) for the rationale.
+Steps 2 and 3 execute in this order within the same transaction. The reverse order (deleting `dms.Document` first) is rejected by the resource row’s `ON DELETE RESTRICT` (`NO ACTION` on SQL Server) foreign key. When that key still cascaded, the reverse order silently lost `/deletes` tombstones because the resource row’s `AFTER DELETE` stamping trigger fired after `dms.Document` was already gone, causing its `INNER JOIN dms.Document` to match no rows. See `change-queries.md` §"Cascade-ordering requirement for deletes" and DMS-1180 (`epics/10-update-tracking-change-queries/17-delete-by-id-tombstone-ordering.md`) for the rationale.
 
 Error reporting:
 - SQL Server and PostgreSQL will report FK constraint violations. DMS should map the violated constraint name back to the referencing resource (deterministic FK naming) to produce a conflict response comparable to today’s `DeleteFailureReference`.
