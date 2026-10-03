@@ -301,7 +301,7 @@ All problem types are under `urn:ed-fi:api:education-organization-projection:` u
 | `AppSettings:EducationOrganizationProjection:ReadLockTimeoutSeconds` | `5` | `1..60` |
 | `AppSettings:EducationOrganizationProjection:ReadCommandTimeoutSeconds` | `60` | `5..600` |
 
-Compose/env mapping `DMS_ENABLE_EDUCATION_ORGANIZATION_PROJECTION` in `eng/docker-compose/local-dms.yml`, `published-dms.yml`, `eng/azure-vm/compose/docker-compose.yml`. Invalid values fail startup through the frontend `AppSettingsValidator`.
+Compose/env mapping `DMS_ENABLE_EDUCATION_ORGANIZATION_PROJECTION` in `eng/docker-compose/local-dms.yml`, `published-dms.yml`, `eng/azure-vm/compose/docker-compose.yml`. Invalid values fail startup through the Core `AppSettingsValidator` (`Core/Configuration/AppSettingsValidator.cs`), which the frontend binds with `ValidateOnStart`; limits are validated whether or not the toggle is on.
 
 ### 3.8 Compatibility and upgrade
 
@@ -638,7 +638,7 @@ Every step: narrowly bounded edits, tests that fail if the step is reverted, `do
 
 ### Phase 2 — DMS endpoint
 
-**2.1 Options and toggle.** Files: `Core/Configuration/AppSettings.cs` (toggle + `EducationOrganizationProjection` options record and validation), frontend `AppSettingsValidator`, `appsettings.json`, compose/env files, `docs/CONFIGURATION.md`. Tests: binding/validation; startup failure via `WebApplicationFactory` on out-of-range values. Checkpoint.
+**2.1 Options and toggle.** Files: `Core/Configuration/AppSettings.cs` (toggle), `Core/Configuration/EducationOrganizationProjectionSettings.cs` (options record), Core `AppSettingsValidator` (validation), `appsettings.json`, compose/env files, `docs/CONFIGURATION.md`. Tests: binding/validation; startup failure via `WebApplicationFactory` on out-of-range values. Checkpoint.
 
 **2.2 Request model, cursor codec, digest, problem types, repeated-parameter plumbing.** Files: `Core/EducationOrganizationProjection/{EducationOrganizationProjectionRequest,ProjectionCursor,ProjectionCursorCodec,ProjectionDigest,ProjectionContractVersions}.cs`, `ParseEducationOrganizationProjectionRequestMiddleware.cs`, `Core/External/Frontend/FrontendRequest.cs` (`RepeatedQueryParameterNames`, default empty), `Response/FailureResponse.cs` factories. Tests: codec round-trip and strict-decode rejection table; binding mismatch; expiry, future-dated, preserved walk timestamp (fake clock); digest golden vectors (§4.2) incl. the signed-boundary vectors; codec round-trip of negative, zero, `Int64.MinValue` and `Int64.MaxValue` positions and rejection of `+`, leading zeroes and `-0`; a set with negative ids returns them on the first page (no zero sentinel); parameter table incl. repeats with mixed case; order-of-operations: cursor binding uses the request's tenant/qualifiers. Checkpoint.
 
