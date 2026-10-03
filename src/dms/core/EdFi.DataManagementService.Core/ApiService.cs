@@ -712,7 +712,11 @@ internal class ApiService : IApiService
                 _validateTenantExistsLogger
             ),
             new ValidateClientTenantBindingMiddleware(_validateClientTenantBindingLogger),
-            new ServiceClaimAuthorizationMiddleware(_claimSetProvider, _serviceClaimAuthorizationLogger),
+            new ServiceClaimAuthorizationMiddleware(
+                ServiceClaimRequirement.Identity,
+                _claimSetProvider,
+                _serviceClaimAuthorizationLogger
+            ),
             new IdentityOperationCapabilityMiddleware(
                 _identityProviderBoundary,
                 _identityOperationCapabilityLogger

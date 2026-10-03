@@ -26,4 +26,10 @@ public static class Conventions
         Justification = "Intentional constant"
     )]
     public const string EdFiOdsServiceClaimBaseUri = "http://ed-fi.org/identity/claims/services";
+
+    /// <summary>
+    /// The CMS-seeded service claim that authorizes the education organization projection endpoint.
+    /// </summary>
+    public const string EducationOrganizationProjectionServiceClaimUri =
+        $"{EdFiOdsServiceClaimBaseUri}/educationOrganizationProjection";
 }
