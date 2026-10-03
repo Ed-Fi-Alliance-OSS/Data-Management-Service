@@ -70,10 +70,11 @@ info:
 
     ## Cursor
 
-    `cursor` is opaque. Clients send `nextCursor` back verbatim and never construct,
-    parse or modify it. Only the exact text DMS issued is accepted; a re-encoded form,
-    including one with base64 padding added, is rejected with `400 invalid-cursor`. It is bound to the data store, tenant, route qualifiers and
-    contract version of the read that produced it, and it expires
+    `cursor` is opaque: clients never construct, parse or modify it. Clients must
+    return `nextCursor` verbatim. The decoder accepts only canonical, unpadded
+    base64url with canonical payload fields; padded or otherwise noncanonical
+    representations receive `400 invalid-cursor`. It is bound to the data store,
+    tenant, route qualifiers and contract version of the read that produced it, and it expires
     `CursorLifetimeMinutes` (default 60) after the read's first page. A cursor that does
     not decode, does not match the request, has expired, or is dated more than 60 seconds in the future is
     rejected with `400 invalid-cursor`; the client may restart the read once without a
@@ -406,8 +407,10 @@ components:
       in: query
       required: false
       description: >-
-        The `nextCursor` value from the previous page of this read, sent verbatim (a
-        re-encoded or padded form is rejected). Omitted on the first page. Opaque; see the document description. Must not be repeated.
+        The `nextCursor` value from the previous page of this read, returned verbatim.
+        Padded or otherwise noncanonical representations receive `400 invalid-cursor`.
+        Omitted on the first page. Opaque; see the document description. Must not be
+        repeated.
       schema:
         type: string
         minLength: 1

@@ -241,10 +241,10 @@ school `900001` has no LEA.
 
 ## Cursor
 
-`cursor` is opaque: clients send `nextCursor` back verbatim and never construct,
-parse or change it. Only the exact text DMS issued is accepted; a re-encoded
-form, including one with base64 padding added, is rejected with
-`400 invalid-cursor`. A cursor is bound to the data store, tenant, route
+`cursor` is opaque: clients never construct, parse or change it. Clients must
+return `nextCursor` verbatim. The decoder accepts only canonical, unpadded
+base64url with canonical payload fields; padded or otherwise noncanonical
+representations receive `400 invalid-cursor`. A cursor is bound to the data store, tenant, route
 qualifiers and contract version of the read that produced it, and expires
 `CursorLifetimeMinutes` (default 60) after the read's first page, however many
 pages follow. A cursor that does not decode, does not match the request, has
