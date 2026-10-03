@@ -906,6 +906,10 @@ public sealed class CoreDdlEmitter
 
         // Ordered by (table name, constraint name).
 
+        // dms.Descriptor follows the resource-root rule (DeriveTableScopesAndKeysStep): the write path
+        // deletes the Descriptor row before its dms.Document row, so this FK is a safety net and must
+        // not cascade. Restrict = single probe on both engines (RESTRICT on PostgreSQL, NO ACTION on
+        // SQL Server). The dms.* cascades below stay: their rows are cascade-maintained.
         writer.AppendLine(
             _dialect.AddForeignKeyConstraint(
                 _descriptorTable,
@@ -913,7 +917,7 @@ public sealed class CoreDdlEmitter
                 [Col("DocumentId")],
                 _documentTable,
                 [Col("DocumentId")],
-                onDelete: ReferentialAction.Cascade
+                onDelete: ReferentialAction.Restrict
             )
         );
         writer.AppendLine();

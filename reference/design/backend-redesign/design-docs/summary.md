@@ -126,7 +126,7 @@ Source documents:
 For each project, create a physical schema derived from `ProjectEndpointName` (e.g., `ed-fi` → `edfi`), with:
 
 - Root table `{schema}.{ResourceName}`:
-  - PK `DocumentId` (FK to `dms.Document(DocumentId)` ON DELETE CASCADE).
+  - PK `DocumentId` (FK to `dms.Document(DocumentId)` ON DELETE RESTRICT, NO ACTION on SQL Server: a safety net, since the write path deletes the root row before the `dms.Document` row).
   - Unique constraint for the resource’s natural key derived from `identityJsonPaths`:
     - scalar identity elements become scalar columns,
     - identity elements sourced from reference objects use the corresponding `..._DocumentId` FK columns (stable), with referenced identity values bound at `{RefBaseName}_{IdentityPart}` columns for query/reconstitution (under key unification these may be presence-gated aliases of canonical stored columns; see `key-unification.md`).

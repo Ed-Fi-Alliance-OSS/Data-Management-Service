@@ -469,7 +469,7 @@ ALTER TABLE [dms].[Descriptor]
 ADD CONSTRAINT [FK_Descriptor_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
+ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -758,7 +758,7 @@ ALTER TABLE [edfi].[Person]
 ADD CONSTRAINT [FK_Person_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
+ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (

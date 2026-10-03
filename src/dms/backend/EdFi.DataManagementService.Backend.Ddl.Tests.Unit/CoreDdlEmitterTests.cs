@@ -709,10 +709,16 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     // ── Foreign keys ────────────────────────────────────────────────
 
     [Test]
-    public void It_should_have_fk_descriptor_document()
+    public void It_should_have_fk_descriptor_document_with_restrict_delete_action()
     {
-        _ddl.Should().Contain("\"FK_Descriptor_Document\"");
-        _ddl.Should().Contain("ON DELETE CASCADE");
+        // dms.Descriptor is a safety-net FK on dms.Document like the resource roots: the write path
+        // deletes the Descriptor row first, so it must not cascade, and PostgreSQL RESTRICT is the
+        // single-probe check (NO ACTION would re-check the parent key before every probe).
+        var fkStatement = CoreDdlStatements.Extract(_ddl, "ADD CONSTRAINT \"FK_Descriptor_Document\"");
+
+        fkStatement.Should().Contain("REFERENCES \"dms\".\"Document\"");
+        fkStatement.Should().Contain("ON DELETE RESTRICT");
+        fkStatement.Should().NotContain("ON DELETE CASCADE");
     }
 
     [Test]
@@ -1888,6 +1894,18 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
+    public void It_should_have_fk_descriptor_document_with_no_action_delete_action()
+    {
+        // Same safety-net rule as the resource roots. SQL Server has no RESTRICT; its NO ACTION is the
+        // single-probe check, whereas CASCADE compiles the Descriptor delete into the Document DELETE plan.
+        var fkStatement = CoreDdlStatements.Extract(_ddl, "ADD CONSTRAINT [FK_Descriptor_Document]");
+
+        fkStatement.Should().Contain("REFERENCES [dms].[Document]");
+        fkStatement.Should().Contain("ON DELETE NO ACTION");
+        fkStatement.Should().NotContain("CASCADE");
+    }
+
+    [Test]
     public void It_should_have_cascade_deletes_where_specified()
     {
         _ddl.Should().Contain("ON DELETE CASCADE");
@@ -2891,5 +2909,23 @@ public class Given_CoreDdlEmitter_Descriptor_Stamping_Trigger_Metadata
         }
 
         return count;
+    }
+}
+
+/// <summary>
+/// Helpers for asserting on one statement inside emitted core DDL.
+/// </summary>
+internal static class CoreDdlStatements
+{
+    /// <summary>
+    /// Returns the SQL statement that starts at <paramref name="anchor"/> and ends at the next ';'.
+    /// </summary>
+    public static string Extract(string ddl, string anchor)
+    {
+        var start = ddl.IndexOf(anchor, StringComparison.Ordinal);
+        start.Should().BeGreaterThanOrEqualTo(0, $"the DDL should contain '{anchor}'");
+        var end = ddl.IndexOf(';', start);
+        end.Should().BeGreaterThanOrEqualTo(0, $"the statement starting at '{anchor}' should end with ';'");
+        return ddl[start..end];
     }
 }
