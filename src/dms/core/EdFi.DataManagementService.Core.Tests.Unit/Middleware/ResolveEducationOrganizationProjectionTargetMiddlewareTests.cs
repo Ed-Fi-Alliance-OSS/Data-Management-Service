@@ -475,7 +475,12 @@ public abstract class ResolveEducationOrganizationProjectionTargetMiddlewareTest
 
         [Test]
         public void It_answers_the_transient_service_unavailable() =>
-            RequestInfo.FrontendResponse.StatusCode.Should().Be(503);
+            AssertRejectedWith(
+                503,
+                "urn:ed-fi:api:service-unavailable",
+                "Service Unavailable",
+                "The service is temporarily unable to handle the request. Retry the request later."
+            );
 
         [Test]
         public void It_logs_nothing_the_exception_carries() => AssertNothingHostileLogged();

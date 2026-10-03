@@ -97,7 +97,8 @@ internal sealed record EducationOrganizationProjectionProblem(
 
     /// <summary>
     /// The shared <c>service-configuration-error</c> type with the projection's fixed detail and no
-    /// <c>errors</c> entry, reserved for a missing or undecryptable connection configuration.
+    /// <c>errors</c> entry, reserved for a missing connection string. An undecryptable one fails the
+    /// tenant catalog load and is answered as <c>service-unavailable</c>.
     /// </summary>
     public static readonly EducationOrganizationProjectionProblem ServiceConfigurationError = new(
         503,

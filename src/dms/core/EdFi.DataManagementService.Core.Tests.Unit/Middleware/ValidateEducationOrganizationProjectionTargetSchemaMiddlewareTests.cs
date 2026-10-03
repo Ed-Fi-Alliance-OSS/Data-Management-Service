@@ -74,6 +74,35 @@ public abstract class ValidateEducationOrganizationProjectionTargetSchemaMiddlew
 
     protected async Task Execute(CancellationToken cancellationToken = default)
     {
+        StartedRequest request = Start(cancellationToken);
+        RequestInfo = request.RequestInfo;
+        NextCalled = false;
+
+        try
+        {
+            await request.Execution;
+        }
+        finally
+        {
+            NextCalled = request.NextCalled;
+        }
+    }
+
+    /// <summary>
+    /// One request through the step, started but not awaited, so a fixture can hold several
+    /// requests on the same fingerprint cache at once.
+    /// </summary>
+    private protected sealed class StartedRequest(RequestInfo requestInfo)
+    {
+        public RequestInfo RequestInfo { get; } = requestInfo;
+
+        public Task Execution { get; set; } = Task.CompletedTask;
+
+        public bool NextCalled { get; set; }
+    }
+
+    private protected StartedRequest Start(CancellationToken cancellationToken)
+    {
         FrontendRequest frontendRequest = new(
             Path: "/management/education-organizations",
             Body: null,
@@ -100,11 +129,12 @@ public abstract class ValidateEducationOrganizationProjectionTargetSchemaMiddlew
         IServiceProvider serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IDataStoreSelection))).Returns(selection);
 
-        RequestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
-        {
-            RequestCancellationToken = cancellationToken,
-        };
-        NextCalled = false;
+        StartedRequest request = new(
+            new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
+            {
+                RequestCancellationToken = cancellationToken,
+            }
+        );
 
         IEffectiveSchemaSetProvider effectiveSchemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
         A.CallTo(() => effectiveSchemaSetProvider.EffectiveSchemaSet)
@@ -121,14 +151,16 @@ public abstract class ValidateEducationOrganizationProjectionTargetSchemaMiddlew
             Logger
         );
 
-        await middleware.Execute(
-            RequestInfo,
+        request.Execution = middleware.Execute(
+            request.RequestInfo,
             () =>
             {
-                NextCalled = true;
+                request.NextCalled = true;
                 return Task.CompletedTask;
             }
         );
+
+        return request;
     }
 
     protected JsonNode Body => RequestInfo.FrontendResponse.Body!;
@@ -362,8 +394,57 @@ public abstract class ValidateEducationOrganizationProjectionTargetSchemaMiddlew
         }
     }
 
+    /// <summary>
+    /// Two requests share one in-flight fingerprint read. Cancelling the first while it waits must
+    /// end only that request's wait: the read keeps running and the second request still receives
+    /// its result. Ordering comes from the read's completion source, which only the test completes;
+    /// the watchdog only stops a regression from hanging the run.
+    /// </summary>
     [TestFixture]
-    public class Given_The_Request_Is_Cancelled_While_The_Fingerprint_Is_Read
+    public class Given_A_Request_Is_Cancelled_While_Another_Waits_On_The_Same_Read
+        : ValidateEducationOrganizationProjectionTargetSchemaMiddlewareTests
+    {
+        private static readonly TimeSpan _watchdog = TimeSpan.FromSeconds(30);
+
+        [Test]
+        public async Task It_ends_only_the_cancelled_wait_and_the_other_receives_the_shared_result()
+        {
+            TaskCompletionSource<DatabaseFingerprint?> sharedRead = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            A.CallTo(() => FingerprintReader.ReadFingerprintAsync(Target)).Returns(sharedRead.Task);
+            using CancellationTokenSource firstCancellation = new();
+
+            StartedRequest first = Start(firstCancellation.Token);
+            StartedRequest second = Start(CancellationToken.None);
+
+            // Both are waiting on the one read, which nothing has completed.
+            first.Execution.IsCompleted.Should().BeFalse();
+            second.Execution.IsCompleted.Should().BeFalse();
+            A.CallTo(() => FingerprintReader.ReadFingerprintAsync(Target)).MustHaveHappenedOnceExactly();
+
+            await firstCancellation.CancelAsync();
+
+            Func<Task> firstOutcome = () => first.Execution.WaitAsync(_watchdog);
+            await firstOutcome.Should().ThrowAsync<OperationCanceledException>();
+            first.NextCalled.Should().BeFalse();
+            first.RequestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
+
+            // The read is still pending, so the second request cannot have finished.
+            second.Execution.IsCompleted.Should().BeFalse();
+
+            DatabaseFingerprint fingerprint = Fingerprint(ExpectedHash);
+            sharedRead.SetResult(fingerprint);
+            await second.Execution.WaitAsync(_watchdog);
+
+            second.NextCalled.Should().BeTrue();
+            second.RequestInfo.DatabaseFingerprint.Should().BeSameAs(fingerprint);
+            A.CallTo(() => FingerprintReader.ReadFingerprintAsync(Target)).MustHaveHappenedOnceExactly();
+        }
+    }
+
+    [TestFixture]
+    public class Given_The_Request_Is_Already_Cancelled_When_The_Fingerprint_Is_Read
         : ValidateEducationOrganizationProjectionTargetSchemaMiddlewareTests
     {
         [Test]

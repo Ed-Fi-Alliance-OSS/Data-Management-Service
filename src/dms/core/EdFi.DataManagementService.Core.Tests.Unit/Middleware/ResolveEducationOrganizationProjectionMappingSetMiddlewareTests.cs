@@ -107,7 +107,7 @@ public abstract class ResolveEducationOrganizationProjectionMappingSetMiddleware
         );
     }
 
-    protected static MappingSet CreateMappingSet(SqlDialect dialect)
+    internal static MappingSet CreateMappingSet(SqlDialect dialect)
     {
         EffectiveSchemaInfo effectiveSchema = new(
             ApiSchemaFormatVersion: "1.0",

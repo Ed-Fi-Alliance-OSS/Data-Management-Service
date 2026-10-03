@@ -51,7 +51,8 @@ public sealed class MappingSetProvider : IMappingSetProvider
         return _cache.GetOrCreateAsync(key, cancellationToken);
     }
 
-    // Sanitized single-line format for Exception.Message and log entries.
+    // Sanitized single-line format for Exception.Message. Log entries never carry the effective
+    // schema hash: they name the dialect and mapping version only.
     // Distinct from BuildKeyDiagnostics which produces structured unsanitized entries.
     private static string FormatKeyForMessage(MappingSetKey key) =>
         $"EffectiveSchemaHash '{SanitizeInternalValueForLog(key.EffectiveSchemaHash)}', "
@@ -75,8 +76,7 @@ public sealed class MappingSetProvider : IMappingSetProvider
             if (payload is not null)
             {
                 _logger.LogInformation(
-                    "Loaded mapping pack for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}",
-                    SanitizeInternalValueForLog(key.EffectiveSchemaHash),
+                    "Loaded mapping pack for Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}",
                     key.Dialect,
                     SanitizeInternalValueForLog(key.RelationalMappingVersion)
                 );
@@ -103,8 +103,7 @@ public sealed class MappingSetProvider : IMappingSetProvider
             if (_options.Required)
             {
                 _logger.LogWarning(
-                    "Mapping pack required but not found for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}",
-                    SanitizeInternalValueForLog(key.EffectiveSchemaHash),
+                    "Mapping pack required but not found for Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}",
                     key.Dialect,
                     SanitizeInternalValueForLog(key.RelationalMappingVersion)
                 );
@@ -122,8 +121,7 @@ public sealed class MappingSetProvider : IMappingSetProvider
             if (!_options.AllowRuntimeCompileFallback)
             {
                 _logger.LogWarning(
-                    "Mapping pack not found and runtime compilation fallback is disabled for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}",
-                    SanitizeInternalValueForLog(key.EffectiveSchemaHash),
+                    "Mapping pack not found and runtime compilation fallback is disabled for Dialect {Dialect}",
                     key.Dialect
                 );
 
@@ -139,8 +137,7 @@ public sealed class MappingSetProvider : IMappingSetProvider
             }
 
             _logger.LogInformation(
-                "Mapping pack not found for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}; falling back to runtime compilation",
-                SanitizeInternalValueForLog(key.EffectiveSchemaHash),
+                "Mapping pack not found for Dialect {Dialect}; falling back to runtime compilation",
                 key.Dialect
             );
         }
@@ -163,8 +160,7 @@ public sealed class MappingSetProvider : IMappingSetProvider
         }
 
         _logger.LogInformation(
-            "Compiling runtime mapping set for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}",
-            SanitizeInternalValueForLog(key.EffectiveSchemaHash),
+            "Compiling runtime mapping set for Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}",
             key.Dialect,
             SanitizeInternalValueForLog(key.RelationalMappingVersion)
         );
@@ -174,8 +170,7 @@ public sealed class MappingSetProvider : IMappingSetProvider
             var result = await compiler.CompileAsync(key, cancellationToken).ConfigureAwait(false);
 
             _logger.LogInformation(
-                "Runtime mapping set compiled successfully for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}",
-                SanitizeInternalValueForLog(key.EffectiveSchemaHash),
+                "Runtime mapping set compiled successfully for Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}",
                 key.Dialect,
                 SanitizeInternalValueForLog(key.RelationalMappingVersion)
             );

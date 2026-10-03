@@ -163,7 +163,7 @@ public class Given_MappingSetProvider
                 .ContainSingle(record =>
                     record.Level == LogLevel.Information
                     && record.Message
-                        == $"Loaded mapping pack for EffectiveSchemaHash {_testKey.EffectiveSchemaHash}, Dialect {_testKey.Dialect}, RelationalMappingVersion {_testKey.RelationalMappingVersion}"
+                        == $"Loaded mapping pack for Dialect {_testKey.Dialect}, RelationalMappingVersion {_testKey.RelationalMappingVersion}"
                 );
         }
     }
@@ -200,12 +200,12 @@ public class Given_MappingSetProvider
             [
                 new(
                     LogLevel.Information,
-                    $"Compiling runtime mapping set for EffectiveSchemaHash {_testKey.EffectiveSchemaHash}, Dialect {_testKey.Dialect}, RelationalMappingVersion {_testKey.RelationalMappingVersion}",
+                    $"Compiling runtime mapping set for Dialect {_testKey.Dialect}, RelationalMappingVersion {_testKey.RelationalMappingVersion}",
                     null
                 ),
                 new(
                     LogLevel.Information,
-                    $"Runtime mapping set compiled successfully for EffectiveSchemaHash {_testKey.EffectiveSchemaHash}, Dialect {_testKey.Dialect}, RelationalMappingVersion {_testKey.RelationalMappingVersion}",
+                    $"Runtime mapping set compiled successfully for Dialect {_testKey.Dialect}, RelationalMappingVersion {_testKey.RelationalMappingVersion}",
                     null
                 ),
             ];
@@ -238,17 +238,17 @@ public class Given_MappingSetProvider
             [
                 new(
                     LogLevel.Information,
-                    $"Mapping pack not found for EffectiveSchemaHash {_testKey.EffectiveSchemaHash}, Dialect {_testKey.Dialect}; falling back to runtime compilation",
+                    $"Mapping pack not found for Dialect {_testKey.Dialect}; falling back to runtime compilation",
                     null
                 ),
                 new(
                     LogLevel.Information,
-                    $"Compiling runtime mapping set for EffectiveSchemaHash {_testKey.EffectiveSchemaHash}, Dialect {_testKey.Dialect}, RelationalMappingVersion {_testKey.RelationalMappingVersion}",
+                    $"Compiling runtime mapping set for Dialect {_testKey.Dialect}, RelationalMappingVersion {_testKey.RelationalMappingVersion}",
                     null
                 ),
                 new(
                     LogLevel.Information,
-                    $"Runtime mapping set compiled successfully for EffectiveSchemaHash {_testKey.EffectiveSchemaHash}, Dialect {_testKey.Dialect}, RelationalMappingVersion {_testKey.RelationalMappingVersion}",
+                    $"Runtime mapping set compiled successfully for Dialect {_testKey.Dialect}, RelationalMappingVersion {_testKey.RelationalMappingVersion}",
                     null
                 ),
             ];
@@ -281,7 +281,7 @@ public class Given_MappingSetProvider
                 .ContainSingle(record =>
                     record.Level == LogLevel.Warning
                     && record.Message
-                        == $"Mapping pack required but not found for EffectiveSchemaHash {_testKey.EffectiveSchemaHash}, Dialect {_testKey.Dialect}, RelationalMappingVersion {_testKey.RelationalMappingVersion}"
+                        == $"Mapping pack required but not found for Dialect {_testKey.Dialect}, RelationalMappingVersion {_testKey.RelationalMappingVersion}"
                 );
         }
 
@@ -346,7 +346,7 @@ public class Given_MappingSetProvider
                 .ContainSingle(record =>
                     record.Level == LogLevel.Warning
                     && record.Message
-                        == $"Mapping pack not found and runtime compilation fallback is disabled for EffectiveSchemaHash {_testKey.EffectiveSchemaHash}, Dialect {_testKey.Dialect}"
+                        == $"Mapping pack not found and runtime compilation fallback is disabled for Dialect {_testKey.Dialect}"
                 );
         }
     }

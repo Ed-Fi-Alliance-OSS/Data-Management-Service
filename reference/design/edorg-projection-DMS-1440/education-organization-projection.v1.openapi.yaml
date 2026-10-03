@@ -683,7 +683,9 @@ components:
       x-ed-fi-cms-classification: { category: Permanent, code: TargetSchemaIncompatible }
       description: >-
         The database's schema fingerprint does not match this deployment, or reading the
-        projection failed on a missing or incompatible schema object or column type.
+        projection failed on a missing or incompatible schema object or column type. A
+        fingerprint verdict is kept for the life of the process; after repairing the
+        database under the same connection string, restart every affected DMS replica.
       allOf:
         - $ref: '#/components/schemas/FixedProblem'
         - properties:
@@ -778,7 +780,8 @@ components:
       x-ed-fi-cms-classification: { category: Transient, code: ServiceUnavailable }
       description: >-
         The tenant or data store catalog could not be loaded from the Configuration
-        Service, or the request was shed.
+        Service, including when the tenant's catalog holds a connection string that
+        cannot be decrypted, or the request was shed.
       allOf:
         - $ref: '#/components/schemas/FixedProblem'
         - properties:
@@ -789,8 +792,9 @@ components:
     ServiceConfigurationErrorProblem:
       x-ed-fi-cms-classification: { category: Transient, code: ServiceUnavailable }
       description: >-
-        The data store's connection string is missing or cannot be decrypted. Used only
-        for connection configuration; a failure to read the schema fingerprint is
+        The data store has no connection string. Used only for connection
+        configuration; an undecryptable connection string fails the catalog load
+        (`service-unavailable`), and a failure to read the schema fingerprint is
         `target-unavailable`.
       allOf:
         - $ref: '#/components/schemas/FixedProblem'
@@ -801,7 +805,10 @@ components:
             detail: { const: "The data store's database connection is not configured." }
     DatabaseNotProvisionedProblem:
       x-ed-fi-cms-classification: { category: Transient, code: ServiceUnavailable }
-      description: The data store's database has no schema fingerprint row yet.
+      description: >-
+        The data store's database has no schema fingerprint row. DMS keeps this verdict
+        for the life of the process; after provisioning the database under the same
+        connection string, restart every affected DMS replica.
       allOf:
         - $ref: '#/components/schemas/FixedProblem'
         - properties:

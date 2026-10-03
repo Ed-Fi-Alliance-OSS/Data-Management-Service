@@ -198,11 +198,15 @@ internal sealed class IdentityTenantSnapshot(
         catch (Exception ex)
         {
             Volatile.Write(ref _lastFailure, new FailureRecord(timeProvider.GetUtcNow()));
+            // The exception's type only: the catalog failure it wraps quotes the Configuration Service
+            // response, so the exception object never reaches the logger.
+#pragma warning disable S6667 // Deliberate: the exception object is withheld so nothing it carries reaches the log
             logger.LogError(
-                ex,
-                "Identity tenant snapshot refresh failed; callers are answered from the snapshot while it is fresh and as unavailable otherwise, and no refresh starts for {CooldownSeconds}s",
+                "Identity tenant snapshot refresh failed with {ExceptionType}; callers are answered from the snapshot while it is fresh and as unavailable otherwise, and no refresh starts for {CooldownSeconds}s",
+                ex.GetType().Name,
                 FailureCooldown.TotalSeconds
             );
+#pragma warning restore S6667
             return false;
         }
     }

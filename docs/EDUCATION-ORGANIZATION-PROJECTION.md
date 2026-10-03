@@ -337,8 +337,8 @@ by their last segment.
 | 429 | `urn:ed-fi:api:too-many-requests` | Rate limited | Retry later |
 | 500 | `urn:ed-fi:api:system:configuration:security` | The service claim is granted with the wrong authorization strategy | Fix the claim set |
 | 500 | `urn:ed-fi:api:system` | The deployment's configuration is invalid | Retry later |
-| 503 | `urn:ed-fi:api:service-unavailable` | The tenant or data store catalog could not be loaded | Retry later |
-| 503 | `urn:ed-fi:api:service-configuration-error` | The data store's connection string is missing or cannot be decrypted (connection configuration only) | Retry later |
+| 503 | `urn:ed-fi:api:service-unavailable` | The tenant or data store catalog could not be loaded, including when the tenant's catalog holds a connection string that cannot be decrypted | Retry later |
+| 503 | `urn:ed-fi:api:service-configuration-error` | The data store has no connection string (connection configuration only) | Retry later |
 | 503 | `urn:ed-fi:api:database-not-provisioned` | The data store's database has not been provisioned | Retry later |
 | 503 | `target-unavailable` | The database could not be reached, its schema fingerprint could not be read, or it did not complete the read | Retry later |
 
@@ -347,6 +347,13 @@ read. Every other 409 is permanent for the data store as it stands. A 500
 caused by an unexpected exception keeps the existing DMS body
 `{"message": "...", "traceId": "..."}`, served as `application/json`; treat it
 like any other 500. A 429 or 503 may carry `Retry-After`.
+
+DMS caches a database's schema fingerprint verdict per connection string for the
+life of the process, including the negative verdicts behind
+`database-not-provisioned` and `target-schema-incompatible`. After a database is
+provisioned or repaired under the same connection string, restart every affected
+DMS replica: retrying from the Configuration Service alone cannot clear a cached
+negative verdict.
 
 ### Fixed titles and details
 

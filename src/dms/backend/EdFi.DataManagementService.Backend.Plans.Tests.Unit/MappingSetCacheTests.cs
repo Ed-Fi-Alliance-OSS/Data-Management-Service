@@ -248,7 +248,7 @@ public class Given_MappingSetCache
     }
 
     [Test]
-    public async Task It_should_log_cache_hits_with_the_mapping_set_key()
+    public async Task It_should_log_cache_hits_with_the_dialect_and_never_the_hash()
     {
         var key = CreateMappingSetKey(new string('h', 64), SqlDialect.Pgsql, "v1");
         var compiledMappingSet = CreateMappingSet(key);
@@ -264,9 +264,9 @@ public class Given_MappingSetCache
             .Records.Should()
             .ContainSingle(record =>
                 record.Level == LogLevel.Debug
-                && record.Message
-                    == $"Mapping set cache hit for EffectiveSchemaHash {key.EffectiveSchemaHash}, Dialect {key.Dialect}"
+                && record.Message == $"Mapping set cache hit for Dialect {key.Dialect}"
             );
+        logger.Records.Should().NotContain(record => record.Message.Contains(key.EffectiveSchemaHash));
     }
 
     [Test]
