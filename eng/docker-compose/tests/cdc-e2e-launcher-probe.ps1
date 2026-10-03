@@ -16,7 +16,7 @@ $script:reject = $RejectConfiguration.IsPresent
 function global:docker {
     $arguments = @($args | ForEach-Object { $_ })
     $global:LASTEXITCODE = 0
-    if ($arguments[0] -eq 'network' -and $arguments[1] -eq 'ls') { return 'existing-network' }
+    if ($arguments[0] -eq 'network' -and $arguments[1] -eq 'ls') { return @('bridge', 'dms') }
     if ($arguments[0] -eq 'ps') { return 'selected-http-host' }
     if ($arguments[0] -eq 'inspect') {
         return ConvertTo-Json -Depth 20 -InputObject @(@{
