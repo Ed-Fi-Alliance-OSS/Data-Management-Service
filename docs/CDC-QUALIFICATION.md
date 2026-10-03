@@ -146,6 +146,14 @@ Compose persistence qualification starts with newly provisioned Kafka volumes. T
 
 Workflow journal version 2 retains its creation-time purpose before CREATE DATABASE. Ordinary managed provisioning defaults to `SourceHistoryOnly`; the offline CDC bootstrap selects `InitialCdcProvisioning` after ownership checks. Purpose cannot be changed on retry. Journals with missing purpose or an older version fail closed; surviving databases cannot gain initial CDC eligibility through a state upgrade.
 
+## Kafka Connect fixture readiness recovery
+
+Before scenario assertions, the pinned-image fixture polls Kafka Connect REST readiness for up to 90 seconds. If that readiness window expires, it retains structured failure evidence, removes and recreates only the Connect container once, reads its mapped endpoint again, and allows one more 90-second readiness window within the caller's existing overall cancellation budget. Provider and broker preparation are not replayed. Docker launch failures retain their separate port-conflict policy; unrelated exceptions, caller cancellation, failed evidence retention/removal, a second readiness timeout, and `CDC_CONNECTOR_TEMPLATE_KEEP_CONTAINERS=true` stop recovery. Test assertions are never retried.
+
+`admission-evidence-connect-readiness-*.json` retains both timeouts when recovery fails, or the first timeout plus a `Recovered` event when replacement readiness succeeds. Evidence includes probe count, last HTTP status/failure category, allowlisted container state, and a bounded log-tail digest with fixed exception/error markers. Arbitrary log prose, configuration and credentials are not published; these signals do not establish an unknown underlying cause. Diagnostic collection is bounded to five seconds and explicitly records unavailable logs/state.
+
+`qualification.json` and the CI step summary report `ConnectReadinessFailures` and `ConnectReadinessRecoveries`. The Admission suites for both providers inject one readiness timeout and verify real Docker inspection, recreation, replacement HTTP readiness, and cleanup. Their `ConnectReadinessInjectedFailures` and `ConnectReadinessInjectedRecoveries` remain separate from observed infrastructure failures.
+
 ## SQL Server fixture startup recovery and diagnostics
 
 Before database provisioning or scenario work, the controller fixture permits one SQL Server container recreation for either the exact LSA initialization timeout signature or the observed startup signature `Reason: 0x00000002` / `Last errno: 11`. Both require an exited container with exit code 1, complete available log evidence, no Docker OOM kill, and no memory, address-mapping, SQL-error, or signal markers. Reason 2 / errno 11 is an observed CI failure pattern, not a confirmed diagnosis or Microsoft fix.
