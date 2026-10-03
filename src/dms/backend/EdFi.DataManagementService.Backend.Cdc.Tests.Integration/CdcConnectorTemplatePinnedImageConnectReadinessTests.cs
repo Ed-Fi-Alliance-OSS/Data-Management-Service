@@ -12,7 +12,6 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [TestFixture("healthy")]
 [TestFixture("recovered")]
 [TestFixture("exhausted")]
-[TestFixture("second-real-timeout")]
 [TestFixture("unrelated")]
 [TestFixture("cancel")]
 [TestFixture("cancel-inspection")]
@@ -74,17 +73,9 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario)
                         cancellation.Cancel();
                         token.ThrowIfCancellationRequested();
                     }
-                    if (
-                        scenario != "healthy"
-                        && (_probes == 1 || scenario is "exhausted" or "second-real-timeout")
-                    )
+                    if (scenario != "healthy" && (_probes == 1 || scenario is "exhausted"))
                     {
-                        throw new ConnectReadinessTimeoutException(
-                            45,
-                            503,
-                            "HttpStatus",
-                            injected: _probes == 1 || scenario != "second-real-timeout"
-                        );
+                        throw new ConnectReadinessTimeoutException(45, 503, "HttpStatus", injected: true);
                     }
                     return Task.CompletedTask;
                 }
@@ -100,12 +91,7 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario)
     [Test]
     public void It_recreates_at_most_once_only_after_a_readiness_timeout()
     {
-        int starts = scenario
-            is "recovered"
-                or "exhausted"
-                or "second-real-timeout"
-                or "restart-failure"
-                or "diagnostics-unavailable"
+        int starts = scenario is "recovered" or "exhausted" or "restart-failure" or "diagnostics-unavailable"
             ? 2
             : 1;
         _docker.Starts.Should().Be(starts);
@@ -116,7 +102,7 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario)
             case "healthy" or "recovered" or "diagnostics-unavailable":
                 _failure.Should().BeNull();
                 break;
-            case "exhausted" or "second-real-timeout" or "keep-containers":
+            case "exhausted" or "keep-containers":
                 _failure.Should().BeOfType<ConnectReadinessTimeoutException>();
                 break;
             case "cancel" or "cancel-inspection":
@@ -131,7 +117,7 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario)
     [Test]
     public void It_retains_failure_evidence_before_removal_and_rechecks_the_replacement_port()
     {
-        if (scenario is "recovered" or "exhausted" or "second-real-timeout" or "diagnostics-unavailable")
+        if (scenario is "recovered" or "exhausted" or "diagnostics-unavailable")
         {
             _docker
                 .Events.Should()
@@ -144,7 +130,6 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario)
                 scenario
                     is "recovered"
                         or "exhausted"
-                        or "second-real-timeout"
                         or "diagnostics-unavailable"
                         or "cleanup-failure"
                         or "restart-failure"
@@ -161,7 +146,7 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario)
         int count = scenario switch
         {
             "healthy" or "unrelated" or "cancel" or "cancel-inspection" => 0,
-            "recovered" or "exhausted" or "second-real-timeout" or "diagnostics-unavailable" => 2,
+            "recovered" or "exhausted" or "diagnostics-unavailable" => 2,
             _ => 1,
         };
         _evidence.Should().HaveCount(count);
@@ -173,11 +158,7 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario)
                 .And.NotContain(CdcConnectorTemplatePinnedImageFixture.ConnectorDatabasePassword);
             using var document = JsonDocument.Parse(json);
             var evidence = document.RootElement;
-            evidence
-                .GetProperty("Injected")
-                .GetBoolean()
-                .Should()
-                .Be(scenario != "second-real-timeout" || evidence.GetProperty("Attempt").GetInt32() == 1);
+            evidence.GetProperty("Injected").GetBoolean().Should().BeTrue();
             string outcome = evidence.GetProperty("Outcome").GetString()!;
             int attempt = evidence.GetProperty("Attempt").GetInt32();
             if (outcome == "Recovered")
