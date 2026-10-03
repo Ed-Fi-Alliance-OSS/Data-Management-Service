@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Buffers.Text;
+using System.Text;
 using EdFi.DataManagementService.Core.EducationOrganizationProjection;
 using FluentAssertions;
 using NUnit.Framework;
@@ -243,5 +244,93 @@ public class Given_The_Projection_Digest_Golden_Vectors
 
         field.Should().HaveLength(43).And.NotContain("=");
         Base64Url.DecodeFromChars(field).Should().Equal(digest);
+    }
+}
+
+/// <summary>
+/// A name that is not well-formed UTF-16 must fail the digest rather than be replaced by U+FFFD,
+/// because replacement would give two different malformed names identical canonical bytes.
+/// </summary>
+[TestFixture]
+[Parallelizable]
+public class Given_A_Name_That_Is_Not_Well_Formed_Utf16
+{
+    private const char HighSurrogate = '\uD83D';
+    private const char LowSurrogate = '\uDE00';
+
+    /// <summary>
+    /// Built at run time: a lone surrogate in an attribute argument is stored as UTF-8 and would reach
+    /// the test already replaced by U+FFFD.
+    /// </summary>
+    private static IEnumerable<TestCaseData> MalformedNames()
+    {
+        (string Label, string Value)[] values =
+        [
+            ("a_lone_high_surrogate", $"A{HighSurrogate}B"),
+            ("a_lone_low_surrogate", $"A{LowSurrogate}B"),
+            ("a_trailing_high_surrogate", $"AB{HighSurrogate}"),
+            ("a_leading_low_surrogate", $"{LowSurrogate}AB"),
+            ("a_reversed_surrogate_pair", $"{LowSurrogate}{HighSurrogate}"),
+        ];
+
+        foreach ((string label, string value) in values)
+        {
+            yield return new TestCaseData(value, false).SetName($"It_rejects_{label}_in_the_name");
+            yield return new TestCaseData(value, true).SetName($"It_rejects_{label}_in_the_short_name");
+        }
+    }
+
+    private static ProjectionItem[] ItemsWith(string malformed, bool inShortName) =>
+        [
+            new(1, ProjectionItemKind.StateEducationAgency, "Valid", null, null),
+            inShortName
+                ? new(2, ProjectionItemKind.School, "Valid", malformed, 1)
+                : new(2, ProjectionItemKind.School, malformed, "Valid", 1),
+        ];
+
+    [TestCaseSource(nameof(MalformedNames))]
+    public void It_fails_the_digest(string malformed, bool inShortName)
+    {
+        ProjectionItem[] items = ItemsWith(malformed, inShortName);
+
+        Action compute = () => ProjectionDigest.Compute(items);
+
+        compute.Should().Throw<EncoderFallbackException>();
+    }
+
+    [TestCaseSource(nameof(MalformedNames))]
+    public void It_fails_the_canonical_text(string malformed, bool inShortName)
+    {
+        ProjectionItem[] items = ItemsWith(malformed, inShortName);
+
+        Action canonicalText = () => ProjectionDigest.CanonicalText(items);
+
+        canonicalText.Should().Throw<EncoderFallbackException>();
+    }
+
+    [Test]
+    public void It_still_digests_a_well_formed_surrogate_pair()
+    {
+        string pair = new([HighSurrogate, LowSurrogate]);
+
+        ProjectionDigest
+            .CanonicalText([new ProjectionItem(3, ProjectionItemKind.School, pair, null, null)])
+            .Should()
+            .Be($"edorg-projection-digest:v1\n1\n3;SCH;4:{pair};-;-\n");
+    }
+
+    [Test]
+    public void It_digests_a_literal_replacement_character_as_three_utf8_bytes()
+    {
+        ProjectionItem[] items = [new(9, ProjectionItemKind.School, "A\uFFFDB", "\uFFFD", null)];
+
+        ProjectionDigest
+            .CanonicalText(items)
+            .Should()
+            .Be("edorg-projection-digest:v1\n1\n9;SCH;5:A\uFFFDB;3:\uFFFD;-\n");
+        Convert
+            .ToHexStringLower(ProjectionDigest.Compute(items))
+            .Should()
+            .Be("5b37236081226e6c166caddd4ebbdce8b811eb629d7291fdbc00e0227c5d8250");
     }
 }

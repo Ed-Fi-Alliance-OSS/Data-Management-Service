@@ -124,19 +124,26 @@ public class Given_The_Projection_Cursor_Codec
         decoded.Should().Be(cursor);
     }
 
-    [Test]
-    public void It_accepts_the_correctly_padded_form_of_an_issued_cursor()
+    /// <summary>
+    /// A projection cursor has one representation, so even correct padding is refused. The payload
+    /// lengths are chosen so the padded forms need one and two <c>=</c> characters respectively, and
+    /// the unpadded form of each is accepted, so the rejection is attributable to the padding alone.
+    /// </summary>
+    [TestCase("123", "=", TestName = "It_rejects_a_cursor_with_correct_one_character_padding")]
+    [TestCase("12", "==", TestName = "It_rejects_a_cursor_with_correct_two_character_padding")]
+    public void It_rejects_padding_even_when_correct(string lastId, string padding)
     {
-        // A 97-byte payload is not a multiple of three bytes, so its base64url form needs padding.
         string cursor = ProjectionCursorFixtures.CursorFor(
-            ProjectionCursorFixtures.ValidPayload(lastId: "12")
+            ProjectionCursorFixtures.ValidPayload(lastId: lastId)
         );
-        (cursor.Length % 4).Should().NotBe(0, "the case needs a cursor whose padded form differs");
-        string padded = cursor + new string('=', 4 - (cursor.Length % 4));
+        (cursor.Length % 4)
+            .Should()
+            .Be(4 - padding.Length, "the padding under test must be the correct padding");
+        ProjectionCursorCodec.TryDecode(cursor, out _).Should().BeTrue();
 
-        ProjectionCursorCodec.TryDecode(padded, out ProjectionCursor? decoded).Should().BeTrue();
+        ProjectionCursorCodec.TryDecode(cursor + padding, out ProjectionCursor? decoded).Should().BeFalse();
 
-        decoded!.LastEducationOrganizationId.Should().Be(12);
+        decoded.Should().BeNull();
     }
 
     [TestCase(0)]
@@ -177,7 +184,7 @@ public class Given_The_Projection_Cursor_Codec
 }
 
 /// <summary>
-/// The decoder accepts exactly the forms the encoder writes (plus correct padding). Each case
+/// The decoder accepts exactly the unpadded form the encoder writes. Each case
 /// changes one thing about an otherwise valid cursor, so a passing rejection is attributable to
 /// that one change.
 /// </summary>
@@ -214,7 +221,7 @@ public class Given_The_Projection_Cursor_Codec_Strict_Decoding
     [TestCase("MSwz+zg4", TestName = "It_rejects_the_plus_character")]
     [TestCase("MSwz/zg4", TestName = "It_rejects_the_slash_character")]
     [TestCase("MSwzN", TestName = "It_rejects_an_impossible_base64url_length")]
-    [TestCase("MSw==", TestName = "It_rejects_more_padding_than_the_length_needs")]
+    [TestCase("MSw==", TestName = "It_rejects_excess_padding")]
     [TestCase("MSwzNw=", TestName = "It_rejects_short_padding")]
     [TestCase("_w", TestName = "It_rejects_invalid_utf8")]
     public void It_rejects_malformed_transport_text(string? cursor)

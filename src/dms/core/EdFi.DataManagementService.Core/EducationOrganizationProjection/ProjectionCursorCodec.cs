@@ -21,11 +21,13 @@ namespace EdFi.DataManagementService.Core.EducationOrganizationProjection;
 /// The cursor is not signed: altering it can only move the position or fail the digest check
 /// within a set the caller is already authorized to read in full.
 /// <para>
-/// Decoding follows the <see cref="Paging.PageTokenCodec"/> conventions — correctly padded or
-/// unpadded base64url, strict UTF-8 — and is stricter about the fields: every field must be in the
-/// one form the encoder writes, so <c>+1</c>, <c>01</c> and <c>-0</c> are refused rather than read as
-/// the number they resemble. Accepting forms the encoder never emits would create an input surface
-/// that could not later be narrowed.
+/// Decoding accepts exactly one representation of a cursor: the unpadded base64url text the
+/// encoder emits, in strict UTF-8, with every field in the one form the encoder writes. Padding is
+/// refused even when correct, and <c>+1</c>, <c>01</c> and <c>-0</c> are refused rather than read as
+/// the number they resemble. This is stricter than <see cref="Paging.PageTokenCodec"/>, which keeps
+/// accepting padded page tokens for compatibility; a projection cursor is a new contract, so there
+/// is no earlier form to stay compatible with, and accepting forms the encoder never emits would
+/// create an input surface that could not later be narrowed.
 /// </para>
 /// </remarks>
 internal static class ProjectionCursorCodec
@@ -36,7 +38,6 @@ internal static class ProjectionCursorCodec
     private const string FormatVersion = "1";
     private const char FieldSeparator = ',';
     private const int FieldCount = 6;
-    private const char PaddingCharacter = '=';
     private const int BindingHashLength = 32;
 
     private static readonly int _digestFieldLength = Base64Url.GetEncodedLength(ProjectionDigest.ByteLength);
@@ -247,36 +248,15 @@ internal static class ProjectionCursorCodec
             return false;
         }
 
-        int paddingLength = 0;
-        while (paddingLength < text.Length && text[text.Length - 1 - paddingLength] == PaddingCharacter)
-        {
-            paddingLength++;
-        }
-
-        int unpaddedLength = text.Length - paddingLength;
-
-        if (unpaddedLength == 0 || !IsBase64UrlAlphabet(text.AsSpan(0, unpaddedLength)))
+        // The alphabet check also refuses '=', so padding is rejected wherever it appears.
+        if (!IsBase64UrlAlphabet(text) || text.Length % 4 == 1)
         {
             return false;
         }
 
-        int lengthRemainder = unpaddedLength % 4;
+        byte[] payloadBytes = new byte[Base64Url.GetMaxDecodedLength(text.Length)];
 
-        if (lengthRemainder == 1)
-        {
-            return false;
-        }
-
-        int requiredPaddingLength = lengthRemainder == 0 ? 0 : 4 - lengthRemainder;
-
-        if (paddingLength != 0 && paddingLength != requiredPaddingLength)
-        {
-            return false;
-        }
-
-        byte[] payloadBytes = new byte[Base64Url.GetMaxDecodedLength(unpaddedLength)];
-
-        if (!TryDecodeBase64Url(text.AsSpan(0, unpaddedLength), payloadBytes, out int payloadLength))
+        if (!TryDecodeBase64Url(text, payloadBytes, out int payloadLength))
         {
             return false;
         }
@@ -312,7 +292,7 @@ internal static class ProjectionCursorCodec
     }
 
     /// <summary>
-    /// Also rejects <c>+</c>, <c>/</c>, whitespace and padding anywhere but the trailing run.
+    /// Also rejects <c>+</c>, <c>/</c>, whitespace and the padding character <c>=</c>.
     /// </summary>
     private static bool IsBase64UrlAlphabet(ReadOnlySpan<char> text)
     {

@@ -107,6 +107,8 @@ public abstract class ParseEducationOrganizationProjectionRequestMiddlewareTests
         NextCalled.Should().BeFalse();
         RequestInfo.EducationOrganizationProjectionRequest.Should().BeNull();
         RequestInfo.FrontendResponse.StatusCode.Should().Be(status);
+        // The Configuration Service reads the problem type only from this media type.
+        RequestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
         Body["type"]!.GetValue<string>().Should().Be(type);
     }
 

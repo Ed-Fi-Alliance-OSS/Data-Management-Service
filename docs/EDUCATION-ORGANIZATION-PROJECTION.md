@@ -242,7 +242,9 @@ school `900001` has no LEA.
 ## Cursor
 
 `cursor` is opaque: clients send `nextCursor` back verbatim and never construct,
-parse or change it. A cursor is bound to the data store, tenant, route
+parse or change it. Only the exact text DMS issued is accepted; a re-encoded
+form, including one with base64 padding added, is rejected with
+`400 invalid-cursor`. A cursor is bound to the data store, tenant, route
 qualifiers and contract version of the read that produced it, and expires
 `CursorLifetimeMinutes` (default 60) after the read's first page, however many
 pages follow. A cursor that does not decode, does not match the request, has
@@ -284,7 +286,9 @@ The set is rejected with `409 projection-data-invalid` when:
   | Education service center's state education agency | `edfi.StateEducationAgency` |
 
 - the parent local education agency links form a cycle, including a local
-  education agency that names itself.
+  education agency that names itself;
+- a `nameOfInstitution` or `shortNameOfInstitution` is not well-formed text
+  (it contains an unpaired UTF-16 surrogate).
 
 `parentId` is then chosen as follows. It is never the item's own id and, when
 not `null`, is always the id of another item in the set.

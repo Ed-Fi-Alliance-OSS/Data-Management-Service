@@ -71,7 +71,8 @@ info:
     ## Cursor
 
     `cursor` is opaque. Clients send `nextCursor` back verbatim and never construct,
-    parse or modify it. It is bound to the data store, tenant, route qualifiers and
+    parse or modify it. Only the exact text DMS issued is accepted; a re-encoded form,
+    including one with base64 padding added, is rejected with `400 invalid-cursor`. It is bound to the data store, tenant, route qualifiers and
     contract version of the read that produced it, and it expires
     `CursorLifetimeMinutes` (default 60) after the read's first page. A cursor that does
     not decode, does not match the request, has expired, or is dated more than 60 seconds in the future is
@@ -85,8 +86,9 @@ info:
     The whole set is validated on every page, before the digest is compared and before
     the page is sliced. A set with a duplicate identifier, a populated reference that does
     not resolve to an education organization of the expected type (including references
-    that do not become the parent), or a cycle through parent local education agencies
-    (including a self-reference) is rejected with `409 projection-data-invalid`. The
+    that do not become the parent), a cycle through parent local education agencies
+    (including a self-reference), or a name that is not well-formed text (an unpaired
+    UTF-16 surrogate) is rejected with `409 projection-data-invalid`. The
     parent is chosen as follows:
 
     | Type | `parentId` |
@@ -404,8 +406,8 @@ components:
       in: query
       required: false
       description: >-
-        The `nextCursor` value from the previous page of this read, sent verbatim. Omitted
-        on the first page. Opaque; see the document description. Must not be repeated.
+        The `nextCursor` value from the previous page of this read, sent verbatim (a
+        re-encoded or padded form is rejected). Omitted on the first page. Opaque; see the document description. Must not be repeated.
       schema:
         type: string
         minLength: 1
@@ -710,8 +712,9 @@ components:
       x-ed-fi-cms-classification: { category: Permanent, code: DataInvalid }
       description: >-
         The set has a duplicate identifier, a populated reference that does not resolve to
-        an education organization of the expected type, or a parent local education agency
-        cycle. Detected anywhere in the set, not only in the requested page.
+        an education organization of the expected type, a parent local education agency
+        cycle, or a name that is not well-formed text. Detected anywhere in the set, not
+        only in the requested page.
       allOf:
         - $ref: '#/components/schemas/FixedProblem'
         - properties:

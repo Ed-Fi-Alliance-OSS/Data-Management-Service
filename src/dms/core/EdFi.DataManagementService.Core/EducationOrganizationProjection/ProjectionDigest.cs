@@ -23,6 +23,14 @@ namespace EdFi.DataManagementService.Core.EducationOrganizationProjection;
 /// <c>:</c> and line breaks inside names unambiguous. Changing any of this changes every digest, so
 /// every cursor in flight would answer <c>projection-changed</c> once; a format change needs a new
 /// header version.
+/// <para>
+/// Encoding is strict: a string that is not well-formed UTF-16 (a lone high or low surrogate) throws
+/// <see cref="EncoderFallbackException"/> rather than being replaced by U+FFFD. Replacement would give
+/// different malformed names identical canonical bytes, so a change between them would not change
+/// the digest and a walk could mix two states without a SHA-256 collision. Set validation rejects
+/// malformed names as <c>projection-data-invalid</c> before hashing; the exception is the backstop
+/// should one ever reach this class.
+/// </para>
 /// </remarks>
 internal static class ProjectionDigest
 {
@@ -33,16 +41,22 @@ internal static class ProjectionDigest
     private const char FieldSeparator = ';';
     private const string NullField = "-";
 
+    private static readonly UTF8Encoding _strictUtf8 = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true
+    );
+
     /// <summary>
     /// Computes the digest of a set. Items are hashed in ascending id order whatever order they are
     /// supplied in.
     /// </summary>
+    /// <exception cref="EncoderFallbackException">A name is not well-formed UTF-16.</exception>
     public static byte[] Compute(IReadOnlyCollection<ProjectionItem> items)
     {
         ArgumentNullException.ThrowIfNull(items);
 
         using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        WriteCanonicalLines(items, line => hash.AppendData(Encoding.UTF8.GetBytes(line)));
+        WriteCanonicalLines(items, line => hash.AppendData(_strictUtf8.GetBytes(line)));
         return hash.GetHashAndReset();
     }
 
@@ -111,7 +125,7 @@ internal static class ProjectionDigest
     private static string LengthPrefixed(string? value) =>
         value is null
             ? NullField
-            : Encoding.UTF8.GetByteCount(value).ToString(CultureInfo.InvariantCulture) + ":" + value;
+            : _strictUtf8.GetByteCount(value).ToString(CultureInfo.InvariantCulture) + ":" + value;
 
     private static string Tag(ProjectionItemKind kind) =>
         kind switch

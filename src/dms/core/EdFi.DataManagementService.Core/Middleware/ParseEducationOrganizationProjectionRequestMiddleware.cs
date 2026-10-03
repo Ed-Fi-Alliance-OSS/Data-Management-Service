@@ -198,11 +198,20 @@ internal class ParseEducationOrganizationProjectionRequestMiddleware(
     private static bool TryParsePositiveInt32(string? text, out int value) =>
         int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out value) && value > 0;
 
+    /// <summary>
+    /// Every failure this step writes is a problem document. The media type is part of the contract:
+    /// the Configuration Service reads a problem <c>type</c> only from
+    /// <c>application/problem+json</c>, so the <see cref="FrontendResponse"/> default of
+    /// <c>application/json</c> would hide the type it classifies on.
+    /// </summary>
+    private const string ProblemContentType = "application/problem+json";
+
     private static FrontendResponse ParameterValidationFailed(string[] errors, FrontendRequest request) =>
         new(
             StatusCode: 400,
             Body: FailureResponse.ForParameterValidation(errors, request.TraceId),
-            Headers: []
+            Headers: [],
+            ContentType: ProblemContentType
         );
 
     private static FrontendResponse ProjectionProblem(
@@ -212,6 +221,7 @@ internal class ParseEducationOrganizationProjectionRequestMiddleware(
         new(
             StatusCode: problem.Status,
             Body: FailureResponse.ForEducationOrganizationProjection(problem, request.TraceId),
-            Headers: []
+            Headers: [],
+            ContentType: ProblemContentType
         );
 }
