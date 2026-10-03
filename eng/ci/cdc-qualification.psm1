@@ -6,6 +6,7 @@
 Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot 'cdc-api-e2e.ps1')
 . (Join-Path $PSScriptRoot 'cdc-api-diagnostics.ps1')
+. (Join-Path $PSScriptRoot 'cdc-runbook-diagnostics.ps1')
 
 function Invoke-CdcQualificationImagePull {
     <# .SYNOPSIS
@@ -104,7 +105,9 @@ function Get-CdcQualificationReport {
     $startupFailures = 0; $startupRecoveries = 0
     $injectedFailures = 0; $injectedRecoveries = 0
     $signatures = @{}
-    foreach ($file in Get-ChildItem -LiteralPath (Split-Path -Parent $Path) -Filter 'admission-evidence-sql-*.json' -Recurse) {
+    # VSTest also copies attachments into its result hierarchy. The fixture assigns
+    # each event a GUID filename; count that event once, not once per retained copy.
+    foreach ($file in Get-ChildItem -LiteralPath (Split-Path -Parent $Path) -Filter 'admission-evidence-sql-*.json' -Recurse | Sort-Object -Property Name -Unique) {
         $evidence = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json -AsHashtable
         if ($evidence.Stage -eq 'unprovisioned-sql-startup') {
             if ($evidence['Container']?['Logs']?['InjectedFailure'] -eq $true) { $injectedFailures++ }
@@ -120,12 +123,26 @@ function Get-CdcQualificationReport {
             else { $startupRecoveries++ }
         }
     }
+    $connectFailures = 0; $connectRecoveries = 0
+    $connectInjectedFailures = 0; $connectInjectedRecoveries = 0
+    foreach ($file in Get-ChildItem -LiteralPath (Split-Path -Parent $Path) -Filter 'admission-evidence-connect-readiness-*.json' -Recurse | Sort-Object -Property Name -Unique) {
+        $evidence = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json -AsHashtable
+        if ($evidence.Stage -ne 'connect-readiness') { continue }
+        if ($evidence.Outcome -eq 'TimedOut') {
+            if ($evidence.Injected -eq $true) { $connectInjectedFailures++ } else { $connectFailures++ }
+        }
+        elseif ($evidence.Outcome -eq 'Recovered') {
+            if ($evidence.Injected -eq $true) { $connectInjectedRecoveries++ } else { $connectRecoveries++ }
+        }
+    }
     return [ordered]@{
         Status = $status; Total = $results.Count; Passed = $passed; Failed = $failed
         Skipped = $skipped; EnvironmentFailures = $environmentFailures
         SqlStartupFailures = $startupFailures; SqlStartupRecoveries = $startupRecoveries
         SqlStartupInjectedFailures = $injectedFailures; SqlStartupInjectedRecoveries = $injectedRecoveries
         SqlStartupFailureSignatures = $signatures
+        ConnectReadinessFailures = $connectFailures; ConnectReadinessRecoveries = $connectRecoveries
+        ConnectReadinessInjectedFailures = $connectInjectedFailures; ConnectReadinessInjectedRecoveries = $connectInjectedRecoveries
         Diagnostics = @($results | Where-Object outcome -ne 'Passed' | ForEach-Object {
             [ordered]@{
                 TestId = $_.GetAttribute('testId')
@@ -232,20 +249,70 @@ function Export-CdcQualificationEvidence {
             continue
         }
         $value = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json -AsHashtable -NoEnumerate -Depth 100
-        if ($file.Name -like 'cdc-runbook-*') {
+        if ($file.Name -eq 'cdc-runbook-failures.json') {
+            $safeValue = @($value | Where-Object { $_ -is [Collections.IDictionary] } | ForEach-Object { ConvertTo-CdcRunbookDiagnostic $_ })
+        }
+        elseif ($file.Name -like 'cdc-runbook-e2e-setup-*') {
+            if ($file.Name -cnotmatch '^cdc-runbook-e2e-setup-[a-f0-9]{32}\.json$' -or
+                $value -isnot [Collections.IDictionary]) { continue }
+            $safeValue = [ordered]@{}
+            if ($value['operation'] -is [string] -and $value['operation'] -ceq 'e2e-setup') {
+                $safeValue.operation = $value['operation']
+            }
+            if ($value['succeeded'] -is [bool] -and -not $value['succeeded']) {
+                $safeValue.succeeded = $false
+            }
+            if ($value['cancelled'] -is [bool]) { $safeValue.cancelled = $value['cancelled'] }
+            if ($value['cleanup'] -is [string] -and $value['cleanup'] -cin @(
+                'NotStarted', 'Stopped', 'RetainedForGovernedTeardown', 'RetainedForReconciliation'
+            )) { $safeValue.cleanup = $value['cleanup'] }
+            if ($value['provider'] -is [string] -and $value['provider'] -cin @('postgresql', 'mssql')) {
+                $safeValue.provider = $value['provider']
+            }
+            if ($value['failureCodes'] -is [array]) {
+                $safeValue.failureCodes = @($value['failureCodes'] | Where-Object {
+                    $_ -is [string] -and $_ -cmatch '^(Request|WorkflowState|Projection|ProviderSetup|Kafka|Connect|Worker|Metrics|WriterPublication)/(InvalidInput|Unavailable|Timeout|AuthenticationFailed|Conflict|ValidationFailed)\z'
+                })
+            }
+        }
+        elseif ($file.Name -like 'cdc-runbook-*') {
             # Narrow procedure attachment schema. Never retain settings, command output or prose,
             # even innocuous-looking values missed by the general fixture redaction heuristic.
             $safeValue = @($value.Cases | ForEach-Object {
                 if ($_.TestId -cmatch '^CDC-DOC cdc-[a-z0-9-]+$' -and
                     $_.SnippetId -cmatch '^cdc-[a-z0-9-]+$' -and
                     $_.Outcome -cin @('Passed', 'NotPassed', 'Missing', 'Duplicate')) {
-                    [ordered]@{ TestId = $_.TestId; SnippetId = $_.SnippetId; Outcome = $_.Outcome }
+                    $case = [ordered]@{ TestId = $_.TestId; SnippetId = $_.SnippetId; Outcome = $_.Outcome }
+                    foreach ($field in @('Failures', 'Operations')) {
+                        if ($_.Contains($field)) {
+                            $case[$field] = @($_[$field] | Where-Object { $_ -is [Collections.IDictionary] } | ForEach-Object { ConvertTo-CdcRunbookDiagnostic $_ })
+                        }
+                    }
+                    $case
                 }
             })
         }
         else { $safeValue = ConvertTo-CdcSafeEvidence $value }
         ConvertTo-Json -InputObject $safeValue -Depth 100 |
             Set-Content -LiteralPath (Join-Path $Destination $file.Name)
+    }
+}
+
+function Export-CdcRunbookReport {
+    <# .SYNOPSIS
+    Exports sanitized runbook outcomes without replacing primary failures on export errors.
+    #>
+    param([Collections.IDictionary] $Report, [string] $RawDirectory, [string] $Destination, [string] $FileName)
+    try {
+        ConvertTo-Json -InputObject @($Report.Failures) -Depth 10 | Set-Content (Join-Path $RawDirectory 'cdc-runbook-failures.json') -ErrorAction Stop
+        $Report | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $RawDirectory $FileName) -ErrorAction Stop
+        Export-CdcQualificationEvidence -RawDirectory $RawDirectory -Destination $Destination
+    } catch {
+        # Keep Pester's original case/block failures; export is an independent failure.
+        $Report.Status = 'Failed'
+        $Report.ExportFailure = 'ExportFailed'
+        try { $_ | Out-String | Set-Content (Join-Path $RawDirectory 'export-private.log') -ErrorAction Stop }
+        catch { $null = $_ }
     }
 }
 
@@ -273,7 +340,17 @@ function Get-CdcRunbookPesterReport {
     <# .SYNOPSIS
     Requires named wrapper cases independently of discovery; exclusions cannot pass qualification.
     #>
-    param([object[]] $Tests, [ValidateSet('Contract', 'PostgresqlSetup', 'MssqlSetup', 'PostgresqlLifecycle', 'MssqlLifecycle')][string] $QualificationProfile = 'Contract')
+    param([object[]] $Tests, [ValidateSet('Contract', 'PostgresqlSetup', 'MssqlSetup', 'PostgresqlLifecycle', 'MssqlLifecycle')][string] $QualificationProfile = 'Contract',
+        $PesterResult, [string] $ProgressPath = '')
+    $progress = @{}
+    $collectionFailure = $false
+    if ($ProgressPath -and (Test-Path -LiteralPath $ProgressPath)) {
+        try {
+            $progress = Get-Content -LiteralPath $ProgressPath -Raw | ConvertFrom-Json -AsHashtable
+            if ($progress -isnot [Collections.IDictionary]) { throw 'Invalid private progress shape.' }
+        }
+        catch { $progress = @{}; $collectionFailure = $true }
+    }
     [string[]] $required = if ($QualificationProfile -in @('PostgresqlLifecycle', 'MssqlLifecycle')) { @('cdc-managed-start') } elseif ($QualificationProfile -eq 'PostgresqlSetup') { @('cdc-pg-bootstrap-local', 'cdc-pg-e2e-setup') } elseif ($QualificationProfile -eq 'MssqlSetup') { @('cdc-sqlserver-bootstrap-local', 'cdc-sqlserver-bootstrap-published', 'cdc-sqlserver-e2e-setup') } else { @(
         'cdc-pg-bootstrap-local', 'cdc-pg-bootstrap-published',
         'cdc-sqlserver-bootstrap-local', 'cdc-sqlserver-bootstrap-published',
@@ -283,14 +360,41 @@ function Get-CdcRunbookPesterReport {
     ) }
     $cases = @($required | ForEach-Object {
         $id = $_
-        $found = @($Tests | Where-Object ExpandedName -eq "CDC-DOC $id")
+        $found = @($Tests | Where-Object {
+            $_.ExpandedName -ceq "CDC-DOC $id" -or (
+                # BeforeEach/BeforeAll can fail before Pester expands <Id>. Use only
+                # the fixed template and the required case ID from discovery data.
+                $_.ExpandedName -ceq 'CDC-DOC <Id>' -and $_.Result -cne 'Passed' -and
+                $_.PSObject.Properties['Data'] -and $_.Data -is [Collections.IDictionary] -and $_.Data['Id'] -ceq $id
+            )
+        })
         $outcome = if ($found.Count -eq 0) { 'Missing' } elseif ($found.Count -ne 1) { 'Duplicate' }
         elseif ($found[0].Result -eq 'Passed') { 'Passed' } else { 'NotPassed' }
-        [ordered]@{ TestId = "CDC-DOC $id"; SnippetId = $id.Replace('-start-rejected', '-start'); Outcome = $outcome }
+        $case = [ordered]@{ TestId = "CDC-DOC $id"; SnippetId = $id.Replace('-start-rejected', '-start'); Outcome = $outcome }
+        if ($progress.Contains($id)) {
+            $case.Operations = @($progress[$id] | ForEach-Object { ConvertTo-CdcRunbookDiagnostic $_ })
+        }
+        if ($found.Count -eq 1 -and $found[0].PSObject.Properties['ErrorRecord']) {
+            $phase = if ($case.Contains('Operations') -and $case.Operations.Count) { $case.Operations[-1].Phase } else { 'Test' }
+            $case.Failures = @($found[0].ErrorRecord | ForEach-Object { Get-CdcRunbookErrorDiagnostic $_ -Phase $phase })
+        }
+        $case
     })
+    $failures = @(
+        if ($collectionFailure) { [ordered]@{ Phase = 'Export'; Category = 'CollectionFailed' } }
+        if ($progress.Contains('CollectionFailed')) { [ordered]@{ Phase = 'Export'; Category = 'CollectionFailed' } }
+        if ($null -ne $PesterResult) {
+            foreach ($container in @($PesterResult.Containers)) {
+                foreach ($record in @($container.ErrorRecord)) {
+                    if ($null -ne $record) { Get-CdcRunbookErrorDiagnostic $record -Category ContainerFailed -Phase Setup }
+                }
+                foreach ($block in @($container.Blocks)) { Get-CdcRunbookBlockFailure $block }
+            }
+        }
+    )
     $passed = @($cases | Where-Object Outcome -eq Passed).Count
-    return [ordered]@{ Name = $(if ($QualificationProfile -in @('PostgresqlLifecycle', 'MssqlLifecycle')) { $QualificationProfile.Replace('Lifecycle', '-runbook-lifecycle') } elseif ($QualificationProfile -eq 'PostgresqlSetup') { 'Postgresql-runbook-setup' } elseif ($QualificationProfile -eq 'MssqlSetup') { 'Mssql-runbook-setup' } else { 'runbook-wrappers' }); Status = $(if ($passed -eq $required.Count) { 'Passed' } else { 'Failed' });
-        Total = $required.Count; Passed = $passed; Failed = $required.Count - $passed; Skipped = 0; Cases = $cases }
+    return [ordered]@{ Name = $(if ($QualificationProfile -in @('PostgresqlLifecycle', 'MssqlLifecycle')) { $QualificationProfile.Replace('Lifecycle', '-runbook-lifecycle') } elseif ($QualificationProfile -eq 'PostgresqlSetup') { 'Postgresql-runbook-setup' } elseif ($QualificationProfile -eq 'MssqlSetup') { 'Mssql-runbook-setup' } else { 'runbook-wrappers' }); Status = $(if ($passed -eq $required.Count -and $failures.Count -eq 0) { 'Passed' } else { 'Failed' });
+        Total = $required.Count; Passed = $passed; Failed = $required.Count - $passed; Skipped = 0; Cases = $cases; Failures = $failures }
 }
 
 function Get-CdcRunbookCliReport {
@@ -463,4 +567,4 @@ function Get-CdcRequiredMethodReport {
         Total = $required.Count; Passed = $passed; Failed = $required.Count - $passed; Skipped = 0; Cases = $cases }
 }
 
-Export-ModuleMember -Function New-CdcApiRunnerReport, Get-CdcApiScenarioReport, Invoke-CdcApiQualification, Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Get-CdcQualificationProviderSuite, Get-CdcRunbookPesterReport, Get-CdcRunbookCliReport, Get-CdcRunbookLifecycleReport, Get-CdcRunbookRecoveryReport, Get-CdcRunbookRecordSizeReport, Get-CdcRunbookHistoryReport, Get-CdcRunbookTelemetryReport, Get-CdcRunbookKafkaReport, Get-CdcRunbookConsumerReport
+Export-ModuleMember -Function New-CdcApiRunnerReport, Get-CdcApiScenarioReport, Invoke-CdcApiQualification, Invoke-CdcQualificationImagePull, Get-CdcQualificationReport, Export-CdcQualificationEvidence, Export-CdcRunbookReport, Get-CdcQualificationProviderSuite, Get-CdcRunbookPesterReport, Get-CdcRunbookCliReport, Get-CdcRunbookLifecycleReport, Get-CdcRunbookRecoveryReport, Get-CdcRunbookRecordSizeReport, Get-CdcRunbookHistoryReport, Get-CdcRunbookTelemetryReport, Get-CdcRunbookKafkaReport, Get-CdcRunbookConsumerReport

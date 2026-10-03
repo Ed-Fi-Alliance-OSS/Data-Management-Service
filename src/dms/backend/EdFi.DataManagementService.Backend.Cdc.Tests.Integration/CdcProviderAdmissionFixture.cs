@@ -61,6 +61,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
     public List<ContinuitySample> ContinuitySamples { get; } = [];
     public List<DocumentCacheStatusResponse> ProjectionObservations { get; } = [];
     public Action<string> BeforeRuntimeCall { get; set; } = _ => { };
+    public Func<CancellationToken, Task> BeforeProjectionWrite { get; set; } = _ => Task.CompletedTask;
     public Action<string> AfterRuntimeCall { get; set; } = _ => { };
     public string ConnectionString { get; private set; } = null!;
     public IReadOnlyList<string> SchemaFiles { get; private set; } =
@@ -557,6 +558,13 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
             Target,
             DocumentCacheRuntimeTargetSelection.RequireConfiguredMembership
         );
+        var writer = services.Single(s => s.ServiceType == typeof(IDocumentCacheWriter));
+        services.Replace(
+            ServiceDescriptor.Scoped<IDocumentCacheWriter>(provider => new CoordinatedWriter(
+                (IDocumentCacheWriter)writer.ImplementationFactory!(provider),
+                this
+            ))
+        );
         var schema = A.Fake<IApiSchemaProvider>();
         A.CallTo(() => schema.GetApiSchemaNodes()).Returns(_schema.NormalizedNodes);
         A.CallTo(() => schema.SchemaLoadId).Returns(Guid.NewGuid());
@@ -1004,6 +1012,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         {
             await CleanupAsync(WriteEvidenceAsync);
         }
+        BeforeProjectionWrite = _ => Task.CompletedTask;
         BeforeRuntimeCall = _ => { };
         AfterRuntimeCall = _ => { };
         if (Infrastructure is not null)
@@ -1033,6 +1042,16 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
             throw new InvalidOperationException(
                 "Admission fixture evidence or cleanup failed. Details redacted."
             );
+        }
+    }
+
+    private sealed class CoordinatedWriter(IDocumentCacheWriter inner, CdcProviderAdmissionFixture owner)
+        : IDocumentCacheWriter
+    {
+        public async Task<DocumentCacheWriterResult> WriteAsync(DocumentCacheWriterRequest request)
+        {
+            await owner.BeforeProjectionWrite(request.CancellationToken);
+            return await inner.WriteAsync(request);
         }
     }
 

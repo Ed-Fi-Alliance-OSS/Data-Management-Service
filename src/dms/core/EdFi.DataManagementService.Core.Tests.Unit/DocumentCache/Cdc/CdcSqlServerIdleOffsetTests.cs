@@ -129,7 +129,7 @@ public sealed class Given_SqlServer_Idle_Commit_Boundary
     [TestCase("00000023:00000138:0000", CdcSourceHistoryContinuity.Healthy)]
     [TestCase(Commit, CdcSourceHistoryContinuity.Healthy)]
     [TestCase("00000023:00000140:0000", CdcSourceHistoryContinuity.Healthy)]
-    [TestCase("00000023:00000140:0001", CdcSourceHistoryContinuity.Lost)]
+    [TestCase("00000023:00000140:0001", CdcSourceHistoryContinuity.Unknown)]
     public void It_requires_the_idle_resume_commit_to_remain_in_retained_history(
         string commit,
         CdcSourceHistoryContinuity expected
@@ -172,6 +172,16 @@ public sealed class Given_SqlServer_Idle_Commit_Boundary
                 .Deserialize<CdcIncident>(CdcJsonContract.Serialize(incident))
                 .Succeeded.Should()
                 .BeTrue();
+        }
+        else if (expected == CdcSourceHistoryContinuity.Unknown)
+        {
+            result.IncidentCandidate.Should().BeNull();
+            result
+                .Observation.Diagnostics.Should()
+                .Contain(diagnostic =>
+                    diagnostic.Category == CdcDiagnosticCategory.ProviderHistoryUnknown
+                    && diagnostic.Path == "$.providerHistory.retainedRangeEnd"
+                );
         }
     }
 

@@ -124,7 +124,7 @@ function Invoke-CdcRunbookLifecycle {
             Invoke-NativeCommandWithInput -FilePath 'docker' -ArgumentList @('exec', '-i', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', $Database, '-At', '-v', 'ON_ERROR_STOP=1') -InputText $Sql
         } else {
             # sqlcmd defaults differ from SqlClient; indexed projection objects require this SET option.
-            Invoke-FixtureSql -Database $Database -Sql ("SET QUOTED_IDENTIFIER ON;`n" + $Sql)
+            Invoke-CdcFixtureSql -Database $Database -Sql ("SET QUOTED_IDENTIFIER ON;`n" + $Sql)
         }
         $result.FailureKind | Should -Be 'None'
         $result.ExitCode | Should -Be 0

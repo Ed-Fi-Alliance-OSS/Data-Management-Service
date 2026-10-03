@@ -165,22 +165,18 @@ public sealed partial class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider p
                 ? "dms.\"DocumentProjectionWork\""
                 : "dms.DocumentProjectionWork";
         (await _fixture.ScalarAsync<int>($"SELECT CAST(COUNT(*) AS int) FROM {work}", Token)).Should().Be(1);
-        await using System.Data.Common.DbConnection connection =
-            provider == CdcProvider.Postgresql
-                ? new NpgsqlConnection(_fixture.ConnectionString)
-                : new SqlConnection(_fixture.ConnectionString);
-        await connection.OpenAsync(Token);
-        await using var transaction = await connection.BeginTransactionAsync(Token);
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText =
-            provider == CdcProvider.Postgresql
-                ? $"SELECT * FROM {work} FOR UPDATE"
-                : $"SELECT * FROM {work} WITH (UPDLOCK, ROWLOCK)";
-        await command.ExecuteNonQueryAsync(Token);
+        // Keep actual durable work queued without blocking a provider command. A row lock
+        // races the writer's command timeout against the lifecycle deadline and can put the
+        // target into backoff before this test reaches its persistent-backlog assertion.
+        var writerEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseWriter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _fixture.BeforeProjectionWrite = cancellationToken =>
+        {
+            writerEntered.TrySetResult();
+            return releaseWriter.Task.WaitAsync(cancellationToken);
+        };
         int resumes = 0;
         int postResumePasses = 0;
-        bool released = false;
         _fixture.Infrastructure.BeforeConnectCall = method =>
         {
             if (method == nameof(ICdcConnectTransport.ResumeAsync))
@@ -193,10 +189,9 @@ public sealed partial class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider p
             if (method == nameof(ICdcProjectionRuntime.ObserveAsync) && resumes > 0)
             {
                 postResumePasses++;
-                if (postResumePasses == 4 && !persistent)
+                if (postResumePasses >= 4 && !persistent && writerEntered.Task.IsCompletedSuccessfully)
                 {
-                    transaction.Commit();
-                    released = true;
+                    releaseWriter.TrySetResult();
                 }
             }
         };
@@ -234,6 +229,7 @@ public sealed partial class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider p
             result.Succeeded.Should().Be(!persistent, "{0}", JsonSerializer.Serialize(result));
             result.Ready.Should().Be(!persistent);
             resumes.Should().Be(1);
+            writerEntered.Task.IsCompletedSuccessfully.Should().BeTrue();
             (await _fixture.JournalAsync(Token)).Operations.Last().Completions.Should().ContainSingle();
             if (persistent)
             {
@@ -261,10 +257,8 @@ public sealed partial class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider p
         {
             _fixture.BeforeRuntimeCall = _ => { };
             _fixture.Infrastructure.BeforeConnectCall = _ => { };
-            if (!released)
-            {
-                await transaction.RollbackAsync(Token);
-            }
+            releaseWriter.TrySetResult();
+            _fixture.BeforeProjectionWrite = _ => Task.CompletedTask;
         }
     }
 

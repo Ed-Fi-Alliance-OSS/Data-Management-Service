@@ -267,7 +267,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         bool composeKafka = false,
         bool offlineKafka = false,
         Func<Exception, string, Task> writeStartupFailureEvidence = null!,
-        bool isolateSourceProducer = false
+        bool isolateSourceProducer = false,
+        Func<CdcConnectorTemplatePinnedImageFixture, CancellationToken, Task> waitForConnect = null!
     )
     {
         var fixture = new CdcConnectorTemplatePinnedImageFixture(
@@ -322,12 +323,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                     metricsReservation.Stop();
                 }
             );
-            fixture._startupStage = "read-connect-port";
-            Uri connectBaseUri = await fixture.ReadMappedConnectBaseUriAsync(cancellationToken);
-
-            fixture._httpClient.BaseAddress = connectBaseUri;
-            fixture._startupStage = "wait-for-connect";
-            await fixture.WaitForKafkaConnectAsync(cancellationToken);
+            await fixture.WaitForKafkaConnectWithRecoveryAsync(cancellationToken, waitForConnect);
 
             return fixture;
         }
@@ -1778,34 +1774,44 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             .Replace("\n", "\\n", StringComparison.Ordinal);
     }
 
-    private async Task WaitForKafkaConnectAsync(CancellationToken cancellationToken)
+    internal async Task WaitForKafkaConnectAsync(CancellationToken cancellationToken)
     {
-        DateTimeOffset deadline = DateTimeOffset.UtcNow.Add(ConnectStartupTimeout);
-        string lastError = "none";
-        while (DateTimeOffset.UtcNow < deadline)
+        using var readiness = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        readiness.CancelAfter(ConnectStartupTimeout);
+        int probes = 0;
+        int lastStatusCode = 0;
+        string lastFailure = "NoResponse";
+        try
         {
-            try
+            while (true)
             {
-                using HttpResponseMessage response = await _httpClient.GetAsync(
-                    "/connector-plugins?connectorsOnly=false",
-                    cancellationToken
-                );
-                if (response.IsSuccessStatusCode)
+                probes++;
+                try
                 {
-                    return;
+                    using HttpResponseMessage response = await _httpClient.GetAsync(
+                        "/connector-plugins?connectorsOnly=false",
+                        readiness.Token
+                    );
+                    lastStatusCode = (int)response.StatusCode;
+                    if (response.IsSuccessStatusCode)
+                    {
+                        return;
+                    }
+                    lastFailure = "HttpStatus";
                 }
+                catch (HttpRequestException)
+                {
+                    lastStatusCode = 0;
+                    lastFailure = "HttpRequestFailure";
+                }
+                await Task.Delay(TimeSpan.FromSeconds(2), readiness.Token);
             }
-            catch (HttpRequestException ex)
-            {
-                lastError = ex.Message;
-            }
-
-            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
         }
-
-        throw new InvalidOperationException(
-            $"Kafka Connect REST API did not become ready. Last error: {lastError}"
-        );
+        catch (OperationCanceledException)
+            when (!cancellationToken.IsCancellationRequested && readiness.IsCancellationRequested)
+        {
+            throw new ConnectReadinessTimeoutException(probes, lastStatusCode, lastFailure);
+        }
     }
 
     private async Task WaitForRegisteredConnectorRunningAsync(
