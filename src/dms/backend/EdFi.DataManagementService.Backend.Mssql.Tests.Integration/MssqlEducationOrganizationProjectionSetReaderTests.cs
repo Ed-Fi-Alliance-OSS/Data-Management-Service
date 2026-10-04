@@ -562,28 +562,55 @@ public class Given_A_Mssql_Education_Organization_Projection_Set_Reader_Under_Co
     }
 
     [Test]
-    public async Task It_waits_for_an_uncommitted_change_and_reads_both_of_its_rows_after_it_commits()
+    public async Task It_waits_for_the_open_transaction_while_a_later_one_commits_and_reads_both_of_its_rows()
     {
-        // The round-1 counterexample: T1 changes A and B and stays open; T2 changes C and commits.
-        // T2 commits first: under locking read committed its update would wait for T1.
+        // The round-1 counterexample. A, B and C are independent rows: A is the lowest state agency,
+        // B the school with no local agency, C a service center referencing neither. T1 changes A and
+        // B and stays open; T2 then changes C and commits, so commits happen out of start order.
+        //
+        // The generated stamping triggers update dms.Document without a seek hint. In a database this
+        // small the optimizer scans it under update locks, and T2's scan would wait on T1's document
+        // rows although the two touch none in common. A realistic table size, with the triggers'
+        // plans recompiled, makes the scan a seek.
         await Database.ExecuteNonQueryAsync(
-            "UPDATE [edfi].[EducationServiceCenter] SET [NameOfInstitution] = N'C-new' WHERE [EducationServiceCenterId] = 10;"
+            """
+            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
+            SELECT NEWID(), (SELECT [ResourceKeyId] FROM [dms].[ResourceKey]
+                             WHERE [ProjectName] = N'Ed-Fi' AND [ResourceName] = N'Student')
+            FROM (SELECT TOP (20000) 1 AS x FROM sys.all_objects a CROSS JOIN sys.all_objects b) t;
+            UPDATE STATISTICS [dms].[Document];
+            EXEC sp_recompile N'[edfi].[EducationServiceCenter]';
+            EXEC sp_recompile N'[edfi].[StateEducationAgency]';
+            EXEC sp_recompile N'[edfi].[School]';
+            """
         );
+
         await using var t1 = await OpenWriterAsync();
         await ExecuteAsync(
             t1,
-            "UPDATE [edfi].[StateEducationAgency] SET [NameOfInstitution] = N'A-new' WHERE [StateEducationAgencyId] = 1;"
+            "UPDATE [edfi].[StateEducationAgency] SET [NameOfInstitution] = N'A-new' WHERE [StateEducationAgencyId] = -9223372036854775808;"
         );
         await ExecuteAsync(
             t1,
             "UPDATE [edfi].[School] SET [NameOfInstitution] = N'B-new' WHERE [SchoolId] = 900001;"
         );
 
+        // T2 must not wait for T1; the lock timeout turns any such wait into a failure here.
+        await using (var t2 = await OpenWriterAsync("SET LOCK_TIMEOUT 5000;"))
+        {
+            await ExecuteAsync(
+                t2,
+                "UPDATE [edfi].[EducationServiceCenter] SET [NameOfInstitution] = N'C-new' WHERE [EducationServiceCenterId] = 10;"
+            );
+            await t2.Transaction.CommitAsync();
+        }
+
         var read = ReadAsync(_readerConnectionString);
         await WaitUntilAsync(
-            async () => await CountAsync(Database.ConnectionString, BlockedSql, _applicationName) == 1,
-            "the read is blocked by T1"
+            async () => await BlockingSessionAsync() == t1.Connection.ServerProcessId,
+            "the read is blocked by T1's session"
         );
+        read.IsCompleted.Should().BeFalse();
         await t1.Transaction.CommitAsync();
 
         var result = (Result.Set)await read;
@@ -697,6 +724,23 @@ public class Given_A_Mssql_Education_Organization_Projection_Set_Reader_Under_Co
         AssertRedacted(Logger, Database.DatabaseName, "School");
     }
 
+    /// <summary>The session blocking the read, or 0 while it is not blocked.</summary>
+    private async Task<int> BlockingSessionAsync()
+    {
+        await using var connection = new SqlConnection(Database.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(
+            """
+            SELECT ISNULL(MAX(r.blocking_session_id), 0) FROM sys.dm_exec_requests r
+            JOIN sys.dm_exec_sessions s ON s.session_id = r.session_id
+            WHERE s.program_name = @app;
+            """,
+            connection
+        );
+        command.Parameters.AddWithValue("@app", _applicationName);
+        return Convert.ToInt32(await command.ExecuteScalarAsync());
+    }
+
     private async Task<Writer> OpenWriterAsync(string? sessionSetup = null)
     {
         var connection = new SqlConnection(Database.ConnectionString);
@@ -718,7 +762,7 @@ public class Given_A_Mssql_Education_Organization_Projection_Set_Reader_Under_Co
 
     /// <summary>The names of A, B and C, in that order.</summary>
     private static IEnumerable<string> Names(Result.Set set) =>
-        new long[] { 1, 900001, 10 }.Select(id =>
+        new[] { long.MinValue, 900001, 10 }.Select(id =>
             set.Rows.Single(row => row.EducationOrganizationId == id).NameOfInstitution
         );
 
