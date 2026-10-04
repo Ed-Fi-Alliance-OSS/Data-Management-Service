@@ -137,6 +137,22 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
 
         return services;
     }
+
+    public static IServiceCollection AddPostgresqlEducationOrganizationProjectionSetReader(
+        this IServiceCollection services
+    )
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.Replace(
+            ServiceDescriptor.Scoped<
+                IEducationOrganizationProjectionSetReader,
+                PostgresqlEducationOrganizationProjectionSetReader
+            >()
+        );
+
+        return services;
+    }
 }
 
 internal sealed class PostgresqlReferenceResolverAdapterFactory(IRelationalCommandExecutor commandExecutor)

@@ -186,6 +186,43 @@ A change that leaves every projected member identical, such as an update to a
 member the projection does not return, does not change the digest and does not
 interrupt a read.
 
+### Effect on writers and measured cost
+
+Because every page reads the whole set, a complete read of `N` items in pages
+of `limit` reads the set `ceil(N / limit)` times. At the default cap (50,000
+items) and default page size (2,000), that is 25 reads.
+
+- **PostgreSQL.** `REPEATABLE READ` reads a snapshot. It does not block writers,
+  and writers do not block it.
+- **SQL Server.** `SERIALIZABLE` holds shared and range locks on the four
+  education organization tables until the read's transaction ends. A writer to
+  one of those tables waits for the read in progress to finish. A writer that
+  already holds a lock the read needs, and then needs a lock the read holds,
+  deadlocks with it. SQL Server then aborts one of the two, and when the read
+  is the victim, DMS answers `503 target-unavailable` and the client retries.
+  DMS provisioning does not enable snapshot isolation, and the read does not
+  use it. After the read, DMS returns the session to `READ COMMITTED` before
+  releasing the connection to the pool.
+
+Provider measurements at the cap (step 2.5), one read of the full set by the
+provider reader alone, without validation, hashing or serialization:
+
+| | PostgreSQL 16 | SQL Server 2025 |
+| --- | --- | --- |
+| Read time, median (min-max of 10) | 102 ms (68-123) | 101 ms (83-127) |
+| Bytes received per read | 5.25 MB (105 bytes per row) | 6.24 MB (125 bytes per row) |
+| Single-row writer, alone: p50 / p95 / max | 1.0 / 1.3 / 17 ms | 1.3 / 1.6 / 360 ms (first connection) |
+| Same writer during back-to-back reads: p50 / p95 / max | 1.1 / 2.7 / 18 ms | 1.4 / 87 / 156 ms |
+| Deadlocks or errors (writer / read) | none / none (43 reads) | none / none (243 reads) |
+
+These were measured on one workstation, against local containers with their
+data on tmpfs: 1 state education agency, 10 service centers, 989 local
+education agencies, 49,000 schools, names of about 30 characters, and 2,000
+sequential single-row `School` name updates. They are indications, not
+guarantees. Bytes scale with name length. On SQL Server, a writer's added wait is
+bounded by the duration of the read it waits for. Handler cost (validation,
+digest and response) is measured separately.
+
 ### Canonical digest form
 
 The digest is SHA-256 over the UTF-8 bytes (no byte order mark, LF line endings)
