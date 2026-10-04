@@ -174,6 +174,19 @@ For how jobs run, recover, and are observed, see [Configuration Service Backgrou
 
 The lease must also leave room for a late renewal. Startup also requires `RenewalInterval + 2 × 6 s + FenceTimeout + 5 s + RenewalInterval / 2 + SafetyMargin <= LeaseDuration`. The 2 × 6 s term is the fixed fence acquisition timeout, which a fence can use twice while a renewal waits for it: once to open its connection and transaction, and once to lock and check the job row. The 5 s term is the fixed lock wait of a renewal. It already falls within `RenewalInterval / 2` and is counted again as extra allowance. `SafetyMargin` is the larger of 10 s and `LeaseDuration / 6`. With the defaults this is 60 + 12 + 10 + 5 + 30 + 50 = 167 s, within 300 s. When it fails, the startup message lists each term's value.
 
+## SecretsSettings
+
+A stored data store or derivative connection string may name a secret instead of carrying it, as a `${secret:<name>}` token inside a value, for example `Password=${secret:prod/dms/ds-2026}`. When the Configuration Service reads the row, it asks the `ISecretResolver` a Configuration Service plugin registers for each token's value. These settings control how often it asks and how long it waits (`appsettings.json` section `SecretsSettings`; in the provided Docker Compose files, `SecretsSettings__<Parameter>` is set from `DMS_CONFIG_SECRETS_<PARAMETER>`, for example `DMS_CONFIG_SECRETS_CACHE_EXPIRATION_SECONDS`). The service validates both values at startup and refuses to start, naming `SecretsSettings:<Parameter>` and the accepted range, when one is out of bounds.
+
+| Parameter              | Description                                                                                                                                                                                                                       | Default | Accepted range  |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | --------------- |
+| CacheExpirationSeconds | How long a resolved value is reused, per tenant and secret name, before the resolver is asked again. The expiration is absolute from when the value was fetched; reads do not extend it. It is measured on the system clock, so a step back in that clock lengthens it by the size of the step. `0` disables caching, so every read that needs a value asks the resolver; reads that ask for the same value at the same moment still share one call. | `300`   | `0` or greater  |
+| ResolveTimeoutSeconds  | How long one read may spend waiting on the resolver, across all the calls it makes, before the reference it is waiting for fails. It covers each whole call, including any work the resolver does before it returns, and it counts from the first reference the read resolves, so a store that answers each call slowly costs one allowance per read, not one per secret name. Once it has passed, the rest of that read uses only values already cached and does not ask the resolver again. A reference the read can no longer ask for is unresolved: a data store that holds one fails the whole read with an HTTP 500, collection or single row, and a derivative read as part of its data store is returned with a null connection string. A call the read stopped waiting for keeps running until its own deadline, which is this value counted from when the call started, and caches a value it returns by then, so with caching on a later read finds it and recovers. For the first reference a read resolves the two deadlines coincide, to within timer resolution, so a value that call returns after the read stopped waiting is dropped. With `CacheExpirationSeconds` at `0` nothing is kept, not even within one read: every reference on every row the read returns is its own call, one after another, including a name already resolved for an earlier row or keyword. A collection read of twenty data stores that share one secret makes twenty calls, so a store whose calls for one read take longer than this value in total fails that read every time. Size this value for the slowest whole read, counting every reference on every row, not the slowest call, or leave caching on. A read that joins a call another read started stops waiting when that call reaches its own deadline, which can come before the joining read's allowance is spent; that reference is unresolved, and the read keeps the time it has left for the references after it. A data store read includes one derivative read, so it waits at most twice this value however many rows it returns. DMS fetches a tenant's data stores with a 100-second HTTP client timeout, so keep twice this value well under 100 seconds. | `10`    | `1` – `4294967` |
+
+**Writing a connection string can direct any secret the plugin can reach.** Nothing restricts which name a reference uses, and the value of every string keyword is resolved, not only `Password`; a typed keyword such as `Port` refuses a reference when the value is written. A client allowed to create or update data stores or derivatives (`edfi_admin_api/full_access`), in any existing tenant, since a request names its tenant in the `Tenant` header, can therefore store a connection string such as `Host=<a server it controls>;Username=${secret:<any name>}`. CMS resolves it, and DMS sends the resolved value to that server when it connects, which it does at startup for every data store it loads, whether or not an application is bound to it; nothing checks the host. Without secret resolution, that client could replace a stored password but never read one. A value resolved into a keyword other than `Password`, such as a username or database name, can also appear in DMS's own error logs, because the database driver repeats it in a failed-login or unknown-database message and DMS logs that exception; CMS's logs never carry a resolved value, but DMS's are outside that rule. Grant write access to data stores accordingly, and scope the vault identity the plugin uses to the secrets CMS is meant to serve; that narrows what such a client can reach but does not close the path.
+
+**A rotation reaches DMS within the sum of two windows.** A secret rotated in the store is seen by the Configuration Service within `CacheExpirationSeconds`, and by a running DMS within its own `CacheSettings:DataStoreCacheExpirationSeconds` after that (see [CacheSettings](#cachesettings)). On the defaults that is up to 300 + 600 seconds, about fifteen minutes. For that whole window DMS keeps using the previous value, so write the new credential first and revoke the old one only after the window has elapsed. Both windows are measured on the system clock, so allow longer if a host's clock may have been stepped back during it. Nothing pushes a rotation sooner; to apply one immediately, restart both the Configuration Service and DMS. When DMS's `DataStoreCacheRefreshEnabled` is `false` or its `DataStoreCacheExpirationSeconds` is not positive, DMS keeps the value it loaded until it restarts.
+
 ## Reverse Proxy and Forwarded Headers
 
 When the DMS API or Configuration Service runs behind a reverse proxy or load balancer
@@ -287,18 +300,39 @@ These settings configure how the DMS API connects to the Configuration Service t
 > Configuration Service were encrypted with the previous key and are not
 > re-encrypted automatically. After setting a new key, re-submit each data store
 > and data store derivative connection string through the Admin API; an update
-> stores the value encrypted under the currently configured key. Until a
-> connection string has been re-submitted, DMS cannot decrypt it and reports a
-> decryption failure.
+> stores the value encrypted under the currently configured key. The
+> Configuration Service decrypts every stored connection string when it is read,
+> so until a connection string has been re-submitted:
+> - A data store still under the previous key fails every data store read that
+>   includes it, the collection as well as the single row, with an HTTP 500 whose
+>   log entry says the stored connection string could not be decrypted. DMS
+>   therefore cannot load that tenant's data stores. The stored format is not
+>   authenticated, so about one value in 256 decrypts under the wrong key into
+>   unreadable text instead of failing; that read succeeds, and returns a
+>   connection string DMS cannot use.
+> - A derivative still under the previous key fails the data store derivative
+>   reads the same way. Read as part of its data store, it is returned with a null
+>   connection string, which DMS treats as not configured, and the data store and
+>   its other derivatives are unaffected.
+>
+> Re-submitting a value is a write, which does not decrypt the stored one, so the
+> procedure works while reads fail. The update replaces the other fields too, and
+> needs their values: a data store's `id`, `dataStoreType` and `name` (`provider`
+> is kept when omitted), and a derivative's `id`, `dataStoreId` and
+> `derivativeType`. While reads fail the Admin API cannot supply them, so record
+> them before changing the key, or read them from the data store and derivative
+> tables, where only `ConnectionString` is encrypted: `dmscs.DataStore` and
+> `dmscs.DataStoreDerivative` on SQL Server, `"dmscs"."DataStore"` and
+> `"dmscs"."DataStoreDerivative"` on PostgreSQL, where the quotes are required.
 >
 > This applies to local Docker Compose stacks as well, where the environment
 > files under `eng/docker-compose/` supply the key. Picking up an updated
 > environment file changes the derived key, so a database volume created before
 > the change still holds connection strings encrypted under the previous one.
-> `provision-dms-schema.ps1` then fails with a decryption error even though CMS
-> and DMS agree on the new value — the mismatch is with the stored data, not
-> between the services. Recreate the database volume, or apply the re-submission
-> procedure above.
+> `provision-dms-schema.ps1` then fails when it lists the data stores, with the
+> Configuration Service's HTTP 500, even though CMS and DMS agree on the new
+> value — the mismatch is with the stored data, not between the services.
+> Recreate the database volume, or apply the re-submission procedure above.
 
 ## CacheSettings
 

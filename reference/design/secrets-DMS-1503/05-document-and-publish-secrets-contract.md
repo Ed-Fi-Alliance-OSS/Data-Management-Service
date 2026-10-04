@@ -40,6 +40,7 @@ Unprefixed paths are relative to the repository root.
     - a static vault credential reduces the problem to one secret, and ambient workload identity reduces it to none
     - CMS can still produce the resolved value, cached in process and returned re-encrypted on every limited-access read across the four endpoints (`Config.Frontend/Modules/DataStoreModule.cs:23-24`, `Config.Frontend/Modules/DataStoreDerivativeModule.cs:21-22`)
     - plainly, that an operator whose requirement is that nothing but the vault can produce the secret is not served
+    - that a client with write access to data stores or derivatives, in any tenant it names, can store a reference to any secret the plugin's vault identity reaches inside a keyword such as `Host` or `Username` and have DMS send the resolved value to a server it controls; narrowing the vault identity reduces this but does not close it
 - The chapter states that raising `IdentitySettings:ClientSecretHashingIterations` invalidates every client secret hashed at the old count, with re-issue as the remedy.
 
 **Implementer guide**
@@ -53,7 +54,7 @@ Unprefixed paths are relative to the repository root.
     - the caching obligation: cache the vault client, its connection, and its ambient-credential token; never return a secret value that was not just fetched, because the operator-visible rotation window is the host's
     - what the host does with a resolver that throws, cancels, or returns nothing
 - The guide states what CMS cannot enforce:
-    - the resolve timeout bounds one call, a hung resolver fails a read rather than a request thread, the unreclaimed-thread residual, and the obligation to honour the cancellation token
+    - the resolve timeout bounds the time one read spends on the resolver across all its calls, and a read whose time is spent reports its remaining uncached references unresolved, a hung resolver fails a read rather than a request thread, the unreclaimed-thread residual, and the obligation to honour the cancellation token
     - nothing enforces that a resolver not log what it resolved, stated as an implementer obligation
 - Both guides link to `PLUGINS.md` for packaging, delivery, the allowlist, and the trust model rather than restating any of it.
 
