@@ -276,6 +276,52 @@ public class Given_A_Mssql_Education_Organization_Projection_Set_Reader
     }
 
     [Test]
+    public async Task It_does_not_return_a_connection_whose_session_restore_failed_to_the_pool()
+    {
+        await Seed.StandardHierarchyAsync();
+        var pooled = new SqlConnectionStringBuilder(Database.ConnectionString)
+        {
+            ApplicationName = "projection-restore-" + Guid.NewGuid().ToString("N"),
+            Pooling = true,
+            MinPoolSize = 0,
+            MaxPoolSize = 1,
+        }.ConnectionString;
+
+        // The restore fails while the connection stays open, so the session is still SERIALIZABLE.
+        var result = await Create(
+                pooled,
+                Logger,
+                configureProvider: static provider =>
+                    provider with
+                    {
+                        SessionRestoreStatement = "THROW 50001, N'restore refused', 1;",
+                    }
+            )
+            .ReadSetAsync(Request(Fixture.MappingSet), CancellationToken.None);
+
+        result.Should().BeOfType<Result.Set>();
+        Logger
+            .Records.Should()
+            .ContainSingle(static record => record.Level == Microsoft.Extensions.Logging.LogLevel.Warning)
+            .Which.Message.Should()
+            .Contain("restoring the session")
+            .And.Contain("SqlException(50001)");
+        AssertRedacted(Logger, Database.DatabaseName, "restore refused");
+
+        // The only pooled connection was excluded from reuse, so the next one is a new session.
+        await using var connection = new SqlConnection(pooled);
+        await connection.OpenAsync();
+        await using var command = new SqlCommand(
+            """
+            SELECT CAST(@@LOCK_TIMEOUT AS nvarchar(20)) + N'|' + CAST([transaction_isolation_level] AS nvarchar(5))
+            FROM sys.dm_exec_sessions WHERE [session_id] = @@SPID;
+            """,
+            connection
+        );
+        ((string?)await command.ExecuteScalarAsync()).Should().Be("-1|2");
+    }
+
+    [Test]
     public async Task It_reports_an_unresolvable_host_as_unavailable_in_the_acquire_stage()
     {
         var result = await ReadAsync(

@@ -32,7 +32,8 @@ public class Given_The_Education_Organization_Projection_Staged_Read_With_A_Prov
         static (_, describe) =>
             EducationOrganizationProjectionExecutionClassifier.ClassifyPostgresql(null, describe),
         static seconds => $"SET LOCAL lock_timeout = '{seconds}s'",
-        SessionRestoreStatement: null
+        SessionRestoreStatement: null,
+        DiscardConnection: static _ => { }
     );
 
     private CancellationTokenSource _cancellation = null!;

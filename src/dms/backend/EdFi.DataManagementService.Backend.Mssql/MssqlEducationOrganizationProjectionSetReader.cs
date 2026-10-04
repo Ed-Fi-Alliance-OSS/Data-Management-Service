@@ -28,7 +28,7 @@ namespace EdFi.DataManagementService.Backend.Mssql;
 internal sealed class MssqlEducationOrganizationProjectionSetReader
     : IEducationOrganizationProjectionSetReader
 {
-    private static readonly EducationOrganizationProjectionProvider _provider = new(
+    private static readonly EducationOrganizationProjectionProvider _sqlServer = new(
         SqlDialect.Mssql,
         IsolationLevel.Serializable,
         MssqlConnectionAcquisitionFailure.IsExpected,
@@ -44,12 +44,17 @@ internal sealed class MssqlEducationOrganizationProjectionSetReader
         // BeginTransaction sets the session's isolation level and it outlives the transaction. The
         // pool's connection reset restores LOCK_TIMEOUT but not the isolation level, so without this
         // the next request on the pooled connection would run SERIALIZABLE.
-        SessionRestoreStatement: "SET TRANSACTION ISOLATION LEVEL READ COMMITTED"
+        SessionRestoreStatement: "SET TRANSACTION ISOLATION LEVEL READ COMMITTED",
+        // Marks every connection of this connection's pool, including this checked-out one, to be
+        // discarded rather than reused when closed. Clearing a pool only costs new opens; the
+        // acquisition's lease bookkeeping is unaffected.
+        DiscardConnection: static connection => SqlConnection.ClearPool((SqlConnection)connection)
     );
 
     private readonly Func<CancellationToken, Task<EducationOrganizationProjectionConnection>> _acquireAsync;
     private readonly ILogger<MssqlEducationOrganizationProjectionSetReader> _logger;
     private readonly IEducationOrganizationProjectionReadObserver? _observer;
+    private readonly EducationOrganizationProjectionProvider _provider = _sqlServer;
 
     public MssqlEducationOrganizationProjectionSetReader(
         IDataStoreSelection dataStoreSelection,
@@ -75,13 +80,18 @@ internal sealed class MssqlEducationOrganizationProjectionSetReader
     internal MssqlEducationOrganizationProjectionSetReader(
         Func<CancellationToken, Task<DbConnection>> openConnectionAsync,
         ILogger<MssqlEducationOrganizationProjectionSetReader> logger,
-        IEducationOrganizationProjectionReadObserver? observer = null
+        IEducationOrganizationProjectionReadObserver? observer = null,
+        Func<
+            EducationOrganizationProjectionProvider,
+            EducationOrganizationProjectionProvider
+        >? configureProvider = null
     )
     {
         ArgumentNullException.ThrowIfNull(openConnectionAsync);
 
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _observer = observer;
+        _provider = configureProvider?.Invoke(_sqlServer) ?? _sqlServer;
         _acquireAsync = async cancellationToken =>
             AsOwned(
                 await ConnectionAcquisition

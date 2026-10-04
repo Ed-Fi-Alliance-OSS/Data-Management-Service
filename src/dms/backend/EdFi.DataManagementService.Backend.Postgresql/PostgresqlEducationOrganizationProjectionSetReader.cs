@@ -9,6 +9,7 @@ using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
 
@@ -34,7 +35,9 @@ internal sealed class PostgresqlEducationOrganizationProjectionSetReader
         static seconds =>
             string.Create(CultureInfo.InvariantCulture, $"SET LOCAL lock_timeout = '{seconds}s'"),
         // The isolation level is per transaction.
-        SessionRestoreStatement: null
+        SessionRestoreStatement: null,
+        // Marks the connection's pool so that this connection is closed, not reused, when released.
+        DiscardConnection: static connection => NpgsqlConnection.ClearPool((NpgsqlConnection)connection)
     );
 
     private readonly Func<CancellationToken, Task<EducationOrganizationProjectionConnection>> _acquireAsync;

@@ -49,6 +49,11 @@ internal readonly record struct EducationOrganizationProjectionConnection(
 /// ending the transaction does not, so a pooled connection does not carry the read's isolation into
 /// the next request. <see langword="null"/> when the provider needs none.
 /// </param>
+/// <param name="DiscardConnection">
+/// Excludes the connection from reuse, so that when it is released the pool closes it instead of
+/// handing it to the next request. Called before release whenever the read cannot confirm that it
+/// left the session as it found it.
+/// </param>
 internal sealed record EducationOrganizationProjectionProvider(
     SqlDialect Dialect,
     IsolationLevel IsolationLevel,
@@ -56,7 +61,8 @@ internal sealed record EducationOrganizationProjectionProvider(
     Func<Exception, string> Describe,
     Func<DbException, string, EducationOrganizationProjectionSetResult> ClassifyExecutionFailure,
     Func<int, string> LockTimeoutStatement,
-    string? SessionRestoreStatement
+    string? SessionRestoreStatement,
+    Action<DbConnection> DiscardConnection
 );
 
 /// <summary>
@@ -96,6 +102,16 @@ internal interface IEducationOrganizationProjectionReadObserver
 /// Caller cancellation always propagates as <see cref="OperationCanceledException"/>, whatever the
 /// provider raised for it; an exception the stage does not classify propagates as a defect. On every
 /// path that does not commit, the transaction is rolled back and the connection released.
+/// </para>
+/// <para>
+/// <b>Cleanup never replaces the read's outcome.</b> Ending the transaction, restoring the session
+/// and releasing the connection run on every path after Acquire, and none of them throws: the
+/// cancellation, classified result or defect already in flight is what the caller receives. When the
+/// read cannot confirm that cleanup succeeded - the transaction could not be ended, the session could
+/// not be restored, or the connection could not be released - the connection is excluded from reuse
+/// and only the failure's description is logged. A read that committed keeps its result when cleanup
+/// afterwards fails: the rows were read and committed in one consistent transaction, and the
+/// connection that failed to clean up is not reused.
 /// </para>
 /// <para>
 /// Nothing about an exception except its <see cref="EducationOrganizationProjectionProvider.Describe"/>
@@ -167,155 +183,151 @@ internal static class EducationOrganizationProjectionStagedRead
             return Unavailable(logger, Stage.Acquire, provider.Describe(exception));
         }
 
-        await using (opened.Owner.ConfigureAwait(false))
-        {
-            DbConnection connection = opened.Connection;
-            DbTransaction? transaction = null;
+        DbConnection connection = opened.Connection;
+        DbTransaction? transaction = null;
 
+        try
+        {
+            // Prepare
             try
             {
-                // Prepare
-                try
+                if (observer is not null)
                 {
-                    if (observer is not null)
-                    {
-                        await observer.AfterAcquireAsync(connection, cancellationToken).ConfigureAwait(false);
-                    }
-
-                    transaction = await connection
-                        .BeginTransactionAsync(provider.IsolationLevel, cancellationToken)
-                        .ConfigureAwait(false);
-
-                    await using DbCommand lockTimeout = CreateCommand(
-                        connection,
-                        transaction,
-                        provider.LockTimeoutStatement(request.ReadLockTimeoutSeconds),
-                        request.ReadCommandTimeoutSeconds,
-                        observer
-                    );
-                    await lockTimeout.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception exception) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw CallerCancellation(exception, cancellationToken);
-                }
-                catch (DbException exception)
-                {
-                    return Unavailable(logger, Stage.Prepare, provider.Describe(exception));
+                    await observer.AfterAcquireAsync(connection, cancellationToken).ConfigureAwait(false);
                 }
 
-                // Execute and Materialize
-                List<EducationOrganizationProjectionRow> rows;
-                bool readerClosed;
-                try
-                {
-                    await using DbCommand select = CreateCommand(
-                        connection,
-                        transaction,
-                        plan.Sql,
-                        request.ReadCommandTimeoutSeconds,
-                        observer,
-                        (plan.RowLimitParameter, rowLimit)
-                    );
+                transaction = await connection
+                    .BeginTransactionAsync(provider.IsolationLevel, cancellationToken)
+                    .ConfigureAwait(false);
 
-                    DbDataReader reader = await select
-                        .ExecuteReaderAsync(cancellationToken)
-                        .ConfigureAwait(false);
-                    await using (reader.ConfigureAwait(false))
-                    {
-                        rows = await EducationOrganizationProjectionRowReader
-                            .ReadAllAsync(reader, plan.ResultColumns, cancellationToken)
-                            .ConfigureAwait(false);
-
-                        // Every row has been read; close before committing.
-                        await reader.CloseAsync().ConfigureAwait(false);
-                        readerClosed = reader.IsClosed;
-                    }
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception exception) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw CallerCancellation(exception, cancellationToken);
-                }
-                catch (DbException exception)
-                {
-                    var classified = provider.ClassifyExecutionFailure(
-                        exception,
-                        provider.Describe(exception)
-                    );
-                    LogFailure(logger, classified);
-                    return classified;
-                }
-                catch (Exception exception)
-                    when (EducationOrganizationProjectionExecutionClassifier.IsMaterializationFailure(
-                            exception
-                        )
-                    )
-                {
-                    var mismatch = new EducationOrganizationProjectionSetResult.SchemaIncompatible(
-                        EducationOrganizationProjectionSchemaIncompatibilityReason.MaterializationTypeMismatch,
-                        null
-                    );
-                    LogFailure(logger, mismatch);
-                    return mismatch;
-                }
-
-                // Commit
-                try
-                {
-                    if (observer is not null)
-                    {
-                        await observer
-                            .BeforeCommitAsync(connection, readerClosed, cancellationToken)
-                            .ConfigureAwait(false);
-                    }
-
-                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception exception) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw CallerCancellation(exception, cancellationToken);
-                }
-                catch (Exception exception) when (exception is DbException or InvalidOperationException)
-                {
-                    // A broken connection surfaces as either type; in both the outcome is unknown, so
-                    // the rows are discarded.
-                    return Unavailable(logger, Stage.Commit, provider.Describe(exception));
-                }
-
-                var result = EducationOrganizationProjectionSetResult.FromCappedRows(
-                    rows,
-                    request.MaxProjectionRows
+                await using DbCommand lockTimeout = CreateCommand(
+                    connection,
+                    transaction,
+                    provider.LockTimeoutStatement(request.ReadLockTimeoutSeconds),
+                    request.ReadCommandTimeoutSeconds,
+                    observer
                 );
-
-                logger.LogDebug(
-                    "Education organization projection read {RowCount} rows ({Outcome}) in {ElapsedMs} ms",
-                    rows.Count,
-                    result is EducationOrganizationProjectionSetResult.TooLarge ? "TooLarge" : "Set",
-                    (long)Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds
-                );
-
-                return result;
+                await lockTimeout.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             }
-            finally
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                if (transaction is not null)
+                throw;
+            }
+            catch (Exception exception) when (cancellationToken.IsCancellationRequested)
+            {
+                throw CallerCancellation(exception, cancellationToken);
+            }
+            catch (DbException exception)
+            {
+                return Unavailable(logger, Stage.Prepare, provider.Describe(exception));
+            }
+
+            // Execute and Materialize
+            List<EducationOrganizationProjectionRow> rows;
+            bool readerClosed;
+            try
+            {
+                await using DbCommand select = CreateCommand(
+                    connection,
+                    transaction,
+                    plan.Sql,
+                    request.ReadCommandTimeoutSeconds,
+                    observer,
+                    (plan.RowLimitParameter, rowLimit)
+                );
+
+                DbDataReader reader = await select
+                    .ExecuteReaderAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                await using (reader.ConfigureAwait(false))
                 {
-                    await DisposeTransactionAsync(transaction, provider, logger).ConfigureAwait(false);
-                    await RestoreSessionAsync(connection, provider, request, logger).ConfigureAwait(false);
+                    rows = await EducationOrganizationProjectionRowReader
+                        .ReadAllAsync(reader, plan.ResultColumns, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    // Every row has been read; close before committing.
+                    await reader.CloseAsync().ConfigureAwait(false);
+                    readerClosed = reader.IsClosed;
                 }
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception) when (cancellationToken.IsCancellationRequested)
+            {
+                throw CallerCancellation(exception, cancellationToken);
+            }
+            catch (DbException exception)
+            {
+                var classified = provider.ClassifyExecutionFailure(exception, provider.Describe(exception));
+                LogFailure(logger, classified);
+                return classified;
+            }
+            catch (Exception exception)
+                when (EducationOrganizationProjectionExecutionClassifier.IsMaterializationFailure(exception))
+            {
+                var mismatch = new EducationOrganizationProjectionSetResult.SchemaIncompatible(
+                    EducationOrganizationProjectionSchemaIncompatibilityReason.MaterializationTypeMismatch,
+                    null
+                );
+                LogFailure(logger, mismatch);
+                return mismatch;
+            }
+
+            // Commit
+            try
+            {
+                if (observer is not null)
+                {
+                    await observer
+                        .BeforeCommitAsync(connection, readerClosed, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception) when (cancellationToken.IsCancellationRequested)
+            {
+                throw CallerCancellation(exception, cancellationToken);
+            }
+            catch (Exception exception) when (exception is DbException or InvalidOperationException)
+            {
+                // A broken connection surfaces as either type; in both the outcome is unknown, so
+                // the rows are discarded.
+                return Unavailable(logger, Stage.Commit, provider.Describe(exception));
+            }
+
+            var result = EducationOrganizationProjectionSetResult.FromCappedRows(
+                rows,
+                request.MaxProjectionRows
+            );
+
+            logger.LogDebug(
+                "Education organization projection read {RowCount} rows ({Outcome}) in {ElapsedMs} ms",
+                rows.Count,
+                result is EducationOrganizationProjectionSetResult.TooLarge ? "TooLarge" : "Set",
+                (long)Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds
+            );
+
+            return result;
+        }
+        finally
+        {
+            bool cleanupConfirmed = true;
+            if (transaction is not null)
+            {
+                cleanupConfirmed = await EndTransactionAsync(transaction, provider, logger)
+                    .ConfigureAwait(false);
+                cleanupConfirmed &= await RestoreSessionAsync(connection, provider, request, logger)
+                    .ConfigureAwait(false);
+            }
+
+            await ReleaseAsync(opened, cleanupConfirmed, provider, logger).ConfigureAwait(false);
         }
     }
 
@@ -347,11 +359,10 @@ internal static class EducationOrganizationProjectionStagedRead
     }
 
     /// <summary>
-    /// Ends a transaction that may not have committed. Disposing an uncommitted transaction rolls it
-    /// back; a failure doing so (the connection is already broken) must not replace the read's own
-    /// outcome, and the connection is released next in any case.
+    /// Ends a transaction that may not have committed; disposing an uncommitted transaction rolls it
+    /// back. Returns whether that is confirmed.
     /// </summary>
-    private static async Task DisposeTransactionAsync(
+    private static async Task<bool> EndTransactionAsync(
         DbTransaction transaction,
         EducationOrganizationProjectionProvider provider,
         ILogger logger
@@ -360,34 +371,37 @@ internal static class EducationOrganizationProjectionStagedRead
         try
         {
             await transaction.DisposeAsync().ConfigureAwait(false);
+            return true;
         }
         catch (Exception exception)
         {
-#pragma warning disable S6667 // The exception carries provider text; only its description is logged.
-            logger.LogDebug(
-                "Education organization projection transaction cleanup failed with {Failure}",
-                provider.Describe(exception)
-            );
-#pragma warning restore S6667
+            LogCleanupFailure(logger, "ending the transaction", provider.Describe(exception));
+            return false;
         }
     }
 
     /// <summary>
-    /// Returns the session to its default isolation before the connection goes back to the pool. It
-    /// runs on every path that began a transaction, including cancellation, so it does not take the
-    /// caller's token. A failure means the connection is broken, and a broken connection is not
-    /// reused, so it must not replace the read's own outcome.
+    /// Returns the session to its default isolation before the connection goes back to the pool, and
+    /// returns whether that is confirmed. It runs on every path that began a transaction, including
+    /// cancellation, so it does not take the caller's token. A provider that needs no restore is
+    /// confirmed; a connection that is no longer open cannot be restored and is not confirmed.
     /// </summary>
-    private static async Task RestoreSessionAsync(
+    private static async Task<bool> RestoreSessionAsync(
         DbConnection connection,
         EducationOrganizationProjectionProvider provider,
         EducationOrganizationProjectionSetReadRequest request,
         ILogger logger
     )
     {
-        if (provider.SessionRestoreStatement is null || connection.State != ConnectionState.Open)
+        if (provider.SessionRestoreStatement is null)
         {
-            return;
+            return true;
+        }
+
+        if (connection.State != ConnectionState.Open)
+        {
+            LogCleanupFailure(logger, "restoring the session", "ConnectionNotOpen");
+            return false;
         }
 
         try
@@ -396,16 +410,70 @@ internal static class EducationOrganizationProjectionStagedRead
             restore.CommandText = provider.SessionRestoreStatement;
             restore.CommandTimeout = request.ReadCommandTimeoutSeconds;
             await restore.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
+            return true;
         }
-        catch (DbException exception)
+        catch (Exception exception)
         {
-#pragma warning disable S6667 // The exception carries provider text; only its description is logged.
-            logger.LogDebug(
-                "Education organization projection session restore failed with {Failure}",
-                provider.Describe(exception)
-            );
-#pragma warning restore S6667
+            LogCleanupFailure(logger, "restoring the session", provider.Describe(exception));
+            return false;
         }
+    }
+
+    /// <summary>
+    /// Releases the connection and whatever owns it. A connection whose cleanup is not confirmed is
+    /// excluded from reuse first; one whose release fails is excluded afterwards, since its state is
+    /// then unknown. Never throws.
+    /// </summary>
+    private static async Task ReleaseAsync(
+        EducationOrganizationProjectionConnection opened,
+        bool cleanupConfirmed,
+        EducationOrganizationProjectionProvider provider,
+        ILogger logger
+    )
+    {
+        if (!cleanupConfirmed)
+        {
+            Discard(opened.Connection, provider, logger);
+        }
+
+        try
+        {
+            await opened.Owner.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            LogCleanupFailure(logger, "releasing the connection", provider.Describe(exception));
+            if (cleanupConfirmed)
+            {
+                Discard(opened.Connection, provider, logger);
+            }
+        }
+    }
+
+    private static void Discard(
+        DbConnection connection,
+        EducationOrganizationProjectionProvider provider,
+        ILogger logger
+    )
+    {
+        try
+        {
+            provider.DiscardConnection(connection);
+        }
+        catch (Exception exception)
+        {
+            LogCleanupFailure(logger, "excluding the connection from reuse", provider.Describe(exception));
+        }
+    }
+
+    private static void LogCleanupFailure(ILogger logger, string step, string failure)
+    {
+        // The exception carries provider text; only its description is logged.
+        logger.LogWarning(
+            "Education organization projection cleanup failed {CleanupStep} with {Failure}; the connection is not reused",
+            step,
+            failure
+        );
     }
 
     /// <summary>

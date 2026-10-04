@@ -364,7 +364,11 @@ internal static class MssqlProjectionReaders
     public static MssqlEducationOrganizationProjectionSetReader Create(
         string connectionString,
         RecordingLogger<MssqlEducationOrganizationProjectionSetReader> logger,
-        IEducationOrganizationProjectionReadObserver? observer = null
+        IEducationOrganizationProjectionReadObserver? observer = null,
+        Func<
+            EducationOrganizationProjectionProvider,
+            EducationOrganizationProjectionProvider
+        >? configureProvider = null
     )
     {
         return new(
@@ -383,7 +387,8 @@ internal static class MssqlProjectionReaders
                 }
             },
             logger,
-            observer
+            observer,
+            configureProvider
         );
     }
 
