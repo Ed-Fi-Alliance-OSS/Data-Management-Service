@@ -202,47 +202,76 @@ items) and default page size (2,000), that is 25 reads.
   readers or writers are queued too, waits form blocking chains, so no general
   bound on a writer's wait follows from the duration of one read. A writer
   transaction that holds a row lock the read needs and then needs one the read
-  holds deadlocks with it. For example, it might update a School and then a
-  Local Education Agency, the reverse of the order in which the read takes the
-  four tables. SQL Server then aborts the read, which has written nothing, and
-  DMS answers `503 target-unavailable` for the client to retry. DMS provisioning
-  does not enable snapshot isolation, and the read does not use it. After the
-  read, DMS returns the session to `READ COMMITTED`. A connection whose cleanup
-  cannot be confirmed is not reused.
+  holds deadlocks with it, and SQL Server aborts one of the two. When the read is
+  aborted, DMS answers `503 target-unavailable` for the client to retry. DMS
+  provisioning enables read committed snapshot and snapshot isolation on the
+  databases it creates, but the read uses `SERIALIZABLE`, which takes these
+  locks either way.
+  After the read, DMS returns the session to `READ COMMITTED`. A connection
+  whose cleanup cannot be confirmed is not reused.
 
-Provider measurements at the cap (step 2.5). The read times and bytes are for
-the provider reader alone, without validation, hashing or serialization. The
-writer phases run four concurrent writers for 2,000 operations, first alone and
-then while one client reads the set back-to-back (the reading pattern of a full
-walk).
+  The following were observed in the measurements below, and the plan or the
+  victim choice could differ elsewhere. The read took the four tables in the
+  order State Education Agency, Education Service Center, Local Education
+  Agency, then School. A transaction that updated a School and then a Local
+  Education Agency deadlocked with it, and SQL Server chose the read, which had
+  written nothing, as the victim every time.
+
+A provider read that succeeds is not the same as a complete read of the set. A
+complete read also needs every page's digest to match the first page's, so any
+committed change to projected content between pages restarts it with `409
+projection-changed`. Reducing lock conflicts, for example with snapshot
+isolation per page, would not prevent those restarts.
+
+Provider measurements at the cap (step 2.5) follow. Read times cover the
+provider reader alone, without validation, hashing or serialization. Each writer
+phase runs four concurrent writers for 2,000 operations, first alone and then
+while one client reads the set back-to-back, which is how a full walk reads.
+Every number counts provider reads only: a full walk can still restart, as
+described above.
+
+**With production writes.** The hierarchy is created through the API, and the
+writers change it through the API with `PUT`. They rename the state agency,
+service centers, local agencies and schools, and they change relationships:
+moving a School to another Local Education Agency and changing a Local Education
+Agency's parent. SQL Server runs with the isolation settings DMS provisioning
+enables on new databases (read committed snapshot and snapshot isolation).
 
 | | PostgreSQL 16 | SQL Server 2025 |
 | --- | --- | --- |
-| Read time, median (min-max of 10) | 125 ms (79-161) | 106 ms (70-135) |
+| Read time, median (min-max of 10) | 125 ms (76-187) | 148 ms (113-272) |
+| Writes alone: p50 / p95 / max | 13 / 56 / 104 ms | 12 / 140 / 484 ms |
+| Writes during reads: p50 / p95 / max | 21 / 51 / 94 ms | 19 / 213 / 466 ms |
+| Writes during reads, p95 by kind | 47-56 ms, every kind | School renames and moves 37-46 ms; state agency, service center and local agency writes 208-227 ms |
+| Lock waits during reads | writers waiting in 9 of 378 samples | 828 waits, 75.2 s total; writers waiting in 766 of 919 samples, the read in 20 |
+| Write failures; deadlocks | none; 0 | none; 0 |
+| Reads that succeeded | 93 of 93 | 167 of 167 |
+
+**Stress case, without production writes.** Direct SQL writers on a database
+without read committed snapshot. The writers include a transaction that updates a
+School and then a Local Education Agency, the reverse of the order the read took
+the tables in.
+
+| | PostgreSQL 16 | SQL Server 2025 |
+| --- | --- | --- |
 | Bytes received per read | 5.25 MB (105 bytes per row) | 6.24 MB (125 bytes per row) |
-| **Single-row writers**, alone: p50 / p95 / max | not run separately | 1.6 / 2.4 / 534 ms |
-| Same, during reads: p50 / p95 / max | not run separately | 2.4 / 101 / 165 ms |
-| Same, during reads: lock waits | not run separately | 966 waits, 41.2 s total; writers waiting in 93% of samples |
-| Same, during reads: deadlocks; reads that succeeded | not run separately | 0; 123 of 123 |
-| **Mixed writers** (adds School-then-LEA transactions), alone: p50 / p95 / max | 1.3 / 3.6 / 18 ms | 1.6 / 4.9 / 623 ms |
-| Same, during reads: p50 / p95 / max | 1.5 / 6.3 / 21 ms | 1.8 / 98 / 4,993 ms |
-| Same, during reads: lock waits | writers waiting in 1 of 40 samples | 612 waits, 92.6 s total; writers waiting in 93% of samples |
-| Same, during reads: deadlocks; reads that succeeded | 0; 13 of 13 | 65; **10 of 75** (65 read deadlock victims) |
+| Single-row writers during reads: p95; deadlocks; reads that succeeded | not run separately | 101 ms; 0; 123 of 123 |
+| With the reverse-order transaction, during reads: p95; deadlocks; reads that succeeded | 6.3 ms; 0; 13 of 13 | 98 ms; 65; **10 of 75** |
 
-Notes on the table:
+Every one of the 65 SQL Server deadlocks had the same shape. The read held
+key-range locks on Local Education Agency rows and waited for a School row,
+while the writer held that School row and waited for a Local Education Agency
+row. The read was the victim each time. The production write pipeline did not
+reproduce this shape.
 
-- **Single-row writers** update one row's name in the state agency, a service
-  center, a local agency or a school.
-- **Mixed writers** add a transaction that updates a school and then a local
-  agency.
-- **Lock waits** on SQL Server are the server's `LCK_M_*` totals over the phase,
-  readers and writers together. On both engines, waiting sessions are also
-  sampled every 20 ms.
-- **First maximum on SQL Server:** the first operation on a new pool accounts
-  for the large maximum when writers run alone.
-- **Test conditions:** one workstation, local containers with their data on
-  tmpfs, 1 state education agency, 10 service centers, 989 local education
-  agencies and 49,000 schools, with names of about 30 characters.
+Notes:
+
+- **Lock waits** on SQL Server are the server's `LCK_*` totals over the phase,
+  for readers and writers together. On both engines, waiting sessions are also
+  sampled every 20 ms and split into writers and the read by statement text.
+- **Test conditions:** one workstation; local containers with their data on
+  tmpfs; 1 state education agency, 10 service centers, about 1,000 local
+  education agencies and about 49,000 schools; names of about 30 characters.
 - **Limits:** these are indications, not guarantees. Bytes scale with name
   length. Handler cost (validation, digest and response) is measured
   separately.
