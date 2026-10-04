@@ -48,7 +48,11 @@ internal sealed class MssqlEducationOrganizationProjectionSetReader
         // Marks every connection of this connection's pool, including this checked-out one, to be
         // discarded rather than reused when closed. Clearing a pool only costs new opens; the
         // acquisition's lease bookkeeping is unaffected.
-        DiscardConnection: static connection => SqlConnection.ClearPool((SqlConnection)connection)
+        DiscardConnectionAsync: static connection =>
+        {
+            SqlConnection.ClearPool((SqlConnection)connection);
+            return Task.CompletedTask;
+        }
     );
 
     private readonly Func<CancellationToken, Task<EducationOrganizationProjectionConnection>> _acquireAsync;

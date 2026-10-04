@@ -20,7 +20,7 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 internal sealed class PostgresqlEducationOrganizationProjectionSetReader
     : IEducationOrganizationProjectionSetReader
 {
-    private static readonly EducationOrganizationProjectionProvider _provider = new(
+    private static readonly EducationOrganizationProjectionProvider _postgresql = new(
         SqlDialect.Pgsql,
         IsolationLevel.RepeatableRead,
         PostgresqlConnectionAcquisitionFailure.IsExpected,
@@ -36,22 +36,39 @@ internal sealed class PostgresqlEducationOrganizationProjectionSetReader
             string.Create(CultureInfo.InvariantCulture, $"SET LOCAL lock_timeout = '{seconds}s'"),
         // The isolation level is per transaction.
         SessionRestoreStatement: null,
-        // Marks the connection's pool so that this connection is closed, not reused, when released.
-        DiscardConnection: static connection => NpgsqlConnection.ClearPool((NpgsqlConnection)connection)
+        DiscardConnectionAsync: DiscardAsync
     );
 
     private readonly Func<CancellationToken, Task<EducationOrganizationProjectionConnection>> _acquireAsync;
     private readonly ILogger<PostgresqlEducationOrganizationProjectionSetReader> _logger;
     private readonly IEducationOrganizationProjectionReadObserver? _observer;
+    private readonly EducationOrganizationProjectionProvider _provider = _postgresql;
 
     public PostgresqlEducationOrganizationProjectionSetReader(
         NpgsqlDataSourceProvider dataSourceProvider,
         ILogger<PostgresqlEducationOrganizationProjectionSetReader> logger
     )
+        : this(dataSourceProvider, logger, observer: null, configureProvider: null) { }
+
+    /// <summary>
+    /// The production acquisition path with the test seams: an observer, and a change to the provider
+    /// behavior (for example a session restore that fails).
+    /// </summary>
+    internal PostgresqlEducationOrganizationProjectionSetReader(
+        NpgsqlDataSourceProvider dataSourceProvider,
+        ILogger<PostgresqlEducationOrganizationProjectionSetReader> logger,
+        IEducationOrganizationProjectionReadObserver? observer,
+        Func<
+            EducationOrganizationProjectionProvider,
+            EducationOrganizationProjectionProvider
+        >? configureProvider
+    )
     {
         ArgumentNullException.ThrowIfNull(dataSourceProvider);
 
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _observer = observer;
+        _provider = configureProvider?.Invoke(_postgresql) ?? _postgresql;
         _acquireAsync = async cancellationToken =>
             AsOwned(
                 await PostgresqlSeamConnection
@@ -105,4 +122,32 @@ internal sealed class PostgresqlEducationOrganizationProjectionSetReader
 
     private static EducationOrganizationProjectionConnection AsOwned(DbConnection connection) =>
         new(connection, connection);
+
+    /// <summary>
+    /// Ends the connection's own server session. Npgsql treats the resulting <c>57P01</c> as fatal and
+    /// breaks the connector, and a broken connector is destroyed when the connection is released
+    /// instead of returning to the pool. This is the per-connection exclusion that works for a
+    /// connection opened from an explicitly built data source: <c>NpgsqlConnection.ClearPool</c> uses
+    /// the connection-string pool registry, which does not include such data sources, and the shared
+    /// data source must not be disposed while other requests lease it. A session may always signal
+    /// its own backend. A connection that is no longer open is already broken and is not pooled.
+    /// </summary>
+    private static async Task DiscardAsync(DbConnection connection)
+    {
+        if (connection.State != ConnectionState.Open)
+        {
+            return;
+        }
+
+        await using DbCommand terminate = connection.CreateCommand();
+        terminate.CommandText = "SELECT pg_terminate_backend(pg_backend_pid());";
+        try
+        {
+            await terminate.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.AdminShutdown)
+        {
+            // The session ended, which is the point.
+        }
+    }
 }

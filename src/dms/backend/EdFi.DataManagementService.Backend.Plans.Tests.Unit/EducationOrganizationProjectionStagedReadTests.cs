@@ -33,7 +33,7 @@ public class Given_The_Education_Organization_Projection_Staged_Read_With_A_Prov
             EducationOrganizationProjectionExecutionClassifier.ClassifyPostgresql(null, describe),
         static seconds => $"SET LOCAL lock_timeout = '{seconds}s'",
         SessionRestoreStatement: null,
-        DiscardConnection: static _ => { }
+        DiscardConnectionAsync: static _ => Task.CompletedTask
     );
 
     private CancellationTokenSource _cancellation = null!;

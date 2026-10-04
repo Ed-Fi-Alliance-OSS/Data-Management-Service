@@ -6,7 +6,11 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.PostgresqlProjectionReaders;
@@ -619,5 +623,116 @@ public class Given_A_Postgresql_Education_Organization_Projection_Set_Reader_Und
             await transaction.DisposeAsync();
             await Connection.DisposeAsync();
         }
+    }
+}
+
+/// <summary>
+/// Cleanup exclusion through the production acquisition path: the shared data-source cache, a leased
+/// data source and the request's data-source provider, with a pool of exactly one connection so a
+/// second rental shows whether the first physical session was reused.
+/// </summary>
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_A_Postgresql_Education_Organization_Projection_Read_Through_The_Production_Data_Source
+    : PostgresqlEducationOrganizationProjectionFixtureBase
+{
+    private NpgsqlDataSourceCache _cache = null!;
+    private NpgsqlDataSourceProvider _dataSourceProvider = null!;
+
+    [SetUp]
+    public async Task CreateDataSource()
+    {
+        await Seed.StandardHierarchyAsync();
+        string connectionString = new NpgsqlConnectionStringBuilder(Database.ConnectionString)
+        {
+            ApplicationName = "projection-datasource-" + Guid.NewGuid().ToString("N"),
+            Pooling = true,
+            MinPoolSize = 0,
+            MaxPoolSize = 1,
+        }.ConnectionString;
+        var selection = new DataStoreSelection();
+        selection.SetEffectiveTarget(
+            new EffectiveDataStoreTarget(EffectiveTargetKind.Primary, connectionString)
+        );
+        _cache = new NpgsqlDataSourceCache(NullLogger<NpgsqlDataSourceCache>.Instance);
+        _dataSourceProvider = new NpgsqlDataSourceProvider(
+            selection,
+            _cache,
+            NullLogger<NpgsqlDataSourceProvider>.Instance
+        );
+    }
+
+    [TearDown]
+    public async Task DisposeDataSource()
+    {
+        // Before the base drops the database: the cache's data sources are not in the pool registry
+        // that NpgsqlConnection.ClearAllPools clears.
+        await _dataSourceProvider.DisposeAsync();
+        _cache.Dispose();
+    }
+
+    [Test]
+    public async Task It_never_rents_the_session_again_after_its_cleanup_failed_on_an_open_connection()
+    {
+        var (result, readSession) = await ReadThroughProductionPathAsync(restoreStatement: "SELECT 1 / 0;");
+
+        result.Should().BeOfType<Result.Set>();
+        Logger
+            .Records.Should()
+            .ContainSingle(static record => record.Level == LogLevel.Warning)
+            .Which.Message.Should()
+            .Contain("restoring the session")
+            .And.Contain("PostgresException(22012)");
+
+        await using var next = await _dataSourceProvider.DataSource.OpenConnectionAsync();
+        next.ProcessID.Should().NotBe(readSession);
+        (
+            await Database.ExecuteScalarAsync<long>(
+                "SELECT count(*) FROM pg_stat_activity WHERE pid = @pid;",
+                new NpgsqlParameter("pid", readSession)
+            )
+        )
+            .Should()
+            .Be(0);
+    }
+
+    [Test]
+    public async Task It_rents_the_same_session_again_after_a_read_whose_cleanup_succeeded()
+    {
+        // The control: with pooling as configured, a clean read's session is reused, so the test
+        // above cannot pass merely because sessions are never reused.
+        var (result, readSession) = await ReadThroughProductionPathAsync(restoreStatement: "SELECT 1;");
+
+        result.Should().BeOfType<Result.Set>();
+        Logger.Records.Should().NotContain(static record => record.Level >= LogLevel.Warning);
+
+        await using var next = await _dataSourceProvider.DataSource.OpenConnectionAsync();
+        next.ProcessID.Should().Be(readSession);
+    }
+
+    private async Task<(Result Result, int ReadSession)> ReadThroughProductionPathAsync(
+        string restoreStatement
+    )
+    {
+        int readSession = 0;
+        var observer = new RecordingProjectionReadObserver
+        {
+            OnAfterAcquire = (connection, _) =>
+            {
+                readSession = ((NpgsqlConnection)connection).ProcessID;
+                return Task.CompletedTask;
+            },
+        };
+        var reader = new PostgresqlEducationOrganizationProjectionSetReader(
+            _dataSourceProvider,
+            Logger,
+            observer,
+            provider => provider with { SessionRestoreStatement = restoreStatement }
+        );
+
+        var result = await reader.ReadSetAsync(Request(Fixture.MappingSet), CancellationToken.None);
+        readSession.Should().NotBe(0);
+        return (result, readSession);
     }
 }

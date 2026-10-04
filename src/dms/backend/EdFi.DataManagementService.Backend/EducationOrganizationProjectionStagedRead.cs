@@ -49,10 +49,11 @@ internal readonly record struct EducationOrganizationProjectionConnection(
 /// ending the transaction does not, so a pooled connection does not carry the read's isolation into
 /// the next request. <see langword="null"/> when the provider needs none.
 /// </param>
-/// <param name="DiscardConnection">
+/// <param name="DiscardConnectionAsync">
 /// Excludes the connection from reuse, so that when it is released the pool closes it instead of
 /// handing it to the next request. Called before release whenever the read cannot confirm that it
-/// left the session as it found it.
+/// left the session as it found it. It must work for connections opened from the deployment's own
+/// data source and must not dispose a data source other requests share.
 /// </param>
 internal sealed record EducationOrganizationProjectionProvider(
     SqlDialect Dialect,
@@ -62,7 +63,7 @@ internal sealed record EducationOrganizationProjectionProvider(
     Func<DbException, string, EducationOrganizationProjectionSetResult> ClassifyExecutionFailure,
     Func<int, string> LockTimeoutStatement,
     string? SessionRestoreStatement,
-    Action<DbConnection> DiscardConnection
+    Func<DbConnection, Task> DiscardConnectionAsync
 );
 
 /// <summary>
@@ -433,7 +434,7 @@ internal static class EducationOrganizationProjectionStagedRead
     {
         if (!cleanupConfirmed)
         {
-            Discard(opened.Connection, provider, logger);
+            await DiscardAsync(opened.Connection, provider, logger).ConfigureAwait(false);
         }
 
         try
@@ -445,12 +446,12 @@ internal static class EducationOrganizationProjectionStagedRead
             LogCleanupFailure(logger, "releasing the connection", provider.Describe(exception));
             if (cleanupConfirmed)
             {
-                Discard(opened.Connection, provider, logger);
+                await DiscardAsync(opened.Connection, provider, logger).ConfigureAwait(false);
             }
         }
     }
 
-    private static void Discard(
+    private static async Task DiscardAsync(
         DbConnection connection,
         EducationOrganizationProjectionProvider provider,
         ILogger logger
@@ -458,7 +459,7 @@ internal static class EducationOrganizationProjectionStagedRead
     {
         try
         {
-            provider.DiscardConnection(connection);
+            await provider.DiscardConnectionAsync(connection).ConfigureAwait(false);
         }
         catch (Exception exception)
         {

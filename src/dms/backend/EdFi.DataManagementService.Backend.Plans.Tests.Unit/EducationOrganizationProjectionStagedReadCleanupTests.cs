@@ -81,7 +81,11 @@ public class Given_The_Education_Organization_Projection_Staged_Read_Cleanup
                 EducationOrganizationProjectionExecutionClassifier.ClassifyMssql(null, describe),
             static seconds => $"SET LOCK_TIMEOUT {seconds * 1000}",
             RestoreStatement,
-            _ => _events.Add("discard")
+            _ =>
+            {
+                _events.Add("discard");
+                return Task.CompletedTask;
+            }
         );
     }
 
