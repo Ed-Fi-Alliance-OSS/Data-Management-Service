@@ -68,6 +68,7 @@ internal static class EducationOrganizationProjectionExecutionClassifier
         245, // conversion failed converting a value to a data type
         257, // implicit conversion not allowed
         402, // data types incompatible in operator
+        447, // expression type invalid for COLLATE: a name column that is no longer character data
         529, // explicit conversion not allowed
         8114, // error converting data type
         8115, // arithmetic overflow converting to data type

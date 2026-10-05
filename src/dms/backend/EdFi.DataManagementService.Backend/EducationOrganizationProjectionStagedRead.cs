@@ -243,7 +243,7 @@ internal static class EducationOrganizationProjectionStagedRead
                 await using (reader.ConfigureAwait(false))
                 {
                     rows = await EducationOrganizationProjectionRowReader
-                        .ReadAllAsync(reader, plan.ResultColumns, cancellationToken)
+                        .ReadAllAsync(reader, plan.ResultColumns, plan.NameEncoding, cancellationToken)
                         .ConfigureAwait(false);
 
                     // Every row has been read; close before committing.

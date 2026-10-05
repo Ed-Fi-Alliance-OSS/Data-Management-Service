@@ -778,8 +778,10 @@ internal static class EducationOrganizationProjectionScenario
     }
 
     /// <summary>
-    /// SQL Server can store a lone surrogate, which no client can decode: the set is refused as invalid
-    /// data, never answered with a replacement character or an unexpected error.
+    /// SQL Server can store a lone surrogate, which no client can decode. A high or a low surrogate
+    /// in either name, on a row outside the requested page, refuses the whole set as invalid data: the
+    /// fixed problem, with no partial page and no cursor, never a replacement character, a schema
+    /// incompatibility or an unexpected error. Repairing the name serves the set again.
     /// </summary>
     public static async Task It_refuses_a_name_that_is_not_well_formed_utf16(
         EducationOrganizationProjectionContext context
@@ -789,20 +791,111 @@ internal static class EducationOrganizationProjectionScenario
         EducationOrganizationProjectionEngine engine = context.Engine;
         Seeder seeder = await Seeder.CreateAsync(harness, TenantA, RouteA);
         await seeder.StateAgencyAsync(1, "Projection State");
-        await seeder.SchoolAsync(100001, "School 100001");
+        await seeder.SchoolAsync(100001, "School 100001", "S100001");
 
-        await engine.ExecuteAsync(
-            context.PrimaryConnectionString,
-            $"UPDATE {engine.Table("edfi", "School")} SET {engine.Q("NameOfInstitution")} = N'Lone ' + NCHAR(55296);"
-        );
+        // The first page holds the state agency alone; the school sits on the second.
+        ProjectionResponse firstPage = await GetPageAsync(cursor: null);
+        ShouldBeSuccess(firstPage, PrimaryStoreId);
+        ItemsOf(firstPage).Select(item => item.Id).Should().Equal(1);
+        string cursor = NextCursorOf(firstPage)!;
 
-        ProjectionResponse refused = await GetAsync(
+        string school = engine.Table("edfi", "School");
+        foreach (
+            (string column, string malformed) in new[]
+            {
+                ("NameOfInstitution", "N'High ' + NCHAR(55296)"),
+                ("NameOfInstitution", "N'Low ' + NCHAR(56320)"),
+                ("ShortNameOfInstitution", "NCHAR(56319) + N' high'"),
+                ("ShortNameOfInstitution", "N'low ' + NCHAR(57343)"),
+            }
+        )
+        {
+            string name = column == "NameOfInstitution" ? "'School 100001'" : "'S100001'";
+            await engine.ExecuteAsync(
+                context.PrimaryConnectionString,
+                $"UPDATE {school} SET {engine.Q(column)} = {malformed};"
+            );
+
+            foreach (
+                ProjectionResponse refused in new[]
+                {
+                    await GetPageAsync(cursor: null),
+                    await GetPageAsync(cursor),
+                }
+            )
+            {
+                ShouldBeProjectionProblem(refused, Problem.ProjectionDataInvalid);
+                JsonObject problem = refused.Json.AsObject();
+                problem.Should().NotContainKey("items", $"{column} = {malformed}");
+                problem.Should().NotContainKey("nextCursor", $"{column} = {malformed}");
+                refused.Body.Should().NotContain("\uFFFD");
+            }
+
+            await engine.ExecuteAsync(
+                context.PrimaryConnectionString,
+                $"UPDATE {school} SET {engine.Q(column)} = N{name};"
+            );
+            ShouldBeSuccess(await GetPageAsync(cursor: null), PrimaryStoreId);
+        }
+
+        Task<ProjectionResponse> GetPageAsync(string? cursor) =>
+            GetAsync(
+                harness,
+                Credentials.Projection,
+                ProjectionPath(TenantA, RouteA, Query(PrimaryStoreId, 1, cursor))
+            );
+    }
+
+    /// <summary>
+    /// Stored names are served exactly as stored, on each engine: a supplementary character, a literal
+    /// U+FFFD, an empty short name and a null one. These are the controls for the malformed-name
+    /// refusal, which must not catch well-formed text.
+    /// </summary>
+    public static async Task It_serves_stored_names_unchanged(EducationOrganizationProjectionContext context)
+    {
+        ApiIntegrationHarness harness = Prepare(context);
+        EducationOrganizationProjectionEngine engine = context.Engine;
+        Seeder seeder = await Seeder.CreateAsync(harness, TenantA, RouteA);
+        await seeder.StateAgencyAsync(1, "Projection State", "PS");
+        await seeder.LocalAgencyAsync(100, "District 100", "D100", stateAgency: 1);
+        await seeder.SchoolAsync(100001, "School 100001", "S100001", localAgency: 100);
+
+        const string Supplementary = "Pair \U0001F600 grinning";
+        const string Replacement = "Literal \uFFFD kept";
+        foreach (
+            (string table, string key, long id, string name, string? shortName) in new[]
+            {
+                ("StateEducationAgency", "StateEducationAgencyId", 1L, Supplementary, (string?)""),
+                ("LocalEducationAgency", "LocalEducationAgencyId", 100L, Replacement, null),
+                ("School", "SchoolId", 100001L, "School 100001", Supplementary),
+            }
+        )
+        {
+            await engine.ExecuteAsync(
+                context.PrimaryConnectionString,
+                $"UPDATE {engine.Table("edfi", table)} SET {engine.Q("NameOfInstitution")} = @name, "
+                    + $"{engine.Q("ShortNameOfInstitution")} = {(shortName is null ? "NULL" : "@shortName")} "
+                    + $"WHERE {engine.Q(key)} = @id;",
+                shortName is null
+                    ? [("name", name), ("id", id)]
+                    : [("name", name), ("shortName", shortName), ("id", id)]
+            );
+        }
+
+        Walk walk = await WalkAsync(
             harness,
             Credentials.Projection,
-            ProjectionPath(TenantA, RouteA, Query(PrimaryStoreId, 1))
+            TenantA,
+            RouteA,
+            PrimaryStoreId,
+            limit: 1
         );
-        ShouldBeProjectionProblem(refused, Problem.ProjectionDataInvalid);
-        refused.Body.Should().NotContain("�");
+        walk.Items.Should()
+            .Equal(
+                new Item(1, Supplementary, "", StateAgency, null),
+                new Item(100, Replacement, null, LocalAgency, 1),
+                new Item(100001, "School 100001", Supplementary, School, 100)
+            );
     }
 
     /// <summary>

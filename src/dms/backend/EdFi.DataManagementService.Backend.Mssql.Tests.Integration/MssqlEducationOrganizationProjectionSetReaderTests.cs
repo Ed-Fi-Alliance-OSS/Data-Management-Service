@@ -158,6 +158,71 @@ public class Given_A_Mssql_Education_Organization_Projection_Set_Reader
     }
 
     [Test]
+    public async Task It_reads_each_name_as_the_utf16_code_units_stored()
+    {
+        // SqlClient decodes nvarchar with replacement, so a lone surrogate read as text would arrive as
+        // U+FFFD. Written with NCHAR, since SqlClient would also replace one sent as a parameter.
+        for (long id = 1; id <= 6; id++)
+        {
+            await Seed.StateEducationAgencyAsync(id, $"Agency {id}", null);
+        }
+
+        await Database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[StateEducationAgency] SET [NameOfInstitution] = N'High ' + NCHAR(55296), [ShortNameOfInstitution] = N'ok' WHERE [StateEducationAgencyId] = 1;
+            UPDATE [edfi].[StateEducationAgency] SET [NameOfInstitution] = N'Low ' + NCHAR(56320) WHERE [StateEducationAgencyId] = 2;
+            UPDATE [edfi].[StateEducationAgency] SET [ShortNameOfInstitution] = NCHAR(55296) + N' high' WHERE [StateEducationAgencyId] = 3;
+            UPDATE [edfi].[StateEducationAgency] SET [ShortNameOfInstitution] = N'low ' + NCHAR(57343) WHERE [StateEducationAgencyId] = 4;
+            UPDATE [edfi].[StateEducationAgency] SET [NameOfInstitution] = N'Pair ' + NCHAR(55357) + NCHAR(56832), [ShortNameOfInstitution] = N'' WHERE [StateEducationAgencyId] = 5;
+            UPDATE [edfi].[StateEducationAgency] SET [NameOfInstitution] = N'Literal ' + NCHAR(65533) WHERE [StateEducationAgencyId] = 6;
+            """
+        );
+
+        var result = await ReadAsync();
+
+        IReadOnlyList<EducationOrganizationProjectionRow> rows = result
+            .Should()
+            .BeOfType<Result.Set>()
+            .Which.Rows;
+        string?[][] names =
+        [
+            .. rows.Select(static row => new[] { row.NameOfInstitution, row.ShortNameOfInstitution }),
+        ];
+        string?[][] expected =
+        [
+            ["High \ud800", "ok"],
+            ["Low \udc00", null],
+            ["Agency 3", "\ud800 high"],
+            ["Agency 4", "low \udfff"],
+            ["Pair \ud83d\ude00", ""],
+            ["Literal \ufffd", null],
+        ];
+        Units(names).Should().Equal(Units(expected));
+
+        static string[] Units(string?[][] values) =>
+            [
+                .. values.Select(static pair =>
+                    string.Join(
+                        "|",
+                        pair.Select(static value =>
+                            value is null
+                                ? "null"
+                                : string.Join(
+                                    " ",
+                                    value.Select(static unit =>
+                                        ((int)unit).ToString(
+                                            "X4",
+                                            System.Globalization.CultureInfo.InvariantCulture
+                                        )
+                                    )
+                                )
+                        )
+                    )
+                ),
+            ];
+    }
+
+    [Test]
     public async Task It_relies_on_the_database_to_reject_one_identifier_shared_by_two_types()
     {
         // Assumption A-1: EducationOrganizationIdentity keeps identifiers unique across member types.
@@ -428,7 +493,8 @@ public class Given_A_Mssql_Education_Organization_Projection_Set_Reader_Over_An_
     [Test]
     public async Task It_reports_one_arm_of_another_column_type_as_a_data_type_incompatibility()
     {
-        // The integer arm makes the union integer, so another arm's text short name fails to convert.
+        // The names are read as their UTF-16 bytes through COLLATE, which refuses a column that is not
+        // character data (447) instead of converting it; the bytes never hide the changed type.
         await _database.ExecuteNonQueryAsync(
             """
             UPDATE [edfi].[StateEducationAgency] SET [ShortNameOfInstitution] = NULL;
@@ -443,17 +509,17 @@ public class Given_A_Mssql_Education_Organization_Projection_Set_Reader_Over_An_
             .Be(
                 new Result.SchemaIncompatible(
                     EducationOrganizationProjectionSchemaIncompatibilityReason.DataTypeIncompatible,
-                    "245"
+                    "447"
                 )
             );
         AssertRedacted(_logger, _database.DatabaseName, "ShortNameOfInstitution");
     }
 
     [Test]
-    public async Task It_reports_a_value_it_cannot_read_as_its_required_type_as_a_materialization_mismatch()
+    public async Task It_reports_every_arm_of_another_column_type_as_a_data_type_incompatibility()
     {
-        // Every arm changes together, so the statement succeeds and returns an integer column where
-        // the row requires a string.
+        // Every arm changes together. Read as text, the statement succeeded and returned an integer
+        // column the row could not read; read as bytes, COLLATE refuses it in the statement.
         await _database.ExecuteNonQueryAsync(
             """
             UPDATE [edfi].[StateEducationAgency] SET [ShortNameOfInstitution] = NULL;
@@ -476,11 +542,58 @@ public class Given_A_Mssql_Education_Organization_Projection_Set_Reader_Over_An_
             .Should()
             .Be(
                 new Result.SchemaIncompatible(
-                    EducationOrganizationProjectionSchemaIncompatibilityReason.MaterializationTypeMismatch,
-                    null
+                    EducationOrganizationProjectionSchemaIncompatibilityReason.DataTypeIncompatible,
+                    "447"
                 )
             );
         AssertRedacted(_logger, _database.DatabaseName);
+    }
+
+    [Test]
+    public async Task It_reads_a_name_column_of_another_character_type_as_its_text()
+    {
+        // A non-Unicode column is still character data: it is converted to nvarchar, not reinterpreted
+        // as UTF-16, so it reads as the text it held as text.
+        await _database.ExecuteNonQueryAsync(
+            """
+            ALTER TABLE [edfi].[School] ALTER COLUMN [ShortNameOfInstitution] varchar(75) NULL;
+            UPDATE [edfi].[School] SET [ShortNameOfInstitution] = 'caf' + CHAR(233) WHERE [SchoolId] = 100001;
+            """
+        );
+
+        var result = await ReadAsync();
+
+        result
+            .Should()
+            .BeOfType<Result.Set>()
+            .Which.Rows.Should()
+            .ContainSingle(static row => row.EducationOrganizationId == 100001)
+            .Which.ShortNameOfInstitution.Should()
+            .Be("café");
+    }
+
+    [Test]
+    public async Task It_reports_a_binary_name_column_as_a_data_type_incompatibility()
+    {
+        // Binary data would convert to bytes without complaint; COLLATE refuses it. SQL Server will not
+        // alter nvarchar to varbinary in place, so the column is replaced.
+        await _database.ExecuteNonQueryAsync(
+            """
+            ALTER TABLE [edfi].[School] DROP COLUMN [ShortNameOfInstitution];
+            ALTER TABLE [edfi].[School] ADD [ShortNameOfInstitution] varbinary(150) NULL;
+            """
+        );
+
+        var result = await ReadAsync();
+
+        result
+            .Should()
+            .Be(
+                new Result.SchemaIncompatible(
+                    EducationOrganizationProjectionSchemaIncompatibilityReason.DataTypeIncompatible,
+                    "447"
+                )
+            );
     }
 
     [Test]

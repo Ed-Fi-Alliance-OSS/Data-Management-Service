@@ -86,12 +86,31 @@ public sealed record EducationOrganizationProjectionResultColumns(
 /// </param>
 /// <param name="ArmsInOrder">The core arms in statement order.</param>
 /// <param name="ResultColumns">The result-column aliases, in select order.</param>
+/// <param name="NameEncoding">How the statement returns the two name columns.</param>
 public sealed record EducationOrganizationProjectionSqlPlan(
     string Sql,
     QuerySqlParameter RowLimitParameter,
     IReadOnlyList<EducationOrganizationProjectionArm> ArmsInOrder,
-    EducationOrganizationProjectionResultColumns ResultColumns
+    EducationOrganizationProjectionResultColumns ResultColumns,
+    EducationOrganizationProjectionNameEncoding NameEncoding
 );
+
+/// <summary>
+/// How the projection statement returns <c>nameOfInstitution</c> and <c>shortNameOfInstitution</c>.
+/// </summary>
+public enum EducationOrganizationProjectionNameEncoding
+{
+    /// <summary>As text, read with the provider's string decoding (PostgreSQL).</summary>
+    Text,
+
+    /// <summary>
+    /// As the stored UTF-16 code units, little-endian, in a binary column (SQL Server). SqlClient
+    /// decodes <c>nvarchar</c> with replacement, turning a stored lone surrogate into U+FFFD before any
+    /// caller sees it; the bytes let the reader rebuild exactly what is stored, malformed or not, so
+    /// the handler's validation can refuse it.
+    /// </summary>
+    Utf16LittleEndianBytes,
+}
 
 /// <summary>
 /// The outcome of compiling the projection statement from a mapping set.

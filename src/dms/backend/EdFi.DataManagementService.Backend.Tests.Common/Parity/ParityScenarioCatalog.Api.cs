@@ -140,6 +140,12 @@ public static partial class ParityScenarioCatalog
             "It_abandons_the_read_when_the_client_disconnects"
         ),
         Projection(
+            "Api/EducationOrganizationProjection/ServesStoredNamesUnchanged",
+            "A supplementary character, a literal U+FFFD, an empty short name and a null short name are served exactly as stored.",
+            "EducationOrganizationProjectionScenario.It_serves_stored_names_unchanged",
+            "It_serves_stored_names_unchanged"
+        ),
+        Projection(
             "Api/EducationOrganizationProjection/BoundsTheResponseBodyWithTheLongestNames",
             "Items with 20-character int64 identifiers and the engine's longest serialized names stay within the 2,048-byte item, 512-byte envelope and page bounds, each name within 6 bytes per UTF-16 unit and decoded unchanged.",
             "EducationOrganizationProjectionScenario.It_bounds_the_response_body",

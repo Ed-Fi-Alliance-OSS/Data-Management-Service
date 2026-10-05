@@ -18,12 +18,19 @@ namespace EdFi.DataManagementService.Backend;
 /// conversion exception), which the staged read classifies as a permanent materialization mismatch.
 /// The required-column null is checked explicitly so that it raises the same exception type on both
 /// providers.
+/// <para>
+/// Names returned as UTF-16 bytes (<see cref="EducationOrganizationProjectionNameEncoding.Utf16LittleEndianBytes"/>)
+/// are rebuilt code unit by code unit, without decoding, so a lone surrogate reaches the handler's
+/// validation exactly as stored. Nothing here validates text; that is the handler's job, after the
+/// transaction ends.
+/// </para>
 /// </remarks>
 internal static class EducationOrganizationProjectionRowReader
 {
     public static async Task<List<EducationOrganizationProjectionRow>> ReadAllAsync(
         DbDataReader reader,
         EducationOrganizationProjectionResultColumns columns,
+        EducationOrganizationProjectionNameEncoding nameEncoding,
         CancellationToken cancellationToken
     )
     {
@@ -47,8 +54,8 @@ internal static class EducationOrganizationProjectionRowReader
                 new EducationOrganizationProjectionRow(
                     Required<long>(reader, id),
                     Required<string>(reader, discriminator),
-                    Required<string>(reader, name),
-                    Optional<string>(reader, shortName),
+                    RequiredName(reader, name, nameEncoding),
+                    OptionalName(reader, shortName, nameEncoding),
                     OptionalInt64(reader, localEducationAgency),
                     OptionalInt64(reader, parentLocalEducationAgency),
                     OptionalInt64(reader, educationServiceCenter),
@@ -67,10 +74,60 @@ internal static class EducationOrganizationProjectionRowReader
             : reader.GetFieldValue<T>(ordinal);
     }
 
-    private static T? Optional<T>(DbDataReader reader, int ordinal)
-        where T : class
+    private static string RequiredName(
+        DbDataReader reader,
+        int ordinal,
+        EducationOrganizationProjectionNameEncoding encoding
+    )
     {
-        return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<T>(ordinal);
+        return reader.IsDBNull(ordinal)
+            ? throw new InvalidCastException("A projection column the row requires is null.")
+            : Name(reader, ordinal, encoding);
+    }
+
+    private static string? OptionalName(
+        DbDataReader reader,
+        int ordinal,
+        EducationOrganizationProjectionNameEncoding encoding
+    )
+    {
+        return reader.IsDBNull(ordinal) ? null : Name(reader, ordinal, encoding);
+    }
+
+    private static string Name(
+        DbDataReader reader,
+        int ordinal,
+        EducationOrganizationProjectionNameEncoding encoding
+    )
+    {
+        return encoding == EducationOrganizationProjectionNameEncoding.Utf16LittleEndianBytes
+            ? FromUtf16LittleEndian(reader.GetFieldValue<byte[]>(ordinal))
+            : reader.GetFieldValue<string>(ordinal);
+    }
+
+    /// <summary>
+    /// The code units the bytes hold, each from two bytes, low byte first, whatever the host's byte
+    /// order. No decoder is involved, so no unit is replaced or dropped.
+    /// </summary>
+    internal static string FromUtf16LittleEndian(byte[] bytes)
+    {
+        if (bytes.Length % 2 != 0)
+        {
+            // An nvarchar value always has an even length; anything else is not what the statement returns.
+            throw new InvalidCastException("A projection name column did not hold whole UTF-16 code units.");
+        }
+
+        return string.Create(
+            bytes.Length / 2,
+            bytes,
+            static (units, source) =>
+            {
+                for (int index = 0; index < units.Length; index++)
+                {
+                    units[index] = (char)(source[2 * index] | (source[(2 * index) + 1] << 8));
+                }
+            }
+        );
     }
 
     private static long? OptionalInt64(DbDataReader reader, int ordinal)

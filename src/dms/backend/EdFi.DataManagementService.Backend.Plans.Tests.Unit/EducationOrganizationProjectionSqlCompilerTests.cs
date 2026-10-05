@@ -98,6 +98,12 @@ public class Given_EducationOrganizationProjectionSqlCompiler_Over_The_Ds52_Post
     }
 
     [Test]
+    public void It_returns_the_names_as_text()
+    {
+        _plan.NameEncoding.Should().Be(EducationOrganizationProjectionNameEncoding.Text);
+    }
+
+    [Test]
     public void It_binds_the_row_limit_as_a_limit_parameter()
     {
         _plan.RowLimitParameter.Should().Be(new QuerySqlParameter(QuerySqlParameterRole.Limit, "RowLimit"));
@@ -208,6 +214,12 @@ public class Given_EducationOrganizationProjectionSqlCompiler_Over_The_Ds52_SqlS
     }
 
     [Test]
+    public void It_returns_the_names_as_their_stored_utf16_code_units()
+    {
+        _plan.NameEncoding.Should().Be(EducationOrganizationProjectionNameEncoding.Utf16LittleEndianBytes);
+    }
+
+    [Test]
     public void It_selects_the_same_four_core_arms_as_postgresql()
     {
         var pgsqlPlan = EducationOrganizationProjectionDs52MappingSets.RequireCompiled(
@@ -239,8 +251,8 @@ public class Given_EducationOrganizationProjectionSqlCompiler_Over_The_Ds52_SqlS
                     SELECT
                         r.[StateEducationAgencyId] AS [EducationOrganizationId],
                         N'Ed-Fi:StateEducationAgency' AS [Discriminator],
-                        r.[NameOfInstitution] AS [NameOfInstitution],
-                        r.[ShortNameOfInstitution] AS [ShortNameOfInstitution],
+                        CAST(CONVERT(nvarchar(max), r.[NameOfInstitution] COLLATE Latin1_General_100_BIN2) AS varbinary(max)) AS [NameOfInstitution],
+                        CAST(CONVERT(nvarchar(max), r.[ShortNameOfInstitution] COLLATE Latin1_General_100_BIN2) AS varbinary(max)) AS [ShortNameOfInstitution],
                         CAST(NULL AS bigint) AS [LocalEducationAgencyReference],
                         CAST(NULL AS bigint) AS [ParentLocalEducationAgencyReference],
                         CAST(NULL AS bigint) AS [EducationServiceCenterReference],
@@ -250,8 +262,8 @@ public class Given_EducationOrganizationProjectionSqlCompiler_Over_The_Ds52_SqlS
                     SELECT
                         r.[EducationServiceCenterId] AS [EducationOrganizationId],
                         N'Ed-Fi:EducationServiceCenter' AS [Discriminator],
-                        r.[NameOfInstitution] AS [NameOfInstitution],
-                        r.[ShortNameOfInstitution] AS [ShortNameOfInstitution],
+                        CAST(CONVERT(nvarchar(max), r.[NameOfInstitution] COLLATE Latin1_General_100_BIN2) AS varbinary(max)) AS [NameOfInstitution],
+                        CAST(CONVERT(nvarchar(max), r.[ShortNameOfInstitution] COLLATE Latin1_General_100_BIN2) AS varbinary(max)) AS [ShortNameOfInstitution],
                         CAST(NULL AS bigint) AS [LocalEducationAgencyReference],
                         CAST(NULL AS bigint) AS [ParentLocalEducationAgencyReference],
                         CAST(NULL AS bigint) AS [EducationServiceCenterReference],
@@ -261,8 +273,8 @@ public class Given_EducationOrganizationProjectionSqlCompiler_Over_The_Ds52_SqlS
                     SELECT
                         r.[LocalEducationAgencyId] AS [EducationOrganizationId],
                         N'Ed-Fi:LocalEducationAgency' AS [Discriminator],
-                        r.[NameOfInstitution] AS [NameOfInstitution],
-                        r.[ShortNameOfInstitution] AS [ShortNameOfInstitution],
+                        CAST(CONVERT(nvarchar(max), r.[NameOfInstitution] COLLATE Latin1_General_100_BIN2) AS varbinary(max)) AS [NameOfInstitution],
+                        CAST(CONVERT(nvarchar(max), r.[ShortNameOfInstitution] COLLATE Latin1_General_100_BIN2) AS varbinary(max)) AS [ShortNameOfInstitution],
                         CAST(NULL AS bigint) AS [LocalEducationAgencyReference],
                         r.[ParentLocalEducationAgency_LocalEducationAgencyId] AS [ParentLocalEducationAgencyReference],
                         r.[EducationServiceCenter_EducationServiceCenterId] AS [EducationServiceCenterReference],
@@ -272,8 +284,8 @@ public class Given_EducationOrganizationProjectionSqlCompiler_Over_The_Ds52_SqlS
                     SELECT
                         r.[SchoolId] AS [EducationOrganizationId],
                         N'Ed-Fi:School' AS [Discriminator],
-                        r.[NameOfInstitution] AS [NameOfInstitution],
-                        r.[ShortNameOfInstitution] AS [ShortNameOfInstitution],
+                        CAST(CONVERT(nvarchar(max), r.[NameOfInstitution] COLLATE Latin1_General_100_BIN2) AS varbinary(max)) AS [NameOfInstitution],
+                        CAST(CONVERT(nvarchar(max), r.[ShortNameOfInstitution] COLLATE Latin1_General_100_BIN2) AS varbinary(max)) AS [ShortNameOfInstitution],
                         r.[LocalEducationAgency_LocalEducationAgencyId] AS [LocalEducationAgencyReference],
                         CAST(NULL AS bigint) AS [ParentLocalEducationAgencyReference],
                         CAST(NULL AS bigint) AS [EducationServiceCenterReference],

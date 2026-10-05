@@ -63,6 +63,7 @@ public class Given_The_Parity_Scenario_Catalog
         "Api/EducationOrganizationProjection/FailsClosedOnContradictoryRelationships",
         "Api/EducationOrganizationProjection/RefusesInvalidParametersCursorsAndVersions",
         "Api/EducationOrganizationProjection/AbandonsTheReadWhenTheClientDisconnects",
+        "Api/EducationOrganizationProjection/ServesStoredNamesUnchanged",
         "Api/EducationOrganizationProjection/BoundsTheResponseBodyWithTheLongestNames",
         "Api/EducationOrganizationProjection/BoundsTheResponseBodyWithControlCharacters",
         "Api/EducationOrganizationProjection/RefusesASetLargerThanTheRowCap",

@@ -70,6 +70,10 @@ public sealed class Given_Postgresql_EducationOrganizationProjection
         EducationOrganizationProjectionScenario.It_abandons_the_read_when_the_client_disconnects(Context);
 
     [Test]
+    public Task It_serves_stored_names_unchanged() =>
+        EducationOrganizationProjectionScenario.It_serves_stored_names_unchanged(Context);
+
+    [Test]
     public Task It_bounds_the_response_body_with_the_longest_names() =>
         EducationOrganizationProjectionScenario.It_bounds_the_response_body(
             Context,

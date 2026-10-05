@@ -159,6 +159,7 @@ public class Given_The_Education_Organization_Projection_Row_Reader
         var rows = await EducationOrganizationProjectionRowReader.ReadAllAsync(
             table.CreateDataReader(),
             _columns,
+            EducationOrganizationProjectionNameEncoding.Text,
             CancellationToken.None
         );
 
@@ -211,6 +212,7 @@ public class Given_The_Education_Organization_Projection_Row_Reader
             EducationOrganizationProjectionRowReader.ReadAllAsync(
                 table.CreateDataReader(),
                 _columns,
+                EducationOrganizationProjectionNameEncoding.Text,
                 CancellationToken.None
             );
 
@@ -221,13 +223,155 @@ public class Given_The_Education_Organization_Projection_Row_Reader
             );
     }
 
-    private static DataTable Table()
+    [Test]
+    public async Task It_rebuilds_names_from_their_utf16_bytes_unit_for_unit()
     {
+        // Built at run time: a [TestCase] string loses a lone surrogate in attribute metadata.
+        (string Name, string? ShortName)[] names =
+        [
+            ("High \ud800", "x"),
+            ("Low \udc00", "x"),
+            ("x", "\ud800 high"),
+            ("x", "low \udfff"),
+            ("Pair \ud83d\ude00", ""),
+            ("Literal \ufffd", null),
+        ];
+        names.Take(4).Should().OnlyContain(static pair => (pair.Name + pair.ShortName).Any(char.IsSurrogate));
+
+        var table = Table(binaryNames: true);
+        for (int index = 0; index < names.Length; index++)
+        {
+            table.Rows.Add(
+                (long)index,
+                "Ed-Fi:School",
+                Utf16(names[index].Name),
+                names[index].ShortName is { } shortName ? Utf16(shortName) : DBNull.Value,
+                DBNull.Value,
+                DBNull.Value,
+                DBNull.Value,
+                DBNull.Value
+            );
+        }
+
+        var rows = await EducationOrganizationProjectionRowReader.ReadAllAsync(
+            table.CreateDataReader(),
+            _columns,
+            EducationOrganizationProjectionNameEncoding.Utf16LittleEndianBytes,
+            CancellationToken.None
+        );
+
+        Units(rows.Select(static row => (row.NameOfInstitution, row.ShortNameOfInstitution)))
+            .Should()
+            .Equal(Units(names.Select(static pair => (pair.Name, pair.ShortName))));
+    }
+
+    /// <summary>Code units in hex, so a replaced surrogate cannot compare equal by accident.</summary>
+    private static string[] Units(IEnumerable<(string Name, string? ShortName)> names) =>
+        [
+            .. names.Select(static pair =>
+                $"{Hex(pair.Name)}|{(pair.ShortName is null ? "null" : Hex(pair.ShortName))}"
+            ),
+        ];
+
+    private static string Hex(string value) =>
+        string.Join(
+            " ",
+            value.Select(static unit =>
+                ((int)unit).ToString("X4", System.Globalization.CultureInfo.InvariantCulture)
+            )
+        );
+
+    [Test]
+    public void It_reads_each_code_unit_low_byte_first()
+    {
+        EducationOrganizationProjectionRowReader
+            .FromUtf16LittleEndian([0x00, 0xD8, 0x41, 0x00, 0x00, 0xDC])
+            .Select(static unit => (int)unit)
+            .Should()
+            .Equal(0xD800, 0x0041, 0xDC00);
+    }
+
+    [Test]
+    public async Task It_raises_a_materialization_failure_for_bytes_that_are_not_whole_code_units()
+    {
+        var table = Table(binaryNames: true);
+        table.Rows.Add(
+            1L,
+            "Ed-Fi:School",
+            new byte[] { 0x41, 0x00, 0x42 },
+            DBNull.Value,
+            DBNull.Value,
+            DBNull.Value,
+            DBNull.Value,
+            DBNull.Value
+        );
+
+        var act = () =>
+            EducationOrganizationProjectionRowReader.ReadAllAsync(
+                table.CreateDataReader(),
+                _columns,
+                EducationOrganizationProjectionNameEncoding.Utf16LittleEndianBytes,
+                CancellationToken.None
+            );
+
+        (await act.Should().ThrowAsync<Exception>())
+            .Which.Should()
+            .Match<Exception>(static exception =>
+                EducationOrganizationProjectionExecutionClassifier.IsMaterializationFailure(exception)
+            );
+    }
+
+    [Test]
+    public async Task It_raises_a_materialization_failure_for_a_null_required_name_read_as_bytes()
+    {
+        var table = Table(binaryNames: true);
+        table.Rows.Add(
+            1L,
+            "Ed-Fi:School",
+            DBNull.Value,
+            DBNull.Value,
+            DBNull.Value,
+            DBNull.Value,
+            DBNull.Value,
+            DBNull.Value
+        );
+
+        var act = () =>
+            EducationOrganizationProjectionRowReader.ReadAllAsync(
+                table.CreateDataReader(),
+                _columns,
+                EducationOrganizationProjectionNameEncoding.Utf16LittleEndianBytes,
+                CancellationToken.None
+            );
+
+        (await act.Should().ThrowAsync<Exception>())
+            .Which.Should()
+            .Match<Exception>(static exception =>
+                EducationOrganizationProjectionExecutionClassifier.IsMaterializationFailure(exception)
+            );
+    }
+
+    private static byte[] Utf16(string value)
+    {
+        // Unit by unit, little-endian: Encoding.Unicode would replace a lone surrogate.
+        byte[] bytes = new byte[value.Length * 2];
+        for (int index = 0; index < value.Length; index++)
+        {
+            bytes[2 * index] = (byte)value[index];
+            bytes[(2 * index) + 1] = (byte)(value[index] >> 8);
+        }
+
+        return bytes;
+    }
+
+    private static DataTable Table(bool binaryNames = false)
+    {
+        Type nameType = binaryNames ? typeof(byte[]) : typeof(string);
         var table = new DataTable();
         table.Columns.Add(_columns.EducationOrganizationId.Value, typeof(long));
         table.Columns.Add(_columns.Discriminator.Value, typeof(string));
-        table.Columns.Add(_columns.NameOfInstitution.Value, typeof(string));
-        table.Columns.Add(_columns.ShortNameOfInstitution.Value, typeof(string));
+        table.Columns.Add(_columns.NameOfInstitution.Value, nameType);
+        table.Columns.Add(_columns.ShortNameOfInstitution.Value, nameType);
         table.Columns.Add(_columns.LocalEducationAgencyReference.Value, typeof(long));
         table.Columns.Add(_columns.ParentLocalEducationAgencyReference.Value, typeof(long));
         table.Columns.Add(_columns.EducationServiceCenterReference.Value, typeof(long));

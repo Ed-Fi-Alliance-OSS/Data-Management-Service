@@ -71,13 +71,12 @@ public sealed class Given_Mssql_EducationOrganizationProjection : MssqlEducation
 
     /// <summary>SQL Server only: PostgreSQL text cannot hold a lone surrogate.</summary>
     [Test]
-    [Ignore(
-        "DMS-1440 step 2.8 finding, awaiting decision: Microsoft.Data.SqlClient decodes a stored lone "
-            + "surrogate as U+FFFD, so the read never sees malformed UTF-16 and the projection answers 200 "
-            + "with the replaced name instead of 409 projection-data-invalid."
-    )]
     public Task It_refuses_a_name_that_is_not_well_formed_utf16() =>
         EducationOrganizationProjectionScenario.It_refuses_a_name_that_is_not_well_formed_utf16(Context);
+
+    [Test]
+    public Task It_serves_stored_names_unchanged() =>
+        EducationOrganizationProjectionScenario.It_serves_stored_names_unchanged(Context);
 
     [Test]
     public Task It_bounds_the_response_body_with_the_longest_names() =>

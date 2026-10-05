@@ -94,7 +94,10 @@ public sealed class EducationOrganizationProjectionSqlCompiler(SqlDialect dialec
                     BuildSql(arms),
                     new QuerySqlParameter(QuerySqlParameterRole.Limit, RowLimitParameterName),
                     arms,
-                    _resultColumns
+                    _resultColumns,
+                    _dialect == SqlDialect.Mssql
+                        ? EducationOrganizationProjectionNameEncoding.Utf16LittleEndianBytes
+                        : EducationOrganizationProjectionNameEncoding.Text
                 )
             );
         }
@@ -432,11 +435,11 @@ public sealed class EducationOrganizationProjectionSqlCompiler(SqlDialect dialec
                 .Append(" AS ")
                 .AppendQuoted(_resultColumns.Discriminator.Value)
                 .AppendLine(",");
-            AppendQualifiedColumn(writer, RootAlias, arm.NameOfInstitutionColumn)
+            AppendName(writer, arm.NameOfInstitutionColumn)
                 .Append(" AS ")
                 .AppendQuoted(_resultColumns.NameOfInstitution.Value)
                 .AppendLine(",");
-            AppendQualifiedColumn(writer, RootAlias, arm.ShortNameOfInstitutionColumn)
+            AppendName(writer, arm.ShortNameOfInstitutionColumn)
                 .Append(" AS ")
                 .AppendQuoted(_resultColumns.ShortNameOfInstitution.Value)
                 .AppendLine(",");
@@ -466,6 +469,34 @@ public sealed class EducationOrganizationProjectionSqlCompiler(SqlDialect dialec
                 .AppendLine();
         }
         writer.Append("FROM ").AppendTable(arm.Table).AppendLine($" {RootAlias}");
+    }
+
+    /// <summary>
+    /// Appends a name column. PostgreSQL returns it as text. SQL Server returns its stored UTF-16 code
+    /// units as <c>varbinary(max)</c>, because SqlClient would replace a lone surrogate with U+FFFD
+    /// while decoding (<see cref="EducationOrganizationProjectionNameEncoding"/>). The cast keeps
+    /// three properties of reading the column as text:
+    /// <list type="bullet">
+    /// <item>Nothing is truncated: both conversions are to <c>max</c> types.</item>
+    /// <item>A column of another character type still reads as its text: <c>CONVERT</c> to
+    /// <c>nvarchar</c> first, so the bytes are always UTF-16.</item>
+    /// <item>A column that is not character data still fails the statement, as reading it as text
+    /// did, rather than being converted to bytes: <c>COLLATE</c> accepts only character expressions
+    /// (error 447 otherwise, a permanent incompatibility). The collation does not change
+    /// <c>nvarchar</c> data, whose code units are the same under every collation.</item>
+    /// </list>
+    /// A null stays null and an empty string stays an empty, not null, value.
+    /// </summary>
+    private SqlWriter AppendName(SqlWriter writer, DbColumnName column)
+    {
+        if (_dialect != SqlDialect.Mssql)
+        {
+            return AppendQualifiedColumn(writer, RootAlias, column);
+        }
+
+        writer.Append("CAST(CONVERT(nvarchar(max), ");
+        AppendQualifiedColumn(writer, RootAlias, column);
+        return writer.Append(" COLLATE Latin1_General_100_BIN2) AS varbinary(max))");
     }
 
     /// <summary>
