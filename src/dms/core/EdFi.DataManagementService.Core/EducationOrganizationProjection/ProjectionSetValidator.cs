@@ -316,6 +316,10 @@ internal static class ProjectionSetValidator
     /// agency once: an agency met again while still on the current path closes a cycle, and a path
     /// that ends, or reaches an agency an earlier walk finished, is cycle-free. A self-link is a cycle
     /// of length one.
+    /// <para>
+    /// One walk can follow every agency in the set, and marking its path finished visits them all
+    /// again, so both loops take a checkpoint per agency, as does the loop over starting rows.
+    /// </para>
     /// </summary>
     private static bool HasParentCycle(
         IReadOnlyList<EducationOrganizationProjectionRow> rows,
@@ -345,6 +349,8 @@ internal static class ProjectionSetValidator
 
             while (true)
             {
+                checkpoint();
+
                 if (state[current] == OnPath)
                 {
                     cycle = true;
@@ -376,6 +382,7 @@ internal static class ProjectionSetValidator
 
             foreach (int visited in path)
             {
+                checkpoint();
                 state[visited] = Finished;
             }
 

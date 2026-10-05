@@ -658,6 +658,59 @@ public abstract class EducationOrganizationProjectionHandlerTests
         }
     }
 
+    /// <summary>
+    /// 5,000 agencies, each the child of the next, with the last two forming a cycle, so the cycle
+    /// check's first walk follows the whole chain and finds the cycle only at its end. The three
+    /// earlier validation passes take 15,000 checkpoints and the first starting row one more, so
+    /// checkpoints 15,002 to 20,001 are the walk's steps along the chain; the request is cancelled at
+    /// 17,000, a third of the way along. Without checkpoints inside the walk it would run to the cycle
+    /// and answer 409 before the count ever reached 17,000.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Cancellation_During_The_Parent_Chain_Walk : EducationOrganizationProjectionHandlerTests
+    {
+        private const int Length = 5000;
+        private Func<Task> _act = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            Answer([
+                .. Enumerable
+                    .Range(1, Length)
+                    .Select(id => ProjectionRows.Lea(id, parent: id == Length ? Length - 1 : id + 1)),
+            ]);
+            Observer.CancelAt = (ProjectionProcessingStage.Validation, 17_000);
+            _act = () => Execute();
+        }
+
+        [Test]
+        public async Task It_stops_partway_along_the_chain()
+        {
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+
+            Observer.Checkpoints.Should().HaveCount(17);
+            Observer.Checkpoints[^1].Should().Be((ProjectionProcessingStage.Validation, 17_000));
+        }
+
+        [Test]
+        public async Task It_never_enters_hashing()
+        {
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+
+            Observer.Stages.Should().Equal(ProjectionProcessingStage.Validation);
+        }
+
+        [Test]
+        public async Task It_writes_no_response()
+        {
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+
+            RequestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_Cancellation_At_A_Hashing_Checkpoint : EducationOrganizationProjectionHandlerTests

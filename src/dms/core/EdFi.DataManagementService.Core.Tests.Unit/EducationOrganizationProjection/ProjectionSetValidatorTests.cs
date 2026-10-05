@@ -372,6 +372,44 @@ public abstract class ProjectionSetValidatorTests
     }
 
     /// <summary>
+    /// Every unit of validation work takes a checkpoint, so the count for one long chain is exact:
+    /// three passes over 5,000 rows (15,000), the cycle check's 5,000 starting rows, its walk along
+    /// the whole chain from the first agency (5,000 steps) and marking that path finished (5,000
+    /// steps): 30,000, or 30 reported checkpoints. A loop without checkpoints lowers the count.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Long_Chain_Validated_To_The_End : ProjectionSetValidatorTests
+    {
+        [Test]
+        public void It_takes_a_checkpoint_for_every_step_of_every_loop()
+        {
+            var observer = new Handler.RecordingProjectionObserver();
+
+            ProjectionSetValidator
+                .Validate(
+                    [
+                        .. Enumerable
+                            .Range(1, 5000)
+                            .Select(id => ProjectionRows.Lea(id, parent: id == 5000 ? null : id + 1)),
+                    ],
+                    observer,
+                    CancellationToken.None
+                )
+                .Should()
+                .BeOfType<ProjectionSetValidation.Valid>();
+
+            observer
+                .Checkpoints.Should()
+                .Equal(
+                    Enumerable
+                        .Range(1, 30)
+                        .Select(index => (ProjectionProcessingStage.Validation, index * 1000))
+                );
+        }
+    }
+
+    /// <summary>
     /// 50,000 agencies, each the child of the next, on a thread with a 256 KB stack. The walk from the
     /// first agency follows the whole chain, so a recursive walk needs a frame per agency and overflows
     /// such a stack long before the end of the chain.
