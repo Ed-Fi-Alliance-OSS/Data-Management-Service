@@ -11,7 +11,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F7, F16 and the pending half of F3: an async find and an async search answer 202 with a
+/// An async find and an async search answer 202 with a
 /// <c>Location</c>, following that <c>Location</c> exactly as returned reaches the results route,
 /// and the poll answers incomplete until the fixture's configured poll count has passed and complete
 /// after it. Every results payload conforms to the served results schema.

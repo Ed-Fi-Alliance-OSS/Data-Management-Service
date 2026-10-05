@@ -10,7 +10,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F29: each shape of provider <c>InvalidProperties</c> - a create field error, a search item error,
+/// Each shape of provider <c>InvalidProperties</c> - a create field error, a search item error,
 /// a path-less error (blank, and null) and two messages at one key - yields a <c>400</c> whose body
 /// equals the example of the same name pinned in the served OpenAPI document, once property order is
 /// ignored and the correlation id is normalized.

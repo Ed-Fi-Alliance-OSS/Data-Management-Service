@@ -10,7 +10,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F33: the fixture issues an identity and then throws, DMS answers 502, and the example client
+/// The fixture issues an identity and then throws, DMS answers 502, and the example client
 /// recovers the original id through the exact upstream-key lookup without creating a second time.
 /// </summary>
 /// <remarks>

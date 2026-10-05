@@ -10,7 +10,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F28, host half: a request whose body or media type is structurally wrong is rejected before the
+/// A request whose body or media type is structurally wrong is rejected before the
 /// provider is invoked - duplicate property, malformed JSON, empty body, a wrong top-level shape for
 /// create, find and search, a non-string or null find entry, a non-object search entry, and an
 /// unsupported media type (including an Ed-Fi profile media type).

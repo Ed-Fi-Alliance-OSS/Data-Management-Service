@@ -10,7 +10,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F11: with the host's real rate limiter allowing one request per sixty-second window, an identity
+/// With the host's real rate limiter allowing one request per sixty-second window, an identity
 /// request after the permit is spent answers <c>429</c> with <c>no-store</c> and the existing
 /// too-many-requests problem type, and the provider is never invoked.
 /// </summary>

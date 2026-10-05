@@ -9,9 +9,10 @@ namespace Acme.IdentityFixture;
 
 /// <summary>
 /// Reports what the provider did to the control channel, so a test can show an operation was never
-/// invoked, a person was issued exactly once, or which token a poll received. Nothing is reported
-/// when no control address is configured, and nothing is ever logged. A report carries the operation
-/// name and a kind, plus the request token for a results invocation; it carries no person data.
+/// invoked, a person was issued exactly once or which token a poll received, and can wait until an
+/// operation is waiting for its cancellation. Nothing is reported when no control address is
+/// configured, and nothing is ever logged. A report carries the operation name and a kind, plus the
+/// request token for a results invocation; it carries no person data.
 /// </summary>
 public sealed class FixtureControlEvents(FixtureControlChannel control)
 {
@@ -29,6 +30,12 @@ public sealed class FixtureControlEvents(FixtureControlChannel control)
 
     /// <summary>An async job was created.</summary>
     public const string Job = "job";
+
+    /// <summary>
+    /// An operation is waiting for its cancellation token, which nothing but cancelling the request
+    /// ends. Reported once, after the grant check passed and before the wait begins.
+    /// </summary>
+    public const string AwaitingCancellation = "awaiting-cancellation";
 
     public async Task ReportAsync(
         string operation,

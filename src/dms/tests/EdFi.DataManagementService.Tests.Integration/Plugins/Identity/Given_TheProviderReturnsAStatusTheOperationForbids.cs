@@ -10,7 +10,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F12 and the first half of F9: a provider that answers <c>Incomplete</c> or <c>JobFailed</c> from
+/// A provider that answers <c>Incomplete</c> or <c>JobFailed</c> from
 /// create, get-by-id, find or search has misused the contract, so each answers the
 /// provider-contract-violation <c>502</c> with no <c>Location</c>; the same two statuses from a results
 /// poll are legitimate (an incomplete <c>200</c> and the terminal job-failed <c>502</c>), and a failed

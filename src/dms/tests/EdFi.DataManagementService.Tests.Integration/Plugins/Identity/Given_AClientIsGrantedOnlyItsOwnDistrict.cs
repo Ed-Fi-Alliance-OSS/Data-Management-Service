@@ -12,7 +12,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F5: within one tenant, client A is granted district A and client B district B, and the host
+/// Within one tenant, client A is granted district A and client B district B, and the host
 /// authorizes both for every identity operation. A request against the district the client is not
 /// granted answers identity-not-found <c>404</c> and the provider reports no lookup, issuance or job
 /// creation; own-district requests succeed. Also covers a client with no grant at all and a failing

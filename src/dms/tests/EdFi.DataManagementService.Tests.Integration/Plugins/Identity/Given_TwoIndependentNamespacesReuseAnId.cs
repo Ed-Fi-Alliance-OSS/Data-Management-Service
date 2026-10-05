@@ -11,7 +11,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F4: two independent namespaces hold the same UniqueId for different people and each answers only
+/// Two independent namespaces hold the same UniqueId for different people and each answers only
 /// its own, while two contexts mapped to one shared namespace resolve an id the same way.
 /// </summary>
 /// <remarks>

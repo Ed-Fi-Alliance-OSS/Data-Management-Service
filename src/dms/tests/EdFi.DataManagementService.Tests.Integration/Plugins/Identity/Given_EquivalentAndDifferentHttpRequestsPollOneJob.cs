@@ -12,7 +12,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F6 over HTTP: requests whose tenant and route words differ from the issuing request only by case
+/// Over HTTP, requests whose tenant and route words differ from the issuing request only by case
 /// reach the same namespace and the same job, while a different qualifier value, a different client and
 /// the client whose id differs only by case are denied.
 /// </summary>

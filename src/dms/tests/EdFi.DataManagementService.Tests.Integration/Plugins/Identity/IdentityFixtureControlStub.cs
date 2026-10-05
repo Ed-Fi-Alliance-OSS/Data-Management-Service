@@ -24,9 +24,9 @@ namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 /// next poll must fail transiently; <c>POST events</c> records what the provider reports doing. A
 /// test steers the answers with <see cref="Grant"/>, <see cref="Revoke"/>,
 /// <see cref="FailPolicySource"/>, <see cref="ExpireJob"/>, <see cref="FailJob"/> and
-/// <see cref="FailNextPoll"/>, and reads <see cref="Events"/>. The raw request line of every request
-/// except an event report is logged, so a test can show that a denied request caused no further
-/// lookup.
+/// <see cref="FailNextPoll"/>, reads <see cref="Events"/>, and waits for a report with
+/// <see cref="WaitForEventAsync"/>. The raw request line of every request except an event report is
+/// logged, so a test can show that a denied request caused no further lookup.
 /// </remarks>
 internal sealed class IdentityFixtureControlStub : IAsyncDisposable
 {
@@ -40,6 +40,7 @@ internal sealed class IdentityFixtureControlStub : IAsyncDisposable
     private readonly HashSet<string> _failedJobs = new(StringComparer.Ordinal);
     private readonly HashSet<string> _failNextPoll = new(StringComparer.Ordinal);
     private readonly List<IdentityFixtureEvent> _events = [];
+    private readonly List<(string Operation, string Kind, TaskCompletionSource Reported)> _eventWaiters = [];
     private bool _policySourceFailing;
     private bool _disposed;
 
@@ -162,6 +163,27 @@ internal sealed class IdentityFixtureControlStub : IAsyncDisposable
             {
                 return [.. _events];
             }
+        }
+    }
+
+    /// <summary>
+    /// Completes once the provider has reported the operation and kind, whether the report arrived
+    /// before this call or arrives after it, so a test can wait for a known point inside an operation
+    /// rather than for time. It completes when the stub records the report, which is before the
+    /// provider's report call returns.
+    /// </summary>
+    public Task WaitForEventAsync(string operation, string kind)
+    {
+        lock (_sync)
+        {
+            if (_events.Exists(reported => reported.Operation == operation && reported.Kind == kind))
+            {
+                return Task.CompletedTask;
+            }
+
+            TaskCompletionSource reported = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            _eventWaiters.Add((operation, kind, reported));
+            return reported.Task;
         }
     }
 
@@ -346,14 +368,24 @@ internal sealed class IdentityFixtureControlStub : IAsyncDisposable
     {
         using StreamReader reader = new(context.Request.InputStream, Encoding.UTF8);
         JsonNode? body = JsonNode.Parse(reader.ReadToEnd());
-
-        _events.Add(
-            new IdentityFixtureEvent(
-                body?["operation"]?.GetValue<string>() ?? string.Empty,
-                body?["kind"]?.GetValue<string>() ?? string.Empty,
-                body?["token"]?.GetValue<string>()
-            )
+        IdentityFixtureEvent reported = new(
+            body?["operation"]?.GetValue<string>() ?? string.Empty,
+            body?["kind"]?.GetValue<string>() ?? string.Empty,
+            body?["token"]?.GetValue<string>()
         );
+
+        _events.Add(reported);
+
+        for (int index = _eventWaiters.Count - 1; index >= 0; index--)
+        {
+            (string operation, string kind, TaskCompletionSource waiter) = _eventWaiters[index];
+            if (operation == reported.Operation && kind == reported.Kind)
+            {
+                // Its continuations run asynchronously, so none of them runs under the lock.
+                waiter.TrySetResult();
+                _eventWaiters.RemoveAt(index);
+            }
+        }
     }
 
     private static int GetEphemeralPort()
@@ -368,7 +400,8 @@ internal sealed class IdentityFixtureControlStub : IAsyncDisposable
 
 /// <summary>
 /// One thing the identity fixture reported doing: an operation <c>invocation</c> (before its grant was
-/// checked), a <c>lookup</c> (after the grant check passed), an <c>issuance</c> of a UniqueId, or a <c>job</c> creation. A results invocation carries
-/// the request token the provider received.
+/// checked), a <c>lookup</c> (after the grant check passed), an <c>issuance</c> of a UniqueId, a
+/// <c>job</c> creation, or an <c>awaiting-cancellation</c> wait. A results invocation carries the
+/// request token the provider received.
 /// </summary>
 internal sealed record IdentityFixtureEvent(string Operation, string Kind, string? Token);

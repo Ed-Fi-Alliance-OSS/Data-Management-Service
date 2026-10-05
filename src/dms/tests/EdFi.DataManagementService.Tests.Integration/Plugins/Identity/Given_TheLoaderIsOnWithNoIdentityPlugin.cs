@@ -12,7 +12,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// R3 and F27: the loader is on (a non-empty allowlist naming a staged plugin) but no plugin
+/// The loader is on (a non-empty allowlist naming a staged plugin) but no plugin
 /// supplies an identity provider, so the host starts and every identity operation answers the
 /// host default, operation-unsupported 404.
 /// </summary>

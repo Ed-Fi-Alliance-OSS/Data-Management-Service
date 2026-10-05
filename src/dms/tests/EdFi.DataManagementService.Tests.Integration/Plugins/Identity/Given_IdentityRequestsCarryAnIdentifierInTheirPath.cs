@@ -10,7 +10,7 @@ using Serilog.Events;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F30: a get-by-id and a successful results poll leave neither the UniqueId nor the job token in any
+/// A get-by-id and a successful results poll leave neither the UniqueId nor the job token in any
 /// captured event - not the structured <c>Path</c> and <c>RequestPath</c> properties, not the rendered
 /// message, of the frontend and Core completion events, the framework's hosting-diagnostics events or
 /// anything else the host logged.

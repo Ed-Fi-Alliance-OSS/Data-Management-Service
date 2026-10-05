@@ -11,14 +11,22 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F14: a request token that is exactly <c>.</c> or <c>..</c>, or that escapes to more than 1024
+/// A request token that is exactly <c>.</c> or <c>..</c>, or that escapes to more than 1024
 /// characters, is unusable provider contract misuse for find and for search: <c>502</c>
 /// provider-contract-violation with no <c>Location</c>.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The negative controls sit next to each refusal: longer dotted values are ordinary data, and a token
 /// that escapes to exactly 1024 characters is accepted while one that escapes to 1025 is refused, so
 /// the length rule is shown at its boundary and not only far past it.
+/// </para>
+/// <para>
+/// Every <c>Location</c> an accepted case produces is followed as returned and must answer
+/// <c>200</c>, and the fixture's own report of the token each poll received must be the token it
+/// issued, so an accepted token is shown to reach the results route intact and not only to be
+/// accepted.
+/// </para>
 /// </remarks>
 [Category("PluginIntegration")]
 public sealed class Given_AProviderTokenIsUnusableBeforeAnyRequestLineLimit
@@ -28,6 +36,7 @@ public sealed class Given_AProviderTokenIsUnusableBeforeAnyRequestLineLimit
 
     private IdentityHttpRun? _run;
     private readonly Dictionary<string, IdentityHttpOutcome> _outcomes = [];
+    private readonly Dictionary<string, IdentityHttpOutcome> _followed = [];
 
     private static IReadOnlyDictionary<string, string> Cases { get; } =
         new Dictionary<string, string>
@@ -49,14 +58,28 @@ public sealed class Given_AProviderTokenIsUnusableBeforeAnyRequestLineLimit
 
         foreach ((string name, string token) in Cases)
         {
-            _outcomes[$"find:{name}"] = await _run.PostAsync(
+            await SubmitAndFollowAsync(
+                $"find:{name}",
                 "identities/find",
                 $"[{JsonSerializer.Serialize($"~fixture:token:{token}")}]"
             );
-            _outcomes[$"search:{name}"] = await _run.PostAsync(
+            await SubmitAndFollowAsync(
+                $"search:{name}",
                 "identities/search",
                 $$"""[{ "~FixtureToken": {{JsonSerializer.Serialize(token)}} }]"""
             );
+        }
+    }
+
+    // The Location is followed before the next submission, because find and search reuse one
+    // token and a later job under that token replaces the earlier one.
+    private async Task SubmitAndFollowAsync(string key, string path, string body)
+    {
+        _outcomes[key] = await _run!.PostAsync(path, body);
+
+        if (_outcomes[key].Location is { } location)
+        {
+            _followed[key] = await _run.GetAsync(location);
         }
     }
 
@@ -122,6 +145,43 @@ public sealed class Given_AProviderTokenIsUnusableBeforeAnyRequestLineLimit
     public void It_accepts_the_neighbouring_usable_token_with_202(string operation, string name)
     {
         _outcomes[$"{operation}:{name}"].Status.Should().Be(HttpStatusCode.Accepted);
+    }
+
+    [TestCase("find", "three-dots")]
+    [TestCase("search", "three-dots")]
+    [TestCase("find", "dotted-name")]
+    [TestCase("search", "dotted-name")]
+    [TestCase("find", "leading-dot")]
+    [TestCase("search", "leading-dot")]
+    [TestCase("find", "escaped-1024")]
+    [TestCase("search", "escaped-1024")]
+    public void It_follows_each_accepted_location_to_the_results_route(string operation, string name)
+    {
+        _followed[$"{operation}:{name}"].Status.Should().Be(HttpStatusCode.OK);
+    }
+
+    [TestCase("three-dots")]
+    [TestCase("dotted-name")]
+    [TestCase("leading-dot")]
+    [TestCase("escaped-1024")]
+    public void It_hands_the_provider_the_accepted_token_unchanged_for_find_and_search(string name)
+    {
+        _run!.Stub.ReceivedResultTokens.Count(received => received == Cases[name]).Should().Be(2);
+    }
+
+    [Test]
+    public void It_polls_exactly_the_accepted_tokens_in_submission_order_and_nothing_else()
+    {
+        // The accepted cases in the order Cases lists them, each followed once for find and once for
+        // search; a refused case has no Location, so it is never polled.
+        string[] expected =
+        [
+            .. new[] { "escaped-1024", "three-dots", "dotted-name", "leading-dot" }.SelectMany(name =>
+                new[] { Cases[name], Cases[name] }
+            ),
+        ];
+
+        _run!.Stub.ReceivedResultTokens.Should().Equal(expected);
     }
 
     [Test]

@@ -13,7 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F15: a token that is well under 1024 characters but whose composed poll request line (tenant, two
+/// A token that is well under 1024 characters but whose composed poll request line (tenant, two
 /// route qualifiers and the results route) would exceed the deployment's request-line limit is refused
 /// with the provider-contract-violation <c>502</c> and no <c>Location</c>, for find and for search.
 /// </summary>

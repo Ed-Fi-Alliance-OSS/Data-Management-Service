@@ -9,7 +9,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F9: the example client follows <c>Location</c>, polls to completion, and on the terminal
+/// The example client follows <c>Location</c>, polls to completion, and on the terminal
 /// <c>job-failed</c> problem stops - no further poll and no resubmission of the original request.
 /// </summary>
 /// <remarks>

@@ -9,7 +9,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F34: a scored demographic match is not proof of the issuance, even one that does return the
+/// A scored demographic match is not proof of the issuance, even one that does return the
 /// issued person. The client's own rule refuses it; the lookup is enabled and answers a match.
 /// </summary>
 /// <remarks>

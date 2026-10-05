@@ -25,6 +25,18 @@ public static class FixtureFailures
     public static InvalidOperationException PersonText() =>
         new($"Lookup failed for Jane Doe born 1999-01-01 ({PersonSentinel})");
 
+    /// <summary>
+    /// A cancellation of <paramref name="cancellationToken"/> whose message and inner exception both
+    /// read like text about a person, as a provider quoting the request it was cancelled during would
+    /// throw.
+    /// </summary>
+    public static OperationCanceledException PersonTextCancellation(CancellationToken cancellationToken) =>
+        new(
+            $"Lookup cancelled for Jane Doe born 1999-01-01 ({PersonSentinel})",
+            PersonText(),
+            cancellationToken
+        );
+
     /// <summary>The simulated loss of an upstream response after the upstream acted on a create.</summary>
     public static InvalidOperationException LostResponse() =>
         new("The upstream response to the create was lost.");

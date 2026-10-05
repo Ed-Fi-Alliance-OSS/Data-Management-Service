@@ -22,6 +22,7 @@ public static class FixtureVariants
     public const string SuccessWithPayloadAndToken = "success-both";
     public const string SuccessWithNeither = "success-neither";
     public const string ThrowPersonText = "throw-person";
+    public const string CancelPersonText = "cancel-person";
     public const string LostCreate = "lost-create";
     public const string InvalidPrefix = "invalid-";
 

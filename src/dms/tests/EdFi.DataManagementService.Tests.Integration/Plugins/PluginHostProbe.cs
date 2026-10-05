@@ -262,8 +262,47 @@ internal static class PluginHostProbe
 internal sealed class PluginLogCapture : ILogEventSink
 {
     private readonly ConcurrentQueue<LogEvent> _events = new();
+    private readonly object _waitersLock = new();
+    private readonly List<(Func<LogEvent, bool> Matches, TaskCompletionSource Logged)> _waiters = [];
 
-    public void Emit(LogEvent logEvent) => _events.Enqueue(logEvent);
+    public void Emit(LogEvent logEvent)
+    {
+        _events.Enqueue(logEvent);
+
+        lock (_waitersLock)
+        {
+            for (int index = _waiters.Count - 1; index >= 0; index--)
+            {
+                (Func<LogEvent, bool> matches, TaskCompletionSource logged) = _waiters[index];
+                if (matches(logEvent))
+                {
+                    // Its continuations run asynchronously, so none of them runs under the lock.
+                    logged.TrySetResult();
+                    _waiters.RemoveAt(index);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Completes once an event matching <paramref name="matches"/> has been captured, whether it was
+    /// written before this call or is written after it, so a case can wait for a known event rather
+    /// than for time.
+    /// </summary>
+    public Task WaitForEventAsync(Func<LogEvent, bool> matches)
+    {
+        lock (_waitersLock)
+        {
+            if (_events.Any(matches))
+            {
+                return Task.CompletedTask;
+            }
+
+            TaskCompletionSource logged = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            _waiters.Add((matches, logged));
+            return logged.Task;
+        }
+    }
 
     /// <summary>
     /// A Serilog logger writing every event into this capture.

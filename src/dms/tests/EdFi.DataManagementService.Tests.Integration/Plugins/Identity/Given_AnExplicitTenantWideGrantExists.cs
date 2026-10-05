@@ -12,7 +12,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F5: an explicit tenant-wide grant (<c>ClientId</c> of <c>*</c>) lets another host-authorized client
+/// An explicit tenant-wide grant (<c>ClientId</c> of <c>*</c>) lets another host-authorized client
 /// read the namespace, but a grant never waives job ownership: client B cannot redeem the job token
 /// client A was given.
 /// </summary>

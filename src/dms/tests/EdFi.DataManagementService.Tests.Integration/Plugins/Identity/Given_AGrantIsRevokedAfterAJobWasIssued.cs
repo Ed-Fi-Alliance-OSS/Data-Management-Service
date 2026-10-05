@@ -10,7 +10,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F5: when the policy source revokes a grant after a client was issued a job, the client's next poll
+/// When the policy source revokes a grant after a client was issued a job, the client's next poll
 /// of that job answers identity-not-found <c>404</c>, and restoring the grant answers the same job
 /// again, so the denial came from the grant and not from the job having gone.
 /// </summary>

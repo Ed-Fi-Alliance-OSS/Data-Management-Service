@@ -11,7 +11,7 @@ using Serilog.Events;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F31: an operation that throws an exception whose message is person-shaped text answers the
+/// An operation that throws an exception whose message is person-shaped text answers the
 /// sanitized upstream-failure <c>502</c>, and neither the response nor any log entry above Debug
 /// carries that text.
 /// </summary>

@@ -9,7 +9,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F10: every identity answer, success or failure, carries exactly one <c>Cache-Control</c> header
+/// Every identity answer, success or failure, carries exactly one <c>Cache-Control</c> header
 /// containing <c>no-store</c>, including the answers produced before the provider is reached (an
 /// unknown bearer token through the real authentication middleware, a missing credential) and the
 /// capability rejection. Metadata and discovery keep the caching headers they had.

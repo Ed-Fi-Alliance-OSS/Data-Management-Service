@@ -106,6 +106,11 @@ public class FixtureIdentityService(
         }
 
         string? variant = (request[ReturnProperty] as JsonValue)?.GetValue<string>();
+        if (variant is not null && FixtureVariants.Is(variant, FixtureVariants.CancelPersonText))
+        {
+            return await AwaitCancellationAsync("create", cancellationToken);
+        }
+
         if (variant is not null && !FixtureVariants.Is(variant, FixtureVariants.LostCreate))
         {
             return FixtureVariants.Result(variant);
@@ -324,6 +329,28 @@ public class FixtureIdentityService(
     }
 
     private static IdentityResult NotFound() => new() { Status = IdentityResultStatus.NotFound };
+
+    // Reports that the operation is waiting, waits until its token is cancelled and then throws a
+    // cancellation of that token whose message and inner exception carry person-shaped text. It never
+    // returns. The report is sent without the token: a test cancels as soon as the report arrives, and
+    // a cancelled report would replace this exception with the control client's own. The wait
+    // suppresses the delay's own cancellation exception rather than catching it, so the only
+    // exception that leaves is the person-shaped one.
+    private async Task<IdentityResult> AwaitCancellationAsync(
+        string operation,
+        CancellationToken cancellationToken
+    )
+    {
+        await events.ReportAsync(
+            operation,
+            FixtureControlEvents.AwaitingCancellation,
+            CancellationToken.None
+        );
+        await Task.Delay(Timeout.Infinite, cancellationToken)
+            .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+
+        throw FixtureFailures.PersonTextCancellation(cancellationToken);
+    }
 
     // Reports the invocation, then selects the namespace the context selects when the client holds a
     // grant on it; null for an unknown namespace or a missing grant, with no lookup, issuance or job

@@ -9,8 +9,9 @@ using Serilog.Events;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// R5 negative control: the same two replacement plugins are staged but only the first is
-/// allowlisted, so exactly one plugin claims <c>IIdentityService</c> and the host starts.
+/// The negative control for <c>Given_TwoAllowlistedPluginsReplaceTheIdentityService</c>: the same
+/// two replacement plugins are staged but only the first is allowlisted, so exactly one plugin claims
+/// <c>IIdentityService</c> and the host starts.
 /// </summary>
 [Category("PluginIntegration")]
 public sealed class Given_OnlyOneOfTwoIdentityPluginsIsAllowlisted

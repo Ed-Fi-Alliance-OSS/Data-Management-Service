@@ -10,7 +10,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F28, provider half: a provider that answers <c>InvalidProperties</c> yields a <c>400</c>; a
+/// A provider that answers <c>InvalidProperties</c> yields a <c>400</c>; a
 /// <c>Success</c> without a payload, a find or search success with both or neither of payload and
 /// token yields the provider-contract-violation <c>502</c>; a provider that throws yields the sanitized
 /// upstream-failure <c>502</c> that quotes nothing the exception carried.

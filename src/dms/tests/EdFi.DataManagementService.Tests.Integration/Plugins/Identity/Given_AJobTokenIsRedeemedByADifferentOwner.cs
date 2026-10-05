@@ -12,7 +12,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F17 and F18: a job token redeemed under a different client, qualifier set or tenant answers
+/// A job token redeemed under a different client, qualifier set or tenant answers
 /// identity-not-found <c>404</c>, although the host authorized the caller and the provider granted it
 /// the very namespace the job lives in, so ownership is the only thing left to deny.
 /// </summary>

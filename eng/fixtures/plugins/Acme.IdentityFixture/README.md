@@ -204,9 +204,9 @@ The fixture's HTTP client has its default loggers removed, so request URLs never
 | `GET policy?clientId={client}&namespace={namespace}[&tenant={tenant}]` | `200` with `{ "granted": true }` or `{ "granted": false }`. Any other status, or a body without a boolean `granted`, is a policy-source failure. |
 | `GET jobs/expiry?token={token}` | `200` with `{ "expired": true }` or `{ "expired": false }`. `true` ends the job and the poll answers `NotFound`. |
 | `GET jobs/state?token={token}` | `200` with `{ "failed": bool, "failNextPoll": bool }`. `failNextPoll` is consumed by the read, so only the next poll sees it. Any other status, or a body without both booleans, is a failure to obtain the job state and throws. |
-| `POST events` with `{ "operation": "...", "kind": "...", "token": "..." }` | Any `2xx`. A report from the provider, never read back. `operation` is `create`, `getById`, `find`, `search` or `results`. `kind` is `invocation` (sent first, before the grant is checked), `lookup` (sent only after the namespace and grant checks passed, so never for a denied call), `issuance` (a UniqueId was issued) or `job` (an async job was created). `token` is present only on a `results` invocation or lookup, and is the request token exactly as the provider received it. A report carries no person data and is never logged. |
+| `POST events` with `{ "operation": "...", "kind": "...", "token": "..." }` | Any `2xx`. A report from the provider, never read back. `operation` is `create`, `getById`, `find`, `search` or `results`. `kind` is `invocation` (sent first, before the grant is checked), `lookup` (sent only after the namespace and grant checks passed, so never for a denied call), `issuance` (a UniqueId was issued), `job` (an async job was created) or `awaiting-cancellation` (the `cancel-person` variant is about to wait for its cancellation token; sent without that token, so cancelling the request cannot interrupt the report). `token` is present only on a `results` invocation or lookup, and is the request token exactly as the provider received it. A report carries no person data and is never logged. |
 
-`IdentityFixtureControlStub` implements them for in-process tests: `Grant`, `Revoke`, `FailPolicySource`, `ExpireJob`, `FailJob`, `FailNextPoll`, `PolicyLookupCount`, `RequestPaths` (every request except an event report), `Events`, `InvocationCount`, `LookupCount`, `IssuanceCount`, `JobCount`, `ReceivedResultTokens` and `Reset`.
+`IdentityFixtureControlStub` implements them for in-process tests: `Grant`, `Revoke`, `FailPolicySource`, `ExpireJob`, `FailJob`, `FailNextPoll`, `PolicyLookupCount`, `RequestPaths` (every request except an event report), `Events`, `InvocationCount`, `LookupCount`, `IssuanceCount`, `JobCount`, `ReceivedResultTokens`, `WaitForEventAsync` (completes once a matching report has arrived) and `Reset`.
 
 ## Fixture triggers
 
@@ -217,7 +217,7 @@ The HTTP statuses below are what the DMS host is expected to map the fixture's r
 
 A `<variant>` names a deliberate result and is compared `OrdinalIgnoreCase`.
 An unknown variant makes the fixture throw, which DMS answers as the `502` upstream-failure problem.
-Where a variant does not apply to an operation (`success-both` has no token to carry on create, get-by-id or results, and `lost-create` applies to create only) it is unknown there.
+Where a variant does not apply to an operation (`success-both` has no token to carry on create, get-by-id or results, and `lost-create` and `cancel-person` apply to create only) it is unknown there.
 
 ### Variants
 
@@ -236,6 +236,7 @@ Where a variant does not apply to an operation (`success-both` has no token to c
 | `invalid-pathlessNullError` | The same with a null path; projects identically to the blank path | `400` bad-request with that message in `errors` | `400`, same |
 | `invalid-twoMessagesOneKey` | `InvalidProperties`, two errors at `$.firstName`: `First name is required.` and `First name must not exceed 75 characters.` | `400` data-validation-failed, both messages under one `$.firstName` key | `400`, same |
 | `lost-create` | Create only: see Lost-create reconciliation | `502` upstream-failure after the issuance is recorded | not applicable |
+| `cancel-person` | Create only: reports `awaiting-cancellation` on the control channel, waits until the operation's cancellation token is cancelled, then throws an `OperationCanceledException` of that token whose message and inner exception both contain person-shaped text (`Jane Doe born 1999-01-01` and the sentinel). A token that is never cancelled waits forever, so it is meant for an HTTP request the client cancels. | No response, because the client cancelled the request; DMS logs the exception at Debug only and rethrows a cancellation that carries none of its text | not applicable |
 
 ### Triggers
 
@@ -243,7 +244,7 @@ Where a variant does not apply to an operation (`success-both` has no token to c
 | --- | --- | --- |
 | `~fixture:async` | An element of a find array | The find becomes an async job: `202` with `Location` to the results route. The trigger element itself yields an empty `Responses` group, so the groups stay positional. |
 | `"~FixtureAsync": true` | A property of a search object | The search becomes an async job, as above. |
-| `"~FixtureReturn": "<variant>"` | A property of a create body | The create returns the variant instead of issuing a person. `lost-create` issues, then throws. |
+| `"~FixtureReturn": "<variant>"` | A property of a create body | The create returns the variant instead of issuing a person. `lost-create` issues, then throws. `cancel-person` issues nothing, waits for the request's cancellation, then throws. |
 | `~fixture-return-<variant>` | A get-by-id path id | The get-by-id returns the variant. |
 | `~fixture:return:<variant>` | An element of a find array | The whole find returns the variant (the first such element wins). The element yields an empty `Responses` group. |
 | `"~FixtureReturn": "<variant>"` | A property of a search object | The whole search returns the variant (the first such object wins). |

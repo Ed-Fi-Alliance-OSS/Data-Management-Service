@@ -12,7 +12,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F8: a transient poll failure answers upstream-failure <c>502</c> and the same token then answers; a
+/// A transient poll failure answers upstream-failure <c>502</c> and the same token then answers; a
 /// terminally failed job answers <c>502</c> job-failed with no <c>Location</c> on every authorized
 /// poll, whatever the trace id; an ownership mismatch and an expired job answer <c>404</c>.
 /// </summary>

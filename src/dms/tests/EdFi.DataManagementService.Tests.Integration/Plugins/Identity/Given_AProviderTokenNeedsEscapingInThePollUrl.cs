@@ -10,7 +10,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F13: a request token that needs escaping is escaped once into the <c>202 Location</c>, and the
+/// A request token that needs escaping is escaped once into the <c>202 Location</c>, and the
 /// provider's <c>ResultsAsync</c> receives the original token character for character after the
 /// client follows that <c>Location</c> exactly as returned, for find and for search.
 /// </summary>

@@ -11,7 +11,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F20: the provider and its scoped dependency are created per request. Two get-by-id requests
+/// The provider and its scoped dependency are created per request. Two get-by-id requests
 /// report different provider and scope instances, and each reports exactly one read of
 /// <c>Capabilities</c> on the instance that served it.
 /// </summary>

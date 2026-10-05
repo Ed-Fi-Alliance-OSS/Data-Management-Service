@@ -11,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F6 at the provider boundary: the context equality rules HTTP routing cannot produce - qualifier
+/// At the provider boundary, the context equality rules HTTP routing cannot produce - qualifier
 /// value case, qualifier name case, dictionary insertion order and comparer, missing and extra
 /// qualifiers, a null tenant, and client ids that differ only by case - are exercised by calling the
 /// resolved <see cref="IIdentityService"/> with crafted <see cref="IdentityRequestContext"/> values.
@@ -21,16 +21,20 @@ namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 /// extra, harmless activation. The client whose id differs only by case is granted the namespace, so
 /// its denial for a job is ownership. A client with a case-distinct id and no grant is denied the
 /// namespace itself, which shows grants compare the client id exactly. The job-binding contexts (a
-/// missing qualifier, an extra qualifier, another district) are mapped to the same granted namespace as
-/// the issuing context, so only job binding can deny them, and each one also polls a job issued under
-/// itself. The namespace-selection cases use contexts no namespace maps. A null tenant context is a
-/// namespace-selection case only, because mapping it would remove the unmapped null-tenant control.
+/// missing qualifier, an extra qualifier, another district, another tenant with the same qualifiers)
+/// are mapped to the same namespace as the issuing context and granted to the same client, so only job
+/// binding can deny them, and each one also polls a job issued under itself. The other tenant is the
+/// one context that differs from the issuing context by tenant alone, which is what shows the tenant is
+/// part of job binding. The namespace-selection cases use contexts no namespace maps. A null tenant
+/// context is a namespace-selection case only, because mapping it would remove the unmapped
+/// null-tenant control.
 /// </remarks>
 [Category("PluginIntegration")]
 public sealed class Given_CraftedRequestContextsReachTheIdentityProvider
 {
     private const string FixturePlugin = "Acme.IdentityFixture";
     private const string Tenant = IdentityTestClients.TenantOne;
+    private const string OtherTenant = IdentityTestClients.TenantTwo;
     private const string AlphaDistrict = "Abc";
     private const string OtherDistrict = "255999";
 
@@ -53,10 +57,12 @@ public sealed class Given_CraftedRequestContextsReachTheIdentityProvider
                 (Tenant, Qualifiers()),
                 (Tenant, MissingSchoolYear()),
                 (Tenant, WithCampus("1")),
-                (Tenant, Qualifiers(OtherDistrict))
+                (Tenant, Qualifiers(OtherDistrict)),
+                (OtherTenant, Qualifiers())
             )
             .Namespace("ns-alpha", (Tenant, AlphaDistrict))
             .Grant(IdentityTestClients.ClientA.ClientId, Tenant, "ns-a")
+            .Grant(IdentityTestClients.ClientA.ClientId, OtherTenant, "ns-a")
             .Grant(IdentityTestClients.ClientA.ClientId, Tenant, "ns-alpha")
             .Grant(IdentityTestClients.CaseVariantOfA.ClientId, Tenant, "ns-a")
             .With("IdentityFixture:PollsUntilComplete", "0");
@@ -310,11 +316,18 @@ public sealed class Given_CraftedRequestContextsReachTheIdentityProvider
             .Be(IdentityResultStatus.NotFound);
     }
 
+    [Test]
+    public async Task It_denies_the_job_to_a_granted_context_in_another_tenant_with_the_same_qualifiers()
+    {
+        (await ResultsStatusAsync(Context(tenant: OtherTenant))).Should().Be(IdentityResultStatus.NotFound);
+    }
+
     private IEnumerable<IdentityRequestContext> JobBindingContexts() =>
         [
             Context(qualifiers: MissingSchoolYear()),
             Context(qualifiers: WithCampus("1")),
             Context(qualifiers: Qualifiers(OtherDistrict)),
+            Context(tenant: OtherTenant),
         ];
 
     [Test]

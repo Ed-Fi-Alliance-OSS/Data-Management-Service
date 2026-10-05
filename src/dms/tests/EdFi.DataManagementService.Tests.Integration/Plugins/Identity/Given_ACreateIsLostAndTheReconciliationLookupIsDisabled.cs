@@ -9,7 +9,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F34: with the reconciliation lookup disabled an empty answer cannot establish absence, so the
+/// With the reconciliation lookup disabled an empty answer cannot establish absence, so the
 /// example client stops for operator reconciliation and never retries the create.
 /// </summary>
 /// <remarks>

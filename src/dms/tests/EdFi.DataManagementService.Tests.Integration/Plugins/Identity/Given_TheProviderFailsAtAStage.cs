@@ -11,7 +11,7 @@ using Serilog.Events;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F32: for each stage at which the fixture throws a nested, person-shaped exception (factory,
+/// For each stage at which the fixture throws a nested, person-shaped exception (factory,
 /// constructor, capabilities getter, operation) the host still boots <c>Ready</c>; the first three
 /// answer the provider-configuration <c>500</c> without any operation running, and an operation
 /// failure answers the upstream-failure <c>502</c>. The sentinel appears in no response and in no log
@@ -26,9 +26,9 @@ namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 /// <para>
 /// Capabilities are read once per request by the host, which the earlier get-by-id cases show through
 /// the fixture's read-count probe; a throwing stage cannot return that probe, so here the single
-/// provider invocation of the operation variant is the observable. Request cancellation is not
-/// exercised here: forcing a cancellation at a known point needs a timing-dependent hook, and the
-/// boundary's cancellation logging is covered by the Core boundary unit tests.
+/// provider invocation of the operation variant is the observable. Request cancellation during an
+/// operation is exercised by <see cref="Given_TheClientCancelsWhileTheProviderOperationRuns"/>, which
+/// cancels only once the fixture reports that its operation is waiting for the cancellation.
 /// </para>
 /// </remarks>
 [Category("PluginIntegration")]

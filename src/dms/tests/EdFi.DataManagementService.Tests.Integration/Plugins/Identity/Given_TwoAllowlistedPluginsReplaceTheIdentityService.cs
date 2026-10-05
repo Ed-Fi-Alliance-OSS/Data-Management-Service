@@ -9,7 +9,7 @@ using Serilog.Events;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// R5: two allowlisted plugins each replace <c>IIdentityService</c>. The host refuses to start,
+/// Two allowlisted plugins each replace <c>IIdentityService</c>. The host refuses to start,
 /// and the failure names both plugins and the contract.
 /// </summary>
 /// <remarks>

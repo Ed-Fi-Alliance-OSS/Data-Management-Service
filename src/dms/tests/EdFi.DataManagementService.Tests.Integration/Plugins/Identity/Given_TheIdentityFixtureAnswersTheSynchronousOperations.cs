@@ -12,14 +12,15 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F2, F3 (synchronous payloads), F21, F22, F23, F25 and F26: create, get-by-id, find and search
+/// Create, get-by-id, find and search
 /// succeed over HTTP through the fixture, their payloads conform to the served document, standard
 /// attributes, scores and custom properties arrive as the fixture produced them, and no match or an
 /// unknown id is answered as a successful empty group or an identity-not-found 404.
 /// </summary>
 /// <remarks>
-/// The conformance assertions are paired with a negative control: the same payload with the wire
-/// <c>Status</c> changed to the incomplete value fails the same schema.
+/// The conformance assertions are paired with negative controls: the same payload with the wire
+/// <c>Status</c> changed to the incomplete value fails the same schema, and so does the same find or
+/// search payload without its <c>SearchResponses</c>.
 /// </remarks>
 [Category("PluginIntegration")]
 public sealed class Given_TheIdentityFixtureAnswersTheSynchronousOperations
@@ -183,6 +184,15 @@ public sealed class Given_TheIdentityFixtureAnswersTheSynchronousOperations
     }
 
     [Test]
+    public void It_rejects_the_find_payload_once_its_search_responses_are_removed()
+    {
+        JsonNode broken = Body("find").DeepClone();
+        broken.AsObject().Remove("SearchResponses");
+
+        _openApi!.Conforms("/identities/find", "post", "200", broken).Should().BeFalse();
+    }
+
+    [Test]
     public void It_answers_search_with_wire_status_complete()
     {
         Body("search")["Status"]!.GetValue<string>().Should().Be("Complete");
@@ -199,6 +209,15 @@ public sealed class Given_TheIdentityFixtureAnswersTheSynchronousOperations
     {
         JsonNode broken = Body("search").DeepClone();
         broken["Status"] = "Incomplete";
+
+        _openApi!.Conforms("/identities/search", "post", "200", broken).Should().BeFalse();
+    }
+
+    [Test]
+    public void It_rejects_the_search_payload_once_its_search_responses_are_removed()
+    {
+        JsonNode broken = Body("search").DeepClone();
+        broken.AsObject().Remove("SearchResponses");
 
         _openApi!.Conforms("/identities/search", "post", "200", broken).Should().BeFalse();
     }

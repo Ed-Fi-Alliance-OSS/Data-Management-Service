@@ -12,7 +12,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F24: a provider that does not advertise <c>Search</c> gets operation-unsupported 404 for search
+/// A provider that does not advertise <c>Search</c> gets operation-unsupported 404 for search
 /// without being invoked, while the other four operations still reach it.
 /// </summary>
 /// <remarks>

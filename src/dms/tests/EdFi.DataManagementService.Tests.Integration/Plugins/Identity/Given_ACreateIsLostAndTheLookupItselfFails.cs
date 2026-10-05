@@ -9,7 +9,7 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 
 /// <summary>
-/// F34: when the reconciliation lookup is unavailable the client cannot tell whether the identity was
+/// When the reconciliation lookup is unavailable the client cannot tell whether the identity was
 /// issued, so it stops for operator reconciliation and does not retry the create.
 /// </summary>
 /// <remarks>
