@@ -89,9 +89,20 @@ public sealed class ParameterStoreSecretResolver(
     {
         string name = reference.Name.TrimStart('/');
 
+        // Parameter Store reads name:version and name:label as a selector, so ${secret:prod/dms/ds:1}
+        // would fetch version 1 and keep returning it after the parameter is rotated. Refused here
+        // rather than passed through.
+        if (name.Contains(':'))
+        {
+            throw new ParameterSelectorNotAllowedException();
+        }
+
         return perTenant && reference.Tenant is { } tenant ? $"{_root}/{tenant}/{name}" : $"{_root}/{name}";
     }
 }
 
 public sealed class ParameterHasNoValueException() : Exception("Parameter Store returned no value.");
+
+public sealed class ParameterSelectorNotAllowedException()
+    : Exception("A secret reference may not name a Parameter Store version or label.");
 // embed-region-end: resolver

@@ -63,7 +63,7 @@ hasher on the self-contained identity provider:
 ## Registering either contract
 
 Both contracts are **replace** contracts with zero or one implementation, and both have the same
-three rules. Each rule's failure is stated beside it, because two of them are silent.
+three rules. Each rule's failure is stated beside it, because some of those failures are silent.
 
 **Register with a plain `Add`, never a `TryAdd`.**
 
@@ -75,15 +75,19 @@ A replace contract has one claimant, so there is nothing to try, and a `TryAdd` 
 claim detection. The host works out what each plugin registered by comparing the service collection
 before and after its hook, and the collection your hook is handed hides nothing: a `TryAdd` sees
 every registration already there, including the host's own default hasher, which is always
-registered, and an earlier plugin's resolver. So:
+registered, and an earlier plugin's resolver. A `TryAdd` that declines adds nothing, and what
+follows depends on what else your plugin contributed:
 
-- `TryAdd` for `IClientSecretHasher` always declines. If that was your plugin's only registration,
-  startup fails naming you, because you registered nothing the host calls. If your plugin also
-  registered something else the host declares, nothing fails at all: your plugin loads and your
-  hasher never runs.
-- `TryAdd` for `ISecretResolver` succeeds when yours is the only resolver, and declines silently
-  behind another plugin's. A plain `Add` in the same position is a named startup failure naming
-  both plugins, which is the outcome an operator can act on.
+- If your plugin contributed nothing else, startup fails naming you, because you registered nothing
+  the host calls.
+- If your plugin also registered something else the host declares, or added a configuration source
+  in `ContributeConfiguration`, nothing fails at all: your plugin loads and the implementation you
+  meant to install never runs.
+
+`TryAdd` for `IClientSecretHasher` always declines, so it always lands in one of those two cases.
+`TryAdd` for `ISecretResolver` succeeds when yours is the only resolver and declines behind another
+plugin's. A plain `Add` in that position fails startup naming both plugins, which is the outcome an
+operator can act on.
 
 Two plugins that each register a plain `Add` fail startup naming both, and one plugin that
 registers twice fails naming that plugin and its count. Which of two vendors is live is the
@@ -181,8 +185,9 @@ verify.
 
 ## Worked examples
 
-Each example below is complete and compiles against this package, `EdFi.Api.Plugins`, and the
-vendor SDK versions named beside it; a check in the Ed-Fi repository compiles these exact blocks.
+Each example below is complete and compiles against this package, `EdFi.Api.Plugins` 1.1.0 or
+later (1.1.0 is the first version with `ContributeConfiguration`), and the vendor SDK versions named
+beside it; a check in the Ed-Fi repository compiles these exact blocks.
 None of them is a published plugin, and none has been run against a vault.
 
 ### Azure Key Vault configuration source
@@ -380,11 +385,22 @@ public sealed class ParameterStoreSecretResolver(
     {
         string name = reference.Name.TrimStart('/');
 
+        // Parameter Store reads name:version and name:label as a selector, so ${secret:prod/dms/ds:1}
+        // would fetch version 1 and keep returning it after the parameter is rotated. Refused here
+        // rather than passed through.
+        if (name.Contains(':'))
+        {
+            throw new ParameterSelectorNotAllowedException();
+        }
+
         return perTenant && reference.Tenant is { } tenant ? $"{_root}/{tenant}/{name}" : $"{_root}/{name}";
     }
 }
 
 public sealed class ParameterHasNoValueException() : Exception("Parameter Store returned no value.");
+
+public sealed class ParameterSelectorNotAllowedException()
+    : Exception("A secret reference may not name a Parameter Store version or label.");
 ```
 
 - **The `(name, tenant)` pair becomes a vault path.** With `Acme:ParameterStore:SecretsRoot` set to
@@ -396,5 +412,9 @@ public sealed class ParameterHasNoValueException() : Exception("Parameter Store 
 - **It caches the client and not the value.** The client is built once, in `ContributeServices`,
   and every call fetches. The cancellation token goes to the vault call.
 - **It is registered with a plain `Add`, as one singleton, unkeyed instance.**
+- **It refuses a `:` before calling the vault.** Parameter Store reads `name:version` and
+  `name:label` as a selector rather than as part of the name, so `${secret:prod/dms/ds:1}` would
+  fetch version 1 and keep returning it after the parameter is rotated. The example throws for any
+  reference containing `:`, and the reference is unresolved.
 - **A name Parameter Store does not allow fails the call.** Parameter Store names allow letters,
-  digits, `_ . - /`, so a reference using `:`, `@` or `+` throws from the SDK and is unresolved.
+  digits, `_ . - /`, so a reference using `@` or `+` throws from the SDK and is unresolved.

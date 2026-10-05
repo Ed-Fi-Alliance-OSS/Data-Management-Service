@@ -443,8 +443,9 @@ Ignoring that rule fails in two shapes, and the second is the reason it is a rul
 
 1. A `TryAdd` that declines, when it was your plugin's only contribution, leaves you registering no
    declared contract, and **startup fails naming you**. Annoying, but loud.
-2. A `TryAdd` that declines in a plugin that *also* registered something declared is **not detected
-   at all**. Your plugin loads, startup succeeds, and the replacement simply never happens.
+2. A `TryAdd` that declines in a plugin that *also* registered something declared, or added a
+   configuration source in `ContributeConfiguration`, is **not detected at all**. Your plugin loads,
+   startup succeeds, and the replacement simply never happens.
 
 There is no startup failure waiting to teach you the second case. Follow the rule instead.
 
@@ -521,6 +522,21 @@ which contract versions that release carries. Build against 1.1.0. It is the ver
 may already be pinned to `[1.0.0]`; that plugin runs unchanged on a host carrying 1.1.0, as
 [Older plugin, newer host](#older-plugin-newer-host) describes, but it cannot contribute
 configuration until it is rebuilt against 1.1.0.
+
+A Configuration Service plugin that resolves secrets or replaces the client secret hasher also
+references `EdFi.Api.Secrets`, on the same feed:
+
+```xml
+<PackageReference Include="EdFi.Api.Plugins" Version="[1.1.0]" />
+<PackageReference Include="EdFi.Api.Secrets" Version="[1.0.0]" />
+```
+
+Its version is declared in its own project file,
+`src/config/contracts/EdFi.DmsConfigurationService.Secrets/EdFi.DmsConfigurationService.Secrets.csproj`,
+and moves independently of the Configuration Service release. Its
+[implementer guide](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/config/contracts/EdFi.DmsConfigurationService.Secrets/README.md)
+is the package readme. Its worked examples need `EdFi.Api.Plugins` 1.1.0 or later, because the
+vault configuration sources they show are contributed through `ContributeConfiguration`.
 
 ## License
 
