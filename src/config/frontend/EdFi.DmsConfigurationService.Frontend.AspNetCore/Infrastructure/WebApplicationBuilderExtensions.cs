@@ -11,6 +11,7 @@ using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Deploy;
+using EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
@@ -96,6 +97,9 @@ public static class WebApplicationBuilderExtensions
             .Bind(webApplicationBuilder.Configuration.GetSection("ApplicationLockSettings"))
             .ValidateOnStart();
         ConfigureJobOptions(webApplicationBuilder.Services, webApplicationBuilder.Configuration);
+        webApplicationBuilder.Services.AddDmsEducationOrganizationProjectionReader(
+            webApplicationBuilder.Configuration
+        );
         ConfigureDatastore(webApplicationBuilder, logger);
         ConfigureIdentityProvider(webApplicationBuilder, logger);
 

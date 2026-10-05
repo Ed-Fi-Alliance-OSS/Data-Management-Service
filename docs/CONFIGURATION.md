@@ -180,6 +180,34 @@ For how jobs run, recover, and are observed, see [Configuration Service Backgrou
 
 The lease must also leave room for a late renewal. Startup also requires `RenewalInterval + 2 × 6 s + FenceTimeout + 5 s + RenewalInterval / 2 + SafetyMargin <= LeaseDuration`. The 2 × 6 s term is the fixed fence acquisition timeout, which a fence can use twice while a renewal waits for it: once to open its connection and transaction, and once to lock and check the job row. The 5 s term is the fixed lock wait of a renewal. It already falls within `RenewalInterval / 2` and is counted again as extra allowance. `SafetyMargin` is the larger of 10 s and `LeaseDuration / 6`. With the defaults this is 60 + 12 + 10 + 5 + 30 + 50 = 167 s, within 300 s. When it fails, the startup message lists each term's value.
 
+## DmsEducationOrganizationProjectionSettings
+
+The Configuration Service reads the DMS education-organization projection over HTTP (see [Education Organization Projection](./EDUCATION-ORGANIZATION-PROJECTION.md)). These settings say where DMS is and which client credentials to use (`appsettings.json` section `DmsEducationOrganizationProjectionSettings`; environment override `DmsEducationOrganizationProjectionSettings__<Parameter>`, for example `DmsEducationOrganizationProjectionSettings__TenantCredentials__Tenant1__ClientSecret`). The shipped section is empty: with no `DmsBaseUrl` the reader is not configured, nothing below is checked, and every read fails as not configured. When `DmsBaseUrl` is set, the service validates every value at startup and refuses to start, naming `DmsEducationOrganizationProjectionSettings:<Parameter>`, when one is invalid. Startup messages never contain the base URL or a credential value.
+
+| Parameter | Description | Default | Accepted values |
+| --- | --- | --- | --- |
+| DmsBaseUrl | The DMS root that the Discovery document is read from. | unset | Absolute `http` or `https` URL, optionally with a base path; no user information, query or fragment |
+| Credentials:ClientId / Credentials:ClientSecret | The client-credentials pair used in single-tenant mode, and in multi-tenant mode for a tenant without its own entry. | unset | Both or neither |
+| TenantCredentials:&lt;tenant&gt;:ClientId / ClientSecret | The pair for one tenant; the tenant name matches in any letter case. | none | Both, in every entry |
+| ContractVersions | The projection contract versions this service may request. | `educationOrganizationProjection.v1` | Distinct values from `educationOrganizationProjection.v1` |
+| PageSize | Items requested per page (sent as `limit`). DMS refuses a `limit` above its own `EducationOrganizationProjection:MaximumPageSize`. | `2000` | 1 – 10000 |
+| DiscoveryTimeoutSeconds | Time limit for one Discovery request. | `10` | 1 – 300 |
+| TokenRequestTimeoutSeconds | Time limit for one token request. | `30` | 1 – 300 |
+| PageRequestTimeoutSeconds | Time limit for one page request. | `60` | 1 – 600 |
+| TotalReadTimeoutSeconds | Time limit for one complete read, including Discovery, token requests and restarts. | `600` | 1 – 86400 |
+| MaxPages | Pages one read attempt may fetch. | `2000` | 1 – 1000000 |
+| MaxItems | Items one read attempt may collect. | `500000` | 1 – 10000000 |
+| MaxResponseBodyBytes | Largest response body read. | `8388608` | At least `PageSize × 2048 + 1024` |
+| MaxWalkRestarts | Restarts from the first page after DMS reports that the projection changed during the read. | `3` | 0 – 10 |
+| TokenExpirySafetyMarginSeconds | How long before its expiry a cached token stops being used. | `60` | 0 – 3600 |
+| DiscoveryCacheSeconds | How long a tenant's Discovery document is cached. | `300` | 0 – 86400 |
+
+At least one credential pair, shared or per tenant, is required when `DmsBaseUrl` is set. A shared pair with both values empty counts as absent, so an environment template that sets both to empty strings is accepted.
+
+`MaxResponseBodyBytes` must hold a full page of the largest items: 2048 bytes per item plus 1024 for the page envelope. The default fits the default `PageSize`; raising `PageSize` above 4095 requires raising `MaxResponseBodyBytes` too.
+
+The reader's HTTP client does not follow redirects, stores no cookies, and replaces the default `HttpClient` request logging with one record per request: method, path without query, status and elapsed time, or the exception type names for a failure. Headers, cursors, tokens, bodies and exception messages are never logged.
+
 ## Reverse Proxy and Forwarded Headers
 
 When the DMS API or Configuration Service runs behind a reverse proxy or load balancer
