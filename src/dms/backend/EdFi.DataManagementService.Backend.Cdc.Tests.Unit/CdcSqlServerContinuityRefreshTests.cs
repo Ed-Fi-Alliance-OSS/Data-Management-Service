@@ -3,10 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Threading.Channels;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using NUnit.Framework;
 using Ddl = EdFi.DataManagementService.Backend.Ddl;
 
@@ -239,13 +241,18 @@ internal class Given_SqlServer_established_range_is_refreshed(SqlServerRangeRefr
 internal class Given_SqlServer_admission_samples_an_older_upper_range(bool remainsUnavailable)
     : CdcReadinessTestBase(Ddl.CdcProvider.SqlServer)
 {
-    private CdcTransportEvidenceState _state;
+    private CdcTransportResult<CdcWriterPublicationResult> _result = null!;
     private int _sourceReads;
+
+    protected override TimeProvider CreateObservationTime() =>
+        // Admission requires strictly ordered barrier, history, and projection timestamps.
+        new AdmissionClock(TimeSpan.FromMilliseconds(5)) { AutoAdvanceAmount = TimeSpan.FromTicks(1) };
 
     [SetUp]
     public async Task SetupAdmission()
     {
         ShortTiming(1000);
+        var clock = (AdmissionClock)ObservationTime;
         _sourceReads = 0;
         var original = _change;
         _change = r =>
@@ -270,19 +277,107 @@ internal class Given_SqlServer_admission_samples_an_older_upper_range(bool remai
                     .ToArray(),
             };
         };
-        _state = (await ReadyAsync()).State;
+        using var cancellation = new CancellationTokenSource();
+        Task<CdcTransportResult<CdcWriterPublicationResult>> readiness = ReadyAsync(cancellation.Token);
+        try
+        {
+            await clock.WaitForPollAsync(readiness);
+            _sourceReads.Should().Be(1);
+            readiness.IsCompleted.Should().BeFalse("unknown retention evidence must not authorize admission");
+            clock.Advance(_request.Timing.PollInterval);
+            if (remainsUnavailable)
+            {
+                ITimer nextPoll = await clock.WaitForPollAsync(readiness);
+                _sourceReads.Should().Be(2);
+                readiness.IsCompleted.Should().BeFalse();
+                // Hold this poll so deadline expiry cannot race a third observation.
+                nextPoll.Dispose();
+                clock.Advance(_request.Timing.WaitTimeout - _request.Timing.PollInterval);
+            }
+            _result = await readiness;
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+            try
+            {
+                await readiness;
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+            {
+                // Drain the operation before fixture teardown if an assertion failed while it was polling.
+            }
+        }
     }
 
     [Test]
-    public void It_collects_a_fresh_range_before_admission() => _sourceReads.Should().BeGreaterThan(1);
+    public void It_collects_a_fresh_range_before_admission() => _sourceReads.Should().Be(2);
 
     [Test]
     public void It_requires_affirmative_retention_evidence() =>
-        _state
-            .Should()
+        _result
+            .State.Should()
             .Be(
                 remainsUnavailable
                     ? CdcTransportEvidenceState.Unavailable
                     : CdcTransportEvidenceState.Observed
             );
+
+    [Test]
+    public void It_only_authorizes_publication_after_the_range_catches_up() =>
+        ReadJournal()
+            .Operations.Count(o => o.Effect == CdcWorkflowEffect.AuthorizeWriterPublication)
+            .Should()
+            .Be(remainsUnavailable ? 0 : 1);
+
+    [Test]
+    public void It_reports_the_controlled_deadline_when_retention_remains_unknown()
+    {
+        if (remainsUnavailable)
+        {
+            _result
+                .Should()
+                .BeOfType<CdcTransportResult<CdcWriterPublicationResult>.Unavailable>()
+                .Which.Diagnostics.Should()
+                .ContainSingle()
+                .Which.Failure.Should()
+                .Be(CdcDeploymentFailure.Timeout);
+        }
+        else
+        {
+            _result.Should().BeOfType<CdcTransportResult<CdcWriterPublicationResult>.Observed>();
+        }
+    }
+
+    private sealed class AdmissionClock(TimeSpan pollInterval) : FakeTimeProvider(DateTimeOffset.UtcNow)
+    {
+        private readonly Channel<ITimer> _polls = Channel.CreateUnbounded<ITimer>();
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period
+        )
+        {
+            ITimer timer = base.CreateTimer(callback, state, dueTime, period);
+            if (dueTime == pollInterval)
+            {
+                _polls.Writer.TryWrite(timer);
+            }
+            return timer;
+        }
+
+        public async Task<ITimer> WaitForPollAsync(
+            Task<CdcTransportResult<CdcWriterPublicationResult>> readiness
+        )
+        {
+            Task<ITimer> poll = _polls.Reader.ReadAsync().AsTask();
+            // Fail promptly if the refresh behavior is removed, instead of waiting for a signal forever.
+            (await Task.WhenAny(poll, readiness))
+                .Should()
+                .BeSameAs(poll);
+            return await poll;
+        }
+    }
 }
