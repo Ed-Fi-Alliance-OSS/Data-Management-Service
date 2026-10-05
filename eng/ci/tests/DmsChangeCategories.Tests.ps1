@@ -516,6 +516,7 @@ Describe "DMS pull request change classifier" {
         It "routes <Path> to the embed check" -ForEach @(
             @{ Path = "docs/OPERATIONS.md" }
             @{ Path = "eng/docker-compose/plugins-dms.yml" }
+            @{ Path = "eng/docker-compose/plugins-config.yml" }
             @{ Path = "eng/verification/Assert-DocumentEmbeds.ps1" }
             @{ Path = "eng/verification/PluginsConsumer/AcmePlugin.cs" }
             @{ Path = "src/plugins/EdFi.Api.Plugins/PLUGINS.md" }

@@ -105,7 +105,7 @@ Describe "Assert-DocumentEmbeds against the committed documents" {
         $output = @(& $script:embedChecks)
 
         $output | Should -HaveCount 4
-        $output[0] | Should -BeLike "Verified OPERATIONS.md: * match their files, including 2 required."
+        $output[0] | Should -BeLike "Verified OPERATIONS.md: * match their files, including 3 required."
         $output[1] | Should -BeLike "Verified PLUGINS.md: * match their files, including 1 required."
         $output[2] |
             Should -BeLike "Verified CUSTOM-VALIDATION.md: * match their files, including 3 required."
@@ -113,14 +113,16 @@ Describe "Assert-DocumentEmbeds against the committed documents" {
             Should -BeLike "Verified UNIQUEID-VALIDATION.md: * match their files, including 3 required."
     }
 
-    It "still requires both plugin Compose overlays" {
+    It "still requires all three plugin Compose overlays" {
         # Guards the document table rather than the verifier: an entry that silently vanished from it
-        # would keep the case above passing while the operations chapter lost a recipe.
+        # would keep the case above passing while the operations chapter lost a recipe. The third is
+        # the Configuration Service's, which the chapter's Configuration Service section embeds.
         $paths = @(& $script:embedChecks -ListPath)
 
         $paths | Should -Contain "docs/OPERATIONS.md"
         $paths | Should -Contain "eng/docker-compose/plugins-dms.yml"
         $paths | Should -Contain "eng/docker-compose/plugins-fetch-dms.yml"
+        $paths | Should -Contain "eng/docker-compose/plugins-config.yml"
     }
 
     It "still requires the implementer guide's compiled sample region" {
