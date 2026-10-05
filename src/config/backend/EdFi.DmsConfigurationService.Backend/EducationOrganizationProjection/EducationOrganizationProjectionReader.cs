@@ -13,16 +13,49 @@ using Code = EdFi.DmsConfigurationService.Backend.EducationOrganizationProjectio
 
 namespace EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
 
+/// <summary>Where the reader checks caller cancellation and the read deadline while it processes pages.</summary>
+internal enum ProjectionReadCheckpointKind
+{
+    /// <summary>A 200 page body has been read and is about to be parsed.</summary>
+    BeforeParse,
+
+    /// <summary>The page body has been parsed (or refused).</summary>
+    AfterParse,
+
+    /// <summary>Every <see cref="EducationOrganizationProjectionReader.CheckpointInterval"/> items of a page's validation.</summary>
+    ItemValidation,
+
+    /// <summary>Every <see cref="EducationOrganizationProjectionReader.CheckpointInterval"/> items while the set's ids are indexed.</summary>
+    ParentIndex,
+
+    /// <summary>Every <see cref="EducationOrganizationProjectionReader.CheckpointInterval"/> items while parent ids are resolved.</summary>
+    ParentResolution,
+
+    /// <summary>The read has an outcome and is about to return and log it.</summary>
+    BeforeOutcome,
+}
+
+/// <summary>A processing checkpoint: its kind, the page it concerns (0 for none) and the item index (0 for none).</summary>
+internal readonly record struct ProjectionReadCheckpoint(
+    ProjectionReadCheckpointKind Kind,
+    int Page,
+    int Index
+);
+
 /// <summary>
 /// The DMS-1440 spec §5.4 complete-read loop. It resolves the store through Discovery, then reads pages from the first
 /// one, following <c>nextCursor</c> until it is <c>null</c>, with a bearer token from the token provider. One deadline,
 /// <c>TotalReadTimeoutSeconds</c> from the start, bounds Discovery, every token request, every page and every restart;
-/// each request is also bounded by its own stage timeout. A 401 page drops the token and repeats that page once with a
-/// new one. A 409 <c>projection-changed</c>, or a 400 <c>invalid-cursor</c> answering a cursor, restarts the read from
-/// the first page while restarts remain. <c>MaxPages</c>, <c>MaxItems</c> and the seen cursors are per attempt. Any
-/// failure ends the read with no items; a failure coded <c>DiscoveryInvalid</c>, <c>TargetNotFound</c> or
-/// <c>Unauthorized</c>, at any stage, also drops the tenant's cached Discovery document. The reader logs one record per
-/// read that returns: Information for success, Warning for failure.
+/// each request is also bounded by its own stage timeout. Processing between requests is bounded too: caller
+/// cancellation, then the deadline, are checked before and after each parse, every
+/// <see cref="CheckpointInterval"/> items of validation and of both parent passes, and before the outcome is returned;
+/// cancellation throws with the caller's token, and a set completed after the deadline is <c>Timeout</c>. A 401 page
+/// drops the token and repeats that page once with a new one. A 409 <c>projection-changed</c>, or a 400
+/// <c>invalid-cursor</c> answering a cursor, restarts the read from the first page while restarts remain.
+/// <c>MaxPages</c>, <c>MaxItems</c> and the seen cursors are per attempt. Any failure ends the read with no items; a
+/// failure coded <c>DiscoveryInvalid</c>, <c>TargetNotFound</c> or <c>Unauthorized</c>, at any stage, also drops the
+/// tenant's cached Discovery document. The reader logs one record per read that returns: Information for success,
+/// Warning for failure.
 /// </summary>
 public sealed class EducationOrganizationProjectionReader(
     IDmsDiscoveryClient discoveryClient,
@@ -33,6 +66,9 @@ public sealed class EducationOrganizationProjectionReader(
     ILogger<EducationOrganizationProjectionReader> logger
 ) : IEducationOrganizationProjectionReader
 {
+    /// <summary>Items processed between two cancellation and deadline checks.</summary>
+    internal const int CheckpointInterval = 1024;
+
     private static readonly HashSet<string> _discriminators = new(StringComparer.Ordinal)
     {
         "edfi.StateEducationAgency",
@@ -42,6 +78,9 @@ public sealed class EducationOrganizationProjectionReader(
     };
 
     private readonly DmsEducationOrganizationProjectionSettings _settings = options.Value;
+
+    /// <summary>Called at each processing checkpoint, before its checks; a test seam.</summary>
+    internal Action<ProjectionReadCheckpoint>? CheckpointReached { get; set; }
 
     /// <summary>A page response: the status, its problem fields, and for a 200 the body (<c>null</c> when over the cap).</summary>
     private sealed record PageResponse(HttpStatusCode Status, ProblemFields Problem, byte[]? Body);
@@ -71,6 +110,25 @@ public sealed class EducationOrganizationProjectionReader(
             readDeadline,
             cancellationToken
         );
+
+        // Nothing is returned after caller cancellation, and no set counts as read once the deadline has passed. A
+        // failure already found keeps its code.
+        if (
+            PastDeadline(
+                new(ProjectionReadCheckpointKind.BeforeOutcome, 0, 0),
+                readDeadline,
+                cancellationToken
+            ) && result is EducationOrganizationProjectionReadResult.Success late
+        )
+        {
+            result = new EducationOrganizationProjectionReadResult.Failure(
+                PageFailure(Code.Timeout) with
+                {
+                    PagesRead = late.PageCount,
+                    Restarts = late.Restarts,
+                }
+            );
+        }
 
         if (
             result is EducationOrganizationProjectionReadResult.Failure
@@ -210,8 +268,31 @@ public sealed class EducationOrganizationProjectionReader(
                 return Failed(Code.LimitExceeded, status);
             }
 
+            int pageNumber = pages + 1;
             if (
-                ProjectionResponseParser.Parse(response.Body) is not { } page
+                PastDeadline(
+                    new(ProjectionReadCheckpointKind.BeforeParse, pageNumber, 0),
+                    readDeadline,
+                    cancellationToken
+                )
+            )
+            {
+                return Failed(Code.Timeout);
+            }
+            ProjectionPage? parsed = ProjectionResponseParser.Parse(response.Body);
+            if (
+                PastDeadline(
+                    new(ProjectionReadCheckpointKind.AfterParse, pageNumber, 0),
+                    readDeadline,
+                    cancellationToken
+                )
+            )
+            {
+                return Failed(Code.Timeout);
+            }
+
+            if (
+                parsed is not { } page
                 || !string.Equals(page.ContractVersion, target.ContractVersion, StringComparison.Ordinal)
                 || page.DataStoreId != request.DataStoreId
             )
@@ -236,8 +317,22 @@ public sealed class EducationOrganizationProjectionReader(
                 return Failed(Code.MalformedResponse, status);
             }
 
-            foreach (EducationOrganizationProjectionItem item in page.Items)
+            for (int index = 0; index < page.Items.Count; index++)
             {
+                if (
+                    index != 0
+                    && index % CheckpointInterval == 0
+                    && PastDeadline(
+                        new(ProjectionReadCheckpointKind.ItemValidation, pageNumber, index),
+                        readDeadline,
+                        cancellationToken
+                    )
+                )
+                {
+                    return Failed(Code.Timeout);
+                }
+
+                EducationOrganizationProjectionItem item = page.Items[index];
                 if (
                     !_discriminators.Contains(item.Discriminator)
                     || item.NameOfInstitution.Length == 0
@@ -258,9 +353,12 @@ public sealed class EducationOrganizationProjectionReader(
 
             if (page.NextCursor is null)
             {
-                return HasUnresolvedParent(items)
-                    ? Failed(Code.DataInvalid, status)
-                    : new AttemptResult(items, pages, null, Restartable: false);
+                return ResolveParents(items, readDeadline, cancellationToken) switch
+                {
+                    Code.Timeout => Failed(Code.Timeout),
+                    { } code => Failed(code, status),
+                    null => new AttemptResult(items, pages, null, Restartable: false),
+                };
             }
 
             // seen holds every cursor sent in this attempt, the current one included.
@@ -272,11 +370,69 @@ public sealed class EducationOrganizationProjectionReader(
         }
     }
 
-    /// <summary>Whether a parent id names no item of the set.</summary>
-    private static bool HasUnresolvedParent(List<EducationOrganizationProjectionItem> items)
+    /// <summary>
+    /// <c>DataInvalid</c> when a parent id names no item of the set, <c>Timeout</c> when the deadline passes during
+    /// either pass, otherwise <c>null</c>. Caller cancellation throws.
+    /// </summary>
+    private Code? ResolveParents(
+        List<EducationOrganizationProjectionItem> items,
+        DateTimeOffset readDeadline,
+        CancellationToken cancellationToken
+    )
     {
-        HashSet<long> ids = [.. items.Select(item => item.EducationOrganizationId)];
-        return items.Exists(item => item.ParentId is { } parentId && !ids.Contains(parentId));
+        HashSet<long> ids = new(items.Count);
+        for (int index = 0; index < items.Count; index++)
+        {
+            if (
+                index != 0
+                && index % CheckpointInterval == 0
+                && PastDeadline(
+                    new(ProjectionReadCheckpointKind.ParentIndex, 0, index),
+                    readDeadline,
+                    cancellationToken
+                )
+            )
+            {
+                return Code.Timeout;
+            }
+            ids.Add(items[index].EducationOrganizationId);
+        }
+
+        for (int index = 0; index < items.Count; index++)
+        {
+            if (
+                index != 0
+                && index % CheckpointInterval == 0
+                && PastDeadline(
+                    new(ProjectionReadCheckpointKind.ParentResolution, 0, index),
+                    readDeadline,
+                    cancellationToken
+                )
+            )
+            {
+                return Code.Timeout;
+            }
+            if (items[index].ParentId is { } parentId && !ids.Contains(parentId))
+            {
+                return Code.DataInvalid;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// A processing checkpoint: throws with the caller's token when the caller has cancelled, otherwise whether the
+    /// read deadline has been reached.
+    /// </summary>
+    private bool PastDeadline(
+        ProjectionReadCheckpoint checkpoint,
+        DateTimeOffset readDeadline,
+        CancellationToken cancellationToken
+    )
+    {
+        CheckpointReached?.Invoke(checkpoint);
+        cancellationToken.ThrowIfCancellationRequested();
+        return timeProvider.GetUtcNow() >= readDeadline;
     }
 
     /// <summary>
