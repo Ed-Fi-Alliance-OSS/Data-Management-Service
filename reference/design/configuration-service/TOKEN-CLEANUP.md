@@ -59,13 +59,13 @@ any more.
 A deletion predicate is already index-supported on both engines: `IX_OpenIddictToken_ExpirationDate`
 exists in both engines' DDL, in `0016_Create_openiddict_Token_Table.sql`.
 
-While the limit is enforced, growth is rate-limited, but the table is still unbounded without
-cleanup.
+For limited Ed-Fi API clients, the active-token ceiling constrains grants until existing tokens
+expire or are revoked, but the table is still unbounded without cleanup.
 The default token lifetime is 30 minutes (`IdentityOptions.cs:26`), so a client that requests
 one token per lifetime accrues about 48 rows per day.
 `IdentitySettings.BearerTokenPerClientLimit`, added in DMS-1459 and documented in
-`docs/CONFIGURATION.md`, caps how many simultaneously active tokens one client may hold, so a
-client requesting a token per request can no longer accrue rows without limit: it may mint a new
+`docs/CONFIGURATION.md`, defaults to 15 and caps how many simultaneously active tokens an Ed-Fi
+API client backed by a live `dmscs.ApiClient` row may hold. Such a limited client may mint a new
 one only as fast as its existing ones expire or are revoked. A revoked token stops counting at
 once but, like an expired one, stays stored until the sweep removes it after expiry, so a client
 that revokes each token as it finishes still accrues rows at its request rate. A grant refused by
@@ -73,6 +73,12 @@ that ceiling writes no row.
 That ceiling does not bound the table, though. Expired rows stop counting toward it but remain
 stored, so nothing in the schema or code removes them other than the cleanup mechanism described
 below.
+
+Non-API system/admin clients with no live `dmscs.ApiClient` row, including DMS's Configuration
+Service credential and CMS admin/bootstrap clients, are exempt from the active-token ceiling.
+Their stored-token retention is governed by expiration and cleanup rather than that ceiling.
+Any configured limit below 1 disables enforcement globally, including for Ed-Fi API clients;
+the expired-token sweep remains necessary in every case.
 
 ### Keycloak Mode
 
