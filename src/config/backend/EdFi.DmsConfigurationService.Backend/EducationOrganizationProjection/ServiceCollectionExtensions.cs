@@ -16,8 +16,8 @@ public static class ServiceCollectionExtensions
 {
     /// <summary>
     /// Binds and validates <see cref="DmsEducationOrganizationProjectionSettings"/> at startup, registers the named
-    /// <see cref="HttpClient"/> with <see cref="ProjectionHttpClientLogger"/> as its only logger, and registers the
-    /// projection job error codes. Calling it more than once is harmless.
+    /// <see cref="HttpClient"/> with <see cref="ProjectionHttpClientLogger"/> as its only logger, the Discovery client
+    /// (one cache per process), and the projection job error codes. Calling it more than once is harmless.
     /// </summary>
     public static IServiceCollection AddDmsEducationOrganizationProjectionReader(
         this IServiceCollection services,
@@ -54,6 +54,8 @@ public static class ServiceCollectionExtensions
             )
             .RemoveAllLoggers()
             .AddLogger<ProjectionHttpClientLogger>();
+
+        services.TryAddSingleton<IDmsDiscoveryClient, DmsDiscoveryClient>();
 
         foreach ((string code, string message) in EducationOrganizationProjectionJobErrorCodes.All)
         {

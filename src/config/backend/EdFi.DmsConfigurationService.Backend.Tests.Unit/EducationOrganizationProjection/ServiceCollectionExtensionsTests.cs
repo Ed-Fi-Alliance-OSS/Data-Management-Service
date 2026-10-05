@@ -105,6 +105,14 @@ public class ServiceCollectionExtensionsTests
         [Test]
         public void It_registers_a_time_provider() =>
             _provider.GetService<TimeProvider>().Should().BeSameAs(TimeProvider.System);
+
+        [Test]
+        public void It_registers_one_discovery_client_for_the_process() =>
+            _provider
+                .GetRequiredService<IDmsDiscoveryClient>()
+                .Should()
+                .BeOfType<DmsDiscoveryClient>()
+                .And.BeSameAs(_provider.GetRequiredService<IDmsDiscoveryClient>());
     }
 
     [TestFixture]
