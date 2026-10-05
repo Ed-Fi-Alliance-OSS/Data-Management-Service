@@ -1296,6 +1296,27 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         }
 
         [Test]
+        public async Task It_reports_the_client_as_not_found_and_stores_nothing_when_enforcement_is_disabled()
+        {
+            Guid applicationId = await RegisterApplicationAsync(
+                _repository,
+                $"deleted-disabled-client-{Guid.NewGuid():N}"
+            );
+            await DeleteApplicationRowAsync(applicationId);
+
+            TokenStoreOutcome outcome = await _repository.StoreTokenAsync(
+                Guid.NewGuid(),
+                applicationId,
+                "subject-deleted-disabled",
+                FarFuture,
+                EnforcementDisabled
+            );
+
+            outcome.Should().Be(TokenStoreOutcome.ClientNotFound);
+            (await TokenRowCountAsync(applicationId)).Should().Be(0);
+        }
+
+        [Test]
         public async Task It_does_not_let_competing_grants_exceed_the_cap_once_the_row_is_gone()
         {
             Guid applicationId = await RegisterApplicationAsync(

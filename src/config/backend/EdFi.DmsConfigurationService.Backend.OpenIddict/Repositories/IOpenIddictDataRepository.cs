@@ -120,7 +120,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         /// <summary>
         /// Stores a new token, unless the application already holds the maximum number of active
         /// tokens. When <paramref name="maxActiveTokens"/> is below 1, enforcement is disabled and
-        /// the token is always stored.
+        /// the token is stored without counting active tokens when its application still exists.
         /// </summary>
         /// <returns>
         /// <see cref="TokenStoreOutcome.Stored"/> when the token was written,

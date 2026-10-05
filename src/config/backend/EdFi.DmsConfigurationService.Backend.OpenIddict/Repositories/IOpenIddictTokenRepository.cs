@@ -29,7 +29,8 @@ public interface IOpenIddictTokenRepository
     /// <param name="expiration">The token expiration date.</param>
     /// <param name="maxActiveTokens">
     /// The maximum number of simultaneously active tokens the application may hold. Any value
-    /// below 1 disables enforcement and the token is always stored.
+    /// below 1 disables enforcement; a token is stored without counting active tokens when its
+    /// application still exists.
     /// </param>
     /// <returns>
     /// <see cref="TokenStoreOutcome.Stored"/> when the token was written,
