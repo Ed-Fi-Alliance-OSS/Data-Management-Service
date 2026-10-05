@@ -27,6 +27,11 @@ consumers, and establish the re-provision rollback boundary.
 ## Implementation Scope
 
 - Replace descriptor upsert detection with lowered-URI + `ResourceKeyId` probes.
+- Feed the probe result into the descriptor POST action selection added by DMS-1535
+  (`DescriptorPostTargetSelection` / `DescriptorPostBranch`) and the descriptor ownership checks added
+  by DMS-1060 and DMS-1431, both of which select on the `ReferentialId` lookup today. Keep the
+  existing behavior where a lookup that has gone stale by the time the row is locked fails closed to
+  a retryable conflict.
 - Implement stored-wins descriptor identity for descriptor writes, including persisted-identity
   binding, the split no-op comparer, and the provider-authoritative PUT identity guard.
 - Remove `DescriptorWriteRequest.ReferentialId` and stop writing `dms.ReferentialIdentity` from the
@@ -45,6 +50,9 @@ consumers, and establish the re-provision rollback boundary.
 - SQL Server write/upsert SQL applies the explicit identity collation to each URI input inside
   `LOWER`.
 - Provider stored-wins tests include SQL Server identity aliases accepted by the configured collation.
+- A case-variant descriptor re-POST selects the Update branch on both providers: it is authorized
+  with the Update policy and the stored row's ownership, and a client with only Create permission
+  gets the Update denial rather than a create or a unique violation.
 - The four `DescriptorCaseInsensitiveValidation.feature` E2E scenarios (the ODS-derived casing
   artifact) are tagged `@MssqlRepresentative` and pass on the SQL Server lane; today they carry only
   `@e2e-ci-shard-2` and never run against SQL Server.

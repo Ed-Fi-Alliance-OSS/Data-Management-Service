@@ -32,6 +32,13 @@ using the same provider equality contract as the natural-key resolver.
 - For descriptor `/deletes`, probe the live descriptor table by lowered URI plus the descriptor
   resource's compile-time `ResourceKeyId`.
 - Use the same lookup for descriptor-valued identity joins in resource `/deletes`.
+- Use the same lookup in custom-view `ReadChanges` authorization. DMS-1193 added descriptor seeks
+  in `TrackedChangeAuthorizationSqlEmitter` that join live `dms.Descriptor` by
+  `Discriminator IN (...)` plus exact `Namespace`/`CodeValue` equality (the
+  `ReadChangesCustomViewDescriptorKeyPair` live joins and the `DescriptorSeek` `EXISTS` predicate).
+  Move both to lowered URI plus the descriptor resource's compile-time `ResourceKeyId`. The optional
+  tombstone probe arm that reads the shared descriptor tracked-change table keeps `Discriminator` as
+  its routing predicate.
 - Keep shared-tombstone `Discriminator` as a routing predicate only.
 - Remove the unused live `IX_Descriptor_Discriminator_ContentVersion` index.
 - Preserve descriptor route, response, and authorization contracts.
@@ -44,13 +51,18 @@ using the same provider equality contract as the natural-key resolver.
   detection follow the same per-engine verdicts.
 - Own the focused SQL Server `Turkish_100_CS_AS` database-default live fixture, reusing DMS-1443's
   alternate-default provisioning: write/upsert, reference-resolution, query-filter, descriptor-valued
-  identity, and Change Query recreated-row probes must resolve an existing `I`-bearing descriptor
+  identity, Change Query recreated-row, and custom-view `ReadChanges` descriptor-seek probes must
+  resolve an existing `I`-bearing descriptor
   through `UX_Descriptor_UriLowered_ResourceKeyId` rather than missing and attempting a duplicate
   insert (unqualified `LOWER(N'I')` under that default yields dotless `ı`).
 
 ## Acceptance Criteria
 
-- SQL snapshots contain no live-descriptor `Discriminator` predicate.
+- SQL snapshots contain no live-descriptor `Discriminator` predicate, including the custom-view
+  `ReadChanges` authorization SQL emitted by `TrackedChangeAuthorizationSqlEmitter`.
+- Custom-view `ReadChanges` authorization over a descriptor basis keeps its current authorization
+  verdicts, and a descriptor recreated with only casing changed still matches its custom-view basis
+  row on both providers.
 - Derived index inventories, manifests, and generated DDL contain no live-descriptor
   `IX_Descriptor_Discriminator_ContentVersion` index.
 - Every SQL Server descriptor probe applies the explicit identity collation to its input inside

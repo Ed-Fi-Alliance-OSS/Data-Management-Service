@@ -52,13 +52,7 @@ where the Configuration Service objects share the same physical database as DMS,
 [bootstrap command boundaries](bootstrap/command-boundaries.md).
 
 The migration will be **code-only and re-provision-only**; no in-place upgrade scripts will be
-provided. Release review confirmed that mapping version `v2` has not been released as a supported
-database shape. DMS-1408 consumes `RelationalMappingVersion=v3` for the current physical schema
-shape. Databases provisioned from an earlier prerelease shape must re-provision after picking up
-these changes; the mapping-version mismatch rejects the stale shape. Future natural-key physical
-storage changes must not reuse `v3`; each later incompatible physical schema change requires its own
-`RelationalMappingVersion` bump and schema-hash re-bless so stale databases fail fast with the
-designed 503.
+provided. Databases provisioned before these changes must be re-provisioned.
 
 The rollout is filed as epic DMS-1402 with fourteen stories, DMS-1443 through DMS-1456; this
 document refers to them by their stable local aliases T1–T14, defined in
@@ -112,8 +106,8 @@ standardized on that machinery for FK enforcement, identity lookup, and Change Q
 The descriptor-specific probe target missing was a case-insensitive descriptor lookup, which this
 design will add as a lower-storage unique index on the existing `dms.Descriptor` table: a PostgreSQL
 expression index, and a SQL Server non-persisted computed-column index. Case folding will be owned
-entirely by the database engines — PostgreSQL's builtin `pg_c_utf8` collation (requiring
-PostgreSQL 17+) and SQL Server's `SQL_Latin1_General_CP1_CI_AS` identity collation — so C# will
+entirely by the database engines — PostgreSQL's builtin `pg_c_utf8` collation (available from
+PostgreSQL 17; DMS requires PostgreSQL 18+) and SQL Server's `SQL_Latin1_General_CP1_CI_AS` identity collation — so C# will
 never lowercase descriptor values. Descriptor URI values must be well-formed (no NUL, no unpaired
 surrogates) but will otherwise be accepted without a character-repertoire restriction, including
 non-ASCII characters. SQL Server's accepted version-80 collation limitation will make identity
@@ -523,9 +517,10 @@ engine's folding rules. Every PostgreSQL descriptor identity index, lookup predi
 recreated-row probe must lower values under the builtin **`pg_c_utf8`** collation, for example
 `lower("Uri" COLLATE "pg_c_utf8")`. The implementation must not emit an unqualified `lower("Uri")`
 or `lower(<namespace-codeValue expression>)` and rely on the database default. `pg_c_utf8`
-requires **PostgreSQL 17+** (the pinned minimum version for this design) and a UTF-8 database
-encoding; its folding tables ship inside PostgreSQL and change only at a PostgreSQL major
-upgrade, so the upgrade playbook must include a `REINDEX` of the descriptor expression index —
+requires PostgreSQL 17+ and a UTF-8 database encoding. This design pins **PostgreSQL 18+** as the
+minimum version, a floor the team chose above the collation's own requirement for PostgreSQL 18's
+performance improvements. The collation's folding tables ship inside PostgreSQL and change only at
+a PostgreSQL major upgrade, so the upgrade playbook must include a `REINDEX` of the descriptor expression index —
 and account for the case where a Unicode revision makes two stored descriptors newly collide,
 which blocks the `REINDEX` until the data is resolved manually. On SQL Server, folding will follow
 the `LOWER(...)` computed column and the explicitly emitted `SQL_Latin1_General_CP1_CI_AS`
@@ -964,7 +959,8 @@ Relative to current DMS behavior (the hash era), on SQL Server:
   DMS identity string columns will become explicitly case-insensitive after re-provisioning. Their
   natural-key lookup and uniqueness behavior will therefore match the standard SQL Server deployment.
 - Case-variant natural-key POST of an existing document will shift **409 → 200** (silent update; ODS
-  parity).
+  parity). Since DMS-1535 a POST that finds an existing document is authorized as Update, so a
+  client without Update permission gets the Update denial (403) instead.
 - Casing-only PUT on a cascade-enabled resource: today a real key change (cascade through every
   referrer plus change-version ripples); it will become a no-op for the casing (stored key casing
   immutable, as in ODS).
@@ -977,7 +973,7 @@ Relative to current DMS behavior (the hash era), on SQL Server:
   anywhere in a request body (any resource, any string property) will become a malformed-body 400
   at parse instead of today's unmapped 5xx. Other non-ASCII descriptor
   URI values will become accepted inputs, with case folding owned by each engine — `pg_c_utf8` on
-  PostgreSQL (raising the minimum supported PostgreSQL version to 17) and the CI identity collation
+  PostgreSQL (raising the minimum supported PostgreSQL version to 18) and the CI identity collation
   on SQL Server. The engines' non-ASCII identity verdicts differ; SQL Server's accepted version-80
   behavior includes linguistic and unweighted-code-point aliases (accepted trade-off #8).
 - GET-many string equality filters (`?field=value`): today forced case-sensitive by the
@@ -1179,9 +1175,11 @@ a follow-on to be filed only on evidence and is not part of the T1–T14 rollout
   descriptor-valued query preprocessing), plus body-parse rejection of unpaired-surrogate JSON
   escapes in `ParseBodyMiddleware` (body-wide malformed-body 400; the exception to translate is
   `InvalidOperationException` from string materialization, not only `JsonException`).
-- A PostgreSQL 17 + UTF-8-encoding floor (both required by the builtin `pg_c_utf8` collation),
-  guarded by SchemaTools before any DDL runs, including the pinned CI/compose/Dockerfile
-  PostgreSQL 16 bumps and a template-package rebuild on 17.
+- A PostgreSQL 18 + UTF-8-encoding floor (the builtin `pg_c_utf8` collation needs 17+ and UTF-8;
+  the team raised the version floor to 18 for its performance improvements), guarded by
+  SchemaTools before any DDL runs, including the pinned CI/compose/Dockerfile PostgreSQL 16 bumps,
+  the `postgres:18` image data-directory change (`/var/lib/postgresql/data` →
+  `/var/lib/postgresql/18/docker`), and a template-package rebuild on 18.
 - `UX_Document_DocumentId_ResourceKeyId`, used only as the parent key for descriptor and abstract
   identity document/resource invariants.
 - PostgreSQL `UX_Descriptor_UriLowered_ResourceKeyId` expression index with the lowered URI pinned to
@@ -1253,16 +1251,12 @@ move that live descriptor path back to a `dms.Document` join. The logical shapes
 its trigger topology except for concrete `ResourceKeyId` column population, the composite
 document/resource FK, and explicit SQL Server identity collation; the DocumentCache table family;
 tracked-change tables and triggers; `auth.*`;
-`dms.ResourceKey` / `dms.EffectiveSchema` / `dms.SchemaComponent`; the read/reconstitution pipeline;
-`RelationalMappingVersion` is `v3` because these physical mapping changes must reject earlier
-prerelease aggregate database shapes.
+`dms.ResourceKey` / `dms.EffectiveSchema` / `dms.SchemaComponent`; and the read/reconstitution
+pipeline.
 
 ## Release compatibility and rollback
 
-Release review confirmed that `v2` has not been published as a supported database shape. This
-design therefore moves to the unreleased, re-provision-only `v3` aggregate. Current schema-hash
-expectations will be re-blessed as the physical changes land. Environments using an earlier
-prerelease `v2` shape must re-provision; the mapping-version mismatch rejects that stale shape.
+This design is re-provision-only. Environments provisioned with an earlier shape must re-provision.
 
 Rollback is a commit revert while `dms.ReferentialIdentity` remains fully maintained. Once
 descriptor writes stop maintaining RI rows, rollback to the RI resolver requires re-provisioning
@@ -1483,7 +1477,7 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
    descriptor identity. DMS performs no Unicode normalization, but SQL Server's linguistic
    comparison may likewise treat canonically equivalent spellings as one identity; PostgreSQL's
    code-point comparison keeps them distinct. Exact per-character verdicts are pinned by the
-   engine-divergence fixtures rather than generalized beyond the tested repertoire. PostgreSQL 17
+   engine-divergence fixtures rather than generalized beyond the tested repertoire. PostgreSQL 18
    will become the minimum supported version; and a PostgreSQL major upgrade can change folding,
    requiring the documented `REINDEX` playbook (a newly-created collision blocks the `REINDEX`
    until the data is resolved).
@@ -1496,7 +1490,8 @@ Two designs were evaluated (August 2026):
 
 - **Engine-side folding (chosen)** — case folding owned by the database engines: PostgreSQL's
   builtin `pg_c_utf8` collation and SQL Server's CI identity collation; C# never lowercases; no
-  schema additions. The team accepted the PostgreSQL 17 minimum-version floor this requires, the
+  schema additions. The team accepted a PostgreSQL minimum-version floor (17 is the collation's
+  requirement; the team later set the floor to 18 for its performance improvements), the
   per-engine non-ASCII verdicts (including SQL Server's lossy version-80 identity aliases), and the
   PostgreSQL major-upgrade `REINDEX` playbook — all recorded in accepted trade-off #8.
 - **Application-side folding (rejected)** — one C# folding function (`ToLowerInvariant()`) with a

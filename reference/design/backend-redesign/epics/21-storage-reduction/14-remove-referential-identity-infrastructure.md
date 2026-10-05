@@ -31,9 +31,21 @@ atomically removing all remaining DMS-owned ReferentialIdentity and UUIDv5 infra
   (`ReferentialIdentityRows` / `MaterializedDocumentSourceReferentialIdentityRow`),
   `AuthorizationWriteSideEffectState.ReferentialIdentityRows`, and the
   `Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic` package references (and lock files)
-  in `Backend.Mssql.Tests.Integration` and `Backend.Postgresql.Tests.Integration`. Run both database integration estates against the
-  transition schema with RI seeding disabled. Investigate an absent-RI-row failure as a surviving
-  reader; do not fix it by reseeding.
+  in `Backend.Mssql.Tests.Integration` and `Backend.Postgresql.Tests.Integration`. The same applies to
+  these RI writers and readers:
+  - the performance harness fixtures in `src/dms/tests/EdFi.DataManagementService.Performance.Harness`
+    (`PerfFixtureLoader`, `PerfDescriptorFixtureLoader`, `PerfAuthorizationSeeder`, their
+    `Pgsql*`/`Mssql*` SQL classes, the smoke scenarios, `ReferentialIdentityDerivation` and its own
+    UUIDv5 implementation, the matching `Performance.Harness.Tests.Unit` pins, and the harness
+    README). They insert `dms.ReferentialIdentity` rows with raw SQL and do not compile against
+    Core's referential-ID types, so DMS-1454 does not catch them.
+  - `DocumentCacheCompletedProjectionScenario` in `EdFi.DataManagementService.Tests.Integration`,
+    which snapshots `dms.ReferentialIdentity` rows, and the `SectionReferentialIdentityScenario` /
+    `Given_{Postgresql,Mssql}_SectionReferentialIdentity` suites (rewrite as natural-key resolution
+    coverage or delete if DMS-1451 already superseded them).
+
+  Run both database integration estates against the transition schema with RI seeding disabled.
+  Investigate an absent-RI-row failure as a surviving reader; do not fix it by reseeding.
 - Second, remove `TR_<R>_ReferentialIdentity`, `dms.ReferentialIdentity`, `dms.uuidv5`, DMS-generated
   `CREATE EXTENSION pgcrypto` / `digest()` usage, the SQL Server `dms.UniqueIdentifierTable` TVP type, RI
   table/index/trigger inventories, RI manifest entries, and legacy
@@ -47,6 +59,11 @@ atomically removing all remaining DMS-owned ReferentialIdentity and UUIDv5 infra
   `docs/DEADLOCK-ANALYSIS.md`; leave `eng/docker-compose/OpenIddict-Crypto.psm1` and
   `setup-openiddict.ps1` untouched (CMS/OpenIddict pgcrypto). Update public
   DDL contracts and all generated goldens.
+- Update the Northridge dataset tooling (DMS-1406): `eng/northridge/Copy-NorthridgeDataForward.ps1`
+  copies `ReferentialIdentity` (`$script:DmsDataTable`) and checks an RI-to-Document integrity
+  query, `Add-NorthridgeGapDocument.ps1` writes RI rows, and `eng/northridge/README.md` documents
+  both. The published Northridge dump predates this epic's schema, so it must be carried forward
+  with the updated tooling and republished.
 - Remove `dms.ReferentialIdentity` from `CdcDmsManagedTableInventory` (the DMS-managed CDC table
   list that drives the PostgreSQL publication and SQL Server capture instances) and its CDC goldens.
   This is a public CDC contract change — the RI change stream disappears for downstream consumers —
@@ -74,7 +91,11 @@ atomically removing all remaining DMS-owned ReferentialIdentity and UUIDv5 infra
 - The seeding-disabled transition schema and final schema pass on PostgreSQL and SQL Server.
 - Final production-source scans find no RI reader/writer, referential-ID contract, UUIDv5
   implementation, RI trigger/table/TVP/inventory, operational truncate, CDC managed-table entry,
-  template pgcrypto preamble, or `Be.Vlaanderen` package reference in any csproj or lock file.
+  template pgcrypto preamble, or `Be.Vlaanderen` package reference in any csproj or lock file. The
+  scans also cover `src/dms/tests` (including the performance harness and API integration tests) and
+  `eng/northridge`.
+- The Northridge carry-forward runs against the final schema and the republished dataset contains no
+  `dms.ReferentialIdentity` data.
 - CDC bootstrap (publication / capture-instance) succeeds against the final schema on both providers
   and the CDC inventory goldens contain no `dms.ReferentialIdentity`.
 - Retained trigger-family parity tests pass on both providers; no test references RI trigger
@@ -86,8 +107,5 @@ atomically removing all remaining DMS-owned ReferentialIdentity and UUIDv5 infra
   `CREATE EXTENSION pgcrypto`.
 - Derived constraint inventories, manifests, and generated DDL contain no
   `UX_Descriptor_Uri_Discriminator` uniqueness.
-- DMS-1408 already consumes `RelationalMappingVersion=v3` and re-blesses the current schema-hash
-  pins. Future natural-key physical schema changes must use their own mapping-version bump rather
-  than reusing `v3`.
 - Rollback after DMS-1454, including after this schema removal, requires re-provisioning with the previous
   build or an explicitly designed backfill.

@@ -222,7 +222,7 @@ This inventory is the explicit “what exists in the database” contract that t
   (e.g. the `Latin1_General_100_BIN2` lifecycle token) are preserved.
 - Descriptor identity index: PostgreSQL emits the unique expression index
   `UX_Descriptor_UriLowered_ResourceKeyId ON dms."Descriptor" (lower("Uri" COLLATE "pg_c_utf8"), "ResourceKeyId")`
-  (requires PostgreSQL 17+ and a UTF-8 database; SchemaTools guards both); SQL Server emits the
+  (requires PostgreSQL 18+, the DMS floor, and a UTF-8 database; SchemaTools guards both); SQL Server emits the
   non-persisted computed column `[UriLowered] AS LOWER([Uri])` and a unique index on
   `([UriLowered], [ResourceKeyId])`. No emitted `lower(...)`/`LOWER(...)` over a descriptor value
   may rely on the database default collation.

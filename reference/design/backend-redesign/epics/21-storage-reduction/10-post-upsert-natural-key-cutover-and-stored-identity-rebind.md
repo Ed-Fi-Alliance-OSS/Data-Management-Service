@@ -29,6 +29,13 @@ bind the existing stored identity before authorization and no-op detection.
   RefKey/lowered-descriptor predicate on both write paths: statement 1 of the composite command and
   the first command of the ordered-segments fallback (`ResolveInOrderedSegmentsAsync`). Do not
   resequence the fallback; it captures before it resolves references today and keeps that order.
+  Since DMS-1535 the ordered-segments path is also taken by POSTs whose Create and Update action
+  policies differ and whose Update branch uses a stored custom view, so it is not a rare fallback.
+- Preserve POST action selection (DMS-1535) and ownership authorization (DMS-1060). The captured
+  target picks the Create or Update branch (`PostTargetAction.For`, `PostBranchAuthorizationInputs`),
+  and an existing target is authorized as Update, including stored-ownership checks. The natural-key
+  capture predicate must produce the same target context the RI capture produces today, so a
+  case-variant SQL Server POST that matches an existing document selects the Update branch.
 - Delete `RelationalWriteTargetLookupResolver`'s RI-based POST lookup builders. They have no
   production resource-POST consumer (the write executor does not call them); the descriptor handler's
   use of the shared lookup support is cut over by DMS-1454.
@@ -48,12 +55,17 @@ bind the existing stored identity before authorization and no-op detection.
 
 ## Acceptance Criteria
 
-- Command-stream tests show unchanged round-trip counts; POST create remains two commands.
+- Command-stream tests show unchanged round-trip counts; POST create remains two commands on the
+  shared-policy (co-batched) path, and the split-policy ordered-segments path keeps its current
+  command count with the natural-key capture as its first command.
 - Resource POST target lookup has zero RI command classifications; the create stream classifies
   exactly one natural-key capture/lookup command (`WriteSessionCommandStreamScenarios` create-stream
   expectations move from RI = 1 to RI = 0, natural-key = 1) and the update stream keeps RI = 0.
 - SQL Server case-variant POST tests prove HTTP 200, stored casing in the response, guarded no-op, no
   referrer rewrite, no key-change row, and no `ContentVersion` increment.
+- SQL Server case-variant POST tests with differing Create and Update policies prove the request is
+  authorized as Update: a client with only Create permission gets the Update denial (403), not a
+  create or a 409, and ownership-based authorization is evaluated against the stored row.
 - SQL Server case-variant PUT tests prove a casing-only identity change is not a key change and a
   mixed PUT cascades only the genuinely changed column.
 - SQL Server collection tests prove a PUT whose item differs from the stored row only in the casing

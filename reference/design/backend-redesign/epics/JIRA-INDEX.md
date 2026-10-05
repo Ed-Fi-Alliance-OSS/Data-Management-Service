@@ -241,7 +241,7 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1444` — Add the Document/Resource Invariant and Abstract ResourceKeyId — `reference/design/backend-redesign/epics/21-storage-reduction/02-document-resource-invariant-and-abstract-resource-key.md`
   - `DMS-1445` — Compile Natural-Key Probe Metadata — `reference/design/backend-redesign/epics/21-storage-reduction/03-natural-key-probe-metadata.md`
   - `DMS-1446` — Move Duplicate-Identity and Constraint Diagnostics to Compiled Probes — `reference/design/backend-redesign/epics/21-storage-reduction/04-probe-based-duplicate-identity-and-constraint-diagnostics.md`
-  - `DMS-1447` — Raise the PostgreSQL Floor and Publish the Descriptor-Collation Upgrade Contract — `reference/design/backend-redesign/epics/21-storage-reduction/05-postgresql-17-and-descriptor-collation-upgrade.md`
+  - `DMS-1447` — Raise the PostgreSQL Floor and Publish the Descriptor-Collation Upgrade Contract — `reference/design/backend-redesign/epics/21-storage-reduction/05-postgresql-18-and-descriptor-collation-upgrade.md`
   - `DMS-1448` — Add Descriptor Validation, Index, and Foreign-Key Foundations — `reference/design/backend-redesign/epics/21-storage-reduction/06-descriptor-validation-index-and-fk-foundations.md`
   - `DMS-1449` — Implement Natural-Key SQL Builders and Cardinality Contracts — `reference/design/backend-redesign/epics/21-storage-reduction/07-natural-key-sql-builders-and-cardinality-contracts.md`
   - `DMS-1450` — Implement the Natural-Key Resolver Behind an Internal Seam — `reference/design/backend-redesign/epics/21-storage-reduction/08-natural-key-resolver-internal-seam.md`

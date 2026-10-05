@@ -69,7 +69,7 @@ set grows by roughly half a dozen scenarios as an accepted lane-time cost.
 - **DMS-1444 (T2)** — [`02-document-resource-invariant-and-abstract-resource-key.md`](02-document-resource-invariant-and-abstract-resource-key.md) — Add the document/resource invariant and abstract `ResourceKeyId`.
 - **DMS-1445 (T3)** — [`03-natural-key-probe-metadata.md`](03-natural-key-probe-metadata.md) — Compile natural-key probe metadata.
 - **DMS-1446 (T4)** — [`04-probe-based-duplicate-identity-and-constraint-diagnostics.md`](04-probe-based-duplicate-identity-and-constraint-diagnostics.md) — Move duplicate-identity and constraint diagnostics to compiled probes.
-- **DMS-1447 (T5)** — [`05-postgresql-17-and-descriptor-collation-upgrade.md`](05-postgresql-17-and-descriptor-collation-upgrade.md) — Raise the PostgreSQL floor and publish the descriptor-collation upgrade contract.
+- **DMS-1447 (T5)** — [`05-postgresql-18-and-descriptor-collation-upgrade.md`](05-postgresql-18-and-descriptor-collation-upgrade.md) — Raise the PostgreSQL floor and publish the descriptor-collation upgrade contract.
 - **DMS-1448 (T6)** — [`06-descriptor-validation-index-and-fk-foundations.md`](06-descriptor-validation-index-and-fk-foundations.md) — Add descriptor validation, index, and foreign-key foundations.
 - **DMS-1449 (T7)** — [`07-natural-key-sql-builders-and-cardinality-contracts.md`](07-natural-key-sql-builders-and-cardinality-contracts.md) — Implement natural-key SQL builders and cardinality contracts.
 - **DMS-1450 (T8)** — [`08-natural-key-resolver-internal-seam.md`](08-natural-key-resolver-internal-seam.md) — Implement the natural-key resolver behind an internal seam.
