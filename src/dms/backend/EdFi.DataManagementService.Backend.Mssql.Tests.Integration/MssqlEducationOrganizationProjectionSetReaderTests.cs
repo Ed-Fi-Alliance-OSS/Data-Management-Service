@@ -573,6 +573,35 @@ public class Given_A_Mssql_Education_Organization_Projection_Set_Reader_Over_An_
     }
 
     [Test]
+    public async Task It_reads_name_columns_of_other_encodings_exactly()
+    {
+        // Converted from each column's own encoding: a UTF-8 column with characters outside Latin-1,
+        // one of them supplementary, and a Cyrillic code-page column. Applying another collation before
+        // the conversion would translate both through code page 1252 and lose them as '?', silently.
+        await _database.ExecuteNonQueryAsync(
+            """
+            ALTER TABLE [edfi].[School] ALTER COLUMN [ShortNameOfInstitution] varchar(75) COLLATE Latin1_General_100_CI_AS_SC_UTF8 NULL;
+            ALTER TABLE [edfi].[LocalEducationAgency] ALTER COLUMN [ShortNameOfInstitution] varchar(75) COLLATE Cyrillic_General_CI_AS NULL;
+            UPDATE [edfi].[School] SET [ShortNameOfInstitution] = NCHAR(28450) + NCHAR(55357) + NCHAR(56832) WHERE [SchoolId] = 100001;
+            UPDATE [edfi].[LocalEducationAgency] SET [ShortNameOfInstitution] = NCHAR(1046) + NCHAR(1091) + NCHAR(1082) WHERE [LocalEducationAgencyId] = 100;
+            """
+        );
+
+        var result = await ReadAsync();
+
+        IReadOnlyList<EducationOrganizationProjectionRow> rows = result
+            .Should()
+            .BeOfType<Result.Set>()
+            .Which.Rows;
+        rows.Single(static row => row.EducationOrganizationId == 100001)
+            .ShortNameOfInstitution.Should()
+            .Be("\u6F22\U0001F600");
+        rows.Single(static row => row.EducationOrganizationId == 100)
+            .ShortNameOfInstitution.Should()
+            .Be("\u0416\u0443\u043A");
+    }
+
+    [Test]
     public async Task It_reports_a_binary_name_column_as_a_data_type_incompatibility()
     {
         // Binary data would convert to bytes without complaint; COLLATE refuses it. SQL Server will not

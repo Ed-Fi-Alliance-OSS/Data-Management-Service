@@ -474,18 +474,20 @@ public sealed class EducationOrganizationProjectionSqlCompiler(SqlDialect dialec
     /// <summary>
     /// Appends a name column. PostgreSQL returns it as text. SQL Server returns its stored UTF-16 code
     /// units as <c>varbinary(max)</c>, because SqlClient would replace a lone surrogate with U+FFFD
-    /// while decoding (<see cref="EducationOrganizationProjectionNameEncoding"/>). The cast keeps
-    /// three properties of reading the column as text:
+    /// while decoding (<see cref="EducationOrganizationProjectionNameEncoding"/>):
+    /// <c>CAST(CONVERT(nvarchar(max), CASE WHEN col COLLATE Latin1_General_100_BIN2 IS NULL THEN NULL
+    /// ELSE col END) AS varbinary(max))</c>. The expression keeps what reading the column as text kept:
     /// <list type="bullet">
     /// <item>Nothing is truncated: both conversions are to <c>max</c> types.</item>
-    /// <item>A column of another character type still reads as its text: <c>CONVERT</c> to
-    /// <c>nvarchar</c> first, so the bytes are always UTF-16.</item>
+    /// <item>The text is the stored text. The value converted to <c>nvarchar</c> is the column itself,
+    /// under its own collation, so a column of another character type (another code page, or UTF-8)
+    /// converts from its own encoding, and an <c>nvarchar</c> column's code units are copied as they
+    /// are. A null stays null and an empty string stays empty.</item>
     /// <item>A column that is not character data still fails the statement, as reading it as text
-    /// did, rather than being converted to bytes: <c>COLLATE</c> accepts only character expressions
-    /// (error 447 otherwise, a permanent incompatibility). The collation does not change
-    /// <c>nvarchar</c> data, whose code units are the same under every collation.</item>
+    /// did, rather than being converted to bytes. <c>COLLATE</c> accepts only character expressions
+    /// (error 447 otherwise, a permanent incompatibility), and it appears only in the null test,
+    /// whose outcome no collation can change, so it never translates the value.</item>
     /// </list>
-    /// A null stays null and an empty string stays an empty, not null, value.
     /// </summary>
     private SqlWriter AppendName(SqlWriter writer, DbColumnName column)
     {
@@ -494,9 +496,11 @@ public sealed class EducationOrganizationProjectionSqlCompiler(SqlDialect dialec
             return AppendQualifiedColumn(writer, RootAlias, column);
         }
 
-        writer.Append("CAST(CONVERT(nvarchar(max), ");
+        writer.Append("CAST(CONVERT(nvarchar(max), CASE WHEN ");
         AppendQualifiedColumn(writer, RootAlias, column);
-        return writer.Append(" COLLATE Latin1_General_100_BIN2) AS varbinary(max))");
+        writer.Append(" COLLATE Latin1_General_100_BIN2 IS NULL THEN NULL ELSE ");
+        AppendQualifiedColumn(writer, RootAlias, column);
+        return writer.Append(" END) AS varbinary(max))");
     }
 
     /// <summary>

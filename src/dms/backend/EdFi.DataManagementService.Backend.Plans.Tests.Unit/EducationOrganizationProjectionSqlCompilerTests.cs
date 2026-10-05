@@ -251,8 +251,8 @@ public class Given_EducationOrganizationProjectionSqlCompiler_Over_The_Ds52_SqlS
                     SELECT
                         r.[StateEducationAgencyId] AS [EducationOrganizationId],
                         N'Ed-Fi:StateEducationAgency' AS [Discriminator],
-                        CAST(CONVERT(nvarchar(max), r.[NameOfInstitution] COLLATE Latin1_General_100_BIN2) AS varbinary(max)) AS [NameOfInstitution],
-                        CAST(CONVERT(nvarchar(max), r.[ShortNameOfInstitution] COLLATE Latin1_General_100_BIN2) AS varbinary(max)) AS [ShortNameOfInstitution],
+                        CAST(CONVERT(nvarchar(max), CASE WHEN r.[NameOfInstitution] COLLATE Latin1_General_100_BIN2 IS NULL THEN NULL ELSE r.[NameOfInstitution] END) AS varbinary(max)) AS [NameOfInstitution],
+                        CAST(CONVERT(nvarchar(max), CASE WHEN r.[ShortNameOfInstitution] COLLATE Latin1_General_100_BIN2 IS NULL THEN NULL ELSE r.[ShortNameOfInstitution] END) AS varbinary(max)) AS [ShortNameOfInstitution],
                         CAST(NULL AS bigint) AS [LocalEducationAgencyReference],
                         CAST(NULL AS bigint) AS [ParentLocalEducationAgencyReference],
                         CAST(NULL AS bigint) AS [EducationServiceCenterReference],
@@ -262,8 +262,8 @@ public class Given_EducationOrganizationProjectionSqlCompiler_Over_The_Ds52_SqlS
                     SELECT
                         r.[EducationServiceCenterId] AS [EducationOrganizationId],
                         N'Ed-Fi:EducationServiceCenter' AS [Discriminator],
-                        CAST(CONVERT(nvarchar(max), r.[NameOfInstitution] COLLATE Latin1_General_100_BIN2) AS varbinary(max)) AS [NameOfInstitution],
-                        CAST(CONVERT(nvarchar(max), r.[ShortNameOfInstitution] COLLATE Latin1_General_100_BIN2) AS varbinary(max)) AS [ShortNameOfInstitution],
+                        CAST(CONVERT(nvarchar(max), CASE WHEN r.[NameOfInstitution] COLLATE Latin1_General_100_BIN2 IS NULL THEN NULL ELSE r.[NameOfInstitution] END) AS varbinary(max)) AS [NameOfInstitution],
+                        CAST(CONVERT(nvarchar(max), CASE WHEN r.[ShortNameOfInstitution] COLLATE Latin1_General_100_BIN2 IS NULL THEN NULL ELSE r.[ShortNameOfInstitution] END) AS varbinary(max)) AS [ShortNameOfInstitution],
                         CAST(NULL AS bigint) AS [LocalEducationAgencyReference],
                         CAST(NULL AS bigint) AS [ParentLocalEducationAgencyReference],
                         CAST(NULL AS bigint) AS [EducationServiceCenterReference],
@@ -273,8 +273,8 @@ public class Given_EducationOrganizationProjectionSqlCompiler_Over_The_Ds52_SqlS
                     SELECT
                         r.[LocalEducationAgencyId] AS [EducationOrganizationId],
                         N'Ed-Fi:LocalEducationAgency' AS [Discriminator],
-                        CAST(CONVERT(nvarchar(max), r.[NameOfInstitution] COLLATE Latin1_General_100_BIN2) AS varbinary(max)) AS [NameOfInstitution],
-                        CAST(CONVERT(nvarchar(max), r.[ShortNameOfInstitution] COLLATE Latin1_General_100_BIN2) AS varbinary(max)) AS [ShortNameOfInstitution],
+                        CAST(CONVERT(nvarchar(max), CASE WHEN r.[NameOfInstitution] COLLATE Latin1_General_100_BIN2 IS NULL THEN NULL ELSE r.[NameOfInstitution] END) AS varbinary(max)) AS [NameOfInstitution],
+                        CAST(CONVERT(nvarchar(max), CASE WHEN r.[ShortNameOfInstitution] COLLATE Latin1_General_100_BIN2 IS NULL THEN NULL ELSE r.[ShortNameOfInstitution] END) AS varbinary(max)) AS [ShortNameOfInstitution],
                         CAST(NULL AS bigint) AS [LocalEducationAgencyReference],
                         r.[ParentLocalEducationAgency_LocalEducationAgencyId] AS [ParentLocalEducationAgencyReference],
                         r.[EducationServiceCenter_EducationServiceCenterId] AS [EducationServiceCenterReference],
@@ -284,8 +284,8 @@ public class Given_EducationOrganizationProjectionSqlCompiler_Over_The_Ds52_SqlS
                     SELECT
                         r.[SchoolId] AS [EducationOrganizationId],
                         N'Ed-Fi:School' AS [Discriminator],
-                        CAST(CONVERT(nvarchar(max), r.[NameOfInstitution] COLLATE Latin1_General_100_BIN2) AS varbinary(max)) AS [NameOfInstitution],
-                        CAST(CONVERT(nvarchar(max), r.[ShortNameOfInstitution] COLLATE Latin1_General_100_BIN2) AS varbinary(max)) AS [ShortNameOfInstitution],
+                        CAST(CONVERT(nvarchar(max), CASE WHEN r.[NameOfInstitution] COLLATE Latin1_General_100_BIN2 IS NULL THEN NULL ELSE r.[NameOfInstitution] END) AS varbinary(max)) AS [NameOfInstitution],
+                        CAST(CONVERT(nvarchar(max), CASE WHEN r.[ShortNameOfInstitution] COLLATE Latin1_General_100_BIN2 IS NULL THEN NULL ELSE r.[ShortNameOfInstitution] END) AS varbinary(max)) AS [ShortNameOfInstitution],
                         r.[LocalEducationAgency_LocalEducationAgencyId] AS [LocalEducationAgencyReference],
                         CAST(NULL AS bigint) AS [ParentLocalEducationAgencyReference],
                         CAST(NULL AS bigint) AS [EducationServiceCenterReference],
