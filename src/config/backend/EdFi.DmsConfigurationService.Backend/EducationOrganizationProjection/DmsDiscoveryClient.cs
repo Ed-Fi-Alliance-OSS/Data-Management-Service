@@ -146,10 +146,9 @@ public sealed class DmsDiscoveryClient(
     }
 
     /// <summary>
-    /// One Discovery request, bounded by <c>DiscoveryTimeoutSeconds</c> and the read deadline. However the request
-    /// ends, normally or with an exception, caller cancellation is checked first and the timeout second, so an outcome
-    /// that arrives after either is never classified, cached or returned: cancellation throws with the caller's token
-    /// and an expired timeout is <c>Timeout</c>, even when a transport exception followed it.
+    /// One Discovery request, bounded by <c>DiscoveryTimeoutSeconds</c> and the read deadline through
+    /// <see cref="BoundedProjectionRequest"/>, so an outcome that arrives after caller cancellation or the timeout is
+    /// never classified, cached or returned.
     /// </summary>
     private async Task<(Document?, EducationOrganizationProjectionFailure?)> FetchAsync(
         Uri baseUrl,
@@ -160,52 +159,16 @@ public sealed class DmsDiscoveryClient(
     )
     {
         // start is before readDeadline (ResolveAsync checked), so the request has time left.
-        TimeSpan timeout = TimeSpan.FromSeconds(_settings.DiscoveryTimeoutSeconds);
-        DateTimeOffset requestDeadline = start + timeout < readDeadline ? start + timeout : readDeadline;
-
-        using CancellationTokenSource timeoutSource = new(requestDeadline - start, timeProvider);
-        using CancellationTokenSource linkedSource = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken,
-            timeoutSource.Token
-        );
-
-        // The timer covers a timeout that fires before the clock reads the due time; the clock covers one whose timer
-        // has not run yet when the request ends.
-        bool TimedOut() =>
-            timeoutSource.IsCancellationRequested || timeProvider.GetUtcNow() >= requestDeadline;
-
-        (Document?, EducationOrganizationProjectionFailure?) outcome;
-        try
-        {
-            outcome = await SendAndReadAsync(baseUrl, tenantName, linkedSource.Token);
-        }
-        catch (Exception) when (cancellationToken.IsCancellationRequested)
-        {
-            throw new OperationCanceledException(cancellationToken);
-        }
-        catch (Exception exception)
-            when (TimedOut()
-                && (
-                    exception is OperationCanceledException
-                    || ProjectionFailureClassifier.IsTransportFailure(exception)
-                )
-            )
-        {
-            return (null, Failure(Code.Timeout));
-        }
-        catch (Exception exception)
-            when (exception is OperationCanceledException
-                || ProjectionFailureClassifier.IsTransportFailure(exception)
-            )
-        {
-            return (null, Failure(Code.NetworkError));
-        }
-
-        if (cancellationToken.IsCancellationRequested)
-        {
-            throw new OperationCanceledException(cancellationToken);
-        }
-        return TimedOut() ? (null, Failure(Code.Timeout)) : outcome;
+        BoundedRequestResult<(Document?, EducationOrganizationProjectionFailure?)> result =
+            await BoundedProjectionRequest.RunAsync(
+                token => SendAndReadAsync(baseUrl, tenantName, token),
+                TimeSpan.FromSeconds(_settings.DiscoveryTimeoutSeconds),
+                start,
+                readDeadline,
+                timeProvider,
+                cancellationToken
+            );
+        return result.Interruption is { } interruption ? (null, Failure(interruption)) : result.Outcome;
     }
 
     /// <summary>Sends the Discovery request and reads and classifies its response.</summary>

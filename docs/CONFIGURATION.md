@@ -188,7 +188,7 @@ The Configuration Service reads the DMS education-organization projection over H
 | --- | --- | --- | --- |
 | DmsBaseUrl | The DMS root that the Discovery document is read from: `{DmsBaseUrl}/{tenant}` in multi-tenant mode, `{DmsBaseUrl}/` otherwise. The token and projection URLs Discovery advertises are used only when they have the same scheme, host and port as this URL and lie under its path. | unset | Absolute `http` or `https` URL, optionally with a base path; no user information, query or fragment |
 | Credentials:ClientId / Credentials:ClientSecret | The client-credentials pair used in single-tenant mode, and in multi-tenant mode for a tenant without its own entry. | unset | Both or neither |
-| TenantCredentials:&lt;tenant&gt;:ClientId / ClientSecret | The pair for one tenant; the tenant name matches in any letter case. | none | Both, in every entry |
+| TenantCredentials:&lt;tenant&gt;:ClientId / ClientSecret | The pair for one tenant; the tenant name matches in any letter case. The pair is sent to the token URL that DMS Discovery advertises, as HTTP Basic credentials with each value percent-encoded (RFC 6749 §2.3.1). | none | Both, in every entry |
 | ContractVersions | The projection contract versions this service may request. | `educationOrganizationProjection.v1` | Distinct values from `educationOrganizationProjection.v1` |
 | PageSize | Items requested per page (sent as `limit`). DMS refuses a `limit` above its own `EducationOrganizationProjection:MaximumPageSize`. | `2000` | 1 – 10000 |
 | DiscoveryTimeoutSeconds | Time limit for one Discovery request. | `10` | 1 – 300 |
@@ -199,7 +199,7 @@ The Configuration Service reads the DMS education-organization projection over H
 | MaxItems | Items one read attempt may collect. | `500000` | 1 – 10000000 |
 | MaxResponseBodyBytes | Largest response body read. | `8388608` | At least `PageSize × 2048 + 1024` |
 | MaxWalkRestarts | Restarts from the first page after DMS reports that the projection changed during the read. | `3` | 0 – 10 |
-| TokenExpirySafetyMarginSeconds | How long before its expiry a cached token stops being used. | `60` | 0 – 3600 |
+| TokenExpirySafetyMarginSeconds | How long before its expiry a cached token stops being used. Tokens are cached per tenant and client id, and the lifetime counts from when the token request started; a token whose lifetime does not exceed the margin is used for one read only. | `60` | 0 – 3600 |
 | DiscoveryCacheSeconds | How long a tenant's Discovery document is cached. `0` reads Discovery for every read. A failed Discovery read is never cached. | `300` | 0 – 86400 |
 
 At least one credential pair, shared or per tenant, is required when `DmsBaseUrl` is set. A shared pair with both values empty counts as absent, so an environment template that sets both to empty strings is accepted.

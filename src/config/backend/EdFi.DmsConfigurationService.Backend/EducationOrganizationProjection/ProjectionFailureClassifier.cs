@@ -10,8 +10,8 @@ using Code = EdFi.DmsConfigurationService.Backend.EducationOrganizationProjectio
 namespace EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
 
 /// <summary>
-/// The DMS-1440 spec §5.5 classification of DMS responses: the rows that apply at every stage and the Discovery rows.
-/// Caller cancellation is not classified here; callers check it first and let it propagate.
+/// The DMS-1440 spec §5.5 classification of DMS responses: the rows that apply at every stage, the Discovery rows and
+/// the Token rows. Caller cancellation is not classified here; callers check it first and let it propagate.
 /// </summary>
 internal static class ProjectionFailureClassifier
 {
@@ -43,4 +43,13 @@ internal static class ProjectionFailureClassifier
     public static Code ClassifyDiscoveryStatus(HttpStatusCode status, string? problemType) =>
         ClassifyAnyStageStatus(status, problemType)
         ?? (status == HttpStatusCode.NotFound ? Code.TargetNotFound : Code.UnexpectedResponse);
+
+    /// <summary>A token response other than 200: the rows for any stage, then 400 and 401, then everything else.</summary>
+    public static Code ClassifyTokenStatus(HttpStatusCode status, string? problemType) =>
+        ClassifyAnyStageStatus(status, problemType)
+        ?? (
+            status is HttpStatusCode.BadRequest or HttpStatusCode.Unauthorized
+                ? Code.TokenRejected
+                : Code.UnexpectedResponse
+        );
 }

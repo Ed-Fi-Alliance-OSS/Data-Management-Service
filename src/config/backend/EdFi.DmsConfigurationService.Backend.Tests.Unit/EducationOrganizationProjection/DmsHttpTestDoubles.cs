@@ -15,7 +15,10 @@ public sealed record RecordedRequest(
     Uri Uri,
     string Accept,
     bool HasAuthorization,
-    bool HasCookie
+    bool HasCookie,
+    string? Authorization = null,
+    string? ContentType = null,
+    string Body = ""
 );
 
 /// <summary>
@@ -27,11 +30,21 @@ public sealed class FakeDmsHandler(
 ) : HttpMessageHandler
 {
     private readonly ConcurrentQueue<RecordedRequest> _requests = new();
+    private readonly SemaphoreSlim _received = new(0);
 
     public TaskCompletionSource RequestReceived { get; } =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public IReadOnlyList<RecordedRequest> Requests => [.. _requests];
+
+    /// <summary>Completes once <paramref name="count"/> more requests have been recorded since the last call.</summary>
+    public async Task WaitForRequestsAsync(int count)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            await _received.WaitAsync();
+        }
+    }
 
     /// <summary>A handler that answers every request with a fresh response from <paramref name="response"/>.</summary>
     public static FakeDmsHandler Answering(Func<HttpResponseMessage> response) =>
@@ -47,22 +60,38 @@ public sealed class FakeDmsHandler(
             }
         );
 
-    protected override Task<HttpResponseMessage> SendAsync(
+    protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken
     )
     {
+        string body = request.Content is null
+            ? string.Empty
+            : await request.Content.ReadAsStringAsync(cancellationToken);
         _requests.Enqueue(
             new RecordedRequest(
                 request.Method,
                 request.RequestUri!,
                 request.Headers.Accept.ToString(),
                 request.Headers.Authorization is not null,
-                request.Headers.Contains("Cookie")
+                request.Headers.Contains("Cookie"),
+                request.Headers.Authorization?.ToString(),
+                request.Content?.Headers.ContentType?.MediaType,
+                body
             )
         );
         RequestReceived.TrySetResult();
-        return respond(request, cancellationToken);
+        _received.Release();
+        return await respond(request, cancellationToken);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _received.Dispose();
+        }
+        base.Dispose(disposing);
     }
 }
 

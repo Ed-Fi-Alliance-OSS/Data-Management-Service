@@ -113,6 +113,14 @@ public class ServiceCollectionExtensionsTests
                 .Should()
                 .BeOfType<DmsDiscoveryClient>()
                 .And.BeSameAs(_provider.GetRequiredService<IDmsDiscoveryClient>());
+
+        [Test]
+        public void It_registers_one_token_provider_for_the_process() =>
+            _provider
+                .GetRequiredService<IProjectionServiceTokenProvider>()
+                .Should()
+                .BeOfType<ProjectionServiceTokenProvider>()
+                .And.BeSameAs(_provider.GetRequiredService<IProjectionServiceTokenProvider>());
     }
 
     [TestFixture]
