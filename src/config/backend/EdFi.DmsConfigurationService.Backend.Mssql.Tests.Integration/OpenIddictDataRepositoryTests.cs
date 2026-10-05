@@ -8,8 +8,12 @@ using Dapper;
 using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
+using EdFi.DmsConfigurationService.Secrets;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration;
@@ -42,6 +46,213 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         );
 
         return applicationId;
+    }
+
+    protected static Task AddApiClientRowAsync(
+        OpenIddictDataRepository repository,
+        string clientId,
+        bool isApproved = true
+    ) =>
+        repository.ExecuteInTransactionAsync(
+            async (connection, transaction) =>
+            {
+                int vendorId = await connection.ExecuteScalarAsync<int>(
+                    "INSERT INTO dmscs.Vendor (Company) OUTPUT INSERTED.Id VALUES (@Company)",
+                    new { Company = $"token-limit-{Guid.NewGuid():N}" },
+                    transaction
+                );
+                int applicationId = await connection.ExecuteScalarAsync<int>(
+                    """
+                    INSERT INTO dmscs.Application (ApplicationName, VendorId, ClaimSetName)
+                    OUTPUT INSERTED.Id VALUES ('Token limit test', @VendorId, 'Test claim set')
+                    """,
+                    new { VendorId = vendorId },
+                    transaction
+                );
+                await connection.ExecuteAsync(
+                    """
+                    INSERT INTO dmscs.ApiClient (ApplicationId, ClientId, ClientUuid, Name, IsApproved)
+                    VALUES (@ApplicationId, @ClientId, @ClientUuid, 'Token limit test', @IsApproved)
+                    """,
+                    new
+                    {
+                        ApplicationId = applicationId,
+                        ClientId = clientId,
+                        ClientUuid = Guid.NewGuid(),
+                        IsApproved = isApproved,
+                    },
+                    transaction
+                );
+            }
+        );
+
+    protected static OpenIddictTokenManager CreateTokenManager(
+        OpenIddictDataRepository dataRepository,
+        IdentityOptions options
+    )
+    {
+        // All lookup and storage operations use the real dialect repository. Only the signing
+        // key read is replaced so these grant tests do not depend on key rotation/encryption.
+        IOpenIddictDataRepository signingRepository = A.Fake<IOpenIddictDataRepository>(configuration =>
+            configuration.Wrapping(dataRepository)
+        );
+        using System.Security.Cryptography.RSA rsa = System.Security.Cryptography.RSA.Create(2048);
+        A.CallTo(() => signingRepository.GetActivePrivateKeyInternalAsync("integration-signing-key"))
+            .Returns((Convert.ToBase64String(rsa.ExportPkcs8PrivateKey()), "integration-key"));
+
+        IClientSecretHasher secretHasher = A.Fake<IClientSecretHasher>();
+        A.CallTo(() => secretHasher.VerifySecretAsync("plain-secret", "hashed-secret")).Returns(true);
+        options.EncryptionKey = "integration-signing-key";
+        return new OpenIddictTokenManager(
+            Options.Create(options),
+            NullLogger<OpenIddictTokenManager>.Instance,
+            secretHasher,
+            new OpenIddictTokenRepository(signingRepository)
+        );
+    }
+
+    protected static Task<TokenResult> RequestGrantAsync(OpenIddictTokenManager manager, string clientId) =>
+        manager.GetAccessTokenAsync([new("client_id", clientId), new("client_secret", "plain-secret")]);
+
+    [TestFixture(true)]
+    [TestFixture(false)]
+    public class Given_Application_Lookups_With_And_Without_Api_Client_Rows(bool isApproved)
+        : OpenIddictDataRepositoryTests
+    {
+        private ApplicationInfo _apiClientByClientId = null!;
+        private ApplicationInfo _apiClientById = null!;
+        private ApplicationInfo _noRowByClientId = null!;
+        private ApplicationInfo _noRowById = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            string apiClientId = Guid.NewGuid().ToString();
+            string noRowClientId = Guid.NewGuid().ToString();
+            Guid apiApplicationId = await RegisterApplicationAsync(repository, apiClientId);
+            Guid noRowApplicationId = await RegisterApplicationAsync(repository, noRowClientId);
+            await AddApiClientRowAsync(repository, apiClientId, isApproved);
+            _apiClientByClientId =
+                await repository.GetApplicationByClientIdAsync(apiClientId)
+                ?? throw new InvalidOperationException("Seeded API application was not found.");
+            _noRowByClientId =
+                await repository.GetApplicationByClientIdAsync(noRowClientId)
+                ?? throw new InvalidOperationException("Seeded no-row application was not found.");
+            using var connection = await repository.CreateConnectionAsync();
+            _apiClientById =
+                await repository.GetApplicationByIdAsync(apiApplicationId, connection)
+                ?? throw new InvalidOperationException("Seeded API application was not found.");
+            _noRowById =
+                await repository.GetApplicationByIdAsync(noRowApplicationId, connection)
+                ?? throw new InvalidOperationException("Seeded no-row application was not found.");
+        }
+
+        [Test]
+        public void It_limits_row_backed_clients_looked_up_by_client_id() =>
+            _apiClientByClientId.IsTokenLimitExempt.Should().BeFalse();
+
+        [Test]
+        public void It_limits_row_backed_clients_looked_up_by_application_id() =>
+            _apiClientById.IsTokenLimitExempt.Should().BeFalse();
+
+        [Test]
+        public void It_exempts_no_row_clients_looked_up_by_client_id() =>
+            _noRowByClientId.IsTokenLimitExempt.Should().BeTrue();
+
+        [Test]
+        public void It_exempts_no_row_clients_looked_up_by_application_id() =>
+            _noRowById.IsTokenLimitExempt.Should().BeTrue();
+
+        [Test]
+        public void It_preserves_api_client_approval_in_both_lookups()
+        {
+            _apiClientByClientId.IsApproved.Should().Be(isApproved);
+            _apiClientById.IsApproved.Should().Be(isApproved);
+        }
+
+        [Test]
+        public void It_preserves_default_approval_for_no_row_clients_in_both_lookups()
+        {
+            _noRowByClientId.IsApproved.Should().BeTrue();
+            _noRowById.IsApproved.Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Api_Client_Grants_Through_The_Manager_With_Default_Options
+        : OpenIddictDataRepositoryTests
+    {
+        private Guid _applicationId;
+        private TokenResult[] _admittedGrants = [];
+        private TokenResult _sixteenthGrant = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            string clientId = Guid.NewGuid().ToString();
+            _applicationId = await RegisterApplicationAsync(repository, clientId);
+            await AddApiClientRowAsync(repository, clientId);
+            OpenIddictTokenManager manager = CreateTokenManager(repository, new IdentityOptions());
+            List<TokenResult> admittedGrants = [];
+            for (int i = 0; i < 15; i++)
+            {
+                admittedGrants.Add(await RequestGrantAsync(manager, clientId));
+            }
+            _admittedGrants = admittedGrants.ToArray();
+            _sixteenthGrant = await RequestGrantAsync(manager, clientId);
+        }
+
+        [Test]
+        public void It_admits_the_first_fifteen_grants() =>
+            _admittedGrants.Should().AllBeOfType<TokenResult.Success>();
+
+        [Test]
+        public void It_refuses_the_sixteenth_grant_with_the_default_limit() =>
+            _sixteenthGrant.Should().BeEquivalentTo(new TokenResult.FailureTokenLimitExceeded(15));
+
+        [Test]
+        public async Task It_stores_exactly_fifteen_tokens() =>
+            (await TokenRowCountAsync(_applicationId)).Should().Be(15);
+    }
+
+    [TestFixture(false, 1)]
+    [TestFixture(true, -1)]
+    public class Given_Manager_Grants_That_Bypass_Enforcement(bool hasApiClientRow, int configuredLimit)
+        : OpenIddictDataRepositoryTests
+    {
+        private Guid _applicationId;
+        private TokenResult[] _grants = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            string clientId = Guid.NewGuid().ToString();
+            _applicationId = await RegisterApplicationAsync(repository, clientId);
+            if (hasApiClientRow)
+            {
+                await AddApiClientRowAsync(repository, clientId);
+            }
+            OpenIddictTokenManager manager = CreateTokenManager(
+                repository,
+                new IdentityOptions { BearerTokenPerClientLimit = configuredLimit }
+            );
+            _grants =
+            [
+                await RequestGrantAsync(manager, clientId),
+                await RequestGrantAsync(manager, clientId),
+                await RequestGrantAsync(manager, clientId),
+            ];
+        }
+
+        [Test]
+        public void It_admits_all_three_grants() => _grants.Should().AllBeOfType<TokenResult.Success>();
+
+        [Test]
+        public async Task It_stores_all_three_tokens() =>
+            (await TokenRowCountAsync(_applicationId)).Should().Be(3);
     }
 
     /// <summary>

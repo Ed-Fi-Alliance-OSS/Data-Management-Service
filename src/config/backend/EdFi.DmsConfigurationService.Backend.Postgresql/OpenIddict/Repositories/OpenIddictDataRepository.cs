@@ -318,7 +318,8 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                          a.""Permissions"", a.""Requirements"", a.""Type"", a.""CreatedAt"", a.""ProtocolMappers""::jsonb::text AS ""ProtocolMappers"",
                          COALESCE(array_agg(DISTINCT s.""Name"") FILTER (WHERE s.""Name"" IS NOT NULL), ARRAY[]::text[]) AS ""Scopes"",
                          COALESCE(array_agg(DISTINCT acd.""DataStoreId"") FILTER (WHERE acd.""DataStoreId"" IS NOT NULL), ARRAY[]::int[]) AS ""DataStoreIds"",
-                         COALESCE(BOOL_AND(ac.""IsApproved""), true) AS ""IsApproved""
+                         COALESCE(BOOL_AND(ac.""IsApproved""), true) AS ""IsApproved"",
+                         COUNT(ac.""Id"") = 0 AS ""IsTokenLimitExempt""
                   FROM ""dmscs"".""OpenIddictApplication"" a
                   LEFT JOIN ""dmscs"".""OpenIddictApplicationScope"" aps ON a.""Id"" = aps.""ApplicationId""
                   LEFT JOIN ""dmscs"".""OpenIddictScope"" s ON aps.""ScopeId"" = s.""Id""
@@ -345,7 +346,8 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                          a.""Permissions"", a.""Requirements"", a.""Type"", a.""CreatedAt"", a.""ProtocolMappers""::jsonb::text AS ""ProtocolMappers"",
                          COALESCE(array_agg(DISTINCT s.""Name"") FILTER (WHERE s.""Name"" IS NOT NULL), ARRAY[]::text[]) AS ""Scopes"",
                          COALESCE(array_agg(DISTINCT acd.""DataStoreId"") FILTER (WHERE acd.""DataStoreId"" IS NOT NULL), ARRAY[]::int[]) AS ""DataStoreIds"",
-                         COALESCE(BOOL_AND(ac.""IsApproved""), true) AS ""IsApproved""
+                         COALESCE(BOOL_AND(ac.""IsApproved""), true) AS ""IsApproved"",
+                         COUNT(ac.""Id"") = 0 AS ""IsTokenLimitExempt""
                   FROM ""dmscs"".""OpenIddictApplication"" a
                   LEFT JOIN ""dmscs"".""OpenIddictApplicationScope"" aps ON a.""Id"" = aps.""ApplicationId""
                   LEFT JOIN ""dmscs"".""OpenIddictScope"" s ON aps.""ScopeId"" = s.""Id""

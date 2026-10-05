@@ -389,9 +389,13 @@ UPDATE dmscs.OpenIddictApplication
                 transaction
             );
 
-            bool isApproved = await connection.ExecuteScalarAsync<bool>(
+            var apiClientState = await connection.QuerySingleAsync<(
+                bool IsApproved,
+                bool IsTokenLimitExempt
+            )>(
                 """
-                SELECT CAST(COALESCE(MIN(CAST(ac.IsApproved AS INT)), 1) AS BIT)
+                SELECT CAST(COALESCE(MIN(CAST(ac.IsApproved AS INT)), 1) AS BIT) AS IsApproved,
+                       CAST(CASE WHEN COUNT(ac.Id) = 0 THEN 1 ELSE 0 END AS BIT) AS IsTokenLimitExempt
                 FROM dmscs.ApiClient ac
                 WHERE ac.ClientId = @ClientId
                 """,
@@ -414,7 +418,8 @@ UPDATE dmscs.OpenIddictApplication
                 Scopes = scopes.Distinct().ToArray(),
                 DataStoreIds = dataStoreIds.ToArray(),
                 ProtocolMappers = row.ProtocolMappers ?? string.Empty,
-                IsApproved = isApproved,
+                IsApproved = apiClientState.IsApproved,
+                IsTokenLimitExempt = apiClientState.IsTokenLimitExempt,
             };
         }
 
