@@ -150,8 +150,11 @@ public sealed partial class CdcEstablishedValidation
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(runtime);
         var boundary = new Boundary();
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(request.Timing.WaitTimeout);
+        using var deadline = new CancellationTokenSource(request.Timing.WaitTimeout, _time);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            deadline.Token
+        );
         try
         {
             Require(integrity == CdcDeploymentIntegrityReport.NoReportedLoss);
@@ -906,7 +909,7 @@ public sealed partial class CdcEstablishedValidation
             _ => throw new EvidenceException(new(component, CdcDeploymentFailure.ValidationFailed)),
         };
 
-    private static async Task<CdcTransportResult<T>> ReadAsync<T>(
+    private async Task<CdcTransportResult<T>> ReadAsync<T>(
         CdcDeploymentRequest request,
         Func<CancellationToken, Task<CdcTransportResult<T>>> action,
         CdcDeploymentComponent component,
@@ -926,14 +929,14 @@ public sealed partial class CdcEstablishedValidation
         }
     }
 
-    private static async Task<T> CallAsync<T>(
+    private async Task<T> CallAsync<T>(
         CdcDeploymentRequest request,
         Func<CancellationToken, Task<T>> action,
         CancellationToken token
     )
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-        timeout.CancelAfter(request.Timing.CallTimeout);
+        using var deadline = new CancellationTokenSource(request.Timing.CallTimeout, _time);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token);
         try
         {
             var value = await action(timeout.Token).WaitAsync(timeout.Token);

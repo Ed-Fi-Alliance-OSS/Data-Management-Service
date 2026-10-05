@@ -45,6 +45,9 @@ internal class Given_SqlServer_established_range_is_refreshed(SqlServerRangeRefr
     private int _sourceReads;
     private readonly List<string> _readOrder = [];
 
+    protected override TimeProvider CreateObservationTime() =>
+        new ContinuityRefreshClock(TimeSpan.FromSeconds(1));
+
     [SetUp]
     public async Task SetupRefresh()
     {
@@ -147,19 +150,45 @@ internal class Given_SqlServer_established_range_is_refreshed(SqlServerRangeRefr
             _worker,
             _metrics,
             _positions,
-            TimeProvider.System
+            ObservationTime
         );
-        var observed = await validation.ValidateAsync(
+        var clock = (ContinuityRefreshClock)ObservationTime;
+        using var cancellation = new CancellationTokenSource();
+        var observation = validation.ValidateAsync(
             _request,
             _runtime,
             CdcEstablishedValidationMode.PreStart,
             1000,
-            CdcDeploymentIntegrityReport.NoReportedLoss
+            CdcDeploymentIntegrityReport.NoReportedLoss,
+            cancellation.Token
         );
-        _result = observed
-            .Should()
-            .BeOfType<CdcTransportResult<CdcEstablishedValidationObservation>.Observed>()
-            .Subject.Value;
+        try
+        {
+            for (var sample = 1; sample < ExpectedSamples; sample++)
+            {
+                await clock.WaitForPollAsync(observation);
+                _sourceReads.Should().Be(sample);
+                _offsetReads.Should().Be(sample);
+                observation.IsCompleted.Should().BeFalse();
+                clock.Advance(_request.Timing.PollInterval);
+            }
+            _result = (await observation)
+                .Should()
+                .BeOfType<CdcTransportResult<CdcEstablishedValidationObservation>.Observed>()
+                .Subject.Value;
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+            try
+            {
+                await observation;
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+            {
+                // Drain validation before fixture teardown if a polling assertion failed.
+            }
+        }
     }
 
     private int ExpectedSamples =>
@@ -246,13 +275,16 @@ internal class Given_SqlServer_admission_samples_an_older_upper_range(bool remai
 
     protected override TimeProvider CreateObservationTime() =>
         // Admission requires strictly ordered barrier, history, and projection timestamps.
-        new AdmissionClock(TimeSpan.FromMilliseconds(5)) { AutoAdvanceAmount = TimeSpan.FromTicks(1) };
+        new ContinuityRefreshClock(TimeSpan.FromMilliseconds(5))
+        {
+            AutoAdvanceAmount = TimeSpan.FromTicks(1),
+        };
 
     [SetUp]
     public async Task SetupAdmission()
     {
         ShortTiming(1000);
-        var clock = (AdmissionClock)ObservationTime;
+        var clock = (ContinuityRefreshClock)ObservationTime;
         _sourceReads = 0;
         var original = _change;
         _change = r =>
@@ -348,36 +380,152 @@ internal class Given_SqlServer_admission_samples_an_older_upper_range(bool remai
             _result.Should().BeOfType<CdcTransportResult<CdcWriterPublicationResult>.Observed>();
         }
     }
+}
 
-    private sealed class AdmissionClock(TimeSpan pollInterval) : FakeTimeProvider(DateTimeOffset.UtcNow)
+[TestFixture(false)]
+[TestFixture(true)]
+[Platform(Exclude = "Win", Reason = "Local CDC state requires Unix owner-only permissions.")]
+internal class Given_established_validation_deadlines_use_the_injected_clock(bool overallDeadline)
+    : CdcReadinessTestBase(Ddl.CdcProvider.SqlServer)
+{
+    private CdcTransportResult<CdcEstablishedValidationObservation> _result = null!;
+
+    protected override TimeProvider CreateObservationTime() =>
+        new ContinuityRefreshClock(TimeSpan.FromMilliseconds(5));
+
+    [SetUp]
+    public async Task SetupDeadline()
     {
-        private readonly Channel<ITimer> _polls = Channel.CreateUnbounded<ITimer>();
-
-        public override ITimer CreateTimer(
-            TimerCallback callback,
-            object? state,
-            TimeSpan dueTime,
-            TimeSpan period
-        )
+        ShortTiming(1000);
+        var clock = (ContinuityRefreshClock)ObservationTime;
+        var started = new TaskCompletionSource<CancellationToken>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var pending = new TaskCompletionSource<Ddl.CdcProviderSetupResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var reads = 0;
+        A.CallTo(() => _provider.SetupAsync(A<Ddl.CdcProviderSetupRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(
+                (Ddl.CdcProviderSetupRequest request, CancellationToken token) =>
+                {
+                    if (overallDeadline && ++reads == 1)
+                    {
+                        var result = ProviderResult(request);
+                        return Task.FromResult(
+                            result with
+                            {
+                                ProviderHistoryObservations = result
+                                    .ProviderHistoryObservations.Select(h =>
+                                        h with
+                                        {
+                                            SafeObservedValues = new Dictionary<string, string>(
+                                                h.SafeObservedValues
+                                            )
+                                            {
+                                                ["retained_max_lsn"] = "0x00000001000000020002",
+                                            },
+                                        }
+                                    )
+                                    .ToArray(),
+                            }
+                        );
+                    }
+                    started.SetResult(token);
+                    return pending.Task;
+                }
+            );
+        var validation = new CdcEstablishedValidation(
+            _store,
+            _services.GetRequiredService<ICdcBindingLifecycleService>(),
+            _provider,
+            _templates,
+            _kafka,
+            _connect,
+            _worker,
+            _metrics,
+            _positions,
+            ObservationTime
+        );
+        using var cancellation = new CancellationTokenSource();
+        var observation = validation.ValidateAsync(
+            _request,
+            _runtime,
+            CdcEstablishedValidationMode.PreStart,
+            1000,
+            cancellationToken: cancellation.Token
+        );
+        try
         {
-            ITimer timer = base.CreateTimer(callback, state, dueTime, period);
-            if (dueTime == pollInterval)
+            var remaining = _request.Timing.CallTimeout;
+            if (overallDeadline)
             {
-                _polls.Writer.TryWrite(timer);
+                await clock.WaitForPollAsync(observation);
+                // Start the next call with less overall budget left than its own call timeout.
+                remaining /= 2;
+                clock.Advance(_request.Timing.WaitTimeout - remaining);
             }
-            return timer;
+            (await Task.WhenAny(started.Task, observation)).Should().BeSameAs(started.Task);
+            CancellationToken callToken = await started.Task;
+            callToken.IsCancellationRequested.Should().BeFalse();
+            clock.Advance(remaining);
+            callToken.IsCancellationRequested.Should().BeTrue("virtual time must expire the active deadline");
+            _result = await observation;
         }
-
-        public async Task<ITimer> WaitForPollAsync(
-            Task<CdcTransportResult<CdcWriterPublicationResult>> readiness
-        )
+        finally
         {
-            Task<ITimer> poll = _polls.Reader.ReadAsync().AsTask();
-            // Fail promptly if the refresh behavior is removed, instead of waiting for a signal forever.
-            (await Task.WhenAny(poll, readiness))
-                .Should()
-                .BeSameAs(poll);
-            return await poll;
+            await cancellation.CancelAsync();
+            try
+            {
+                await observation;
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+            {
+                // Drain validation before fixture teardown if a deadline assertion failed.
+            }
         }
+    }
+
+    [Test]
+    public void It_reports_the_provider_timeout() =>
+        _result
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeEquivalentTo(
+                new CdcDeploymentDiagnostic(
+                    CdcDeploymentComponent.ProviderSetup,
+                    CdcDeploymentFailure.Timeout
+                )
+            );
+}
+
+file sealed class ContinuityRefreshClock(TimeSpan pollInterval) : FakeTimeProvider(DateTimeOffset.UtcNow)
+{
+    private readonly Channel<ITimer> _polls = Channel.CreateUnbounded<ITimer>();
+
+    public override ITimer CreateTimer(
+        TimerCallback callback,
+        object? state,
+        TimeSpan dueTime,
+        TimeSpan period
+    )
+    {
+        ITimer timer = base.CreateTimer(callback, state, dueTime, period);
+        if (dueTime == pollInterval)
+        {
+            _polls.Writer.TryWrite(timer);
+        }
+        return timer;
+    }
+
+    public async Task<ITimer> WaitForPollAsync(Task observation)
+    {
+        Task<ITimer> poll = _polls.Reader.ReadAsync().AsTask();
+        // Fail promptly if the refresh behavior is removed, instead of waiting for a signal forever.
+        (await Task.WhenAny(poll, observation))
+            .Should()
+            .BeSameAs(poll);
+        return await poll;
     }
 }
