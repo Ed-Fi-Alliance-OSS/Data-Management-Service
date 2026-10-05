@@ -53,6 +53,22 @@ public class Given_The_Parity_Scenario_Catalog
         "Api/ProfileRootOnlyMerge/CreatesAndReadsViaVisibleProfile",
         "Api/ProfileRootOnlyMerge/PreservesHiddenFieldOnProfiledPut",
         "Api/ProfileRootOnlyMerge/RejectsWriteAgainstReadOnlyProfile",
+        "Api/EducationOrganizationProjection/WalksTheHierarchyWithParentPrecedence",
+        "Api/EducationOrganizationProjection/RefusesAChangedSetAndHonorsTheCursorLifetime",
+        "Api/EducationOrganizationProjection/AnswersTheAuthorizationMatrix",
+        "Api/EducationOrganizationProjection/IsolatesTenantsStoresAndRouteContexts",
+        "Api/EducationOrganizationProjection/AnswersEachTargetState",
+        "Api/EducationOrganizationProjection/MapsReadFailuresBehindACachedFingerprintVerdict",
+        "Api/EducationOrganizationProjection/AnswersAnUnavailableMappingWithoutItsDiagnostics",
+        "Api/EducationOrganizationProjection/FailsClosedOnContradictoryRelationships",
+        "Api/EducationOrganizationProjection/RefusesInvalidParametersCursorsAndVersions",
+        "Api/EducationOrganizationProjection/AbandonsTheReadWhenTheClientDisconnects",
+        "Api/EducationOrganizationProjection/BoundsTheResponseBodyWithTheLongestNames",
+        "Api/EducationOrganizationProjection/BoundsTheResponseBodyWithControlCharacters",
+        "Api/EducationOrganizationProjection/RefusesASetLargerThanTheRowCap",
+        "Api/EducationOrganizationProjection/AnswersALockTimeoutAsTargetUnavailable",
+        "Api/EducationOrganizationProjection/ReadsThePrimaryWhenTheStorePublishesDerivatives",
+        "Api/EducationOrganizationProjection/AnswersTheRateLimitWithTheInheritedProblem",
     ];
 
     private static readonly string[] ExpectedProfileIds =
