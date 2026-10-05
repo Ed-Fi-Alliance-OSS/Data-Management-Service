@@ -86,15 +86,15 @@ function Initialize-BulkLoad {
     The name of the application to create.
 
 .PARAMETER VendorId
-    An existing vendor to create the application under. When omitted, a vendor is created first.
-    POST /v3/vendors is create-only, so a caller that creates several applications passes the id
-    of one vendor instead of letting each call create the same company again.
+    An existing vendor to create the application under. POST /v3/vendors is create-only, so a
+    caller that creates several applications passes the id of one vendor instead of creating the
+    same company again.
 
 .OUTPUTS
     A hashtable containing the Id, Key and Secret for the initialized DMS application.
 
 .EXAMPLE
-    $secrets = Get-KeySecret -CmsUrl "http://localhost:8081" -CmsToken $token -ClaimSetName "EdfiSandbox"
+    $secrets = Get-KeySecret -CmsUrl "http://localhost:8081" -CmsToken $token -ClaimSetName "EdfiSandbox" -VendorId $vendorId
 #>
 function Get-KeySecret() {
     param (
@@ -116,6 +116,7 @@ function Get-KeySecret() {
         # the default district hierarchy (e.g. the DS 6.1 Educator Preparation Provider orgs).
         [long[]]$EducationOrganizationIds = @(),
 
+        [Parameter(Mandatory = $true)]
         [long]$VendorId
     )
 
@@ -124,8 +125,7 @@ function Get-KeySecret() {
         AccessToken = $CmsToken
     }
 
-    # Add Vendor
-    $params.VendorId = $PSBoundParameters.ContainsKey('VendorId') ? $VendorId : (Add-Vendor @params)
+    $params.VendorId = $VendorId
 
     # Add an Application and get Id, Key and Secret
     $params.ClaimSetName = $ClaimSetName
