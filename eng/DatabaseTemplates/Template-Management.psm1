@@ -69,7 +69,6 @@ function Initialize-BulkLoad {
     This function performs the following tasks in sequence:
     - Adds a new client to the DMS configuration.
     - Retrieves an access token for the client.
-    - Adds a vendor entity to the system, unless an existing vendor id is supplied.
     - Initializes a new application for the vendor using a predefined claim set.
     It returns the application ID, key and secret required for authenticated communication with the DMS API.
 
@@ -1507,8 +1506,11 @@ function Build-Template {
             -MssqlPassword $MssqlPassword
     }
 
-    # POST /v3/vendors is create-only, so the bootstrap and sandbox applications share one vendor.
-    $vendorId = Add-Vendor -CmsUrl $CmsUrl -AccessToken $cmsToken
+    # POST /v3/vendors is create-only, so the bootstrap and sandbox applications share one vendor,
+    # and a re-run against the same Configuration Service reuses it.
+    $vendorCompany = "Demo Vendor"
+    $existingVendor = Find-CmsVendorByCompany -CmsUrl $CmsUrl -Company $vendorCompany -AccessToken $cmsToken
+    $vendorId = $existingVendor ? [long]$existingVendor.id : (Add-Vendor -CmsUrl $CmsUrl -Company $vendorCompany -AccessToken $cmsToken)
 
     # Create Bootstrap application and assign to the data store
     $bootstrapApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'BootstrapDescriptorsandEdOrgs' -ApplicationName "$ApplicationName Bootstrap" -DataStoreIds @($targetDataStoreId) -VendorId $vendorId

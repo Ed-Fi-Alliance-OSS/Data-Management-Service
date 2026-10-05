@@ -1550,6 +1550,66 @@ function Get-SeedLoaderNamespacePrefixes {
 
 <#
 .SYNOPSIS
+    Looks up an existing CMS vendor by company name.
+
+.DESCRIPTION
+    GETs v3/vendors?company={company} in the caller's tenant. The Configuration Service compares
+    the company exactly as the vendor uniqueness constraint does, so a match is the vendor a
+    POST /v3/vendors with this company would collide with. POST /v3/vendors is create-only, so
+    callers that may run more than once reuse the returned vendor instead of creating it again.
+
+.PARAMETER CmsUrl
+    The base URL of the Config server. Defaults to http://localhost:8081.
+
+.PARAMETER Company
+    The exact company name to match (mandatory).
+
+.PARAMETER AccessToken
+    Bearer token for authorization (mandatory).
+
+.PARAMETER Tenant
+    Optional tenant header value.
+
+.OUTPUTS
+    The vendor object (id, company, contactName, contactEmailAddress, namespacePrefixes), or
+    $null when the tenant has no vendor with this company.
+
+.EXAMPLE
+    $vendor = Find-CmsVendorByCompany -Company "Demo Vendor" -AccessToken $token
+#>
+function Find-CmsVendorByCompany {
+    [CmdletBinding()]
+    param(
+        [ValidateNotNullOrEmpty()]
+        [string]$CmsUrl = "http://localhost:8081",
+
+        [Parameter(Mandatory)]
+        [string]$Company,
+
+        [Parameter(Mandatory)]
+        [string]$AccessToken,
+
+        [string]$Tenant = ""
+    )
+
+    $headers = @{ Authorization = "Bearer $AccessToken" }
+    if ($Tenant) {
+        $headers["Tenant"] = $Tenant
+    }
+
+    $invokeParams = @{
+        BaseUrl     = $CmsUrl
+        RelativeUrl = "v3/vendors?company=$([uri]::EscapeDataString($Company))"
+        Method      = "Get"
+        ContentType = "application/json"
+        Headers     = $headers
+    }
+
+    return @(Invoke-Api @invokeParams) | Select-Object -First 1
+}
+
+<#
+.SYNOPSIS
     Looks up an existing CMS application by name and vendor ID.
 
 .DESCRIPTION
@@ -1788,14 +1848,11 @@ function New-SeedLoaderCredentials {
 
     # POST /v3/vendors is create-only (a repeat company is rejected with 400), so a re-run finds
     # the vendor by company and refreshes its namespace prefixes with PUT.
-    $existingVendor = @(
-        Invoke-Api `
-            -BaseUrl $CmsUrl `
-            -RelativeUrl "v3/vendors?company=$([uri]::EscapeDataString($VendorCompany))" `
-            -Method Get `
-            -ContentType "application/json" `
-            -Headers $vendorHeaders
-    ) | Select-Object -First 1
+    $existingVendor = Find-CmsVendorByCompany `
+        -CmsUrl $CmsUrl `
+        -Company $VendorCompany `
+        -AccessToken $token `
+        -Tenant $Tenant
 
     if ($existingVendor) {
         $vendorId = [long]$existingVendor.id
@@ -1933,4 +1990,4 @@ function Assert-CmsSeedLoaderClaimSetLoaded {
     }
 }
 
-Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Wait-CmsClientAvailable, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, New-DataStoreConnectionString, New-E2EDataStoreConnectionStrings, Get-E2EStartupPhasePlan, Add-DataStore, Get-DataStore, Add-DataStoreContext, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api, Get-HttpErrorResponse, Get-SeedLoaderNamespacePrefixes, Find-CmsApplicationIdsByNameAndVendor, Remove-CmsApplication, New-SeedLoaderCredentials, Assert-CmsSeedLoaderClaimSetLoaded, ConvertTo-FormBody, ConvertTo-PostgresCredential
+Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Wait-CmsClientAvailable, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, New-DataStoreConnectionString, New-E2EDataStoreConnectionStrings, Get-E2EStartupPhasePlan, Add-DataStore, Get-DataStore, Add-DataStoreContext, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api, Get-HttpErrorResponse, Get-SeedLoaderNamespacePrefixes, Find-CmsVendorByCompany, Find-CmsApplicationIdsByNameAndVendor, Remove-CmsApplication, New-SeedLoaderCredentials, Assert-CmsSeedLoaderClaimSetLoaded, ConvertTo-FormBody, ConvertTo-PostgresCredential

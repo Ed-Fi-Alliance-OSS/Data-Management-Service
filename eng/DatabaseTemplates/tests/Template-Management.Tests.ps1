@@ -1118,6 +1118,7 @@ Describe "Build-Template vendor reuse" {
             Mock Get-CmsToken { return "cms-token" }
             Mock Get-DataStore { return @() }
             Mock Resolve-DataStoreIdForTemplate { return [long]5 }
+            Mock Find-CmsVendorByCompany { return $null }
             Mock Add-Vendor { return [long]17 }
             Mock Add-Application { return @{ Id = 1; Key = "key"; Secret = "secret" } }
             Mock Get-DmsToken { return "dms-token" }
@@ -1141,13 +1142,58 @@ Describe "Build-Template vendor reuse" {
                 -StandardVersion "5.2.0" `
                 -PackageVersion "1.0.0"
 
-            Should -Invoke Add-Vendor -Times 1 -Exactly
+            Should -Invoke Find-CmsVendorByCompany -Times 1 -Exactly -ParameterFilter { $Company -eq 'Demo Vendor' }
+            Should -Invoke Add-Vendor -Times 1 -Exactly -ParameterFilter { $Company -eq 'Demo Vendor' }
             Should -Invoke Add-Application -Times 2 -Exactly
             Should -Invoke Add-Application -Times 1 -Exactly -ParameterFilter {
                 $VendorId -eq 17 -and $ClaimSetName -eq 'BootstrapDescriptorsandEdOrgs'
             }
             Should -Invoke Add-Application -Times 1 -Exactly -ParameterFilter {
                 $VendorId -eq 17 -and $ClaimSetName -eq 'EdFiSandbox'
+            }
+        }
+    }
+
+    It "reuses the vendor a previous build created instead of POSTing it again" {
+        # A re-run against the same Configuration Service finds "Demo Vendor" already present; a
+        # second POST for that company would be rejected with 400.
+        InModuleScope Template-Management {
+            Mock Add-CmsClient {}
+            Mock Get-CmsToken { return "cms-token" }
+            Mock Get-DataStore { return @() }
+            Mock Resolve-DataStoreIdForTemplate { return [long]5 }
+            Mock Find-CmsVendorByCompany { return [pscustomobject]@{ id = 23; company = 'Demo Vendor' } }
+            Mock Add-Vendor { throw "Add-Vendor must not be called for an existing vendor." }
+            Mock Add-Application { return @{ Id = 1; Key = "key"; Secret = "secret" } }
+            Mock Get-DmsToken { return "dms-token" }
+            Mock Invoke-SchoolYearLoader {}
+            Mock Initialize-BulkLoad { return @{} }
+            Mock Get-TemplateBulkLoadTuning { return @{} }
+            Mock Invoke-BulkLoad {}
+            Mock Get-EducatorPreparationSampleFileName { return @() }
+            Mock New-EducatorPreparationFilteredSampleDirectory { return "populated-dir" }
+            Mock Get-EducationOrganizationIdsFromSampleData { return @() }
+            Mock Build-TemplateNuGetPackage {}
+
+            Build-Template `
+                -TemplateType Populated `
+                -DmsUrl "http://dms" `
+                -CmsUrl "http://cms" `
+                -MinimalSampleDataDirectory "minimal-dir" `
+                -PopulatedSampleDataDirectory "populated-dir" `
+                -Extension "ed-fi" `
+                -ConfigFilePath "config.psd1" `
+                -StandardVersion "5.2.0" `
+                -PackageVersion "1.0.0" `
+                -ApplicationName "Second build"
+
+            Should -Invoke Add-Vendor -Times 0 -Exactly
+            Should -Invoke Add-Application -Times 2 -Exactly
+            Should -Invoke Add-Application -Times 1 -Exactly -ParameterFilter {
+                $VendorId -eq 23 -and $ClaimSetName -eq 'BootstrapDescriptorsandEdOrgs'
+            }
+            Should -Invoke Add-Application -Times 1 -Exactly -ParameterFilter {
+                $VendorId -eq 23 -and $ClaimSetName -eq 'EdFiSandbox'
             }
         }
     }
