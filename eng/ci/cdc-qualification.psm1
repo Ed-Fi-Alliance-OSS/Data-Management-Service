@@ -135,6 +135,9 @@ function Get-CdcQualificationReport {
             if ($evidence.Injected -eq $true) { $connectInjectedRecoveries++ } else { $connectRecoveries++ }
         }
     }
+    # An unexplained Connect timeout cannot qualify as a clean run, even after recovery.
+    # Preserve existing failure classifications and the actual TRX test counts.
+    if ($status -eq 'Passed' -and $connectFailures -gt 0) { $status = 'Failed' }
     return [ordered]@{
         Status = $status; Total = $results.Count; Passed = $passed; Failed = $failed
         Skipped = $skipped; EnvironmentFailures = $environmentFailures

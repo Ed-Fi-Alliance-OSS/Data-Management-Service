@@ -154,6 +154,8 @@ Before scenario assertions, the pinned-image fixture polls Kafka Connect REST re
 
 `qualification.json` and the CI step summary report `ConnectReadinessFailures` and `ConnectReadinessRecoveries`. The Admission suites for both providers inject one readiness timeout and verify real Docker inspection, recreation, replacement HTTP readiness, and cleanup. Their `ConnectReadinessInjectedFailures` and `ConnectReadinessInjectedRecoveries` remain separate from observed infrastructure failures.
 
+Any observed (non-injected) Connect readiness timeout prevents qualification from passing, even if recreation succeeds and all scenario assertions pass. The report marks an otherwise passing suite `Failed`, and the runner exits nonzero; test counts and recovery evidence remain intact. Deliberately injected timeouts do not fail qualification, but a real replacement timeout during an injected recovery test does. Recovery permits further evidence collection; it does not establish that an unexplained timeout is an acceptable transient.
+
 ## SQL Server fixture startup recovery and diagnostics
 
 Before database provisioning or scenario work, the controller fixture permits one SQL Server container recreation for either the exact LSA initialization timeout signature or the observed startup signature `Reason: 0x00000002` / `Last errno: 11`. Both require an exited container with exit code 1, complete available log evidence, no Docker OOM kill, and no memory, address-mapping, SQL-error, or signal markers. Reason 2 / errno 11 is an observed CI failure pattern, not a confirmed diagnosis or Microsoft fix.

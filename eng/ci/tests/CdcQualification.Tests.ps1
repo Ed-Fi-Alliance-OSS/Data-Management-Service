@@ -226,7 +226,7 @@ Describe 'CDC qualification result boundary' {
         }
     }
 
-    It 'retains and counts Connect readiness recovery evidence once while separating injected timeouts' {
+    It 'rejects recovered observed Connect timeouts while retaining evidence and separate injected counts' {
         $raw = Join-Path $TestDrive 'connect-raw'
         $published = Join-Path $TestDrive 'connect-published'
         $copies = Join-Path $raw 'attachments'
@@ -241,7 +241,10 @@ Describe 'CDC qualification result boundary' {
         }
         Copy-Item (Join-Path $raw '*.json') $copies
         $result = Get-CdcQualificationReport (Join-Path $raw 'connect.trx') 0
-        $result.Status | Should -Be 'Passed'
+        $result.Status | Should -Be 'Failed'
+        $result.Total | Should -Be 1
+        $result.Passed | Should -Be 1
+        $result.Failed | Should -Be 0
         $result.ConnectReadinessFailures | Should -Be 1
         $result.ConnectReadinessRecoveries | Should -Be 1
         $result.ConnectReadinessInjectedFailures | Should -Be 1
@@ -255,6 +258,38 @@ Describe 'CDC qualification result boundary' {
         Copy-Item $script:report (Join-Path $raw 'connect.trx') -Force
         (Get-CdcQualificationReport (Join-Path $raw 'connect.trx') 1).Status | Should -Be 'Failed'
         Remove-Item $raw, $published -Recurse
+    }
+
+    It 'accepts injected Connect recovery but rejects an observed replacement timeout' {
+        $raw = Join-Path $TestDrive 'connect-injected'
+        $null = New-Item -ItemType Directory -Path $raw
+        try {
+            Write-Report
+            Copy-Item $script:report (Join-Path $raw 'connect.trx')
+            '{"Stage":"connect-readiness","Outcome":"TimedOut","Injected":true,"Attempt":1}' |
+                Set-Content (Join-Path $raw 'admission-evidence-connect-readiness-first.json')
+            $replacement = Join-Path $raw 'admission-evidence-connect-readiness-replacement.json'
+            '{"Stage":"connect-readiness","Outcome":"Recovered","Injected":true,"Attempt":2}' |
+                Set-Content $replacement
+            $result = Get-CdcQualificationReport (Join-Path $raw 'connect.trx') 0
+            $result.Status | Should -Be 'Passed'
+            $result.ConnectReadinessFailures | Should -Be 0
+            $result.ConnectReadinessRecoveries | Should -Be 0
+            $result.ConnectReadinessInjectedFailures | Should -Be 1
+            $result.ConnectReadinessInjectedRecoveries | Should -Be 1
+
+            '{"Stage":"connect-readiness","Outcome":"TimedOut","Injected":false,"Attempt":2}' |
+                Set-Content $replacement
+            $result = Get-CdcQualificationReport (Join-Path $raw 'connect.trx') 0
+            $result.Status | Should -Be 'Failed'
+            $result.ConnectReadinessFailures | Should -Be 1
+            $result.ConnectReadinessRecoveries | Should -Be 0
+            $result.ConnectReadinessInjectedFailures | Should -Be 1
+            $result.ConnectReadinessInjectedRecoveries | Should -Be 0
+        }
+        finally {
+            Remove-Item $raw -Recurse
+        }
     }
 
     It 'rejects skipped cases instead of counting them as qualification' {
