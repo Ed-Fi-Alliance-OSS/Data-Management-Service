@@ -6,18 +6,21 @@
 <#
 .SYNOPSIS
     Packs EdFi.Api.Secrets into a local folder feed and compiles the scratch consumer and the
-    implementer guide's worked examples against it.
+    implementer guide's worked examples against it, and, when given a feed, the scratch consumer
+    against the package published there.
 
 .DESCRIPTION
     Asserting on a package's contents proves what is in the box; this proves an outside project can
     restore the packed artifact and implement both contracts against it, which is the only check
     that exercises the package the way an implementer will.
 
-    Five things, in order:
+    Up to six things, in order; the sixth only when a feed is given:
 
     1. Packs the contract, at the Version its csproj declares, into -FeedDirectory. No version is
        passed on the command line: the contract is versioned on its own public surface, and its
-       csproj ignores a global version override anyway.
+       csproj ignores a global version override anyway. With -NoBuild it packs what an earlier build
+       left in the output folder instead, which is how the prerelease lane proves that a release
+       build with explicit versions still packs the contract at its own.
     2. Asserts the AssemblyVersion of the DLL inside that nupkg equals the package version, because
        an assembly reference carries the assembly version, not the package version, and the two
        disagreeing would leave any version check on the host comparing the wrong thing.
@@ -35,6 +38,9 @@
        SECRETS_VERIFICATION_FEED and everything else to nuget.org. Assert-DocumentEmbeds.ps1 holds
        the guide's blocks to that project's sources, so the examples an implementer copies are ones
        that compile. They are compiled only; nothing here runs them against a vault.
+    6. With -PublishedServiceIndexUrl, runs Invoke-PublishedSecretsConsumerCheck.ps1, which compiles
+       the scratch consumer against the package published on that feed once the declared version
+       exists there, and says plainly when it does not yet.
 
     The on-config-pullrequest.yml lane calls this on a pull request that is not a draft and changed
     a config-relevant path, and unconditionally in the merge queue.
@@ -63,7 +69,23 @@ param(
     $ConsumerProject = (Join-Path $PSScriptRoot "SecretsConsumer"),
 
     [string]
-    $ExamplesProject = (Join-Path $PSScriptRoot "SecretsPluginExamples")
+    $ExamplesProject = (Join-Path $PSScriptRoot "SecretsPluginExamples"),
+
+    # Pack the contract without building it, from the output an earlier build in the same
+    # -Configuration left behind.
+    [switch]
+    $NoBuild,
+
+    # The feed whose published EdFi.Api.Secrets the scratch consumer is also compiled against, once
+    # the declared version exists there. Omitted, step 6 does not run.
+    [string]
+    $PublishedServiceIndexUrl = "",
+
+    # Throwaway NuGet global-packages folder for step 6. Required with -PublishedServiceIndexUrl, and
+    # separate from -NuGetPackagesDirectory, which by then holds the locally packed package under the
+    # same id and version.
+    [string]
+    $PublishedNuGetPackagesDirectory = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -87,19 +109,23 @@ function Initialize-EmptyDirectory {
     return (Resolve-Path -LiteralPath $Path).ProviderPath
 }
 
+if ($PublishedServiceIndexUrl -and -not $PublishedNuGetPackagesDirectory) {
+    throw "-PublishedServiceIndexUrl needs -PublishedNuGetPackagesDirectory, a fresh folder of its own."
+}
+
 $feed = Initialize-EmptyDirectory -Path $FeedDirectory -Description "feed directory"
 $packages = Initialize-EmptyDirectory -Path $NuGetPackagesDirectory -Description "NuGet packages directory"
 
-# The csproj declares Version exactly once; read it rather than repeat a literal that could drift.
-$versionNodes = @(([xml](Get-Content -LiteralPath $contractProject -Raw)).SelectNodes("/Project/PropertyGroup/Version"))
-if ($versionNodes.Count -ne 1 -or [string]::IsNullOrWhiteSpace($versionNodes[0].InnerText)) {
-    throw "$contractProject must declare Version exactly once; found $($versionNodes.Count)."
-}
-$packageVersion = $versionNodes[0].InnerText.Trim()
+# Read where every lane reads it, rather than repeat a literal that could drift.
+$packageVersion = Get-SecretsContractVersion -ProjectPath $contractProject
 
 # 1. Pack. The contract's own restore uses the repository's feeds and cache as any build does;
 #    only the consumer restore below is isolated.
-dotnet pack $contractProject -c $Configuration --nologo -o $feed
+$packArguments = @($contractProject, "-c", $Configuration, "--nologo", "-o", $feed)
+if ($NoBuild) {
+    $packArguments += "--no-build"
+}
+dotnet pack @packArguments
 if ($LASTEXITCODE -ne 0) {
     throw "Packing $packageId failed."
 }
@@ -219,4 +245,17 @@ finally {
     }
 }
 
+$publishedStatus = "The published package was not checked: no -PublishedServiceIndexUrl was given."
+if ($PublishedServiceIndexUrl) {
+    # 6. Against the package published on the feed, if the declared version is there yet.
+    $publishedStatus = & (Join-Path $PSScriptRoot "Invoke-PublishedSecretsConsumerCheck.ps1") `
+        -PackageFile $packageFile `
+        -PackageVersion $packageVersion `
+        -ServiceIndexUrl $PublishedServiceIndexUrl `
+        -NuGetPackagesDirectory $PublishedNuGetPackagesDirectory `
+        -Configuration $Configuration `
+        -ConsumerProject $ConsumerProject
+}
+
 Write-Output "Verified $packageId $packageVersion packs with AssemblyVersion $assemblyVersion and its implementer guide as readme, that the scratch consumer implements ISecretResolver and IClientSecretHasher against it from a local feed, and that the guide's worked examples compile against it and EdFi.Api.Plugins $pluginsVersion."
+Write-Output $publishedStatus

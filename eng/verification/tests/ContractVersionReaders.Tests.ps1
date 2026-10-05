@@ -200,6 +200,46 @@ Describe "Get-PluginsContractVersion" {
     }
 }
 
+Describe "Get-SecretsContractVersion" {
+    # The empty, missing and duplicated cases are Get-DeclaredVersionElement's and are covered once
+    # above. What is particular to this reader is the element: the secrets csproj declares Version,
+    # not VersionPrefix.
+    It "returns the version the repository's own contract csproj declares" {
+        $csprojPath = Join-Path $script:repositoryRoot `
+            "src/config/contracts/EdFi.DmsConfigurationService.Secrets/EdFi.DmsConfigurationService.Secrets.csproj"
+        $expected = ([xml] (Get-Content -LiteralPath $csprojPath -Raw)).SelectSingleNode(
+            "/Project/PropertyGroup/Version"
+        ).InnerText.Trim()
+
+        Get-SecretsContractVersion | Should -BeExactly $expected
+    }
+
+    It "reads Version out of a supplied csproj" {
+        $path = New-FixtureFile -Name "secrets-declared.csproj" -Content @"
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <Version>3.2.1</Version>
+    </PropertyGroup>
+</Project>
+"@
+
+        Get-SecretsContractVersion -ProjectPath $path | Should -BeExactly "3.2.1"
+    }
+
+    It "does not fall back to VersionPrefix, which this csproj does not declare" {
+        $path = New-FixtureFile -Name "secrets-prefix-only.csproj" -Content @"
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <VersionPrefix>3.2.1</VersionPrefix>
+    </PropertyGroup>
+</Project>
+"@
+
+        { Get-SecretsContractVersion -ProjectPath $path } |
+            Should -Throw -ExpectedMessage "*declares no Version."
+    }
+}
+
 Describe "The two contracts version independently" {
     # The whole point of the second reader. If these ever collapsed onto one source, a contract's
     # version would move when the other contract's surface moved, and the loader's skew preflight

@@ -321,6 +321,36 @@ function Get-CustomValidationContractVersion {
 
 <#
 .DESCRIPTION
+Reads the secrets contract's own declared version out of its csproj.
+
+EdFi.Api.Secrets is versioned on its own public surface, independently of the Configuration Service
+release, and its csproj is where that version is stated: it declares Version, AssemblyVersion,
+FileVersion and InformationalVersion, and marks all four TreatAsLocalProperty so neither the
+release-stamped src/config/Directory.Build.props nor a global /p:Version can replace them. Every
+lane that names the package by version reads it through here rather than from a release tag.
+
+The element is Version rather than the VersionPrefix the other two contracts declare, because that
+is the property this csproj states; the reader asks for the element the file actually carries.
+
+.EXAMPLE
+Get-SecretsContractVersion
+# Returns: 1.0.0
+#>
+function Get-SecretsContractVersion {
+    param (
+        # The project file declaring the contract version. Defaults to the repository's own.
+        [string]
+        $ProjectPath = (Join-Path $PSScriptRoot "src/config/contracts/EdFi.DmsConfigurationService.Secrets/EdFi.DmsConfigurationService.Secrets.csproj")
+    )
+
+    return Get-DeclaredVersionElement `
+        -Path $ProjectPath `
+        -ElementName "Version" `
+        -ContractDescription "secrets contract"
+}
+
+<#
+.DESCRIPTION
 The view-scoped form of a feed's NuGet v3 service index.
 
 Azure Artifacts addresses a feed's views by suffixing the feed name, so the Release view of
@@ -662,6 +692,7 @@ Export-ModuleMember -Function `
     Convert-ToAssemblyVersion, `
     Get-PluginsContractVersion, `
     Get-CustomValidationContractVersion, `
+    Get-SecretsContractVersion, `
     Get-ViewScopedServiceIndexUrl, `
     Test-PackageInView, `
     Get-FeedViewVersion, `
