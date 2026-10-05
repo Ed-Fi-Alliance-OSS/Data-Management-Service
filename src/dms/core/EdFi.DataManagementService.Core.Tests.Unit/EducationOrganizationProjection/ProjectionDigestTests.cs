@@ -334,3 +334,94 @@ public class Given_A_Name_That_Is_Not_Well_Formed_Utf16
             .Be("5b37236081226e6c166caddd4ebbdce8b811eb629d7291fdbc00e0227c5d8250");
     }
 }
+
+/// <summary>
+/// The order rows are hashed in, which is part of the digest's contract: ascending id, and equal ids
+/// in the order supplied (a stable sort). A sequence already in id order is hashed as supplied and
+/// any other is sorted, so both paths are pinned, each with a pair of equal ids.
+/// </summary>
+[TestFixture]
+[Parallelizable]
+public class Given_The_Projection_Digest_Row_Order
+{
+    private static ProjectionItem Item(long id, string name) =>
+        new(id, ProjectionItemKind.School, name, null, null);
+
+    [Test]
+    public void It_keeps_equal_ids_in_supplied_order_when_already_in_id_order()
+    {
+        ProjectionItem[] items = [Item(1, "One"), Item(2, "Second"), Item(2, "First"), Item(3, "Three")];
+
+        ProjectionDigest
+            .CanonicalText(items)
+            .Should()
+            .Be(
+                "edorg-projection-digest:v1\n4\n1;SCH;3:One;-;-\n2;SCH;6:Second;-;-\n2;SCH;5:First;-;-\n3;SCH;5:Three;-;-\n"
+            );
+    }
+
+    [Test]
+    public void It_keeps_equal_ids_in_supplied_order_when_sorting()
+    {
+        ProjectionItem[] items = [Item(3, "Three"), Item(2, "Second"), Item(1, "One"), Item(2, "First")];
+
+        ProjectionDigest
+            .CanonicalText(items)
+            .Should()
+            .Be(
+                "edorg-projection-digest:v1\n4\n1;SCH;3:One;-;-\n2;SCH;6:Second;-;-\n2;SCH;5:First;-;-\n3;SCH;5:Three;-;-\n"
+            );
+    }
+
+    [Test]
+    public void It_hashes_a_sorted_and_an_unsorted_supply_of_the_same_rows_identically()
+    {
+        ProjectionItem[] sorted = [Item(-5, "A"), Item(0, "B"), Item(7, "C")];
+        ProjectionItem[] unsorted = [Item(7, "C"), Item(-5, "A"), Item(0, "B")];
+
+        ProjectionDigest.Compute(unsorted).Should().Equal(ProjectionDigest.Compute(sorted));
+    }
+
+    [Test]
+    public void It_returns_a_sequence_already_in_id_order_as_supplied() =>
+        ProjectionDigest
+            .InAscendingIdOrder([Item(1, "A"), Item(1, "B"), Item(2, "C")])
+            .Select(item => item.NameOfInstitution)
+            .Should()
+            .Equal("A", "B", "C");
+}
+
+/// <summary>
+/// Every page hashes the whole set, so the digest's own allocations must not grow with the number of
+/// rows. Formatting each row into a string and a byte array cost about 470 bytes a row; 10,000 rows
+/// would allocate several megabytes.
+/// </summary>
+[TestFixture]
+public class Given_The_Projection_Digest_Of_A_Large_Set
+{
+    [Test]
+    public void It_allocates_a_bounded_amount_whatever_the_row_count()
+    {
+        ProjectionItem[] items =
+        [
+            .. Enumerable
+                .Range(1, 10_000)
+                .Select(id => new ProjectionItem(
+                    id,
+                    ProjectionItemKind.School,
+                    $"Independent School {id:D9}",
+                    "Short",
+                    id + 100_000
+                )),
+        ];
+
+        // Warm up so first-call costs are not counted.
+        ProjectionDigest.Compute(items);
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        ProjectionDigest.Compute(items);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        allocated.Should().BeLessThan(64 * 1024);
+    }
+}

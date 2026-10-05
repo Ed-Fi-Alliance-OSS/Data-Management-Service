@@ -180,6 +180,10 @@ public class Given_A_Full_Walk_Of_The_Handler_At_The_Cap
                             observer.Milliseconds(ProjectionProcessingStage.Hashing),
                             observer.Milliseconds(ProjectionProcessingStage.Slicing),
                             observer.Milliseconds(ProjectionProcessingStage.Publishing),
+                            [
+                                .. Enum.GetValues<ProjectionProcessingStage>()
+                                    .Select(stage => observer.Megabytes(stage)),
+                            ],
                             serializeMilliseconds,
                             body.Length
                         )
@@ -213,6 +217,17 @@ public class Given_A_Full_Walk_Of_The_Handler_At_The_Cap
                 + $"publishing {Summary([.. pages.Select(page => page.Publishing)])}"
         );
         await output.WriteLineAsync(
+            "MEASURE handler allocated_mb_by_stage "
+                + string.Join(
+                    " ",
+                    Enum.GetValues<ProjectionProcessingStage>()
+                        .Select(
+                            (stage, index) =>
+                                $"{stage.ToString().ToLowerInvariant()} {Summary([.. pages.Select(page => page.StageMegabytes[index])])}"
+                        )
+                )
+        );
+        await output.WriteLineAsync(
             $"MEASURE handler serialize_ms {Summary([.. pages.Select(page => page.SerializeMilliseconds)])} "
                 + $"body_kb {Summary([.. pages.Select(page => page.BodyBytes / 1024.0)])}"
         );
@@ -227,6 +242,7 @@ public class Given_A_Full_Walk_Of_The_Handler_At_The_Cap
         double Hashing,
         double Slicing,
         double Publishing,
+        double[] StageMegabytes,
         double SerializeMilliseconds,
         int BodyBytes
     );
@@ -247,8 +263,10 @@ public class Given_A_Full_Walk_Of_The_Handler_At_The_Cap
     private sealed class StageTimer : IProjectionProcessingObserver
     {
         private readonly Stopwatch _clock = new();
-        private readonly Dictionary<ProjectionProcessingStage, (TimeSpan Start, TimeSpan? End)> _stages = [];
+        private readonly Dictionary<ProjectionProcessingStage, Span> _stages = [];
         private ProjectionProcessingStage? _current;
+
+        private sealed record Span(TimeSpan Start, long StartAllocated, TimeSpan End, long EndAllocated);
 
         public void Reset()
         {
@@ -259,29 +277,36 @@ public class Given_A_Full_Walk_Of_The_Handler_At_The_Cap
 
         public void Stage(ProjectionProcessingStage stage)
         {
-            if (_current is ProjectionProcessingStage previous)
-            {
-                _stages[previous] = (_stages[previous].Start, _clock.Elapsed);
-            }
-
-            _stages[stage] = (_clock.Elapsed, null);
+            End();
+            long allocated = GC.GetAllocatedBytesForCurrentThread();
+            _stages[stage] = new Span(_clock.Elapsed, allocated, _clock.Elapsed, allocated);
             _current = stage;
         }
 
         public void Checkpoint(ProjectionProcessingStage stage, int rowsProcessed) { }
 
         /// <summary>Ends the stage in progress at the end of the page.</summary>
-        public void Complete()
-        {
-            if (_current is ProjectionProcessingStage last)
-            {
-                _stages[last] = (_stages[last].Start, _clock.Elapsed);
-            }
-        }
+        public void Complete() => End();
 
         public double Milliseconds(ProjectionProcessingStage stage) =>
-            _stages.TryGetValue(stage, out var span)
-                ? ((span.End ?? span.Start) - span.Start).TotalMilliseconds
+            _stages.TryGetValue(stage, out Span? span) ? (span.End - span.Start).TotalMilliseconds : 0;
+
+        public double Megabytes(ProjectionProcessingStage stage) =>
+            _stages.TryGetValue(stage, out Span? span)
+                ? (span.EndAllocated - span.StartAllocated) / 1_048_576.0
                 : 0;
+
+        private void End()
+        {
+            if (_current is ProjectionProcessingStage previous)
+            {
+                _stages[previous] = _stages[previous] with
+                {
+                    End = _clock.Elapsed,
+                    EndAllocated = GC.GetAllocatedBytesForCurrentThread(),
+                };
+                _current = null;
+            }
+        }
     }
 }

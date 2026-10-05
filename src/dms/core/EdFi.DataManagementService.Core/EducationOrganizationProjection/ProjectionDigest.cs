@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Buffers;
 using System.Buffers.Text;
 using System.Globalization;
 using System.Security.Cryptography;
@@ -31,24 +32,45 @@ namespace EdFi.DataManagementService.Core.EducationOrganizationProjection;
 /// malformed names as <c>projection-data-invalid</c> before hashing; the exception is the backstop
 /// should one ever reach this class.
 /// </para>
+/// <para>
+/// The canonical bytes are formatted straight into one pooled buffer, a line at a time, and fed to
+/// the hash; no string or array is built per row. Every page of a walk hashes the whole set, so a
+/// per-row allocation would be repeated for every row of every page.
+/// </para>
 /// </remarks>
 internal static class ProjectionDigest
 {
     /// <summary>The digest length in bytes.</summary>
     public const int ByteLength = 32;
 
-    private const string HeaderLine = "edorg-projection-digest:v1\n";
-    private const char FieldSeparator = ';';
-    private const string NullField = "-";
+    /// <summary>Enough for a row whose names are each well within the 75-character data bound.</summary>
+    private const int InitialBufferBytes = 1024;
+
+    /// <summary>The longest invariant decimal of an int64: <c>-9223372036854775808</c>.</summary>
+    private const int MaxInt64Bytes = 20;
+
+    /// <summary>The longest invariant decimal of an int32 byte count.</summary>
+    private const int MaxInt32Bytes = 11;
+
+    /// <summary>A UTF-16 code unit is at most three UTF-8 bytes; a surrogate pair is four for two.</summary>
+    private const int MaxUtf8BytesPerChar = 3;
+
+    private const byte FieldSeparator = (byte)';';
+    private const byte LengthSeparator = (byte)':';
+    private const byte NullField = (byte)'-';
+    private const byte LineFeed = (byte)'\n';
 
     private static readonly UTF8Encoding _strictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true
     );
 
+    /// <summary>Receives the canonical bytes in order. The span is valid only during the call.</summary>
+    private delegate void CanonicalBytesSink(ReadOnlySpan<byte> bytes);
+
     /// <summary>
     /// Computes the digest of a set. Items are hashed in ascending id order whatever order they are
-    /// supplied in.
+    /// supplied in (see <see cref="InAscendingIdOrder"/>).
     /// </summary>
     /// <exception cref="EncoderFallbackException">A name is not well-formed UTF-16.</exception>
     public static byte[] Compute(IReadOnlyCollection<ProjectionItem> items) =>
@@ -70,9 +92,9 @@ internal static class ProjectionDigest
         ArgumentNullException.ThrowIfNull(observer);
 
         using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        WriteCanonicalLines(
+        WriteCanonicalBytes(
             items,
-            line => hash.AppendData(_strictUtf8.GetBytes(line)),
+            bytes => hash.AppendData(bytes),
             rowsWritten =>
                 ProjectionProcessing.Checkpoint(
                     observer,
@@ -106,65 +128,166 @@ internal static class ProjectionDigest
     {
         ArgumentNullException.ThrowIfNull(items);
 
-        StringBuilder text = new();
-        WriteCanonicalLines(items, line => text.Append(line), rowWritten: null);
-        return text.ToString();
+        ArrayBufferWriter<byte> text = new();
+        WriteCanonicalBytes(items, bytes => text.Write(bytes), rowWritten: null);
+        return _strictUtf8.GetString(text.WrittenSpan);
+    }
+
+    /// <summary>
+    /// The order items are hashed in: ascending id, and for equal ids the order they were supplied in.
+    /// </summary>
+    /// <remarks>
+    /// This is a stable sort by id. A sequence already in non-decreasing id order, which is what the
+    /// handler supplies, is returned as supplied without sorting: a stable sort would leave it exactly
+    /// as it is, so the bytes hashed are the same either way. Any other sequence is sorted.
+    /// </remarks>
+    internal static IEnumerable<ProjectionItem> InAscendingIdOrder(IReadOnlyCollection<ProjectionItem> items)
+    {
+        long? previous = null;
+
+        foreach (long id in items.Select(item => item.EducationOrganizationId))
+        {
+            if (id < previous)
+            {
+                return items.OrderBy(item => item.EducationOrganizationId);
+            }
+
+            previous = id;
+        }
+
+        return items;
     }
 
     /// <summary>
     /// The single writer of the canonical form, shared by <see cref="Compute"/> and
     /// <see cref="CanonicalText"/> so the text a test pins is the text that is hashed.
     /// </summary>
-    private static void WriteCanonicalLines(
+    private static void WriteCanonicalBytes(
         IReadOnlyCollection<ProjectionItem> items,
-        Action<string> write,
+        CanonicalBytesSink write,
         Action<int>? rowWritten
     )
     {
-        write(HeaderLine);
-        write(items.Count.ToString(CultureInfo.InvariantCulture) + "\n");
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(InitialBufferBytes);
 
-        int rowsWritten = 0;
-
-        // A stable sort, so the text is fully determined by the set even before validation has
-        // rejected duplicate ids.
-        foreach (ProjectionItem item in items.OrderBy(item => item.EducationOrganizationId))
+        try
         {
-            write(RowLine(item));
-            rowWritten?.Invoke(++rowsWritten);
+            write("edorg-projection-digest:v1\n"u8);
+
+            int countLength = WriteInt64(items.Count, buffer);
+            buffer[countLength] = LineFeed;
+            write(buffer.AsSpan(0, countLength + 1));
+
+            int rowsWritten = 0;
+
+            foreach (ProjectionItem item in InAscendingIdOrder(items))
+            {
+                int bound = MaxRowBytes(item);
+
+                if (buffer.Length < bound)
+                {
+                    byte[] larger = ArrayPool<byte>.Shared.Rent(bound);
+                    ArrayPool<byte>.Shared.Return(buffer);
+                    buffer = larger;
+                }
+
+                write(buffer.AsSpan(0, WriteRow(item, buffer)));
+                rowWritten?.Invoke(++rowsWritten);
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
         }
     }
 
-    private static string RowLine(ProjectionItem item) =>
-        string.Concat(
-            item.EducationOrganizationId.ToString(CultureInfo.InvariantCulture),
-            FieldSeparator.ToString(),
-            Tag(item.Kind),
-            FieldSeparator.ToString(),
-            LengthPrefixed(item.NameOfInstitution),
-            FieldSeparator.ToString(),
-            LengthPrefixed(item.ShortNameOfInstitution),
-            FieldSeparator.ToString(),
-            item.ParentId?.ToString(CultureInfo.InvariantCulture) ?? NullField,
-            "\n"
-        );
+    /// <summary>
+    /// Writes <c>&lt;id&gt;;&lt;tag&gt;;&lt;name&gt;;&lt;short name&gt;;&lt;parent id&gt;\n</c> and returns its
+    /// length. The fields are written in order, so a bad kind is reported before a malformed name.
+    /// </summary>
+    private static int WriteRow(ProjectionItem item, Span<byte> destination)
+    {
+        int length = WriteInt64(item.EducationOrganizationId, destination);
+        destination[length++] = FieldSeparator;
+
+        ReadOnlySpan<byte> tag = Tag(item.Kind);
+        tag.CopyTo(destination[length..]);
+        length += tag.Length;
+        destination[length++] = FieldSeparator;
+
+        length += WriteLengthPrefixed(item.NameOfInstitution, destination[length..]);
+        destination[length++] = FieldSeparator;
+
+        length += WriteLengthPrefixed(item.ShortNameOfInstitution, destination[length..]);
+        destination[length++] = FieldSeparator;
+
+        if (item.ParentId is long parentId)
+        {
+            length += WriteInt64(parentId, destination[length..]);
+        }
+        else
+        {
+            destination[length++] = NullField;
+        }
+
+        destination[length++] = LineFeed;
+        return length;
+    }
 
     /// <summary>
     /// <c>-</c> for null; otherwise the UTF-8 byte count, a colon and the value. A lone <c>-</c> never
     /// collides with a value, because every value carries a count.
     /// </summary>
-    private static string LengthPrefixed(string? value) =>
-        value is null
-            ? NullField
-            : _strictUtf8.GetByteCount(value).ToString(CultureInfo.InvariantCulture) + ":" + value;
+    /// <exception cref="EncoderFallbackException">The value is not well-formed UTF-16.</exception>
+    private static int WriteLengthPrefixed(string? value, Span<byte> destination)
+    {
+        if (value is null)
+        {
+            destination[0] = NullField;
+            return 1;
+        }
 
-    private static string Tag(ProjectionItemKind kind) =>
+        int byteCount = _strictUtf8.GetByteCount(value);
+        int length = WriteInt64(byteCount, destination);
+        destination[length++] = LengthSeparator;
+        length += _strictUtf8.GetBytes(value, destination[length..]);
+        return length;
+    }
+
+    /// <summary>The invariant-culture decimal: a leading <c>-</c> when negative, nothing else.</summary>
+    private static int WriteInt64(long value, Span<byte> destination)
+    {
+        if (!value.TryFormat(destination, out int written, default, CultureInfo.InvariantCulture))
+        {
+            throw new InvalidOperationException("The canonical row buffer is too small.");
+        }
+
+        return written;
+    }
+
+    /// <summary>A bound on the bytes <see cref="WriteRow"/> writes for an item.</summary>
+    private static int MaxRowBytes(ProjectionItem item) =>
+        MaxInt64Bytes
+        + 1
+        + 3
+        + 1
+        + MaxLengthPrefixedBytes(item.NameOfInstitution)
+        + 1
+        + MaxLengthPrefixedBytes(item.ShortNameOfInstitution)
+        + 1
+        + MaxInt64Bytes
+        + 1;
+
+    private static int MaxLengthPrefixedBytes(string? value) =>
+        value is null ? 1 : MaxInt32Bytes + 1 + (value.Length * MaxUtf8BytesPerChar);
+
+    private static ReadOnlySpan<byte> Tag(ProjectionItemKind kind) =>
         kind switch
         {
-            ProjectionItemKind.StateEducationAgency => "SEA",
-            ProjectionItemKind.EducationServiceCenter => "ESC",
-            ProjectionItemKind.LocalEducationAgency => "LEA",
-            ProjectionItemKind.School => "SCH",
+            ProjectionItemKind.StateEducationAgency => "SEA"u8,
+            ProjectionItemKind.EducationServiceCenter => "ESC"u8,
+            ProjectionItemKind.LocalEducationAgency => "LEA"u8,
+            ProjectionItemKind.School => "SCH"u8,
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unsupported projection kind."),
         };
 }
