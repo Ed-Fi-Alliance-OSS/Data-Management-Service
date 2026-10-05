@@ -80,8 +80,8 @@ mismatch rejection; those fixture mutations are not operator recovery procedures
 The runner builds SchemaTools in the selected configuration and in Debug, which
 the shipped wrapper resolver prefers when present, before executing the snippets.
 
-The provider Recovery selection also requires all nine native-recovery outcomes across
-seven methods. The existing provider fixture invokes the exact marked
+The provider Recovery selection also requires all eight native-recovery outcomes across
+six methods. The existing provider fixture invokes the exact marked
 `cdc-native-recovery-watch` and `cdc-incomplete-shutdown-status` commands through
 the packaged SchemaTools executable, using its original state and private fixture
 settings. The shared snippet extractor and literal-argument binder reject undeclared
@@ -173,3 +173,33 @@ Published crash evidence includes numeric status/parameter codes, an allowlisted
 If failures recur, compare repeated fresh starts of the pinned image on the normal and a larger runner, then compare a newer pinned SQL Server 2025 CU with the same runner settings. Keep the complete CDC matrix as the acceptance check for an image change. Measure failure frequency rather than treating one successful retry as proof of a fix.
 
 For a diagnostic reproduction, follow [Microsoft's dump-capture guidance](https://learn.microsoft.com/en-us/sql/linux/containers/troubleshoot?view=sql-server-ver17#enable-dump-captures): enable `--cap-add SYS_PTRACE` on the diagnostic SQL container and collect `/var/opt/mssql/log` before removing it. Keep raw logs and dumps in restricted storage, outside the public qualification artifact path. A local fixture reproduction can set `CDC_CONNECTOR_TEMPLATE_KEEP_CONTAINERS=true` (direct `dotnet test`; the qualification runner deliberately overrides it) to retain the failing container. The normal nightly workflow publishes only sanitized evidence.
+
+## Permanent live-coverage reductions (DMS-1577)
+
+The revised selection permanently removes eight live cases. Provider category filters,
+required-case guards, operator runbooks, and failure handling remain unchanged except
+for removing the deleted recovery method from its required-method map. A passing
+revised matrix does not mean the previous selection passed or its incidents were fixed.
+
+| Deleted live cases | Reason and retained coverage | Coverage no longer provided |
+| --- | --- | --- |
+| `Given_CdcSqlServerFixtureStartupLiveRecreation.It_recreates_only_the_failed_unprovisioned_provider_and_retains_the_attempt_evidence` (2 SQL Server cases) | Offline tests retain startup policy, evidence-before-removal, cancellation, cleanup and retry bounds; ordinary live suites still exercise SQL startup and its recovery policy. | Dedicated forced SQL startup recreation through real Docker. |
+| `It_waits_for_retained_projection_work_in_the_single_start_invocation` (4 cases, 2 per provider) | Lifecycle unit tests retain delayed catch-up, one authorized mutation, durable completion, fresh post-completion observations and operation-deadline rejection. Other live lifecycle tests retain runtime/adapter integration. | A deliberately held real projection writer and retained database work across managed startup. |
+| `It_rejects_unknown_recovery_evidence_and_unauthorized_controller_mutations` (2 cases, 1 per provider) | Native-recovery unit tests cover changed-worker invalidation, exercised observation faults, not-ready results, rejected Start/Restart/Resume, no Create/Resume/Restart, sanitization and recovery after clearing faults. Other required live cases retain actual crashes and revalidation. | The duplicate crash followed by unknown-evidence fault combinations. |
+
+These are coverage decisions, not root-cause corrections:
+
+- [October 1 SQL startup assertion](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/36837557607/job/110288636401): the replacement container exited with reason 4 / errno 2, without OOM. Its cause remains unresolved; startup policy is unchanged.
+- [October 2 PostgreSQL retained-history gap](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/36984918719/job/110767720314): the latched `retainedHistoryGap` remains unexplained. SQL Server range-classification changes do not correct PostgreSQL classification.
+- [October 5 native recovery](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/37285839756/job/111684553201): recovery failed before fault injection, at worker recovery after roughly 90 seconds. A Connect readiness timeout is an inference from the boundary and duration, not a retained exception diagnosis. Initial-start recreation does not retry in-scenario crash recovery.
+- [October 4 interrupted retirement](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/37195034647/job/111415058701): the final `cdc-retire` returned `Kafka / Unavailable`. The retained retirement journal verified cleanup through `PublicTopic` and `ProgressTopic`, then recorded `SchemaHistoryTopic` intent without verification. This identifies schema-history topic cleanup/read-back as the failing boundary, but does not distinguish its initial inspection from post-deletion inspection or establish the broker/client cause. Interrupted retirement and its required-method guard remain required; this is not established as a harness flake.
+
+A focused local SQL Server interrupted-retirement run on October 5, 2026, against
+`22d30cae6` passed once (1 case, 2m22s). It did not reproduce the historical failure.
+The existing journal and command diagnostic identify the boundary and classification;
+no retry, weaker assertion, recovery-policy change or speculative cleanup fix was added.
+The lower-level cause remains unresolved, and one passing replay does not establish it.
+
+Real Connect readiness timeouts still fail qualification, including successful recovery
+from an observed timeout. Existing lifecycle unit tests outside the narrowed deadline
+case still use real timing; this change does not make that entire fixture deterministic.
