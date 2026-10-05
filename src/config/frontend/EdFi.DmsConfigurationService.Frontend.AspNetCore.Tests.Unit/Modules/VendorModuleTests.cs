@@ -218,7 +218,7 @@ public class VendorModuleTests
     }
 
     [TestFixture]
-    public class NamespacePrefixesRequestTests : VendorModuleTests
+    public class Given_namespace_prefixes_in_vendor_requests : VendorModuleTests
     {
         private const string EmptyPrefixesBody = """
             {
@@ -270,43 +270,43 @@ public class VendorModuleTests
             """;
 
         [Test]
-        public Task Post_WithEmptyNamespacePrefixes_ShouldPassEmptyValueToRepository() =>
+        public Task It_passes_empty_prefixes_from_post_to_the_repository() =>
             AssertPostAcceptsPrefixesAsync(EmptyPrefixesBody, "");
 
         [Test]
-        public Task Post_WithOmittedNamespacePrefixes_ShouldPassEmptyValueToRepository() =>
+        public Task It_passes_omitted_prefixes_from_post_to_the_repository() =>
             AssertPostAcceptsPrefixesAsync(OmittedPrefixesBody, "");
 
         [Test]
-        public Task Put_WithEmptyNamespacePrefixes_ShouldPassEmptyValueToRepository() =>
+        public Task It_passes_empty_prefixes_from_put_to_the_repository() =>
             AssertPutAcceptsPrefixesAsync(EmptyPrefixesBody, "");
 
         [Test]
-        public Task Put_WithOmittedNamespacePrefixes_ShouldPassEmptyValueToRepository() =>
+        public Task It_passes_omitted_prefixes_from_put_to_the_repository() =>
             AssertPutAcceptsPrefixesAsync(OmittedPrefixesBody, "");
 
         [Test]
-        public Task Post_WithNullNamespacePrefixes_ShouldPassEmptyValueToRepository() =>
+        public Task It_passes_null_prefixes_from_post_as_empty() =>
             AssertPostAcceptsPrefixesAsync(NullPrefixesBody, "");
 
         [Test]
-        public Task Put_WithNullNamespacePrefixes_ShouldPassEmptyValueToRepository() =>
+        public Task It_passes_null_prefixes_from_put_as_empty() =>
             AssertPutAcceptsPrefixesAsync(NullPrefixesBody, "");
 
         [Test]
-        public Task Post_WithWhitespaceNamespacePrefixes_ShouldPassEmptyValueToRepository() =>
+        public Task It_passes_whitespace_prefixes_from_post_as_empty() =>
             AssertPostAcceptsPrefixesAsync(WhitespacePrefixesBody, "");
 
         [Test]
-        public Task Put_WithWhitespaceNamespacePrefixes_ShouldPassEmptyValueToRepository() =>
+        public Task It_passes_whitespace_prefixes_from_put_as_empty() =>
             AssertPutPassesCanonicalPrefixesToRepositoryAndProviderAsync(WhitespacePrefixesBody, "");
 
         [Test]
-        public Task Post_WithPaddedNamespacePrefixes_ShouldPassCanonicalValueToRepository() =>
+        public Task It_passes_canonical_prefixes_from_post_to_the_repository() =>
             AssertPostAcceptsPrefixesAsync(PaddedPrefixesBody, "prefix1,prefix2");
 
         [Test]
-        public Task Put_WithPaddedNamespacePrefixes_ShouldPassCanonicalValueToRepository() =>
+        public Task It_passes_canonical_prefixes_from_put_to_the_repository() =>
             AssertPutAcceptsPrefixesAsync(PaddedPrefixesBody, "prefix1,prefix2");
 
         private async Task AssertPostAcceptsPrefixesAsync(string body, string expectedPrefixes)
