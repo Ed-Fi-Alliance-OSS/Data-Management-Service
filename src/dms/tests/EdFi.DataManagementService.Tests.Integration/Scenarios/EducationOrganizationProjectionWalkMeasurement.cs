@@ -6,6 +6,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.EducationOrganizationProjection;
@@ -44,6 +45,12 @@ internal static class EducationOrganizationProjectionWalkMeasurement
     private const int StableWalks = 3;
     private const int ChangeAfterPage = 5;
 
+#if DEBUG
+    private const string Configuration = "Debug";
+#else
+    private const string Configuration = "Release";
+#endif
+
     /// <summary>The database a walk reads and how.</summary>
     public sealed record Target(
         ApiIntegrationHarness Harness,
@@ -53,9 +60,20 @@ internal static class EducationOrganizationProjectionWalkMeasurement
     );
 
     /// <summary>The writes the phases apply, supplied by the scenario that seeded the hierarchy.</summary>
-    /// <param name="ChangeOnceAsync">Commits one change to projected content through the API.</param>
-    /// <param name="RunWritersAsync">Runs the step 2.5 concurrent writer workload to completion.</param>
-    public sealed record Writes(Func<int, Task> ChangeOnceAsync, Func<Task> RunWritersAsync);
+    /// <param name="ChangeOnceAsync">
+    /// Commits one change to projected content through the API, and returns the failure's status and
+    /// problem type, or <see langword="null"/> when the write succeeded.
+    /// </param>
+    /// <param name="RunWritersAsync">
+    /// Runs the step 2.5 concurrent writer workload to completion and reports what it did.
+    /// </param>
+    public sealed record Writes(
+        Func<int, Task<string?>> ChangeOnceAsync,
+        Func<Task<WriterOutcome>> RunWritersAsync
+    );
+
+    /// <summary>What a write workload did: its operations, and its failures by status and problem type.</summary>
+    public sealed record WriterOutcome(int Operations, IReadOnlyDictionary<string, int> Failures);
 
     public static async Task MeasureAsync(Target target, Writes writes)
     {
@@ -69,6 +87,13 @@ internal static class EducationOrganizationProjectionWalkMeasurement
         };
         int limit = settings.MaximumPageSize;
         var walker = new Walker(target, settings);
+
+        await output.WriteLineAsync(
+            $"MEASURE walk runtime dotnet={Environment.Version} configuration={Configuration} "
+                + $"server_gc={GCSettings.IsServerGC} concurrent_gc={AppContext.GetData("System.GC.Concurrent") ?? "default(true)"} "
+                + $"latency_mode={GCSettings.LatencyMode} processors={Environment.ProcessorCount} "
+                + $"gc_available_mb={GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / 1_048_576}"
+        );
 
         // Warm-up: the first walk pays JIT and pool start-up.
         (await walker.WalkAsync(limit, betweenPages: null))
@@ -107,7 +132,7 @@ internal static class EducationOrganizationProjectionWalkMeasurement
             {
                 if (page == ChangeAfterPage)
                 {
-                    await writes.ChangeOnceAsync(change++);
+                    (await writes.ChangeOnceAsync(change++)).Should().BeNull();
                 }
             }
         );
@@ -143,11 +168,18 @@ internal static class EducationOrganizationProjectionWalkMeasurement
     }
 
     /// <summary>
-    /// Runs logical reads back-to-back until the write workload finishes.
+    /// Runs logical reads back-to-back while the write workload runs. No logical read starts after
+    /// the writers finish, but one in progress then runs to its end, restarts included; it is reported
+    /// apart from those that finished while the writers were active.
     /// </summary>
-    private static async Task<WritePhase> RunWithWritesAsync(Walker walker, int limit, Func<Task> writesAsync)
+    private static async Task<WritePhase> RunWithWritesAsync(
+        Walker walker,
+        int limit,
+        Func<Task<WriterOutcome>> writesAsync
+    )
     {
         var phase = new WritePhase();
+        var clock = Stopwatch.StartNew();
         using var stop = new CancellationTokenSource();
 
         Task readLoop = Task.Run(async () =>
@@ -161,15 +193,16 @@ internal static class EducationOrganizationProjectionWalkMeasurement
                 {
                     attempts++;
                     WalkResult attempt = await walker.WalkAsync(limit, betweenPages: null);
-                    phase.Attempts.Add(attempt);
+                    phase.Attempts.Add((attempt, clock.Elapsed.TotalMilliseconds));
 
                     if (attempt.Outcome != "Changed" || attempts > MaxWalkRestarts)
                     {
                         phase.LogicalReads.Add(
-                            (
+                            new LogicalRead(
                                 attempt.Outcome == "Changed" ? "RestartsExhausted" : attempt.Outcome,
                                 attempts,
-                                logical.Elapsed.TotalMilliseconds
+                                logical.Elapsed.TotalMilliseconds,
+                                clock.Elapsed.TotalMilliseconds
                             )
                         );
                         break;
@@ -178,23 +211,35 @@ internal static class EducationOrganizationProjectionWalkMeasurement
             }
         });
 
-        await writesAsync();
+        phase.Writers = await writesAsync();
+        phase.WritersEndedMilliseconds = clock.Elapsed.TotalMilliseconds;
         await stop.CancelAsync();
         await readLoop;
 
         return phase;
     }
 
-    private static async Task PacedWritesAsync(Writes writes, int intervalMilliseconds, TimeSpan duration)
+    private static async Task<WriterOutcome> PacedWritesAsync(
+        Writes writes,
+        int intervalMilliseconds,
+        TimeSpan duration
+    )
     {
         var elapsed = Stopwatch.StartNew();
         int index = 0;
+        Dictionary<string, int> failures = [];
 
         while (elapsed.Elapsed < duration)
         {
-            await writes.ChangeOnceAsync(10_000 + index++);
+            if (await writes.ChangeOnceAsync(10_000 + index++) is string failure)
+            {
+                failures[failure] = failures.GetValueOrDefault(failure) + 1;
+            }
+
             await Task.Delay(intervalMilliseconds);
         }
+
+        return new WriterOutcome(index, failures);
     }
 
     private static int[] PacedIntervals() =>
@@ -236,31 +281,67 @@ internal static class EducationOrganizationProjectionWalkMeasurement
         IReadOnlyList<double> PageScopeMilliseconds
     );
 
+    /// <summary>One logical read: its outcome, attempts, duration, and when it finished in the phase.</summary>
+    private sealed record LogicalRead(
+        string Outcome,
+        int Attempts,
+        double Milliseconds,
+        double EndedAtMilliseconds
+    );
+
     private sealed class WritePhase
     {
-        public ConcurrentBag<WalkResult> Attempts { get; } = [];
+        public ConcurrentBag<(WalkResult Attempt, double EndedAtMilliseconds)> Attempts { get; } = [];
 
-        public ConcurrentBag<(string Outcome, int Attempts, double Milliseconds)> LogicalReads { get; } = [];
+        public ConcurrentBag<LogicalRead> LogicalReads { get; } = [];
+
+        public WriterOutcome Writers { get; set; } = new(0, new Dictionary<string, int>());
+
+        public double WritersEndedMilliseconds { get; set; }
 
         public string Describe(string name)
         {
-            string outcomes = string.Join(
-                ",",
-                LogicalReads.GroupBy(read => read.Outcome).Select(group => $"{group.Key}:{group.Count()}")
-            );
-            string attemptOutcomes = string.Join(
-                ",",
-                Attempts.GroupBy(attempt => attempt.Outcome).Select(group => $"{group.Key}:{group.Count()}")
-            );
-            var completed = LogicalReads.Where(read => read.Outcome == "Completed").ToList();
-            var changed = Attempts.Where(attempt => attempt.Outcome == "Changed").ToList();
+            var during = LogicalReads
+                .Where(read => read.EndedAtMilliseconds <= WritersEndedMilliseconds)
+                .ToList();
+            var after = LogicalReads
+                .Where(read => read.EndedAtMilliseconds > WritersEndedMilliseconds)
+                .ToList();
+            var attemptsDuring = Attempts
+                .Where(attempt => attempt.EndedAtMilliseconds <= WritersEndedMilliseconds)
+                .Select(attempt => attempt.Attempt)
+                .ToList();
+            string failures =
+                Writers.Failures.Count == 0
+                    ? "none"
+                    : string.Join(",", Writers.Failures.Select(failure => $"{failure.Key}x{failure.Value}"));
 
-            return $"MEASURE walk phase={name} logical_reads={LogicalReads.Count} outcomes={(outcomes.Length == 0 ? "none" : outcomes)} "
-                + $"attempts={Attempts.Count} attempt_outcomes={(attemptOutcomes.Length == 0 ? "none" : attemptOutcomes)} "
-                + $"completed_attempts_per_read {Summary([.. completed.Select(read => (double)read.Attempts)])} "
-                + $"completed_read_ms {Summary([.. completed.Select(read => read.Milliseconds)])} "
-                + $"pages_before_change {Summary([.. changed.Select(attempt => (double)attempt.Pages)])} "
-                + $"attempt_ms {Summary([.. Attempts.Select(attempt => attempt.Milliseconds)])}";
+            return $"MEASURE walk phase={name} writers_active_ms={WritersEndedMilliseconds:F0} "
+                + $"writer_ops={Writers.Operations} writer_failures={failures} "
+                + $"reads_finished_during_writes={Outcomes(during)} "
+                + $"reads_finished_after_writes={Outcomes(after)} "
+                + $"attempts_during_writes={Outcomes(attemptsDuring.Select(attempt => attempt.Outcome))} "
+                + $"completed_during_writes_attempts {Summary([.. during.Where(Completed).Select(read => (double)read.Attempts)])} "
+                + $"completed_during_writes_ms {Summary([.. during.Where(Completed).Select(read => read.Milliseconds)])} "
+                + $"pages_before_change_during_writes {Summary([.. attemptsDuring.Where(attempt => attempt.Outcome == "Changed").Select(attempt => (double)attempt.Pages)])} "
+                + $"attempt_ms {Summary([.. Attempts.Select(attempt => attempt.Attempt.Milliseconds)])}";
+        }
+
+        private static bool Completed(LogicalRead read) => read.Outcome == "Completed";
+
+        private static string Outcomes(IEnumerable<LogicalRead> reads) =>
+            Outcomes(reads.Select(read => read.Outcome));
+
+        private static string Outcomes(IEnumerable<string> outcomes)
+        {
+            string counted = string.Join(
+                ",",
+                outcomes
+                    .GroupBy(outcome => outcome)
+                    .OrderBy(group => group.Key)
+                    .Select(group => $"{group.Key}:{group.Count()}")
+            );
+            return counted.Length == 0 ? "none" : counted;
         }
     }
 

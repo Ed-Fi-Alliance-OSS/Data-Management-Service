@@ -157,12 +157,12 @@ internal static class EducationOrganizationProjectionWriteImpactScenario
                             changeLocalEducationAgency: false
                         );
                         var (status, responseBody) = await PutAsync(harness, path, body);
-                        status.Should().Be(HttpStatusCode.NoContent, responseBody);
+                        return status == HttpStatusCode.NoContent ? null : Signature(status, responseBody);
                     },
-                    RunWritersAsync: () =>
+                    RunWritersAsync: async () =>
                     {
                         var phase = new Phase();
-                        return Task.WhenAll(
+                        await Task.WhenAll(
                             Enumerable
                                 .Range(0, writers)
                                 .Select(writer =>
@@ -170,6 +170,10 @@ internal static class EducationOrganizationProjectionWriteImpactScenario
                                         WriteAsync(harness, hierarchy, writer, operationsPerWriter, phase)
                                     )
                                 )
+                        );
+                        return new EducationOrganizationProjectionWalkMeasurement.WriterOutcome(
+                            phase.WriteMilliseconds.Values.Sum(values => values.Count),
+                            phase.Failures.ToDictionary(failure => failure.Key, failure => failure.Value)
                         );
                     }
                 )

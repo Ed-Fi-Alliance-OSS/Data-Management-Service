@@ -282,46 +282,47 @@ Every page also validates and hashes the whole set before it returns its
 items. Measured at the cap (50,000 items) and the default page size (2,000),
 so a complete read is 25 pages.
 
-**Handler alone** (step 2.6), with the set already read, so no database time:
+**Handler alone** (step 2.6), with the set already read, so no database time.
+Two runs, median per page:
 
 | Per page | Median | 95th percentile |
 | --- | --- | --- |
-| Handler time | 32 ms | 58 ms |
-| Validation / parent selection / digest | 1.8 / 0.5 / 28 ms | 5.3 / 5.4 / 33 ms |
-| Selecting and building the page's items | 0.3 ms | 15 ms |
-| Managed memory allocated | 30 MB | 30 MB |
+| Handler time | 11-18 ms | 29-34 ms |
+| Validation / parent selection / digest | 2.0-4.1 / 1.3 / 3.7-8.2 ms | 6.7 / 16 / 5.4-9.9 ms |
+| Managed memory allocated | 6.5 MB | 6.5-6.6 MB |
+| Of which: validation / parent selection / digest / response items | 1.6 / 3.4 / 0.0 / 1.5 MB | same |
 | Response body (2,000 items) | 322 KB | 322 KB |
 
-A 25-page read spends about 0.8 s in the handler (median of five). The digest
-accounts for most of the time and memory.
+A 25-page read spends 0.35-0.56 s in the handler (median of five). The digest
+formats its canonical bytes into one reusable buffer; before it did, it
+allocated 23.4 MB a page and the handler 30 MB, about 750 MB over a complete
+read.
 
 **Complete reads.** These measurements run the request parsing and the handler
 over the production provider reader against the databases described above, one
-page after another, in the order a client reads.
+page after another, in the order a client reads. Runtime: .NET 10.0.12, Release
+build, workstation garbage collection with concurrent collection on, 16
+processors; the test process, which also hosts the API and the writers, peaked
+at 0.9 GB, and at least 3.2 GB of physical memory stayed free.
 
 | | PostgreSQL 16 | SQL Server 2025 |
 | --- | --- | --- |
-| Complete read, no writes (median of 3) | 3.7-4.2 s | 5.9-8.1 s |
-| Provider reads per complete read | 2.1-2.2 s | 3.6-3.9 s |
-| Non-read time per page, median (95th percentile) | 25-46 ms (183-209 ms) | 39-209 ms (224-241 ms) |
-| One change committed after page 5 | page 6 refused; restarted read completes; 5.1 s in all | page 6 refused; restarted read completes; 7.9-9.9 s in all |
-
-Ranges span the runs (two on PostgreSQL, three on SQL Server). The non-read
-time per page varied between runs and rose with the number of full (gen 2)
-garbage collections in the test process, which also hosts the API and the
-writers. In one SQL Server run, garbage collection paused the process for
-1.7 s over three complete reads. The test process used workstation garbage
-collection.
+| Complete read, no writes (median of 3) | 3.0 s | 4.4 s |
+| Provider reads per complete read | 2.3 s | 3.8 s |
+| Non-read time per page, median (95th percentile) | 16 ms (70 ms) | 10 ms (72 ms) |
+| One change committed after page 5 | page 6 refused; restarted read completes; 3.8 s in all | page 6 refused; restarted read completes; 5.5 s in all |
 
 **Reads during writes.** A logical read here follows the Configuration
 Service's rule: on `projection-changed` it restarts without a cursor, at most 3
-times (4 attempts).
+times (4 attempts). Logical reads run back-to-back while the writers are
+active; a read in progress when the writers stop runs to its end and is counted
+separately.
 
-| Writes to projected content during reads | PostgreSQL 16 | SQL Server 2025 |
+| Writes to projected content | PostgreSQL 16 | SQL Server 2025 |
 | --- | --- | --- |
-| Four concurrent writers, 2,000 `PUT`s | 1 of 7 logical reads completed, in each of two runs; attempts refused on page 2 | 1 of 12, 0 of 11 and 1 of 11 in three runs; attempts refused on page 2 or 3 |
-| One rename every 10 s, for 60 s | 7 of 7 and 15 of 15 completed in two runs, 1-2 attempts each | 7 of 7 completed in each of three runs, 1-2 attempts each |
-| One rename every 2 s, for 60 s | 3 of 9 and 5 of 11 completed | 4 of 9, 2 of 7 and 2 of 7 completed |
+| Four concurrent writers, 2,000 `PUT`s (writers active 10 s / 28 s, no write failures) | 0 of 9 completed while writers were active, all 9 used up their restarts; every attempt refused on page 2; 1 completed after the writers stopped | 0 of 17 completed while writers were active, all 17 used up their restarts; every attempt refused on page 2; 1 completed after the writers stopped |
+| One rename every 10 s, for 60 s (no write failures) | 25 of 25 completed while writing, 1-2 attempts each; 1 more after | 12 of 12 completed while writing, 1-2 attempts each; 1 more after |
+| One rename every 2 s, for 60 s (no write failures) | 5 of 11 completed while writing; 6 used up their restarts; 1 more after | 2 of 7 completed while writing; 5 used up their restarts; 1 more after |
 
 A read completes only when no change to projected content commits while it is
 in progress, so whether reads complete depends on how often projected content
