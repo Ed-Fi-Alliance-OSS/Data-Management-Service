@@ -624,6 +624,12 @@ public class PipelineOrderingTests
             NullLogger<AvailableChangeVersionsHandler>.Instance
         );
 
+        // The projection pipeline reads the database too, so it is built from the same provider.
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddSingleton<ResolveEducationOrganizationProjectionTargetMiddleware>();
+        services.AddSingleton<ValidateEducationOrganizationProjectionTargetSchemaMiddleware>();
+        services.AddSingleton<ResolveEducationOrganizationProjectionMappingSetMiddleware>();
+
         var serviceProvider = services.BuildServiceProvider();
 
         return new ApiService(
@@ -1047,19 +1053,50 @@ public class PipelineOrderingTests
         }
 
         /// <summary>
+        /// The projection reads the primary only: a snapshot request is ignored and a configured read
+        /// replica is never chosen, so every page of a walk reads the same database the digest
+        /// describes.
+        /// </summary>
+        [Test]
+        public void It_gives_the_education_organization_projection_the_primary_only_policy()
+        {
+            PolicyOf("CreateEducationOrganizationProjectionPipeline")
+                .Should()
+                .Be(
+                    new DerivativeRoutingPolicy(
+                        DatabaseAccessIntent.ReadOnly,
+                        SnapshotEligibility.NotApplicable,
+                        ReplicaEligibility.NotApplicable
+                    )
+                );
+        }
+
+        /// <summary>
         /// The lists above must between them name every pipeline that runs the database phase, so a
         /// newly added one cannot go unpoliced.
         /// </summary>
         [Test]
         public void It_covers_every_pipeline_that_performs_database_validation()
         {
-            string[] policed = [.. ReadFactories, .. MutationFactories, "CreateGetTokenInfoPipeline"];
+            string[] policed =
+            [
+                .. ReadFactories,
+                .. MutationFactories,
+                "CreateGetTokenInfoPipeline",
+                "CreateEducationOrganizationProjectionPipeline",
+            ];
 
+            // The projection validates the fingerprint with its own step, which answers in the
+            // projection's taxonomy, so both steps mark a pipeline that reads the database.
             var databaseReadingFactories = PipelineFactoryMethodNames()
                 .Where(name =>
-                    GetRoutedResourcePipelineStepTypes(name)
-                        .Contains(typeof(ValidateDatabaseFingerprintMiddleware))
-                )
+                {
+                    var stepTypes = GetRoutedResourcePipelineStepTypes(name);
+                    return stepTypes.Contains(typeof(ValidateDatabaseFingerprintMiddleware))
+                        || stepTypes.Contains(
+                            typeof(ValidateEducationOrganizationProjectionTargetSchemaMiddleware)
+                        );
+                })
                 .ToList();
 
             databaseReadingFactories.Should().BeEquivalentTo(policed);
@@ -1817,6 +1854,59 @@ public class PipelineOrderingTests
             var stepTypes = GetStepTypes(BuildApiService(), factoryMethodName);
 
             stepTypes.Should().NotContain(type => type.Name.Contains("ApiSchema", StringComparison.Ordinal));
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Education_Organization_Projection_Pipeline : PipelineOrderingTests
+    {
+        /// <summary>
+        /// The documented order (spec section 3.4): identity ordering and service-claim authorization
+        /// first, then parsing, target resolution, target selection, the projection's schema and
+        /// mapping steps, and the handler.
+        /// </summary>
+        private static readonly Type[] _expectedStepTypes =
+        [
+            typeof(RequestResponseLoggingMiddleware),
+            typeof(CoreExceptionLoggingMiddleware),
+            typeof(TenantValidationMiddleware),
+            typeof(JwtAuthenticationMiddleware),
+            typeof(ValidateTenantExistsMiddleware),
+            typeof(ValidateClientTenantBindingMiddleware),
+            typeof(ServiceClaimAuthorizationMiddleware),
+            typeof(ParseEducationOrganizationProjectionRequestMiddleware),
+            typeof(ResolveEducationOrganizationProjectionTargetMiddleware),
+            typeof(SelectEffectiveDataStoreTargetMiddleware),
+            typeof(ValidateEducationOrganizationProjectionTargetSchemaMiddleware),
+            typeof(ResolveEducationOrganizationProjectionMappingSetMiddleware),
+            typeof(EducationOrganizationProjectionHandler),
+        ];
+
+        [Test]
+        public void It_builds_the_pipeline_in_the_exact_documented_order() =>
+            GetRoutedResourcePipelineStepTypes("CreateEducationOrganizationProjectionPipeline")
+                .Should()
+                .Equal(_expectedStepTypes);
+
+        [Test]
+        public void It_authorizes_the_projection_service_claim()
+        {
+            var authorization = GetSteps(
+                    BuildRoutedResourceApiService(),
+                    "CreateEducationOrganizationProjectionPipeline"
+                )
+                .OfType<ServiceClaimAuthorizationMiddleware>()
+                .Single();
+
+            var requirementField = typeof(ServiceClaimAuthorizationMiddleware)
+                .GetFields(BindingFlags.NonPublic | BindingFlags.Instance)
+                .Single(info => info.FieldType == typeof(ServiceClaimRequirement));
+
+            requirementField
+                .GetValue(authorization)
+                .Should()
+                .BeSameAs(ServiceClaimRequirement.EducationOrganizationProjection);
         }
     }
 }

@@ -139,6 +139,11 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<ValidateResourceKeySeedMiddleware>()
             // Mapping set resolution
             .AddSingleton<ResolveMappingSetMiddleware>()
+            // Education-organization projection steps. The parse step and the handler are built by the
+            // pipeline from the projection settings.
+            .AddSingleton<ResolveEducationOrganizationProjectionTargetMiddleware>()
+            .AddSingleton<ValidateEducationOrganizationProjectionTargetSchemaMiddleware>()
+            .AddSingleton<ResolveEducationOrganizationProjectionMappingSetMiddleware>()
             .AddSingleton<IProfileCmsProvider, ConfigurationServiceProfileProvider>()
             .AddSingleton<IProfileService, CachedProfileService>()
             .AddSingleton<IReadableProfileProjector, ReadableProfileProjector>()

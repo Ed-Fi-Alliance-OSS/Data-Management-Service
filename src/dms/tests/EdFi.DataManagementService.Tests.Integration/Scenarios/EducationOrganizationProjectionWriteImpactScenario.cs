@@ -95,6 +95,9 @@ internal static class EducationOrganizationProjectionWriteImpactScenario
         MappingSet mappingSet = await ResolveMappingSetAsync(harness, engine);
         var request = new EducationOrganizationProjectionSetReadRequest(mappingSet, rows, 5, 60);
         Func<Task<Result>> read = () => ReadAsync(harness, connectionString, request);
+        string[] phases = (
+            Environment.GetEnvironmentVariable("PROJECTION_MEASURE_PHASES") ?? "provider,walks"
+        ).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         for (int index = 0; index < WarmupReads; index++)
         {
@@ -117,18 +120,59 @@ internal static class EducationOrganizationProjectionWriteImpactScenario
         );
         await output.WriteLineAsync($"MEASURE read_ms n={MeasuredReads} {Summary(readMilliseconds)}");
 
-        foreach (bool withReads in new[] { false, true })
+        if (phases.Contains("provider"))
         {
-            var phase = await RunPhaseAsync(
-                harness,
-                engine,
-                hierarchy,
-                writers,
-                operationsPerWriter,
-                withReads ? read : null
-            );
-            await output.WriteLineAsync(
-                phase.Describe(withReads ? "writes_with_reads" : "writes_alone", writers)
+            foreach (bool withReads in new[] { false, true })
+            {
+                var phase = await RunPhaseAsync(
+                    harness,
+                    engine,
+                    hierarchy,
+                    writers,
+                    operationsPerWriter,
+                    withReads ? read : null
+                );
+                await output.WriteLineAsync(
+                    phase.Describe(withReads ? "writes_with_reads" : "writes_alone", writers)
+                );
+            }
+        }
+
+        if (phases.Contains("walks"))
+        {
+            await output.WriteLineAsync($"MEASURE walk engine={engine.Name}");
+            await EducationOrganizationProjectionWalkMeasurement.MeasureAsync(
+                new EducationOrganizationProjectionWalkMeasurement.Target(
+                    harness,
+                    connectionString,
+                    mappingSet,
+                    rows
+                ),
+                new EducationOrganizationProjectionWalkMeasurement.Writes(
+                    ChangeOnceAsync: async index =>
+                    {
+                        var (path, body) = hierarchy.School(
+                            new Random(index),
+                            $"Changed {index}",
+                            changeLocalEducationAgency: false
+                        );
+                        var (status, responseBody) = await PutAsync(harness, path, body);
+                        status.Should().Be(HttpStatusCode.NoContent, responseBody);
+                    },
+                    RunWritersAsync: () =>
+                    {
+                        var phase = new Phase();
+                        return Task.WhenAll(
+                            Enumerable
+                                .Range(0, writers)
+                                .Select(writer =>
+                                    Task.Run(() =>
+                                        WriteAsync(harness, hierarchy, writer, operationsPerWriter, phase)
+                                    )
+                                )
+                        );
+                    }
+                )
             );
         }
     }

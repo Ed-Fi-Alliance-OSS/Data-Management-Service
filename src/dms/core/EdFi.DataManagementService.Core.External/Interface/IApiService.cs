@@ -224,4 +224,15 @@ public interface IApiService
     /// Servers array should be provided by the front end.
     /// </summary>
     JsonNode GetIdentityOpenApiSpecification(JsonArray servers);
+
+    /// <summary>
+    /// DMS entry point for one page of the education-organization projection:
+    /// GET {prefix}/management/education-organizations
+    /// </summary>
+    /// <param name="frontendRequest">The request to be processed</param>
+    /// <param name="cancellationToken">Cancellation token for the request</param>
+    Task<IFrontendResponse> GetEducationOrganizationProjection(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken
+    );
 }

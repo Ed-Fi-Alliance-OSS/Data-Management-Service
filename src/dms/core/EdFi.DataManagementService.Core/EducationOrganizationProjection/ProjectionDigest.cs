@@ -51,12 +51,36 @@ internal static class ProjectionDigest
     /// supplied in.
     /// </summary>
     /// <exception cref="EncoderFallbackException">A name is not well-formed UTF-16.</exception>
-    public static byte[] Compute(IReadOnlyCollection<ProjectionItem> items)
+    public static byte[] Compute(IReadOnlyCollection<ProjectionItem> items) =>
+        Compute(items, NoOpProjectionProcessingObserver.Instance, CancellationToken.None);
+
+    /// <summary>
+    /// Computes the digest of a set, reporting a <see cref="ProjectionProcessingStage.Hashing"/>
+    /// checkpoint and checking for cancellation every
+    /// <see cref="ProjectionProcessing.CheckpointInterval"/> rows.
+    /// </summary>
+    /// <exception cref="EncoderFallbackException">A name is not well-formed UTF-16.</exception>
+    public static byte[] Compute(
+        IReadOnlyCollection<ProjectionItem> items,
+        IProjectionProcessingObserver observer,
+        CancellationToken cancellationToken
+    )
     {
         ArgumentNullException.ThrowIfNull(items);
+        ArgumentNullException.ThrowIfNull(observer);
 
         using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        WriteCanonicalLines(items, line => hash.AppendData(_strictUtf8.GetBytes(line)));
+        WriteCanonicalLines(
+            items,
+            line => hash.AppendData(_strictUtf8.GetBytes(line)),
+            rowsWritten =>
+                ProjectionProcessing.Checkpoint(
+                    observer,
+                    ProjectionProcessingStage.Hashing,
+                    rowsWritten,
+                    cancellationToken
+                )
+        );
         return hash.GetHashAndReset();
     }
 
@@ -83,7 +107,7 @@ internal static class ProjectionDigest
         ArgumentNullException.ThrowIfNull(items);
 
         StringBuilder text = new();
-        WriteCanonicalLines(items, line => text.Append(line));
+        WriteCanonicalLines(items, line => text.Append(line), rowWritten: null);
         return text.ToString();
     }
 
@@ -91,16 +115,23 @@ internal static class ProjectionDigest
     /// The single writer of the canonical form, shared by <see cref="Compute"/> and
     /// <see cref="CanonicalText"/> so the text a test pins is the text that is hashed.
     /// </summary>
-    private static void WriteCanonicalLines(IReadOnlyCollection<ProjectionItem> items, Action<string> write)
+    private static void WriteCanonicalLines(
+        IReadOnlyCollection<ProjectionItem> items,
+        Action<string> write,
+        Action<int>? rowWritten
+    )
     {
         write(HeaderLine);
         write(items.Count.ToString(CultureInfo.InvariantCulture) + "\n");
+
+        int rowsWritten = 0;
 
         // A stable sort, so the text is fully determined by the set even before validation has
         // rejected duplicate ids.
         foreach (ProjectionItem item in items.OrderBy(item => item.EducationOrganizationId))
         {
             write(RowLine(item));
+            rowWritten?.Invoke(++rowsWritten);
         }
     }
 
