@@ -132,6 +132,43 @@ public class Given_Dms_Token_Cache
         _acquisitions.Should().Be(2);
     }
 
+    [Test]
+    public async Task It_evicts_a_failed_shared_refresh_of_a_stale_token_so_the_next_call_retries()
+    {
+        var refresh = new TaskCompletionSource<TokenResponse>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var cache = new DmsTokenCache(
+            (_, _, _) =>
+                ++_acquisitions switch
+                {
+                    1 => Task.FromResult(new TokenResponse("original", "bearer", 120)),
+                    2 => refresh.Task,
+                    _ => Task.FromResult(new TokenResponse("retry", "bearer", 120)),
+                },
+            _time
+        );
+        (await cache.GetReusableDmsTokenAsync("endpoint", "client", "secret")).Should().Be("original");
+        _time.Advance(TimeSpan.FromSeconds(90));
+
+        var callers = Enumerable
+            .Range(0, 10)
+            .Select(_ => cache.GetReusableDmsTokenAsync("endpoint", "client", "secret"))
+            .ToArray();
+        var acquisitionsBeforeFailure = _acquisitions;
+        refresh.SetException(new HttpRequestException("Refresh failed"));
+
+        foreach (var caller in callers)
+        {
+            var failure = async () => await caller;
+            await failure.Should().ThrowAsync<HttpRequestException>();
+        }
+
+        acquisitionsBeforeFailure.Should().Be(2);
+        (await cache.GetReusableDmsTokenAsync("endpoint", "client", "secret")).Should().Be("retry");
+        _acquisitions.Should().Be(3);
+    }
+
     [TestCase(0)]
     [TestCase(-1)]
     public async Task It_does_not_reuse_a_response_without_a_positive_lifetime(int lifetime)
