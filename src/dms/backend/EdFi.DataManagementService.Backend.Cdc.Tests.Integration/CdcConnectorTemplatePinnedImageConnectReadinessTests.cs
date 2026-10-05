@@ -9,18 +9,19 @@ using FluentAssertions;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
-[TestFixture("healthy")]
-[TestFixture("recovered")]
-[TestFixture("exhausted")]
-[TestFixture("unrelated")]
-[TestFixture("cancel")]
-[TestFixture("cancel-inspection")]
-[TestFixture("cleanup-failure")]
-[TestFixture("restart-failure")]
-[TestFixture("keep-containers")]
-[TestFixture("diagnostics-unavailable")]
+[TestFixture("healthy", false)]
+[TestFixture("recovered", false)]
+[TestFixture("recovered", true)]
+[TestFixture("exhausted", false)]
+[TestFixture("unrelated", false)]
+[TestFixture("cancel", false)]
+[TestFixture("cancel-inspection", false)]
+[TestFixture("cleanup-failure", false)]
+[TestFixture("restart-failure", false)]
+[TestFixture("keep-containers", false)]
+[TestFixture("diagnostics-unavailable", false)]
 [NonParallelizable]
-public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario)
+public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario, bool composeKafka)
 {
     private const string Prefix = "dms-cdc-connect-readiness-test";
     private const string Pattern = "admission-evidence-connect-readiness-*.json";
@@ -55,6 +56,8 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario)
                 Prefix,
                 cancellation.Token,
                 applyPrerequisitePolicy: false,
+                exposeBroker: composeKafka,
+                composeKafka: composeKafka,
                 beforeWorker: (_, _) =>
                 {
                     _preparations++;
@@ -138,6 +141,16 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario)
             );
         _docker.ProviderStarts.Should().Be(1);
         _docker.BrokerStarts.Should().Be(1);
+        if (composeKafka)
+        {
+            _docker
+                .ComposeWorkerCommands.Should()
+                .Equal(
+                    "up --detach --wait kafka-cdc-worker",
+                    "rm --stop --force kafka-cdc-worker",
+                    "up --detach --wait kafka-cdc-worker"
+                );
+        }
     }
 
     [Test]
@@ -208,6 +221,7 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario)
             Pattern
         );
         public List<string> Events { get; } = [];
+        public List<string> ComposeWorkerCommands { get; } = [];
         public Exception Unrelated { get; } = new InvalidOperationException("unrelated failure");
 
         public Task RequireDockerAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -220,10 +234,39 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario)
             cancellationToken.ThrowIfCancellationRequested();
             if (arguments[0] == "port")
             {
+                arguments.Should().Equal("port", Prefix + "-connect", "8083/tcp");
                 Events.Add("port-" + Starts);
                 return Task.FromResult(new DockerCommandResult(0, $"127.0.0.1:{18083 + Starts}", ""));
             }
-            if (arguments[0] == "rm" && arguments.Contains(Prefix + "-connect"))
+            bool composeRemoval = false;
+            if (arguments[0] == "compose")
+            {
+                if (arguments.Contains("config"))
+                {
+                    return Task.FromResult(
+                        new DockerCommandResult(
+                            0,
+                            """{"services":{"kafka":{"volumes":[{"source":"kafka-data","target":"/tmp/kraft-combined-logs"}]}}}""",
+                            ""
+                        )
+                    );
+                }
+                if (arguments.Contains("kafka-cdc-worker"))
+                {
+                    ComposeWorkerCommands.Add(string.Join(" ", arguments.Skip(7)));
+                    composeRemoval = arguments.Contains("rm");
+                    if (arguments.Contains("up"))
+                    {
+                        Starts++;
+                        Events.Add("start-" + Starts);
+                    }
+                }
+                else if (arguments.Contains("up") && arguments.Contains("kafka"))
+                {
+                    BrokerStarts++;
+                }
+            }
+            if (composeRemoval || (arguments[0] == "rm" && arguments.Contains(Prefix + "-connect")))
             {
                 Events.Add("remove");
                 Removals++;
