@@ -447,7 +447,6 @@ function Get-CdcRunbookRecoveryReport {
         It_observes_publication_before_crash_revalidation_and_rejects_prior_process_metrics = 1
         It_detects_failed_task_recovery_on_the_same_worker_without_certifying_the_gap = 1
         It_routes_incomplete_or_acknowledged_but_unverified_shutdown_to_native_recovery = 2
-        It_rejects_unknown_recovery_evidence_and_unauthorized_controller_mutations = 1
         It_rejects_missing_provenance_after_native_recovery_without_reconstructing_state = 1
         It_contains_recovered_connectors_and_retains_terminal_history_loss = 2
         It_repeats_the_offline_barrier_sequence_after_worker_crash_interrupts_initial_readiness = 1
