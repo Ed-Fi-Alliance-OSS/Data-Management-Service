@@ -15,7 +15,7 @@ examples, are in the `EdFi.Api.Secrets` package's readme,
 ## What a secrets plugin is
 
 A secrets plugin is an ordinary plugin, delivered and allowlisted like any other,
-that does one or both of two things.
+that does one of two things, or both in the Configuration Service only.
 
 1. **It supplies configuration values from a vault (Phase A).** Its
    `ContributeConfiguration` hook adds a configuration source, such as Azure Key
@@ -23,7 +23,7 @@ that does one or both of two things.
    source holds resolves from it. This serves the **process-global** secrets each
    host reads from its configuration at startup. It works in both DMS and the
    Configuration Service, and the plugin must be allowlisted in each host whose
-   values it supplies.
+   values it supplies, subject to the rule below.
 2. **It resolves secret references in stored connection strings (Phase B).** It
    registers an `ISecretResolver` in the Configuration Service, which the
    Configuration Service calls when a data store or derivative connection string it
@@ -31,6 +31,13 @@ that does one or both of two things.
    **runtime-data** secrets an API client creates through `/v3/dataStores/` and
    `/v3/dataStoreDerivatives/`. Only the Configuration Service resolves references;
    DMS receives connection strings that are already resolved.
+
+**A plugin that registers an `ISecretResolver` or an `IClientSecretHasher` is
+allowlisted in the Configuration Service only.** DMS treats both as types it owns and
+fails its startup on a plugin that registers either, even one that also adds a
+configuration source. To serve DMS's own keys from a vault as well, deliver a second
+plugin to DMS that only adds a configuration source. One plugin that only adds a
+configuration source may be allowlisted in both hosts.
 
 The two are separate because the values are. A process-global secret is fixed by
 the deployment before the process starts; a connection string is data an API client
@@ -45,6 +52,17 @@ no special handling, provided nothing that outranks plugin sources also supplies
 An unprefixed environment variable or a command-line argument does; see
 [Configuration precedence](./CONFIGURATION.md#configuration-precedence). An operator
 moving a value into a vault removes it from the environment.
+
+**On the shipped Docker Compose files, removing it from `.env` is not enough.**
+`local-dms.yml`, `published-dms.yml`, `local-config.yml` and `published-config.yml`
+map five of these keys from `.env` variables: `ConfigurationServiceSettings__ClientSecret`
+and `ConfigurationServiceSettings__EncryptionKey` on `dms`, and
+`DatabaseSettings__EncryptionKey`, `IdentitySettings__ClientSecret` and
+`IdentitySettings__EncryptionKey` on `config`. Deleting the variable sets the key to
+an empty string, which still outranks the vault, so the host sees no value and
+refuses to start. Unset each key in a deployment-owned override file instead, as
+[Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files)
+shows.
 
 **DMS, two keys:**
 
@@ -145,8 +163,13 @@ The Configuration Service stores the reference, encrypted, exactly as it stores 
 other connection string, and never writes the resolved value to its database. It
 resolves on every read, re-encrypts, and returns cipher text in the shape DMS
 already expects. A reference with no resolver installed, or one the resolver cannot
-answer, fails the read rather than reaching DMS as a password; see
-[SecretsSettings](./CONFIGURATION.md#secretssettings) for each failure's result.
+answer, fails the read rather than reaching DMS as a password: the data store
+collection or single row, or a derivative read on its own, returns HTTP 500. The one
+exception is a derivative read **as part of its data store**, which is returned with
+a null connection string and logged as a warning, so the data store and its other
+derivatives are unaffected. An unresolved reference is never passed through as text.
+See [SecretsSettings](./CONFIGURATION.md#secretssettings) for how the cache and the
+time allowance affect these outcomes.
 
 ## How a rotation propagates
 

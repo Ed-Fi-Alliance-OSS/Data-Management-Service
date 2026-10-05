@@ -1260,10 +1260,9 @@ jobs:
 
   # The Configuration Service's contract chain: pack, an SBOM, provenance, a read-only publish
   # decision, and a publish job, in the shape the two DMS contract chains above have and for the same
-  # reason. EdFi.Api.Secrets is
-  # packed and published at the version its own csproj declares, never at the release version, so
-  # this workflow offers the same version to the feed on every cs- prerelease, and the publish job
-  # consults Invoke-ContractPublishCheck rather than pushing.
+  # reason. EdFi.Api.Secrets is packed and published at the version its own csproj declares, never at
+  # the release version, so this workflow offers the same version to the feed on every cs-
+  # prerelease, and the publish job consults Invoke-ContractPublishCheck rather than pushing.
   pack-secrets:
     name: Build and Pack Secrets Contract
     # A dispatch reaches this job as well as a cs- prerelease, as the trigger comment describes.

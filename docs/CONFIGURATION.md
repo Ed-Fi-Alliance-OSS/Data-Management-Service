@@ -428,23 +428,26 @@ and what a startup failure means, and
 [eng/docker-compose/README.md](../eng/docker-compose/README.md) for running them
 against a local development stack.
 
-A plugin is built against up to three published contract packages, on the Ed-Fi Azure
-Artifacts feed at
+A plugin is built against up to three published contract packages, on the Ed-Fi
+Azure Artifacts feed at
 `https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json`:
 
-| Package                     | What it declares                                                                                   |
-| --------------------------- | -------------------------------------------------------------------------------------------------- |
-| `EdFi.Api.Plugins`          | `EdFiApiPlugin`, the base class a plugin implements.                                               |
-| `EdFi.Api.CustomValidation` | `ICustomResourceValidator`, for a plugin that registers a validator.                               |
+| Package                     | What it declares                                                                                                  |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `EdFi.Api.Plugins`          | `EdFiApiPlugin`, the base class a plugin implements.                                                              |
+| `EdFi.Api.CustomValidation` | `ICustomResourceValidator`, for a plugin that registers a validator.                                              |
 | `EdFi.Api.Secrets`          | `ISecretResolver` and `IClientSecretHasher`, for a [Configuration Service plugin](#configuration-service-plugins). |
 
-None carries a Data Management Service or Configuration Service release version. Each declares its own
-semantic version, in its own source, and moves it only when its public surface, its
-XML documentation or its declared dependencies change, because the loader compares
-contract assembly versions when it decides whether a plugin may run. Which contract
-versions a given release carries is stated in the host assembly manifest attached to
-that release. None of this is configuration: it is what a vendor compiles against
-before the directory this section governs ever exists.
+None carries a Data Management Service or Configuration Service release version.
+Each declares its own semantic version, in its own source, and moves it only when
+its public surface, its XML documentation or its declared dependencies change,
+because the loader compares contract assembly versions when it decides whether a
+plugin may run. Which contract versions a Data Management Service release carries
+is stated in the host assembly manifest attached to that release. A Configuration
+Service release has no such manifest; the versions it carries, `EdFi.Api.Secrets`
+included, are the ones declared in source at that release's tag. None of this is
+configuration: it is what a vendor compiles against before the directory this
+section governs ever exists.
 
 | Parameter | Description                                                                                                                                                                                                                  |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

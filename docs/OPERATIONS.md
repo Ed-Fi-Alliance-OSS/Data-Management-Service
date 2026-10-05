@@ -515,8 +515,11 @@ file.
 The Configuration Service loads plugins with the same loader, from its own plugin
 root and its own `Plugins:Allowed`. A plugin allowlisted for DMS is not thereby
 allowlisted for the Configuration Service, and the reverse, so a plugin both hosts
-use is delivered to and named in each. Everything above about trust, case, and the
-stop-fetch-start rule applies unchanged. The plugin a Configuration Service operator
+use is delivered to and named in each. A plugin that registers a contract only one
+host declares fails startup in the other, so only a plugin that adds configuration
+and registers no contract can be used by both; see
+[Secrets](./SECRETS.md#what-a-secrets-plugin-is). Everything above about trust,
+case, and the stop-fetch-start rule applies unchanged. The plugin a Configuration Service operator
 is most likely to install is a secrets plugin; see [Secrets](./SECRETS.md) for what
 one serves and what adopting one does and does not protect.
 
@@ -535,7 +538,9 @@ stops it before it serves a request, and the reason is on standard error; see
 Configuration Service's plugin directories. Add the file with its own `-f` after
 `local-config.yml` or `published-config.yml`, followed by a deployment-owned
 override that sets `Plugins__Allowed` on the `config` service, because this overlay
-allowlists nothing.
+allowlists nothing. When the plugin serves secrets from a vault, that override also
+removes them from the environment; see
+[Secrets on the shipped Compose files](#secrets-on-the-shipped-compose-files).
 
 <!-- embed: eng/docker-compose/plugins-config.yml -->
 ```yaml
@@ -608,6 +613,37 @@ than the file an operator actually composes with `-f`.
 For running the recipes against a local development stack through
 `bootstrap-local-dms.ps1`, see
 [eng/docker-compose/README.md](../eng/docker-compose/README.md).
+
+### Secrets on the shipped Compose files
+
+A secret a plugin serves from a vault must not also be supplied by the environment,
+because an environment variable outranks every plugin source; see
+[Secrets](./SECRETS.md#the-process-global-secrets-phase-a-serves). The shipped
+Compose files map five of those secrets from `.env` variables, and deleting a
+variable does not remove the mapping: Compose sets the key to an empty string, which
+outranks the vault, and the host refuses to start for want of the value.
+
+Remove each key the vault serves in the same deployment-owned override that sets
+`Plugins__Allowed`, with `!reset null`:
+
+```yaml
+services:
+  dms:
+    environment:
+      ConfigurationServiceSettings__ClientSecret: !reset null
+      ConfigurationServiceSettings__EncryptionKey: !reset null
+  config:
+    environment:
+      DatabaseSettings__EncryptionKey: !reset null
+      IdentitySettings__ClientSecret: !reset null
+      IdentitySettings__EncryptionKey: !reset null
+```
+
+List only the keys the vault actually serves, and leave the matching `.env`
+variables unset. Compose still warns that each unset variable defaults to a blank
+string; with the key reset, that warning is expected and harmless. Do not reset `DatabaseSettings__DatabaseConnection`: the stock
+Configuration Service entry point reads it before .NET starts, so it stays in the
+environment, as [Secrets](./SECRETS.md) describes.
 
 ## Logging
 

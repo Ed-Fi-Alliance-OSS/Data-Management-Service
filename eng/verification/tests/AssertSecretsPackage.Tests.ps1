@@ -127,6 +127,20 @@ Describe "Assert-SecretsPackage control cases" {
         $result.Threw | Should -BeTrue
         $result.Message | Should -BeLike "*was not found*"
     }
+
+    It "refuses to empty an extraction directory it did not create, and leaves it untouched" {
+        $occupied = Join-Path $script:fixtureRoot "occupied-$([guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $occupied | Out-Null
+        $sentinel = Join-Path $occupied "keep.txt"
+        Set-Content -LiteralPath $sentinel -Value "not a package extraction"
+
+        {
+            & $script:verifier -PackageFile $script:packedPackage -ExtractTo $occupied `
+                -PackageId $script:packageId -ExpectedPackageVersion $script:packageVersion
+        } | Should -Throw "*Refusing to empty*"
+
+        Test-Path -LiteralPath $sentinel | Should -BeTrue
+    }
 }
 
 Describe "Assert-SecretsPackage refusals" {
@@ -191,6 +205,50 @@ Describe "Assert-SecretsPackage refusals" {
 
         $result.Threw | Should -BeTrue
         $result.Message | Should -BeLike "*Missing package metadata: description*"
+    }
+
+    It "refuses a license expression other than Apache-2.0" {
+        $package = New-RepackedPackage -Name "license" -Mutate {
+            param($stage)
+            Edit-Nuspec -Stage $stage -Transform { param($text) $text.Replace(">Apache-2.0</license>", ">MIT</license>") }
+        }
+
+        $result = Invoke-Verifier -PackageFile $package
+
+        $result.Threw | Should -BeTrue
+        $result.Message | Should -BeLike "*unexpected license expression: MIT*"
+    }
+
+    It "refuses a package without its <Element> metadata" -ForEach @(
+        @{ Element = "title" }
+        @{ Element = "projectUrl" }
+    ) {
+        $package = New-RepackedPackage -Name "no-$Element" -Mutate {
+            param($stage)
+            Edit-Nuspec -Stage $stage -Transform { param($text) $text -replace "<$Element>[^<]*</$Element>", "" }
+        }
+
+        $result = Invoke-Verifier -PackageFile $package
+
+        $result.Threw | Should -BeTrue
+        $result.Message | Should -BeLike "*Missing package metadata: $Element*"
+    }
+
+    # The nuspec is moved to a version the assembly was not built at, and the verifier is told to
+    # expect it, so the package version check passes and only the AssemblyVersion check can refuse.
+    It "refuses an assembly whose AssemblyVersion is not the package version" {
+        $package = New-RepackedPackage -Name "assembly-version" -Mutate {
+            param($stage)
+            Edit-Nuspec -Stage $stage -Transform {
+                param($text)
+                $text.Replace("<version>$($script:packageVersion)</version>", "<version>9.9.9</version>")
+            }
+        }
+
+        $result = Invoke-Verifier -PackageFile $package -ExpectedPackageVersion "9.9.9"
+
+        $result.Threw | Should -BeTrue
+        $result.Message | Should -BeLike "*Unexpected AssemblyVersion*expected 9.9.9.0*"
     }
 
     It "refuses a readme that is not the committed guide, which is what a stale package looks like" {

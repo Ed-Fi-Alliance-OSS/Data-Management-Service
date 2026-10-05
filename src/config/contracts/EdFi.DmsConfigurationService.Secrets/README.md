@@ -18,7 +18,8 @@ installing a secrets plugin, and how a rotation propagates, is in
 
 ## Two jobs, two mechanisms
 
-A secrets plugin does one or both of two things, and they use different hooks.
+A secrets plugin does one of two things, or both in the Configuration Service only, and they use
+different hooks.
 
 - **Supply configuration values from a vault.** Override `EdFiApiPlugin.ContributeConfiguration`
   and add a configuration source. This needs nothing from this package: the hosts' configuration
@@ -31,8 +32,15 @@ A secrets plugin does one or both of two things, and they use different hooks.
   register an `ISecretResolver`. A data store or derivative connection string an API client stores
   in the Configuration Service may carry `${secret:<name>}` in place of a value, and the
   Configuration Service calls your resolver for it when it returns that connection string. Only the
-  Configuration Service declares this contract: a plugin allowlisted in the Data Management Service
-  that registers only a resolver contributes nothing that host calls, and fails its startup.
+  Configuration Service declares this contract, as it alone declares `IClientSecretHasher`. The
+  Data Management Service treats both as types it owns, so a plugin allowlisted there that
+  registers either one fails its startup, whatever else the plugin contributes, a configuration
+  source included.
+
+So a plugin that registers a resolver or a hasher is allowlisted in the Configuration Service only.
+A deployment that also serves the Data Management Service's configuration secrets from a vault does
+that with a second plugin, which only adds a configuration source, allowlisted in the Data
+Management Service.
 
 ## What is here
 
@@ -78,11 +86,16 @@ every registration already there, including the host's own default hasher, which
 registered, and an earlier plugin's resolver. A `TryAdd` that declines adds nothing, and what
 follows depends on what else your plugin contributed:
 
-- If your plugin contributed nothing else, startup fails naming you, because you registered nothing
-  the host calls.
-- If your plugin also registered something else the host declares, or added a configuration source
+- If your plugin registered nothing else the host declares and added no configuration source,
+  startup fails naming you, because nothing you registered is something the host calls. Your own
+  types, such as a vault client or options you register for your resolver, do not count.
+- If your plugin also registered another contract the host declares, or added a configuration source
   in `ContributeConfiguration`, nothing fails at all: your plugin loads and the implementation you
   meant to install never runs.
+
+The host counts only what is still registered once every allowlisted plugin has run. A plugin whose
+every declared registration was removed by a later plugin fails startup naming it, whatever else it
+contributed.
 
 `TryAdd` for `IClientSecretHasher` always declines, so it always lands in one of those two cases.
 `TryAdd` for `ISecretResolver` succeeds when yours is the only resolver and declines behind another
@@ -146,8 +159,8 @@ An unresolved reference fails the read: the data store collection or single row,
 read on its own through `/v3/dataStoreDerivatives/`, returns HTTP 500 and the log names the row, the
 tenant and the reference. The one exception is a derivative read **as part of its data store**,
 which is returned with a null connection string and logged as a warning, so the data store and its
-other derivatives are unaffected. An unresolved reference is never passed through as text. The full
-table of outcomes is in
+other derivatives are unaffected. An unresolved reference is never passed through as text. How the
+cache and the time allowance shape these outcomes is in
 [SecretsSettings](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/CONFIGURATION.md#secretssettings).
 
 ### What the host bounds, and what it cannot
@@ -305,7 +318,9 @@ public sealed class ParameterStoreConfigurationPlugin : EdFiApiPlugin
 ### A resolver over Parameter Store
 
 Compiled against `AWSSDK.SimpleSystemsManagement` 4.0.104.1 and `AWSSDK.Extensions.NETCore.Setup`
-4.0.102.1. It uses the same vault, and the same client type, as the configuration source above.
+4.0.102.1. It uses the same vault, and the same client type, as the configuration source above,
+but it is a plugin of its own: it registers a resolver, so it is allowlisted in the Configuration
+Service only, while the configuration source may be allowlisted in either host or both.
 
 <!-- embed: eng/verification/SecretsPluginExamples/ParameterStoreSecretResolver.cs#resolver -->
 ```csharp

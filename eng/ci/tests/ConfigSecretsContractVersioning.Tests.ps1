@@ -207,6 +207,14 @@ Describe "EdFi.Api.Secrets contract versioning (DMS-1552)" {
             $script:publishSecrets | Should -Match "if: steps\.decide\.outputs\.should-push == 'true'"
         }
 
+        # A Configuration Service release is a cs- tag. A dms- gate here would skip the contract on
+        # every Configuration Service prerelease and run it on every DMS one instead.
+        It "runs the pack and the decision on a cs- prerelease, and only on a dispatch otherwise" {
+            $gate = '(?m)^    if: \$\{\{ github\.event_name == ''workflow_dispatch'' \|\| startsWith\(github\.event\.release\.tag_name, ''cs-''\) \}\}$'
+            $script:packSecrets | Should -Match $gate
+            $script:checkSecrets | Should -Match $gate
+        }
+
         It "runs the pack and the decision on a dispatch and keeps the push off it" {
             $script:packSecrets | Should -Match "github\.event_name == 'workflow_dispatch'"
             $script:checkSecrets | Should -Match "github\.event_name == 'workflow_dispatch'"

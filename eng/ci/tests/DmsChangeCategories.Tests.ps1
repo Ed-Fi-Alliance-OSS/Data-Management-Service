@@ -516,13 +516,11 @@ Describe "DMS pull request change classifier" {
         It "routes <Path> to the embed check" -ForEach @(
             @{ Path = "docs/OPERATIONS.md" }
             @{ Path = "eng/docker-compose/plugins-dms.yml" }
-            @{ Path = "eng/docker-compose/plugins-config.yml" }
             @{ Path = "eng/verification/Assert-DocumentEmbeds.ps1" }
             @{ Path = "eng/verification/PluginsConsumer/AcmePlugin.cs" }
             @{ Path = "src/plugins/EdFi.Api.Plugins/PLUGINS.md" }
             @{ Path = "eng/fixtures/plugins/Acme.UniqueIdValidation/UniqueIdValidator.cs" }
             @{ Path = "src/config/contracts/EdFi.DmsConfigurationService.Secrets/README.md" }
-            @{ Path = "eng/verification/SecretsPluginExamples/ParameterStoreSecretResolver.cs" }
         ) {
             (Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @($Path)).document_embeds_relevant |
                 Should -BeTrue

@@ -500,7 +500,8 @@ class the host discovers alongside the old one for as long as both are supported
 
 ## Getting the package
 
-`EdFi.Api.Plugins` and `EdFi.Api.CustomValidation` are published to the Ed-Fi Azure Artifacts feed:
+`EdFi.Api.Plugins`, `EdFi.Api.CustomValidation` and `EdFi.Api.Secrets` are published to the Ed-Fi
+Azure Artifacts feed:
 
 ```text
 https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json
@@ -510,10 +511,10 @@ https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nug
 <PackageReference Include="EdFi.Api.Plugins" Version="[1.1.0]" />
 ```
 
-The second contract, `EdFi.Api.CustomValidation`, is on the same feed and carries its own version in
-the same way; add it only if your plugin registers a validator. Each contract declares its version in
-its own source - `src/plugins/Directory.Build.props` for this one, the project file for the other -
-so their numbers move independently of each other and of the Data Management Service release.
+`EdFi.Api.CustomValidation` carries its own version in the same way; add it only if your plugin
+registers a validator. Each contract declares its version in its own source -
+`src/plugins/Directory.Build.props` for this one, its project file for each of the others - so their
+numbers move independently of each other and of either host's release.
 
 Pin the version exactly, in brackets, as above. A bare version is a minimum rather than a pin, and
 the host assembly manifest attached to the Data Management Service release you are targeting states
