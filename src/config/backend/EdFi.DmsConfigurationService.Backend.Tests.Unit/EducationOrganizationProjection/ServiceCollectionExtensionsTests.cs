@@ -121,6 +121,14 @@ public class ServiceCollectionExtensionsTests
                 .Should()
                 .BeOfType<ProjectionServiceTokenProvider>()
                 .And.BeSameAs(_provider.GetRequiredService<IProjectionServiceTokenProvider>());
+
+        [Test]
+        public void It_registers_a_reader_per_resolution() =>
+            _provider
+                .GetRequiredService<IEducationOrganizationProjectionReader>()
+                .Should()
+                .BeOfType<EducationOrganizationProjectionReader>()
+                .And.NotBeSameAs(_provider.GetRequiredService<IEducationOrganizationProjectionReader>());
     }
 
     [TestFixture]
