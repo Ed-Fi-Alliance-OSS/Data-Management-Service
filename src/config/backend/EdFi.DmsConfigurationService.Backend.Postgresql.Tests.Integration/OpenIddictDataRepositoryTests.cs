@@ -1234,27 +1234,6 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             (await TokenRowCountAsync(applicationId)).Should().Be(0);
         }
 
-        [Test]
-        public async Task It_reports_the_client_as_not_found_and_stores_nothing_when_enforcement_is_disabled()
-        {
-            Guid applicationId = await RegisterApplicationAsync(
-                _repository,
-                $"deleted-disabled-client-{Guid.NewGuid():N}"
-            );
-            await DeleteApplicationRowAsync(applicationId);
-
-            TokenStoreOutcome outcome = await _repository.StoreTokenAsync(
-                Guid.NewGuid(),
-                applicationId,
-                "subject-deleted-disabled",
-                FarFuture,
-                EnforcementDisabled
-            );
-
-            outcome.Should().Be(TokenStoreOutcome.ClientNotFound);
-            (await TokenRowCountAsync(applicationId)).Should().Be(0);
-        }
-
         /// <summary>
         /// The concurrent form, which is where the PostgreSQL bypass lived: a <c>FOR UPDATE</c>
         /// matching no row takes no lock at all, so without the guard these grants would run an

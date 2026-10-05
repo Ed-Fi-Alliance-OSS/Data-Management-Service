@@ -417,8 +417,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 dataStoreIds: applicationInfo.DataStoreIds
             );
 
-            // Store token in database. The repository owns the disable semantics of the limit,
-            // so a value below 1 is passed through rather than special-cased here.
+            // Exempt applications use the repository's disabled path; otherwise the configured
+            // limit is passed through unchanged.
             int maxActiveTokens = applicationInfo.IsTokenLimitExempt
                 ? -1
                 : _identityOptions.Value.BearerTokenPerClientLimit;

@@ -426,16 +426,22 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             parameters.Add("Status", "valid");
             parameters.Add("ReferenceId", tokenId.ToString("N"));
 
-            if (maxActiveTokens > 0)
+            // Enforcement disabled: the unconditional insert that ran before the limit existed,
+            // with no transaction and no lock.
+            if (maxActiveTokens < 1)
             {
-                // Bound exactly as ExpirationDate is, so the count compares two instants.
-                parameters.Add("ActiveAsOf", DateTimeOffset.UtcNow, DbType.DateTimeOffset);
-                parameters.Add("MaxActiveTokens", maxActiveTokens);
+                await connection.ExecuteAsync(insertSql, parameters);
+
+                return TokenStoreOutcome.Stored;
             }
 
-            // Every grant verifies the application still exists under its row lock. Enforcing
-            // grants also serialize on that row, making the limit a strict ceiling rather than a
-            // best-effort one. The lock lives and dies with this transaction.
+            // Bound exactly as ExpirationDate is, so the count compares two instants.
+            parameters.Add("ActiveAsOf", DateTimeOffset.UtcNow, DbType.DateTimeOffset);
+            parameters.Add("MaxActiveTokens", maxActiveTokens);
+
+            // Grants for one client serialize on that client's OpenIddictApplication row, which
+            // makes the limit a strict ceiling rather than a best-effort one. The lock lives and
+            // dies with this transaction, so every path below releases it.
             await using var transaction = await connection.BeginTransactionAsync();
 
             try
@@ -448,29 +454,28 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                     transaction
                 );
 
-                // A FOR UPDATE matching no row takes no lock at all on PostgreSQL, and
-                // OpenIddictToken has no foreign key to OpenIddictApplication. This guard applies
-                // even when enforcement is disabled so a client deleted after its lookup cannot
-                // receive a freshly minted, storable token.
+                // A FOR UPDATE matching no row takes no lock at all on PostgreSQL, so without this
+                // guard concurrent grants for a client deleted mid-request would count and insert
+                // unserialized and could exceed the cap. OpenIddictToken has no foreign key to
+                // OpenIddictApplication, so nothing else would stop the insert either.
                 if (lockedApplicationId is null)
                 {
                     await transaction.RollbackAsync();
                     return TokenStoreOutcome.ClientNotFound;
                 }
 
-                int rowsAffected =
-                    maxActiveTokens < 1
-                        ? await connection.ExecuteAsync(insertSql, parameters, transaction)
-                        : await connection.ExecuteAsync(ConditionalInsertSql, parameters, transaction);
+                int rowsAffected = await connection.ExecuteAsync(
+                    ConditionalInsertSql,
+                    parameters,
+                    transaction
+                );
 
                 await transaction.CommitAsync();
 
-                // On the enforcing path zero rows means the count predicate was false. A deadlock
-                // victim, or any other fault, throws from the statements above and is never
-                // reported as a limit rejection; only the lock-wait timeout below is an outcome.
-                return maxActiveTokens < 1 || rowsAffected > 0
-                    ? TokenStoreOutcome.Stored
-                    : TokenStoreOutcome.LimitExceeded;
+                // Zero rows can only mean the count predicate was false. A deadlock victim, or any
+                // other fault, throws from the statements above and is never reported here as a
+                // limit rejection; only the lock-wait timeout below is an outcome.
+                return rowsAffected > 0 ? TokenStoreOutcome.Stored : TokenStoreOutcome.LimitExceeded;
             }
             catch (PostgresException exception)
                 when (exception.SqlState == PostgresErrorCodes.LockNotAvailable)
