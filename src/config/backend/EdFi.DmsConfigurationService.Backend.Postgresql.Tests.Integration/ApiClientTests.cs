@@ -500,6 +500,10 @@ public class ApiClientTests : DatabaseTest
                 Configuration.DatabaseOptions,
                 NullLogger<DataStoreRepository>.Instance,
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                TestConnectionStringReader.Create(
+                    new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                    tenantContextProvider
+                ),
                 new DataStoreContextRepository(
                     Configuration.DatabaseOptions,
                     NullLogger<DataStoreContextRepository>.Instance,
@@ -510,6 +514,10 @@ public class ApiClientTests : DatabaseTest
                     Configuration.DatabaseOptions,
                     NullLogger<DataStoreDerivativeRepository>.Instance,
                     new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                    TestConnectionStringReader.Create(
+                        new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                        tenantContextProvider
+                    ),
                     new TestAuditContext(),
                     tenantContextProvider
                 ),

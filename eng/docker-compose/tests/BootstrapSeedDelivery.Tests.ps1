@@ -1065,6 +1065,13 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             Remove-Item -LiteralPath $sourceDir -Recurse -Force
         }
 
+        It "preserves Windows backslashes in a missing custom seed path error" {
+            $missingPath = "C:\dms-1427-missing-seed-$([Guid]::NewGuid().ToString('N'))"
+
+            { Assert-SeedDataPathHasXml -SeedDataPath $missingPath } |
+                Should -Throw -ExpectedMessage "*$missingPath*"
+        }
+
         It "excludes only ODS _rels path segments from custom seed staging" {
             $sourceDir = New-TestDirectory
             $relsDir = Join-Path $sourceDir "_rels"

@@ -241,6 +241,29 @@ public class IdentityNoStoreTests
         public async Task Setup()
         {
             var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.GetIdentityOpenApiSpecification(A<JsonArray>._))
+                .Returns(
+                    JsonNode.Parse(
+                        """
+                        {
+                          "openapi": "3.0.0",
+                          "components": {
+                            "securitySchemes": {
+                              "oauth2_client_credentials": {
+                                "type": "oauth2",
+                                "flows": {
+                                  "clientCredentials": {
+                                    "tokenUrl": "https://internal-auth.example/oauth/token",
+                                    "scopes": {}
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                        """
+                    )!
+                );
             _factory = CreateFactory(apiService);
             _client = _factory.CreateClient();
 

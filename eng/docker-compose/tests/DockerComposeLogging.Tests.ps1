@@ -119,9 +119,11 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
             "eng/docker-compose/plugins-dms.yml",
             "eng/docker-compose/plugins-fetch-dms.yml",
             "eng/docker-compose/postgresql-tmpfs.yml",
+            "eng/docker-compose/tests/cms-isolation/cms-e2e-isolation.yml",
             "eng/docker-compose/tests/plugin-deployment/plugins-allowed-dms.yml",
             "eng/docker-compose/tests/plugin-deployment/plugins-feed-dms.yml",
-            "eng/docker-compose/tests/plugin-deployment/stock-image-pin-dms.yml"
+            "eng/docker-compose/tests/plugin-deployment/stock-image-pin-dms.yml",
+            "eng/docker-compose/tests/secret-resolution/secret-resolution-isolation.yml"
         )
 
         return @(

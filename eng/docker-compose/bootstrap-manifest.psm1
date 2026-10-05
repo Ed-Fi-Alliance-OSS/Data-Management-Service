@@ -146,11 +146,11 @@ function Read-BootstrapManifest {
     try {
         $manifest = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -AsHashtable
     } catch {
-        throw "Bootstrap manifest '$(Format-LogSafeText $Path)' contains malformed JSON. $(Format-LogSafeText ($_.Exception.Message))"
+        throw "Bootstrap manifest '$(Format-LogSafePath $Path)' contains malformed JSON. $(Format-LogSafeText ($_.Exception.Message))"
     }
 
     if ($manifest -isnot [System.Collections.IDictionary]) {
-        throw "Bootstrap manifest '$(Format-LogSafeText $Path)' must contain a JSON object."
+        throw "Bootstrap manifest '$(Format-LogSafePath $Path)' must contain a JSON object."
     }
 
     if (-not $manifest.ContainsKey("version") -or $null -eq $manifest["version"]) {
@@ -161,7 +161,7 @@ function Read-BootstrapManifest {
     try {
         $manifestVersion = [int]$manifest["version"]
     } catch {
-        throw "Bootstrap manifest '$(Format-LogSafeText $Path)' has malformed version: $(Format-LogSafeText ($manifest["version"]))"
+        throw "Bootstrap manifest '$(Format-LogSafePath $Path)' has malformed version: $(Format-LogSafeText ($manifest["version"]))"
     }
 
     if ($manifestVersion -gt 1) {
@@ -169,7 +169,7 @@ function Read-BootstrapManifest {
     }
 
     if ($manifestVersion -lt 1) {
-        throw "Bootstrap manifest '$(Format-LogSafeText $Path)' has malformed version: $(Format-LogSafeText $manifestVersion)"
+        throw "Bootstrap manifest '$(Format-LogSafePath $Path)' has malformed version: $(Format-LogSafeText $manifestVersion)"
     }
 
     $manifest["version"] = $manifestVersion
@@ -307,12 +307,12 @@ function Resolve-BootstrapWorkspaceRelativePath {
 
     $normalizedPath = $RelativePath.Replace("\", "/")
     if ([System.IO.Path]::IsPathRooted($RelativePath) -or $normalizedPath.StartsWith("/")) {
-        throw "Bootstrap manifest field '$(Format-LogSafeText $ManifestField)' must be relative to the bootstrap workspace: $(Format-LogSafeText $RelativePath)"
+        throw "Bootstrap manifest field '$(Format-LogSafeText $ManifestField)' must be relative to the bootstrap workspace: $(Format-LogSafePath $RelativePath)"
     }
 
     $pathSegments = @($normalizedPath -split "/")
     if ($pathSegments | Where-Object { [string]::IsNullOrWhiteSpace($_) -or $_ -eq "." -or $_ -eq ".." }) {
-        throw "Bootstrap manifest field '$(Format-LogSafeText $ManifestField)' must not contain empty, current, or parent path segments: $(Format-LogSafeText $RelativePath)"
+        throw "Bootstrap manifest field '$(Format-LogSafeText $ManifestField)' must not contain empty, current, or parent path segments: $(Format-LogSafePath $RelativePath)"
     }
 
     return $normalizedPath
@@ -357,7 +357,7 @@ function Get-BootstrapWorkspaceFingerprint {
     )
 
     if (-not (Test-Path -LiteralPath $Path)) {
-        throw "Workspace path does not exist: $(Format-LogSafeText $Path)"
+        throw "Workspace path does not exist: $(Format-LogSafePath $Path)"
     }
 
     $excludeSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -466,11 +466,11 @@ function Set-BootstrapStartupEnvironment {
 
     $apiSchemaPath = Join-Path $script:BootstrapRoot "ApiSchema"
     if (-not $SkipArtifactValidation -and -not (Test-Path -LiteralPath $apiSchemaPath)) {
-        throw "Bootstrap ApiSchema workspace is missing: $(Format-LogSafeText $apiSchemaPath)"
+        throw "Bootstrap ApiSchema workspace is missing: $(Format-LogSafePath $apiSchemaPath)"
     }
 
     if (-not $SkipArtifactValidation -and -not (Test-Path -LiteralPath $apiSchemaManifestPath -PathType Leaf)) {
-        throw "Bootstrap ApiSchema manifest is missing: $(Format-LogSafeText $apiSchemaManifestPath)"
+        throw "Bootstrap ApiSchema manifest is missing: $(Format-LogSafePath $apiSchemaManifestPath)"
     }
 
     # Activate the staged schema workspace as runtime-authoritative (bootstrap-design.md §3 activation
@@ -514,7 +514,7 @@ function Set-BootstrapStartupEnvironment {
 
     $claimsPath = Resolve-BootstrapPath -RelativePath $claimsDirectory
     if (-not $SkipArtifactValidation -and -not (Test-Path -LiteralPath $claimsPath)) {
-        throw "Bootstrap claims workspace is missing: $(Format-LogSafeText $claimsPath)"
+        throw "Bootstrap claims workspace is missing: $(Format-LogSafePath $claimsPath)"
     }
 
     if (-not $manifest.ContainsKey("seed")) {
@@ -647,7 +647,7 @@ function Initialize-E2EClaimsWorkspace {
 
         foreach ($fragment in @(Get-ChildItem -LiteralPath $sourceDirectory -Filter "*-claimset.json" -File | Sort-Object -Property Name)) {
             if ($intendedSources.ContainsKey($fragment.Name)) {
-                throw "Claimset fragment filename collision for '$(Format-LogSafeText $fragment.Name)' from '$(Format-LogSafeText $fragment.FullName)' and '$(Format-LogSafeText ($intendedSources[$fragment.Name]))'."
+                throw "Claimset fragment filename collision for '$(Format-LogSafeText $fragment.Name)' from '$(Format-LogSafePath $fragment.FullName)' and '$(Format-LogSafePath ($intendedSources[$fragment.Name]))'."
             }
 
             $intendedSources[$fragment.Name] = $fragment.FullName
@@ -752,7 +752,7 @@ function Remove-BootstrapWorkspaceIfRequested {
         return
     }
     if (Test-Path -LiteralPath $bootstrapDir) {
-        Write-Output "Removing bootstrap workspace at $(Format-LogSafeText $bootstrapDir)"
+        Write-Output "Removing bootstrap workspace at $(Format-LogSafePath $bootstrapDir)"
         # Remove-Item is non-terminating by default; promote to a terminating error so a failed
         # cleanup cannot leave a stale manifest behind for the next start to pick up.
         Remove-Item -LiteralPath $bootstrapDir -Recurse -Force -ErrorAction Stop

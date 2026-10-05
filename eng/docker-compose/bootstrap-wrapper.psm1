@@ -517,7 +517,8 @@ function Invoke-BootstrapWrapper {
         # Shared E2E composition preserves its already selected package surface and prepares
         # its separate snapshot before admission. Ordinary bootstrap keeps its defaults.
         [switch]$UseEnvironmentFileSchemaSettings,
-        [switch]$RebuildLocalImages,
+        [Alias("RebuildLocalImages")]
+        [switch]$Rebuild,
         [scriptblock]$BeforeCdcAdmission,
         [string]$OriginalEnvironmentFile,
 
@@ -943,25 +944,23 @@ function Invoke-BootstrapWrapper {
                 IdentityProvider = $resolvedIdentityProvider
                 InfraOnly = $true
                 EnableConfig = $true
+                SuppressWriterGuidance = $true
             }
             if ($EnableKafkaUI -and -not $EnableKafkaCdc) { $startArgs.EnableKafkaUI = $true }
-            if ($EnableKafkaCdc) { $startArgs.CdcDatabaseInfrastructure = $true; $startArgs.SuppressWriterGuidance = $true }
+            if ($EnableKafkaCdc) { $startArgs.CdcDatabaseInfrastructure = $true }
             if ($EnableSwaggerUI) { $startArgs.EnableSwaggerUI = $true }
             if ($AddExtensionSecurityMetadata) { $startArgs.AddExtensionSecurityMetadata = $true }
             $startArgs.DatabaseEngine = $DatabaseEngine
             if ($SeparateConfigDatabase) { $startArgs.SeparateConfigDatabase = $true }
             $startArgs.EnvironmentFile = $effectiveEnvFile
-            # This invocation is -InfraOnly without -DmsBaseUrl, so the start script reaches its terminal
-            # guidance and would print its own "run a fresh bootstrap-local-dms.ps1" hint. It cannot build a
-            # correct one here: the -EnvironmentFile above is already derived, and -DataStandardVersion is
-            # deliberately not forwarded (it would recompose the shared data-standard overlay over this run's
-            # bootstrap-scoped one). This run owns that hint and prints it from $callerEnvFile and its own
-            # $DataStandardVersion, so the start script's copy is suppressed rather than left to contradict
-            # it. Guarded on the start script that has the parameter: only start-local-dms.ps1 emits the
-            # hint, and start-published-dms.ps1 does not declare the switch.
+            # The wrapper owns every step after this initial infrastructure invocation, including configure,
+            # provision, DMS startup or final IDE guidance. Suppress the start script's terminal phase guidance
+            # for every wrapper shape so it never tells the operator to run steps the wrapper is about to run.
+            # The local script's separate fresh-wrapper hint is also suppressed below because this run owns the
+            # caller environment and data-standard values needed to print it correctly after provisioning.
             if ($StartScriptName -eq "start-local-dms.ps1") {
                 $startArgs.SuppressWrapperContinuationGuidance = $true
-                if ($RebuildLocalImages) { $startArgs.r = $true }
+                if ($Rebuild) { $startArgs.r = $true }
             }
 
             # Reset the native exit-code sentinel so the check below reflects only this start invocation and
