@@ -142,6 +142,10 @@ parameters are ignored.
 Neither the envelope nor an item has any other member. Every response carries
 `Cache-Control: no-store`.
 
+An item serializes to at most 2,048 bytes and the envelope to at most 512, so a
+page is at most `limit` × 2,048 + 512 bytes: about 3.9 MiB at the default
+`MaximumPageSize` of 2,000.
+
 ## Reading the whole set
 
 A read starts without `cursor` and follows `nextCursor` until it is `null`,
@@ -331,6 +335,11 @@ succeeded. Changes less frequent than one complete read (seconds at the cap)
 cost at most a restart or two. A steady stream of changes prevents a complete
 read at the cap, and the read reports `projection-changed` once its restarts
 are used up.
+
+These measurements do not show that a read can complete while projected
+content keeps changing. A read that
+runs out of restarts fails as a whole. The Configuration Service discards the
+incomplete attempt and keeps its previous snapshot.
 
 ### Canonical digest form
 

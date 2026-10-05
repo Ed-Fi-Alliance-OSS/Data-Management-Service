@@ -65,7 +65,7 @@ public class DiscoveryModuleTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         apiDetails.Should().NotBeNull();
-        apiDetails?["urls"]?.AsObject().Count.Should().Be(7);
+        apiDetails?["urls"]?.AsObject().Count.Should().Be(8);
         apiDetails?["urls"]?["tokenInfo"].Should().NotBeNull();
         apiDetails?["urls"]?["tokenInfo"]?.GetValue<string>().Should().Contain("/oauth/token_info");
         GetUrl(apiDetails, "dataManagementApi").Should().Be("http://localhost/data");
@@ -127,7 +127,7 @@ public class DiscoveryModuleTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         apiDetails.Should().NotBeNull();
-        apiDetails?["urls"]?.AsObject().Count.Should().Be(7);
+        apiDetails?["urls"]?.AsObject().Count.Should().Be(8);
         var dependenciesUrl = apiDetails?["urls"]?["dependencies"];
         dependenciesUrl.Should().NotBeNull();
         dependenciesUrl?.GetValue<string>().Should().Contain(pathBase);
@@ -197,7 +197,7 @@ public class DiscoveryModuleTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         apiDetails.Should().NotBeNull();
-        apiDetails?["urls"]?.AsObject().Count.Should().Be(7);
+        apiDetails?["urls"]?.AsObject().Count.Should().Be(8);
         // Verify URLs include tenant
         apiDetails?["urls"]?["dataManagementApi"]?.GetValue<string>().Should().Contain("valid-tenant");
         GetUrl(apiDetails, "changeQueries").Should().Be("http://localhost/valid-tenant/changeQueries/v1/");

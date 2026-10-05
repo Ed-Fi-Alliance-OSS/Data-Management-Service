@@ -10,9 +10,10 @@ namespace EdFi.DataManagementService.Core.EducationOrganizationProjection;
 /// </summary>
 /// <remarks>
 /// Matching is exact and case-sensitive: a client sends a version it read from Discovery, so a
-/// differently spelled value is not one this deployment advertised.
+/// differently spelled value is not one this deployment advertised. Public so the frontend's
+/// Discovery document advertises exactly the list the request parser accepts.
 /// </remarks>
-internal static class ProjectionContractVersions
+public static class ProjectionContractVersions
 {
     public const string V1 = "educationOrganizationProjection.v1";
 

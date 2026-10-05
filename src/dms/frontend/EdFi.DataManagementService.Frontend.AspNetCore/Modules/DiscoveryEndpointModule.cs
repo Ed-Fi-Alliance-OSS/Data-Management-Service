@@ -5,6 +5,7 @@
 
 using System.Net;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.EducationOrganizationProjection;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
@@ -156,6 +157,21 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
         if (coreOptions.Value.EnableIdentityManagement)
         {
             response["urls"]!["identity"] = $"{rootUrl}{routeQualifierPrefix}/identity/v2/";
+        }
+
+        // AppSettings:EnableEducationOrganizationProjection adds exactly two members: the endpoint
+        // URL template and the top-level contract-version list. Turning it off removes only those
+        // two; urls.oauth, which a projection client also reads, is listed either way.
+        if (coreOptions.Value.EnableEducationOrganizationProjection)
+        {
+            response["urls"]!["educationOrganizationProjection"] =
+                $"{rootUrl}{routeQualifierPrefix}{EducationOrganizationProjectionEndpointModule.RouteSuffix}";
+            response["educationOrganizationProjection"] = new JsonObject
+            {
+                ["contractVersions"] = new JsonArray([
+                    .. ProjectionContractVersions.Supported.Select(version => JsonValue.Create(version)),
+                ]),
+            };
         }
 
         await httpContext.Response.WriteAsSerializedJsonAsync(response);
