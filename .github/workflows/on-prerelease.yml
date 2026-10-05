@@ -8,13 +8,11 @@ on:
   release:
     types:
       - prereleased
-  # A dispatch is a dry run of the three contract chains, and only ever that. It runs pack-plugins
-  # and pack-custom-validation and, through their needs, the two SBOM jobs, the two SLSA provenance
-  # jobs and the two read-only check jobs, so a branch can prove it produces both nupkgs, both
-  # SPDX 2.2 manifests and both provenance files with the real generator, and reaches a publish
-  # decision against the live feed, before a release ever fires this workflow. It runs
-  # pack-secrets and check-secrets-contract the same way for the Configuration Service's
-  # EdFi.Api.Secrets contract, which has no SBOM or provenance job of its own.
+  # A dispatch is a dry run of the three contract chains, and only ever that. It runs pack-plugins,
+  # pack-custom-validation and pack-secrets and, through their needs, the three SBOM jobs, the three
+  # SLSA provenance jobs and the three read-only check jobs, so a branch can prove it produces all
+  # three nupkgs, SPDX 2.2 manifests and provenance files with the real generator, and reaches a
+  # publish decision against the live feed, before a release ever fires this workflow.
   #
   # Nothing is published on a dispatch. The three contract publish jobs test event_name and skip,
   # which is where the package pushes live; the check jobs only read the feed. Every other job here
@@ -523,7 +521,7 @@ jobs:
 
   pack-custom-validation:
     name: Build and Pack Custom Validation Contract
-    # Same as pack-plugins: a dispatch is the dry run, and this is one of the two chains it runs.
+    # Same as pack-plugins: a dispatch is the dry run, and this is one of the three chains it runs.
     if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'dms-') }}
     runs-on: ubuntu-latest
     defaults:
@@ -612,9 +610,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # The four contract SBOM and provenance jobs below produce run artifacts that nothing attaches to
-  # a GitHub release, and the two provenance jobs run the real SLSA generator with id-token: write
-  # to produce a file only the run holds. Deliberate, and not a step left unfinished.
+  # The four DMS contract SBOM and provenance jobs below, and the two for the secrets contract further
+  # down, produce run artifacts that nothing attaches to a GitHub release, and the provenance jobs
+  # run the real SLSA generator with id-token: write to produce a file only the run holds.
+  # Deliberate, and not a step left unfinished.
   #
   # The three release-stamped siblings can attach because their version moves with every release,
   # so the non-alpha prerelease run that populates the vX.Y.Z release is the run that pushed the
@@ -1259,8 +1258,9 @@ jobs:
 
   # jobs for Config
 
-  # The Configuration Service's contract chain: pack, a read-only publish decision, and a publish job,
-  # in the shape the two DMS contract chains above have and for the same reason. EdFi.Api.Secrets is
+  # The Configuration Service's contract chain: pack, an SBOM, provenance, a read-only publish
+  # decision, and a publish job, in the shape the two DMS contract chains above have and for the same
+  # reason. EdFi.Api.Secrets is
   # packed and published at the version its own csproj declares, never at the release version, so
   # this workflow offers the same version to the feed on every cs- prerelease, and the publish job
   # consults Invoke-ContractPublishCheck rather than pushing.
@@ -1273,6 +1273,7 @@ jobs:
       run:
         shell: pwsh
     outputs:
+      hash-code: ${{ steps.hash-code.outputs.hash-code }}
       contract-version: ${{ steps.contract-version.outputs.contract-version }}
 
     steps:
@@ -1339,6 +1340,29 @@ jobs:
           $packageFile = "${{ env.SECRETS_PACKAGE_NAME }}.${{ steps.contract-version.outputs.contract-version }}.nupkg"
           Copy-Item -LiteralPath (Join-Path $feed $packageFile) -Destination $packageFile
 
+      - name: Assert Secrets Package Contents
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Before anything is uploaded, and therefore before anything can be published: this is the
+          # check that decides what a published version contains. The publish check pushes a version
+          # the feed does not hold without opening the package, so nothing else reads it.
+          ./eng/verification/Assert-SecretsPackage.ps1 `
+            -PackageFile "${{ env.SECRETS_PACKAGE_NAME }}.${{ steps.contract-version.outputs.contract-version }}.nupkg" `
+            -ExtractTo (Join-Path $env:RUNNER_TEMP "secrets-nupkg-$([guid]::NewGuid().ToString('N'))") `
+            -PackageId "${{ env.SECRETS_PACKAGE_NAME }}" `
+            -ExpectedPackageVersion "${{ steps.contract-version.outputs.contract-version }}"
+
+      - name: Generate Secrets hash for NuGet package
+        id: hash-code
+        run: |
+          $packageFile = "${{ env.SECRETS_PACKAGE_NAME }}.${{ steps.contract-version.outputs.contract-version }}.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected secrets contract package was not found: $packageFile"
+          }
+
+          "hash-code=$(sha256sum $packageFile | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
       - name: Upload Secrets Package as Artifact
         if: success()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -1347,6 +1371,84 @@ jobs:
           path: ${{ github.workspace }}/${{ env.SECRETS_PACKAGE_NAME }}.${{ steps.contract-version.outputs.contract-version }}.nupkg
           if-no-files-found: error
           retention-days: 30
+
+  # Run artifacts only, like the four DMS contract SBOM and provenance jobs, and for the reason
+  # recorded above them: a contract version is first pushed by an alpha prerelease, whose release
+  # attaches nothing.
+  sbom-create-secrets:
+    name: Create Secrets Contract SBOM
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    needs: pack-secrets
+    permissions:
+      actions: read
+      contents: write
+    outputs:
+      sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Get Secrets Artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.SECRETS_PACKAGE_NAME }}-NuGet
+
+      - name: Generate Secrets Software Bill of Materials (SBOM)
+        run: |
+          $packageName = "${{ env.SECRETS_PACKAGE_NAME }}"
+          $version = "${{ needs.pack-secrets.outputs.contract-version }}"
+
+          $packageFile = "$packageName.$version.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected secrets contract package was not found: $packageFile"
+          }
+          (Resolve-Path $packageFile).Path > buildfilelist.txt
+
+          dotnet tool install --global Microsoft.Sbom.DotNetTool
+
+          sbom-tool generate `
+              -b ./ `
+              -bl ./buildfilelist.txt `
+              -bc "./" `
+              -pn "$packageName" `
+              -pv $version `
+              -nsb https://ed-fi.org `
+              -m ./ `
+              -ps "Ed-Fi Alliance"
+
+          cp _manifest/spdx_2.2/manifest.spdx.* .
+
+      - name: Upload Secrets SBOM
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.SECRETS_PACKAGE_NAME }}-SBOM
+          path: ${{ env.MANIFEST_FILE }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Generate Secrets hash code for SBOM
+        id: sbom-hash-code
+        shell: bash
+        run: |
+          sbom_hash=$(sha256sum "./${{ env.MANIFEST_FILE }}" | awk '{split($0,a); print a[1]}')
+          echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
+
+  provenance-create-secrets:
+    name: Create Secrets Contract Provenance
+    needs: pack-secrets
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
+    with:
+      base64-subjects: ${{ needs.pack-secrets.outputs.hash-code }}
+      provenance-name: edfiApiSecrets.intoto.jsonl
+      upload-assets: false
+      compile-generator: true
 
   # The read-only publish decision, separate from the mutation so it can gate what ships the
   # contract DLL: pack-cs needs it, because the Configuration Service package carries the contract

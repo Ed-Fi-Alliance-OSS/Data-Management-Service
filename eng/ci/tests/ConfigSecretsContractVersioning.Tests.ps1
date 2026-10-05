@@ -152,6 +152,8 @@ Describe "EdFi.Api.Secrets contract versioning (DMS-1552)" {
             $script:publishSecrets = Get-WorkflowJob -Workflow $prerelease -Name "publish-package-secrets"
             $script:packCs = Get-WorkflowJob -Workflow $prerelease -Name "pack-cs"
             $script:publishCs = Get-WorkflowJob -Workflow $prerelease -Name "publish-package-cs"
+            $script:sbomSecrets = Get-WorkflowJob -Workflow $prerelease -Name "sbom-create-secrets"
+            $script:provenanceSecrets = Get-WorkflowJob -Workflow $prerelease -Name "provenance-create-secrets"
             $script:prereleaseWorkflow = $prerelease
             $script:promoteSecrets = [regex]::Match(
                 $release,
@@ -178,6 +180,25 @@ Describe "EdFi.Api.Secrets contract versioning (DMS-1552)" {
             $pack | Should -BeGreaterThan $build
             $script:packSecrets | Should -Match '-DmsCSVersion \$packageVersion'
             $script:packSecrets | Should -Match '(?m)^\s+-NoBuild `$'
+        }
+
+        # The publish check pushes a version the feed does not hold without opening it, so this step
+        # is the only thing that reads what the first publication of each version contains.
+        It "asserts the package contents before the artifact is uploaded for publication" {
+            $pack = $script:packSecrets.IndexOf("Invoke-SecretsConsumerCheck.ps1")
+            $assert = $script:packSecrets.IndexOf("./eng/verification/Assert-SecretsPackage.ps1")
+            $upload = $script:packSecrets.IndexOf("- name: Upload Secrets Package as Artifact")
+
+            $assert | Should -BeGreaterThan $pack
+            $upload | Should -BeGreaterThan $assert
+            $script:packSecrets | Should -Match '-ExpectedPackageVersion "\$\{\{ steps\.contract-version\.outputs\.contract-version \}\}"'
+        }
+
+        It "produces an SBOM and SLSA provenance for the packed artifact" {
+            $script:packSecrets | Should -Match '(?m)^      hash-code: \$\{\{ steps\.hash-code\.outputs\.hash-code \}\}$'
+            $script:sbomSecrets | Should -Match '(?m)^    needs: pack-secrets$'
+            $script:provenanceSecrets | Should -Match '(?m)^    needs: pack-secrets$'
+            $script:provenanceSecrets | Should -Match 'base64-subjects: \$\{\{ needs\.pack-secrets\.outputs\.hash-code \}\}'
         }
 
         It "decides against the feed by package id before anything is pushed" {

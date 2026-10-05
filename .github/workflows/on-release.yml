@@ -70,7 +70,7 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # The two contract promotions below compare feed-listed versions through NuGet's own parsers,
+      # The three contract promotions below compare feed-listed versions through NuGet's own parsers,
       # which package-helpers.psm1 loads from the installed .NET SDK. The runner image ships some
       # SDK, but which one is the image's choice; this pins the same SDK every other job uses.
       - name: Setup dotnet

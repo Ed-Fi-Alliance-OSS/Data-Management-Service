@@ -60,10 +60,6 @@ param(
     [string]
     $NuGetPackagesDirectory,
 
-    # Personal access token for a feed that requires one. Reading a public feed needs none.
-    [string]
-    $FeedApiKey = "",
-
     # The source the consumer restores from. Defaults to the service index, which is the only value
     # a lane passes; a test passes a local folder standing in for the feed.
     [string]
@@ -106,7 +102,6 @@ $checkArguments = @{
     PackageVersion   = $PackageVersion
     WorkingDirectory = Join-Path ([System.IO.Path]::GetTempPath()) "secrets-published-check-$([guid]::NewGuid().ToString('N'))"
     ServiceIndexUrl  = $ServiceIndexUrl
-    FeedApiKey       = $FeedApiKey
 }
 
 if ($null -ne $ResolvePackageBaseAddress) {

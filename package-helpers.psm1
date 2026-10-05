@@ -207,10 +207,10 @@ function Convert-ToAssemblyVersion {
 
 <#
 .DESCRIPTION
-Reads one declared version element out of an MSBuild file, for the two contract packages that carry
-their own version rather than the DMS release version.
+Reads one declared version element out of an MSBuild file, for the three contract packages that
+carry their own version rather than a release version.
 
-Not exported. The two readers below are the callable surface, because a caller naming its own
+Not exported. The three readers below are the callable surface, because a caller naming its own
 element would be free to read a property the compiler does not use.
 
 SelectNodes rather than property access, and a count check rather than SelectSingleNode: property
