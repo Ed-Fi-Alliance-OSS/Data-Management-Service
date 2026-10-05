@@ -146,6 +146,10 @@ Compose persistence qualification starts with newly provisioned Kafka volumes. T
 
 Workflow journal version 2 retains its creation-time purpose before CREATE DATABASE. Ordinary managed provisioning defaults to `SourceHistoryOnly`; the offline CDC bootstrap selects `InitialCdcProvisioning` after ownership checks. Purpose cannot be changed on retry. Journals with missing purpose or an older version fail closed; surviving databases cannot gain initial CDC eligibility through a state upgrade.
 
+## Historical failure classifications
+
+The [DMS-1577 investigation in PR #1319](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/pull/1319) records recent failure classifications, supporting evidence, and unresolved causes. See "Incident classifications and limitations" in the PR description. Successful subsequent runs do not establish the causes of unresolved incidents.
+
 ## Kafka Connect fixture readiness recovery
 
 Before scenario assertions, the pinned-image fixture polls Kafka Connect REST readiness for up to 90 seconds. If that readiness window expires, it retains structured failure evidence, removes and recreates only the Connect container once, reads its mapped endpoint again, and allows one more 90-second readiness window within the caller's existing overall cancellation budget. Provider and broker preparation are not replayed. Docker launch failures retain their separate port-conflict policy; unrelated exceptions, caller cancellation, failed evidence retention/removal, a second readiness timeout, and `CDC_CONNECTOR_TEMPLATE_KEEP_CONTAINERS=true` stop recovery. Test assertions are never retried.
