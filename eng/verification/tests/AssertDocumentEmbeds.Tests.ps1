@@ -104,13 +104,14 @@ Describe "Assert-DocumentEmbeds against the committed documents" {
         # verifier checks for drift either way.
         $output = @(& $script:embedChecks)
 
-        $output | Should -HaveCount 4
+        $output | Should -HaveCount 5
         $output[0] | Should -BeLike "Verified OPERATIONS.md: * match their files, including 3 required."
         $output[1] | Should -BeLike "Verified PLUGINS.md: * match their files, including 1 required."
         $output[2] |
             Should -BeLike "Verified CUSTOM-VALIDATION.md: * match their files, including 3 required."
         $output[3] |
             Should -BeLike "Verified UNIQUEID-VALIDATION.md: * match their files, including 3 required."
+        $output[4] | Should -BeLike "Verified README.md: * match their files, including 3 required."
     }
 
     It "still requires all three plugin Compose overlays" {
@@ -165,6 +166,19 @@ Describe "Assert-DocumentEmbeds against the committed documents" {
         $paths | Should -Contain "eng/fixtures/plugins/Acme.UniqueIdValidation/UniqueIdValidationOptions.cs"
         $paths | Should -Contain "eng/fixtures/plugins/Acme.UniqueIdValidation/UniqueIdValidator.cs"
         $paths | Should -Contain "eng/fixtures/plugins/Acme.UniqueIdValidation/UniqueIdValidationPlugin.cs"
+    }
+
+    It "still requires all three of the secrets implementer guide's compiled worked examples" {
+        # Three independent examples, one per vault mechanism an implementer copies: the Azure Key
+        # Vault and Parameter Store configuration sources and the Parameter Store resolver. The
+        # project they come from is compiled against both packed contracts and pinned vendor SDKs by
+        # Invoke-SecretsConsumerCheck.ps1, so each example the guide publishes is one that compiles.
+        $paths = @(& $script:embedChecks -ListPath)
+
+        $paths | Should -Contain "src/config/contracts/EdFi.DmsConfigurationService.Secrets/README.md"
+        $paths | Should -Contain "eng/verification/SecretsPluginExamples/KeyVaultConfigurationPlugin.cs"
+        $paths | Should -Contain "eng/verification/SecretsPluginExamples/ParameterStoreConfigurationPlugin.cs"
+        $paths | Should -Contain "eng/verification/SecretsPluginExamples/ParameterStoreSecretResolver.cs"
     }
 }
 

@@ -8,7 +8,9 @@ rotation propagates, and what adopting one does and does not protect.
 How a plugin is packaged, delivered, allowlisted, and trusted is not restated here:
 see [PLUGINS.md](../src/plugins/EdFi.Api.Plugins/PLUGINS.md) for the implementer's
 side and the [Plugins chapter of OPERATIONS.md](./OPERATIONS.md#plugins) for the
-operator's. How to write a resolver is in the `EdFi.Api.Secrets` package's readme.
+operator's. How to write a resolver, and worked Azure Key Vault and AWS Parameter Store
+examples, are in the `EdFi.Api.Secrets` package's readme,
+[the implementer guide](../src/config/contracts/EdFi.DmsConfigurationService.Secrets/README.md).
 
 ## What a secrets plugin is
 
@@ -157,7 +159,8 @@ stores it fetched from the Configuration Service. On stock settings that is
 five minutes alone.
 
 That sum assumes a resolver that fetches each value when asked, which the
-implementer guide requires. Both windows are measured on the system clock, so allow
+[implementer guide](../src/config/contracts/EdFi.DmsConfigurationService.Secrets/README.md#cache-the-client-never-the-value)
+requires. Both windows are measured on the system clock, so allow
 longer if a host's clock may have been stepped back during one.
 
 ### Rotation rules

@@ -91,6 +91,19 @@ $checkedDocument = @(
             "eng/fixtures/plugins/Acme.UniqueIdValidation/UniqueIdValidationPlugin.cs#plugin"
         )
     }
+    [pscustomobject]@{
+        # Three regions, all required, but for a different reason than the two guides above: these
+        # are three independent worked examples rather than three parts of one, and each is what an
+        # implementer of that vault copies. Requiring all three is what keeps the guide from quietly
+        # dropping one while the others still match. The project they come from is compiled against
+        # both packed contracts and pinned vendor SDKs by Invoke-SecretsConsumerCheck.ps1.
+        Document = "src/config/contracts/EdFi.DmsConfigurationService.Secrets/README.md"
+        RequiredEmbed = @(
+            "eng/verification/SecretsPluginExamples/KeyVaultConfigurationPlugin.cs#plugin",
+            "eng/verification/SecretsPluginExamples/ParameterStoreConfigurationPlugin.cs#plugin",
+            "eng/verification/SecretsPluginExamples/ParameterStoreSecretResolver.cs#resolver"
+        )
+    }
 )
 
 if ($ListPath) {

@@ -9,6 +9,10 @@ Ed-Fi API host without rebuilding it.
 > loads them with the same loader for the secrets contracts in `EdFi.Api.Secrets`, a secret resolver
 > and a client secret hasher; see
 > [Configuration Service plugins](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/CONFIGURATION.md#configuration-service-plugins).
+> How to implement those contracts, and how to serve either host's configuration secrets from a
+> vault, is in the
+> [`EdFi.Api.Secrets` implementer guide](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/config/contracts/EdFi.DmsConfigurationService.Secrets/README.md),
+> which links back here for packaging, delivery, the allowlist and the trust model.
 > Each host has its own plugin root and its own allowlist, so allowlisting a plugin for one host
 > does not run it in the other.
 

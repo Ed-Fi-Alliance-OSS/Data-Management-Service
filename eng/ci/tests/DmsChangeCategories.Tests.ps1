@@ -521,6 +521,8 @@ Describe "DMS pull request change classifier" {
             @{ Path = "eng/verification/PluginsConsumer/AcmePlugin.cs" }
             @{ Path = "src/plugins/EdFi.Api.Plugins/PLUGINS.md" }
             @{ Path = "eng/fixtures/plugins/Acme.UniqueIdValidation/UniqueIdValidator.cs" }
+            @{ Path = "src/config/contracts/EdFi.DmsConfigurationService.Secrets/README.md" }
+            @{ Path = "eng/verification/SecretsPluginExamples/ParameterStoreSecretResolver.cs" }
         ) {
             (Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @($Path)).document_embeds_relevant |
                 Should -BeTrue
