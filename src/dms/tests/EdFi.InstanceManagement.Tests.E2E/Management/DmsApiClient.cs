@@ -189,6 +189,16 @@ public class DmsApiClient : IDisposable
     }
 
     /// <summary>
+    /// GET the education organization projection at an absolute URL resolved from Discovery, the way
+    /// the Configuration Service reader composes it. A client created without a token sends no
+    /// Authorization header.
+    /// </summary>
+    public async Task<HttpResponseMessage> GetEducationOrganizationProjectionAsync(
+        string projectionUrl,
+        string query
+    ) => await _httpClient.GetAsync($"{projectionUrl}?{query}");
+
+    /// <summary>
     /// GET a resource without route qualifiers (for error testing)
     /// </summary>
     public async Task<HttpResponseMessage> GetResourceWithoutQualifiersAsync(string resource)

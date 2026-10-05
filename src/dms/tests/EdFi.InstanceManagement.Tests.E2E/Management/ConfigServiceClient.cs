@@ -377,7 +377,27 @@ public class ConfigServiceClient
     /// grants nothing, which the identity revocation E2E uses to simulate an administrator
     /// removing the identity claim from a claim set.
     /// </summary>
-    public async Task<int> ImportIdentityOnlyClaimSetAsync(string claimSetName, params string[] actions)
+    public Task<int> ImportIdentityOnlyClaimSetAsync(string claimSetName, params string[] actions) =>
+        ImportServiceClaimSetAsync(
+            claimSetName,
+            "identity",
+            "http://ed-fi.org/identity/claims/services/identity",
+            actions
+        );
+
+    /// <summary>
+    /// Imports a claim set whose only resource claim is the named service claim, granting exactly
+    /// the given actions, with the same upsert-by-name contract as
+    /// <see cref="ImportIdentityOnlyClaimSetAsync"/>. CMS skips a resource claim missing from its
+    /// stored hierarchy rather than rejecting the import, so callers that depend on the grant read
+    /// it back with <see cref="ExportClaimSetAsync"/>.
+    /// </summary>
+    public async Task<int> ImportServiceClaimSetAsync(
+        string claimSetName,
+        string resourceName,
+        string claimName,
+        params string[] actions
+    )
     {
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
             "Bearer",
@@ -394,8 +414,8 @@ public class ConfigServiceClient
                     {
                         new
                         {
-                            name = "identity",
-                            claimName = "http://ed-fi.org/identity/claims/services/identity",
+                            name = resourceName,
+                            claimName,
                             actions = actions
                                 .Select(action => new { name = action, enabled = true })
                                 .ToArray(),
@@ -411,6 +431,23 @@ public class ConfigServiceClient
             ?? throw new InvalidOperationException("Failed to read the imported claim set's location.");
 
         return int.Parse(location.Split('/')[^1], NumberStyles.Integer, CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Export a claim set by id, returning the response body: the claim set with every resource
+    /// claim it grants.
+    /// </summary>
+    public async Task<string> ExportClaimSetAsync(int claimSetId)
+    {
+        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            _accessToken
+        );
+
+        var response = await _httpClient.GetAsync($"/v3/claimSets/{claimSetId}/export");
+        response.EnsureSuccessStatusCode();
+
+        return await response.Content.ReadAsStringAsync();
     }
 
     /// <summary>
