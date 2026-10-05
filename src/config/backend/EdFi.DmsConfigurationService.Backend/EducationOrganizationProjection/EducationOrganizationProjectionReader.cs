@@ -225,8 +225,13 @@ public sealed class EducationOrganizationProjectionReader(
                 return Failed(Code.LimitExceeded, status);
             }
 
-            // Only the first page of an empty set has no items, and it ends the set.
-            if (page.Items.Count == 0 && (pages > 1 || page.NextCursor is not null))
+            // A page never holds more than the limit, a page with a cursor holds exactly the limit, and only the first
+            // page (of an empty set, so it has no cursor) can be empty. Nothing of a page that breaks these is kept.
+            if (
+                page.Items.Count > _settings.PageSize
+                || (page.NextCursor is not null && page.Items.Count != _settings.PageSize)
+                || (page.Items.Count == 0 && pages > 1)
+            )
             {
                 return Failed(Code.MalformedResponse, status);
             }

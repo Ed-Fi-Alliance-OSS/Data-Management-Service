@@ -173,7 +173,10 @@ public class EducationOrganizationProjectionReaderTests
         [SetUp]
         public async Task Setup() =>
             _result = await ProjectionReaderHarness
-                .Serving([() => Page(null, Item(-5, Sea), Item(0, Esc, -5), Item(7, Lea, 0))])
+                .Serving(
+                    [() => Page(null, Item(-5, Sea), Item(0, Esc, -5), Item(7, Lea, 0))],
+                    settings => settings.PageSize = 3
+                )
                 .ReadAsync();
 
         [Test]
@@ -494,11 +497,14 @@ public class EducationOrganizationProjectionReaderTests
         [SetUp]
         public async Task Setup()
         {
-            _harness = ProjectionReaderHarness.Serving([
-                () => Page("c1", Schools(1, 2)),
-                () => Page("c2", Schools(3, 4)),
-                Problem(HttpStatusCode.ServiceUnavailable, "urn:ed-fi:api:service-unavailable"),
-            ]);
+            _harness = ProjectionReaderHarness.Serving(
+                [
+                    () => Page("c1", Schools(1, 2)),
+                    () => Page("c2", Schools(3, 4)),
+                    Problem(HttpStatusCode.ServiceUnavailable, "urn:ed-fi:api:service-unavailable"),
+                ],
+                settings => settings.PageSize = 2
+            );
             _result = await _harness.ReadAsync();
         }
 
@@ -602,10 +608,16 @@ public class EducationOrganizationProjectionReaderTests
                     () => Page(null, Schools(3)),
                 ],
                 "own parent" => [() => Page(null, Item(1, Lea, parentId: 1))],
-                _ => [() => Page("c1", Item(1, School, parentId: 2)), () => Page(null, Item(3, Lea))],
+                _ =>
+                [
+                    () => Page("c1", Item(1, School, parentId: 2), Item(4, Lea)),
+                    () => Page(null, Item(5, Lea)),
+                ],
             };
             _pagesRead = rule.EndsWith("across pages") || rule == "parent not in the set" ? 2 : 1;
-            _result = await ProjectionReaderHarness.Serving(pages).ReadAsync();
+            _result = await ProjectionReaderHarness
+                .Serving(pages, settings => settings.PageSize = 2)
+                .ReadAsync();
         }
 
         [Test]
@@ -627,6 +639,83 @@ public class EducationOrganizationProjectionReaderTests
         [Test]
         public void It_accepts_them() =>
             ShouldSucceed(_result).Items.Single().ShortNameOfInstitution.Should().Be("");
+    }
+
+    /// <summary>
+    /// The contract's page sizes with a requested <c>limit</c> of 2: a page never holds more than the limit, and a page
+    /// with a cursor holds exactly the limit. A page that breaks either is refused before its items are checked or
+    /// kept, so it is <c>MalformedResponse</c> even when its items would also be invalid or over <c>MaxItems</c>.
+    /// </summary>
+    [TestFixture("underfilled continuation page", false, 1)]
+    [TestFixture("oversized continuation page", false, 1)]
+    [TestFixture("oversized final page", false, 1)]
+    [TestFixture("oversized first page of out-of-order ids", false, 1)]
+    [TestFixture("oversized page past the item limit", false, 2)]
+    [TestFixture("full continuation then short final page", true, 2)]
+    [TestFixture("full final page", true, 1)]
+    [TestFixture("empty first page", true, 1)]
+    public class Given_page_sizes_against_the_limit(string shape, bool succeeds, int pages)
+    {
+        private ProjectionReaderHarness _harness = null!;
+        private EducationOrganizationProjectionReadResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            Func<HttpResponseMessage>[] responses = shape switch
+            {
+                "underfilled continuation page" =>
+                [
+                    () => Page("c1", Schools(1)),
+                    () => Page(null, Schools(2)),
+                ],
+                "oversized continuation page" =>
+                [
+                    () => Page("c1", Schools(1, 2, 3)),
+                    () => Page(null, Schools(4)),
+                ],
+                "oversized final page" => [() => Page(null, Schools(1, 2, 3))],
+                "oversized first page of out-of-order ids" => [() => Page(null, Schools(3, 2, 1))],
+                "oversized page past the item limit" =>
+                [
+                    () => Page("c1", Schools(1, 2)),
+                    () => Page(null, Schools(3, 4, 5)),
+                ],
+                "full continuation then short final page" =>
+                [
+                    () => Page("c1", Schools(1, 2)),
+                    () => Page(null, Schools(3)),
+                ],
+                "full final page" => [() => Page(null, Schools(1, 2))],
+                _ => [() => Page(null)],
+            };
+            _harness = ProjectionReaderHarness.Serving(
+                responses,
+                settings =>
+                {
+                    settings.PageSize = 2;
+                    settings.MaxItems = 4;
+                }
+            );
+            _result = await _harness.ReadAsync();
+        }
+
+        [Test]
+        public void It_reads_only_pages_within_the_limit()
+        {
+            if (succeeds)
+            {
+                ShouldSucceed(_result).PageCount.Should().Be(pages);
+            }
+            else
+            {
+                ShouldFailWith(_result, Code.MalformedResponse, Stage.Page, 200, pagesRead: pages);
+            }
+        }
+
+        [Test]
+        public void It_requests_the_limit() =>
+            _harness.PageRequests.Select(request => Query(request, "limit")).Should().AllBe("2");
     }
 
     [TestFixture(2, true)]
@@ -671,7 +760,11 @@ public class EducationOrganizationProjectionReaderTests
             _result = await ProjectionReaderHarness
                 .Serving(
                     [() => Page("c1", Schools(1, 2)), () => Page(null, Schools(3, 4))],
-                    settings => settings.MaxItems = maxItems
+                    settings =>
+                    {
+                        settings.MaxItems = maxItems;
+                        settings.PageSize = 2;
+                    }
                 )
                 .ReadAsync();
 
@@ -761,6 +854,7 @@ public class EducationOrganizationProjectionReaderTests
                 settings =>
                 {
                     settings.MaxPages = 2;
+                    settings.PageSize = 2;
                     settings.MaxItems = 4;
                 }
             );
@@ -1619,6 +1713,7 @@ public class EducationOrganizationProjectionReaderTests
                             ["DmsEducationOrganizationProjectionSettings:Credentials:ClientId"] = "client",
                             ["DmsEducationOrganizationProjectionSettings:Credentials:ClientSecret"] =
                                 ClientSecret,
+                            ["DmsEducationOrganizationProjectionSettings:PageSize"] = "1",
                         }
                     )
                     .Build()

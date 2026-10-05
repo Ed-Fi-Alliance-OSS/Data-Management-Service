@@ -90,7 +90,9 @@ public sealed class ProjectionReaderHarness
     private int _tokensIssued;
 
     /// <param name="pages">Answers page requests; the argument is the page request's number, from 1.</param>
-    /// <param name="configure">Changes the settings, which start as the defaults with a base URL and credentials.</param>
+    /// <param name="configure">
+    /// Changes the settings, which start as the defaults with a base URL, credentials and a page size of 1.
+    /// </param>
     /// <param name="discovery">Answers Discovery requests; the harness document by default.</param>
     /// <param name="token">Answers token requests; a new bearer token each time by default.</param>
     /// <param name="tokenProvider">Replaces the real token provider.</param>
@@ -106,6 +108,7 @@ public sealed class ProjectionReaderHarness
         {
             DmsBaseUrl = BaseUrl,
             Credentials = new() { ClientId = "client", ClientSecret = "secret" },
+            PageSize = 1,
         };
         configure?.Invoke(Settings);
 
