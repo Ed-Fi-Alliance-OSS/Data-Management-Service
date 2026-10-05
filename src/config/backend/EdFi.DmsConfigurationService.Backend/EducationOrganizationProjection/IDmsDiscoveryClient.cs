@@ -13,9 +13,11 @@ public interface IDmsDiscoveryClient
 {
     /// <summary>
     /// The token and projection URLs and the contract version for a data store, or a <see cref="DmsDiscoveryResolution.Failed"/>
-    /// at the Discovery stage. A Discovery request is bounded by <c>DiscoveryTimeoutSeconds</c> and by
-    /// <paramref name="readDeadline"/>; reaching either is a transient <c>Timeout</c>. Only cancellation of
-    /// <paramref name="cancellationToken"/> throws (<see cref="OperationCanceledException"/>).
+    /// at the Discovery stage. Caller cancellation is checked first and the read deadline second, before a cached
+    /// document is used. A Discovery request is bounded by <c>DiscoveryTimeoutSeconds</c> and by
+    /// <paramref name="readDeadline"/>; reaching either is a transient <c>Timeout</c>, and both are checked again when
+    /// the request ends, before its outcome is classified, cached or returned. Only cancellation of
+    /// <paramref name="cancellationToken"/> throws (<see cref="OperationCanceledException"/>), with that token.
     /// </summary>
     /// <param name="tenantName">The tenant, or <c>null</c> in single-tenant mode.</param>
     /// <param name="dataStoreContexts">The store's route contexts (context key to value) that fill placeholders.</param>

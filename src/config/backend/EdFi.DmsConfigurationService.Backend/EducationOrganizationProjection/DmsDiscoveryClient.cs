@@ -49,7 +49,13 @@ public sealed class DmsDiscoveryClient(
         CancellationToken cancellationToken
     )
     {
+        // Caller cancellation, then the read deadline, decide before anything else, a cached document included.
         cancellationToken.ThrowIfCancellationRequested();
+        DateTimeOffset now = timeProvider.GetUtcNow();
+        if (now >= readDeadline)
+        {
+            return Failed(Code.Timeout);
+        }
 
         if (
             string.IsNullOrWhiteSpace(_settings.DmsBaseUrl)
@@ -73,14 +79,12 @@ public sealed class DmsDiscoveryClient(
         }
 
         string cacheKey = tenantName ?? string.Empty;
-        if (
-            !_cache.TryGetValue(cacheKey, out CacheEntry? entry)
-            || entry.ExpiresAt <= timeProvider.GetUtcNow()
-        )
+        if (!_cache.TryGetValue(cacheKey, out CacheEntry? entry) || entry.ExpiresAt <= now)
         {
             (Document? document, EducationOrganizationProjectionFailure? failure) = await FetchAsync(
                 baseUrl,
                 tenantName,
+                now,
                 readDeadline,
                 cancellationToken
             );
@@ -141,82 +145,51 @@ public sealed class DmsDiscoveryClient(
         );
     }
 
+    /// <summary>
+    /// One Discovery request, bounded by <c>DiscoveryTimeoutSeconds</c> and the read deadline. However the request
+    /// ends, normally or with an exception, caller cancellation is checked first and the timeout second, so an outcome
+    /// that arrives after either is never classified, cached or returned: cancellation throws with the caller's token
+    /// and an expired timeout is <c>Timeout</c>, even when a transport exception followed it.
+    /// </summary>
     private async Task<(Document?, EducationOrganizationProjectionFailure?)> FetchAsync(
         Uri baseUrl,
         string? tenantName,
+        DateTimeOffset start,
         DateTimeOffset readDeadline,
         CancellationToken cancellationToken
     )
     {
-        TimeSpan remaining = readDeadline - timeProvider.GetUtcNow();
-        if (remaining <= TimeSpan.Zero)
-        {
-            return (null, Failure(Code.Timeout));
-        }
-
+        // start is before readDeadline (ResolveAsync checked), so the request has time left.
         TimeSpan timeout = TimeSpan.FromSeconds(_settings.DiscoveryTimeoutSeconds);
-        using CancellationTokenSource timeoutSource = new(
-            remaining < timeout ? remaining : timeout,
-            timeProvider
-        );
+        DateTimeOffset requestDeadline = start + timeout < readDeadline ? start + timeout : readDeadline;
+
+        using CancellationTokenSource timeoutSource = new(requestDeadline - start, timeProvider);
         using CancellationTokenSource linkedSource = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
             timeoutSource.Token
         );
 
+        // The timer covers a timeout that fires before the clock reads the due time; the clock covers one whose timer
+        // has not run yet when the request ends.
+        bool TimedOut() =>
+            timeoutSource.IsCancellationRequested || timeProvider.GetUtcNow() >= requestDeadline;
+
+        (Document?, EducationOrganizationProjectionFailure?) outcome;
         try
         {
-            using HttpClient client = httpClientFactory.CreateClient(
-                DmsEducationOrganizationProjectionHttpClient.Name
-            );
-            using HttpRequestMessage request = new(HttpMethod.Get, DocumentUrl(baseUrl, tenantName));
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-
-            using HttpResponseMessage response = await client.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                linkedSource.Token
-            );
-            int status = (int)response.StatusCode;
-
-            if (response.StatusCode != HttpStatusCode.OK)
-            {
-                ProblemFields problem = await ProjectionHttpContent.ReadProblemAsync(
-                    response,
-                    linkedSource.Token
-                );
-                return (
-                    null,
-                    Failure(
-                        ProjectionFailureClassifier.ClassifyDiscoveryStatus(
-                            response.StatusCode,
-                            problem.Type
-                        ),
-                        status,
-                        problem
-                    )
-                );
-            }
-
-            byte[]? body = await ProjectionHttpContent.ReadBoundedAsync(
-                response.Content,
-                MaxDocumentBytes,
-                linkedSource.Token
-            );
-            if (body is null)
-            {
-                return (null, Failure(Code.DiscoveryInvalid, status));
-            }
-
-            (Document? document, Code? code) = ParseDocument(body, _settings.EffectiveContractVersions);
-            return code is null ? (document, null) : (null, Failure(code.Value, status));
+            outcome = await SendAndReadAsync(baseUrl, tenantName, linkedSource.Token);
         }
         catch (Exception) when (cancellationToken.IsCancellationRequested)
         {
-            // Caller cancellation decides before any timeout or transport classification (§5.5).
             throw new OperationCanceledException(cancellationToken);
         }
-        catch (OperationCanceledException) when (timeoutSource.IsCancellationRequested)
+        catch (Exception exception)
+            when (TimedOut()
+                && (
+                    exception is OperationCanceledException
+                    || ProjectionFailureClassifier.IsTransportFailure(exception)
+                )
+            )
         {
             return (null, Failure(Code.Timeout));
         }
@@ -227,6 +200,59 @@ public sealed class DmsDiscoveryClient(
         {
             return (null, Failure(Code.NetworkError));
         }
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            throw new OperationCanceledException(cancellationToken);
+        }
+        return TimedOut() ? (null, Failure(Code.Timeout)) : outcome;
+    }
+
+    /// <summary>Sends the Discovery request and reads and classifies its response.</summary>
+    private async Task<(Document?, EducationOrganizationProjectionFailure?)> SendAndReadAsync(
+        Uri baseUrl,
+        string? tenantName,
+        CancellationToken cancellationToken
+    )
+    {
+        using HttpClient client = httpClientFactory.CreateClient(
+            DmsEducationOrganizationProjectionHttpClient.Name
+        );
+        using HttpRequestMessage request = new(HttpMethod.Get, DocumentUrl(baseUrl, tenantName));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        using HttpResponseMessage response = await client.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken
+        );
+        int status = (int)response.StatusCode;
+
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            ProblemFields problem = await ProjectionHttpContent.ReadProblemAsync(response, cancellationToken);
+            return (
+                null,
+                Failure(
+                    ProjectionFailureClassifier.ClassifyDiscoveryStatus(response.StatusCode, problem.Type),
+                    status,
+                    problem
+                )
+            );
+        }
+
+        byte[]? body = await ProjectionHttpContent.ReadBoundedAsync(
+            response.Content,
+            MaxDocumentBytes,
+            cancellationToken
+        );
+        if (body is null)
+        {
+            return (null, Failure(Code.DiscoveryInvalid, status));
+        }
+
+        (Document? document, Code? code) = ParseDocument(body, _settings.EffectiveContractVersions);
+        return code is null ? (document, null) : (null, Failure(code.Value, status));
     }
 
     /// <summary>

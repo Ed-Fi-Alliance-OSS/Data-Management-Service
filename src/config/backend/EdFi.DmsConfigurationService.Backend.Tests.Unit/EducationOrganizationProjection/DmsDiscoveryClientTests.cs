@@ -71,7 +71,8 @@ public class DmsDiscoveryClientTests
     {
         public Harness(
             FakeDmsHandler handler,
-            Action<DmsEducationOrganizationProjectionSettings>? configure = null
+            Action<DmsEducationOrganizationProjectionSettings>? configure = null,
+            bool manualTimers = false
         )
         {
             Handler = handler;
@@ -81,17 +82,21 @@ public class DmsDiscoveryClientTests
                 Credentials = new() { ClientId = "id", ClientSecret = "secret" },
             };
             configure?.Invoke(settings);
+            ManualTimers = manualTimers ? new ManualTimersTimeProvider(Time) : null;
             Client = new DmsDiscoveryClient(
                 new SingleHandlerHttpClientFactory(
                     handler,
                     DmsEducationOrganizationProjectionHttpClient.Name
                 ),
                 Options.Create(settings),
-                Time
+                ManualTimers ?? (TimeProvider)Time
             );
         }
 
         public FakeTimeProvider Time { get; } = new(_start);
+
+        /// <summary>The client's timers when they fire only on request; the clock is still <see cref="Time"/>.</summary>
+        public ManualTimersTimeProvider? ManualTimers { get; }
 
         public FakeDmsHandler Handler { get; }
 
@@ -984,6 +989,266 @@ public class DmsDiscoveryClientTests
 
         [Test]
         public void It_sends_no_request() => _harness.Handler.Requests.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// A 200 Discovery document or a 404 problem whose body runs <paramref name="atEnd"/> on reaching its end and then
+    /// ends normally.
+    /// </summary>
+    private static HttpResponseMessage EndingResponse(string body, Action atEnd)
+    {
+        bool document = body == "document";
+        HttpResponseMessage response = DmsResponses.Stream(
+            document ? HttpStatusCode.OK : HttpStatusCode.NotFound,
+            new EndOfBodyStream(
+                Encoding.UTF8.GetBytes(document ? Document() : """{"type":"urn:ed-fi:api:not-found"}"""),
+                atEnd
+            )
+        );
+        if (!document)
+        {
+            response.Content.Headers.ContentType = new("application/problem+json");
+        }
+        return response;
+    }
+
+    [TestFixture(0)]
+    [TestFixture(-1)]
+    public class Given_a_cached_document_and_a_read_deadline_already_reached(int secondsFromNow)
+    {
+        private Harness _harness = null!;
+        private DmsDiscoveryResolution _resolution = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = new Harness(FakeDmsHandler.Answering(() => Ok(Document())));
+            ShouldBeResolved(await _harness.ResolveAsync());
+            _resolution = await _harness.ResolveAsync(
+                deadline: _harness.Time.GetUtcNow().AddSeconds(secondsFromNow)
+            );
+        }
+
+        [Test]
+        public void It_times_out() => ShouldFailWith(_resolution, Code.Timeout, null);
+
+        [Test]
+        public void It_sends_no_request_beyond_the_one_that_filled_the_cache() =>
+            _harness.Handler.Requests.Should().ContainSingle();
+    }
+
+    [TestFixture]
+    public class Given_a_cached_document_a_reached_read_deadline_and_a_cancelled_caller
+    {
+        private Harness _harness = null!;
+        private CancellationTokenSource _caller = null!;
+        private Exception? _exception;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _caller = new CancellationTokenSource();
+            _harness = new Harness(FakeDmsHandler.Answering(() => Ok(Document())));
+            ShouldBeResolved(await _harness.ResolveAsync());
+            await _caller.CancelAsync();
+            try
+            {
+                await _harness.ResolveAsync(
+                    deadline: _harness.Time.GetUtcNow(),
+                    cancellationToken: _caller.Token
+                );
+            }
+            catch (Exception exception)
+            {
+                _exception = exception;
+            }
+        }
+
+        [TearDown]
+        public void TearDown() => _caller.Dispose();
+
+        [Test]
+        public void It_reports_caller_cancellation_before_the_deadline() =>
+            _exception
+                .Should()
+                .BeAssignableTo<OperationCanceledException>()
+                .Which.CancellationToken.Should()
+                .Be(_caller.Token);
+
+        [Test]
+        public void It_sends_no_request_beyond_the_one_that_filled_the_cache() =>
+            _harness.Handler.Requests.Should().ContainSingle();
+    }
+
+    [TestFixture("document", false)]
+    [TestFixture("problem", false)]
+    [TestFixture("document", true)]
+    public class Given_a_body_that_ends_normally_after_the_caller_cancels(string body, bool timeoutToo)
+    {
+        private Harness _harness = null!;
+        private CancellationTokenSource _caller = null!;
+        private Exception? _exception;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _caller = new CancellationTokenSource();
+            int calls = 0;
+            _harness = new Harness(
+                FakeDmsHandler.Answering(() =>
+                    Interlocked.Increment(ref calls) == 1
+                        ? EndingResponse(
+                            body,
+                            () =>
+                            {
+                                _caller.Cancel();
+                                if (timeoutToo)
+                                {
+                                    _harness.Time.Advance(TimeSpan.FromSeconds(10));
+                                }
+                            }
+                        )
+                        : Ok(Document())
+                )
+            );
+            try
+            {
+                await _harness.ResolveAsync(cancellationToken: _caller.Token).WaitAsync(_hangGuard);
+            }
+            catch (Exception exception)
+            {
+                _exception = exception;
+            }
+        }
+
+        [TearDown]
+        public void TearDown() => _caller.Dispose();
+
+        [Test]
+        public void It_throws_with_the_caller_token() =>
+            _exception
+                .Should()
+                .BeAssignableTo<OperationCanceledException>()
+                .Which.CancellationToken.Should()
+                .Be(_caller.Token);
+
+        [Test]
+        public async Task It_does_not_cache_the_response()
+        {
+            ShouldBeResolved(await _harness.ResolveAsync());
+            _harness.Handler.Requests.Should().HaveCount(2);
+        }
+    }
+
+    [TestFixture("document", "discovery timeout")]
+    [TestFixture("problem", "discovery timeout")]
+    [TestFixture("document", "read deadline")]
+    [TestFixture("document", "discovery timeout whose timer has not run")]
+    public class Given_a_body_that_ends_normally_after_the_timeout(string body, string limit)
+    {
+        private Harness _harness = null!;
+        private DmsDiscoveryResolution _resolution = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            bool readDeadline = limit == "read deadline";
+            int calls = 0;
+            _harness = new Harness(
+                FakeDmsHandler.Answering(() =>
+                    Interlocked.Increment(ref calls) == 1
+                        ? EndingResponse(
+                            body,
+                            () => _harness.Time.Advance(TimeSpan.FromSeconds(readDeadline ? 3 : 10))
+                        )
+                        : Ok(Document())
+                ),
+                settings => settings.DiscoveryTimeoutSeconds = 10,
+                manualTimers: limit == "discovery timeout whose timer has not run"
+            );
+            _resolution = await _harness
+                .ResolveAsync(deadline: readDeadline ? _harness.Time.GetUtcNow().AddSeconds(3) : null)
+                .WaitAsync(_hangGuard);
+        }
+
+        [Test]
+        public void It_times_out() => ShouldFailWith(_resolution, Code.Timeout, null);
+
+        [Test]
+        public async Task It_does_not_cache_the_response()
+        {
+            ShouldBeResolved(await _harness.ResolveAsync());
+            _harness.Handler.Requests.Should().HaveCount(2);
+        }
+    }
+
+    [TestFixture("send")]
+    [TestFixture("body")]
+    public class Given_a_transport_failure_after_the_timeout(string where)
+    {
+        private DmsDiscoveryResolution _resolution = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            if (where == "send")
+            {
+                TaskCompletionSource<HttpResponseMessage> answer = new(
+                    TaskCreationOptions.RunContinuationsAsynchronously
+                );
+                Harness harness = new(new FakeDmsHandler((_, _) => answer.Task));
+                Task<DmsDiscoveryResolution> pending = harness.ResolveAsync();
+                await harness.Handler.RequestReceived.Task.WaitAsync(_hangGuard);
+
+                harness.Time.Advance(TimeSpan.FromSeconds(10));
+                answer.SetException(new HttpRequestException("reset"));
+                _resolution = await pending.WaitAsync(_hangGuard);
+            }
+            else
+            {
+                Harness? harness = null;
+                harness = new Harness(
+                    FakeDmsHandler.Answering(() =>
+                        DmsResponses.Stream(
+                            HttpStatusCode.OK,
+                            new StalledStream(
+                                new IOException("reset"),
+                                () => harness!.Time.Advance(TimeSpan.FromSeconds(10))
+                            )
+                        )
+                    )
+                );
+                _resolution = await harness.ResolveAsync().WaitAsync(_hangGuard);
+            }
+        }
+
+        [Test]
+        public void It_times_out() => ShouldFailWith(_resolution, Code.Timeout, null);
+    }
+
+    [TestFixture]
+    public class Given_the_timeout_timer_firing_before_the_clock_reaches_it
+    {
+        private DmsDiscoveryResolution _resolution = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            Harness harness = new(
+                FakeDmsHandler.NeverAnswering(),
+                settings => settings.DiscoveryTimeoutSeconds = 10,
+                manualTimers: true
+            );
+            Task<DmsDiscoveryResolution> pending = harness.ResolveAsync();
+            await harness.Handler.RequestReceived.Task.WaitAsync(_hangGuard);
+
+            harness.Time.Advance(TimeSpan.FromSeconds(10) - TimeSpan.FromTicks(1));
+            harness.ManualTimers!.FireAll();
+            _resolution = await pending.WaitAsync(_hangGuard);
+        }
+
+        [Test]
+        public void It_times_out() => ShouldFailWith(_resolution, Code.Timeout, null);
     }
 
     [TestFixture]
