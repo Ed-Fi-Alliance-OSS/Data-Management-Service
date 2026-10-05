@@ -93,10 +93,6 @@ follows depends on what else your plugin contributed:
   in `ContributeConfiguration`, nothing fails at all: your plugin loads and the implementation you
   meant to install never runs.
 
-The host counts only what is still registered once every allowlisted plugin has run. A plugin whose
-every declared registration was removed by a later plugin fails startup naming it, whatever else it
-contributed.
-
 `TryAdd` for `IClientSecretHasher` always declines, so it always lands in one of those two cases.
 `TryAdd` for `ISecretResolver` succeeds when yours is the only resolver and declines behind another
 plugin's. A plain `Add` in that position fails startup naming both plugins, which is the outcome an

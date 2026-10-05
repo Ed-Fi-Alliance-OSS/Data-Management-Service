@@ -53,16 +53,16 @@ An unprefixed environment variable or a command-line argument does; see
 [Configuration precedence](./CONFIGURATION.md#configuration-precedence). An operator
 moving a value into a vault removes it from the environment.
 
-**On the shipped Docker Compose files, removing it from `.env` is not enough.**
+**On the shipped Docker Compose files, removing it from `.env` does not work.**
 `local-dms.yml`, `published-dms.yml`, `local-config.yml` and `published-config.yml`
 map five of these keys from `.env` variables: `ConfigurationServiceSettings__ClientSecret`
 and `ConfigurationServiceSettings__EncryptionKey` on `dms`, and
 `DatabaseSettings__EncryptionKey`, `IdentitySettings__ClientSecret` and
 `IdentitySettings__EncryptionKey` on `config`. Deleting the variable sets the key to
-an empty string, which still outranks the vault, so the host sees no value and
-refuses to start. Unset each key in a deployment-owned override file instead, as
-[Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files)
-shows.
+an empty string, which still outranks the vault, so the host sees no value. Unset
+each key in a deployment-owned override file instead, and keep the `.env` variables
+set, because the local launch scripts read them; see
+[Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files).
 
 **DMS, two keys:**
 

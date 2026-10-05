@@ -519,9 +519,10 @@ use is delivered to and named in each. A plugin that registers a contract only o
 host declares fails startup in the other, so only a plugin that adds configuration
 and registers no contract can be used by both; see
 [Secrets](./SECRETS.md#what-a-secrets-plugin-is). Everything above about trust,
-case, and the stop-fetch-start rule applies unchanged. The plugin a Configuration Service operator
-is most likely to install is a secrets plugin; see [Secrets](./SECRETS.md) for what
-one serves and what adopting one does and does not protect.
+case, and the stop-fetch-start rule applies unchanged. The plugin a Configuration
+Service operator is most likely to install is a secrets plugin; see
+[Secrets](./SECRETS.md) for what one serves and what adopting one does and does not
+protect.
 
 **The mount target is `/app/plugins` on the `config` service**, which is the
 `Plugins:Directory` the Configuration Service's `appsettings.json` ships. As for
@@ -604,11 +605,12 @@ because no committed file is their artifact.
 ### The Compose blocks above are asserted equal to the committed files
 
 `eng/docker-compose/plugins-dms.yml`, `eng/docker-compose/plugins-fetch-dms.yml`, and
-`eng/docker-compose/plugins-config.yml` are the artifact. The end-to-end tiers run those files as committed, and a check in
-this repository compares each block above against its file, so a chapter edited
-without the file — or a file edited without the chapter — fails. Nothing anywhere
-drives a recipe parsed out of this document, which would prove the document rather
-than the file an operator actually composes with `-f`.
+`eng/docker-compose/plugins-config.yml` are the artifact. The end-to-end tiers run
+those files as committed, and a check in this repository compares each block above
+against its file, so a chapter edited without the file — or a file edited without the
+chapter — fails. Nothing anywhere drives a recipe parsed out of this document, which
+would prove the document rather than the file an operator actually composes with
+`-f`.
 
 For running the recipes against a local development stack through
 `bootstrap-local-dms.ps1`, see
@@ -621,10 +623,16 @@ because an environment variable outranks every plugin source; see
 [Secrets](./SECRETS.md#the-process-global-secrets-phase-a-serves). The shipped
 Compose files map five of those secrets from `.env` variables, and deleting a
 variable does not remove the mapping: Compose sets the key to an empty string, which
-outranks the vault, and the host refuses to start for want of the value.
+outranks the vault. An empty `DatabaseSettings__EncryptionKey` stops the
+Configuration Service at startup. The others do not: the host starts and then fails
+requests, and an empty `IdentitySettings__EncryptionKey` fails only once the
+self-contained identity provider issues its first token.
 
 Remove each key the vault serves in the same deployment-owned override that sets
-`Plugins__Allowed`, with `!reset null`:
+`Plugins__Allowed`, with `!reset null`. A service block goes only in the override for
+a Compose project that defines that service: a project that runs only one host, such
+as one started with `start-local-config.ps1`, keeps only that host's block, because
+Compose rejects a block for a service the project does not define.
 
 ```yaml
 services:
@@ -639,11 +647,16 @@ services:
       IdentitySettings__EncryptionKey: !reset null
 ```
 
-List only the keys the vault actually serves, and leave the matching `.env`
-variables unset. Compose still warns that each unset variable defaults to a blank
-string; with the key reset, that warning is expected and harmless. Do not reset `DatabaseSettings__DatabaseConnection`: the stock
-Configuration Service entry point reads it before .NET starts, so it stays in the
-environment, as [Secrets](./SECRETS.md) describes.
+List only the keys the vault actually serves. Keep the matching `.env` variables
+set: the reset already keeps their values out of the containers, and the local
+launch scripts read them directly to register identity clients and provision
+databases. `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` feeds both
+`DatabaseSettings__EncryptionKey` on `config` and
+`ConfigurationServiceSettings__EncryptionKey` on `dms`, so clearing it for one host
+would blank the key the other still reads from the environment. Do not reset
+`DatabaseSettings__DatabaseConnection`: the stock Configuration Service entry point
+reads it before .NET starts, so it stays in the environment, as
+[Secrets](./SECRETS.md) describes.
 
 ## Logging
 

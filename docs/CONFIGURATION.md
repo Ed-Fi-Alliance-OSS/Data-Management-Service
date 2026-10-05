@@ -432,10 +432,10 @@ A plugin is built against up to three published contract packages, on the Ed-Fi
 Azure Artifacts feed at
 `https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json`:
 
-| Package                     | What it declares                                                                                                  |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `EdFi.Api.Plugins`          | `EdFiApiPlugin`, the base class a plugin implements.                                                              |
-| `EdFi.Api.CustomValidation` | `ICustomResourceValidator`, for a plugin that registers a validator.                                              |
+| Package                     | What it declares                                                                                                   |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `EdFi.Api.Plugins`          | `EdFiApiPlugin`, the base class a plugin implements.                                                               |
+| `EdFi.Api.CustomValidation` | `ICustomResourceValidator`, for a plugin that registers a validator.                                               |
 | `EdFi.Api.Secrets`          | `ISecretResolver` and `IClientSecretHasher`, for a [Configuration Service plugin](#configuration-service-plugins). |
 
 None carries a Data Management Service or Configuration Service release version.
