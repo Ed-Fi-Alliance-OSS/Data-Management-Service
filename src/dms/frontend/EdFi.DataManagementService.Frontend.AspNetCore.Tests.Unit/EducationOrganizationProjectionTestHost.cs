@@ -42,10 +42,12 @@ internal static class EducationOrganizationProjectionTestHost
     /// <param name="createFingerprintReader">
     /// Builds the fingerprint reader; by default one that matches the deployment on every target.
     /// </param>
+    /// <param name="configureServices">Registers further test services after the replacements.</param>
     public static WebApplicationFactory<Program> Create(
         DataStore store,
         Func<IServiceProvider, IEducationOrganizationProjectionSetReader> createSetReader,
-        Func<IServiceProvider, IDatabaseFingerprintReader>? createFingerprintReader = null
+        Func<IServiceProvider, IDatabaseFingerprintReader>? createFingerprintReader = null,
+        Action<IServiceCollection>? configureServices = null
     ) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -84,6 +86,8 @@ internal static class EducationOrganizationProjectionTestHost
                 services.Replace(
                     ServiceDescriptor.Scoped<IEducationOrganizationProjectionSetReader>(createSetReader)
                 );
+
+                configureServices?.Invoke(services);
             });
         });
 

@@ -101,7 +101,8 @@ internal sealed class ProjectionFrontendHost : IAsyncDisposable
         bool enableProjection,
         ProjectionRouteMode mode,
         string? pathBase = null,
-        Func<FrontendRequest, CancellationToken, Task<IFrontendResponse>>? handle = null
+        Func<FrontendRequest, CancellationToken, Task<IFrontendResponse>>? handle = null,
+        Action<IServiceCollection>? configureServices = null
     )
     {
         A.CallTo(() =>
@@ -137,6 +138,7 @@ internal sealed class ProjectionFrontendHost : IAsyncDisposable
             {
                 TestMockHelper.AddEssentialMocks(services);
                 services.AddTransient(_ => ApiService);
+                configureServices?.Invoke(services);
             });
         });
     }

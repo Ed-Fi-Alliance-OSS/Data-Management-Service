@@ -422,6 +422,10 @@ route-qualifier pairs are lower-cased and sorted by key. The cursor is not
 signed. Changing it can only move the position, or fail the digest check, within
 a set the caller is already authorized to read in full.
 
+DMS does not write cursors to its logs. Its request logs record the path without
+the query string, and the framework's request-starting and request-finished
+log events for this route record the query string as `?[redacted]`.
+
 ## Validation and parent selection
 
 Every page validates the whole set before it compares the digest and before it

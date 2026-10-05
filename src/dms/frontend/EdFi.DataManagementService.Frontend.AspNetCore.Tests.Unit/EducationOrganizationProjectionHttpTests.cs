@@ -70,8 +70,10 @@ public class Given_A_Full_Page_Of_The_Largest_Items_Served_Over_Http(string fixt
     private const int ItemBound = 2048;
 
     /// <summary>
-    /// The largest envelope is 270 bytes: 108 fixed bytes and a 162-character cursor carrying a ten-digit
-    /// data store id and a twenty-character position. The bound was first estimated at 256 bytes.
+    /// The envelope measured here is 270 bytes: 108 fixed bytes and a 162-character cursor carrying a
+    /// ten-digit data store id, a twenty-character position and a ten-digit walk timestamp. That is a
+    /// measurement, not a maximum: the timestamp's decimal width grows. The bound was first estimated at
+    /// 256 bytes.
     /// </summary>
     private const int EnvelopeBound = 512;
     private const long DataStoreId = int.MaxValue;
