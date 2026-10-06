@@ -19,6 +19,7 @@ They describe the evidence below, not a claim that this story qualifies every be
 | [Compose persistence](../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcComposePersistenceTests.cs) / both provider RecordSize jobs | Shipped broker/worker services and named data volume; verified stop and non-destructive Compose down/up; acknowledged increase through the production Compose broker-size adapter. Actual container replacement retains cluster/topic identity, public sentinel, connector configuration and committed source offsets, followed by fresh readiness validation | CDC-INV-07 (operational capacity only), 11, 12 |
 | [CDC wrapper tests](../eng/docker-compose/tests) (`Cdc*.Tests.ps1`) / `Contract` | Bootstrap, E2E, worker startup, stop/start and destructive cleanup ordering; explicit provider/environment/state-root forwarding | CDC-INV-01, 10, 12 |
 | [Message and consumer contracts](../src/dms/backend/Fixtures/cdc/message-contract/README.md) / `Contract` and both provider `MessageContract` jobs | Fixture and scenario traceability, focused admission, reference consumer bootstrap/continuity, published transform serialization, provider routing, broker replay, heartbeat acknowledgement and record-size enforcement. Synthetic prerequisites qualify evaluator behavior only; replay convergence does not certify lifecycle continuity | CDC-INV-02, 06, 07, 08, 09, 10, 13, 14 |
+| [API-driven Kafka E2E](../src/dms/tests/EdFi.DataManagementService.Tests.E2E/Cdc/CdcApiScenarios.cs) / both provider `ApiE2E` jobs | API CRUD, executor restart, delete-before-projection, overlap, online rebuild, unavailable evidence and terminal loss using branch-built services and owned disposable stacks | See [API scenario traceability](../eng/ci/cdc-api-e2e.ps1) |
 
 The required [DMS CI gate](../.github/workflows/on-dms-pullrequest.yml) runs only the fast `Contract` qualification lane on relevant ready PR updates, merge groups and manual dispatches. It does not start live CDC provider or Kafka fixtures. Existing non-qualification CI jobs are unchanged.
 
@@ -50,13 +51,13 @@ See the [procedure-to-test mappings](../reference/cdc-documentation/cdc-inv-evid
 for the consumer unit/broker split. Store generated reports outside the repository
 and link retained artifacts from the relevant PR or release record with their tested revision.
 
-All 15 live qualification jobs—Kafka plus Admission, Lifecycle, Recovery, RecordSize, Telemetry, History and MessageContract for both providers—run independently in [Nightly CDC Qualification](../.github/workflows/nightly-cdc-qualification.yml) every day at 08:17 UTC, including Saturday. They do not also run in [DMS Weekend Build](../.github/workflows/dms-weekend-build.yml) and do not block the regular DMS CI gate. Nightly success/failure notifications use a single-line Slack summary, with selection and qualification status on failure; raw diagnostic logs are not published. This is post-merge integration evidence, not proof that each PR passed the live suites before merging.
+All 17 live qualification jobs—Kafka plus Admission, Lifecycle, Recovery, RecordSize, Telemetry, History, MessageContract and ApiE2E for both providers—run independently in [Nightly CDC Qualification](../.github/workflows/nightly-cdc-qualification.yml) every day at 08:17 UTC, including Saturday. They do not also run in [DMS Weekend Build](../.github/workflows/dms-weekend-build.yml) and do not block the regular DMS CI gate. Nightly success/failure notifications use a single-line Slack summary, with selection and qualification status on failure; raw diagnostic logs are not published. This is post-merge integration evidence, not proof that each PR passed the live suites before merging.
 
-For targeted pre-merge validation, manually dispatch Nightly CDC Qualification on the desired branch with `lane` set to `Postgresql` or `Mssql` and a specific `suite`. `suite: All` runs that provider's seven jobs; `lane: Kafka` with `suite: All` selects the Kafka job. The default `All`/`All` selection runs all 15 jobs. A specific suite without a provider lane fails rather than silently selecting another scope.
+For targeted pre-merge validation, manually dispatch Nightly CDC Qualification on the desired branch with `lane` set to `Postgresql` or `Mssql` and a specific `suite`. `suite: All` runs that provider's eight jobs; `lane: Kafka` with `suite: All` selects the Kafka job. The default `All`/`All` selection runs all 17 jobs. A specific suite without a provider lane fails rather than silently selecting another scope.
 
 The nightly workflow loads `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` from the checked-out `CdcQualifiedWorkerImage.json` record. This keeps the worker image aligned with the branch being qualified without maintaining a separate GitHub repository variable. Redpanda and database images still come from their `CDC_CONNECTOR_TEMPLATE_*_IMAGE` repository variables.
 
-Both workflows call [Invoke-CdcQualification.ps1](../eng/ci/Invoke-CdcQualification.ps1); its default `All` selection runs Contract and all 15 live jobs sequentially locally. `-Lane` selects one complete lane; a provider `-Suite` selects one complete CI job. Use a new `-ResultsDirectory` for every invocation.
+Both workflows call [Invoke-CdcQualification.ps1](../eng/ci/Invoke-CdcQualification.ps1); its default `All` selection runs Contract and all 17 live jobs sequentially locally. `-Lane` selects one complete lane; a provider `-Suite` selects one complete CI job. Results default to a unique system temporary directory. An explicit `-ResultsDirectory` must be new and outside the checkout. CI uploads sanitized results from the runner temporary directory with 14-day retention; generated diagnostics are never committed.
 
 Qualification requires PowerShell 7.5 or newer, including direct Pester runs of the CDC lifecycle and qualification tests. Retained Compose input checks distinguish empty environment variables from absent ones; PowerShell 7.4 removes variables assigned an empty string. Check `$PSVersionTable.PSVersion` before running locally.
 
@@ -79,8 +80,8 @@ mismatch rejection; those fixture mutations are not operator recovery procedures
 The runner builds SchemaTools in the selected configuration and in Debug, which
 the shipped wrapper resolver prefers when present, before executing the snippets.
 
-The provider Recovery selection also requires all nine native-recovery outcomes across
-seven methods. The existing provider fixture invokes the exact marked
+The provider Recovery selection also requires all eight native-recovery outcomes across
+six methods. The existing provider fixture invokes the exact marked
 `cdc-native-recovery-watch` and `cdc-incomplete-shutdown-status` commands through
 the packaged SchemaTools executable, using its original state and private fixture
 settings. The shared snippet extractor and literal-argument binder reject undeclared
@@ -145,16 +146,46 @@ Compose persistence qualification starts with newly provisioned Kafka volumes. T
 
 Workflow journal version 2 retains its creation-time purpose before CREATE DATABASE. Ordinary managed provisioning defaults to `SourceHistoryOnly`; the offline CDC bootstrap selects `InitialCdcProvisioning` after ownership checks. Purpose cannot be changed on retry. Journals with missing purpose or an older version fail closed; surviving databases cannot gain initial CDC eligibility through a state upgrade.
 
+## Kafka Connect fixture readiness recovery
+
+Before scenario assertions, the pinned-image fixture polls Kafka Connect REST readiness for up to 90 seconds. If that readiness window expires, it retains structured failure evidence, removes and recreates only the Connect container once, reads its mapped endpoint again, and allows one more 90-second readiness window within the caller's existing overall cancellation budget. Provider and broker preparation are not replayed. Docker launch failures retain their separate port-conflict policy; unrelated exceptions, caller cancellation, failed evidence retention/removal, a second readiness timeout, and `CDC_CONNECTOR_TEMPLATE_KEEP_CONTAINERS=true` stop recovery. Test assertions are never retried.
+
+`admission-evidence-connect-readiness-*.json` retains both timeouts when recovery fails, or the first timeout plus a `Recovered` event when replacement readiness succeeds. Evidence includes probe count, last HTTP status/failure category, allowlisted container state, and a bounded log-tail digest with fixed exception/error markers. Arbitrary log prose, configuration and credentials are not published; these signals do not establish an unknown underlying cause. Diagnostic collection is bounded to five seconds and explicitly records unavailable logs/state.
+
+`qualification.json` and the CI step summary report `ConnectReadinessFailures` and `ConnectReadinessRecoveries`. The Admission suites for both providers inject one readiness timeout and verify real Docker inspection, recreation, replacement HTTP readiness, and cleanup. Their `ConnectReadinessInjectedFailures` and `ConnectReadinessInjectedRecoveries` remain separate from observed infrastructure failures.
+
+For runs through [Invoke-CdcQualification.ps1](../eng/ci/Invoke-CdcQualification.ps1), any observed (non-injected) Connect readiness timeout prevents qualification from passing, even if recreation succeeds and all scenario assertions pass. The report marks an otherwise passing suite `Failed`, and the runner exits nonzero; test counts and recovery evidence remain intact. Deliberately injected timeouts do not fail qualification, but a real replacement timeout during an injected recovery test does. Recovery permits further evidence collection; it does not establish that an unexplained timeout is an acceptable transient.
+
+The manually dispatched connector-template smoke job in [on-dms-pullrequest.yml](../.github/workflows/on-dms-pullrequest.yml) runs `dotnet test` directly with the `CdcConnectorTemplateSmoke` category and does not apply this report-level timeout gate. It can pass after a real Connect readiness timeout if fixture recreation succeeds and all selected tests pass. The same limitation applies to other direct `dotnet test` runs.
+
 ## SQL Server fixture startup recovery and diagnostics
 
 Before database provisioning or scenario work, the controller fixture permits one SQL Server container recreation for either the exact LSA initialization timeout signature or the observed startup signature `Reason: 0x00000002` / `Last errno: 11`. Both require an exited container with exit code 1, complete available log evidence, no Docker OOM kill, and no memory, address-mapping, SQL-error, or signal markers. Reason 2 / errno 11 is an observed CI failure pattern, not a confirmed diagnosis or Microsoft fix.
 
 The fixture retains the first failure, removes only the unprovisioned SQL Server container, waits five seconds, and requires the replacement to pass SQL Server and Agent readiness. Both attempts share the existing 200-second overall deadline. A second failure, failed evidence retention/removal, caller cancellation, or `CDC_CONNECTOR_TEMPLATE_KEEP_CONTAINERS=true` prevents further recreation. Failures after provisioning and CDC assertions are never retried by this mechanism.
 
-`admission-evidence-sql-startup-*.json` records each failed attempt. `admission-evidence-sql-recovery-*.json` records successful replacement readiness even if subsequent scenario work fails. `qualification.json` and the CI step summary report `SqlStartupFailures` and `SqlStartupRecoveries`; failure counts by signature support tracking recurrence across runs. The live recovery tests deliberately inject both exit patterns, then use real Docker inspection, deletion, replacement startup, and cleanup. Their `SqlStartupInjectedFailures` and `SqlStartupInjectedRecoveries` counters are separate from observed infrastructure failures.
+`admission-evidence-sql-startup-*.json` records each failed attempt. `admission-evidence-sql-recovery-*.json` records successful replacement readiness even if subsequent scenario work fails. `qualification.json` and the CI step summary report `SqlStartupFailures` and `SqlStartupRecoveries`; failure counts by signature support tracking recurrence across runs. Offline tests inject both exit patterns to verify the recovery policy and operation ordering. Dedicated forced-recreation live tests were permanently removed; see the [coverage boundary](#permanent-live-coverage-reductions-dms-1577). Ordinary live startup still exercises the existing recovery policy, but does not guarantee that recreation occurs. The report keeps `SqlStartupInjectedFailures` and `SqlStartupInjectedRecoveries` separate from observed infrastructure failures.
 
 Published crash evidence includes numeric status/parameter codes, an allowlisted module/offset stack, a fixed message classification and message SHA-256, and the SQL build stamp. Arbitrary messages, paths and logs remain unpublished. Failed startup attempts also sample host memory/swap, task and PID limits, configured container memory/CPU/PID/ulimit settings, the image's SQL version label, and available disk space on the local Docker data filesystem. Resource collection is best-effort, bounded to three seconds inside the five-second inspection deadline. Container usage after exit is explicitly unavailable because its cgroup has already been removed; `OomKilled=false` does not rule out every allocation failure.
 
 If failures recur, compare repeated fresh starts of the pinned image on the normal and a larger runner, then compare a newer pinned SQL Server 2025 CU with the same runner settings. Keep the complete CDC matrix as the acceptance check for an image change. Measure failure frequency rather than treating one successful retry as proof of a fix.
 
 For a diagnostic reproduction, follow [Microsoft's dump-capture guidance](https://learn.microsoft.com/en-us/sql/linux/containers/troubleshoot?view=sql-server-ver17#enable-dump-captures): enable `--cap-add SYS_PTRACE` on the diagnostic SQL container and collect `/var/opt/mssql/log` before removing it. Keep raw logs and dumps in restricted storage, outside the public qualification artifact path. A local fixture reproduction can set `CDC_CONNECTOR_TEMPLATE_KEEP_CONTAINERS=true` (direct `dotnet test`; the qualification runner deliberately overrides it) to retain the failing container. The normal nightly workflow publishes only sanitized evidence.
+
+## Permanent live-coverage reductions (DMS-1577)
+
+The revised selection permanently removes eight live cases. Provider category filters,
+required-case guards, operator runbooks, and failure handling remain unchanged except
+for removing the deleted recovery method from its required-method map. A passing
+revised matrix does not mean the previous selection passed or its incidents were fixed.
+
+| Deleted live cases | Reason and retained coverage | Coverage no longer provided |
+| --- | --- | --- |
+| `Given_CdcSqlServerFixtureStartupLiveRecreation.It_recreates_only_the_failed_unprovisioned_provider_and_retains_the_attempt_evidence` (2 SQL Server cases) | Offline tests retain startup policy, evidence-before-removal, cancellation, cleanup and retry bounds; ordinary live suites still exercise SQL startup and its recovery policy. | Dedicated forced SQL startup recreation through real Docker. |
+| `It_waits_for_retained_projection_work_in_the_single_start_invocation` (4 cases, 2 per provider) | Lifecycle unit tests retain delayed catch-up, one authorized mutation, durable completion, fresh post-completion observations and operation-deadline rejection. Other live lifecycle tests retain runtime/adapter integration. | A deliberately held real projection writer and retained database work across managed startup. |
+| `It_rejects_unknown_recovery_evidence_and_unauthorized_controller_mutations` (2 cases, 1 per provider) | Native-recovery unit tests cover changed-worker invalidation, exercised observation faults, not-ready results, rejected Start/Restart/Resume, no Create/Resume/Restart, sanitization and recovery after clearing faults. Other required live cases retain actual crashes and revalidation. | The duplicate crash followed by unknown-evidence fault combinations. |
+
+Real Connect readiness timeouts still fail runs through `Invoke-CdcQualification.ps1`,
+including successful recovery from an observed timeout. Existing lifecycle unit tests
+outside the narrowed deadline case still use real timing; this change does not make
+that entire fixture deterministic.

@@ -662,6 +662,24 @@ substitutes for retained CDC rows. See
 and the Debezium
 [PostgreSQL connector history-loss guidance](https://debezium.io/documentation/reference/3.6/connectors/postgresql.html).
 
+For SQL Server, a committed offset below the retained minimum proves a history gap and
+produces `lost`. An offset above the sampled maximum produces `unknown`: provider history
+is read before the Connect offset, so the maximum may be an older observation of an
+advancing range. This does not prove either continuity or terminal loss.
+
+SQL Server range refresh applies only while continuity is `unknown` with the
+`ProviderHistoryUnknown` diagnostic at `$.providerHistory.retainedRangeEnd`. Initial
+writer admission waits the configured poll interval and repeats the admission pass within
+its existing operation deadline. Established validation also requires an observed offset
+and allows at most three provider/offset pairs, including the initial pair, with the
+configured poll interval before each refresh. Both paths read the provider range before
+reading a fresh Connect offset, so an advancing retention floor is compared with the new
+offset. Refresh does not reset the operation deadline or apply to unrelated SQL Server
+`unknown` results. If evidence remains unknown, admission/readiness remains withheld;
+affirmative continuity and all other prerequisites are still required. This sampling rule
+does not authorize CDC on a clone or restored database; the
+[physical-source replacement restriction](#v1-physical-source-replacement-deferral) still applies.
+
 The deployment-owned status has three continuity outcomes:
 
 - `healthy`: the exact resume position is currently proved for every required provider
@@ -671,9 +689,10 @@ The deployment-owned status has three continuity outcomes:
   the controller does not start, restart, or resume the connector. Native recovery is subject
   to the boundary below. A later check may return to `healthy` only with complete
   affirmative evidence; and
-- `lost`: a required artifact was removed or re-created, the committed position fell
-  outside retained history, or a successful Connect query proves the established binding's
-  expected offset missing, malformed, or source-mismatched. Deployment state durably
+- `lost`: a required artifact was removed or re-created, a retained-history gap is proved
+  (including a SQL Server committed offset below the retained minimum), or a successful
+  Connect query proves the established binding's expected offset missing, malformed, or
+  source-mismatched. Deployment state durably
   latches `SourceHistoryContinuityLost` for that binding generation, stops the old connector,
   and keeps combined readiness false. The latch cannot be cleared by later artifact
   recreation, offset mutation, a healthy-looking lag value, or a snapshot.

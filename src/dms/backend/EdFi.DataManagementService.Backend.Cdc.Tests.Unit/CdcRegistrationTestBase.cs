@@ -49,6 +49,9 @@ internal abstract class CdcRegistrationTestBase(Ddl.CdcProvider provider)
     protected string _identity = null!;
     protected Func<Ddl.CdcProviderSetupResult, Ddl.CdcProviderSetupResult> _change = null!;
     protected CdcTargetIdentity Target => _request.TargetIdentity;
+    protected TimeProvider ObservationTime { get; private set; } = TimeProvider.System;
+
+    protected virtual TimeProvider CreateObservationTime() => TimeProvider.System;
 
     protected virtual CdcDeploymentRequest CreateRequest() =>
         CdcDeploymentRequestTestData.Request(
@@ -59,10 +62,11 @@ internal abstract class CdcRegistrationTestBase(Ddl.CdcProvider provider)
     [SetUp]
     public async Task Setup()
     {
+        ObservationTime = CreateObservationTime();
         _root = Path.Combine(Path.GetTempPath(), "cdc-provider-" + Guid.NewGuid().ToString("N"));
         _onWrite = _ => { };
         _onCall = _ => { };
-        _store = new(_root, TimeProvider.System, b => _onWrite(b));
+        _store = new(_root, ObservationTime, b => _onWrite(b));
         _request = CreateRequest();
         _trace = [];
         _connectorExists = false;
@@ -83,7 +87,10 @@ internal abstract class CdcRegistrationTestBase(Ddl.CdcProvider provider)
             provisioner,
             purpose: CdcWorkflowPurpose.InitialCdcProvisioning
         );
-        var services = new ServiceCollection().AddCdcConnectorTemplates().AddDmsCdcControlPlane();
+        var services = new ServiceCollection()
+            .AddSingleton(ObservationTime)
+            .AddCdcConnectorTemplates()
+            .AddDmsCdcControlPlane();
         services.Configure<CdcBindingStateStoreOptions>(o => o.RootPath = _root);
         _services = services.BuildServiceProvider();
         _runtime = A.Fake<ICdcProjectionRuntime>();
@@ -100,7 +107,7 @@ internal abstract class CdcRegistrationTestBase(Ddl.CdcProvider provider)
                         ? RelationalProviderToken.Postgresql
                         : RelationalProviderToken.SqlServer,
                     _request.Binding.PhysicalSourceFingerprint,
-                    DateTimeOffset.UtcNow,
+                    ObservationTime.GetUtcNow(),
                     new(_lifecycle, _latch),
                     new(!_rows, true, true),
                     Guid.NewGuid().ToString("D")
@@ -125,7 +132,13 @@ internal abstract class CdcRegistrationTestBase(Ddl.CdcProvider provider)
                     );
                 }
             );
-        (await new CdcInitialEnablement(_root).ActivateAsync(_request, _runtime))
+        (
+            await new CdcInitialEnablement(
+                _store,
+                _services.GetRequiredService<ICdcBindingLifecycleService>(),
+                ObservationTime
+            ).ActivateAsync(_request, _runtime)
+        )
             .State.Should()
             .Be(CdcTransportEvidenceState.Observed);
         _provider = A.Fake<Ddl.ICdcProviderSetupService>();
@@ -133,10 +146,13 @@ internal abstract class CdcRegistrationTestBase(Ddl.CdcProvider provider)
             .ReturnsLazily((Ddl.CdcProviderSetupRequest r, CancellationToken _) => ProviderResult(r));
         _templates = _services.GetRequiredService<ICdcConnectorTemplateService>();
         _handoff = (
-            await new CdcProviderSetupOrchestration(_root, _provider, _templates).SetupAsync(
-                _request,
-                _runtime
-            )
+            await new CdcProviderSetupOrchestration(
+                _store,
+                _services.GetRequiredService<ICdcBindingLifecycleService>(),
+                _provider,
+                _templates,
+                ObservationTime
+            ).SetupAsync(_request, _runtime)
         )
             .Should()
             .BeOfType<CdcTransportResult<CdcProviderSetupHandoff>.Observed>()
@@ -403,7 +419,7 @@ internal abstract class CdcRegistrationTestBase(Ddl.CdcProvider provider)
             _kafka,
             _connect,
             _worker,
-            TimeProvider.System
+            ObservationTime
         );
 
     protected void Trace(string name)
@@ -424,7 +440,7 @@ internal abstract class CdcRegistrationTestBase(Ddl.CdcProvider provider)
             new(
                 CdcJsonContract.CurrentContractVersion,
                 Guid.NewGuid().ToString("D"),
-                DateTimeOffset.UtcNow,
+                ObservationTime.GetUtcNow(),
                 Target,
                 _request.Binding.Provider,
                 _request.Binding.PhysicalSourceFingerprint,

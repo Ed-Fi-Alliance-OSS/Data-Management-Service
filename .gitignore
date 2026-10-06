@@ -65,7 +65,6 @@ artifacts/
 eng/docker-compose/.bootstrap/
 eng/docker-compose/.e2e-claims/
 eng/docker-compose/.cdc-deployments/
-eng/docker-compose/.cdc-diagnostics/
 eng/docker-compose/.cdc-api-e2e.lock
 eng/docker-compose/.cdc-state
 eng/docker-compose/.derived/
@@ -464,6 +463,9 @@ CLAUDE.local.md
 .mcp.json
 .plans/
 .claude/
+
+# Local implementation plan
+/PLAN.md
 
 # SDK generation artifacts
 /eng/sdkGen/csharp/*

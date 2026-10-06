@@ -42,13 +42,83 @@ Describe 'CDC live snippet process boundary' {
             $FilePath -eq 'pwsh' -and $ArgumentList -contains '-EnableKafkaCdc' -and
             $ArgumentList -contains (Join-Path $TestDrive '.local/cdc/postgresql.json') -and
             $ArgumentList -contains (Join-Path $TestDrive '.local/cdc/state-pg') -and
-            $ArgumentList -contains (Join-Path $TestDrive '.env') -and $InputText -eq ''
+            $ArgumentList -contains (Join-Path $TestDrive '.env') -and $InputText -eq '' -and $TimeoutSeconds -eq 600
         }
+    }
+    It 'preserves a failing native snippet exit code in its result and progress report' {
+        $script:runbookProgress = @{}
+        $script:runbookCase = 'cdc-stack-teardown'
+        $savedEvidenceDirectory = $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY
+        try {
+            $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = $TestDrive
+            $result = Invoke-CdcRunbookScript -Id 'cdc-stack-teardown' -FixtureRoot $TestDrive `
+                -Code "pwsh -NoProfile -NonInteractive -Command 'exit 7'"
+            $result.FailureKind | Should -Be 'None'
+            $result.ExitCode | Should -Be 7
+            $progress = Get-Content (Join-Path $TestDrive 'runbook-progress.json') -Raw | ConvertFrom-Json
+            $progress.'cdc-stack-teardown'[0].Phase | Should -Be 'Teardown'
+            $progress.'cdc-stack-teardown'[0].ExitCode | Should -Be 7
+        } finally {
+            $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = $savedEvidenceDirectory
+            Remove-Variable runbookProgress, runbookOperation, runbookOperationCase, runbookCase, runbookTimer -Scope Script -ErrorAction SilentlyContinue
+        }
+    }
+    It 'allows preparation and the internal readiness wait for <Id>' -ForEach @(
+        @{ Id = 'cdc-pg-e2e-setup' },
+        @{ Id = 'cdc-sqlserver-e2e-setup' }
+    ) {
+        # Simulate 300 seconds of preparation plus the supported 600-second wait.
+        # Exercise the real wrapper's native-process boundary without a long wall-clock test.
+        Mock Invoke-NativeCommandWithInput {
+            param($TimeoutSeconds)
+            [pscustomobject]@{
+                ExitCode = 0
+                FailureKind = $(if ($TimeoutSeconds -le 900) { 'Timeout' } else { 'None' })
+                StandardOutput = ''; StandardError = ''
+            }
+        }
+        $result = Invoke-CdcRunbookLiveWrapper -Id $Id -FixtureRoot $TestDrive
+        $result.FailureKind | Should -Be 'None'
+        Should -Invoke Invoke-NativeCommandWithInput -Times 1 -Exactly -ParameterFilter { $TimeoutSeconds -eq 1800 }
+    }
+    It 'honors an explicit E2E setup deadline and preserves its timeout result' {
+        Mock Invoke-NativeCommandWithInput {
+            [pscustomobject]@{ ExitCode = 0; FailureKind = 'Timeout'; StandardOutput = ''; StandardError = '' }
+        }
+        $result = Invoke-CdcRunbookLiveWrapper -Id 'cdc-sqlserver-e2e-setup' -FixtureRoot $TestDrive -TimeoutSeconds 1
+        $result.FailureKind | Should -Be 'Timeout'
+        Should -Invoke Invoke-NativeCommandWithInput -Times 1 -Exactly -ParameterFilter { $TimeoutSeconds -eq 1 }
     }
     It 'does not start a process for a missing marked wrapper' {
         Mock Invoke-NativeCommandWithInput { throw 'must not execute' }
         { Invoke-CdcRunbookLiveWrapper -Id 'cdc-absent' -FixtureRoot $TestDrive } | Should -Throw '*Missing*'
         Should -Invoke Invoke-NativeCommandWithInput -Times 0
+    }
+}
+
+Describe 'CDC live lifecycle snippet boundary' {
+    BeforeAll {
+        . (Join-Path $PSScriptRoot 'cdc-runbook-snippets.ps1')
+        . (Join-Path $PSScriptRoot 'cdc-runbook-lifecycle.ps1')
+        Import-Module (Join-Path $PSScriptRoot '../env-utility.psm1') -DisableNameChecking
+    }
+    It 'executes the retained inventory snippet before requesting managed stop' {
+        $script:repo = $TestDrive
+        $state = Join-Path $TestDrive 'state'
+        $settings = Join-Path $TestDrive 'settings.json'
+        $inventory = Join-Path $TestDrive 'inventory.json'
+        $null = New-Item -ItemType Directory -Force -Path (Join-Path $state 'bindings'), (Join-Path $TestDrive 'eng/docker-compose/.bootstrap')
+        '{}' | Set-Content $settings
+        '{}' | Set-Content $inventory
+        '{}' | Set-Content (Join-Path $state 'bindings/binding.json')
+        Mock Invoke-CdcRunbookLiveWrapper { throw 'Reached managed stop' }
+
+        { Invoke-CdcRunbookLifecycle -Entry @{ SettingsPath = $settings } -InventoryPath $inventory `
+            -StatePath $state -Project 'dms-local' -FixtureRoot $TestDrive } | Should -Throw 'Reached managed stop'
+
+        Should -Invoke Invoke-CdcRunbookLiveWrapper -Times 1 -Exactly -ParameterFilter { $Id -eq 'cdc-managed-stop' -and $FixtureRoot -eq $TestDrive }
+        # ANSI styling may precede the header, and long paths can hide later columns.
+        Get-Content (Join-Path $TestDrive 'cdc-state-inventory.stdout') -Raw | Should -Match 'FullName'
     }
 }
 
