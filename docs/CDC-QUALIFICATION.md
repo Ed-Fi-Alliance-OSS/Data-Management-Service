@@ -146,10 +146,6 @@ Compose persistence qualification starts with newly provisioned Kafka volumes. T
 
 Workflow journal version 2 retains its creation-time purpose before CREATE DATABASE. Ordinary managed provisioning defaults to `SourceHistoryOnly`; the offline CDC bootstrap selects `InitialCdcProvisioning` after ownership checks. Purpose cannot be changed on retry. Journals with missing purpose or an older version fail closed; surviving databases cannot gain initial CDC eligibility through a state upgrade.
 
-## Historical failure classifications
-
-The [DMS-1577 investigation in PR #1319](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/pull/1319) records recent failure classifications, supporting evidence, and unresolved causes. See "Incident classifications and limitations" in the PR description. Successful subsequent runs do not establish the causes of unresolved incidents.
-
 ## Kafka Connect fixture readiness recovery
 
 Before scenario assertions, the pinned-image fixture polls Kafka Connect REST readiness for up to 90 seconds. If that readiness window expires, it retains structured failure evidence, removes and recreates only the Connect container once, reads its mapped endpoint again, and allows one more 90-second readiness window within the caller's existing overall cancellation budget. Provider and broker preparation are not replayed. Docker launch failures retain their separate port-conflict policy; unrelated exceptions, caller cancellation, failed evidence retention/removal, a second readiness timeout, and `CDC_CONNECTOR_TEMPLATE_KEEP_CONTAINERS=true` stop recovery. Test assertions are never retried.
@@ -186,32 +182,6 @@ revised matrix does not mean the previous selection passed or its incidents were
 | `Given_CdcSqlServerFixtureStartupLiveRecreation.It_recreates_only_the_failed_unprovisioned_provider_and_retains_the_attempt_evidence` (2 SQL Server cases) | Offline tests retain startup policy, evidence-before-removal, cancellation, cleanup and retry bounds; ordinary live suites still exercise SQL startup and its recovery policy. | Dedicated forced SQL startup recreation through real Docker. |
 | `It_waits_for_retained_projection_work_in_the_single_start_invocation` (4 cases, 2 per provider) | Lifecycle unit tests retain delayed catch-up, one authorized mutation, durable completion, fresh post-completion observations and operation-deadline rejection. Other live lifecycle tests retain runtime/adapter integration. | A deliberately held real projection writer and retained database work across managed startup. |
 | `It_rejects_unknown_recovery_evidence_and_unauthorized_controller_mutations` (2 cases, 1 per provider) | Native-recovery unit tests cover changed-worker invalidation, exercised observation faults, not-ready results, rejected Start/Restart/Resume, no Create/Resume/Restart, sanitization and recovery after clearing faults. Other required live cases retain actual crashes and revalidation. | The duplicate crash followed by unknown-evidence fault combinations. |
-
-These are coverage decisions, not root-cause corrections:
-
-- [October 1 SQL startup assertion](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/36837557607/job/110288636401): the replacement container exited with reason 4 / errno 2, without OOM. Its cause remains unresolved; startup policy is unchanged.
-- [October 2 PostgreSQL retained-history gap](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/36984918719/job/110767720314): the latched `retainedHistoryGap` remains unexplained. SQL Server range-classification changes do not correct PostgreSQL classification.
-- [October 5 native recovery](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/37285839756/job/111684553201): recovery failed before fault injection, at worker recovery after roughly 90 seconds. A Connect readiness timeout is an inference from the boundary and duration, not a retained exception diagnosis. Initial-start recreation does not retry in-scenario crash recovery.
-- [October 4 interrupted retirement](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/37195034647/job/111415058701): the final `cdc-retire` returned `Kafka / Unavailable`. The retained retirement journal verified cleanup through `PublicTopic` and `ProgressTopic`, then recorded `SchemaHistoryTopic` intent without verification. This identifies schema-history topic cleanup/read-back as the failing boundary, but does not distinguish its initial inspection from post-deletion inspection or establish the broker/client cause. Interrupted retirement and its required-method guard remain required; this is not established as a harness flake.
-
-The [October 5 revised-selection matrix](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/37368465544/job/111971238574)
-passed all 43 SQL Server controller Admission cases, but published-stack teardown
-left its deployment inventory behind. The following E2E setup case failed its
-container-ownership check before setup began. The enclosing teardown snippet
-completed after 7.2 seconds and reported exit 0; an offline regression demonstrated that a
-nested `pwsh` failure can be hidden unless its exit code is explicitly forwarded.
-The snippet runner now preserves that native exit code in its result and progress
-report. This corrects the process reporting boundary, not the unexplained underlying
-teardown failure. Required runbooks and teardown postconditions remain intact, and
-the failed matrix is retained rather than replaced by a failed-job rerun.
-A focused local replay passed published setup and teardown, including inventory
-removal; it did not reproduce or explain the CI failure.
-
-A focused local SQL Server interrupted-retirement run on October 5, 2026, against
-`22d30cae6` passed once (1 case, 2m22s). It did not reproduce the historical failure.
-The existing journal and command diagnostic identify the boundary and classification;
-no retry, weaker assertion, recovery-policy change or speculative cleanup fix was added.
-The lower-level cause remains unresolved, and one passing replay does not establish it.
 
 Real Connect readiness timeouts still fail qualification, including successful recovery
 from an observed timeout. Existing lifecycle unit tests outside the narrowed deadline
