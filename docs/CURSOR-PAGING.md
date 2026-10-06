@@ -382,11 +382,25 @@ from. It cannot be used to advance a walk.
 | `number` | Optional. The desired number of partitions, from `1` to `200`. Omitted means the deployment's configured `DefaultPartitionCount`. A non-numeric or out-of-range value is rejected. |
 | Resource filters, `minChangeVersion` | Allowed, and should match the filters the walks will use. A partition calculated over a different filter set describes segments that do not match what the walks read. Where the data store has a `Snapshot` derivative configured and `minChangeVersion` is supplied without `maxChangeVersion`, the returned tokens also belong to the data source the request asked for: walks replaying them must repeat the same `Use-Snapshot` choice, and are rejected otherwise. On a snapshot the `minChangeVersion` bound itself is enforced as well, which it is not on current data: a walk that drops it from a set cut with `minChangeVersion` alone, and a walk that adds it to a set cut with no change-version window at all, are both rejected with the invalid-token message. A walk that adds `maxChangeVersion` beside it is served. Where the data store has no `Snapshot` derivative, `Use-Snapshot: true` is answered `404` with `Snapshot not found.` on this operation too. |
 | `maxChangeVersion` | Allowed, and must match the walks that replay the returned tokens: on current data, a token from a request that included it is rejected on a walk that omits it, and a token from a request that omitted it is rejected on a walk that adds it. Same rule, same message, and the same snapshot exception as the `maxChangeVersion` row above, under the same limit: where the partitions request also carried `minChangeVersion`, a walk on a snapshot that drops the ceiling is served rather than rejected. Every token but the last then goes on bounding the partition it names, which is what keeps those walks inside their slices. The last range is unbounded above, so the walk replaying it reads past the boundary the set was cut under, to the newest version in the copy. The opposite direction is served on a snapshot as well: where the partitions request carried `minChangeVersion` without a ceiling, a walk that adds one keeps its tokens and reads each range narrowed to the overlap it shares with the ceiling. The `Use-Snapshot` choice is not enforced for these tokens, because a max-bearing window is anchored the same way on every data source; repeat it anyway, so the walks read the database the boundaries were cut from. |
-| `pageToken`, `pageSize`, `limit`, `offset`, `totalCount` | Not supported on this operation and rejected. They belong to the collection GET-many. |
+| `pageToken`, `pageSize`, `limit`, `offset`, `totalCount` | Ignored on this operation, as the Ed-Fi ODS/API ignores them: they belong to the collection GET-many, and a set of partition boundaries has no page. A well-formed value has no effect and is named in the `X-EdFi-Warning` response header. A malformed value is still rejected, by the same rule and message GET-many applies to that parameter; the rules relating one paging parameter to another, such as `pageToken` with `offset`, do not apply here. |
 
 A `/partitions` response is always `application/json` and never carries
 `Total-Count` or `Next-Page-Token`; a set of partition boundaries is not a page
 and has no successor.
+
+> [!NOTE]
+> A query parameter an operation does not use, including a mistyped filter name,
+> does not reject the request: it is ignored and named in an `X-EdFi-Warning`
+> response header, for example
+> `X-EdFi-Warning: Ignored query parameters: studentUniqueld`. A mistyped filter
+> therefore widens the result, so check for this header. The header lists names
+> only, never values, percent-encoded and capped at ten names. Known controls
+> keep their value validation: a malformed `limit`, `offset`, change version, or
+> consumed filter value is still rejected, and so is a malformed value of a
+> paging control the operation otherwise ignores. `/deletes` and `/keyChanges`
+> ignore `pageToken`, `pageSize`, and resource filters, still rejecting a
+> malformed `pageToken` or `pageSize` value, but never a resource filter value.
+> See `reference/adr-unknown-query-parameters-DMS-1589.md`.
 
 > [!NOTE]
 > A resource that declares a query property literally named `number` can filter

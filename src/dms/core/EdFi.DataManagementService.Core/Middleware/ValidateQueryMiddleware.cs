@@ -69,7 +69,7 @@ internal class ValidateQueryMiddleware(
     /// The paging names this operation parses and excludes from filter matching. Spelled from the
     /// constants the cursor validator reads, because <see cref="Paging.PartitionRequestValidator" />
     /// reserves the same five names from the same constants: matching filters over a different set of
-    /// names than /partitions rejects would let one operation filter on a resource property the other
+    /// names than /partitions reserves would let one operation filter on a resource property the other
     /// treats as paging.
     /// </summary>
     private static readonly string[] _paginationQueryParameters =

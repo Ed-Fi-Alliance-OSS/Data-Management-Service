@@ -4,8 +4,8 @@ jira: DMS-1589
 
 # ADR: Ignore unconsumed query parameters and report them in `X-EdFi-Warning`
 
-**Status:** Proposed. Applies to DMS (`src/dms`) only. \
-**Date:** 2026-10-06 \
+**Status:** Accepted and implemented in DMS (`src/dms`). Does not apply to CMS (`src/config`). \
+**Date:** 2026-10-06 (accepted 2026-10-06) \
 **Author:** Adam Hopkins, with drafting assistance from Claude Code and Codex.
 
 ## Executive summary
