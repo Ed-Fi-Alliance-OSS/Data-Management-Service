@@ -338,6 +338,7 @@ public class DmsStartupOrchestratorTests
         return new WarmUpOidcMetadataTask(
             serviceProvider,
             Options.Create(AuthAppSettings(bypassAuthorization: bypassAuthorization)),
+            Options.Create(new JwtAuthenticationOptions { Authority = "https://issuer.example" }),
             NullLogger<WarmUpOidcMetadataTask>.Instance
         );
     }

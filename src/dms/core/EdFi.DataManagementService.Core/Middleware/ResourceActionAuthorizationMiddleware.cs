@@ -86,6 +86,10 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
                 return;
             }
         }
+        catch (OperationCanceledException) when (requestInfo.RequestCancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(
@@ -131,11 +135,15 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     private async Task<ClaimSet?> GetClaimSetForClient(RequestInfo requestInfo)
     {
         string claimSetName = requestInfo.ClientAuthorizations.ClaimSetName;
-        _logger.LogInformation("Claim set name from token scope - {ClaimSetName}", claimSetName);
+        _logger.LogInformation(
+            "Claim set name from token scope - {ClaimSetName}",
+            LoggingSanitizer.SanitizeInternalValueForLogging(claimSetName)
+        );
 
         _logger.LogInformation("Retrieving claim set list");
         IList<ClaimSet> claimsList = await _claimSetProvider.GetAllClaimSets(
-            requestInfo.FrontendRequest.Tenant
+            requestInfo.FrontendRequest.Tenant,
+            requestInfo.RequestCancellationToken
         );
 
         ClaimSet? claimSet = claimsList.FindClaimSetByName(claimSetName);
@@ -144,7 +152,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         {
             _logger.LogInformation(
                 "ResourceActionAuthorizationMiddleware: No ClaimSet matching Scope {Scope} - {TraceId}",
-                claimSetName,
+                LoggingSanitizer.SanitizeInternalValueForLogging(claimSetName),
                 requestInfo.FrontendRequest.TraceId.Value
             );
         }

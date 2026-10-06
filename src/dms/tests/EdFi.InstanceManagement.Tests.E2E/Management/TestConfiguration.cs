@@ -17,6 +17,12 @@ public static class TestConfiguration
         Environment.GetEnvironmentVariable("DMS_API_URL") ?? "http://localhost:8080";
 
     /// <summary>
+    /// Name of the DMS Docker container, used by the identity plugin slice to read logs and restart it
+    /// </summary>
+    public static string DmsContainerName =>
+        Environment.GetEnvironmentVariable("DMS_CONTAINER_NAME") ?? "ed-fi-api";
+
+    /// <summary>
     /// Base URL for the Configuration Service
     /// </summary>
     public static string ConfigServiceUrl =>

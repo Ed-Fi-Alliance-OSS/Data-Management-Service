@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        The fixture plugin that contributes against the Configuration Service's own contracts. It is
+        published into the CMS frontend test project's output, because the criteria it exists for are
+        about the real secrets contract and a host the CMS AddServices has populated, none of which the
+        plugin hosting tests can see.
+
+        Its reference into src/config is test-only and goes the harmless direction: a fixture reads the
+        host's contract, exactly as a real plugin does through the published EdFi.Api.Secrets package.
+        Host-first resolution serves this plugin the host's copy of that assembly at run time, which is
+        what makes the resolver the host resolves the same type the fixture registered.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.CmsContributor</AssemblyName>
+        <RootNamespace>Acme.CmsContributor</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <!--
+            For the decoy audit input. A plugin can construct one of these, and the host's has to win
+            anyway by being registered last rather than by being unconstructible.
+        -->
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins.Hosting\EdFi.Api.Plugins.Hosting.csproj" />
+        <ProjectReference Include="..\..\..\..\..\config\contracts\EdFi.DmsConfigurationService.Secrets\EdFi.DmsConfigurationService.Secrets.csproj" />
+        <PackageReference Include="Microsoft.Extensions.Configuration" />
+        <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+        <!-- For the options the plugin binds from its own section, beside the declared contract. -->
+        <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    </ItemGroup>
+</Project>

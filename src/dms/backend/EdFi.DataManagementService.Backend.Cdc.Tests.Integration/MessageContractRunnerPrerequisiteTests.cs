@@ -10,6 +10,8 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
 [TestFixture]
 [Category("CdcMessageContract")]
+[Property("CdcInvariant", "CDC-INV-08")]
+[Property("CdcInvariant", "CDC-INV-09")]
 public sealed class Given_MessageContractRunner_prerequisites
 {
     private static readonly string Image = CdcQualifiedWorkerImage.Image;

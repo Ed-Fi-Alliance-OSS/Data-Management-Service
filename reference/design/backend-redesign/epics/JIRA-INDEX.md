@@ -219,7 +219,7 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1322` — Add the relational DocumentState Kafka Connect transform — `reference/design/backend-redesign/epics/19-cdc-kafka/03-document-state-transform.md`
   - `DMS-1323` — Add explicit local/bootstrap connector registration — `reference/design/backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md`
   - `DMS-1324` — Add Kafka message and source-routing contract tests — `reference/design/backend-redesign/epics/19-cdc-kafka/05-message-contract-tests.md`
-  - `DMS-1325` — Replace legacy Kafka E2E expectations — `reference/design/backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md`
+  - `DMS-1325` — Add API-driven relational Kafka E2E coverage — `reference/design/backend-redesign/epics/19-cdc-kafka/06-e2e-kafka-scenarios.md`
   - `DMS-1326` — Add CDC setup, monitoring, recovery, and security runbooks — `reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md`
 
 - `DMS-1348` — Partitioned Cursor Paging — `reference/design/backend-redesign/epics/20-partitioned-cursor-paging/EPIC.md`

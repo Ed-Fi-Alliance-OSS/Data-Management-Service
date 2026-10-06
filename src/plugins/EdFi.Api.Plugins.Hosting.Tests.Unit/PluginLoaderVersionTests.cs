@@ -83,8 +83,13 @@ public class Given_a_plugin_built_against_a_newer_contract_than_the_host_carries
     [Test]
     public void It_refuses_and_names_the_contract_and_both_versions()
     {
+        // The host's version is read rather than written down, so the assertion names the contract this
+        // host actually carries and cannot keep passing on a stale literal after the contract moves.
+        Version hostVersion = typeof(EdFiApiPlugin).Assembly.GetName().Version!;
+
         _run.Failure!.Reason.Should().Be(PluginLoadFailure.ContractVersionSkew);
-        _run.Failure!.Message.Should().Contain("EdFi.Api.Plugins").And.Contain("2.0.0").And.Contain("1.0.0");
+        _run.Failure!.Message.Should().Contain("EdFi.Api.Plugins").And.Contain("2.0.0");
+        _run.Failure!.Message.Should().Contain($"host carries {hostVersion}.");
     }
 
     [Test]

@@ -98,7 +98,8 @@ public class Given_Scope_Validation_Is_Enabled_For_Profile_Resolution_Middleware
             A.Fake<CachedClaimSetProvider>(),
             A.Fake<IResourceDependencyGraphMLFactory>(),
             A.Fake<IProfileService>(),
-            new CircuitBreakerSettings()
+            new CircuitBreakerSettings(),
+            TestHelper.CreateNoOpIdentityTenantSnapshot()
         );
     }
 

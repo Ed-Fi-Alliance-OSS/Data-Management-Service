@@ -60,7 +60,7 @@ DocumentCache or CDC/Kafka content, not to unrelated material in the same artifa
 | [`multitenancy-analysis.md`](../../../multitenancy-analysis.md) | Stale-but-useful | Its database-engine constraints and topic-per-instance isolation guidance were incorporated here. Its OpenSearch material is historical and is not part of the relational CDC design. |
 | Deleted `remove-legacy-backend.md` | Historical | Records the completed removal of the document-store backend and its Kafka test path. It remains useful only as Git history and defines no active contract. |
 | Legacy document-store connector configurations and KafkaMessaging setup/test instructions | Obsolete | Targeted removed JSON columns and the shared legacy topic. They must not be restored or used to configure relational CDC; the proposed relational E2E replacement is defined by this design and the implementation stories. |
-| [`eng/docker-compose/README.md`](../../../../../eng/docker-compose/README.md), [`local-development-setup.http`](../../../../../src/dms/tests/RestClient/local-development-setup.http), and the [Instance Management E2E README](../../../../../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md) | Current | Managed relational registration is shipped through the local/published bootstrap and DMS E2E opt-in. These entry points link to the [operator procedures](../../../../cdc-documentation/README.md); manual RestClient and Instance Management route-context setup do not implement CDC admission. Procedure-level qualification is recorded separately in the [evidence index](../../../../cdc-documentation/cdc-inv-evidence.md), with unexercised rows pending. |
+| [`eng/docker-compose/README.md`](../../../../../eng/docker-compose/README.md), [`local-development-setup.http`](../../../../../src/dms/tests/RestClient/local-development-setup.http), and the [Instance Management E2E README](../../../../../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md) | Current | Managed relational registration is shipped through the local/published bootstrap and DMS E2E opt-in. These entry points link to the [operator procedures](../../../../cdc-documentation/README.md); manual RestClient and Instance Management route-context setup do not implement CDC admission. Procedure-to-test mappings and result-recording requirements are maintained in the [qualification index](../../../../cdc-documentation/cdc-inv-evidence.md); execution reports are retained outside the repository. |
 
 ## Scope and Architecture
 
@@ -662,6 +662,24 @@ substitutes for retained CDC rows. See
 and the Debezium
 [PostgreSQL connector history-loss guidance](https://debezium.io/documentation/reference/3.6/connectors/postgresql.html).
 
+For SQL Server, a committed offset below the retained minimum proves a history gap and
+produces `lost`. An offset above the sampled maximum produces `unknown`: provider history
+is read before the Connect offset, so the maximum may be an older observation of an
+advancing range. This does not prove either continuity or terminal loss.
+
+SQL Server range refresh applies only while continuity is `unknown` with the
+`ProviderHistoryUnknown` diagnostic at `$.providerHistory.retainedRangeEnd`. Initial
+writer admission waits the configured poll interval and repeats the admission pass within
+its existing operation deadline. Established validation also requires an observed offset
+and allows at most three provider/offset pairs, including the initial pair, with the
+configured poll interval before each refresh. Both paths read the provider range before
+reading a fresh Connect offset, so an advancing retention floor is compared with the new
+offset. Refresh does not reset the operation deadline or apply to unrelated SQL Server
+`unknown` results. If evidence remains unknown, admission/readiness remains withheld;
+affirmative continuity and all other prerequisites are still required. This sampling rule
+does not authorize CDC on a clone or restored database; the
+[physical-source replacement restriction](#v1-physical-source-replacement-deferral) still applies.
+
 The deployment-owned status has three continuity outcomes:
 
 - `healthy`: the exact resume position is currently proved for every required provider
@@ -671,9 +689,10 @@ The deployment-owned status has three continuity outcomes:
   the controller does not start, restart, or resume the connector. Native recovery is subject
   to the boundary below. A later check may return to `healthy` only with complete
   affirmative evidence; and
-- `lost`: a required artifact was removed or re-created, the committed position fell
-  outside retained history, or a successful Connect query proves the established binding's
-  expected offset missing, malformed, or source-mismatched. Deployment state durably
+- `lost`: a required artifact was removed or re-created, a retained-history gap is proved
+  (including a SQL Server committed offset below the retained minimum), or a successful
+  Connect query proves the established binding's expected offset missing, malformed, or
+  source-mismatched. Deployment state durably
   latches `SourceHistoryContinuityLost` for that binding generation, stops the old connector,
   and keeps combined readiness false. The latch cannot be cleared by later artifact
   recreation, offset mutation, a healthy-looking lag value, or a snapshot.
@@ -1316,8 +1335,8 @@ database-per-instance isolation model.
   `CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH`, or (in validation-only mode)
   `CDC_SQLSERVER_CONNECTOR_USER_MISSING`. Setup-authority failures use
   `CDC_SQLSERVER_SETUP_PRINCIPAL_FAILURE`. These diagnostics never expose SIDs or credentials.
-  T29's [implementation evidence](../../../../cdc-documentation/cdc-inv-evidence.md#sql-server-initial-user-mapping-t29)
-  is separate from T03's operator examples and T17's public-snippet qualification.
+  The [user-mapping test index](../../../../cdc-documentation/cdc-inv-evidence.md#sql-server-initial-user-mapping)
+  identifies provider, controller, and public-wrapper coverage.
 - Configure `DocumentUuid` as the Debezium message key for both tables.
 - `DocumentCache.DocumentUuid` remains non-indexed; provider CDC captures the column and
   the configured custom key does not change the table's `DocumentId` clustered key.

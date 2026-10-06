@@ -33,9 +33,10 @@ Configuration Service.
 ## Plugins
 
 A plugin is a directory of already-published assemblies that the Ed-Fi API loads at
-startup and lets contribute to its service composition. DMS ships no fetcher:
-getting a plugin directory under the plugin root is a **deployment** step that
-happens before the process starts, and it comes in two recipes, below.
+startup and lets contribute to its configuration and its service composition. DMS
+ships no fetcher: getting a plugin directory under the plugin root is a
+**deployment** step that happens before the process starts, and it comes in two
+recipes, below.
 
 Acquiring the bytes does not enable them. A plugin runs if and only if its directory
 name appears in `Plugins:Allowed`, which is a separate, deployment-owned setting
@@ -75,7 +76,7 @@ What this does **not** protect against, stated so it is not rediscovered:
   updates a directory and its digest together.
 - Anything a plugin does after it loads. There is no capability restriction, no
   resource limit, and no audit beyond the load inventory in the log.
-- A plugin that hangs. The contribution hook is synchronous and unbounded, so a
+- A plugin that hangs. The contribution hooks are synchronous and unbounded, so a
   plugin that blocks blocks startup. That is deliberate — a timeout would mean
   continuing without a plugin the operator required, which the failure rules below
   refuse. What you get instead is attribution: the loader announces each plugin
@@ -418,12 +419,13 @@ an error at all: nothing was asked for, and the root is not inspected.
 | The entry assembly exposes zero, or more than one, plugin class | Names what was found. |
 | The plugin's declared name does not match its directory name | Names both. Compared ordinally. |
 | The entry assembly's own assembly name does not match the directory name | Names both. |
-| A contribution hook throws | Names the plugin and the composition phase. |
+| A contribution hook throws | Names the plugin and the hook, `ContributeConfiguration` or `ContributeServices`, and keeps the plugin's own exception as the cause. |
+| The plugin's configuration hook removes or reorders a configuration source that was present before it ran | Names the plugin and the position and type of the source. Adding sources is the only permitted operation, and that includes leaving alone a source an earlier plugin in `Plugins:Allowed` added. |
 | The plugin registers a service type the host owns, or removes, replaces, or overwrites a host-owned registration that existed before its hook ran | Names the plugin and the service type, before the call reaches the host's own collection. Plugins contribute registrations; they do not edit the host's. Removing a registration the plugin itself added is fine, and removing a pre-existing framework or third-party registration is permitted and recorded in the inventory. |
 | The plugin removes, replaces, or overwrites one of the host's four logging registrations | Names the plugin and the service type. `ClearProviders()` lands here: it would silence DMS and the inventory record of the plugin doing it. Adding a logging **provider** is untouched. |
 | The plugin **adds** its own unkeyed logger factory or logger registration | Names the plugin and the service type. Those are resolved singly, so the last registration wins and a plugin would displace the host's logging by adding rather than removing. Keyed logging registrations and added providers stay permitted. |
 | The plugin registers a declared contract under a wildcard service key | Names the contract. Enumerable resolution cannot reach a wildcard registration, so the startup probe cannot cover it. |
-| The plugin leaves no surviving declared contract registration | Names the plugin and lists what it did register. It ran and contributed nothing the host will call — most often a plugin allowlisted on the wrong host, or a replace-contract claim made with a `TryAdd`, which declines invisibly. |
+| The plugin leaves no surviving declared contract registration and added no configuration source | Names the plugin and lists what it did register. It ran and contributed nothing the host will call — most often a plugin allowlisted on the wrong host, or a replace-contract claim made with a `TryAdd`, which declines invisibly. A plugin that added a configuration source and declared no plugin contract is not reported here, because the host reads what it contributed. One that declared contracts and had every one removed by a later plugin is reported whether or not it also added a source. |
 | A registration of a declared contract cannot be constructed | Reported by the startup probe, which resolves each surviving declared-contract registration once before the process serves traffic. |
 
 Every row in this group is about the plugin's own content rather than about how the
@@ -455,17 +457,19 @@ again.
 
 #### Two rules that apply only to configuration contribution
 
-The plugin contract exposes a service-contribution hook and no configuration-contribution
-hook, so neither rule below can be reached by any plugin a deployment can install. They
-are recorded so the catalogue states the whole rule set rather than a silently partial
-one:
+A plugin can contribute configuration sources from its `ContributeConfiguration`
+hook, which DMS runs for every allowlisted plugin, in `Plugins:Allowed` order, as soon
+as the plugins have loaded. Two rows above are specific to it:
 
 - **A configuration hook that removes or reorders a source it did not add is
-  fatal**, naming the plugin. Adding is the only permitted operation.
-- **The "contributed nothing" row above has a second half that is likewise
-  unreachable.** A plugin satisfies that row by registering a declared contract;
-  where configuration contribution is supported, contributing a configuration source
-  satisfies it as well.
+  fatal**, naming the plugin. Adding is the only permitted operation. The loader then
+  places what the plugin added below the operator's unprefixed environment and
+  command-line sources, and above the JSON files and the `ASPNETCORE_` and `DOTNET_`
+  prefixed environment sources; see
+  [Configuration precedence](./CONFIGURATION.md#configuration-precedence).
+- **The "contributed nothing" row has a second half.** A plugin satisfies that row by
+  registering a declared contract, or by contributing at least one configuration
+  source, so a plugin whose only job is to supply configuration starts normally.
 
 ### Where to read the reason
 
@@ -475,9 +479,14 @@ The two questions have two answers, and they live in different places.
 `AppSettings:StartupStatusFilePath`, defaulting to `dms-startup-status.json` in the
 system temporary directory. It is a JSON document carrying the status, the bootstrap
 phase, a one-line summary, and — on a failure — the exception type and message. A
-plugin failure names its phase there: the loading phase for a failure to load, and
-the service-configuration phase for a failure inside a contribution hook, because the
-host invokes that hook while it is registering services.
+plugin failure names its phase there. `LoadPlugins` covers a failure to load and a
+failure inside a plugin's `ContributeConfiguration` hook, which runs in that same
+phase as soon as loading returns. `ConfigureServices` covers a failure inside a
+`ContributeServices` hook, because the host invokes that hook while it is registering
+services.
+`ValidatePluginRegistrations` covers a registration the host refuses after the container
+is built: an invalid custom validator registration, or a plugin contribution the audit
+rejects, such as two plugins replacing one contract.
 
 **What actually loaded: the log.** Each loaded plugin produces one
 `Plugin inventory for {PluginName} version {AssemblyVersion}` event listing the files
@@ -504,18 +513,153 @@ them. A **fatal** during loading is not replayed, because the process does not r
 the point where a logger exists: for that, read standard error and the startup status
 file.
 
+### The Configuration Service
+
+The Configuration Service loads plugins with the same loader, from its own plugin
+root and its own `Plugins:Allowed`. A plugin allowlisted for DMS is not thereby
+allowlisted for the Configuration Service, and the reverse, so a plugin both hosts
+use is delivered to and named in each. A plugin that registers a contract only one
+host declares fails startup in the other, so only a plugin that adds configuration
+and registers no contract can be used by both; see
+[Secrets](./SECRETS.md#what-a-secrets-plugin-is). Everything above about trust,
+case, and the stop-fetch-start rule applies unchanged. The plugin a Configuration
+Service operator is most likely to install is a secrets plugin; see
+[Secrets](./SECRETS.md) for what one serves and what adopting one does and does not
+protect.
+
+**The mount target is `/app/plugins` on the `config` service**, which is the
+`Plugins:Directory` the Configuration Service's `appsettings.json` ships. As for
+DMS, the two recipes below are alternatives that both claim it, so pick one.
+
+The Configuration Service writes no startup status file. A plugin that does not load
+stops it before it serves a request, and the reason is on standard error; see
+[Configuration Service plugins](./CONFIGURATION.md#configuration-service-plugins).
+
+#### Recipe 1 for the Configuration Service: a pre-populated plugin root
+
+`plugins-config.yml` is the Configuration Service counterpart of `plugins-dms.yml`.
+`CMS_PLUGINS_MOUNT_SOURCE` is the one required value: the host path that holds the
+Configuration Service's plugin directories. Add the file with its own `-f` after
+`local-config.yml` or `published-config.yml`, followed by a deployment-owned
+override that sets `Plugins__Allowed` on the `config` service, because this overlay
+allowlists nothing. When the plugin serves secrets from a vault, that override also
+removes them from the environment; see
+[Secrets on the shipped Compose files](#secrets-on-the-shipped-compose-files).
+
+<!-- embed: eng/docker-compose/plugins-config.yml -->
+```yaml
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# Plugin acquisition for the Configuration Service: a pre-populated plugin root, bind-mounted
+# read-only. The Configuration Service counterpart of plugins-dms.yml, which it mirrors.
+#
+# Add with its own -f, after local-config.yml or published-config.yml, both of which it leaves
+# unchanged. start-local-config.ps1 has no setting that adds it: DMS_PLUGINS_COMPOSE_FILES is the
+# Data Management Service launchers' setting for DMS overlays, not a Configuration Service one.
+#
+# CMS_PLUGINS_MOUNT_SOURCE is declared with :? rather than a default. A deployment that composed
+# this file in meant to supply a host path, and a silent default would make Docker materialize an
+# empty root-owned directory beside it, which is exactly what keeping the mount out of the base
+# files avoids.
+#
+# Acquiring the bytes does not enable them. Nothing here writes Plugins:Allowed; the allowlist is
+# a separate deployment-owned setting on the config service. See eng/docker-compose/README.md,
+# "Loading plugins into the Configuration Service".
+services:
+  config:
+    volumes:
+      - ${CMS_PLUGINS_MOUNT_SOURCE:?set the host path holding the plugin directories}:/app/plugins:ro
+```
+
+`DMS_PLUGINS_COMPOSE_FILES` is the DMS launchers' setting and does not add this
+file, and `start-local-config.ps1` has no equivalent; compose it directly, as
+[eng/docker-compose/README.md](../eng/docker-compose/README.md) shows.
+
+#### Recipe 2 for the Configuration Service: a pinned package fetched by the deployment
+
+There is no committed fetch overlay for the Configuration Service. The fetch itself
+is the same: the same three required values, the same digest-pinned image, and the
+same four commands, which check the plugin name, verify the package digest, clear
+the target directory, and extract the plugin directory. Only where the result is
+mounted differs. Either of two forms does it:
+
+- **Into the host path Recipe 1 mounts.** Run the four commands as a deployment step
+  that extracts into the directory `CMS_PLUGINS_MOUNT_SOURCE` names, then compose
+  `plugins-config.yml` exactly as in Recipe 1. Nothing about the overlay changes.
+- **Into a volume, as `plugins-fetch-dms.yml` does for DMS.** Copy that file into the
+  deployment and point its last service block at `config` instead of `dms`. When DMS
+  also uses Recipe 2 in the same Compose project, rename the `fetch-plugins` service
+  and the `plugins` volume as well, because the two files would otherwise define one
+  service and one volume for both hosts, and each host's plugin root would then hold
+  the other's plugins. Rename every reference along with them: the service's key and
+  the `depends_on` entry under `config` that names it, and the volume's top-level
+  declaration together with both mounts that use it, the fetcher's `/out` and the
+  `config` service's `/app/plugins:ro`.
+
+On Kubernetes, the init-container form in
+[Recipe 2 on Kubernetes](#recipe-2-on-kubernetes) applies unchanged, with the
+Configuration Service container mounting the `emptyDir` at `/app/plugins` with
+`readOnly: true`. As there, these forms are not asserted against a committed file,
+because no committed file is their artifact.
+
 ### The Compose blocks above are asserted equal to the committed files
 
-`eng/docker-compose/plugins-dms.yml` and `eng/docker-compose/plugins-fetch-dms.yml`
-are the artifact. The end-to-end tiers run those files as committed, and a check in
-this repository compares each block above against its file, so a chapter edited
-without the file — or a file edited without the chapter — fails. Nothing anywhere
-drives a recipe parsed out of this document, which would prove the document rather
-than the file an operator actually composes with `-f`.
+`eng/docker-compose/plugins-dms.yml`, `eng/docker-compose/plugins-fetch-dms.yml`, and
+`eng/docker-compose/plugins-config.yml` are the artifact. The end-to-end tiers run
+those files as committed, and a check in this repository compares each block above
+against its file, so a chapter edited without the file — or a file edited without the
+chapter — fails. Nothing anywhere drives a recipe parsed out of this document, which
+would prove the document rather than the file an operator actually composes with
+`-f`.
 
 For running the recipes against a local development stack through
 `bootstrap-local-dms.ps1`, see
 [eng/docker-compose/README.md](../eng/docker-compose/README.md).
+
+### Secrets on the shipped Compose files
+
+A secret a plugin serves from a vault must not also be supplied by the environment,
+because an environment variable outranks every plugin source; see
+[Secrets](./SECRETS.md#the-process-global-secrets-phase-a-serves). The shipped
+Compose files map five of those secrets from `.env` variables, and deleting a
+variable does not remove the mapping: Compose sets the key to an empty string, which
+outranks the vault. An empty `DatabaseSettings__EncryptionKey` stops the
+Configuration Service at startup. The others do not: the host starts and then fails
+requests, and an empty `IdentitySettings__EncryptionKey` fails only once the
+self-contained identity provider issues its first token.
+
+Remove each key the vault serves in the same deployment-owned override that sets
+`Plugins__Allowed`, with `!reset null`. A service block goes only in the override for
+a Compose project that defines that service: a project that runs only one host, such
+as one started with `start-local-config.ps1`, keeps only that host's block, because
+Compose rejects a block for a service the project does not define.
+
+```yaml
+services:
+  dms:
+    environment:
+      ConfigurationServiceSettings__ClientSecret: !reset null
+      ConfigurationServiceSettings__EncryptionKey: !reset null
+  config:
+    environment:
+      DatabaseSettings__EncryptionKey: !reset null
+      IdentitySettings__ClientSecret: !reset null
+      IdentitySettings__EncryptionKey: !reset null
+```
+
+List only the keys the vault actually serves. Keep the matching `.env` variables
+set: the reset already keeps their values out of the containers, and the local
+launch scripts read them directly to register identity clients and provision
+databases. `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` feeds both
+`DatabaseSettings__EncryptionKey` on `config` and
+`ConfigurationServiceSettings__EncryptionKey` on `dms`, so clearing it for one host
+would blank the key the other still reads from the environment. Do not reset
+`DatabaseSettings__DatabaseConnection`: the stock Configuration Service entry point
+reads it before .NET starts, so it stays in the environment, as
+[Secrets](./SECRETS.md) describes.
 
 ## Logging
 

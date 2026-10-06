@@ -8,6 +8,15 @@
         "resolved": "6.0.2",
         "contentHash": "bJShQ6uWRTQ100ZeyiMqcFlhP7WJ+bCuabUs885dJiBEzMsJMSFr7BOyeCw4rgvQokteGi5rKQTlkhfQPUXg2A=="
       },
+      "FakeItEasy": {
+        "type": "Direct",
+        "requested": "[8.3.0, )",
+        "resolved": "8.3.0",
+        "contentHash": "5QmShA6njFOhQHUYrFUjWEepfRcbQLOhgctaFhWyhPTi17kVGNyZOdvJ/2HhoNthmdghIzNsnZsMScJZhVBaQQ==",
+        "dependencies": {
+          "Castle.Core": "5.1.1"
+        }
+      },
       "FluentAssertions": {
         "type": "Direct",
         "requested": "[6.12.1, )",
@@ -99,6 +108,14 @@
           "Azure.Core": "1.50.0",
           "Microsoft.Identity.Client": "4.78.0",
           "Microsoft.Identity.Client.Extensions.Msal": "4.78.0"
+        }
+      },
+      "Castle.Core": {
+        "type": "Transitive",
+        "resolved": "5.1.1",
+        "contentHash": "rpYtIczkzGpf+EkZgDr9CClTdemhsrwA/W5hMoPjLkRFnXzH44zDLoovXeKtmxb1ykXK9aJVODSpiJml8CTw2g==",
+        "dependencies": {
+          "System.Diagnostics.EventLog": "6.0.0"
         }
       },
       "Cucumber.CucumberExpressions": {
@@ -634,6 +651,7 @@
           "Microsoft.Extensions.Caching.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Caching.Hybrid": "[9.5.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Http": "[10.0.1, )",
           "Microsoft.Extensions.Logging": "[10.0.1, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
@@ -678,6 +696,8 @@
       "edfi.datamanagementservice.tests.e2e": {
         "type": "Project",
         "dependencies": {
+          "Confluent.Kafka": "[2.6.1, )",
+          "EdFi.DataManagementService.Backend.Cdc": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Tests.Integration.Common": "[1.0.0, )",
           "EdFi.DataManagementService.Core.External": "[1.0.0, )",
           "EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration": "[1.0.0, )",

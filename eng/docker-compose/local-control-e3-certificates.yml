@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# DMS-1556 investigation control E3 (spec §3.4): certificate-mode signing keys. Removes
+# database-backed key retrieval COLLECTIVELY - both the resolver's key read and the
+# VerifyTokenAsync key read (F3) come from the X.509 file instead - while the token-status
+# check stays on the database. It cannot separate blocking from round-trip cost.
+# The development certificate is written to the diagnostics bind mount (/diag), which the
+# CMS user can write; it persists across restarts, so a token minted before a restart
+# still verifies (same thumbprint kid). Apply IN ADDITION to the stack's -f list and the
+# diagnostics overlays, then recreate the config service. Local tool only.
+services:
+  config:
+    environment:
+      IdentitySettings__UseCertificates: "true"
+      IdentitySettings__UseDevelopmentCertificates: "true"
+      IdentitySettings__DevCertificatePath: /diag/dms1556-e3-devcert.pfx

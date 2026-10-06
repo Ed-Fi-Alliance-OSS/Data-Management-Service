@@ -541,12 +541,22 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             return keyRecord;
         }
 
-        public async Task<IEnumerable<(string KeyId, byte[] PublicKey)>> GetActivePublicKeysInternalAsync()
+        public Task<IEnumerable<(string KeyId, byte[] PublicKey)>> GetActivePublicKeysInternalAsync()
+        {
+            return GetActivePublicKeysInternalAsync(CancellationToken.None);
+        }
+
+        public async Task<IEnumerable<(string KeyId, byte[] PublicKey)>> GetActivePublicKeysInternalAsync(
+            CancellationToken cancellationToken
+        )
         {
             await using var connection = new NpgsqlConnection(_connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
             return await connection.QueryAsync<(string KeyId, byte[] PublicKey)>(
-                "SELECT \"KeyId\", \"PublicKey\" FROM \"dmscs\".\"OpenIddictKey\" WHERE \"IsActive\" = TRUE"
+                new CommandDefinition(
+                    "SELECT \"KeyId\", \"PublicKey\" FROM \"dmscs\".\"OpenIddictKey\" WHERE \"IsActive\" = TRUE",
+                    cancellationToken: cancellationToken
+                )
             );
         }
     }

@@ -143,6 +143,11 @@ public record ApiClientInsertResult
     public record FailureDataStoreNotFound() : ApiClientInsertResult();
 
     /// <summary>
+    /// Another API client of the same application already has this name; nothing was written
+    /// </summary>
+    public record FailureDuplicateName() : ApiClientInsertResult();
+
+    /// <summary>
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ApiClientInsertResult();
@@ -204,6 +209,11 @@ public record ApiClientUpdateResult
     /// Referenced Data store not found exception thrown and caught
     /// </summary>
     public record FailureDataStoreNotFound() : ApiClientUpdateResult();
+
+    /// <summary>
+    /// Another API client of the same application already has this name; nothing was written
+    /// </summary>
+    public record FailureDuplicateName() : ApiClientUpdateResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught

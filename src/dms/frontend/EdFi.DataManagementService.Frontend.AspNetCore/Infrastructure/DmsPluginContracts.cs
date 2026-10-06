@@ -5,6 +5,7 @@
 
 using EdFi.Api.Plugins.Hosting;
 using EdFi.DataManagementService.CustomValidation;
+using EdFi.DataManagementService.Identity;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 
@@ -30,9 +31,13 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 internal static class DmsPluginContracts
 {
     /// <summary>
-    /// The registry. One entry today: the custom resource validator, which is fan-in, so any number of
-    /// plugins may contribute an implementation.
+    /// The registry. Two entries: the custom resource validator, which is fan-in, so any number of
+    /// plugins may contribute an implementation; and the identity service, which is replace, so at most
+    /// one plugin may supply it and it takes the place of the host default, <c>NoIdentityService</c>.
     /// </summary>
     public static PluginContractRegistry Registry { get; } =
-        new([new PluginContractEntry(typeof(ICustomResourceValidator), Cardinality.FanIn)]);
+        new([
+            new PluginContractEntry(typeof(ICustomResourceValidator), Cardinality.FanIn),
+            new PluginContractEntry(typeof(IIdentityService), Cardinality.Replace),
+        ]);
 }

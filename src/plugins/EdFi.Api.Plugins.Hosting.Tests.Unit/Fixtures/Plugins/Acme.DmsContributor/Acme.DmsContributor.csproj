@@ -11,7 +11,7 @@
         src/plugins production code a reference to the Data Management Service, and nothing gives that
         tree a reference to the frontend.
 
-        Host-first resolution serves this plugin the host's copies of all four referenced assemblies at
+        Host-first resolution serves this plugin the host's copies of all five referenced assemblies at
         run time, which is what makes the type identities the assertions compare the same ones.
     -->
     <PropertyGroup>
@@ -32,6 +32,9 @@
         />
         <ProjectReference
             Include="..\..\..\..\..\dms\backend\EdFi.DataManagementService.Backend.External\EdFi.DataManagementService.Backend.External.csproj"
+        />
+        <ProjectReference
+            Include="..\..\..\..\..\dms\core\EdFi.DataManagementService.Identity\EdFi.DataManagementService.Identity.csproj"
         />
     </ItemGroup>
 </Project>

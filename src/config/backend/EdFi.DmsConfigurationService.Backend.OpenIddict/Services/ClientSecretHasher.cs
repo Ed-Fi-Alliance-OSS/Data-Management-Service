@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
+using EdFi.DmsConfigurationService.Secrets;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -35,7 +36,7 @@ public class ClientSecretHasher(ILogger<ClientSecretHasher> logger, IOptions<Ide
         const byte Version = 1;
         const int SaltLength = 16;
         const int SubkeyLength = 32;
-        int iterations = _identityOptions.Value.HashingIterations;
+        int iterations = _identityOptions.Value.ClientSecretHashingIterations;
 
         byte[] salt = RandomNumberGenerator.GetBytes(SaltLength);
         byte[] subkey = Rfc2898DeriveBytes.Pbkdf2(
@@ -94,7 +95,7 @@ public class ClientSecretHasher(ILogger<ClientSecretHasher> logger, IOptions<Ide
             byte[] actualSubkey = Rfc2898DeriveBytes.Pbkdf2(
                 plainTextSecret,
                 salt,
-                _identityOptions.Value.HashingIterations,
+                _identityOptions.Value.ClientSecretHashingIterations,
                 HashAlgorithmName.SHA256,
                 32
             );

@@ -32,9 +32,8 @@ TENANT1="${TENANT1:-tenant1}"
 TENANT2="${TENANT2:-tenant2}"
 SCHOOL_YEAR="${SCHOOL_YEAR:-2025}"
 
-# All three apps authenticate against the shared Keycloak realm. (Don't take the token URL from
-# /mt-dms discovery: it wrongly appends /{tenant}/{schoolYear} -- ../docs/infrastructure.md
-# issue 11.) The /{st,mt}-dms/oauth/token proxy also works.
+# All three apps authenticate against the shared Keycloak realm directly. The
+# /{st,mt}-dms/oauth/token proxy that discovery advertises also works.
 KC_TOKEN="https://$FQDN/auth/realms/$REALM/protocol/openid-connect/token"
 
 FAILURES=0

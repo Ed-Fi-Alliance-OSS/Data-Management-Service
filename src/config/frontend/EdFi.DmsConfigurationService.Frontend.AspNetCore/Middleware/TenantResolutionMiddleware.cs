@@ -32,13 +32,15 @@ public class TenantResolutionMiddleware(RequestDelegate next)
             return;
         }
 
-        // Allow /health endpoint without tenant header (health probes must be tenant-agnostic).
+        // Allow tenant-agnostic paths without tenant header: the service root, /health, /tenancy,
+        //   /metadata/specifications and /openapi/v1.json. None of them returns tenant-scoped data.
         //   Matched exactly (not by segment prefix) so lookalike paths keep requiring a valid tenant.
+        //   A Tenant header sent to one of them is never looked up.
         // Allow /connect endpoints without tenant header (for system administrator authentication)
         // Allow /v3/tenants endpoints without tenant header (for tenant management before tenants exist)
         // Allow /.well-known endpoints without tenant header (standard OIDC discovery endpoints)
         if (
-            IsHealthPath(context.Request.Path)
+            IsTenantAgnosticPath(context.Request.Path)
             || context.Request.Path.StartsWithSegments("/connect", StringComparison.OrdinalIgnoreCase)
             || context.Request.Path.StartsWithSegments("/v3/tenants", StringComparison.OrdinalIgnoreCase)
             || context.Request.Path.StartsWithSegments("/.well-known", StringComparison.OrdinalIgnoreCase)
@@ -127,16 +129,36 @@ public class TenantResolutionMiddleware(RequestDelegate next)
         );
     }
 
+    // Exact paths (each also accepted with one trailing slash) that never need a Tenant header: health probes,
+    // tenant discovery, and the discovery and OpenAPI documents. None of them returns tenant-scoped data.
+    private static readonly string[] TenantAgnosticPaths =
+    [
+        "/health",
+        "/tenancy",
+        "/metadata/specifications",
+        "/openapi/v1.json",
+    ];
+
     /// <summary>
-    /// Determines whether the request targets the health endpoint, which must be reachable without a
-    /// tenant header so health probes remain tenant-agnostic. Matches only "/health" and "/health/"
-    /// (case-insensitive), leaving lookalike paths such as "/health/foo" or "/healthcheck" subject to
-    /// tenant enforcement. Path base is already stripped by UsePathBase, so "/mt-config/health" arrives
-    /// here as "/health".
+    /// Determines whether the request targets a tenant-agnostic endpoint that must be reachable without a
+    /// tenant header: the service root, "/health" (health probes), "/tenancy" (tenant discovery), and
+    /// "/metadata/specifications" and "/openapi/v1.json" (discovery documents, including the header-less
+    /// inner fetch that "/metadata/specifications" makes of "/openapi/v1.json"). Each is matched exactly,
+    /// case-insensitively and optionally with one trailing slash, leaving lookalike paths such as
+    /// "/health/foo", "/metadataX" or "/tenancyx" subject to tenant enforcement. Path base is already
+    /// stripped by UsePathBase, so "/mt-config/health" arrives here as "/health".
     /// </summary>
-    private static bool IsHealthPath(PathString path) =>
-        path.Equals("/health", StringComparison.OrdinalIgnoreCase)
-        || path.Equals("/health/", StringComparison.OrdinalIgnoreCase);
+    private static bool IsTenantAgnosticPath(PathString path) =>
+        IsServiceRoot(path)
+        || Array.Exists(
+            TenantAgnosticPaths,
+            p =>
+                path.Equals(p, StringComparison.OrdinalIgnoreCase)
+                || path.Equals($"{p}/", StringComparison.OrdinalIgnoreCase)
+        );
+
+    // UsePathBase leaves "" for the bare path base ("/mt-config") and "/" for "/mt-config/".
+    private static bool IsServiceRoot(PathString path) => !path.HasValue || path.Value == "/";
 
     /// <summary>
     /// Sanitizes a string for safe logging by allowing only safe characters.

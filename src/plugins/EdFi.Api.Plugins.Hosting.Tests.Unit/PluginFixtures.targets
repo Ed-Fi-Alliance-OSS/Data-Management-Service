@@ -119,6 +119,12 @@
         <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.HookTouch/Acme.HookTouch.csproj">
             <StagedName>Acme.HookTouch</StagedName>
         </PluginFixture>
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.ConfigContributor/Acme.ConfigContributor.csproj">
+            <StagedName>Acme.ConfigContributor</StagedName>
+        </PluginFixture>
+        <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.SecondConfigContributor/Acme.SecondConfigContributor.csproj">
+            <StagedName>Acme.SecondConfigContributor</StagedName>
+        </PluginFixture>
         <PluginFixture Include="$(MSBuildThisFileDirectory)Fixtures/Plugins/Acme.Native/Acme.Native.csproj">
             <StagedName>Acme.Native</StagedName>
             <PublishArgs>--runtime $(NETCoreSdkRuntimeIdentifier) --no-self-contained</PublishArgs>
@@ -138,7 +144,7 @@
             <StagedName>PluginNativeProbeHost</StagedName>
         </PluginProbeHost>
         <!--
-            The 1.0-on-1.1 host, staged whole and read-only. Each test copies it into a temporary
+            The 1.1-on-1.2 host, staged whole and read-only. Each test copies it into a temporary
             directory of its own before replacing that copy's contract assembly, so the staged tree is
             never the thing whose identity is rewritten.
         -->
@@ -148,13 +154,13 @@
     </ItemGroup>
 
     <!--
-        The additive 1.1 contract, built rather than published: what a test needs from it is the single
+        The additive 1.2 contract, built rather than published: what a test needs from it is the single
         assembly it substitutes into a copy of the runner's output, and a publish would bring a manifest
         and a runtimeconfig that nothing reads.
     -->
     <ItemGroup>
-        <PluginContractBuild Include="$(MSBuildThisFileDirectory)Fixtures/Contracts/Contract_1_1/EdFi.Api.Plugins.v1_1.csproj">
-            <StagedName>Contract_1_1</StagedName>
+        <PluginContractBuild Include="$(MSBuildThisFileDirectory)Fixtures/Contracts/Contract_1_2/EdFi.Api.Plugins.v1_2.csproj">
+            <StagedName>Contract_1_2</StagedName>
         </PluginContractBuild>
     </ItemGroup>
 
@@ -417,7 +423,7 @@
         />
 
         <!--
-            The additive 1.1 contract, to the intermediate output. Only one file of it is wanted, so it
+            The additive 1.2 contract, to the intermediate output. Only one file of it is wanted, so it
             is not staged where a test could mistake it for a plugin or a host.
         -->
         <Exec
@@ -434,7 +440,7 @@
         -->
         <Copy
             SourceFiles="@(PluginContractBuild->'$(PluginFixtureRawRoot)%(StagedName)/EdFi.Api.Plugins.dll')"
-            DestinationFiles="@(PluginContractBuild->'$(PluginFixtureProbeRoot)PluginHostRunner/contract-1.1/EdFi.Api.Plugins.dll')"
+            DestinationFiles="@(PluginContractBuild->'$(PluginFixtureProbeRoot)PluginHostRunner/contract-1.2/EdFi.Api.Plugins.dll')"
         />
 
         <Exec

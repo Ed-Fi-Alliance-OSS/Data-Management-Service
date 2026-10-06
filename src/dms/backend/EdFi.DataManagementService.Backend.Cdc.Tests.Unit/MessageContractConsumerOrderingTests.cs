@@ -57,6 +57,9 @@ internal static class MessageContractConsumerOrderingData
     nameof(MessageContractConsumerOrderingData.Cases)
 )]
 [Category("CdcMessageContract")]
+[Property("CdcInvariant", "CDC-INV-07")]
+[Property("CdcInvariant", "CDC-INV-13")]
+[Property("CdcInvariant", "CDC-INV-14")]
 public class Given_MessageContractConsumerOrdering(string caseName)
 {
     private MessageContractConsumer _consumer = null!;
@@ -287,6 +290,9 @@ public class Given_MessageContractConsumerOrdering(string caseName)
 [TestFixture]
 [Category("CdcMessageContract")]
 [Property("ScenarioId", "MC-CONSUMER-ORDERING-INT64")]
+[Property("CdcInvariant", "CDC-INV-07")]
+[Property("CdcInvariant", "CDC-INV-13")]
+[Property("CdcInvariant", "CDC-INV-14")]
 public class Given_MessageContractConsumerOrdering_exact_versions
 {
     private MessageContractConsumer _consumer = null!;
@@ -372,6 +378,9 @@ public class Given_MessageContractConsumerOrdering_exact_versions
 [TestFixture]
 [Category("CdcMessageContract")]
 [Property("ScenarioId", "MC-CONSUMER-ORDERING-DURABILITY")]
+[Property("CdcInvariant", "CDC-INV-07")]
+[Property("CdcInvariant", "CDC-INV-13")]
+[Property("CdcInvariant", "CDC-INV-14")]
 public class Given_MessageContractConsumerOrdering_durability
 {
     private MessageContractConsumer _consumer = null!;
@@ -520,6 +529,9 @@ public class Given_MessageContractConsumerOrdering_durability
 [TestFixture]
 [Category("CdcMessageContract")]
 [Property("ScenarioId", "MC-CONSUMER-ORDERING-WIRE-BOUNDARY")]
+[Property("CdcInvariant", "CDC-INV-07")]
+[Property("CdcInvariant", "CDC-INV-13")]
+[Property("CdcInvariant", "CDC-INV-14")]
 public class Given_MessageContractConsumerOrdering_invalid_public_records
 {
     private MessageContractConsumer _consumer = null!;

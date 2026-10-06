@@ -141,6 +141,7 @@ function Invoke-NativeCommandWithInput {
 
     .PARAMETER TimeoutSeconds
         The single end-to-end deadline covering stdin delivery and process exit together.
+        Allows up to one hour for qualification build/test stages; callers keep shorter defaults.
     #>
     param(
         [Parameter(Mandatory)]
@@ -154,7 +155,7 @@ function Invoke-NativeCommandWithInput {
         [AllowEmptyString()]
         [string]$InputText,
 
-        [ValidateRange(1, 600)]
+        [ValidateRange(1, 3600)]
         [int]$TimeoutSeconds = 60
     )
 

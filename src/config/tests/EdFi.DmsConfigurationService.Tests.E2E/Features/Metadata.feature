@@ -15,7 +15,8 @@ Feature: Metadata endpoints
                       "informationalVersion": "{*}",
                       "build": "{*}",
                       "urls": {
-                          "openApiMetadata": "{*}"
+                          "openApiMetadata": "{*}",
+                          "tenancy": "{*}"
                       },
                       "specificationVersion": "{*}"
                   }
@@ -70,6 +71,7 @@ Feature: Metadata endpoints
              Then each metadata URL should be valid
                   | URL Field       |
                   | openApiMetadata |
+                  | tenancy         |
 
         Scenario: 07 Verify the api client dataStoreIds contract is documented
              When a GET request is made to "/metadata/specifications"
@@ -92,3 +94,25 @@ Feature: Metadata endpoints
                   | Field                                                                                  | Value |
                   | paths./v3/apiClients.post.requestBody.content.application/json.example.dataStoreIds     | []    |
                   | paths./v3/apiClients/{id}.put.requestBody.content.application/json.example.dataStoreIds | []    |
+
+        # Single-tenant only: on a multi-tenant stack the list holds every tenant, and Tenants.feature creates
+        # tenants. An empty list alone does not mean multi-tenancy is off (DMS-1508 AC4).
+        # The multi-tenant listing is covered by Tenants.feature.
+        @DMS-1508 @SingleTenantOnly
+        Scenario: 08 Tenancy lists no tenants without authentication when multi-tenancy is disabled
+             When an unauthenticated GET request is made to "/tenancy"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                      "tenants": []
+                  }
+                  """
+
+        @DMS-1508
+        Scenario: 09 Tenancy is documented as anonymous in the OpenAPI specification
+             When a GET request is made to "/metadata/specifications"
+             Then it should respond with 200
+              And the response body contains OpenAPI specification
+                  | Field                       | Value |
+                  | paths./tenancy.get.security | []    |

@@ -5,16 +5,19 @@
 
 using System.Reflection;
 using System.Text.RegularExpressions;
+using EdFi.Api.Plugins.Hosting;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Deploy;
+using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Mssql;
 using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using EdFi.DmsConfigurationService.Backend.Postgresql;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
@@ -26,6 +29,7 @@ using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
+using EdFi.DmsConfigurationService.Secrets;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -39,8 +43,13 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 public static class WebApplicationBuilderExtensions
 {
-    public static void AddServices(this WebApplicationBuilder webApplicationBuilder)
+    public static void AddServices(
+        this WebApplicationBuilder webApplicationBuilder,
+        LoadedPlugins loadedPlugins
+    )
     {
+        ArgumentNullException.ThrowIfNull(loadedPlugins);
+
         var logger = ConfigureLogging();
         webApplicationBuilder.Services.AddLogging(loggingBuilder => loggingBuilder.AddSerilog(dispose: true));
 
@@ -82,11 +91,22 @@ public static class WebApplicationBuilderExtensions
             >()
             .Configure<ClaimsOptions>(webApplicationBuilder.Configuration.GetSection("ClaimsOptions"))
             .AddSingleton<IValidateOptions<ClaimsOptions>, ClaimsOptionsValidator>()
-            .AddSingleton<IValidateOptions<ApplicationLockOptions>, ApplicationLockOptionsValidator>();
+            .AddSingleton<IValidateOptions<ApplicationLockOptions>, ApplicationLockOptionsValidator>()
+            .AddSingleton<IValidateOptions<SecretsOptions>, SecretsOptionsValidator>();
         webApplicationBuilder
             .Services.AddOptions<ApplicationLockOptions>()
             .Bind(webApplicationBuilder.Configuration.GetSection("ApplicationLockSettings"))
             .ValidateOnStart();
+        webApplicationBuilder
+            .Services.AddOptions<SecretsOptions>()
+            .Bind(webApplicationBuilder.Configuration.GetSection("SecretsSettings"))
+            .ValidateOnStart();
+
+        // The cache is a singleton taking the tenant as an argument, so it holds no scoped
+        // dependency; the read seam that consults it is transient like the repositories calling it.
+        webApplicationBuilder.Services.AddSingleton<SecretValueCache>();
+        webApplicationBuilder.Services.AddTransient<IConnectionStringReader, ConnectionStringReader>();
+        ConfigureJobOptions(webApplicationBuilder.Services, webApplicationBuilder.Configuration);
         ConfigureDatastore(webApplicationBuilder, logger);
         ConfigureIdentityProvider(webApplicationBuilder, logger);
 
@@ -97,6 +117,8 @@ public static class WebApplicationBuilderExtensions
             logger.Error("Error reading appSettings");
             throw new InvalidOperationException("Unable to read appSettings");
         }
+
+        webApplicationBuilder.Services.AddSingleton(new JobRuntimeEnvironment(appSettings.MultiTenancy));
 
         webApplicationBuilder.Services.AddHttpClient(
             "KeycloakClient",
@@ -129,6 +151,20 @@ public static class WebApplicationBuilderExtensions
         // Each repository will get a fresh instance that captures the current HTTP context (if available)
         webApplicationBuilder.Services.AddHttpContextAccessor();
         webApplicationBuilder.Services.AddTransient<IAuditContext, AuditContext>();
+
+        // Last, and unconditionally. Plugin hooks contribute to a collection this method has finished
+        // populating. With no plugin loaded the contribution phase is a no-op and the audit runs and
+        // finds nothing, which keeps a plugin-free deployment on the same path as any other.
+        //
+        // The audit input is registered as an instance, so the container activates nothing to hand it
+        // over, and after every plugin hook has run, so a plugin that registered its own cannot
+        // displace it: a single-service resolve takes the last registration for a service type.
+        PluginAuditInput pluginAuditInput = loadedPlugins.ContributeServices(
+            webApplicationBuilder.Services,
+            webApplicationBuilder.Configuration,
+            CmsPluginContracts.Registry
+        );
+        webApplicationBuilder.Services.AddSingleton(pluginAuditInput);
 
         Serilog.ILogger ConfigureLogging()
         {
@@ -190,12 +226,14 @@ public static class WebApplicationBuilderExtensions
                 Backend.Postgresql.ClaimsDataLoader.ResourceClaimMetadataRepository
             >();
             webAppBuilder.Services.AddTransient<IResourceClaimRepository, ResourceClaimRepository>();
+            AddPostgresqlJobs(webAppBuilder.Services);
         }
         else
         {
             logger.Information("Injecting MSSQL as the primary backend datastore");
             webAppBuilder.Services.AddMssqlDatastore();
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Mssql.Deploy.DatabaseDeploy>();
+            AddMssqlJobs(webAppBuilder.Services);
         }
 
         AddDataStoreConnectionStringValidator(webAppBuilder.Services, usePostgresql);
@@ -207,10 +245,78 @@ public static class WebApplicationBuilderExtensions
     }
 
     /// <summary>
+    /// Binds <c>JobSettings</c> and validates it at startup (spec D-15, §6.3), publishes the configured lease timings
+    /// that the lease repositories and fence factories take, adds the provider-neutral job services (the registries, the
+    /// enqueuer, the schedule service, the executor, and the metrics), and registers each hosted service whose switch is
+    /// on.
+    /// </summary>
+    private static void ConfigureJobOptions(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddSingleton<IValidateOptions<JobOptions>, JobOptionsValidator>();
+        services
+            .AddOptions<JobOptions>()
+            .Bind(configuration.GetSection(JobOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton(provider =>
+            provider.GetRequiredService<IOptions<JobOptions>>().Value.LeaseTimings
+        );
+        services.AddJobServices();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<JobMetrics>();
+        services.AddSingleton<JobExecutor>();
+
+        // Each hosted service has its own switch under spec D-15, read while the services are registered.
+        JobOptions configured = configuration.GetSection(JobOptions.SectionName).Get<JobOptions>() ?? new();
+        if (configured.WorkerEnabled)
+        {
+            services.AddHostedService<JobWorkerService>();
+        }
+
+        if (configured.SchedulerEnabled)
+        {
+            services.AddHostedService<JobScheduleDispatcherService>();
+        }
+
+        if (configured.RetentionEnabled)
+        {
+            services.AddHostedService<JobRetentionService>();
+        }
+    }
+
+    /// <summary>The PostgreSQL job repositories and factories (spec D-1).</summary>
+    private static void AddPostgresqlJobs(IServiceCollection services)
+    {
+        services.AddTransient<IJobRepository, JobRepository>();
+        services.AddTransient<
+            ICmsTransactionFactory,
+            Backend.Postgresql.Jobs.PostgresqlCmsTransactionFactory
+        >();
+        services.AddTransient<IJobLeaseRepository, JobLeaseRepository>();
+        services.AddTransient<IJobFenceFactory, Backend.Postgresql.Jobs.PostgresqlJobFenceFactory>();
+        services.AddTransient<IJobRetentionRepository, JobRetentionRepository>();
+        services.AddTransient<IJobScheduleRepository, JobScheduleRepository>();
+    }
+
+    /// <summary>The SQL Server job repositories and factories (spec D-1).</summary>
+    private static void AddMssqlJobs(IServiceCollection services)
+    {
+        services.AddTransient<IJobRepository, Backend.Mssql.Repositories.JobRepository>();
+        services.AddTransient<ICmsTransactionFactory, Backend.Mssql.Jobs.MssqlCmsTransactionFactory>();
+        services.AddTransient<IJobLeaseRepository, Backend.Mssql.Repositories.JobLeaseRepository>();
+        services.AddTransient<IJobFenceFactory, Backend.Mssql.Jobs.MssqlJobFenceFactory>();
+        services.AddTransient<IJobRetentionRepository, Backend.Mssql.Repositories.JobRetentionRepository>();
+        services.AddTransient<IJobScheduleRepository, Backend.Mssql.Repositories.JobScheduleRepository>();
+    }
+
+    /// <summary>
     /// The one place that decides which engine a submitted data store connection string is validated
     /// against. It follows the configured datastore because that is the engine this deployment runs,
     /// and it is a single seam: a setting that names the target provider per data store replaces this
     /// method and nothing else.
+    ///
+    /// The one validator is also the <see cref="IDataStoreConnectionStringBuilderSource"/>, forwarded
+    /// to the same registration, so the builder a stored connection string is rewritten through is
+    /// the parser it was validated by.
     /// </summary>
     private static void AddDataStoreConnectionStringValidator(IServiceCollection services, bool usePostgresql)
     {
@@ -228,6 +334,11 @@ public static class WebApplicationBuilderExtensions
                 MssqlDataStoreConnectionStringValidator
             >();
         }
+
+        services.AddSingleton<IDataStoreConnectionStringBuilderSource>(provider =>
+            (IDataStoreConnectionStringBuilderSource)
+                provider.GetRequiredService<IDataStoreConnectionStringValidator>()
+        );
     }
 
     private static void ConfigureIdentityProvider(
@@ -288,59 +399,19 @@ public static class WebApplicationBuilderExtensions
                                 logger.Error("Authentication failed: {Message}", context.Exception.Message);
                                 return Task.CompletedTask;
                             },
-                            OnTokenValidated = async context =>
-                            {
-                                var tokenManager =
-                                    context.HttpContext.RequestServices.GetService<ITokenManager>();
-                                if (tokenManager != null)
-                                {
-                                    // Extract the raw token from the Authorization header
-                                    var authHeader = context.Request.Headers["Authorization"].ToString();
-                                    var rawToken = authHeader.StartsWith(
-                                        "Bearer ",
-                                        StringComparison.OrdinalIgnoreCase
-                                    )
-                                        ? authHeader.Substring("Bearer ".Length).Trim()
-                                        : authHeader.Trim();
-                                    var isValid = await tokenManager.ValidateTokenAsync(rawToken);
-                                    if (!isValid)
-                                    {
-                                        context.Fail("Token has been revoked or is invalid.");
-                                    }
-                                }
-                            },
                         };
                     }
                 );
 
-            // Configure dynamic key resolution using IssuerSigningKeyResolver
+            // Validation keys come from the shared signing-key snapshot through its configuration manager, and the
+            // shared request boundary classifies dependency failures as 503 (spec D-2, D-3, step 3.1). The token-status
+            // check runs in the shared token-validated handler. Authority and MetadataAddress above stay set but are
+            // inert: with a manager supplied, nothing fetches discovery or JWKS over HTTP (C-2).
             webApplicationBuilder
                 .Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
-                .Configure<ITokenManager>(
-                    (options, tokenManager) =>
-                    {
-                        options.TokenValidationParameters.IssuerSigningKeyResolver = (
-                            token,
-                            securityToken,
-                            kid,
-                            validationParameters
-                        ) =>
-                        {
-                            // This resolver will be called when a token needs to be validated
-                            // Using ConfigureAwait(false) to avoid deadlocks in the sync context
-                            var keysTask = tokenManager.GetPublicKeysAsync();
-                            var publicKeysList = keysTask.ConfigureAwait(false).GetAwaiter().GetResult();
-
-                            return publicKeysList.Select(rsaParams =>
-                            {
-                                var key = new RsaSecurityKey(rsaParams.RsaParameters)
-                                {
-                                    KeyId = rsaParams.KeyId,
-                                };
-                                return (SecurityKey)key;
-                            });
-                        };
-                    }
+                .Configure<SigningKeyConfigurationManager, SigningKeyBearerEvents>(
+                    (options, configurationManager, bearerEvents) =>
+                        options.UseSigningKeySnapshot(configurationManager, bearerEvents)
                 );
 
             // Add authorization services for OpenIddict (same as Keycloak)

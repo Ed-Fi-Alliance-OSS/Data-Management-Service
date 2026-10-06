@@ -16,6 +16,9 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [TestFixture("unpause")]
 [TestFixture("start")]
 [Category("CdcMessageContract")]
+[Property("CdcInvariant", "CDC-INV-07")]
+[Property("CdcInvariant", "CDC-INV-09")]
+[Property("CdcInvariant", "CDC-INV-14")]
 public sealed class Given_MessageContractRetryCleanup(string failure)
 {
     private const string Sentinel = "synthetic-body-password-tenant-connection-string";

@@ -228,14 +228,18 @@ internal static class RelationalReadGuardrails
             .OrderBy(static name => name, StringComparer.Ordinal)
             .Select(static name => $"'{name}'");
 
+        // Every descriptor operation enforces OwnershipBased, so the sentence names it: this message fires only
+        // for a genuinely unsupported strategy, such as a relationship one, and must not imply ownership is.
         string supportedStrategySentence =
             supportedCustomViewNames.Count == 0
                 ? "Only requests with no authorization strategies or with "
-                    + $"'{AuthorizationStrategyNameConstants.NamespaceBased}' and/or "
-                    + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}' are currently supported."
+                    + $"'{AuthorizationStrategyNameConstants.NamespaceBased}', "
+                    + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}', and/or "
+                    + $"'{AuthorizationStrategyNameConstants.OwnershipBased}' are currently supported."
                 : "Only requests with no authorization strategies or with "
                     + $"'{AuthorizationStrategyNameConstants.NamespaceBased}', "
-                    + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}', and/or a resolved "
+                    + $"'{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}', "
+                    + $"'{AuthorizationStrategyNameConstants.OwnershipBased}', and/or a resolved "
                     + "custom view-based strategy are currently supported.";
 
         return $"Relational {operationLabel} authorization is not implemented for resource '{RelationalWriteSupport.FormatResource(resource)}' "

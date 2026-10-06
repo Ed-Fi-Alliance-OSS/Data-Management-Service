@@ -4,8 +4,12 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
 {
@@ -55,6 +59,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                     "IdentitySettings:KeyFormatCacheSize",
                     100
                 );
+                options.ClientSecretHashingIterations = configuration.GetValue<int>(
+                    "IdentitySettings:ClientSecretHashingIterations",
+                    options.ClientSecretHashingIterations
+                );
                 options.TokenCleanupEnabled = configuration.GetValue<bool>(
                     "IdentitySettings:TokenCleanupEnabled",
                     true
@@ -67,7 +75,73 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                     "IdentitySettings:BearerTokenPerClientLimit",
                     5
                 );
+                options.SigningKeyRefreshIntervalSeconds = configuration.GetValue<int>(
+                    "IdentitySettings:SigningKeyRefreshIntervalSeconds",
+                    300
+                );
+                options.SigningKeyMaxStalenessSeconds = configuration.GetValue<int>(
+                    "IdentitySettings:SigningKeyMaxStalenessSeconds",
+                    3600
+                );
+                options.SigningKeyUnknownKeyRefreshCooldownSeconds = configuration.GetValue<int>(
+                    "IdentitySettings:SigningKeyUnknownKeyRefreshCooldownSeconds",
+                    30
+                );
+                options.SigningKeyLoadTimeoutSeconds = configuration.GetValue<int>(
+                    "IdentitySettings:SigningKeyLoadTimeoutSeconds",
+                    10
+                );
             });
+
+            // Invalid signing-key settings stop the host at startup instead of surfacing on the
+            // first authenticated request.
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<IValidateOptions<IdentityOptions>, SigningKeyOptionsValidator>()
+            );
+            services.AddOptions<IdentityOptions>().ValidateOnStart();
+
+            // PBKDF2 rejects a non-positive count, so without this a bad value would surface as a 500
+            // on the first client create or token request rather than failing startup.
+            services
+                .AddOptions<IdentityOptions>()
+                .Validate(
+                    options => options.ClientSecretHashingIterations > 0,
+                    "IdentitySettings:ClientSecretHashingIterations must be greater than zero."
+                )
+                .ValidateOnStart();
+
+            return services;
+        }
+
+        /// <summary>
+        /// Registers the signing-key services (spec §4.3, step 2.1): the development-certificate store, both key
+        /// sources, the source selected by <see cref="IdentityOptions.UseCertificates"/>, the one snapshot provider,
+        /// its refresh service, and <see cref="TimeProvider"/>; and (step 2.3) the configuration manager and the shared
+        /// bearer events. Only the self-contained store registrations call this, so nothing here exists in Keycloak
+        /// mode. Every registration is a try-add, so registering twice still yields one of each. The bearer schemes
+        /// take the manager and the events through <see cref="SigningKeyJwtBearerOptionsExtensions.UseSigningKeySnapshot"/>:
+        /// the default <c>Bearer</c> scheme since step 3.1 and <c>DmsJwtBearer</c> since step 3.2.
+        /// </summary>
+        public static IServiceCollection AddSigningKeyServices(this IServiceCollection services)
+        {
+            services.TryAddSingleton(TimeProvider.System);
+            services.TryAddSingleton<DevelopmentCertificateStore>();
+            services.TryAddSingleton<DatabaseSigningKeySource>();
+            services.TryAddSingleton<CertificateSigningKeySource>();
+
+            // The same switch the token manager reads, so validation and issuance use the same key store.
+            services.TryAddSingleton<ISigningKeySource>(serviceProvider =>
+                serviceProvider.GetRequiredService<IOptions<IdentityOptions>>().Value.UseCertificates
+                    ? serviceProvider.GetRequiredService<CertificateSigningKeySource>()
+                    : serviceProvider.GetRequiredService<DatabaseSigningKeySource>()
+            );
+
+            services.TryAddSingleton<ISigningKeySnapshotProvider, SigningKeySnapshotProvider>();
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<IHostedService, SigningKeyRefreshService>()
+            );
+            services.TryAddSingleton<SigningKeyConfigurationManager>();
+            services.TryAddSingleton<SigningKeyBearerEvents>();
 
             return services;
         }

@@ -32,6 +32,15 @@ public static class SetupHooks
     private static string EnvOrDefault(string name, string fallback) =>
         Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : fallback;
 
+    /// <summary>
+    /// The database the cleanup hooks delete from, without credentials, so an isolated run can check
+    /// before it starts that cleanup and the deployment it targets are the same.
+    /// </summary>
+    internal static string CleanupDatabaseTarget =>
+        UseMssql
+            ? $"mssql localhost:{MssqlDbPortExternal}/{DatabaseName}"
+            : $"postgresql localhost:{DbPortExternal}/{DatabaseName}";
+
     private static bool UseMssql =>
         string.Equals(
             Environment.GetEnvironmentVariable("DMS_CONFIG_DATASTORE"),
@@ -70,6 +79,18 @@ public static class SetupHooks
                 "Requires a multi-tenant CMS (tenant endpoints are only mapped when multi-tenancy is enabled); "
                     + $"DMS_CONFIG_MULTI_TENANCY is '{multiTenancy ?? "unset"}'."
             );
+        }
+    }
+
+    // Single-tenant expectations, such as an exact empty tenant list, don't hold on a
+    // multi-tenant stack. Skip scenarios tagged @SingleTenantOnly when multi-tenancy is enabled.
+    [BeforeScenario("SingleTenantOnly")]
+    public static void SkipIfMultiTenancyEnabled()
+    {
+        var multiTenancy = Environment.GetEnvironmentVariable("DMS_CONFIG_MULTI_TENANCY");
+        if (string.Equals(multiTenancy, "true", StringComparison.OrdinalIgnoreCase))
+        {
+            Assert.Ignore($"Requires a single-tenant CMS; DMS_CONFIG_MULTI_TENANCY is '{multiTenancy}'.");
         }
     }
 
