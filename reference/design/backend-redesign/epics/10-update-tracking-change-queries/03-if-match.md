@@ -51,9 +51,9 @@ Implement optimistic concurrency checks using stored representation stamps for r
 
 ## If-Match Outcome Table
 
-This table is the DMS-1005 write-side summary. `If-None-Match` behavior is defined in
-[`../../design-docs/update-tracking.md`](../../design-docs/update-tracking.md) and the ContentVersion ADR; when both
-headers are present, `If-Match` governs.
+This table is the DMS-1005 write-side summary. `If-None-Match` is ignored on writes (DMS-1576). Its
+conditional-GET behavior is defined in
+[`../../design-docs/update-tracking.md`](../../design-docs/update-tracking.md) and the ContentVersion ADR.
 
 | Request state | `If-Match` form | Evaluation | Result |
 |---|---|---|---|

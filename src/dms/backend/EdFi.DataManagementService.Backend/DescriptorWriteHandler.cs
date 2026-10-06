@@ -259,37 +259,6 @@ internal sealed class DescriptorWriteHandler(
                         )
                         .ConfigureAwait(false);
 
-                case DescriptorLockedPreconditionResult.CreateNew(var createDocumentUuid):
-                    // If-Match on an insert has no current representation to match, so it fails (412).
-                    // If-None-Match on an insert is the create-only success case: no current
-                    // representation exists, so the insert proceeds in the same locked session (the
-                    // proposed namespace check already ran inside the resolve).
-                    if (request.WritePrecondition is WritePrecondition.IfNoneMatch)
-                    {
-                        var insertResult = await InsertDescriptorAsync(
-                                request,
-                                body,
-                                createDocumentUuid,
-                                resourceKeyId,
-                                writeSession.CreateCommandExecutor(),
-                                cancellationToken
-                            )
-                            .ConfigureAwait(false);
-
-                        await writeSession.CommitAsync(cancellationToken).ConfigureAwait(false);
-                        RecordDescriptorEnqueueSuccessIfApplicable(
-                            request,
-                            DocumentCacheEnqueueTelemetryCanonicalOperation.Insert,
-                            insertResult.DocumentCacheEnqueueOutcome
-                        );
-                        return insertResult.Result;
-                    }
-
-                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                    return new UpsertResult.UpsertFailureETagMisMatch(
-                        ETagPreconditionFailureReason.TargetDoesNotExist
-                    );
-
                 case DescriptorLockedPreconditionResult.MissingDocument:
                     await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                     return new UpsertResult.UpsertFailureWriteConflict();
@@ -550,8 +519,8 @@ internal sealed class DescriptorWriteHandler(
                         await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                         // RFC 9110 §13.1.1 If-Match: * requires the target to exist; a wildcard If-Match against
                         // a missing PUT target yields the precondition-failed (412) result rather than
-                        // not-exists (404). A wildcard If-None-Match against a missing target is the
-                        // success case, so it falls through to the normal not-exists (404) result.
+                        // not-exists (404). A non-wildcard If-Match against a missing target falls through to
+                        // the normal not-exists (404) result.
                         return request.WritePrecondition is WritePrecondition.IfMatch { IsWildcard: true }
                             ? new UpdateResult.UpdateFailureETagMisMatch(
                                 ETagPreconditionFailureReason.TargetDoesNotExist
@@ -1212,14 +1181,13 @@ internal sealed class DescriptorWriteHandler(
             storedNamespaceAuthorization
         );
 
-        if (targetContext is RelationalWriteTargetContext.CreateNew(var createDocumentUuid))
+        if (targetContext is RelationalWriteTargetContext.CreateNew)
         {
-            // POST with If-Match where no existing document was found normally returns ETagMisMatch,
-            // and If-None-Match on the same create proceeds to insert (the caller branches on the
-            // precondition type). Either way the configured proposed-value filters run before the
-            // precondition outcome, so an authorization denial (403) precedes it. Which of those filters
-            // answers is decided by CMS-configured order, below. The proposed namespace check is a single
-            // statement against the dialect's namespace authorization SQL and needs no row lookup.
+            // POST with If-Match where no existing document was found normally returns ETagMisMatch.
+            // The configured proposed-value filters run before the precondition outcome, so an
+            // authorization denial (403) precedes it. Which of those filters answers is decided by
+            // CMS-configured order, below. The proposed namespace check is a single statement against the
+            // dialect's namespace authorization SQL and needs no row lookup.
             // Same deterministic denial as the non-precondition create path: no row exists yet, so no view row
             // can reference it. It and the proposed namespace check run in CMS-configured order, so whichever is
             // configured first is the one that answers.
@@ -1273,7 +1241,7 @@ internal sealed class DescriptorWriteHandler(
             }
 
             // The ownership slot of a create: after every proposed filter, and ahead of the precondition
-            // outcome, so the 403 or cap 500 precedes an If-Match 412 and If-None-Match inserts nothing.
+            // outcome, so the 403 or cap 500 precedes an If-Match 412.
             if (deferredCreateOwnershipFailureResult is not null)
             {
                 return new DescriptorLockedPreconditionResult.DeferredPostOwnershipFailure(
@@ -1281,7 +1249,10 @@ internal sealed class DescriptorWriteHandler(
                 );
             }
 
-            return new DescriptorLockedPreconditionResult.CreateNew(createDocumentUuid);
+            // If-Match on an insert has no current representation to match, so it fails (412).
+            return new DescriptorLockedPreconditionResult.Mismatch(
+                ETagPreconditionFailureReason.TargetDoesNotExist
+            );
         }
 
         if (targetContext is not RelationalWriteTargetContext.ExistingDocument existingTargetContext)
@@ -1436,18 +1407,13 @@ internal sealed class DescriptorWriteHandler(
         ILogger logger
     )
     {
-        var isSatisfied = EtagPreconditionEvaluator.IsSatisfied(
-            precondition,
-            targetExists: true,
-            currentEtag
-        );
+        var isSatisfied = EtagPreconditionEvaluator.IsSatisfied(precondition, currentEtag);
 
         if (logger.IsEnabled(LogLevel.Debug))
         {
             var clientTag = precondition switch
             {
                 WritePrecondition.IfMatch m => m.IsWildcard ? "*" : m.Value,
-                WritePrecondition.IfNoneMatch n => n.IsWildcard ? "*" : string.Join(", ", n.Values),
                 _ => "(none)",
             };
             logger.LogDebug(
@@ -4596,8 +4562,6 @@ internal sealed class DescriptorWriteHandler(
     private abstract record DescriptorLockedPreconditionResult
     {
         private DescriptorLockedPreconditionResult() { }
-
-        public sealed record CreateNew(DocumentUuid DocumentUuid) : DescriptorLockedPreconditionResult;
 
         public sealed record NotFound : DescriptorLockedPreconditionResult
         {

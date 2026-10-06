@@ -223,26 +223,19 @@ internal sealed class DefaultRelationalWriteExecutor(
             var etagPreconditionEvaluation =
                 RelationalWriteExecutionStateResolver.GetEtagPreconditionEvaluation(executionRequest);
 
-            // If-None-Match is a sibling of If-Match, so the before-auth gate must admit both to
-            // agree with GetEtagPreconditionEvaluation's broadened defer decision; otherwise an
-            // If-None-Match write would silently skip the precondition resolution.
             if (
                 RelationalWriteExecutionStateResolver.HasEtagPrecondition(request.WritePrecondition)
                 && etagPreconditionEvaluation is EtagPreconditionEvaluation.BeforeProposedAuthorization
             )
             {
-                // If-Match on an insert (CreateNew) fails (412); If-None-Match on an insert is the
-                // create-only success case and proceeds.
+                // If-Match on an insert (CreateNew) fails (412).
                 if (executionRequest.TargetContext is RelationalWriteTargetContext.CreateNew)
                 {
-                    if (executionRequest.WritePrecondition is WritePrecondition.IfMatch)
-                    {
-                        await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                        return RelationalWriteExecutorResults.BuildPreconditionFailureResult(
-                            executionRequest.OperationKind,
-                            ETagPreconditionFailureReason.TargetDoesNotExist
-                        );
-                    }
+                    await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                    return RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                        executionRequest.OperationKind,
+                        ETagPreconditionFailureReason.TargetDoesNotExist
+                    );
                 }
                 else
                 {

@@ -3,639 +3,378 @@
 **Status:** Accepted — implemented in the relational backend; the three design docs
 (`update-tracking.md`, `transactions-and-concurrency.md`, `flattening-reconstitution.md`) have been
 updated to match. \
-**Date:** 2026-06-30 (accepted 2026-07-03) \
-**Amended 2026-07-04:** `profileCode` removed from the `If-Match` comparison to restore legacy
-compatibility — see [Amendment (2026-07-04)](#amendment-2026-07-04-profilecode-removed-from-if-match-comparison). \
-**Amended 2026-07-05:** unquoted `If-Match` values accepted as equivalent to quoted ones for legacy
-compatibility — see [Amendment (2026-07-05)](#amendment-2026-07-05-unquoted-if-match-values-accepted-as-equivalent-to-quoted). \
-**Amended 2026-07-05:** bare `If-Match: *` honored as an existence precondition per RFC 9110 §13.1.1 —
-see [Amendment (2026-07-05, wildcard)](#amendment-2026-07-05-if-match-wildcard-matching). \
-**Amended 2026-07-06:** `If-None-Match` support added — conditional-GET `304` plus a write create-guard —
-see [Amendment (2026-07-06)](#amendment-2026-07-06-if-none-match-support). \
-**Amended 2026-07-07:** the served descriptor `_etag` is now profile-sensitive for conditional-GET
-correctness — see [Amendment (2026-07-07, descriptor profile etag)](#amendment-2026-07-07-descriptor-served-etag-varies-by-readable-profile). \
-**Amended 2026-07-10:** response content coding was added to `variantKey` so identity, Brotli, and
-gzip representations have distinct strong validators — see [Amendment (2026-07-10)](#amendment-2026-07-10-content-coding-added-to-the-served-etag). \
-**Amended 2026-07-08:** a final `ContentVersion` read is restored — relocated into the persister,
-after every table mutation — because the root-insert stamp is stale once child-table writes fire
-stamp triggers; see [Amendment (2026-07-08, final ContentVersion read)](#amendment-2026-07-08-final-contentversion-read-relocated-into-the-persister). \
-**Amended 2026-07-08:** the `variantKey` `profileCode` is a SHA-256 prefix of the profile *name*, not
-a compile-time index — this hashes the profile descriptor, never the representation, so it upholds the
-original no-representation-hash decision; see [Amendment (2026-07-08, profileCode hash)](#amendment-2026-07-08-profilecode-encodes-a-hash-of-the-profile-name). \
+**Date:** 2026-06-30 (accepted 2026-07-03; last amended 2026-09-30) \
 **Deciders:** Development team (signed off 2026-07-08). \
-**Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
+**Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 and Claude Opus 5.5 (Claude Code).
+The 2026-07-10 amendment was authored by Brad Banister, with implementation assistance from Codex.
+
+This ADR describes architecture and client-visible behavior. Code-level details (classes, files, tests)
+are deliberately omitted; the implementation is the source of truth for those.
+
+## Amendment history
+
+| Date | Change |
+| --- | --- |
+| 2026-07-04 | `profileCode` removed from the `If-Match` comparison, for legacy compatibility. |
+| 2026-07-05 | Unquoted `If-Match` values accepted as equivalent to quoted ones, for legacy compatibility. |
+| 2026-07-05 | Bare `If-Match: *` honored as an existence precondition (RFC 9110 §13.1.1). |
+| 2026-07-06 | `If-None-Match` support added: conditional GET `304`, plus a write create-guard. |
+| 2026-07-07 | Served descriptor `_etag` made profile-sensitive, matching other resources. |
+| 2026-07-08 | Final `ContentVersion` read restored on the write path, after all table mutations. |
+| 2026-07-08 | `profileCode` clarified as a hash of the profile *name*. |
+| 2026-07-10 | Content coding added to the served etag. |
+| 2026-09-30 | `If-None-Match` restricted to conditional GET; the write create-guard was withdrawn (DMS-1576). |
+
+The sections below describe the current, consolidated design.
 
 ## Executive Summary
 
-A deep code analysis reveals that the `_etag` calculation requires an extra database read, which may have a noticeable impact across high volume operations. At the same time, the application is calculating a `ContentVersion` (numeric) for every update. This number can be used as the state component of the composed `_etag` instead.
+The `_etag` calculation originally required an extra database read on every write, which has a
+noticeable impact on high volume operations. At the same time, the application already calculates a
+`ContentVersion` (numeric) for every update. This number can be used as the state component of the
+composed `_etag` instead.
 
-The only additional benefit provided with the more complex current path is that it would guarantee etag equality for the same payload when pushed to multiple servers, or in the case of a `DELETE` followed by `POST` of the same body. However, this is not a requirement of an Ed-Fi API. Indeed, the legacy Ed-Fi ODS/API likewise does not satisfy that requirement. Consequently, this ADR pushes the code base to use the `ContentVersion` as the basis for the `_etag`.
+The only additional benefit of the more complex hash-based approach is that it would guarantee etag
+equality for the same payload when pushed to multiple servers, or in the case of a `DELETE` followed by
+`POST` of the same body. That is not a requirement of an Ed-Fi API. Indeed, the legacy Ed-Fi ODS/API
+likewise does not satisfy it. Consequently, this ADR bases the `_etag` on `ContentVersion`.
 
-Additionally, this ADR brings the `_etag` formatting in line with (HTTP) RFC 9110's requirements by serving different `_etag` values for each representation.
+Additionally, this ADR brings the `_etag` in line with HTTP RFC 9110 by serving a different `_etag` for
+each byte-different representation of a resource.
 
 ## Context
 
-Before this ADR, the redesigned relational backend design computed `_etag` as a SHA-256 hash of the canonical resource-state JSON (object properties ordinally ordered, arrays preserved, minified UTF-8, base64; server fields `id`, `link`, `_etag`, `_lastModifiedDate` excluded). The same algorithm was used by the JSON-document backend at the time of the decision.
+Before this ADR, the redesigned relational backend computed `_etag` as a SHA-256 hash of the canonical
+resource-state JSON. A throughput review of the high-concurrency POST path (a client full-sync issuing
+tens of thousands of POSTs) identified this per-write hash as the single most impactful bottleneck. In
+the relational backend the hash cannot be computed from the request body, because the persisted document
+can differ from the request (collection merges, identity cascades, normalization). The write path
+therefore performed a full hydrate-materialize-hash **readback** of the just-written document, inside the
+write transaction, solely to populate a response header whose body is otherwise empty.
 
-A throughput review of the high-concurrency POST path (a client full-sync issuing tens of thousands of POSTs to `/students` and `/studentSchoolAssociations`) identified the per-write computation of this hash as the single most impactful bottleneck. In the relational backend the hash cannot be computed from the request body, because the persisted canonical document can differ from the request (collection merges, identity cascades, normalization). To obtain it, the write path performs a full hydrate-materialize-hash **readback** of the just-written document — a multi-statement query plus JSON reconstruction — **inside the write transaction, before `COMMIT`**, solely to populate a response header. The POST/PUT response body is `null`, so none of the materialized document is otherwise used.
+Two facts make a change to the `_etag` contract feasible:
 
-Two facts make a change to the `_etag` contract feasible and attractive now:
-
-1. **The content-hash `_etag` has not yet shipped** in the redesigned backend. Changing the client-visible `If-Match` value is therefore not a breaking change against deployed clients — it is a design choice still available at no compatibility cost.
-2. **Content-addressability is not a firm requirement.** The team confirmed the deployment model does not require `_etag` to be identical for identical content across full rebuilds/migrations, or across heterogeneous instances/engines (e.g. blue-green with separate stores, or PostgreSQL and SQL Server replicas serving byte-identical etags).
+1. **The content-hash `_etag` has not shipped** (at the time of the initial ADR and code fix) in the
+   redesigned backend, so changing it is not a breaking change for deployed clients.
+2. **Content-addressability is not a requirement.** The deployment model does not need identical
+   `_etag` values for identical content across rebuilds, migrations, or heterogeneous instances and
+   engines.
 
 > [!NOTE]
-> Stephen has confirmed that this is *not* a requirement by inspecting actual legacy ODS/API behavior. Thus while the idea has merit, it is unnecessary.
+> Stephen has confirmed that this is *not* a requirement by inspecting actual legacy ODS/API behavior.
+> Thus while the idea has merit, it is unnecessary.
 
 ## Decision drivers
 
-- Reduce or eliminate the per-write readback cost on the high-concurrency write path, and the row-lock window it extends.
+- Reduce or eliminate the per-write readback cost on the high-concurrency write path, and the row-lock
+  window it extends.
 - Preserve correct optimistic-concurrency (`If-Match`) semantics.
 - Adhere strictly to RFC 9110 strong-validator semantics for `ETag` / `If-Match`.
 - Maintain cross-engine (PostgreSQL / SQL Server) determinism.
 - Avoid high-risk refactors and contracts that are hard to maintain.
-- Respect the backend redesign's stated priority of correctness over speed; do not trade away a required property for throughput.
+- Respect the backend redesign's stated priority of correctness over speed.
 
 ## Considered options
 
 ### Option 1 — Move the readback after `COMMIT`
 
-Keep the hash; run the hydrate-materialize-hash readback after the transaction commits rather than before.
+Keep the hash; run the readback after the transaction commits.
 
-- **Pros:** Lowest risk; preserves the hash byte-for-byte; shrinks the row-lock window (concurrent re-POSTs to the same key stop serializing on hydration time).
-- **Cons:** Does not reduce total work per write — the readback still runs, only outside the lock; throughput-per-core is unchanged. A post-commit read failure needs a defined fallback (the write already succeeded).Additionally, introduces a potential race condition:
-
-  1. Client A: `BEGIN … writes … COMMIT`. At `COMMIT`, A's row lock on the `dms.Document` row (the `FOR UPDATE` Bottleneck) is released.
-  2. Client B: acquires the row, updates the same resource, `COMMIT`s.
-  3. Client A: post-commit readback runs under ReadCommitted → reads the latest committed state, which is now B's.
-
-     So A's 201/200 response carries B's `_etag` and `_lastModifiedDate` (and, on a GET-style materialization, B's body), not the state A actually wrote.
+- **Pros:** Lowest risk; preserves the hash; shrinks the row-lock window.
+- **Cons:** Total work per write is unchanged. It also introduces a race: after client A commits and
+  releases its row lock, client B can commit a newer change before A's readback runs, so A's response
+  would carry B's `_etag` rather than the state A wrote.
 
 ### Option 2 — Compute the hash in-memory from merged write state
 
-Build the canonical JSON from the merged write state at persist time and hash it in-process, eliminating the readback.
+Hash in-process at persist time, eliminating the readback.
 
-- **Pros:** Removes the readback entirely while preserving the hash contract; aligns the relational backend with how the JSON backend already works.
-- **Cons:** Substantial, high-risk refactor. At persist time, memory holds a *flattened relational view* (`RelationalWriteMergeResult` / per-table `FlattenedWriteValue[]`), the prior current state, and the request body — but **no canonical JSON document**. JSON reconstitution (`DocumentReconstituter` + `RelationalReadMaterializer`) runs only off hydrated *read* rows. Implementing this requires a new serialization layer over flattened rows and a proof that its output is byte-for-byte identical to the read-path output on both engines; the lossy flatten/merge step (null-vs-omitted, value normalization) is exactly where divergence would hide. (Note: DB-stamped `ContentLastModifiedAt` is *not* a blocker, because `_etag` excludes `_lastModifiedDate`; the blocker is the absence of an in-memory canonical JSON form.)
+- **Pros:** Removes the readback while preserving the hash contract.
+- **Cons:** Substantial, high-risk refactor. At persist time the system holds a flattened relational view,
+  not a canonical JSON document, so it would need a new serialization layer proven byte-for-byte
+  identical to the read path on both engines. The lossy flatten/merge step is exactly where divergence
+  would hide.
 
 ### Option 3 — Persist a `ContentEtag` column
 
-Compute the hash once at write, store it on `dms.Document`, and serve it on reads from the column.
+Compute the hash once at write, store it, and serve reads from the column.
 
-- **Pros:** Retires the per-*read* rehash (helps GET-by-id and GET-collection).
-- **Cons:** Does not help the POST write hot path on its own — the hash must still be computed at write time (via Option 1 or 2). Cannot be maintained by a DB trigger, because canonical-ordered SHA-256 is not reproducible identically across PostgreSQL and SQL Server, so it must be computed app-side. Useful only as a read-path complement to Option 1 or 2.
+- **Pros:** Retires the per-read rehash.
+- **Cons:** Does not help the write hot path, since the hash must still be computed at write time. It
+  cannot be maintained by a database trigger because the canonical SHA-256 is not reproducible across
+  engines. Useful only as a read-path complement to Option 1 or 2.
 
 ### Option 4 — Derive `_etag` from `ContentVersion` (CHOSEN)
 
-Serve `_etag` from `dms.Document.ContentVersion`, the monotonic per-document change counter, plus the active representation `variantKey`, abandoning the content hash.
+Serve `_etag` from the monotonic per-document `ContentVersion`, plus a token describing the served
+representation, and abandon the content hash.
 
-- **Pros:** Cheapest possible — no readback, no hash; the value is already returned by `INSERT … RETURNING` and present on the row at zero marginal cost. Eliminates the bottleneck for both reads and writes. Satisfies every *written* requirement for `_etag`. Retires the per-*read* rehash (helps GET-by-id and GET-collection).
-- **Cons:** Loses content-addressability and cross-instance content identity (both confirmed out of scope). Couples `If-Match` to the change-version counter — but this is moot, since `ChangeVersion` (equal to `ContentVersion`) is already a client-visible field, so the etag exposes nothing new.
-- **Variant 4b:** Serve an opaque `hash(documentUuid + ContentVersion)` instead of the raw integer, to keep the etag opaque and able to diverge from `ChangeVersion` later. Not adopted now (marginal benefit, since the counter is already public), but recorded as a low-cost future option.
+- **Pros:** Cheapest possible: no readback and no hash. Eliminates the bottleneck for reads and writes.
+  Satisfies every *written* requirement for `_etag`.
+- **Cons:** Loses content-addressability and cross-instance content identity (both confirmed out of
+  scope). Couples `If-Match` to the change-version counter, which is moot because `ChangeVersion` (equal
+  to `ContentVersion`) is already client-visible.
+- **Variant 4b:** Serve an opaque hash of document id and `ContentVersion` instead of the raw integer.
+  Not adopted (marginal benefit), but recorded as a low-cost future option.
 
 ### Rejected alternative — Use `_lastModifiedDate`
 
-Derive `_etag` from a the stored `ContentLastModifiedAt` timestamp.
+Viable on performance, but `ContentVersion` strictly dominates it:
 
-- Viable on performance (a stored stamp, no readback — same win as Option 4), and clears the cheap / profile-stable / `If-Match`-capable bars.
-- **Rejected because `ContentVersion` strictly dominates it:**
-  - **Uniqueness:** a monotonic counter never collides; two writes to the same document within one clock tick produce identical timestamps and thus an identical etag across a real content change, risking an `If-Match` false-match and a lost update.
-  - **Cross-engine determinism:** `now()` / `getutcdate()` are clock-based (skew, NTP, differing resolution), while a `bigint` counter is deterministic and strictly increasing.
-  - Cascade-sensitivity is a *tie* (the descriptor stamping trigger updates `ContentVersion` and `ContentLastModifiedAt` in the same statement), so the timestamp offers no advantage there.
+- **Uniqueness:** two writes within one clock tick produce identical timestamps, risking an `If-Match`
+  false match and a lost update. A monotonic counter never collides.
+- **Cross-engine determinism:** database clocks vary in skew and resolution; a `bigint` counter does not.
 
 ## Decision
 
 Adopt **Option 4**: derive `_etag` from `ContentVersion`.
 
-`ContentVersion` satisfies every requirement the redesign documents actually state for `_etag`:
+`ContentVersion` satisfies every requirement the redesign documents state for `_etag`:
 
-- **Resource-state-sensitive** — bumps on representation change, including identity cascades (subject to the follow-up below).
-- **No-op-suppressed** — left unbumped when an inbound write changes nothing.
-- **Stored, not response-derived** — read directly from the row.
-- **Profile- and `link`-insensitive at the stamp level** — `ContentVersion` is a stored stamp taken before projection and response decoration. (The *served* etag deliberately re-introduces profile/format/link sensitivity via `variantKey` for RFC 9110 compliance — see "ETag format and HTTP validator semantics (RFC 9110)".)
+- **Resource-state-sensitive** — advances on any representation change, including identity cascades.
+- **No-op-suppressed** — left unchanged when an inbound write changes nothing.
+- **Stored, not response-derived** — read directly from the document row.
+- **Profile- and `link`-insensitive at the stamp level** — the stamp is taken before projection and
+  response decoration. (The *served* etag deliberately reintroduces representation sensitivity; see
+  below.)
 - **Cross-engine** — a deterministic `bigint`.
 
-The only requirements it does not meet are content-addressability and cross-instance content identity, both confirmed out of scope. The change removes the bottleneck at its root rather than relocating it (Option 1) or accepting a high-risk refactor (Option 2).
+It does not meet content-addressability or cross-instance content identity, both out of scope. The
+change removes the bottleneck at its root rather than relocating it (Option 1) or accepting a high-risk
+refactor (Option 2).
 
-One redesign requirement is **deliberately reversed**: the redesign specifies a profile/link-insensitive `_etag`, whereas this ADR makes the *served* etag representation-sensitive for strict RFC 9110 compliance (see the next section). The underlying stamp (`ContentVersion`) remains profile/link-insensitive; only the served etag gains the `variantKey`.
+One redesign requirement is **deliberately reversed**: the redesign specified a profile/link-insensitive
+`_etag`, whereas the *served* etag is now representation-sensitive for RFC 9110 compliance. The
+underlying stamp remains profile/link-insensitive.
 
 ## ETag format and HTTP validator semantics (RFC 9110)
 
-RFC 9110 §8.8.1 distinguishes strong and weak validators. A strong validator must change whenever the representation changes in any way — any two responses sharing the etag are byte-for-byte identical for that representation — while a weak validator promises only semantic equivalence. This design requires **strong** validators: RFC 9110 §13.1.1 mandates the *strong* comparison function for `If-Match`, and weak (`W/`-prefixed) etags never satisfy strong comparison, so a weak etag would make every `If-Match` precondition fail and break the optimistic-concurrency protection this design depends on. Etags are therefore served as strong entity-tags — quoted, with no `W/` prefix. Weakening is **not** an available fallback.
+RFC 9110 §8.8.1 distinguishes strong and weak validators. A strong validator changes whenever the
+representation changes in any way. This design requires **strong** validators: `If-Match` mandates
+strong comparison (§13.1.1), and weak (`W/`) etags never satisfy it, so weak etags would make every
+`If-Match` fail. Etags are therefore served as quoted strong entity-tags with no `W/` prefix. Weakening
+is not an available fallback.
 
-A bare `ContentVersion` is a strong validator only when each resource state maps to a single served byte-representation. That condition does not hold: the served bytes vary by **profile** (readable-profile projection removes fields; selected per request), **link mode** (`ResourceLinksOptions.Enabled`; server configuration), and **content coding** (identity, Brotli, or gzip), and may vary by **format / media type** in the future (e.g. XML). A bare counter would assign the same etag to these byte-different representations, violating strong-validator semantics and conditional-GET cache correctness.
+A bare `ContentVersion` is a strong validator only if each resource state has one served byte
+representation. It does not: served bytes vary by **profile**, **link mode**, **content coding**
+(identity, Brotli, gzip), and potentially **format / media type** in the future. A bare counter would
+give the same etag to byte-different representations.
 
-**Prescription — the etag MUST be `"{ContentVersion}-{variantKey}"`.** `variantKey` is a short, deterministic, stable token encoding every byte-affecting representation selector in scope — the response **format / media type**, the active **profile** (or its absence), the **link mode**, and the selected **content coding**. This keeps each representation's etag distinct (strict RFC 9110 §8.8.1 adherence) while staying cheap: it composes the counter with a small key and performs no hashing of the document body.
+**The etag is therefore `"{ContentVersion}-{variantKey}"`.** `variantKey` is a short, deterministic
+token encoding every byte-affecting representation selector. Each representation gets a distinct etag
+while the cost stays negligible: the counter is concatenated with a small key, and no document is hashed.
 
-An implementation correction or deployment may change representation bytes without
-changing any `variantKey` selector. In that case the corrected representation MUST NOT be
-served with the prior strong ETag. Before corrected traffic is admitted, the deployment
-must use the supported out-of-band representation-restamp operation to advance
-`ContentVersion` for every affected document, even when a corrected composer would produce
-a different ETag at the old version. The restamp is a coordinated maintenance operation,
-not an ordinary no-op resource update; see
-[Offline byte-changing representation correction](design/backend-redesign/design-docs/cdc/cdc-streaming.md#offline-byte-changing-representation-correction).
+**Both parts are opaque strings.** Neither server nor clients interpret `ContentVersion` numerically. It
+is serialized as a string, compared character-by-character, and documented to clients as opaque.
 
-**`ContentVersion` MUST be treated as a string.** HTTP entity-tags are opaque, quoted strings (e.g. `ETag: "5-json"`). Neither the server nor clients may interpret the `ContentVersion` portion as a number: serialize it as a string in the `_etag` body field and as a quoted value in the `ETag` header, compare it as an opaque string (RFC strong comparison is character-by-character), and document it to clients as opaque so they never parse it or compare it numerically.
+### `variantKey` encoding
 
-**`If-Match` comparison (decided).** The *served* etag carries the full `variantKey`, but `If-Match` evaluation compares only the **state-significant projection** of the tag. The origin server mints these tags and may therefore compare them with knowledge of their structure — etag opacity binds clients, not the server. The compared components are `ContentVersion` and `schemaEpoch`. The `variantKey` components **`format`**, **`profileCode`**, **`linkFlag`**, and **`contentCoding`** encode representation selectors rather than resource state, so they are excluded from the write-time `If-Match` match. This preserves optimistic-concurrency safety — ignored components cannot mask a state change because any persisted change advances `ContentVersion` — while avoiding false `412`s across representation variants that denote the same state. The *served* etags remain full strong validators for conditional **GET** / `If-None-Match` cache correctness, and only the write-time `If-Match` comparison is projected to the state-significant subset.
-
-### `variantKey` encoding (specification)
-
-`variantKey` is a dot-delimited, fixed-order, lowercase ASCII token of five components. All characters are drawn from `[a-z0-9_]` plus the `.` separator — all valid `etagc` characters (RFC 9110 §8.8.3), containing no `"` or `\`.
+`variantKey` is a dot-delimited, fixed-order, lowercase token of five components, using only `[a-z0-9_]`
+and `.`:
 
 ```
 variantKey = schemaEpoch "." format "." profileCode "." linkFlag "." contentCoding
-etag-value = ContentVersion "-" variantKey          ; opaque; never parsed numerically
+etag-value = ContentVersion "-" variantKey
 ETag       = DQUOTE etag-value DQUOTE               ; quotes are HTTP framing only
 ```
 
-Components, in fixed order:
+1. **`schemaEpoch`** — the first 8 hex characters of the in-force `EffectiveSchemaHash`. It captures every
+   rendering input that is not document state, including the resource's field set and profile
+   *definitions*. A schema or profile-definition change rotates it, correctly invalidating etags whose
+   bytes are no longer reproducible.
+2. **`format`** — a stable code for the response media type, from a fixed registry. Today `j` =
+   `application/json`; further codes (e.g. `x` for XML) are reserved for future formats.
+3. **`profileCode`** — `_` when no profile applies; otherwise the first 8 hex characters of
+   `SHA-256(profileName)`. This hashes only the tiny, static profile name, never the representation, so
+   it upholds the decision to stop hashing document bodies. (A compile-time profile index was
+   considered, but the mapping model exposes no stable profile catalog to assign one.)
+4. **`linkFlag`** — `l` when links are emitted, `n` otherwise.
+5. **`contentCoding`** — `i` identity, `b` Brotli, `g` gzip, taken from the coding the response
+   compression middleware selected. A new coding requires registering a new stable code.
 
-1. **`schemaEpoch`** — the first 8 lowercase hex characters of the in-force `EffectiveSchemaHash`. Captures every rendering input that is *not* the document state itself: the resource's field set / ordering and all profile *definitions*. A schema or profile-definition change rotates this segment, correctly invalidating prior etags whose bytes are no longer reproducible. (Team option: substitute a coarser API-standard-version token if per-schema-hash invalidation is judged too aggressive; the hash is the strict-correct choice, because a profile redefinition genuinely changes the served bytes for an unchanged `ContentVersion`.)
-2. **`format`** — a stable one-or-two-char code for the response media type, from a fixed server-side registry. Defined today: `j` = `application/json`. Reserve further codes (e.g. `x` = XML) as formats are added. Never derive this from the raw media-type string at runtime; map through the registry so codes stay stable.
-3. **`profileCode`** — `_` when no profile is applied; otherwise the first 8 lowercase hex characters of `SHA-256(UTF-8(profileName))`, where `profileName` is the readable profile name. This hashes only the tiny, static profile-name descriptor — never the representation JSON — so it preserves the decision to stop hashing document bodies.
-4. **`linkFlag`** — `l` when `ResourceLinksOptions.Enabled` is true (links emitted), `n` when false.
-5. **`contentCoding`** — a stable code for the selected response content coding: `i` = identity,
-   `b` = Brotli (`br`), and `g` = gzip. The ASP.NET Core response-compression provider is the source
-   of the negotiated coding; adding another provider requires registering a new stable code.
-
-Examples (`ContentVersion` = 5, schema epoch `a1b2c3d4`):
+All components are always present (`_` / `n` / `i` for "none" / "off" / "identity"), so the token has a
+fixed shape.
 
 | Representation | `_etag` body value | `ETag` header |
-|---|---|---|
+| --- | --- | --- |
 | JSON, no profile, links on, identity | `5-a1b2c3d4.j._.l.i` | `"5-a1b2c3d4.j._.l.i"` |
 | JSON, no profile, links on, gzip | `5-a1b2c3d4.j._.l.g` | `"5-a1b2c3d4.j._.l.g"` |
 | JSON, profiled, links off, identity | `5-a1b2c3d4.j.9f1d2c3a.n.i` | `"5-a1b2c3d4.j.9f1d2c3a.n.i"` |
-| (future) XML, no profile, links on, Brotli | `5-a1b2c3d4.x._.l.b` | `"5-a1b2c3d4.x._.l.b"` |
 
-Rules:
-
-- The opaque-tag value is everything between the quotes (`5-a1b2c3d4.j._.l.i`); the double-quotes are HTTP framing only. The `_etag` JSON body field carries the **unquoted** value; the `ETag` / `If-Match` headers the server **emits** carry it **quoted**. On **input**, however, the server accepts an `If-Match` value whether or not it is quoted (see [Amendment (2026-07-05)](#amendment-2026-07-05-unquoted-if-match-values-accepted-as-equivalent-to-quoted)); this asymmetry is deliberate, for legacy compatibility. A bare `If-Match: *` is handled separately as an RFC 9110 §13.1.1 wildcard, not as an opaque tag (see [Amendment (2026-07-05, wildcard)](#amendment-2026-07-05-if-match-wildcard-matching)).
-- `ContentVersion` and every `variantKey` component are treated as **opaque strings** — no component is parsed or compared numerically.
-- All components are always present (use `_` / `n` for "none" / "off") so the token has a fixed shape and is never ambiguous.
-- The server composes the full tag deterministically from `ContentVersion`, request context (negotiated format, profile in effect, link mode, and selected content coding), and the loaded schema. Reads use the row's `ContentVersion`; write responses use the final `ContentVersion` returned by the persistence layer after all mutations and emit the identity-coding variant because they carry no encoded resource representation. No document hydration or document hashing is performed for etag construction. Write preconditions compare the **state-significant projection** (`ContentVersion`, `schemaEpoch`; `format`, `profileCode`, `linkFlag`, and `contentCoding` excluded) — see "`If-Match` comparison (decided)" and the 2026-07-04 amendment.
-- When response compression is enabled, ETag-bearing GET responses include `Vary: Accept-Encoding`. This applies to `304 Not Modified` as well as `200 OK`; a 304 has no body, so the serving boundary adds the field even though the compression middleware does not execute its body-write hook.
-
-Cost: each etag is a string concatenation of the counter with five small tokens. `schemaEpoch` and the `format` registry are derived from already-loaded schema metadata, `profileCode` is `_` or a short SHA-256 prefix of the readable profile name, `linkFlag` is a config read, and `contentCoding` comes from the already-selected response-compression provider. For write responses, the current implementation pays one scalar `ContentVersion` lookup after persistence-side mutations so trigger-stamped child changes are reflected in the returned etag. No per-document hashing occurs.
-
-**Alternative (fixed-length opaque token).** If a uniform, fully-opaque etag is preferred over the debuggable structured form, set `variantKey` to the first 12 hex characters of `SHA-256("{schemaEpoch}|{format}|{profileCode}|{linkFlag}|{contentCoding}")`. This hashes only a tiny descriptor string (cacheable per variant), not the document, so it preserves the performance goal; it trades operator readability for fixed width. The structured form is recommended unless fixed-length tags are specifically required.
-
-## Supporting findings (code review, 2026-06-30)
-
-- **No-op detection does not depend on the etag hash.** The guarded no-op path (`DefaultRelationalWriteExecutor` ~lines 310-347; `RelationalWriteGuardedNoOp`) detects an unchanged body by flattened row-by-row value comparison (`ComparableValues.SequenceEqual`), not by hashing. The subsequent `SELECT "ContentVersion" … FOR UPDATE` (`RelationalWriteFreshnessChecker`) compares the live `ContentVersion` to the value observed at lookup — a concurrency guard, not the content-change test. This means a content hash is not needed for no-op detection. It also means the no-op success path currently **still pays the full readback** to build the response etag, so even unchanged re-POSTs (the common case in a re-sync) incur the bottleneck today; Option 4 eliminates that.
-
-- **`ContentVersion` is always on and not configurable.** It is emitted as `bigint NOT NULL` defaulting to `NEXT VALUE FOR dms.ChangeVersionSequence` (`CoreDdlEmitter`), assigned by the database on every INSERT. No `appsettings` flag gates it; the `AppSettings` classes expose no change-tracking toggle. The etag therefore rests on a value guaranteed present on every write.
-
-- **`_etag` is produced in two places today**, both of which this decision changes (see Consequences).
-
-## Consequences
-
-### Cross-backend implementation scope
-
-- **JSON-document backend:** `InjectVersionMetadataToEdFiDocumentMiddleware` (Core) currently computes `_etag` by hashing the request body **before persistence** (`ResourceEtagFormatter.FormatEtag`). Because `ContentVersion` does not exist until the write, etag production must move to **after** the write (or the backend must return the counter for Core to format). Confirm this does not regress the JSON backend's current zero-readback property.
-- **Relational backend:** `_etag` was computed from the materialized current/committed representation; its state component now comes directly from the persisted/returned `ContentVersion` and is composed with the active `variantKey`.
-- **`If-Match` precondition check:** `RelationalCurrentEtagPreconditionChecker` currently re-hashes the materialized current state. Under Option 4 it becomes a `ContentVersion` comparison — and since `RelationalWriteFreshnessChecker` already fetches `ContentVersion … FOR UPDATE`, the two could converge into a single read.
-
-### Design documentation
-
-The redesign docs that currently *specify* the content hash must be updated: `update-tracking.md`, `transactions-and-concurrency.md` (§"Serving API metadata" / §"Concurrency"), and `flattening-reconstitution.md` §6.4. The update must also (a) **reverse** the requirement that `_etag` be insensitive to readable-profile filtering and link decorations, and (b) specify the `"{ContentVersion}-{variantKey}"` format and the opaque-string requirement.
-
-### Client-visible behavior
-
-`_etag` values become compact, opaque, quoted strong entity-tags of the form `"{ContentVersion}-{variantKey}"` rather than hashes; the `ContentVersion` portion is treated as an opaque string, never a number. Acceptable because the contract has not shipped. The *served* etag varies by profile, format, link mode, and content coding — a deliberate change from the redesign's original profile/link-insensitive etag, for RFC 9110 conditional-GET correctness. `If-Match` matching, however, compares only the **state-significant projection** (`ContentVersion`, `schemaEpoch`): it is insensitive to `profileCode`, `format`, `linkFlag`, and `contentCoding`, so representation-only differences do not cause a spurious `412` when the resource state is unchanged. `If-None-Match` (weak comparison, conditional GET) continues to use the full served etag.
-
-### What is given up
-
-Content-addressability across rebuilds/migrations and identical etags across instances/engines. If either becomes a requirement later, the fallback is to keep the hash and pursue Option 1 (post-COMMIT) for writes plus Option 3 for reads, or invest in Option 2.
-
-## Open question to resolve before implementation
-
-Confirm that an **identity-update cascade into referrers** (e.g. a `StudentUniqueId` change rippling into every resource embedding that reference) bumps the referrers' `ContentVersion`. The cascade-stamping trigger observed in the DDL is **descriptor-specific**; the mechanism for general identity cascades (application DML or otherwise) must be verified. This requirement applies equally to the content-hash approach; if any cascade path fails to bump `ContentVersion`, that is a defect to fix regardless of the etag decision, and it is a correctness precondition for this ADR.
-
-## Next steps
-
-1. Team review of this ADR.
-2. Confirm the identity-cascade stamping behavior above.
-3. On acceptance, update the design docs listed under Consequences.
-4. Implement the cross-backend etag-production change, converging the relational `If-Match` check onto the `ContentVersion` comparison.
-5. Human review of design-doc and code changes before merge.
-
-## Amendment (2026-07-04): `profileCode` removed from `If-Match` comparison
-
-**Status:** Accepted — amends the 2026-07-01 "`profileCode` is deliberately significant" decision. \
-**Date:** 2026-07-04 \
-**Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
-
-### What changed
-
-The 2026-07-01 decision made `profileCode` a **state-significant** component of the `If-Match` comparison, so an etag obtained under one representation (profiled or unprofiled) would fail an `If-Match` against a write under a different representation, returning `412` even when the resource state was unchanged. This amendment **removes `profileCode` from the comparison**. The retained, compared components are now **`ContentVersion` and `schemaEpoch`** only; `format`, `linkFlag`, and now `profileCode` are all projected out.
-
-The **served** etag is unchanged: reads and writes still emit the full `"{ContentVersion}-{variantKey}"` tag including `profileCode`, so conditional-**GET** / `If-None-Match` cache correctness (the actual RFC 9110 driver for representation-sensitive etags) is fully preserved. Only the write-time `If-Match` comparison is relaxed.
-
-### Why
-
-1. **Legacy compatibility.** The legacy Ed-Fi ODS/API serves a single etag per resource state and accepts it for `If-Match` regardless of the profile lens used on the read. Confirmed by inspection of the legacy code base: a client may take an etag from a profile-filtered (partial) read and successfully use it as the `If-Match` for a full/unprofiled write. The 2026-07-01 decision broke that contract.
-
-2. **The break could hit a compliant client.** The most acute case is an **asymmetric (read-only) profile** — a profile that defines a readable content type but no writable one for a resource. Such a client is *forced* to write unprofiled (there is no writable content type to send), yet the only etag it can obtain comes from the profiled read. Under the 2026-07-01 rule this yields a spurious `412` that the client cannot avoid.
-
-3. **`profileCode` significance added no lost-update protection.** `If-Match`'s purpose is to detect concurrent modification, which `ContentVersion` answers completely — it bumps on *any* state change, including profile-hidden persisted fields (verified by the "stale hidden-field" tests, which still `412` on the `ContentVersion` change). `profileCode` only ever flips a *no-conflict* case (identical `ContentVersion`) into a `412`, enforcing "write through the same lens you read through" — a representation-consistency constraint that `If-Match` is not designed to provide and that legacy never imposed. The field-clobbering concern the original decision cited is a property of PUT-with-profile semantics, not something `If-Match` can or should police.
-
-`schemaEpoch` **remains** significant: a schema or profile-*definition* change genuinely changes the reproducible bytes for an unchanged `ContentVersion`, so invalidating prior etags across such a change is still correct. This does not affect the legacy scenario, which is same-schema.
-
-1. **Realignment with the DMS-1005 story.** The update-tracking story (`epics/10-update-tracking-change-queries/03-if-match.md`, Answers 1.1 and 3.2) already resolved that `If-Match` must ignore readable profile projection rather than requiring a profile-specific match. In current terminology, `If-Match` compares the state-significant projection (`ContentVersion` plus `schemaEpoch`) and ignores representation-only `variantKey` segments. The 2026-07-01 decision diverged from that resolution; this amendment restores it. The ADR's *separate* decision to serve **profile-variant** etags for conditional-GET / `If-None-Match` cache correctness still stands — that supersedes the earlier story acceptance criterion that profiled GET preserve the unprofiled tag and is unaffected by this amendment, because served etags and the `If-Match` comparison are deliberately decoupled.
-
-### Scope of the code change
-
-- The only production change is `EtagMatchProjection.Of`, which stops appending `profileCode` to the projection. Both write precondition sites (`RelationalCurrentEtagPreconditionChecker` and `RelationalWriteExecutionStateResolver`) and the shared DELETE precondition path route through this method and inherit the new behavior automatically. Descriptors are unaffected (their `profileCode` is always the no-profile code).
-- Etag **composition** (`EtagComposer` / `VariantKeyFactory` / `ProfileVariantCode`) is untouched, preserving the profile-sensitive served etag.
-
-### Consequence
-
-Cross-profile and profiled-vs-unprofiled `If-Match` (and DELETE `If-Match`) now succeed whenever `ContentVersion` and `schemaEpoch` agree, matching legacy ODS/API behavior. Optimistic-concurrency safety is retained in full, because the removed component never reflected resource state.
-
-## Amendment (2026-07-05): unquoted `If-Match` values accepted as equivalent to quoted
-
-**Status:** Accepted — clarifies the RFC 9110 posture stated in "ETag format and HTTP validator semantics". \
-**Date:** 2026-07-05 \
-**Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
-
-### What changed
-
-RFC 9110 §8.8.3 defines an entity-tag as an `opaque-tag` that **must** be double-quoted (`opaque-tag = DQUOTE *etagc DQUOTE`), so a strict reading — the posture this ADR otherwise adopts — treats `If-Match: "5-a1b2c3d4.j._.l.i"` as valid and a bare `If-Match: 5-a1b2c3d4.j._.l.i` as malformed. The legacy Ed-Fi ODS/API, by contrast, does **not** enforce the quoting requirement on input: it accepts the quoted and unquoted forms interchangeably for `If-Match`.
-
-This amendment adopts the legacy behavior as a **requirement**: on **input**, the DMS treats an unquoted `If-Match` value as equivalent to the same value quoted. Both forms resolve to the same opaque tag and are compared identically against the server-composed expected tag.
-
-The server's **output** contract is unchanged: the DMS continues to **emit** `ETag` response headers as fully quoted strong entity-tags (no `W/` prefix), per RFC 9110. The relaxation applies only to what the server is willing to **parse** from a client, not to what it produces. Weak (`W/`-prefixed) validators remain rejected for `If-Match` regardless of quoting.
-
-### Why
-
-1. **Legacy compatibility, no downside.** Clients written against the legacy ODS/API may send `If-Match` without quotes. Rejecting those requests (or silently failing the precondition) would be a breaking behavior change for a population of already-conforming-enough clients, with no offsetting benefit — the unquoted value is unambiguous here because the opaque tag contains no whitespace, comma, or quote characters (`variantKey` draws only from `[a-z0-9_.]` and `ContentVersion` is digits), so there is no parsing hazard in accepting it.
-
-2. **Postel's-law robustness.** Being liberal in what the server accepts while strict in what it emits is the standard, safe accommodation for a validator whose grammar the server fully controls. Accepting the unquoted form cannot weaken optimistic-concurrency safety: the value still has to match the state-significant projection of the current tag, so a wrong or stale tag still yields `412`.
-
-### Scope of the code change
-
-This decision is **already satisfied** by the current implementation; the amendment documents the intent rather than requiring new work:
-
-- `EtagValue.TryParseHeaderValue` (`Core/Utilities/EtagValue.cs`) strips surrounding quotes when present and otherwise returns the bare value unchanged, while still rejecting `W/` weak tags.
-- `WritePreconditionFactory.Create` (`Core/Backend/WritePreconditionFactory.cs`) routes every `If-Match` header — for PUT, POST-as-update, and DELETE — through that helper, so all write preconditions inherit the quoted/unquoted equivalence from a single parse site.
-- Server emission (`EtagValue.ToHeaderValue`, `EtagComposer`) is untouched and continues to quote.
-
-If future hardening ever tightens the parser, the quoted/unquoted equivalence for `If-Match` input must be preserved (or explicitly re-decided by the team) to avoid regressing legacy clients.
-
-### Consequence
-
-A client may send `If-Match` with or without surrounding quotes and receive identical precondition behavior, matching legacy ODS/API. The change is confined to input tolerance; the emitted `ETag` contract and RFC 9110 strong-comparison semantics are otherwise unchanged.
-
-## Amendment (2026-07-05): `If-Match` wildcard matching
-
-**Status:** Proposed — **requires a code change** (not yet implemented; contrast the two amendments above, which the code already satisfied). \
-**Date:** 2026-07-05 \
-**Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
-
-### What changed
-
-RFC 9110 §13.1.1 defines a wildcard for `If-Match`: with the field-value `*`, the precondition is true if — and only if — the origin server currently has a representation for the target resource, regardless of its entity-tag. The grammar is `If-Match = "*" / 1#entity-tag`, so the wildcard is the **bare, unquoted** `*`, a production distinct from a (quoted) entity-tag.
-
-The DMS-1005 story specified an exact opaque-string comparison that "must not normalize quotes, parse entity-tag lists, or otherwise reinterpret the value." As a result, a `*` is today compared literally against the composed tag `"{ContentVersion}-{variantKey}"`, never equals it, and **always produces `412` — even when the resource exists.** This amendment adopts wildcard handling as a requirement, superseding the story's blanket "no reinterpretation" stance for the `*` case only (as the earlier quote/unquote amendments already did for quoting).
-
-**Requirement.** The DMS must treat a bare `If-Match: *` as a wildcard: the precondition succeeds when a current representation of the target exists and fails with `412` when it does not.
-
-Per operation:
-
-- **PUT** (update-by-id): resource exists → `*` satisfied, update proceeds. Missing target → **`412`** (the wildcard is an existence precondition and it fails). This is the one case where a missing target does **not** return `404`.
-- **DELETE**: resource exists → `*` satisfied, delete proceeds. Missing target → **`412`**.
-- **POST** upsert resolving to **update** (existing document): `*` satisfied, proceeds.
-- **POST** upsert resolving to **insert** (new document): no current representation → **`412`**, consistent with the existing "POST + `If-Match` on a new document → 412" rule.
-
-Outside the wildcard, status-code behavior is unchanged: a missing PUT/DELETE target without `If-Match`, or with a specific-tag `If-Match`, still returns **`404`** (per DMS-1005 Answer 1.5). Only a bare `*` converts a missing target into a `412`.
-
-A wildcard never guards against concurrent modification — it matches any version and asserts only existence. That is exactly the RFC-defined meaning and a deliberately weaker guarantee than a specific-tag `If-Match`, selected by the client.
-
-### Decisions
-
-Three points were resolved when adopting this amendment:
-
-1. **Missing target + `If-Match: *` returns `412`, not `404`.** The wildcard is an existence precondition; when the target does not exist the precondition genuinely fails, so `412` (not `404`) is the RFC-conformant and chosen response. Non-wildcard requests keep the existing `404` for missing targets.
-2. **Only the bare, unquoted `*` is the wildcard.** A quoted `"*"` is treated as an ordinary opaque tag (which will simply mismatch), matching the RFC grammar `If-Match = "*" / 1#entity-tag`.
-3. **This is a non-breaking enhancement.** Legacy Ed-Fi ODS/API has no wildcard `If-Match` concept, so no existing client could have relied on wildcard behavior; today's unconditional `412` is simply a defect for any RFC-conformant client that sends `*`.
-
-### Why
-
-1. **RFC 9110 §13.1.1 conformance.** The current unconditional `412` for `*` is a defect against the standard this ADR otherwise commits to.
-2. **Client ergonomics.** `*` is the standard way to express "modify/delete only if it exists." Honoring it lets clients and tooling use the wildcard as intended instead of receiving a spurious `412`.
-3. **No concurrency-safety loss.** `*` is explicitly an existence check, not a change detector, so honoring it removes no protection that a specific-tag `If-Match` provides.
-
-### Scope of the code change
-
-Unlike the 2026-07-04 (`profileCode`) and earlier 2026-07-05 (unquoted) amendments, this is **new work**:
-
-- **Detect the wildcard before quote-stripping.** `WritePreconditionFactory.Create` (`Core/Backend/WritePreconditionFactory.cs`) should recognize a raw `If-Match` value of exactly `*` and produce a new typed arm — e.g. `WritePrecondition.IfMatchAny` — rather than routing it through `EtagValue.TryParseHeaderValue`. Only the bare `*` qualifies; a quoted `"*"` continues through the normal opaque-tag path.
-- **Honor the wildcard in the precondition checkers.** `RelationalCurrentEtagPreconditionChecker`, `RelationalWriteExecutionStateResolver`, the DELETE precondition path, and `DescriptorWriteHandler` should treat `IfMatchAny` as satisfied whenever the target row is present — i.e., pass when the existence/row-lock step that already runs succeeds — bypassing `EtagMatchProjection` entirely, and fail with `412` when the target is absent (including the PUT/DELETE missing-target case, which the wildcard converts from `404` to `412`).
-- **Preserve non-wildcard precedence:** new-document POST-insert → `412`; missing PUT/DELETE target without a wildcard → `404`.
-
-### Consequence
-
-`If-Match: *` becomes a working existence precondition — succeeding on any current version of an existing resource and returning `412` when the resource does not exist — instead of an unconditional `412` in all cases. Optimistic-concurrency behavior for specific-tag `If-Match` is unchanged.
-
-## Amendment (2026-07-06): `If-None-Match` support
-
-**Status:** Proposed — implemented (pending sign-off). This is the first amendment to touch the read path. \
-**Date:** 2026-07-06 \
-**Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
-
-### What changed
-
-The ADR's original analysis and every prior amendment addressed only `If-Match`. `If-None-Match` — advertised as an OpenAPI `header` parameter on GET-by-id in the API schema, but never read or enforced by the DMS — was left unimplemented. As a result a conditional GET silently returns `200` with a full body where a client would expect `304 Not Modified`, and there is no create-guard on writes. This amendment adopts **full `If-None-Match` support** per RFC 9110 §13.1.2 and §13.2.2, covering both of the header's roles.
-
-`If-None-Match` is **not** a mirror of `If-Match`. RFC 9110 assigns it two distinct jobs, mandates the **weak** comparison function for it, and **inverts** the wildcard. The design below is deliberately consistent with the existing `If-Match` machinery where the semantics coincide (write-time state-significant projection, quoted/unquoted tolerance, bare-`*` detection) and deliberately diverges where RFC 9110 requires it (full-tag comparison on reads, weak comparison, inverted wildcard).
-
-### Behavior
-
-**Two behaviors.**
-
-- **Conditional read** (GET-by-id; HEAD when/if supported). When the precondition is *false* — **any** of the client's tags matches the current representation — the server responds **`304 Not Modified`** with the current `ETag` header and no body. When *true* (none match), it responds `200` with the full representation as usual.
-- **Write create-guard** (POST upsert, PUT update-by-id). When the precondition is *false*, the server responds **`412`**. The dominant, RFC-canonical form is `If-None-Match: *` = "proceed only if no current representation exists" (insert-only):
-  - POST upsert resolving to an **existing** document → `412`; resolving to an **insert** → proceeds.
-  - PUT (update-by-id) against an **existing** target → `412`; the PUT missing-target case is unchanged (`404`).
-
-**Entity-tag list support (RFC 9110 §13.1.2).** `If-None-Match` accepts a **comma-separated list** of entity-tags (e.g., `If-None-Match: "tag1", "tag2", W/"tag3"`). The precondition is evaluated against each tag in the list: if **any** tag matches (using the weak comparison function — see below), the precondition is *false* (triggering `304` on reads or `412` on writes). A single tag is the degenerate case of a one-element list. The bare `*` wildcard cannot appear in a list — per RFC 9110 it is only valid as the sole value.
-
-**Comparison basis — the read/write asymmetry (the crux of this amendment).**
-
-- **Conditional reads compare the FULL served tag** — `ContentVersion` plus every `variantKey` component (`schemaEpoch`, `format`, `profileCode`, `linkFlag`, `contentCoding`). This is precisely the cache-correctness guarantee the ADR already cites as the reason served etags are representation-complete: a client that cached a *JSON / profile-3 / links-off / gzip* body must **not** receive `304` when it re-requests the resource under a different profile, format, link mode, or content coding, because the served bytes genuinely differ.
-- **Write-side `If-None-Match` compares the state-significant projection** (`ContentVersion`, `schemaEpoch`) through the existing `EtagMatchProjection.Of` — identical to `If-Match`, and for the same reason: representation variance (`format`, `profileCode`, `linkFlag`, `contentCoding`) must not spuriously flip a state precondition. A bare `*` compares nothing; it is a pure existence test.
-
-Thus reads use the full tag and writes use the projection. This is intentional: it is the same deliberate decoupling of served-etag comparison from write-precondition comparison that the 2026-07-04 amendment introduced for `If-Match`, applied here in the opposite direction — for `If-None-Match`, reads are the *stricter* side.
-
-**Comparison function — weak, per RFC 9110 §8.8.3.2.** `If-None-Match` uses the **weak** comparison function, in contrast to `If-Match`, which this ADR pins to strong comparison. Because the DMS only ever *emits* strong tags, the practical consequence is input tolerance: a `W/`-prefixed value on `If-None-Match` is accepted and its opaque-tag compared, whereas `If-Match` rejects weak tags (see "ETag format and HTTP validator semantics"). The quoted/unquoted equivalence ([Amendment 2026-07-05](#amendment-2026-07-05-unquoted-if-match-values-accepted-as-equivalent-to-quoted)) and the bare-`*` wildcard rule (below) carry over unchanged.
-
-**Unquoted acceptance is required for legacy conditional-GET compatibility (ODS-6853).** Manual review of the legacy Ed-Fi ODS/API found a defect (tracked as **ODS-6853**): it returns `304` **only** when the client's `If-None-Match` value is **unquoted**, and fails to `304` when the value is quoted — even though it emits a (quoted) `ETag`. Clients that successfully use conditional GET against legacy therefore send the etag **unquoted**. For the DMS to be compatible with that installed client behavior, the DMS **must accept an unquoted `If-None-Match`** and treat it as equivalent to the quoted form. The DMS remains strictly RFC-correct on **output** (it emits quoted strong `ETag`s); the leniency is confined to **input**, exactly as for `If-Match` (2026-07-05). This makes the unquoted tolerance a **requirement**, not merely Postel's-law robustness: without it, a working legacy client would silently stop receiving `304` after migration.
-
-**Wildcard `*` is inverted from `If-Match`.** `If-None-Match: *` means "the server has **no** current representation of the target":
-
-- GET-by-id → `304` if the resource exists; normal processing (`200`, or `404` if absent) otherwise.
-- Write → `412` if the resource exists; proceeds (create) if not.
-
-This is the exact inverse of the `If-Match: *` wildcard ([Amendment 2026-07-05, wildcard](#amendment-2026-07-05-if-match-wildcard-matching)), where `*` asserts the resource **does** exist. Only the bare, unquoted `*` is the wildcard; a quoted `"*"` is an ordinary opaque tag that simply mismatches.
-
-**Precedence when both headers are present (RFC 9110 §13.2.2).** `If-Match` is evaluated first; `If-None-Match` is evaluated only when `If-Match` is absent. A request carrying both (contradictory) preconditions therefore resolves in favor of `If-Match`.
-
-### Per-operation summary
-
-| Operation | `If-None-Match: *` | `If-None-Match: "<tag>"` or `"<tag1>", "<tag2>", ...` |
-|---|---|---|
-| GET-by-id, resource exists | `304` | `304` if **any** tag in the list matches the **full served tag**; else `200` |
-| GET-by-id, resource absent | `404` (normal) | `404` (normal) |
-| POST upsert → existing document | `412` | `412` if **any** tag's **projection** matches; else proceeds (update) |
-| POST upsert → insert | proceeds (create) | proceeds (create) |
-| PUT, target exists | `412` | `412` if **any** tag's **projection** matches; else proceeds (update) |
-| PUT, target absent | `404` (unchanged) | `404` (unchanged) |
-
-### Why
-
-1. **Close the advertised-but-unimplemented gap.** The API schema already declares `If-None-Match` on GET-by-id, so a conforming client can reasonably send it expecting `304`. Today it is silently ignored — a latent defect, not a design choice.
-2. **RFC 9110 conformance.** §13.1.2 defines both the conditional-read `304` and the write `412` behaviors; honoring them aligns the DMS with the standard this ADR otherwise commits to.
-3. **Standard create-only idiom.** `If-None-Match: *` is the canonical way to express "create only if absent." Supporting it lets clients and tooling perform safe inserts without a separate existence check.
-4. **No optimistic-concurrency change.** The write create-guard is an existence/inverse-match test, not a change detector; it removes no protection `If-Match` provides and does not alter `If-Match` behavior.
-5. **Legacy conditional-GET compatibility (ODS-6853).** Legacy clients doing conditional GET send the etag unquoted (working around the ODS-6853 quoted-`If-None-Match` defect). Accepting an unquoted `If-None-Match` — which the DMS already does — preserves `304` behavior for those clients after migration; see the unquoted-acceptance note above.
-
-### Decisions
-
-1. **Reads compare the full served tag; writes compare the state-significant projection.** Reads are about representation/cache correctness (all `variantKey` components significant); writes are about resource state (`format`/`profileCode`/`linkFlag`/`contentCoding` projected out, exactly as for `If-Match`).
-2. **`If-None-Match` uses weak comparison and accepts `W/` tags on input;** `If-Match` remains strong-only. Emission is unchanged — the server still emits only strong tags. In practice this means `W/"1-abc"` on `If-None-Match` is compared as if it were `"1-abc"` — only the opaque-tag portion matters.
-3. **`If-None-Match` accepts a comma-separated list of entity-tags** per RFC 9110 §13.1.2. The precondition triggers (`304` or `412`) if **any** tag in the list matches. Each tag in the list is independently subject to weak comparison, `W/` stripping, and quoted/unquoted tolerance.
-4. **Only the bare `*` is the wildcard, and it is inverted from `If-Match: *`** — it asserts *non-existence*. A quoted `"*"` is an ordinary (mismatching) opaque tag.
-5. **`If-Match` takes precedence over `If-None-Match`** when both are present (RFC 9110 §13.2.2).
-6. **Additive, non-breaking enhancement.** No existing DMS client can depend on the current non-behavior (the header is ignored today). Legacy conditional-GET behavior has now been reviewed: legacy `304`s only on an **unquoted** `If-None-Match` (ODS-6853). The DMS's design — accept quoted *and* unquoted input, emit quoted output — is a strict superset of the working legacy behavior, so a legacy client that receives `304` today continues to receive it against the DMS. This removes the last open uncertainty flagged when the amendment was first drafted.
-
-### Scope of the code change
-
-Like the 2026-07-05 wildcard amendment, this is **new work**, and it is the first amendment to add a **read-path** precondition.
-
-- **Parse.** `WritePreconditionFactory.Create` (`Core/Backend/WritePreconditionFactory.cs`) recognizes `If-None-Match` (only when `If-Match` is absent — precedence) and produces a new `WritePrecondition.IfNoneMatch(Values, IsWildcard)` arm. It first detects the bare `*` wildcard; otherwise it splits the header value on commas (per RFC 9110 entity-tag list grammar) and parses each element through a **weak-tolerant parse** that strips `W/` prefixes, strips surrounding quotes, and tolerates an unquoted value (ODS-6853 compatibility) — distinct from `EtagValue.TryParseHeaderValue`, which rejects `W/` for `If-Match`. A single-tag header is the degenerate one-element case.
-- **Write checkers.** `RelationalCurrentEtagPreconditionChecker`, `RelationalWriteExecutionStateResolver`, and `DescriptorWriteHandler` honor the new arm: a wildcard `IfNoneMatch` fails (`412`) when the target row is present and passes when absent; a specific-tag list `IfNoneMatch` fails when **any** tag's projection matches and passes otherwise — the logical inverse of the `If-Match` check, iterated over the list, reusing `EtagMatchProjection`. Because these are decided at several layers, all sites (including the deferred post-authorization path) must be covered and proven by PostgreSQL and SQL Server integration tests.
-- **Read path (new).** A conditional-GET hook in the GET-by-id handler parses the client's `If-None-Match` list (weak comparison, `W/` stripping) and compares each tag against the full served tag; if **any** tag matches, it short-circuits to `304 Not Modified` — with the `ETag` header and no body. As implemented, the handler echoes the already-composed `_etag` from the materialized response body (which `RelationalReadMaterializer` composed via `EtagComposer` with all `variantKey` components) rather than recomposing it independently; this is functionally identical and cannot drift from read materialization. `If-Match` has no read-side equivalent today, so this is a genuinely new surface.
-- **Emission unchanged.** `EtagValue.ToHeaderValue` / `EtagComposer` continue to emit fully quoted strong tags. The `304` response carries the current `ETag` and no `_etag` body field (there is no body).
-- **DELETE is out of scope.** `If-None-Match` on DELETE is not a meaningful idiom (`*` would `412` whenever there is anything to delete); a DELETE carrying `If-None-Match` is ignored. It may be revisited if a concrete need arises.
-
-### Consequence
-
-`If-None-Match` becomes a working conditional-read validator (`304 Not Modified` on a cache hit) and a working write create-guard (`412` on `If-None-Match: *` against an existing resource), per RFC 9110. Optimistic-concurrency behavior for `If-Match` and the emitted `ETag` contract are both unchanged.
+The `_etag` body field carries the unquoted value; the `ETag` header is quoted.
+
+**How etags are produced.** Reads use the row's `ContentVersion`. Write responses use the final
+`ContentVersion` from the persistence layer (see "Write-path `ContentVersion`") and carry the identity
+variant, since they enclose no encoded representation. No document hydration or hashing occurs. When
+response compression is enabled, ETag-bearing GET responses, including `304`, send
+`Vary: Accept-Encoding`.
+
+**Byte-changing corrections.** If a code correction or deployment changes representation bytes without
+changing any `variantKey` selector, the corrected representation must not be served under the prior
+strong etag. The deployment must first run the supported out-of-band representation restamp to advance
+`ContentVersion` for every affected document. See
+[Offline byte-changing representation correction](design/backend-redesign/design-docs/cdc/cdc-streaming.md#offline-byte-changing-representation-correction).
+
+**Alternative (fixed-length opaque token).** `variantKey` could instead be a 12-hex-character SHA-256
+prefix of the five components. This hashes only a tiny descriptor, so it keeps the performance goal, but
+it trades operator readability for fixed width. The structured form is recommended.
+
+## Conditional request behavior
+
+The *served* etag is representation-complete, but the headers use it differently on reads and writes.
+The origin server mints these tags and may compare them with knowledge of their structure; opacity
+binds clients, not the server.
+
+### `If-Match` (writes: PUT, POST-as-update, DELETE)
+
+- **State-significant comparison.** `If-Match` compares only `ContentVersion` and `schemaEpoch`.
+  `format`, `profileCode`, `linkFlag`, and `contentCoding` are representation selectors, not resource
+  state, and are ignored. This keeps optimistic concurrency safe, because any persisted change advances
+  `ContentVersion`, while avoiding false `412`s across representation variants of the same state.
+- **Why `profileCode` is ignored (2026-07-04).** The legacy ODS/API accepts an etag from a
+  profile-filtered read as `If-Match` for a full write. An asymmetric read-only profile forces exactly
+  that pattern, so profile sensitivity would produce a `412` the client cannot avoid. It also added no
+  lost-update protection. `schemaEpoch` stays significant because a schema or profile-definition change
+  genuinely changes reproducible bytes.
+- **Strong only.** Weak (`W/`) tags are rejected.
+- **Quoted and unquoted accepted (2026-07-05).** The legacy ODS/API accepts both forms, so the DMS
+  does too on input. This is safe because tags contain no whitespace, commas, or quotes. The DMS still
+  emits quoted tags.
+- **Wildcard (2026-07-05).** A bare, unquoted `If-Match: *` is an existence precondition per RFC 9110
+  §13.1.1. It succeeds when the target exists and returns `412` when it does not, including for PUT and
+  DELETE on a missing target, which otherwise return `404`. A POST that would insert returns `412`. A
+  quoted `"*"` is an ordinary opaque tag that simply mismatches. A wildcard never guards against
+  concurrent modification.
+- **Divergence from the ODS/API (intentional).** The ODS/API compares `*` as a literal tag and always
+  returns `412`. No working client can depend on that, so the DMS is only more permissive.
+
+### `If-None-Match` (reads only)
+
+`If-None-Match` is a **conditional-read validator for GET-by-id**. POST, PUT, and DELETE ignore it
+entirely and behave as if it were absent, even when `If-Match` is also present. When a write carries the
+header, the DMS logs at `Debug` that it was ignored, recording the method and trace id but not the value.
+
+For GET-by-id:
+
+- **Full served-tag comparison.** A client that cached a gzip, profiled, or links-off body must not
+  receive `304` when it re-requests a different representation, because the bytes differ. All
+  `variantKey` components are significant.
+- **Weak comparison** (RFC 9110 §8.8.3.2). A `W/` prefix is accepted on input and stripped before
+  comparison.
+- **Lists.** A comma-separated list of tags is accepted; the precondition is false if any tag matches.
+- **Wildcard.** A bare `*` means "no current representation exists," so it yields `304` when the
+  resource exists. This is the inverse of `If-Match: *`.
+- **Unquoted accepted.** The legacy ODS/API returns `304` only for an *unquoted* `If-None-Match`
+  (defect ODS-6853), so clients that work against it send unquoted values. Accepting both forms
+  preserves their `304` behavior after migration.
+- **Result.** A match returns `304 Not Modified` with the current `ETag` header and no body. No match
+  returns `200` with the full representation. An absent resource returns `404` as usual.
+- **Independence from write preconditions.** The GET path reads and evaluates the header on its own. It
+  does not share the write-precondition machinery.
+
+| Operation | `If-None-Match: *` | `If-None-Match: "<tag>"` or a list |
+| --- | --- | --- |
+| GET-by-id, resource exists | `304` | `304` if any tag matches the full served tag; else `200` |
+| GET-by-id, resource absent | `404` | `404` |
+| POST, PUT, DELETE | ignored | ignored |
+
+### Why the write create-guard was withdrawn (2026-09-30, DMS-1576)
+
+The 2026-07-06 amendment also made `If-None-Match` a create-guard on POST and PUT (`412` if the resource
+exists). Skyward Qmlativ sends `If-None-Match: *` on every POST, so it could no longer re-send existing
+records. Testing against the legacy ODS/API showed that it never had a create-guard: POST upserts, PUT
+returns `204`, and only GET honors the header. The earlier claim that the guard was a non-breaking
+addition held for the DMS alone, not for clients migrating from the ODS/API.
+
+The RFC does not require the guard. It defines `If-None-Match` against the request URI's target
+resource, and for a POST upsert that is the collection, which exists. Ignoring the header on POST is a
+reasonable reading, and it matches installed behavior. PUT ignores it too, for ODS/API compatibility.
+
+No optimistic-concurrency protection is lost: the guard was an existence test, and `If-Match` still
+provides lost-update protection. A POST that loses a create race now gets the ordinary identity-conflict
+result, with or without the header. The change is listed under "Breaking changes" in the 8.1.0
+changelog, since the guard shipped in 8.0.0 and a client relying on it now upserts silently.
 
 ### Out of scope: `If-Modified-Since`, `If-Unmodified-Since`, `If-Range`
 
-For the record, and to bound this amendment: the DMS still does **not** implement `If-Modified-Since`, `If-Unmodified-Since`, or `If-Range`, and this amendment does not add them.
+- **`If-Modified-Since` / `If-Unmodified-Since`** are timestamp validators. The reasons for rejecting
+  `_lastModifiedDate` as an etag basis (clock skew, sub-tick collisions, cross-engine nondeterminism)
+  apply equally here. Clients wanting a conditional read should use `If-None-Match`.
+- **`If-Range`** only matters with range requests, which the DMS does not support.
 
-- **`If-Modified-Since` / `If-Unmodified-Since`** are timestamp-based validators. The ADR's rejection of `_lastModifiedDate` as an etag basis — clock skew, sub-tick collisions, and cross-engine `now()` / `getutcdate()` nondeterminism (see "Rejected alternative — Use `_lastModifiedDate`") — applies equally to using `ContentLastModifiedAt` as a precondition validator. Date-based conditionals are therefore deliberately deferred in favor of the strong, `ContentVersion`-derived entity-tag; a client wanting a conditional read should use `If-None-Match`.
-- **`If-Range`** is only meaningful alongside HTTP range requests, which the DMS does not support.
+## Write-path `ContentVersion` (2026-07-08)
 
-These may be revisited if a concrete client need arises; none is a conformance gap for the entity-tag-based conditional model this ADR establishes.
+Option 4 originally assumed the write-response etag could use the `ContentVersion` returned by the root
+insert at no marginal cost. That value is stale: child-table writes can fire stamp triggers that advance
+the owning document's `ContentVersion` after the root insert. An etag composed from the insert-time value
+would not match what a subsequent GET returns, breaking conditional-GET correctness.
 
-## Amendment (2026-07-07): descriptor served `_etag` varies by readable profile
+The design therefore performs a **single lightweight `ContentVersion` read after every table mutation**,
+owned by the persistence layer, which is the only layer that knows when all mutations are done. This is
+persistence metadata, not response-materialization metadata. The guarded no-op path, where nothing is
+written, reuses the version already established by the freshness check.
 
-**Status:** Accepted — closes a gap left open when the profile-sensitive served etag (see "ETag format and HTTP validator semantics (RFC 9110)") was implemented only for non-descriptor resources. \
-**Date:** 2026-07-07 \
-**Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
+This does not return the throughput cost the ADR removed. The eliminated cost was the
+hydrate-materialize-hash readback; the retained read is one scalar lookup. Placing it in the persistence
+layer leaves a path to remove even that round trip later by capturing the final stamp directly from the
+database. No content hashing is reintroduced.
 
-### What changed
+## Descriptors (2026-07-07)
 
-A feasibility spike confirmed that descriptors **are** subject to readable-profile projection on GET: `ProfileResolutionMiddleware` runs on the descriptor GET pipelines, `Handler/Utility.CreateReadableProfileProjectionContext` special-cases `IsDescriptor` to seed the identity-property allow-list, and `DescriptorReadHandler.MaterializeDescriptorDocument` already applied `IReadableProfileProjector.Project(...)` to the served descriptor body when a projection context was present. Despite that, the served descriptor `_etag` was composed via the fixed `DescriptorVariantKey.For(effectiveSchemaHash)`, whose `profileCode` is hardcoded to the no-profile sentinel `_` regardless of whether a profile actually projected the body. Two profile-different descriptor representations therefore shared one strong `ETag` — a violation of RFC 9110 §8.8.1 for the same reason the main ADR text gives for non-descriptor resources.
+Descriptors are subject to readable-profile projection on GET, so their served etag follows the same
+rule as every other resource: a profiled and an unprofiled read carry distinct strong etags. This
+applies to descriptor write responses as well, so a profiled descriptor POST or PUT returns the same
+`_etag` a profiled GET serves. Descriptor `If-Match` remains profile-insensitive, like all `If-Match`.
 
-`DescriptorReadHandler` now composes the served descriptor etag through `IServedEtagComposer`, passing the active readable profile's name (when one actually projects the read) instead of the fixed descriptor variant key. `DescriptorDocumentMaterializer.Materialize` no longer composes the etag itself; it accepts the caller's precomposed string, so the handler alone decides profile-sensitivity — mirroring the pattern already used by the non-descriptor path (`RelationalReadMaterializer.ComposeEtag`). The condition that selects the profile name mirrors `RelationalDocumentStoreRepository.ShouldApplyReadableProfileProjection` exactly (`ExternalResponse` read mode **and** a non-null projection context), so the descriptor and non-descriptor read paths stay in lockstep.
+## Consequences
 
-### What did not change
+### Cross-backend scope
 
-- **Descriptor `If-Match` remains profile-insensitive.** `EtagMatchProjection.Of` (unaffected by this change) drops `profileCode` — along with `format` and `linkFlag` — from every precondition comparison, descriptor or not (see [Amendment (2026-07-04)](#amendment-2026-07-04-profilecode-removed-from-if-match-comparison)). A descriptor PUT/DELETE using an `If-Match` value obtained from a profiled GET still succeeds whenever `ContentVersion` and `schemaEpoch` agree, exactly as for non-descriptor resources.
-- **Descriptor write-response etags remain unprofiled.** `DescriptorWriteHandler` already composed its response etag via `IServedEtagComposer` with `ProfileName: null` before this change and continues to do so; only the *read* path changes.
+- **JSON-document backend:** `_etag` was computed from the request body before persistence. Because
+  `ContentVersion` does not exist until the write, etag production must happen after the write, or the
+  backend must return the counter. This must not regress the zero-readback property.
+- **Relational backend:** the etag's state component comes directly from the persisted `ContentVersion`,
+  composed with the active `variantKey`. The `If-Match` check becomes a `ContentVersion` comparison and
+  can converge with the existing freshness check's row read.
 
-  > [!WARNING]
-  > **Superseded 2026-07-08 — descriptor write-response etags are now profile-sensitive.** A follow-up
-  > fix ("profile-code descriptor write response ETags") changed `DescriptorWriteHandler` to compose
-  > every success-response etag via `IServedEtagComposer` with the request's `ProfileName` (not
-  > `ProfileName: null`). A profiled descriptor POST/PUT therefore returns the same profile-variant
-  > `_etag` a follow-up profiled GET serves — the write→read parity the descriptor integration tests
-  > assert. This aligns the descriptor *write* path with the *read* path this amendment introduced.
-  > Descriptor `If-Match` is unaffected and remains profile-insensitive (the bullet above): the served
-  > etag gains `profileCode`, but `EtagMatchProjection.Of` still drops it from every precondition
-  > comparison.
-- Descriptor read and write paths compose etags through `IServedEtagComposer` using a
-  `ServedEtagContext`. Callers provide the effective schema hash, JSON format, applicable profile
-  name, fixed descriptor link mode (`LinksEnabled: false`), `ContentVersion`, and response content
-  coding; there is no descriptor-specific variant-key abstraction.
+### Design documentation
 
-### Scope of the code change
+The redesign docs that specified the content hash were updated: `update-tracking.md`,
+`transactions-and-concurrency.md`, and `flattening-reconstitution.md`. The updates reverse the
+requirement that `_etag` be insensitive to profile filtering and link decoration, and specify the
+`"{ContentVersion}-{variantKey}"` format and the opaque-string requirement.
 
-- `DescriptorReadHandler` (`src/dms/backend/EdFi.DataManagementService.Backend/DescriptorReadHandler.cs`): constructor now takes `IServedEtagComposer` instead of `IEtagComposer`; the descriptor GET-by-id and query materialization paths compose the served etag from `ServedEtagContext` with the resolved profile name (or `null`) rather than the fixed `DescriptorVariantKey`.
-- `DescriptorDocumentMaterializer` (`src/dms/backend/EdFi.DataManagementService.Backend/DescriptorDocumentMaterializer.cs`): `Materialize` now takes a precomposed `string? composedEtag` instead of `IEtagComposer` + `VariantKey`, and throws if an `ExternalResponse` read is materialized without one.
-- Test updates: `DescriptorReadHandlerTests`, `DescriptorDocumentMaterializerTests`, and `DescriptorReadHandlerNamespaceAuthorizationTests` updated for the new signatures; the previous pinning test (which asserted a profiled and unprofiled descriptor read shared one `_etag`) was flipped to assert they now differ, and a case was added proving unprofiled descriptor reads still yield the `_` profile code. `DescriptorWriteHandlerPreconditionTests` gained PUT and DELETE cases proving a profile-obtained descriptor etag still satisfies `If-Match` against an unprofiled write.
+### Client-visible behavior
 
-### Consequence
+- `_etag` values are compact, opaque, quoted strong entity-tags, not hashes. Acceptable because the
+  contract has not shipped.
+- The *served* etag varies by profile, format, link mode, and content coding.
+- `If-Match` ignores those selectors, so representation-only differences never cause a spurious `412`.
+- `If-None-Match` is honored on GET only, using the full served tag.
 
-Two profile-different descriptor GET representations now carry distinct strong `ETag` values, closing the RFC 9110 §8.8.1 gap for descriptors specifically (the main ADR text already closed it for non-descriptor resources). `If-Match` / `If-None-Match` semantics for descriptor writes are unaffected — a client may still read a descriptor under one profile and write it back unprofiled using the same etag.
+### What is given up
 
-## Amendment (2026-07-08): final `ContentVersion` read relocated into the persister
+Content-addressability across rebuilds and migrations, and identical etags across instances and engines.
+If either becomes a requirement, the fallback is to keep the hash and pursue Option 1 for writes plus
+Option 3 for reads, or invest in Option 2.
 
-**Status:** Accepted — refines how Option 4's "compose `_etag` from the persisted `ContentVersion`
-plus `variantKey`" is realized on the write path; the served-etag and `If-Match` contracts are
-unchanged. \
-**Date:** 2026-07-08 \
-**Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
+## Open question
 
-### What changed
+Confirm that an **identity-update cascade into referrers** (e.g. a `StudentUniqueId` change rippling into
+every resource embedding that reference) advances the referrers' `ContentVersion`. The cascade-stamping
+trigger observed in the DDL is descriptor-specific; the mechanism for general identity cascades must be
+verified. This requirement applies equally to the content-hash approach. Any cascade path that fails to
+advance `ContentVersion` is a defect to fix regardless of this decision, and it is a correctness
+precondition for this ADR.
 
-Option 4 assumed the write-response etag could be composed from the `ContentVersion` "already
-returned by `INSERT … RETURNING` … at zero marginal cost," and an intermediate refactor accordingly
-**dropped the response reader's separate `SELECT ContentVersion`** and composed the etag from that
-persist-time value. This amendment **restores a final `ContentVersion` read**, but relocates it out
-of the response reader and into the persistence layer, where it runs **after every table mutation**.
+## Supporting findings (code review, 2026-06-30)
 
-Concretely:
-
-- `RelationalWritePersistResult` carries the final `ContentVersion` (read after
-  `ExecuteDeletesAsync` / `ExecuteUpsertsAsync` in `RelationalWriteNoProfilePersister.PersistAsync`
-  via `ReadCommittedContentVersionAsync`).
-- `DefaultRelationalWriteExecutor` composes the served write-response etag directly from
-  `persistedTarget.ContentVersion` and issues **no** `dms.Document` query of its own. (Originally this
-  ran through a `RelationalCommittedRepresentationReader` seam; once the readback was gone that type was
-  an async interface wrapping only `IServedEtagComposer` + `ResourceLinksOptions`, so it was collapsed
-  into the executor.)
-- The guarded no-op path (no persister runs) composes from `guardedTarget.ObservedContentVersion`,
-  which the freshness check already established.
-
-### Why
-
-1. **Correctness — the root-insert stamp is not the final `ContentVersion`.** Child-table
-   deletes/upserts can fire stamp triggers that bump the owning root document's `ContentVersion`.
-   The value returned by the root `INSERT` (the "zero-cost" value Option 4 anticipated) is captured
-   before those child writes run, so composing the etag from it would emit a **stale** tag that does
-   not match the `ContentVersion` a subsequent GET returns — breaking conditional-GET / `If-None-Match`
-   cache correctness and the write→read etag parity the descriptor and non-descriptor tests assert.
-   The final version is only known once every table operation has completed.
-
-2. **Ownership / layering.** The persister owns the write boundary and is the only layer that knows
-   when all persistence-side mutations are done. The final `ContentVersion` is **persistence
-   metadata**, not response-materialization metadata, so it belongs on `RelationalWritePersistResult`.
-   Moving it there makes the write contract explicit instead of hiding a database lookup inside a
-   "read committed response" abstraction, and prevents future code from reintroducing representation
-   hydration/hash work behind that abstraction.
-
-3. **It does not give back the throughput goal, and preserves the path to fully reclaiming it.**
-   The bottleneck this ADR removed was the hydrate-materialize-**hash** readback; the restored read
-   is a single lightweight `ContentVersion` lookup, run after the mutations rather than inside a
-   representation read. Placing it in the persister sets up the next optimization: the persister can
-   later capture the final stamp directly from the DML/triggers and drop even this lookup, eliminating
-   the round trip in the correct layer.
-
-### What did not change
-
-- The served-etag format (`"{ContentVersion}-{variantKey}"`) and the `If-Match` state-significant
-  projection (`ContentVersion` + `schemaEpoch`) are untouched.
-- No content hashing is reintroduced anywhere; the readback that Option 4 eliminated stays eliminated.
-- `RelationalWritePersistResult.ContentVersion` defaults to `0` only for the incremental rollout;
-  production persistence always sets a positive value, and `RelationalWritePersistedTargetValidator`
-  rejects a non-positive committed `ContentVersion` on applied writes.
-
-### Consequence
-
-Write-response etags reflect the true post-commit `ContentVersion` — including bumps from child-table
-stamp triggers — so a write's etag matches a follow-up GET's etag. The remaining per-write cost is a
-single `ContentVersion` read located in the persistence layer, where it is visible and can be removed
-later without touching the response contract.
-
-## Amendment (2026-07-08): `profileCode` encodes a hash of the profile name
-
-**Status:** Accepted — clarifies the `variantKey` encoding to match the implementation; the etag
-contract (state derives from `ContentVersion`; representation selectors are appended) is unchanged. \
-**Date:** 2026-07-08 \
-**Author:** Stephen Fuqua, with analysis assistance from Claude Opus 4.8 (Claude Code).
-
-### What changed
-
-The [`variantKey` encoding](#variantkey-encoding-specification) specified `profileCode` as "the
-readable profile's stable **compile-time index** within the current `MappingSet` (a non-negative
-integer, e.g. `3`)." The implementation instead derives it as a short lowercase-hex **SHA-256 prefix
-of the readable profile *name*** — `ProfileVariantCode.Of` returns `VariantKey.NoProfileCode` (`_`)
-when no profile applies, otherwise the first 4 bytes (8 hex characters) of
-`SHA-256(UTF-8(profileName))`. A served etag's `profileCode` is therefore `_` or an 8-hex token
-(e.g. `5-a1b2c3d4.j.9f3a2b1c.n.i`), not a small integer.
-
-The index form was not used because a `MappingSet` exposes no enumerable profile catalog from which to
-assign stable ordinals. The name-hash prefix is deterministic and stable across processes and engines,
-draws only from `etagc`-safe characters (`[0-9a-f]`), and needs no catalog — it identifies the profile
-directly from the name already carried on the read/write request. This is the same hashing tradeoff the
-ADR already sanctioned in its "Alternative (fixed-length opaque token)" note, applied to the
-`profileCode` component only while `schemaEpoch`, `format`, and `linkFlag` remain structured.
-
-### Why this does not violate the spirit of the original decision
-
-This ADR's performance driver was eliminating the per-write hash of **the representation itself** — the
-hydrate-materialize-hash readback that reconstructs the canonical resource-state JSON inside the write
-transaction (see [Context](#context) and Option 2). Hashing the profile **name** is categorically
-different:
-
-- It hashes a **tiny, static descriptor string** (the profile's name), not the document body.
-- It requires **no readback** and **no per-document work** — the name is known from request context,
-  and the 8-hex code is a pure function of it, computable once and cacheable per
-  (`schemaEpoch`, profile) variant.
-- Its cost is constant and independent of resource size or child-collection count, so it cannot
-  reintroduce the throughput bottleneck the ADR removed.
-
-The etag's **state** signal still comes entirely from `ContentVersion`; the profile hash only
-distinguishes **representations** so that two profile-different responses carry distinct strong
-validators, exactly as RFC 9110 §8.8.1 requires (see
-[ETag format and HTTP validator semantics](#etag-format-and-http-validator-semantics-rfc-9110)).
-
-### What did not change
-
-- At the time of this amendment, the etag format `"{ContentVersion}-{variantKey}"` and then-current
-  four-component `variantKey` order. The 2026-07-10 amendment subsequently added `contentCoding`.
-- `If-Match` comparison, which projects `profileCode` out entirely (along with `format` and
-  `linkFlag`) per [Amendment (2026-07-04)](#amendment-2026-07-04-profilecode-removed-from-if-match-comparison),
-  so the profile-name hash never affects optimistic-concurrency behavior — it only affects served-etag
-  distinctness for conditional **GET** / `If-None-Match`.
-- No representation hashing is introduced anywhere; the readback the ADR eliminated stays eliminated.
-
-### Consequence
-
-The `variantKey` documentation now matches the shipped encoding: `profileCode` is `_` or an 8-hex
-SHA-256 prefix of the profile name. The change is descriptive — it records how the etag is already
-built and affirms that hashing the profile descriptor (not the representation) is consistent with the
-ADR's core decision.
-
-## Amendment (2026-07-10): content coding added to the served etag
-
-**Status:** Accepted — fixes strong-validator correctness when ASP.NET response compression is enabled. \
-**Date:** 2026-07-10 \
-**Author:** Brad Banister, with implementation assistance from Codex.
-
-### What changed
-
-`variantKey` gains a fifth, always-present `contentCoding` component after `linkFlag`: `i` for
-identity, `b` for Brotli, and `g` for gzip. The frontend asks the registered ASP.NET Core response
-compression provider which coding it selected and carries that stable enum value to read
-materialization. The `_etag` body field and `ETag` response header are therefore composed for the
-same representation that the compression middleware serves.
-
-Conditional GET continues comparing the full served tag. A client that cached a gzip response can
-receive `304` only when gzip is selected again; changing to identity or Brotli produces a different
-tag and a `200` response. ETag-bearing GET responses also vary on `Accept-Encoding`, including 304
-responses whose empty body does not activate the response-compression middleware's normal header
-hook.
-
-### Write-side behavior
-
-`contentCoding` is a representation selector, not resource state. `EtagMatchProjection` therefore
-projects it out along with `format`, `profileCode`, and `linkFlag`, retaining only `ContentVersion`
-and `schemaEpoch`. An ETag obtained from an identity, Brotli, or gzip GET protects the same write
-state and does not cause a representation-only `412`. Write responses carry the identity code
-because they do not enclose a content-coded resource representation.
-
-### Consequence
-
-Identity and compressed byte representations no longer share a strong validator, while optimistic
-concurrency and write-side `If-None-Match` remain content-coding-insensitive.
+- **No-op detection does not depend on the etag hash.** Unchanged bodies are detected by row-by-row
+  value comparison of the flattened write, not by hashing. A hash is not needed for no-op detection. The
+  no-op success path used to pay the full readback to build the response etag, so even unchanged
+  re-POSTs in a re-sync incurred the bottleneck; Option 4 eliminates that.
+- **`ContentVersion` is always on and not configurable.** The database assigns it on every insert, and no
+  application setting gates it. The etag therefore rests on a value guaranteed present on every write.
 
 ## References
 

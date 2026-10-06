@@ -8,10 +8,36 @@ using EdFi.DataManagementService.Core.Utilities;
 
 namespace EdFi.DataManagementService.Core.Backend;
 
+/// <summary>
+/// Builds the <see cref="WritePrecondition" /> a write request (POST, PUT, DELETE) carries, from its
+/// request headers.
+/// </summary>
+/// <remarks>
+/// DMS-1576: <c>If-None-Match</c> is a conditional-read (GET-only) validator for DMS, matching the
+/// ODS/API, which ignores it on every write and honors it only on GET. <see cref="Create" /> therefore
+/// never reads it: a write request that carries only <c>If-None-Match</c> (a wildcard, a single tag, or
+/// a list) produces <see cref="WritePrecondition.None" />, the same as a request with no conditional
+/// header at all. The GET path reads <c>If-None-Match</c> itself (see
+/// <c>GetByIdHandler.TryCreateNotModified</c>) and does not go through this factory.
+/// </remarks>
 internal static class WritePreconditionFactory
 {
     private const string IfMatchHeaderName = "If-Match";
-    private const string IfNoneMatchHeaderName = "If-None-Match";
+
+    /// <summary>
+    /// The conditional-read header name. <see cref="Create" /> never reads it; GET reads it independently.
+    /// </summary>
+    internal const string IfNoneMatchHeaderName = "If-None-Match";
+
+    /// <summary>
+    /// True when a write request carries an <c>If-None-Match</c> header that <see cref="Create" /> ignores.
+    /// </summary>
+    public static bool IsIfNoneMatchIgnored(IReadOnlyDictionary<string, string> headers)
+    {
+        ArgumentNullException.ThrowIfNull(headers);
+
+        return headers.ContainsKey(IfNoneMatchHeaderName);
+    }
 
     public static WritePrecondition Create(IReadOnlyDictionary<string, string> headers)
     {
@@ -35,21 +61,6 @@ internal static class WritePreconditionFactory
             return EtagValue.TryParseHeaderValue(ifMatchValue, out var opaqueTag)
                 ? new WritePrecondition.IfMatch(opaqueTag)
                 : new WritePrecondition.IfMatch(ifMatchValue ?? string.Empty);
-        }
-
-        if (headers.TryGetValue(IfNoneMatchHeaderName, out var ifNoneMatchValue))
-        {
-            // RFC 9110 §13.1.2 wildcard: a bare (unquoted) "*" asserts non-existence.
-            if (string.Equals(ifNoneMatchValue, "*", StringComparison.Ordinal))
-            {
-                return new WritePrecondition.IfNoneMatch("*", IsWildcard: true);
-            }
-
-            // Weak comparison: accept W/ (unlike If-Match) and tolerate unquoted for each list element.
-            var tags = EtagValue.ParseConditionalTagList(ifNoneMatchValue);
-            return tags.Count > 0
-                ? new WritePrecondition.IfNoneMatch(tags)
-                : new WritePrecondition.IfNoneMatch(ifNoneMatchValue ?? string.Empty);
         }
 
         return new WritePrecondition.None();
