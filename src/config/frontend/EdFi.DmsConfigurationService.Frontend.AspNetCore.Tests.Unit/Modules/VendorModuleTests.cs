@@ -397,6 +397,10 @@ public class VendorModuleTests
         [SetUp]
         public void SetUp()
         {
+            Fake.ClearRecordedCalls(_vendorRepository);
+            Fake.ClearRecordedCalls(_apiClientRepository);
+            Fake.ClearRecordedCalls(_identityProviderRepository);
+
             A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored, A<bool>.Ignored))
                 .Returns(new VendorInsertResult.Success(1, IsNewVendor: false));
             A.CallTo(() => _vendorRepository.GetVendorUpdateState(1))
