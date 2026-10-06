@@ -1749,7 +1749,9 @@ public class OpenIddictTokenManagerTests
                 Options.Create(new IdentityOptions { EncryptionKey = "test-encryption-key" }),
                 NullLogger<OpenIddictTokenManager>.Instance,
                 _secretHasher,
-                _tokenRepository
+                _tokenRepository,
+                _signingKeyProvider,
+                _developmentCertificateStore
             );
             _result = await manager.GetAccessTokenAsync(GrantCredentials());
         }

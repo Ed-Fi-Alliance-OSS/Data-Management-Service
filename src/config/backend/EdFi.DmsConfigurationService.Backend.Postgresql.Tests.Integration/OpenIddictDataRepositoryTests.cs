@@ -8,6 +8,7 @@ using Dapper;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Secrets;
 using FakeItEasy;
@@ -131,7 +132,12 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             Options.Create(options),
             NullLogger<OpenIddictTokenManager>.Instance,
             secretHasher,
-            new OpenIddictTokenRepository(signingRepository)
+            new OpenIddictTokenRepository(signingRepository),
+            A.Fake<ISigningKeySnapshotProvider>(),
+            new DevelopmentCertificateStore(
+                Options.Create(options),
+                NullLogger<DevelopmentCertificateStore>.Instance
+            )
         );
     }
 
