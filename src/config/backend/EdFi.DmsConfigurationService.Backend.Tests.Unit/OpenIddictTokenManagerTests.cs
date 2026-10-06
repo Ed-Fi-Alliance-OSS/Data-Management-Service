@@ -1684,10 +1684,7 @@ public class OpenIddictTokenManagerTests
         [SetUp]
         public async Task Act()
         {
-            ArrangeGrantableClient(
-                isTokenLimitExempt: true,
-                scopes: ["edfi_admin_api/readonly_access", "edfi_admin_api/full_access"]
-            );
+            ArrangeGrantableClient(true, "edfi_admin_api/readonly_access", "edfi_admin_api/full_access");
             ArrangeStoreOutcome(TokenStoreOutcome.Stored, call => _call = call);
 
             _result = await CreateTokenManagerWithTokenLimit(3).GetAccessTokenAsync(GrantCredentials());

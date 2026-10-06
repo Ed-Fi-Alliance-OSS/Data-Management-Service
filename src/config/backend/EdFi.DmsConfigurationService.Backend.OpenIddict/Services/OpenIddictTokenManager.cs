@@ -422,8 +422,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             bool isExempt =
                 applicationInfo.IsTokenLimitExempt
                 && applicationInfo.Scopes.Length > 0
-                && applicationInfo.Scopes.All(scope =>
-                    scope.StartsWith("edfi_admin_api/", StringComparison.Ordinal)
+                && Array.TrueForAll(
+                    applicationInfo.Scopes,
+                    scope => scope.StartsWith("edfi_admin_api/", StringComparison.Ordinal)
                 );
             int maxActiveTokens = isExempt ? -1 : _identityOptions.Value.BearerTokenPerClientLimit;
             TokenStoreOutcome outcome = await _tokenRepository.StoreTokenAsync(
