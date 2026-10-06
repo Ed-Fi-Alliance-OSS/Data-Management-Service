@@ -29,7 +29,8 @@ consumers, and establish the re-provision rollback boundary.
 - Replace descriptor upsert detection with lowered-URI + `ResourceKeyId` probes.
 - Feed the probe result into the descriptor POST action selection added by DMS-1535
   (`DescriptorPostTargetSelection` / `DescriptorPostBranch`) and the descriptor ownership checks added
-  by DMS-1060 and DMS-1431, both of which select on the `ReferentialId` lookup today. Keep the
+  by DMS-1431 (DMS-1060 only stamped the creator ownership token on descriptors), both of which
+  select on the `ReferentialId` lookup today. Keep the
   existing behavior where a lookup that has gone stale by the time the row is locked fails closed to
   a retryable conflict.
 - Implement stored-wins descriptor identity for descriptor writes, including persisted-identity

@@ -61,9 +61,13 @@ atomically removing all remaining DMS-owned ReferentialIdentity and UUIDv5 infra
   DDL contracts and all generated goldens.
 - Update the Northridge dataset tooling (DMS-1406): `eng/northridge/Copy-NorthridgeDataForward.ps1`
   copies `ReferentialIdentity` (`$script:DmsDataTable`) and checks an RI-to-Document integrity
-  query, `Add-NorthridgeGapDocument.ps1` writes RI rows, and `eng/northridge/README.md` documents
-  both. The published Northridge dump predates this epic's schema, so it must be carried forward
-  with the updated tooling and republished.
+  query, and `eng/northridge/README.md` documents that. `Add-NorthridgeGapDocument.ps1` writes
+  through the API, so only its help text, which lists `dms.ReferentialIdentity` among the rows the
+  API produces, changes.
+- Republish both Northridge artifacts on the final schema. The README treats the PostgreSQL dump and
+  the SQL Server `.7z` as a matched pair (same documents, same effective schema), and both predate
+  this epic's schema. `Copy-NorthridgeDataForward.ps1` handles PostgreSQL only and there is no
+  SQL Server carry-forward tool, so producing the SQL Server artifact is part of this work.
 - Remove `dms.ReferentialIdentity` from `CdcDmsManagedTableInventory` (the DMS-managed CDC table
   list that drives the PostgreSQL publication and SQL Server capture instances) and its CDC goldens.
   This is a public CDC contract change — the RI change stream disappears for downstream consumers —
@@ -92,10 +96,11 @@ atomically removing all remaining DMS-owned ReferentialIdentity and UUIDv5 infra
 - Final production-source scans find no RI reader/writer, referential-ID contract, UUIDv5
   implementation, RI trigger/table/TVP/inventory, operational truncate, CDC managed-table entry,
   template pgcrypto preamble, or `Be.Vlaanderen` package reference in any csproj or lock file. The
-  scans also cover `src/dms/tests` (including the performance harness and API integration tests) and
-  `eng/northridge`.
-- The Northridge carry-forward runs against the final schema and the republished dataset contains no
-  `dms.ReferentialIdentity` data.
+  scans also cover `src/dms/tests` (including the performance harness and API integration tests),
+  `src/dms/clis` test projects (for example `SchemaTools.Tests.Integration`'s
+  `ProvisionTestHelper.cs` table list and `DdlProvisionMssqlTests.cs`), and `eng/northridge`.
+- Both republished Northridge artifacts (PostgreSQL and SQL Server) are on the final schema, remain
+  a matched pair, and contain no `dms.ReferentialIdentity` data.
 - CDC bootstrap (publication / capture-instance) succeeds against the final schema on both providers
   and the CDC inventory goldens contain no `dms.ReferentialIdentity`.
 - Retained trigger-family parity tests pass on both providers; no test references RI trigger

@@ -668,8 +668,9 @@ be a client validation error. The preprocessor will delete its `ToLowerInvariant
 will validate with the shared well-formedness helper and pass the value through unfolded.
 GET-by-id, `?id=`, link injection, ownership authorization, and descriptor paging will not get
 result-contract changes. Change Query route/response/authorization contracts remain
-unchanged, but `/deletes` recreated-row detection will follow the lowered-URI + `ResourceKeyId`
-descriptor identity contract described above.
+unchanged, but `/deletes` recreated-row detection and the descriptor comparisons in custom-view
+`ReadChanges` authorization (live seeks and tombstone probe arms) will follow the lowered-URI +
+`ResourceKeyId` descriptor identity contract described above.
 
 ### Query-time string filters (`?field=value`)
 

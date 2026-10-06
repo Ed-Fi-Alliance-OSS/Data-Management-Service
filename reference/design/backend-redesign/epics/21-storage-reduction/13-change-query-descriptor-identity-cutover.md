@@ -14,6 +14,7 @@ using the same provider equality contract as the natural-key resolver.
 ## Design References
 
 - [Natural-key resolution](../../design-docs/natural-key-resolution.md)
+- [Change queries](../../design-docs/change-queries.md) (custom-view `ReadChanges` authorization)
 - [E21 dependency chain](EPIC.md#dependency-chain)
 
 ## Dependencies
@@ -32,13 +33,22 @@ using the same provider equality contract as the natural-key resolver.
 - For descriptor `/deletes`, probe the live descriptor table by lowered URI plus the descriptor
   resource's compile-time `ResourceKeyId`.
 - Use the same lookup for descriptor-valued identity joins in resource `/deletes`.
-- Use the same lookup in custom-view `ReadChanges` authorization. DMS-1193 added descriptor seeks
-  in `TrackedChangeAuthorizationSqlEmitter` that join live `dms.Descriptor` by
-  `Discriminator IN (...)` plus exact `Namespace`/`CodeValue` equality (the
-  `ReadChangesCustomViewDescriptorKeyPair` live joins and the `DescriptorSeek` `EXISTS` predicate).
-  Move both to lowered URI plus the descriptor resource's compile-time `ResourceKeyId`. The optional
-  tombstone probe arm that reads the shared descriptor tracked-change table keeps `Discriminator` as
-  its routing predicate.
+- Use the same descriptor identity contract in custom-view `ReadChanges` authorization
+  (`TrackedChangeAuthorizationSqlEmitter`, added by DMS-1193). It compares descriptor identity in
+  four places, and all four move off exact `Namespace`/`CodeValue` equality:
+  - the live-seek join (`ReadChangesCustomViewDescriptorKeyPair`) and the `DescriptorSeek` `EXISTS`
+    predicate, which join live `dms.Descriptor` by `Discriminator IN (...)` plus exact
+    `Namespace`/`CodeValue` equality. Move both to lowered URI plus the descriptor resource's
+    compile-time `ResourceKeyId`.
+  - the live-seek tombstone probe arm (`BuildProbeArm`, `ReadChangesCustomViewProbeDescriptorKeyPair`)
+    and the `DescriptorSeek` tombstone probe arm (`BuildDescriptorSeekPredicate`). Both compare old
+    `Namespace`/`CodeValue` values stored on two tracked-change rows with a plain `=` and no
+    `dms.Descriptor` join (the contract comment in `ReadChangesAuthorizationContracts.cs` and the
+    `TrackedChangeAuthorizationSqlEmitterTests` pin record this). Compare the lowered
+    `<namespace>#<codeValue>` of both sides under the same per-engine fold the live probes use
+    (`lower(… COLLATE "pg_c_utf8")` on PostgreSQL, `LOWER` under the DMS identity collation on SQL
+    Server), and update that contract comment and the pinning tests. The `DescriptorSeek` probe arm
+    keeps `Discriminator` as its routing predicate over the shared descriptor tracked-change table.
 - Keep shared-tombstone `Discriminator` as a routing predicate only.
 - Remove the unused live `IX_Descriptor_Discriminator_ContentVersion` index.
 - Preserve descriptor route, response, and authorization contracts.
@@ -61,8 +71,9 @@ using the same provider equality contract as the natural-key resolver.
 - SQL snapshots contain no live-descriptor `Discriminator` predicate, including the custom-view
   `ReadChanges` authorization SQL emitted by `TrackedChangeAuthorizationSqlEmitter`.
 - Custom-view `ReadChanges` authorization over a descriptor basis keeps its current authorization
-  verdicts, and a descriptor recreated with only casing changed still matches its custom-view basis
-  row on both providers.
+  verdicts except for descriptor values that differ only in casing, which now match on both
+  providers (a change on PostgreSQL, where all four comparisons are case-sensitive today). This
+  holds for a live basis row and for a deleted basis row reached through either tombstone probe arm.
 - Derived index inventories, manifests, and generated DDL contain no live-descriptor
   `IX_Descriptor_Discriminator_ContentVersion` index.
 - Every SQL Server descriptor probe applies the explicit identity collation to its input inside
