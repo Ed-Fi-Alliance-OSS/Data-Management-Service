@@ -117,7 +117,8 @@ Describe 'CDC live lifecycle snippet boundary' {
             -StatePath $state -Project 'dms-local' -FixtureRoot $TestDrive } | Should -Throw 'Reached managed stop'
 
         Should -Invoke Invoke-CdcRunbookLiveWrapper -Times 1 -Exactly -ParameterFilter { $Id -eq 'cdc-managed-stop' -and $FixtureRoot -eq $TestDrive }
-        (Get-Content (Join-Path $TestDrive 'cdc-state-inventory.stdout') -Raw).TrimStart() | Should -Match '^FullName\b'
+        # ANSI styling may precede the header, and long paths can hide later columns.
+        Get-Content (Join-Path $TestDrive 'cdc-state-inventory.stdout') -Raw | Should -Match 'FullName'
     }
 }
 
