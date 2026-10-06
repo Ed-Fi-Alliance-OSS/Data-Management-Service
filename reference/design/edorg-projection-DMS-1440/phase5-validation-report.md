@@ -13,7 +13,7 @@ Run 2026-10-06 on Windows 11 (local Docker Desktop), against branch `DMS-1440`.
 
 ## 1. Result summary
 
-Every lane that exercises branch code passed. Every failure that remains also fails, by test name, on the merge-base, or is the documented Windows-only set; none is introduced by the branch.
+Projection-specific tests passed. Broader lanes had the failures and skips detailed below; no branch regression was identified. Every remaining failure except one also fails, by test name, on the merge-base; the exception is a `DocumentCacheWriter` telemetry test that failed once in the full SQL Server shard 4 and passed in isolation on both the branch and the merge-base (§4). These results establish validation of `afcb8938e`, not of a future merged version.
 
 | Lane | Passed | Failed | Skipped / not run | Verdict |
 | --- | ---: | ---: | ---: | --- |
@@ -35,7 +35,7 @@ Every lane that exercises branch code passed. Every failure that remains also fa
 | DMS E2E DS 6.1 version-coupled (PostgreSQL / SQL Server) | 12 / 12 | 0 | 0 | Pass, includes the DS 6.1 Discovery scenario |
 | DMS E2E DS 5.2 Discovery scenario (focused) | 1 | 0 | 0 | Pass |
 | DMS E2E DS 5.2 shard 4 (full) | — | — | interrupted, 0 results | Stopped by the host's low-memory reaper; replaced by the focused run (accepted) |
-| CI Pester lane (57 files) | 3,451 | 6 | 72 | All 6 fail identically on the merge-base; platform-dependent |
+| CI Pester lane (57 files) | 3,451 | 6 | 72 | All 6 also fail on the merge-base; 5 platform-dependent, 1 cause not investigated |
 
 ## 2. Environment and run notes
 
@@ -163,7 +163,7 @@ The 57 paths of `run-bootstrap-pester-tests` in `.github/workflows/on-dms-pullre
 
 Branch-changed or reviewer-named files, run individually: `EducationOrganizationProjectionToggleWiring` 5 / 0 / 0, `InstanceE2EForwarding` 69 / 0 / 0, `DmsPullRequestCiBudget` 125 / 0 / 0, `BuildScriptTestGuards` 12 / 0 / 0.
 
-**Platform-dependent failures** (all six also fail on the merge-base tree, which has no generated E2E state; `pester/mergebase-failing-files.txt`):
+**Failures** (all six also fail on the merge-base tree, which has no generated E2E state; `pester/mergebase-failing-files.txt`). Five are platform-dependent; the `E2EEngineForwarding` failure reproduces on the merge-base but its cause has not been investigated, so it is not classified as Windows-only:
 
 | File :: test | Reason |
 | --- | --- |
@@ -182,19 +182,19 @@ Branch-changed or reviewer-named files, run individually: `EducationOrganization
 | DMS unit, Backend.Cdc | 63 | Same 63 names | Windows CDC workflow journal (`LocalCdcWorkflowJournalStore`) |
 | DMS unit, SchemaTools | 581 | Same 581 names | Same journal plus Windows path assertions |
 | Backend SQL Server shard 3, first pass | 9 (`…Propagated_Reference_Identity_Runtime_With_The_Authoritative_DS52_Survey_Fixture` ×3, `…Relational_Write_Smoke_With_The_Authoritative_Sample_StudentAcademicRecord_Fixture` ×4, `…ClassPeriod_To_BellSchedule_Child_Binding` ×1, `…Projection_Set_Reader_Over_An_Altered_Schema.It_reports_every_arm_of_another_column_type_as_a_data_type_incompatibility` ×1) | Not needed: the branch rerun passed 316 / 316 | Modern Standby 10:26–11:59 froze the Docker VM during provisioning; `Execution Timeout Expired` after 1 h 37 m |
-| Backend SQL Server shard 4 | 3 (below) | 2 deterministic failures identical; the third passes on both | See the reconciliation |
+| Backend SQL Server shard 4 | 3 (below) | The 2 alias-mutex failures reproduce alone on both; the third did not reproduce (passes alone on both) | See the reconciliation |
 | Backend CDC integration | 3 × `Given_CdcControllerFixtureHooks.It_reopens_the_same_durable_state_after_a_journal_write_interruption(…)` | Same 3 names | Windows CDC workflow journal |
 | SchemaTools PostgreSQL | 7 failed + 8 not run | Same 15 names | 3 × `psql` not on the Windows `PATH`; 4 × managed provisioning (`CdcWorkflowStateException`, `CreateDatabaseIfNotExists` assertion) in `Given_Managed_Database_Provisioning_With_A_Real_Provider("pgsql")`; 8 CDC tests skip because SchemaTools reads its own `appsettings.json` and reached the 5432 server (`wal_level=replica`) |
 | SchemaTools SQL Server | 4 failed + 15 not run | The same 4 + 15, plus 7 more failures (120 s provisioning timeouts) | Managed provisioning fixture (`"mssql"`), as above; 15 tests require `DMS_CDC_ISOLATED_SQLSERVER=1` |
-| CI Pester lane | 6 | Same 6 names | Platform, see §3.8 |
+| CI Pester lane | 6 | Same 6 names | 5 platform-dependent; `E2EEngineForwarding` cause not investigated; see §3.8 |
 
 **Shard 4 reconciliation (604 / 607).** 607 executed = 604 passed + 3 failed:
 
 1. `Given_A_Mssql_DocumentCacheAdministrativeMutex.It_serializes_alias_connections_to_the_same_database` — `TimeoutException` (6 s); fails alone on the branch and on the merge-base.
 2. `Given_A_Mssql_RepresentationRestampStore.It_serializes_aliases_of_the_same_physical_database_through_the_administrative_mutex` — `TimeoutException` (7 s); fails alone on the branch and on the merge-base.
-3. `Given_A_Mssql_DocumentCacheWriter.It_retries_transient_locked_lifecycle_read_failures_before_classification` — telemetry assertion in the full shard; passes alone on the branch and on the merge-base.
+3. `Given_A_Mssql_DocumentCacheWriter.It_retries_transient_locked_lifecycle_read_failures_before_classification` — telemetry assertion in the full shard; did **not** reproduce: the isolated reruns on the branch and on the merge-base both passed.
 
-Items 1 and 2: the tests' `LoopbackDataSourceAlias` rewrites `127.0.0.1` to `localhost` to reach the same server under another name; the local container publishes on `127.0.0.1` only, so the alias connection tries `::1` first and times out. CI's container publishes on all interfaces. Not re-verified by rebinding the port. Item 3 is a timing-sensitive test under shard load. Neither file nor the code under test is in the branch diff. Evidence: `integration/backend-ms-4*.trx`.
+Items 1 and 2: the tests' `LoopbackDataSourceAlias` rewrites `127.0.0.1` to `localhost` to reach the same server under another name; the local container publishes on `127.0.0.1` only, so the alias connection tries `::1` first and times out. CI's container publishes on all interfaces. Not re-verified by rebinding the port. Item 3: the test relies on a 250 ms delay to provoke a 100 ms lock timeout, which supports timing sensitivity under shard load, and neither the test nor the writer is in the branch diff; its cause is not conclusively established. Accepted at review as a nonblocking residual risk. Neither file nor the code under test is in the branch diff. Evidence: `integration/backend-ms-4*.trx`.
 
 ## 5. Review checklist (§11)
 
@@ -214,7 +214,7 @@ Items 1 and 2: the tests' `LoopbackDataSourceAlias` rewrites `127.0.0.1` to `loc
 | No CMS → DMS reference | CMS `BackendProjectBoundaryTests` (in the 2,585) |
 | Lock files | See below |
 
-The evidence column maps each item to the suites that carry it; every suite named passed in full. The per-test inventory was approved at the corresponding steps and was not re-derived here.
+The evidence column maps each item to the suites that carry it; the projection tests in those suites passed (SQL Server shard 3 in its rerun). The per-test inventory was approved at the corresponding steps and was not re-derived here.
 
 **Lock files.** `git diff 5c964676f afcb8938e -- '*packages.lock.json'` touches only CMS projects and contains exactly the two approved exceptions:
 
