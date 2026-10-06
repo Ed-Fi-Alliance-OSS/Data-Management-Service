@@ -128,7 +128,7 @@ public class ProfileModuleTests
     }
 
     [Test]
-    public async Task CreateProfile_DuplicateName_ShouldReturnConflict()
+    public async Task CreateProfile_DuplicateName_ShouldReturnBadRequest()
     {
         var duplicateProfile = new
         {
@@ -150,20 +150,22 @@ public class ProfileModuleTests
         var expectedResponse = JsonNode.Parse(
             """
             {
-              "detail": "The identifying value(s) of the item are the same as another item that already exists.",
-              "type": "urn:ed-fi:api:conflict:non-unique-identity",
-              "title": "Identifying Values Are Not Unique",
-              "status": 409,
+              "detail": "Data validation failed. See 'validationErrors' for details.",
+              "type": "urn:ed-fi:api:bad-request:data",
+              "title": "Data Validation Failed",
+              "status": 400,
               "correlationId": "{correlationId}",
-              "validationErrors": {},
-              "errors": [
-                "A profile with this name already exists."
-              ]
+              "validationErrors": {
+                "Name": [
+                  "A profile with this name already exists."
+                ]
+              },
+              "errors": []
             }
             """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
         );
 
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
         JsonNode.DeepEquals(actualResponse, expectedResponse).Should().BeTrue();
     }
@@ -469,7 +471,7 @@ public class ProfileModuleTests
     }
 
     [Test]
-    public async Task UpdateProfile_DuplicateName_ShouldReturnConflict()
+    public async Task UpdateProfile_DuplicateName_ShouldReturnBadRequest()
     {
         var updateProfile = new
         {
@@ -492,20 +494,22 @@ public class ProfileModuleTests
         var expectedResponse = JsonNode.Parse(
             """
             {
-              "detail": "The identifying value(s) of the item are the same as another item that already exists.",
-              "type": "urn:ed-fi:api:conflict:non-unique-identity",
-              "title": "Identifying Values Are Not Unique",
-              "status": 409,
+              "detail": "Data validation failed. See 'validationErrors' for details.",
+              "type": "urn:ed-fi:api:bad-request:data",
+              "title": "Data Validation Failed",
+              "status": 400,
               "correlationId": "{correlationId}",
-              "validationErrors": {},
-              "errors": [
-                "A profile with this name already exists."
-              ]
+              "validationErrors": {
+                "Name": [
+                  "A profile with this name already exists."
+                ]
+              },
+              "errors": []
             }
             """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
         );
 
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
         JsonNode.DeepEquals(actualResponse, expectedResponse).Should().BeTrue();
     }

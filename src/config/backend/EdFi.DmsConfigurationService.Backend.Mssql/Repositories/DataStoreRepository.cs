@@ -32,6 +32,8 @@ public class DataStoreRepository(
 
     private long? TenantId => TenantContext is TenantContext.Multitenant mt ? mt.TenantId : null;
 
+    private const string DuplicateNameConstraint = "UX_DataStore_TenantId_Name";
+
     public async Task<DataStoreInsertResult> InsertDataStore(DataStoreInsertCommand command)
     {
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
@@ -55,6 +57,11 @@ public class DataStoreRepository(
 
             var id = await connection.ExecuteScalarAsync<int>(sql, parameters);
             return new DataStoreInsertResult.Success(id);
+        }
+        catch (SqlException ex) when (ex.IsUniqueViolation(DuplicateNameConstraint))
+        {
+            logger.LogWarning(ex, "Data store name must be unique within the tenant");
+            return new DataStoreInsertResult.FailureDuplicateName();
         }
         catch (Exception ex)
         {
@@ -339,6 +346,11 @@ public class DataStoreRepository(
                 return new DataStoreUpdateResult.FailureNotExists();
             }
             return new DataStoreUpdateResult.Success();
+        }
+        catch (SqlException ex) when (ex.IsUniqueViolation(DuplicateNameConstraint))
+        {
+            logger.LogWarning(ex, "Data store name must be unique within the tenant");
+            return new DataStoreUpdateResult.FailureDuplicateName();
         }
         catch (Exception ex)
         {

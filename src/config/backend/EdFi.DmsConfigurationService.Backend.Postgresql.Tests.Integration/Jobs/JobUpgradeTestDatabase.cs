@@ -11,7 +11,7 @@ using Npgsql;
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.Jobs;
 
 /// <summary>
-/// An isolated database for the DMS-1437 upgrade fixtures. Every deploy is bounded by script number
+/// An isolated database for the DMS-1437 and DMS-1341 upgrade fixtures. Every deploy is bounded by script number
 /// through <see cref="Deploy.DatabaseDeploy.ScriptFilter"/>, so a fixture's exact journal assertions
 /// describe the migrations it names and are not changed by scripts added later.
 /// </summary>
@@ -23,9 +23,12 @@ internal sealed class JobUpgradeTestDatabase
     public const int PreTicketScript = 32;
     public const int JobScheduleScript = 33;
     public const int JobScript = 34;
+    public const int NameUniquenessScript = 35;
 
     public const string JobScheduleScriptName = ScriptNamePrefix + "0033_Create_JobSchedule_Table.sql";
     public const string JobScriptName = ScriptNamePrefix + "0034_Create_Job_Table.sql";
+    public const string NameUniquenessScriptName =
+        ScriptNamePrefix + "0035_Add_DataStore_And_ApiClient_Name_Uniqueness.sql";
 
     private readonly string _databaseName;
 
@@ -45,16 +48,20 @@ internal sealed class JobUpgradeTestDatabase
 
     public void DeployThrough(int lastScript)
     {
-        DatabaseDeployResult result = new Deploy.DatabaseDeploy
-        {
-            ScriptFilter = scriptName => ScriptNumber(scriptName) <= lastScript,
-        }.DeployDatabase(ConnectionString);
+        DatabaseDeployResult result = Deploy(lastScript);
 
         if (result is DatabaseDeployResult.DatabaseDeployFailure failure)
         {
             Assert.Fail($"Database deploy through script {lastScript} failed: {failure.Error}");
         }
     }
+
+    /// <summary>Deploys through <paramref name="lastScript"/> and returns the outcome, failure included.</summary>
+    public DatabaseDeployResult Deploy(int lastScript) =>
+        new Deploy.DatabaseDeploy
+        {
+            ScriptFilter = scriptName => ScriptNumber(scriptName) <= lastScript,
+        }.DeployDatabase(ConnectionString);
 
     public static int ScriptNumber(string scriptName)
     {

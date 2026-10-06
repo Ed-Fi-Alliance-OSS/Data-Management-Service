@@ -13,6 +13,7 @@ using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
+using FluentValidation.Results;
 using Microsoft.OpenApi;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
@@ -21,12 +22,17 @@ public class VendorModule : IEndpointModule
 {
     private const string DuplicateCompanyNameError = "A vendor with this company name already exists.";
 
+    private static IResult DuplicateCompanyName(HttpContext httpContext) =>
+        FailureResults.DataValidation(
+            [new ValidationFailure("Company", DuplicateCompanyNameError)],
+            httpContext.TraceIdentifier
+        );
+
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints
             .MapSecuredPost("/v3/vendors/", InsertVendor)
             .Produces(201)
-            .Produces(200)
             .AddOpenApiOperationTransformer(
                 (operation, context, ct) =>
                 {
@@ -35,21 +41,18 @@ public class VendorModule : IEndpointModule
                         return Task.CompletedTask;
                     }
 
-                    foreach (var code in new[] { "201", "200" })
+                    if (
+                        operation.Responses.TryGetValue("201", out var iResponse)
+                        && iResponse is OpenApiResponse response
+                    )
                     {
-                        if (
-                            operation.Responses.TryGetValue(code, out var iResponse)
-                            && iResponse is OpenApiResponse response
-                        )
+                        response.Headers ??= new Dictionary<string, IOpenApiHeader>();
+                        response.Headers["Location"] = new OpenApiHeader
                         {
-                            response.Headers ??= new Dictionary<string, IOpenApiHeader>();
-                            response.Headers["Location"] = new OpenApiHeader
-                            {
-                                Description = "The absolute URL of the vendor resource.",
-                                Required = true,
-                                Schema = new OpenApiSchema { Type = JsonSchemaType.String, Format = "uri" },
-                            };
-                        }
+                            Description = "The absolute URL of the vendor resource.",
+                            Required = true,
+                            Schema = new OpenApiSchema { Type = JsonSchemaType.String, Format = "uri" },
+                        };
                     }
 
                     return Task.CompletedTask;
@@ -78,24 +81,10 @@ public class VendorModule : IEndpointModule
         var locationUrl =
             $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/";
 
-        if (insertResult is VendorInsertResult.Success success)
-        {
-            var resourceUrl = $"{locationUrl}{success.Id}";
-            if (success.IsNewVendor)
-            {
-                return Results.Created(resourceUrl, null);
-            }
-
-            httpContext.Response.Headers.Location = resourceUrl;
-            return Results.Ok();
-        }
-
         return insertResult switch
         {
-            VendorInsertResult.FailureDuplicateCompanyName => FailureResults.NonUniqueIdentity(
-                DuplicateCompanyNameError,
-                httpContext.TraceIdentifier
-            ),
+            VendorInsertResult.Success success => Results.Created($"{locationUrl}{success.Id}", null),
+            VendorInsertResult.FailureDuplicateCompanyName => DuplicateCompanyName(httpContext),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
@@ -227,10 +216,7 @@ public class VendorModule : IEndpointModule
                     // holds its original values and no outcome resolution is needed: only the
                     // provider claims this request changed are restored.
                     return await RollbackMutatedClientsAsync(acceptMissing: false)
-                        ? FailureResults.NonUniqueIdentity(
-                            DuplicateCompanyNameError,
-                            httpContext.TraceIdentifier
-                        )
+                        ? DuplicateCompanyName(httpContext)
                         : FailureResults.Unknown(httpContext.TraceIdentifier);
                 case VendorUpdateResult.FailureUnknown updateFailure:
                     logger.LogError(
