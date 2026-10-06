@@ -27,7 +27,7 @@ file.
 | RouteQualifierSegments           | Comma separated list of route qualifier context segments as defined by `dataStoreContexts` in Configuration Service. Example: "districtId,schoolYear". The names `__identityId` and `__identityToken` are reserved, and names that are equal under case-insensitive comparison are rejected, whether or not identity management is enabled. As with `CorrelationIdMaxLength`, a rejected value does not stop the process: the host starts, logs the validation failure at `Critical`, and answers every request, including `/health`, with the generic Ed-Fi `500` until the setting is corrected and the service is restarted. |
 | MultiTenancy                     | When `true`, enables multi-tenancy mode where the tenant identifier is extracted from the URL route. Default: `false` |
 | EnableManagementEndpoints       | When `true`, allows the DMS claimset management endpoint surface to be registered. When `false`, `/management/reload-claimsets` and `/management/view-claimsets` are not mapped. Environment override: `AppSettings__EnableManagementEndpoints`. Default: `false` |
-| EnableIdentityManagement        | When `true`, maps the DMS-owned `/identity/v2/identities` routes and serves the identity OpenAPI document, its metadata listing entry, and the `identity` Discovery URL. When `false`, none of them exist and the identity routes fall through to the catch-all `404`. The operations themselves are performed by an identity provider plugin; with none registered, a request that passes authentication, tenant, client-binding and identity-claim checks answers `404` with `urn:ed-fi:api:identities:operation-not-supported`. Environment override: `AppSettings__EnableIdentityManagement`. Default: `false` |
+| EnableIdentityManagement        | When `true`, maps the DMS-owned `/identity/v2/identities` routes and serves the identity OpenAPI document, its metadata listing entry, and the `identity` Discovery URL. When `false`, none of them exist and the identity routes fall through to the catch-all `404`. The operations themselves are performed by an identity provider plugin; with none registered, a request that passes authentication, tenant, client-binding and identity-claim checks answers `404` with `urn:ed-fi:api:identities:operation-not-supported`. With it `true`, CORS also exposes the `Location` response header to the one origin named by `Cors:SwaggerUIOrigin`, which a browser client needs to follow an asynchronous request; see [Cors](#cors). See [Identity Management](./IDENTITY-MANAGEMENT.md) for enabling it, the responses a client sees, and how quickly a change to a client or claim set takes effect. Environment override: `AppSettings__EnableIdentityManagement`. Default: `false` |
 | ManagementEndpoints:RequiredRole | Single literal role token a bearer must carry, under `JwtAuthentication:RoleClaimType`, to reach `reload-claimsets` and `view-claimsets`. Empty by default, which leaves those endpoints unmapped. Environment override: `AppSettings__ManagementEndpoints__RequiredRole`. Recommended: `cms-client` |
 | MaximumPageSize                  | Upper bound for the `limit` and `pageSize` query parameters on GET-many requests, and the page size applied when neither is supplied. Also the `default` and `maximum` published for those parameters in the OpenAPI specification. Must be greater than `0`; the service refuses to start otherwise. Environment override: `AppSettings__MaximumPageSize`. Default: `500` |
 | DefaultPartitionCount            | Number of partitions returned by a resource or descriptor `/partitions` request that omits the `number` query parameter. Also the `default` published for `numberOfPartitions` in the OpenAPI specification. Must be between `1` and `200`, the same range accepted for `number`; the service refuses to start otherwise. Environment override: `AppSettings__DefaultPartitionCount`. See [Cursor Paging](./CURSOR-PAGING.md). Default: `10` |
@@ -334,6 +334,15 @@ These settings configure how the DMS API connects to the Configuration Service t
 > value — the mismatch is with the stored data, not between the services.
 > Recreate the database volume, or apply the re-submission procedure above.
 
+## Cors
+
+DMS allows cross-origin requests from one origin, the one the bundled Swagger UI is served from.
+Any other origin gets no CORS headers.
+
+| Parameter | Description |
+| --- | --- |
+| `Cors:SwaggerUIOrigin` | The single origin allowed to call DMS from a browser. Environment override: `Cors__SwaggerUIOrigin`; the shipped Docker Compose files map it from `DMS_SWAGGER_UI_URL`. When `AppSettings:EnableIdentityManagement` is `true`, DMS also exposes the `Location` response header to this origin and to no other, so a browser client at this origin can follow an asynchronous identity request. See [Identity Management](./IDENTITY-MANAGEMENT.md#cors). Default: `http://localhost:8082` |
+
 ## CacheSettings
 
 These settings configure DMS in-memory cache behavior. Expiration values are in seconds.
@@ -428,7 +437,7 @@ and what a startup failure means, and
 [eng/docker-compose/README.md](../eng/docker-compose/README.md) for running them
 against a local development stack.
 
-A plugin is built against up to three published contract packages, on the Ed-Fi
+A plugin is built against up to four published contract packages, on the Ed-Fi
 Azure Artifacts feed at
 `https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json`:
 
@@ -437,6 +446,7 @@ Azure Artifacts feed at
 | `EdFi.Api.Plugins`          | `EdFiApiPlugin`, the base class a plugin implements.                                                               |
 | `EdFi.Api.CustomValidation` | `ICustomResourceValidator`, for a plugin that registers a validator.                                               |
 | `EdFi.Api.Secrets`          | `ISecretResolver` and `IClientSecretHasher`, for a [Configuration Service plugin](#configuration-service-plugins). |
+| `EdFi.Api.Identity`         | `IIdentityService`, for a plugin that backs [Identity Management](./IDENTITY-MANAGEMENT.md). Its [implementer guide](../src/dms/core/EdFi.DataManagementService.Identity/IDENTITY.md) is the package readme. |
 
 None carries a Data Management Service or Configuration Service release version.
 Each declares its own semantic version, in its own source, and moves it only when
@@ -1003,6 +1013,7 @@ it covers verifying the change on every instance and refreshing each consumer.
 | `JwtAuthentication.Authority`       | URL of the identity provider's authority (issuer). It must equal the `issuer` in the metadata document exactly; DMS will not start otherwise, and a mismatch that appears later makes DMS reject tokens (401) until it re-fetches metadata that matches. DMS retries at most once per `RefreshIntervalMinutes` (default 60), so recovery can lag the fix by up to that long; restarting DMS recovers immediately. The first rejected request is logged as an error and repeats at debug level | `http://localhost:8045/realms/edfi`              | `http://ed-fi-api-config:8081`              |
 | `JwtAuthentication.MetadataAddress` | OpenID Connect metadata endpoint. DMS fetches signing keys only from this address's origin (scheme, host and port): a metadata document whose `jwks_uri` names another origin is refused, which stops DMS from starting, or keeps the last good metadata on a later refresh. DMS then retries until a fetch succeeds (once the automatic refresh is due, on every request), logging the first refusal as an error and repeats at debug level. DMS does not follow redirects for these fetches. For Keycloak reached over an internal hostname, set `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true`; Keycloak's default makes `jwks_uri` name the public host | `http://dms-keycloak:8080/realms/edfi/.well-known/openid-configuration` | `http://ed-fi-api-config:8081/.well-known/openid-configuration` |
 | `JwtAuthentication.RoleClaimType` | Exact inbound claim type used by endpoints that require a specifically configured role | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` |
+| `JwtAuthentication.ClockSkewSeconds` | Clock skew tolerance in seconds applied to a token's `nbf` and `exp` checks, so a token is still accepted for this long after it expires. Environment override: `JwtAuthentication__ClockSkewSeconds`; the shipped Docker Compose files map it from `DMS_JWT_CLOCK_SKEW_SECONDS`. Default: `30` | `30` | `30` |
 
 Refer to the API service's `appsettings.json` for additional options and defaults.
 

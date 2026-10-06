@@ -5,8 +5,9 @@
 
 <#
 .SYNOPSIS
-    Compiles the scratch consumer against EdFi.Api.Secrets as published on a feed, once the version
-    the contract declares exists there.
+    Compiles a scratch consumer against a contract package as published on a feed, once the version
+    the contract declares exists there. Serves any contract package: the package id, assembly and
+    consumer are parameters, with EdFi.Api.Secrets and its SecretsConsumer as the defaults.
 
 .DESCRIPTION
     The local check proves the package just packed restores and compiles. This proves the same of
@@ -37,13 +38,14 @@
 #>
 [CmdletBinding()]
 param(
-    # The EdFi.Api.Secrets nupkg just packed from this checkout, which the published one is compared
-    # with before anything is restored.
+    # The nupkg just packed from this checkout (EdFi.Api.Secrets by default), which the published one
+    # is compared with before anything is restored.
     [Parameter(Mandatory)]
     [string]
     $PackageFile,
 
-    # The version the contract declares, read by the caller with Get-SecretsContractVersion.
+    # The version the contract declares, read by the caller with the contract's own reader, such as
+    # Get-SecretsContractVersion.
     [Parameter(Mandatory)]
     [string]
     $PackageVersion,
@@ -72,6 +74,36 @@ param(
     [string]
     $ConsumerProject = (Join-Path $PSScriptRoot "SecretsConsumer"),
 
+    # The package under verification and the assembly it carries in lib/net10.0. The defaults are
+    # the Secrets contract's, so the config lane's call needs none of these.
+    [string]
+    $PackageId = "EdFi.Api.Secrets",
+
+    [string]
+    $AssemblyName = "EdFi.DmsConfigurationService.Secrets",
+
+    # The MSBuild property through which the consumer takes the version of $PackageId.
+    [string]
+    $VersionPropertyName = "SecretsPackageVersion",
+
+    # Further MSBuild properties for the consumer's restore and build, such as the version of a
+    # second contract it also references.
+    [hashtable]
+    $AdditionalProperties = @{},
+
+    # For a consumer that restores more than $PackageId from the Ed-Fi feed: the other package ids
+    # it takes from -RestoreSource. Giving any also requires -PublicSource, and the restore then
+    # runs from a generated nuget.config that maps $PackageId and these ids to -RestoreSource and
+    # everything else to -PublicSource. A consumer with its own source mapping cannot be restored
+    # with --source, because NuGet then considers no source for the mapped ids. Omitted, the restore
+    # is the plain --source one the Secrets consumer, which declares no source, has always used.
+    [string[]]
+    $AdditionalFeedPackageIds = @(),
+
+    # The source for every other package id, when -AdditionalFeedPackageIds is given.
+    [string]
+    $PublicSource = "",
+
     # Passed through to Invoke-ContractPublishCheck.ps1 unchanged, so a test can decide what the
     # feed answers without a network. A lane passes none and the real requests are made.
     [scriptblock]
@@ -86,8 +118,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$packageId = "EdFi.Api.Secrets"
-$assemblyName = "EdFi.DmsConfigurationService.Secrets"
+$packageId = $PackageId
+$assemblyName = $AssemblyName
+
+if ($AdditionalFeedPackageIds.Count -gt 0 -and -not $PublicSource) {
+    throw "-AdditionalFeedPackageIds needs -PublicSource, the source for every other package the consumer restores."
+}
 
 if ((Test-Path -LiteralPath $NuGetPackagesDirectory) -and @(Get-ChildItem -LiteralPath $NuGetPackagesDirectory -Force).Count -gt 0) {
     throw "The NuGet packages directory $NuGetPackagesDirectory is not empty. Pass a fresh path per run."
@@ -100,7 +136,7 @@ $checkArguments = @{
     PackageFile      = $PackageFile
     PackageId        = $packageId
     PackageVersion   = $PackageVersion
-    WorkingDirectory = Join-Path ([System.IO.Path]::GetTempPath()) "secrets-published-check-$([guid]::NewGuid().ToString('N'))"
+    WorkingDirectory = Join-Path ([System.IO.Path]::GetTempPath()) "published-contract-check-$([guid]::NewGuid().ToString('N'))"
     ServiceIndexUrl  = $ServiceIndexUrl
 }
 
@@ -128,6 +164,7 @@ if ($decision.Reason -ne "unchanged") {
 # rather than assigned $null, which PowerShell 7.5 leaves defined and empty.
 $nugetPackagesWasSet = Test-Path -LiteralPath "Env:NUGET_PACKAGES"
 $previousNuGetPackages = if ($nugetPackagesWasSet) { $env:NUGET_PACKAGES } else { $null }
+$configDirectory = $null
 
 try {
     $env:NUGET_PACKAGES = $packages
@@ -135,17 +172,52 @@ try {
     # The consumer's nuget.config clears every source, so the feed named here is the only place the
     # package can come from, and the fresh global-packages folder means it is downloaded. Build
     # output goes to the host so the success stream carries only the status line.
-    dotnet restore $ConsumerProject --source $RestoreSource -p:SecretsPackageVersion=$PackageVersion | Out-Host
+    $properties = @("-p:$VersionPropertyName=$PackageVersion")
+    foreach ($name in $AdditionalProperties.Keys) {
+        $properties += "-p:$name=$($AdditionalProperties[$name])"
+    }
+
+    $restoreArguments = @("--source", $RestoreSource)
+    if ($AdditionalFeedPackageIds.Count -gt 0) {
+        $configDirectory = Join-Path ([System.IO.Path]::GetTempPath()) "published-contract-restore-$([guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $configDirectory -Force | Out-Null
+        $configFile = Join-Path $configDirectory "nuget.config"
+        $mapped = @($packageId) + $AdditionalFeedPackageIds
+        $feedPatterns = ($mapped | ForEach-Object { "<package pattern=`"$([System.Security.SecurityElement]::Escape($_))`" />" }) -join ""
+        $escapedFeed = [System.Security.SecurityElement]::Escape($RestoreSource)
+        $escapedPublic = [System.Security.SecurityElement]::Escape($PublicSource)
+        Set-Content -LiteralPath $configFile -Encoding utf8 -Value @"
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key="published-feed" value="$escapedFeed" />
+    <add key="public" value="$escapedPublic" />
+  </packageSources>
+  <packageSourceMapping>
+    <packageSource key="published-feed">$feedPatterns</packageSource>
+    <packageSource key="public"><package pattern="*" /></packageSource>
+  </packageSourceMapping>
+</configuration>
+"@
+        $restoreArguments = @("--configfile", $configFile)
+    }
+
+    dotnet restore $ConsumerProject @restoreArguments @properties | Out-Host
     if ($LASTEXITCODE -ne 0) {
         throw "The scratch consumer failed to restore the published $packageId $PackageVersion from $RestoreSource."
     }
 
-    dotnet build $ConsumerProject -c $Configuration --no-restore --nologo -p:SecretsPackageVersion=$PackageVersion | Out-Host
+    dotnet build $ConsumerProject -c $Configuration --no-restore --nologo @properties | Out-Host
     if ($LASTEXITCODE -ne 0) {
         throw "The scratch consumer failed to compile against the published $packageId $PackageVersion."
     }
 }
 finally {
+    if ($null -ne $configDirectory -and (Test-Path -LiteralPath $configDirectory)) {
+        Remove-Item -LiteralPath $configDirectory -Recurse -Force
+    }
+
     if ($nugetPackagesWasSet) {
         $env:NUGET_PACKAGES = $previousNuGetPackages
     }

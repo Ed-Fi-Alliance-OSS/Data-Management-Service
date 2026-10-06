@@ -6,7 +6,7 @@
 #Requires -Version 7
 
 # Assert-IdentityPackage.ps1 asserts on the id, the version, the license, the readme, the assembly,
-# its AssemblyVersion, the exported type surface, the load-bearing documentation landmarks, and the
+# its AssemblyVersion, the readme against the committed guide, the exported type surface, the load-bearing documentation landmarks, and the
 # dependency set of a packed EdFi.Api.Identity nupkg. The admission case below runs the whole script
 # against the real packed artifact, and each negative control repacks that same artifact with exactly
 # one thing changed, so a failure is attributable to the one property the case mutated rather than to
@@ -69,7 +69,9 @@ BeforeAll {
         param(
             [Parameter(Mandatory)][string] $Name,
             [scriptblock] $TransformNuspec,
-            [scriptblock] $TransformXmlDocumentation
+            [scriptblock] $TransformXmlDocumentation,
+            [scriptblock] $TransformReadme,
+            [switch] $RemoveReadme
         )
 
         $stage = Join-Path $script:fixtureRoot "$Name-stage-$([guid]::NewGuid().ToString('N'))"
@@ -93,6 +95,16 @@ BeforeAll {
             [System.IO.File]::WriteAllText($xmlPath, (& $TransformXmlDocumentation $original))
         }
 
+        $readmePath = Join-Path $stage "IDENTITY.md"
+
+        if ($RemoveReadme) {
+            Remove-Item -LiteralPath $readmePath
+        }
+        elseif ($null -ne $TransformReadme) {
+            $original = [System.IO.File]::ReadAllText($readmePath)
+            [System.IO.File]::WriteAllText($readmePath, (& $TransformReadme $original))
+        }
+
         # -LiteralPath, and per entry. A nupkg carries [Content_Types].xml at its root, and square
         # brackets are a character class to Compress-Archive's wildcard -Path, so globbing the stage
         # directory would silently drop that entry.
@@ -105,16 +117,21 @@ BeforeAll {
     function Invoke-Verifier {
         param(
             [Parameter(Mandatory)][string] $PackageFile,
-            [string] $ExpectedPackageVersion = $script:contractVersion
+            [string] $ExpectedPackageVersion = $script:contractVersion,
+            [string] $GuidePath
         )
 
         # A fresh unique extraction directory per invocation, never a directory holding anything a
         # caller owns.
         $extractTo = Join-Path (New-FixtureDirectory -Name "extract") "package"
 
+        $guideArgument = @{}
+        if ($GuidePath) { $guideArgument.GuidePath = $GuidePath }
+
         try {
             & $script:verifier -PackageFile $PackageFile -ExtractTo $extractTo `
-                -PackageId $script:packageId -ExpectedPackageVersion $ExpectedPackageVersion |
+                -PackageId $script:packageId -ExpectedPackageVersion $ExpectedPackageVersion `
+                @guideArgument |
                 Out-Null
             return [pscustomobject]@{ Threw = $false; Message = "" }
         }
@@ -245,6 +262,73 @@ Describe "Assert-IdentityPackage negative controls" {
         $result.Message | Should -BeLike "*no longer contains*load-bearing rule phrase*"
         $result.Message |
             Should -BeLike "*The 1024-character ceiling bounds the escaped form because escaping only ever expands a token*"
+    }
+
+    It "refuses a packed readme that differs from the committed guide, naming the readme and the line" {
+        Test-PackedPackageAvailable
+
+        $package = New-RepackedPackage -Name "mismatched-readme" -TransformReadme {
+            param($text)
+            $text.TrimEnd() + "`nAn appended paragraph the committed guide does not carry.`n"
+        }
+
+        $result = Invoke-Verifier -PackageFile $package
+
+        $result.Threw | Should -BeTrue
+        $result.Message | Should -BeLike "*The packed IDENTITY.md is not the committed implementer guide*"
+        $result.Message | Should -BeLike "*First difference at line*package has 'An appended paragraph*"
+    }
+
+    It "admits a packed readme that differs from the committed guide only in line endings" {
+        Test-PackedPackageAvailable
+
+        $package = New-RepackedPackage -Name "crlf-readme" -TransformReadme {
+            param($text)
+            $text.Replace("`r`n", "`n").Replace("`n", "`r`n")
+        }
+
+        $result = Invoke-Verifier -PackageFile $package
+
+        $result.Threw | Should -BeFalse -Because "an autocrlf checkout must not fail the comparison: $($result.Message)"
+    }
+
+    It "refuses a readme that still carries the placeholder sentence, even when the committed guide agrees" {
+        Test-PackedPackageAvailable
+
+        # The committed guide is pointed at the same placeholder text, so the whole-file comparison
+        # would pass and only the placeholder refusal can account for the failure.
+        $placeholder = "# EdFi.Api.Identity`n`nThe implementer guide arrives in a later story.`n"
+        $guide = Join-Path (New-FixtureDirectory -Name "placeholder-guide") "IDENTITY.md"
+        [System.IO.File]::WriteAllText($guide, $placeholder)
+        $package = New-RepackedPackage -Name "placeholder-readme" -TransformReadme {
+            param($text)
+            $null = $text
+            $placeholder
+        }
+
+        $result = Invoke-Verifier -PackageFile $package -GuidePath $guide
+
+        $result.Threw | Should -BeTrue
+        $result.Message | Should -BeLike "*Packed readme IDENTITY.md still carries the placeholder sentence*"
+    }
+
+    It "still refuses a package that does not carry the readme file" {
+        Test-PackedPackageAvailable
+
+        $result = Invoke-Verifier -PackageFile (New-RepackedPackage -Name "no-readme" -RemoveReadme)
+
+        $result.Threw | Should -BeTrue
+        $result.Message | Should -BeLike "*Package does not carry the readme file itself*"
+    }
+
+    It "refuses when the committed guide cannot be found" {
+        Test-PackedPackageAvailable
+
+        $result = Invoke-Verifier -PackageFile $script:packedPackage `
+            -GuidePath (Join-Path $script:fixtureRoot "absent-guide.md")
+
+        $result.Threw | Should -BeTrue
+        $result.Message | Should -BeLike "*committed implementer guide was not found*"
     }
 
     It "still refuses a missing package file before it touches anything" {

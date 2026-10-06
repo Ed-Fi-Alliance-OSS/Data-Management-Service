@@ -130,12 +130,12 @@ public interface IIdentityService
     /// the getter's own inexpensive, no-I/O, stable-per-deployment contract.
     /// DMS reads this getter once per request, immediately after provider activation and before any
     /// operation is invoked, and gates the requested route's operation against the captured value: an
-    /// unsupported operation returns operation-unsupported <c>404</c> before body parsing, and no
-    /// method below is called. The same captured value also gates whether a token returned by
-    /// <c>FindAsync</c> or <c>SearchAsync</c> may later be redeemed through <c>ResultsAsync</c>, via
-    /// <see cref="IdentityCapabilities.Results"/>; a provider returning a
-    /// <see cref="IdentityAsyncResult.RequestToken"/> while that capability is absent is provider
-    /// contract misuse.
+    /// unsupported operation returns operation-unsupported <c>404</c> before content-type, body and
+    /// duplicate-property validation, and no method below is called. The same captured value also
+    /// gates whether a token returned by <c>FindAsync</c> or <c>SearchAsync</c> may later be redeemed
+    /// through <c>ResultsAsync</c>, via <see cref="IdentityCapabilities.Results"/>; a provider
+    /// returning a <see cref="IdentityAsyncResult.RequestToken"/> while that capability is absent is
+    /// provider contract misuse.
     /// A getter failure is a request-time activation failure: it returns the sanitized <c>500</c>
     /// identity-provider-configuration problem and invokes no operation, exactly as a throwing
     /// constructor or registration factory does.
