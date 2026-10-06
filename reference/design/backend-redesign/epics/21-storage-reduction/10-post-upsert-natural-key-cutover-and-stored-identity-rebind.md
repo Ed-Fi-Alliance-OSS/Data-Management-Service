@@ -30,12 +30,11 @@ bind the existing stored identity before authorization and no-op detection.
   the first command of the ordered-segments fallback (`ResolveInOrderedSegmentsAsync`). Do not
   resequence the fallback; it captures before it resolves references today and keeps that order.
   Since DMS-1535 the ordered-segments path is no longer a rare fallback. Split Create/Update POST
-  policies take it when `PostBranchAuthorizationInputs.RequiresOrderedSegments` is true (a branch
+  policies take it when `PostTargetAuthorizationBundles.RequiresOrderedSegments` is true (a branch
   whose result is owed right after capture, such as a not-permitted branch, or a create-new
-  relationship result) or when the Update branch uses a stored custom view. A split policy with
-  both branches permitted and no custom views stays co-batched.
+  relationship result) or when the Update branch uses a stored custom view.
 - Preserve POST action selection (DMS-1535) and ownership authorization (DMS-1060). The captured
-  target picks the Create or Update branch (`PostTargetAction.For`, `PostBranchAuthorizationInputs`),
+  target picks the Create or Update branch (`PostTargetAuthorizationBundles.Select`, `PostTargetAction.For`),
   and an existing target is authorized as Update, including stored-ownership checks. The natural-key
   capture predicate must produce the same target-context shape the RI capture produces today, plus
   `ExistingDocument` for identities that are equal under the SQL Server identity collation but
@@ -65,8 +64,7 @@ bind the existing stored identity before authorization and no-op detection.
   co-batched path, and the ordered-segments path keeps its current command count with the
   natural-key capture as its first command. The ordered-segments fixtures must actually reach
   `ResolveInOrderedSegmentsAsync`, through `RequiresOrderedSegments` or an Update-branch custom
-  view, and assert that they did; a split policy with both branches permitted and no custom views
-  is co-batched and does not cover this path.
+  view, and assert that they did.
 - Resource POST target lookup has zero RI command classifications; the create stream classifies
   exactly one natural-key capture/lookup command (`WriteSessionCommandStreamScenarios` create-stream
   expectations move from RI = 1 to RI = 0, natural-key = 1) and the update stream keeps RI = 0.

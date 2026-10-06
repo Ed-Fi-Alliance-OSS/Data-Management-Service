@@ -59,13 +59,19 @@ atomically removing all remaining DMS-owned ReferentialIdentity and UUIDv5 infra
   `docs/DEADLOCK-ANALYSIS.md`; leave `eng/docker-compose/OpenIddict-Crypto.psm1` and
   `setup-openiddict.ps1` untouched (CMS/OpenIddict pgcrypto). Update public
   DDL contracts and all generated goldens.
-- Update the Northridge dataset tooling (DMS-1406): `eng/northridge/Copy-NorthridgeDataForward.ps1`
-  copies `ReferentialIdentity` (`$script:DmsDataTable`) and checks an RI-to-Document integrity
-  query, and `eng/northridge/README.md` documents that. `Add-NorthridgeGapDocument.ps1` writes
-  through the API, so only its help text, which lists `dms.ReferentialIdentity` among the rows the
-  API produces, changes.
-- Republish both Northridge artifacts on the final schema. The README treats the PostgreSQL dump and
-  the SQL Server `.7z` as a matched pair (same documents, same effective schema), and both predate
+- Update the Northridge dataset tooling (DMS-1406), `eng/northridge/Copy-NorthridgeDataForward.ps1`,
+  for this epic's final schema:
+  - Stop copying `ReferentialIdentity`. Remove it from `$script:DmsDataTable`, skip the archive's RI
+    rows explicitly, and update the source/target table-coverage and "ReferentialIdentity ->
+    Document" integrity checks so the dropped table is expected, not reported as missing.
+  - Derive the `ResourceKeyId` that DMS-1444 adds as NOT NULL to every abstract identity table, the
+    same way the script already derives `dms.Descriptor.ResourceKeyId`: load those tables through
+    the staging schema and take the value from `dms.Document`. Leave the target schema unchanged.
+  - Update `eng/northridge/README.md` to match. `Add-NorthridgeGapDocument.ps1` writes through the
+    API, so only its help text, which lists `dms.ReferentialIdentity` among the rows the API
+    produces, changes.
+- Republish both Northridge artifacts on the final schema. The README treats the PostgreSQL and SQL
+  Server `.7z` artifacts as a matched pair (same documents, same effective schema), and both predate
   this epic's schema. `Copy-NorthridgeDataForward.ps1` handles PostgreSQL only and there is no
   SQL Server carry-forward tool, so producing the SQL Server artifact is part of this work.
 - Remove `dms.ReferentialIdentity` from `CdcDmsManagedTableInventory` (the DMS-managed CDC table
@@ -99,6 +105,8 @@ atomically removing all remaining DMS-owned ReferentialIdentity and UUIDv5 infra
   scans also cover `src/dms/tests` (including the performance harness and API integration tests),
   `src/dms/clis` test projects (for example `SchemaTools.Tests.Integration`'s
   `ProvisionTestHelper.cs` table list and `DdlProvisionMssqlTests.cs`), and `eng/northridge`.
+- `Copy-NorthridgeDataForward.ps1` completes against the final schema with every guard enabled;
+  abstract identity rows carry the `ResourceKeyId` of their owning `dms.Document` row.
 - Both republished Northridge artifacts (PostgreSQL and SQL Server) are on the final schema, remain
   a matched pair, and contain no `dms.ReferentialIdentity` data.
 - CDC bootstrap (publication / capture-instance) succeeds against the final schema on both providers

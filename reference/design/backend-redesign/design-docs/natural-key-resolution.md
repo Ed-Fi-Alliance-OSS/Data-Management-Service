@@ -189,9 +189,10 @@ Runtime readers (each will become an implementation ticket):
 Verified non-consumers (these will be untouched by this design): row locking (`dms.Document` by `DocumentId`),
 DELETE (captures by `DocumentUuid`; the only interaction was the ON DELETE CASCADE), GET-by-id,
 `?id=` queries, link injection, ownership authorization, stamping and tracked-change triggers, Change
-Query routing/response contracts/authorization/`/keyChanges`, and the entire DocumentCache path.
-Change Query `/deletes` recreated-row detection is a consumer of the natural-key and descriptor
-identity contracts below, so it will be updated by this design.
+Query routing/response contracts/`/keyChanges`, and the entire DocumentCache path.
+Change Query `/deletes` recreated-row detection and the descriptor comparisons in custom-view
+`ReadChanges` authorization are consumers of the natural-key and descriptor identity contracts
+below, so they will be updated by this design.
 
 ## The replacement design
 
@@ -528,7 +529,8 @@ identity collation. Every parameter-side descriptor fold must select that same c
 `LOWER` executes, for example `LOWER(@uri COLLATE SQL_Latin1_General_CP1_CI_AS)`; an unqualified
 `LOWER(@uri)` would fold under the database default before collation precedence is applied to the
 comparison. This rule covers write/upsert, reference-resolution, query-filter, descriptor-valued
-identity, and Change Query recreated-row probes. The two engines' non-ASCII verdicts differ — an
+identity, Change Query recreated-row probes, and custom-view `ReadChanges` authorization (live
+seeks and tombstone probe arms). The two engines' non-ASCII verdicts differ — an
 accepted trade-off (see "Risks and accepted trade-offs").
 
 The SQL Server difference is deliberately broader than case folding. The chosen
@@ -541,8 +543,9 @@ therefore ignorable in comparison: on SQL Server 2025, for example, `A😀` comp
 additionally equate canonically equivalent spellings such as precomposed `é` and `e` + combining
 acute even though DMS performs no Unicode
 normalization. These are not validation failures: they are accepted descriptor-identity aliases.
-The unique index, resolver/upsert probes, stored-wins behavior, and Change Query recreated-row probes
-must all treat each such pair as the same SQL Server descriptor identity. The project accepts this
+The unique index, resolver/upsert probes, stored-wins behavior, Change Query recreated-row probes,
+and custom-view `ReadChanges` authorization must all treat each such pair as the same SQL Server
+descriptor identity. The project accepts this
 limitation to preserve the fixed ODS-aligned SQL Server identity collation; live fixtures will pin
 the known examples so an engine change is visible.
 
@@ -668,9 +671,11 @@ be a client validation error. The preprocessor will delete its `ToLowerInvariant
 will validate with the shared well-formedness helper and pass the value through unfolded.
 GET-by-id, `?id=`, link injection, ownership authorization, and descriptor paging will not get
 result-contract changes. Change Query route/response/authorization contracts remain
-unchanged, but `/deletes` recreated-row detection and the descriptor comparisons in custom-view
-`ReadChanges` authorization (live seeks and tombstone probe arms) will follow the lowered-URI +
-`ResourceKeyId` descriptor identity contract described above.
+unchanged, but `/deletes` recreated-row detection and custom-view `ReadChanges` authorization will
+follow the descriptor identity contract described above. Live lookups of `dms.Descriptor` use
+lowered URI + `ResourceKeyId`. The tombstone probe arms compare the lowered old
+`<namespace>#<codeValue>` of two tracked-change rows, which carry no `ResourceKeyId`, under the same
+per-engine fold.
 
 ### Query-time string filters (`?field=value`)
 
@@ -1518,8 +1523,8 @@ validation boundary and lowered-value contracts and are aligned with this decisi
   DELETE shape, readers, and `DocumentCache` triggers remain unchanged.
 - Changing or constraining the SQL Server database default collation. The column-level identity
   contract is specifically what allows the supported case-sensitive database default to remain.
-- In-place upgrade scripts (the migration is re-provision-only; prerelease databases provisioned
-  from an earlier shape must be re-provisioned).
+- In-place upgrade scripts (the migration is re-provision-only; databases provisioned before these
+  changes must be re-provisioned).
 - DocumentCache/CDC work (live, RI-free, orthogonal).
 - ApiSchema contract or resource JSON shapes, except for the new descriptor URI NUL rejection and
   the body-wide parse-time rejection of unpaired-surrogate JSON escapes described above.

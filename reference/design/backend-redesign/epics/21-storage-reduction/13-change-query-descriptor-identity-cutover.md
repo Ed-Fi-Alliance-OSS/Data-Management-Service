@@ -34,12 +34,15 @@ using the same provider equality contract as the natural-key resolver.
   resource's compile-time `ResourceKeyId`.
 - Use the same lookup for descriptor-valued identity joins in resource `/deletes`.
 - Use the same descriptor identity contract in custom-view `ReadChanges` authorization
-  (`TrackedChangeAuthorizationSqlEmitter`, added by DMS-1193). It compares descriptor identity in
+  (`TrackedChangeAuthorizationSqlEmitter`; DMS-1193 added custom views to it). It compares descriptor identity in
   four places, and all four move off exact `Namespace`/`CodeValue` equality:
   - the live-seek join (`ReadChangesCustomViewDescriptorKeyPair`) and the `DescriptorSeek` `EXISTS`
     predicate, which join live `dms.Descriptor` by `Discriminator IN (...)` plus exact
     `Namespace`/`CodeValue` equality. Move both to lowered URI plus the descriptor resource's
-    compile-time `ResourceKeyId`.
+    compile-time `ResourceKeyId`. The planner resolves that `ResourceKeyId` from
+    `MappingSet.ResourceKeyIdByResource` and carries it on `ReadChangesCustomViewDescriptorKeyPair`
+    and `ReadChangesCustomViewBasis.DescriptorSeek`; the emitter renders it as a literal and does
+    not take a `MappingSet`.
   - the live-seek tombstone probe arm (`BuildProbeArm`, `ReadChangesCustomViewProbeDescriptorKeyPair`)
     and the `DescriptorSeek` tombstone probe arm (`BuildDescriptorSeekPredicate`). Both compare old
     `Namespace`/`CodeValue` values stored on two tracked-change rows with a plain `=` and no
@@ -70,10 +73,13 @@ using the same provider equality contract as the natural-key resolver.
 
 - SQL snapshots contain no live-descriptor `Discriminator` predicate, including the custom-view
   `ReadChanges` authorization SQL emitted by `TrackedChangeAuthorizationSqlEmitter`.
-- Custom-view `ReadChanges` authorization over a descriptor basis keeps its current authorization
-  verdicts except for descriptor values that differ only in casing, which now match on both
-  providers (a change on PostgreSQL, where all four comparisons are case-sensitive today). This
-  holds for a live basis row and for a deleted basis row reached through either tombstone probe arm.
+- Custom-view `ReadChanges` authorization keeps its current verdicts, except that descriptor values
+  differing only in casing now match on both providers. Today all four comparisons are
+  case-sensitive on PostgreSQL, and on SQL Server under a case-sensitive database default. The
+  criterion holds for both basis kinds, each with a live basis row and with a deleted basis row
+  reached through its tombstone probe arm:
+  - a descriptor basis (`DescriptorSeek`);
+  - a resource basis whose identity includes a descriptor (live seek).
 - Derived index inventories, manifests, and generated DDL contain no live-descriptor
   `IX_Descriptor_Discriminator_ContentVersion` index.
 - Every SQL Server descriptor probe applies the explicit identity collation to its input inside
@@ -87,7 +93,8 @@ using the same provider equality contract as the natural-key resolver.
   case-only recreation and SQL Server aliases accepted by the configured collation.
 - The same suppression behavior applies to descriptor-valued resource `/deletes` identity joins.
 - The same URI under another `ResourceKeyId` does not suppress the tombstone.
-- Descriptor route, response, and authorization behavior remains unchanged.
+- Descriptor route, response, and authorization behavior remains unchanged, except for the
+  case-only custom-view matches above.
 - The engine-divergence fixture matrix pins both verdicts for every listed pair on both engines; a
   comparer-looser pair, if one ever appears, surfaces as a fixture diff rather than a production
   discovery.
