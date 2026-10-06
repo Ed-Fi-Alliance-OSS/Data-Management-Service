@@ -23,7 +23,10 @@ The natural-key/`dms.ReferentialIdentity` removal workstream is filed as fourtee
 stories, DMS-1443 through DMS-1456. T1–T14 remain stable local rollout aliases matching the file
 ordering. Jira carries the same direct dependency chain with `blocks` links.
 
-The other DMS-1398 storage-reduction ideas remain outside this local story set until their approved
+DMS-1404 covers compact descriptor IDs and descriptor storage optimizations as an additional child
+story, separate from the T1–T14 natural-key/ReferentialIdentity removal chain.
+
+The remaining DMS-1398 storage-reduction ideas stay outside this local story set until their approved
 scope and Jira children are available. Mapping-pack functionality, DMS-1015, DMS-1016, and the closed
 DMS-946 are not included in these stories. In particular, mapping packs / AOT
 (`mpack-format-v1.md`, `aot-compilation.md`, epic 05) are out of scope even though this epic
@@ -81,3 +84,4 @@ by roughly half a dozen scenarios as an accepted lane-time cost.
 - **DMS-1454 (T12)** — [`12-descriptor-write-cutover-and-uuidv5-cleanup.md`](12-descriptor-write-cutover-and-uuidv5-cleanup.md) — Cut over descriptor writes and remove Core UUIDv5 contracts.
 - **DMS-1455 (T13)** — [`13-change-query-descriptor-identity-cutover.md`](13-change-query-descriptor-identity-cutover.md) — Cut over Change Query descriptor identity resolution and own the cross-engine Unicode verdict fixture matrix and `Turkish_100_CS_AS` live fixture.
 - **DMS-1456 (T14)** — [`14-remove-referential-identity-infrastructure.md`](14-remove-referential-identity-infrastructure.md) — Remove ReferentialIdentity fixtures, maintenance, and infrastructure.
+- **DMS-1404** — [`15-compact-descriptor-id-and-storage-optimizations.md`](15-compact-descriptor-id-and-storage-optimizations.md) — Give descriptors a compact int surrogate, plus other optimizations.

@@ -251,3 +251,4 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1454` — Cut Over Descriptor Writes and Remove Core UUIDv5 Contracts — `reference/design/backend-redesign/epics/21-storage-reduction/12-descriptor-write-cutover-and-uuidv5-cleanup.md`
   - `DMS-1455` — Cut Over Change Query Descriptor Identity Resolution — `reference/design/backend-redesign/epics/21-storage-reduction/13-change-query-descriptor-identity-cutover.md`
   - `DMS-1456` — Remove ReferentialIdentity Fixtures, Maintenance, and Infrastructure — `reference/design/backend-redesign/epics/21-storage-reduction/14-remove-referential-identity-infrastructure.md`
+  - `DMS-1404` — Give descriptors a compact int surrogate, plus other optimizations — `reference/design/backend-redesign/epics/21-storage-reduction/15-compact-descriptor-id-and-storage-optimizations.md`
