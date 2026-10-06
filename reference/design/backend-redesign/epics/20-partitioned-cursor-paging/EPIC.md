@@ -101,7 +101,7 @@ column into static comparison cases.
 
 DMS returns exactly one error per rejected cursor request, which matches ODS's one-element
 validation-error response rather than accumulating every applicable cursor message. Partition
-validation deliberately differs: it reports every unsupported reserved parameter in deterministic
+validation deliberately differs: it reports every malformed ignored paging value in deterministic
 order once the higher-priority `number` phase passes. Giving `number` the highest priority matches
 ODS, which range-checks `number` before it constructs its query parameters and therefore before it
 decodes a supplied `pageToken`.
@@ -251,7 +251,7 @@ and the never-record list are owned by
   and padding forms, invalid UTF-8, extra fields, decimal grammar, `Int64` bounds, terminal
   inverted ranges, and overflow handling.
 - Validation tests cover every query-parameter combination, ODS-compatible cursor precedence,
-  exactly one cursor error, partition phase gating and unsupported-parameter ordering, exact
+  exactly one cursor error, partition phase gating and malformed ignored-value ordering, exact
   messages and ProblemDetails shells, repeated-parameter last-value-wins behavior, and case-variant
   canonicalization without an exception.
 - Routing and handler tests cover typed collection/by-id/partition classification, the dedicated
@@ -456,7 +456,8 @@ package is referred to everywhere else in this epic.
    configuration and startup validation, and focused unit tests.
 2. **[DMS-1384: Request validation and typed paths](00b-cursor-and-partition-validation.md)** —
    ODS-precedence single-error cursor validation, phase-gated partition validation, the
-   ProblemDetails shell, operation-scoped rejection on `/deletes` and `/keyChanges`, typed
+   ProblemDetails shell, operation-scoped rejection on `/deletes` and `/keyChanges` (name-based
+   rejection there was later superseded by DMS-1589, which ignores and reports those names), typed
    collection/by-id/partition path operations, and parameter canonicalization.
 3. **[DMS-1385: Candidate planning and provider cursor SQL](02-shared-candidate-planning.md)** —
    extend the shared page-document-id spec/compiler, share Core filter validation, add parameter
