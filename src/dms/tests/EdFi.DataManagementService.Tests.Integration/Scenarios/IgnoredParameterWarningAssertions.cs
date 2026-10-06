@@ -29,4 +29,15 @@ internal static class IgnoredParameterWarningAssertions
 
         values.Should().Equal(IgnoredQueryParameterWarning.HeaderPrefix + string.Join(", ", expectedNames));
     }
+
+    /// <summary>
+    /// Asserts that <paramref name="response"/> carries no warning, as a request that ignored nothing
+    /// does.
+    /// </summary>
+    internal static void AssertNoWarning(HttpResponseMessage response)
+    {
+        ArgumentNullException.ThrowIfNull(response);
+
+        response.Headers.Contains(IgnoredQueryParameterWarning.HeaderName).Should().BeFalse();
+    }
 }

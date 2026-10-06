@@ -469,7 +469,6 @@ internal class ApiService : IApiService
             new ValidatePartitionQueryMiddleware(
                 _logger,
                 _appSettings.Value.DefaultPartitionCount,
-                _appSettings.Value.MaximumPageSize,
                 _serviceProvider.GetRequiredService<ICollectionPagingTelemetry>(),
                 _appSettings.Value.UseLegacyDocumentIdOrderingForChangeQueries
             ),
@@ -638,8 +637,9 @@ internal class ApiService : IApiService
             // carries no anchor. The configured ordering value is still supplied rather than
             // hard-coded, so no composition can resolve the anchor by a different rule than the others.
             //
-            // A Change Query neither pages by cursor nor filters on resource fields, as in the ODS/API,
-            // so those parameters are ignored and reported rather than acquired.
+            // A Change Query neither pages by cursor nor filters on resource fields. The cursor
+            // parameters are rejected by name, so a client cannot believe it is walking a cursor. A
+            // resource filter is ignored and reported, as the ODS/API ignores it.
             new ValidateQueryMiddleware(
                 _logger,
                 _appSettings.Value.MaximumPageSize,

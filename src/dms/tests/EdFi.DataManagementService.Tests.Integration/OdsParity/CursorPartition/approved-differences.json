@@ -38,15 +38,15 @@
       "executable": true
     },
     {
-      "id": "cursor-parameter-values-range-checked-on-change-queries",
+      "id": "cursor-parameters-rejected-on-change-queries",
       "bullet": 7,
-      "summary": "Ignore and report pageToken and pageSize on /deletes and /keyChanges, but reject a pageSize outside 0 to MaximumPageSize, where ODS binds pageSize there and checks only that it is an integer.",
+      "summary": "Reject pageToken and pageSize on /deletes and /keyChanges by name, where ODS binds the same request model on those endpoints and accepts a valid token.",
       "executable": true
     },
     {
-      "id": "partition-reserved-parameter-values-range-checked",
+      "id": "partition-reserved-parameters-unsupported",
       "bullet": 8,
-      "summary": "Ignore and report limit, offset, pageToken, pageSize, and totalCount on /partitions, but judge each value by the rule GET-many applies, where ODS binds those names and checks only their types.",
+      "summary": "Reject all five of limit, offset, pageToken, pageSize, and totalCount on /partitions as unsupported, where ODS binds those names, range-checks only number, and ignores the rest.",
       "executable": true
     },
     {

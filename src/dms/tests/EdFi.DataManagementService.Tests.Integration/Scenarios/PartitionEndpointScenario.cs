@@ -250,20 +250,25 @@ internal static class PartitionEndpointScenario
     }
 
     /// <summary>
-    /// The paging parameters belong to the collection read and have no effect on a boundary set, so a
-    /// well-formed one is ignored, as the ODS/API ignores it, and named in the warning.
+    /// The paging parameters belong to the collection read, so a client that confused the two endpoints
+    /// is told which parameter does not apply rather than having it ignored as if it were a typo.
     /// </summary>
-    public static async Task It_ignores_a_reserved_paging_parameter(ApiIntegrationHarness harness)
+    public static async Task It_refuses_a_reserved_paging_parameter(ApiIntegrationHarness harness)
     {
         ArgumentNullException.ThrowIfNull(harness);
 
         using HttpResponseMessage response = await harness.HttpClient.GetAsync(
-            $"{MergeItemsPartitionsEndpoint}?limit=1"
+            $"{MergeItemsPartitionsEndpoint}?limit=5"
         );
         string body = await response.Content.ReadAsStringAsync();
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
-        IgnoredParameterWarningAssertions.AssertWarnsOf(response, "limit");
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
+        JsonNode.Parse(body)!["errors"]!
+            .AsArray()
+            .Select(static error => error!.GetValue<string>())
+            .Should()
+            .Equal("The 'limit' parameter is not supported by the partitions endpoint.");
+        IgnoredParameterWarningAssertions.AssertNoWarning(response);
     }
 
     public static async Task It_refuses_a_partition_count_outside_the_supported_range(

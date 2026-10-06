@@ -82,36 +82,27 @@
       "outcome": "parity"
     },
     {
-      "id": "partition-reserved-parameters-ignored",
+      "id": "partition-reserved-parameters",
       "group": "validation",
       "executor": "partitions-get",
-      "query": "?pageToken={validToken}&pageSize=1&limit=1&offset=5&totalCount=true",
-      "dms": {
-        "status": 200
-      },
-      "ods": {
-        "status": 200
-      },
-      "outcome": "parity",
-      "note": "Both ignore well-formed paging parameters on /partitions. DMS also names them in X-EdFi-Warning."
-    },
-    {
-      "id": "partition-reserved-parameter-range-checked",
-      "group": "validation",
-      "executor": "partitions-get",
-      "query": "?limit=-1",
+      "query": "?pageToken={validToken}&pageSize=5&limit=5&offset=5&totalCount=true",
+      "shell": "parameterValidation",
       "dms": {
         "status": 400,
         "errors": [
-          "Limit must be omitted or set to a numeric value between 0 and {maximumPageSize}."
+          "The 'pageToken' parameter is not supported by the partitions endpoint.",
+          "The 'pageSize' parameter is not supported by the partitions endpoint.",
+          "The 'limit' parameter is not supported by the partitions endpoint.",
+          "The 'offset' parameter is not supported by the partitions endpoint.",
+          "The 'totalCount' parameter is not supported by the partitions endpoint."
         ]
       },
       "ods": {
         "status": 200
       },
       "outcome": "difference",
-      "approvedDifference": "partition-reserved-parameter-values-range-checked",
-      "note": "ODS binds limit into its partitions request model, which checks only that the value is an integer, and never range-checks it there."
+      "approvedDifference": "partition-reserved-parameters-unsupported",
+      "note": "ODS binds these reserved names into the request model its partitions action declares, range-checks only number, and never carries them into its partition query. It decodes a supplied pageToken and then discards the decoded range."
     },
     {
       "id": "partition-ods-only-allow-small-partitions",
@@ -141,52 +132,43 @@
       "outcome": "parity"
     },
     {
-      "id": "change-query-ignores-page-token",
+      "id": "change-query-rejects-page-token",
       "group": "validation",
       "executor": "change-query-get",
       "path": "/deletes",
       "query": "?pageToken={validToken}",
-      "dms": {
-        "status": 200
-      },
-      "ods": {
-        "status": 200
-      },
-      "outcome": "parity",
-      "note": "Both decode and then ignore a well-formed token on a Change Query. DMS also names it in X-EdFi-Warning."
-    },
-    {
-      "id": "change-query-ignores-page-size",
-      "group": "validation",
-      "executor": "change-query-get",
-      "path": "/keyChanges",
-      "query": "?pageSize=1",
-      "dms": {
-        "status": 200
-      },
-      "ods": {
-        "status": 200
-      },
-      "outcome": "parity"
-    },
-    {
-      "id": "change-query-page-size-range-checked",
-      "group": "validation",
-      "executor": "change-query-get",
-      "path": "/keyChanges",
-      "query": "?pageSize=-1",
+      "shell": "badRequest",
       "dms": {
         "status": 400,
         "errors": [
-          "PageSize must be a value between 0 and {maximumPageSize}."
+          "The query field 'pageToken' is not valid for this Change Query endpoint."
         ]
       },
       "ods": {
         "status": 200
       },
       "outcome": "difference",
-      "approvedDifference": "cursor-parameter-values-range-checked-on-change-queries",
-      "note": "ODS binds pageSize on Change Queries, which checks only that the value is an integer, and never range-checks it there."
+      "approvedDifference": "cursor-parameters-rejected-on-change-queries",
+      "note": "ODS binds the same request model on these endpoints and accepts a valid token; it answers a malformed one with 'The page token provided was invalid.'"
+    },
+    {
+      "id": "change-query-rejects-page-size",
+      "group": "validation",
+      "executor": "change-query-get",
+      "path": "/keyChanges",
+      "query": "?pageSize=5",
+      "shell": "badRequest",
+      "dms": {
+        "status": 400,
+        "errors": [
+          "The query field 'pageSize' is not valid for this Change Query endpoint."
+        ]
+      },
+      "ods": {
+        "status": 200
+      },
+      "outcome": "difference",
+      "approvedDifference": "cursor-parameters-rejected-on-change-queries"
     },
     {
       "id": "traditional-offset-message-retained",

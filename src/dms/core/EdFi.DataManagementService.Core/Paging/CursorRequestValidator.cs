@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Paging;
@@ -210,10 +211,15 @@ internal static class CursorRequestValidator
 
         if (
             hasPageSize
-            && !PagingControlValueValidator.TryParsePageSize(
-                queryParameters[PageSizeParameter],
-                maximumPageSize,
-                out pageSize
+            && (
+                !int.TryParse(
+                    queryParameters[PageSizeParameter],
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out pageSize
+                )
+                || pageSize < 0
+                || pageSize > maximumPageSize
             )
         )
         {

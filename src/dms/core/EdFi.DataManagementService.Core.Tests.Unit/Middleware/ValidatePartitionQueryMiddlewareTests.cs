@@ -32,12 +32,11 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 public class ValidatePartitionQueryMiddlewareTests
 {
     private const int DefaultPartitionCount = 12;
-    private const int MaximumPageSize = 500;
     private const string TraceId = "partition-trace-id";
 
     /// <summary>
-    /// A resource with two query fields, one of them typed, so the unknown-field and bad-value
-    /// branches both run for real rather than over an empty field set.
+    /// A resource with two query fields, one of them typed, so ignoring an unknown name and rejecting
+    /// a bad value both run for real rather than over an empty field set.
     /// </summary>
     private static ApiSchemaDocuments NewApiSchemaDocuments() =>
         new ApiSchemaBuilder()
@@ -111,44 +110,11 @@ public class ValidatePartitionQueryMiddlewareTests
         IPipelineStep middleware = new ValidatePartitionQueryMiddleware(
             NullLogger.Instance,
             DefaultPartitionCount,
-            MaximumPageSize,
             collectionPagingTelemetry ?? NoOpCollectionPagingTelemetry.Instance,
             _useLegacyDocumentIdOrderingForChangeQueries: false
         );
 
         await middleware.Execute(requestInfo, NullNext);
-
-        return requestInfo;
-    }
-
-    /// <summary>
-    /// Runs the step with a rest-of-pipeline that answers 200 with a header of its own, so what the step
-    /// adds to a downstream response, and what it preserves, can be asserted.
-    /// </summary>
-    private static async Task<RequestInfo> ExecuteToDownstreamResponse(
-        params (string Key, string Value)[] queryParameters
-    )
-    {
-        RequestInfo requestInfo = RequestInfoFor(queryParameters);
-
-        await new ValidatePartitionQueryMiddleware(
-            NullLogger.Instance,
-            DefaultPartitionCount,
-            MaximumPageSize,
-            NoOpCollectionPagingTelemetry.Instance,
-            _useLegacyDocumentIdOrderingForChangeQueries: false
-        ).Execute(
-            requestInfo,
-            () =>
-            {
-                requestInfo.FrontendResponse = new FrontendResponse(
-                    StatusCode: 200,
-                    Body: new JsonArray(),
-                    Headers: new() { ["Downstream"] = "kept" }
-                );
-                return Task.CompletedTask;
-            }
-        );
 
         return requestInfo;
     }
@@ -221,13 +187,13 @@ public class ValidatePartitionQueryMiddlewareTests
         }
 
         // The count controls the calculation itself, so it is reported alone: a client that fixes the
-        // count and resends still learns about the malformed paging value, and one that fixes only the
-        // paging value learns nothing useful.
+        // count and resends still learns about the reserved parameter, and one that fixes only the
+        // reserved parameter learns nothing useful.
         [Test]
         public async Task It_suppresses_the_reserved_parameter_phase()
         {
             AssertParameterValidationShell(
-                await Execute(("number", "0"), ("limit", "abc")),
+                await Execute(("number", "0"), ("limit", "5")),
                 PartitionRequestValidator.NumberOutOfRange
             );
         }
@@ -235,98 +201,54 @@ public class ValidatePartitionQueryMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_Well_Formed_Reserved_Paging_Parameters : ValidatePartitionQueryMiddlewareTests
+    public class Given_Reserved_Paging_Parameters : ValidatePartitionQueryMiddlewareTests
     {
-        private static readonly string ValidToken = PageTokenCodec.Encode(
-            new CursorRange(1, 100),
-            PageOrderingMode.ContentVersion
-        );
-
+        [TestCase("pageToken", "abc")]
         [TestCase("pageSize", "5")]
         [TestCase("limit", "5")]
         [TestCase("offset", "0")]
         [TestCase("totalCount", "true")]
-        public async Task It_ignores_the_parameter_and_reports_it(string parameter, string value)
-        {
-            RequestInfo requestInfo = await ExecuteToDownstreamResponse(("number", "4"), (parameter, value));
-
-            requestInfo.FrontendResponse.StatusCode.Should().Be(200);
-            requestInfo.RequestedPartitionCount.Should().Be(4);
-            WarningOf(requestInfo).Should().Be($"Ignored query parameters: {parameter}");
-        }
-
-        // A token is only decoded, never compared with this request's boundary anchor: a request with no
-        // window resolves DocumentId, and this token was issued for ContentVersion.
-        [Test]
-        public async Task It_ignores_a_decodable_page_token_whatever_its_anchor()
-        {
-            RequestInfo requestInfo = await ExecuteToDownstreamResponse(("pageToken", ValidToken));
-
-            requestInfo.FrontendResponse.StatusCode.Should().Be(200);
-            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
-            WarningOf(requestInfo).Should().Be("Ignored query parameters: pageToken");
-        }
-
-        [Test]
-        public async Task It_applies_no_paging_from_them()
-        {
-            RequestInfo requestInfo = await ExecuteToDownstreamResponse(
-                ("pageToken", ValidToken),
-                ("pageSize", "5"),
-                ("limit", "5"),
-                ("offset", "3")
-            );
-
-            requestInfo.CollectionPaging.Should().Be(No.CollectionPaging);
-            requestInfo.PaginationParameters.Should().Be(No.PaginationParameters);
-        }
-
-        [Test]
-        public async Task It_lists_them_in_request_order()
-        {
-            RequestInfo requestInfo = await ExecuteToDownstreamResponse(
-                ("totalCount", "true"),
-                ("limit", "5"),
-                ("pageSize", "5")
-            );
-
-            WarningOf(requestInfo).Should().Be("Ignored query parameters: totalCount, limit, pageSize");
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
-    public class Given_Malformed_Reserved_Paging_Parameters : ValidatePartitionQueryMiddlewareTests
-    {
-        [TestCase("pageToken", "abc", "The page token provided was invalid.")]
-        [TestCase("pageSize", "501", "PageSize must be a value between 0 and 500.")]
-        [TestCase("limit", "-1", "Limit must be omitted or set to a numeric value between 0 and 500.")]
-        [TestCase("offset", "abc", "Offset must be a numeric value greater than or equal to 0.")]
-        [TestCase("totalCount", "maybe", "TotalCount must be a boolean value.")]
-        public async Task It_rejects_the_value_and_still_reports_the_parameter(
-            string parameter,
-            string value,
-            string expectedError
-        )
+        public async Task It_names_the_parameter_that_does_not_apply(string parameter, string value)
         {
             RequestInfo requestInfo = await Execute((parameter, value));
 
-            AssertParameterValidationShell(requestInfo, expectedError);
+            AssertParameterValidationShell(
+                requestInfo,
+                PartitionRequestValidator.UnsupportedParameter(parameter)
+            );
             AssertNothingApplied(requestInfo);
-            WarningOf(requestInfo).Should().Be($"Ignored query parameters: {parameter}");
         }
 
         // Several are independent mistakes, so all of them are reported in one response rather than
         // over as many round trips, in the canonical order the validator publishes.
         [Test]
-        public async Task It_reports_every_malformed_value_in_canonical_order()
+        public async Task It_reports_every_reserved_parameter_in_canonical_order()
         {
             AssertParameterValidationShell(
-                await Execute(("totalCount", "maybe"), ("limit", "abc"), ("pageToken", "abc")),
-                "The page token provided was invalid.",
-                "Limit must be omitted or set to a numeric value between 0 and 500.",
-                "TotalCount must be a boolean value."
+                await Execute(("totalCount", "true"), ("limit", "5"), ("pageToken", "abc")),
+                PartitionRequestValidator.UnsupportedParameter("pageToken"),
+                PartitionRequestValidator.UnsupportedParameter("limit"),
+                PartitionRequestValidator.UnsupportedParameter("totalCount")
             );
+        }
+
+        // A rejected name is not also an ignored one, so the warning names only the unknown field.
+        [Test]
+        public async Task It_rejects_the_reserved_parameter_and_reports_only_the_unknown_field()
+        {
+            RequestInfo requestInfo = await Execute(("limit", "5"), ("notAField", "1"));
+
+            AssertParameterValidationShell(
+                requestInfo,
+                PartitionRequestValidator.UnsupportedParameter("limit")
+            );
+            WarningOf(requestInfo).Should().Be("Ignored query parameters: notAField");
+        }
+
+        [Test]
+        public async Task It_sends_no_warning_when_only_a_reserved_parameter_was_sent()
+        {
+            WarningOf(await Execute(("limit", "5"))).Should().BeNull();
         }
     }
 
@@ -334,6 +256,37 @@ public class ValidatePartitionQueryMiddlewareTests
     [Parallelizable]
     public class Given_An_Unknown_Query_Field : ValidatePartitionQueryMiddlewareTests
     {
+        /// <summary>
+        /// Runs the step with a rest-of-pipeline that answers 200 with a header of its own, so what the step
+        /// adds to a downstream response, and what it preserves, can be asserted.
+        /// </summary>
+        private static async Task<RequestInfo> ExecuteToDownstreamResponse(
+            params (string Key, string Value)[] queryParameters
+        )
+        {
+            RequestInfo requestInfo = RequestInfoFor(queryParameters);
+
+            await new ValidatePartitionQueryMiddleware(
+                NullLogger.Instance,
+                DefaultPartitionCount,
+                NoOpCollectionPagingTelemetry.Instance,
+                _useLegacyDocumentIdOrderingForChangeQueries: false
+            ).Execute(
+                requestInfo,
+                () =>
+                {
+                    requestInfo.FrontendResponse = new FrontendResponse(
+                        StatusCode: 200,
+                        Body: new JsonArray(),
+                        Headers: new() { ["Downstream"] = "kept" }
+                    );
+                    return Task.CompletedTask;
+                }
+            );
+
+            return requestInfo;
+        }
+
         [Test]
         public async Task It_ignores_the_field_and_applies_the_known_filter()
         {
@@ -492,7 +445,6 @@ public class ValidatePartitionQueryMiddlewareTests
             await new ValidatePartitionQueryMiddleware(
                 NullLogger.Instance,
                 DefaultPartitionCount,
-                MaximumPageSize,
                 NoOpCollectionPagingTelemetry.Instance,
                 useLegacyDocumentIdOrdering
             ).Execute(requestInfo, NullNext);
@@ -583,7 +535,6 @@ public class ValidatePartitionQueryMiddlewareTests
             await new ValidatePartitionQueryMiddleware(
                 NullLogger.Instance,
                 DefaultPartitionCount,
-                MaximumPageSize,
                 NoOpCollectionPagingTelemetry.Instance,
                 _useLegacyDocumentIdOrderingForChangeQueries: true
             ).Execute(requestInfo, NullNext);
@@ -689,7 +640,6 @@ public class ValidatePartitionQueryMiddlewareTests
             await new ValidatePartitionQueryMiddleware(
                 NullLogger.Instance,
                 DefaultPartitionCount,
-                MaximumPageSize,
                 NoOpCollectionPagingTelemetry.Instance,
                 _useLegacyDocumentIdOrderingForChangeQueries: false
             ).Execute(
@@ -732,7 +682,6 @@ public class ValidatePartitionQueryMiddlewareTests
             await new ValidatePartitionQueryMiddleware(
                 NullLogger.Instance,
                 DefaultPartitionCount,
-                MaximumPageSize,
                 telemetry,
                 _useLegacyDocumentIdOrderingForChangeQueries: false
             ).Execute(requestInfo, NullNext);
@@ -746,7 +695,7 @@ public class ValidatePartitionQueryMiddlewareTests
         [
             new TestCaseData(new[] { ("number", "0") }).SetName("{m}(partition count fault)"),
             new TestCaseData(new[] { ("minChangeVersion", "abc") }).SetName("{m}(change-version fault)"),
-            new TestCaseData(new[] { ("limit", "abc") }).SetName("{m}(malformed ignored paging value)"),
+            new TestCaseData(new[] { ("limit", "5") }).SetName("{m}(reserved paging parameter)"),
             new TestCaseData(new[] { ("schoolId", "not-a-number") }).SetName("{m}(invalid filter value)"),
         ];
 
@@ -783,7 +732,7 @@ public class ValidatePartitionQueryMiddlewareTests
         {
             RecordingCollectionPagingTelemetry telemetry = new();
 
-            await Execute(telemetry, ("notAField", "1"), ("limit", "5"));
+            await Execute(telemetry, ("notAField", "1"));
 
             telemetry.Measurements.Should().BeEmpty();
         }

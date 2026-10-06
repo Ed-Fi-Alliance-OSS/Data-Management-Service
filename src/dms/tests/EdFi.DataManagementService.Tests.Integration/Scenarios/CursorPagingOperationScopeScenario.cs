@@ -26,8 +26,8 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 /// </para>
 ///
 /// <para>
-/// The Change Query requests seed nothing: query validation ignores the cursor parameters there,
-/// rejecting only a malformed value, and an empty result is enough to show the request was served. The accepted cursor request seeds one school through the same
+/// The Change Query requests seed nothing: query validation rejects the cursor parameter names by
+/// name, before any candidate selection. The accepted cursor request seeds one school through the same
 /// pipeline, because what it pins is the page the read path actually serves. The leased database is
 /// required either way, since these pipelines resolve the database fingerprint, resource key seed, and
 /// mapping set before query validation runs.
@@ -37,9 +37,12 @@ internal static class CursorPagingOperationScopeScenario
 {
     private const string SchoolsEndpoint = "/data/ed-fi/schools";
 
+    private const string BadRequestType = "urn:ed-fi:api:bad-request";
+
     /// <summary>
-    /// Not base64url, so it is rejected as an undecodable token whether or not the operation pages by
-    /// cursor.
+    /// Not base64url, so cursor validation would reject it as an undecodable token. An operation that
+    /// does not page by cursor must instead report the parameter name, which is what distinguishes the
+    /// two answers.
     /// </summary>
     private const string UndecodablePageToken = "!!!";
 
@@ -49,13 +52,12 @@ internal static class CursorPagingOperationScopeScenario
     private const string WellFormedPageSize = "25";
 
     /// <summary>
-    /// A deletes request carrying an undecodable <c>pageToken</c> is rejected for the value, by the rule a
-    /// cursor request applies, and the parameter is named in the warning. The operation ignores the
-    /// parameter, but not a malformed value.
+    /// A deletes request carrying <c>pageToken</c> is told the field is not valid for a Change Query
+    /// endpoint. The token is deliberately one cursor validation would reject, so the answer separates
+    /// an operation that does not recognize the name from one that recognizes it and found the value
+    /// malformed.
     /// </summary>
-    public static async Task It_rejects_an_undecodable_page_token_on_a_deletes_request(
-        ApiIntegrationHarness harness
-    )
+    public static async Task It_rejects_a_page_token_on_a_deletes_request(ApiIntegrationHarness harness)
     {
         ArgumentNullException.ThrowIfNull(harness);
 
@@ -63,22 +65,19 @@ internal static class CursorPagingOperationScopeScenario
             $"{SchoolsEndpoint}/deletes?pageToken={UndecodablePageToken}"
         );
 
-        await ParameterValidationProblemDetails.AssertShellAsync(
+        await AssertSingleBadRequestError(
             response,
-            CursorRequestValidator.InvalidPageToken
+            "The query field 'pageToken' is not valid for this Change Query endpoint."
         );
-        IgnoredParameterWarningAssertions.AssertWarnsOf(response, "pageToken");
+        IgnoredParameterWarningAssertions.AssertNoWarning(response);
     }
 
     /// <summary>
-    /// A keyChanges request carrying a well-formed <c>pageSize</c>, from a client whose claim set does not
-    /// grant ReadChanges, passes query validation and is refused by authorization, which runs after it.
-    /// The refusal is a downstream non-success response, and the warning naming the ignored parameter
-    /// must reach it too. The served case is proven by <see cref="IgnoredQueryParameterScenario" />.
+    /// A keyChanges request carrying <c>pageSize</c> is told the field is not valid for a Change Query
+    /// endpoint. The parameter is reported rather than ignored, so a client cannot believe it asked
+    /// for a page size that was honored.
     /// </summary>
-    public static async Task It_carries_the_warning_to_a_key_changes_request_refused_by_authorization(
-        ApiIntegrationHarness harness
-    )
+    public static async Task It_rejects_a_page_size_on_a_key_changes_request(ApiIntegrationHarness harness)
     {
         ArgumentNullException.ThrowIfNull(harness);
 
@@ -86,8 +85,11 @@ internal static class CursorPagingOperationScopeScenario
             $"{SchoolsEndpoint}/keyChanges?pageSize={WellFormedPageSize}"
         );
 
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden, await response.Content.ReadAsStringAsync());
-        IgnoredParameterWarningAssertions.AssertWarnsOf(response, "pageSize");
+        await AssertSingleBadRequestError(
+            response,
+            "The query field 'pageSize' is not valid for this Change Query endpoint."
+        );
+        IgnoredParameterWarningAssertions.AssertNoWarning(response);
     }
 
     /// <summary>
@@ -207,5 +209,51 @@ internal static class CursorPagingOperationScopeScenario
         string body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.Created, $"POST {endpoint} body: {body}");
+    }
+
+    /// <summary>
+    /// A keyChanges request carrying a resource filter, from a client whose claim set does not grant
+    /// ReadChanges, passes query validation, which ignores the filter, and is refused by authorization,
+    /// which runs after it. The refusal is a downstream non-success response, and the warning naming
+    /// the ignored filter must reach it too. The served case is proven by
+    /// <see cref="IgnoredQueryParameterScenario" />.
+    /// </summary>
+    public static async Task It_carries_the_warning_to_a_key_changes_request_refused_by_authorization(
+        ApiIntegrationHarness harness
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+
+        var response = await harness.HttpClient.GetAsync($"{SchoolsEndpoint}/keyChanges?schoolId=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden, await response.Content.ReadAsStringAsync());
+        IgnoredParameterWarningAssertions.AssertWarnsOf(response, "schoolId");
+    }
+
+    /// <summary>
+    /// Asserts the generic bad-request shell, which is the shell an unrecognized query field is
+    /// reported in. A cursor request that was recognized and rejected would answer with the parameter
+    /// validation shell instead, so the shell is part of what is being asserted.
+    /// </summary>
+    private static async Task AssertSingleBadRequestError(HttpResponseMessage response, string expectedError)
+    {
+        string content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+
+        JsonNode body = JsonNode.Parse(content)!;
+
+        // The reported message first, so a wrong answer names itself rather than being described only
+        // by the shell it arrived in.
+        body["errors"]!.AsArray().Select(error => error!.GetValue<string>()).Should().Equal(expectedError);
+        body["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("The request could not be processed. See 'errors' for details.");
+        body["type"]!.GetValue<string>().Should().Be(BadRequestType);
+        body["title"]!.GetValue<string>().Should().Be("Bad Request");
+        body["status"]!.GetValue<int>().Should().Be(400);
+        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+        body["validationErrors"]!.AsObject().Should().BeEmpty();
     }
 }

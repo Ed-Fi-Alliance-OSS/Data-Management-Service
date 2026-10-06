@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Net;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
@@ -124,14 +123,19 @@ internal static class PartitionPublicContractScenario
     }
 
     /// <summary>
-    /// Every malformed reserved paging value is reported, in the canonical order, with the message
-    /// GET-many gives it, and every reserved parameter is named in the warning, in request order.
+    /// Every reserved paging parameter present is reported, in the canonical order, without its value
+    /// being parsed, and none of them is named in the warning.
     /// </summary>
     /// <remarks>
-    /// The five parameters are supplied in the reverse of the order they are reported in, so the error
-    /// order is the contract's rather than the query string's, while the warning keeps the request's.
+    /// Three claims in one request. The five parameters are supplied in the reverse of the order they
+    /// are reported in, so the response order is the contract's rather than the query string's. Every
+    /// supplied value is malformed: a parsed <c>pageToken</c> would have answered that the token was
+    /// invalid, and a parsed <c>offset</c> or <c>totalCount</c> would have answered with a range or
+    /// boolean message. Getting five unsupported-parameter messages instead shows the complaint is that
+    /// the parameter does not apply here at all. And a rejected name is not an ignored one, so no
+    /// warning is sent.
     /// </remarks>
-    public static async Task It_reports_every_malformed_reserved_parameter_in_canonical_order(
+    public static async Task It_reports_every_reserved_parameter_in_canonical_order(
         ApiIntegrationHarness harness
     )
     {
@@ -144,20 +148,13 @@ internal static class PartitionPublicContractScenario
 
         await ParameterValidationProblemDetails.AssertShellAsync(
             response,
-            "The page token provided was invalid.",
-            $"PageSize must be a value between 0 and {HostMaximumPageSize}.",
-            $"Limit must be omitted or set to a numeric value between 0 and {HostMaximumPageSize}.",
-            "Offset must be a numeric value greater than or equal to 0.",
-            "TotalCount must be a boolean value."
+            "The 'pageToken' parameter is not supported by the partitions endpoint.",
+            "The 'pageSize' parameter is not supported by the partitions endpoint.",
+            "The 'limit' parameter is not supported by the partitions endpoint.",
+            "The 'offset' parameter is not supported by the partitions endpoint.",
+            "The 'totalCount' parameter is not supported by the partitions endpoint."
         );
-        IgnoredParameterWarningAssertions.AssertWarnsOf(
-            response,
-            "totalCount",
-            "offset",
-            "limit",
-            "pageSize",
-            "pageToken"
-        );
+        IgnoredParameterWarningAssertions.AssertNoWarning(response);
     }
 
     /// <summary>
@@ -196,21 +193,29 @@ internal static class PartitionPublicContractScenario
     }
 
     /// <summary>
-    /// An unknown query field alongside a well-formed reserved paging parameter is served, with both
-    /// named in the warning, in request order.
+    /// An unknown query field alongside a reserved paging parameter is answered for the reserved
+    /// parameter, and only the unknown field is named in the warning.
     /// </summary>
-    public static async Task It_serves_an_unknown_field_and_a_reserved_parameter_with_a_warning(
+    /// <remarks>
+    /// The reserved names are excluded from filter matching, so <c>?limit=5</c> is reported as a
+    /// parameter that does not apply here rather than matched as a filter, and the unknown field does
+    /// not hide that rejection.
+    /// </remarks>
+    public static async Task It_answers_an_unknown_field_and_a_reserved_parameter_for_the_reserved_parameter(
         ApiIntegrationHarness harness
     )
     {
         ArgumentNullException.ThrowIfNull(harness);
 
         using var response = await harness.HttpClient.GetAsync(
-            $"{CursorContractSupport.MergeItemsPartitionsEndpoint}?{UnknownFieldName}=1&limit=1"
+            $"{CursorContractSupport.MergeItemsPartitionsEndpoint}?{UnknownFieldName}=1&limit=5"
         );
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
-        IgnoredParameterWarningAssertions.AssertWarnsOf(response, UnknownFieldName, "limit");
+        await ParameterValidationProblemDetails.AssertShellAsync(
+            response,
+            "The 'limit' parameter is not supported by the partitions endpoint."
+        );
+        IgnoredParameterWarningAssertions.AssertWarnsOf(response, UnknownFieldName);
     }
 
     /// <summary>
@@ -218,8 +223,8 @@ internal static class PartitionPublicContractScenario
     /// message alone, in the parameter-validation shell rather than the bad-request one.
     /// </summary>
     /// <remarks>
-    /// The unknown field no longer answers at all, so what this pins is that a rejection still carries
-    /// the warning naming it.
+    /// An unknown field is ignored rather than rejected, so what this pins is that a rejection still
+    /// carries the warning naming it.
     /// </remarks>
     public static async Task It_answers_a_malformed_window_and_an_unknown_field_in_the_parameter_validation_shell(
         ApiIntegrationHarness harness
@@ -241,7 +246,7 @@ internal static class PartitionPublicContractScenario
     /// </summary>
     /// <remarks>
     /// One request separates four ways this can go wrong. If <c>NUMBER</c> were treated as an unknown
-    /// parameter, the answer would be the unknown-field message; if the variants were not collapsed, the
+    /// parameter, it would be ignored and the default count applied; if the variants were not collapsed, the
     /// surviving <c>number=abc</c> would be answered with the range message; if the first value won,
     /// <c>abc</c> would be answered the same way; and if collapsing threw, nothing would be served at
     /// all. Only recognition under either casing plus last-value-wins reaches a served token array.

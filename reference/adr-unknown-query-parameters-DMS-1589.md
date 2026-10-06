@@ -16,7 +16,9 @@ parameter is harmless.
 
 DMS now ignores them too, as the [operation matrix](#operation-matrix) specifies. A query parameter
 that the operation does not use has no effect on the request or its result. Unlike the ODS/API, DMS
-reports the ignored parameter names, up to a fixed limit, in an `X-EdFi-Warning` response header. A malformed value for a known control, such as `limit=abc`, still returns `400`.
+reports the ignored parameter names, up to a fixed limit, in an `X-EdFi-Warning` response header. A malformed value for a known control, such as `limit=abc`, still returns `400`. The
+paging controls are the exception to ignoring: an operation that does not use them still rejects
+them by name, which is stricter than the ODS/API.
 
 ## Context
 
@@ -87,30 +89,45 @@ silently. DMS reduces it by naming what it ignored.
 ### Operation matrix
 
 A parameter is **consumed** when the operation uses it. A parameter is **ignored** when the
-operation does not use it. An ignored parameter has no effect on the operation, and it is listed
-in the warning header.
+operation does not use it and it is not a paging control. An ignored parameter has no effect on the
+operation, its value is not validated, and it is listed in the warning header. A paging control that
+the operation does not use is **rejected by name**.
 
-| Operation | Consumed | Ignored, and how its value is validated |
-| --- | --- | --- |
-| GET many (resources and descriptors) | `limit`, `offset`, `totalCount`, `pageToken`, `pageSize`, change versions, resource filters | Every other name. Its value is not validated. |
-| Partitions | `number`, change versions, resource filters | `limit`, `offset`, `totalCount`, `pageToken`, `pageSize`: the value must be well formed (see below). Every other name: the value is not validated. |
-| Deletes and KeyChanges | `limit`, `offset`, `totalCount`, change versions | `pageToken`, `pageSize`: the value must be well formed. Resource filters and every other name: the value is not validated. |
-| GET by id, POST, PUT, DELETE | None | Unchanged. The query string is never read, and no warning header is sent. |
+| Operation | Consumed | Rejected by name | Ignored |
+| --- | --- | --- | --- |
+| GET many (resources and descriptors) | `limit`, `offset`, `totalCount`, `pageToken`, `pageSize`, change versions, resource filters | None | Every other name |
+| Partitions | `number`, change versions, resource filters | `limit`, `offset`, `totalCount`, `pageToken`, `pageSize` | Every other name |
+| Deletes and KeyChanges | `limit`, `offset`, `totalCount`, change versions | `pageToken`, `pageSize` | Resource filters and every other name |
+| GET by id, POST, PUT, DELETE | None | None | None. The query string is never read, and no warning header is sent. |
 
 Validation of consumed parameters does not change. The same values return the same `400` with the
 same body as before.
 
-**Well-formed** means the value passes the check DMS applies to that control where it is consumed:
+A name rejected by name returns `400` whatever its value, with the message it returned before this
+decision:
 
-- `limit` must be an integer from 0 to the maximum page size;
-- `offset` must be an integer of 0 or more;
-- `totalCount` must be a boolean;
-- `pageSize` must be within the cursor page-size range;
-- `pageToken` must be a token DMS can decode.
+- Partitions: `The '{parameter}' parameter is not supported by the partitions endpoint.`, one per
+  supplied control, in the order `pageToken`, `pageSize`, `limit`, `offset`, `totalCount`.
+- Deletes and KeyChanges: `The query field '{parameter}' is not valid for this Change Query
+  endpoint.`
 
-Rules that combine controls, such as `offset` with `pageToken`, apply only where the controls are
-consumed. Ignoring a control never turns on its behavior. Change queries do not page by cursor,
-and partition-boundary responses are not paginated.
+A rejected name is never also listed in the warning header. The header carries only the names
+that were ignored, including on that `400`.
+
+#### Why the paging controls are rejected rather than ignored
+
+A paging control sent where it does not apply is not a typo. It is a known control used against
+the wrong operation, and ignoring it misleads the client about what it received:
+
+- A client sending `pageToken` to `/deletes` or `/keyChanges` believes it is walking a cursor. If
+  the token were ignored, every request would re-read the first page, and the client would loop
+  or stop early without an error.
+- A client sending `limit` or `pageSize` to `/partitions` has confused the boundary request with a
+  page request. Telling it which parameter does not apply is more useful than a header it may not
+  read.
+
+The warning header does not cover this risk. A cursor client reads `Next-Page-Token`, not
+`X-EdFi-Warning`, so a client that does not know to look for the warning gets no signal at all.
 
 Names are matched as they are today. Paging controls are matched exactly after the frontend
 canonicalizes their case. Change versions and resource filters are matched without regard to case.
@@ -192,12 +209,13 @@ repeats.
     them, so the same request can return a broader or different result from DMS.
   - DMS reads the correlation ID only from its configured header. A `correlationId` query
     parameter is ignored and reported.
+- **Paging controls are rejected where they do not apply.** DMS rejects `pageToken` and
+  `pageSize` on Deletes and KeyChanges, and all five paging controls on Partitions, by name. The
+  ODS/API binds them on those operations, checks only their types, and then ignores them. The
+  [rationale](#why-the-paging-controls-are-rejected-rather-than-ignored) explains why.
 - **Value checks differ.**
   - On Partitions, a malformed resource-filter value returns `400`. The ODS/API discards its
     binding result there.
-  - An ignored control's value must pass the same range check DMS applies where the control is
-    consumed. The ODS/API only checks the type. For example, `?limit=-1` on Partitions returns
-    `400` in DMS and is accepted by the ODS/API.
   - A malformed value for an ODS-only parameter is not checked, because DMS does not recognize the
     parameter. For example, the ODS/API fails `useJoinAuth=abc`, and DMS ignores it.
   - DMS keeps its own messages and range rules for consumed controls.
@@ -210,6 +228,7 @@ repeats.
 | Keep rejecting | Rejected | Safest, but it blocks ODS/API migrations over parameters that change nothing. |
 | Ignore silently, like the ODS/API | Rejected | The wider-result risk stays invisible. |
 | Ignore, and report in a header | **Chosen** | ODS/API-compatible handling of ignored names, per the operation matrix, plus a signal to the caller. |
+| Also ignore paging controls where they do not apply, like the ODS/API | Rejected | A cursor client reads `Next-Page-Token`, not the warning, so an ignored `pageToken` silently re-reads the first page. |
 | Standard `Warning` header | Rejected | RFC 9111 obsoletes it, and its grammar targets caches. |
 | Configurable caps | Rejected | No deployment needs them, and fixed caps are easier to keep header-safe. |
 

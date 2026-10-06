@@ -25,10 +25,11 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 /// <param name="_cursorParametersRecognized">
 /// Whether this pipeline's operation supports cursor paging. True for live GET-many, false for
-/// Change Query endpoints, which ignore the cursor parameters rather than acquire them: a well-formed
-/// value is ignored and reported, and a malformed one is still rejected. Recognition is a property of
-/// pipeline composition rather than something inferred at run time, so a reader can see at the
-/// composition site which operations page by cursor.
+/// Change Query endpoints, which must reject the cursor parameters by name rather than acquire or
+/// ignore them: silently discarding a pageToken there would let a client believe it was walking a
+/// cursor when it was re-reading page one. Recognition is a property of pipeline composition rather
+/// than something inferred at run time, so a reader can see at the composition site which operations
+/// page by cursor.
 /// </param>
 /// <param name="_resourceFiltersRecognized">
 /// Whether this pipeline's operation filters on the resource's query fields. True for live GET-many,
@@ -93,13 +94,11 @@ internal class ValidateQueryMiddleware(
         if (requestInfo.FrontendRequest.QueryParameters.ContainsKey("offset"))
         {
             if (
-                !PagingControlValueValidator.TryParseOffset(
-                    requestInfo.FrontendRequest.QueryParameters["offset"],
-                    out int offsetVal
-                )
+                !int.TryParse(requestInfo.FrontendRequest.QueryParameters["offset"], out int offsetVal)
+                || offsetVal < 0
             )
             {
-                errors.Add(PagingControlValueValidator.OffsetInvalid);
+                errors.Add("Offset must be a numeric value greater than or equal to 0.");
             }
             else
             {
@@ -110,14 +109,12 @@ internal class ValidateQueryMiddleware(
         if (requestInfo.FrontendRequest.QueryParameters.ContainsKey("limit"))
         {
             if (
-                !PagingControlValueValidator.TryParseLimit(
-                    requestInfo.FrontendRequest.QueryParameters["limit"],
-                    maxPageSize,
-                    out int limitVal
-                )
+                !int.TryParse(requestInfo.FrontendRequest.QueryParameters["limit"], out int limitVal)
+                || limitVal < 0
+                || limitVal > maxPageSize
             )
             {
-                errors.Add(PagingControlValueValidator.LimitOutOfRange(maxPageSize));
+                errors.Add($"Limit must be omitted or set to a numeric value between 0 and {maxPageSize}.");
             }
             else
             {
@@ -169,9 +166,10 @@ internal class ValidateQueryMiddleware(
     /// </summary>
     /// <remarks>
     /// Paging names are matched case-sensitively, consistent with how they are parsed, and the
-    /// change-version names case-insensitively, consistent with how the validator looks them up. A name
-    /// is a consumed filter only where it would be matched as one: never a paging or cursor name, and
-    /// only when this operation filters at all.
+    /// change-version names case-insensitively, consistent with how the validator looks them up. The
+    /// cursor names are never ignored: an operation that does not page by cursor rejects them by name,
+    /// and a rejected name is not reported as ignored. A name is a consumed filter only where it would
+    /// be matched as one: never a paging or cursor name, and only when this operation filters at all.
     /// </remarks>
     private string[] IgnoredNames(RequestInfo requestInfo)
     {
@@ -187,14 +185,12 @@ internal class ValidateQueryMiddleware(
 
         bool IsConsumed(string name)
         {
-            if (_paginationQueryParameters.Contains(name, StringComparer.Ordinal))
+            if (
+                _paginationQueryParameters.Contains(name, StringComparer.Ordinal)
+                || CursorRequestValidator.CursorParameters.Contains(name, StringComparer.Ordinal)
+            )
             {
                 return true;
-            }
-
-            if (CursorRequestValidator.CursorParameters.Contains(name, StringComparer.Ordinal))
-            {
-                return _cursorParametersRecognized;
             }
 
             return ChangeVersionParameterValidator.ReservedParameterNames.Contains(
@@ -287,7 +283,7 @@ internal class ValidateQueryMiddleware(
         }
 
         // Determined here, but the typed collection-paging choice reaches request state only at the
-        // accepting exits below: the change-version, ignored-cursor and query-field steps that follow
+        // accepting exits below: the change-version, cursor-name and query-field steps that follow
         // can still answer the request, and a request they reject must not carry a paging
         // mode a handler could act on. That deferral covers the typed choice. The traditional branch
         // assigns pagination parameters as soon as they parse cleanly, which is ahead of those later
@@ -329,26 +325,36 @@ internal class ValidateQueryMiddleware(
             return;
         }
 
-        // An operation that does not page by cursor ignores the cursor parameters, but a malformed
-        // value is still rejected, by the same per-value rule a cursor request applies. Only the
-        // per-value rule: the rules relating the cursor parameters to limit and offset describe a
-        // cursor walk, which this operation never starts.
+        // An operation that does not page by cursor rejects the cursor parameters by name, whatever
+        // their values. They are not globally reserved names that such an operation may discard:
+        // discarding a pageToken would let a client believe it was walking a cursor when it was
+        // re-reading page one.
         if (!_cursorParametersRecognized)
         {
-            string[] ignoredCursorErrors = PagingControlValueValidator.ValidateIgnored(
-                requestInfo.FrontendRequest.QueryParameters,
-                CursorRequestValidator.CursorParameters,
-                _maximumPageSize
-            );
+            string[] cursorParameterErrors =
+            [
+                .. CursorRequestValidator
+                    .CursorParameters.Where(requestInfo.FrontendRequest.QueryParameters.ContainsKey)
+                    .Select(name => $"The query field '{name}' is not valid for this Change Query endpoint."),
+            ];
 
-            if (ignoredCursorErrors.Length > 0)
+            if (cursorParameterErrors.Length > 0)
             {
                 _logger.LogDebug(
-                    "Ignored cursor parameter validation error - {TraceId}",
+                    "Cursor parameter on a Change Query endpoint - {TraceId}",
                     requestInfo.FrontendRequest.TraceId.Value
                 );
 
-                requestInfo.FrontendResponse = ParameterValidationFailed(ignoredCursorErrors);
+                requestInfo.FrontendResponse = new FrontendResponse(
+                    StatusCode: 400,
+                    Body: FailureResponse.ForBadRequest(
+                        "The request could not be processed. See 'errors' for details.",
+                        requestInfo.FrontendRequest.TraceId,
+                        [],
+                        cursorParameterErrors
+                    ),
+                    Headers: []
+                );
                 return;
             }
         }

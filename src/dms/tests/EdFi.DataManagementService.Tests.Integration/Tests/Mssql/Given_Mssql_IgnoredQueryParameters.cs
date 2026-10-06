@@ -31,14 +31,14 @@ public sealed class Given_Mssql_IgnoredQueryParameters : MssqlApiIntegrationTest
     public Task Seed() => IgnoredQueryParameterScenario.SeedAsync(Harness);
 
     [Test]
-    public Task It_serves_deletes_unchanged_by_ignored_cursor_parameters_and_filters() =>
-        IgnoredQueryParameterScenario.It_serves_deletes_unchanged_by_ignored_cursor_parameters_and_filters(
+    public Task It_serves_deletes_unchanged_by_ignored_filters_and_unknown_names() =>
+        IgnoredQueryParameterScenario.It_serves_deletes_unchanged_by_ignored_filters_and_unknown_names(
             Harness
         );
 
     [Test]
-    public Task It_serves_key_changes_unchanged_by_ignored_cursor_parameters_and_filters() =>
-        IgnoredQueryParameterScenario.It_serves_key_changes_unchanged_by_ignored_cursor_parameters_and_filters(
+    public Task It_serves_key_changes_unchanged_by_ignored_filters_and_unknown_names() =>
+        IgnoredQueryParameterScenario.It_serves_key_changes_unchanged_by_ignored_filters_and_unknown_names(
             Harness
         );
 

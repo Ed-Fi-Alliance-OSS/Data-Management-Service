@@ -101,7 +101,7 @@ column into static comparison cases.
 
 DMS returns exactly one error per rejected cursor request, which matches ODS's one-element
 validation-error response rather than accumulating every applicable cursor message. Partition
-validation deliberately differs: it reports every malformed ignored paging value in deterministic
+validation deliberately differs: it reports every unsupported reserved parameter in deterministic
 order once the higher-priority `number` phase passes. Giving `number` the highest priority matches
 ODS, which range-checks `number` before it constructs its query parameters and therefore before it
 decodes a supplied `pageToken`.
@@ -251,7 +251,7 @@ and the never-record list are owned by
   and padding forms, invalid UTF-8, extra fields, decimal grammar, `Int64` bounds, terminal
   inverted ranges, and overflow handling.
 - Validation tests cover every query-parameter combination, ODS-compatible cursor precedence,
-  exactly one cursor error, partition phase gating and malformed ignored-value ordering, exact
+  exactly one cursor error, partition phase gating and unsupported-parameter ordering, exact
   messages and ProblemDetails shells, repeated-parameter last-value-wins behavior, and case-variant
   canonicalization without an exception.
 - Routing and handler tests cover typed collection/by-id/partition classification, the dedicated
@@ -334,21 +334,18 @@ The approved intentional ODS differences are:
   request succeeds with the configured default partition count. The empty-value-binds-to-null step
   rests on ASP.NET Core's standard binding of an empty value to a nullable simple type, the same
   basis as the recorded blank-`pageSize` behavior above;
-- ignore `pageToken` and `pageSize` on `/deletes` and `/keyChanges` and report them in
-  `X-EdFi-Warning`, but reject a malformed value by the rule a cursor request applies to it, so a
-  `pageSize` outside `0` to `MaximumPageSize` returns `PageSize must be a value between 0 and {N}.`,
-  where ODS binds the same request model on those endpoints and checks only that `pageSize` is an
-  integer. Both answer an undecodable token with `The page token provided was invalid.` (amended by
-  DMS-1589; see `reference/adr-unknown-query-parameters-DMS-1589.md`);
-- ignore `limit`, `offset`, `pageToken`, `pageSize`, and `totalCount` on `/partitions` and report
-  them in `X-EdFi-Warning`, but judge each value by the rule GET-many applies to it, so `?limit=-1`
-  is rejected, where ODS 7.3.2 binds those reserved names into the request model its partitions
-  action declares, checks only their types, and never carries them into its partition query. ODS
-  decodes a supplied `pageToken`, answering a malformed one with `The page token provided was
-  invalid.`, then discards the decoded range, so a well-formed token does not move its partition
-  boundaries; DMS does the same (amended by DMS-1589). DMS-1589 also retired the former difference
-  that rejected ODS's undocumented `allowSmallPartitions` and `useJoinAuth` partition parameters:
-  DMS now ignores and reports them, while ODS acts on them;
+- reject `pageToken` and `pageSize` on `/deletes` and `/keyChanges` by name, where ODS binds the same request model on those endpoints, accepts a
+  valid token, and answers a malformed one with `The page token provided was invalid.`;
+- reject all five of `limit`, `offset`, `pageToken`, `pageSize`, and `totalCount` on `/partitions`
+  as unsupported, where ODS 7.3.2 binds those reserved names into the request model its partitions
+  action declares, range-checks only `number`, and ignores `limit`, `offset`, `pageSize`, and
+  `totalCount`: they never reach its partition query, which carries no paging clause. ODS decodes a
+  supplied `pageToken`, answering a malformed one with `The page token provided was invalid.`, then
+  discards the decoded range, so a well-formed token does not move its partition boundaries.
+  DMS-1589 kept both rejections by name when it began ignoring unknown query parameters, and retired
+  the former difference that rejected ODS's undocumented `allowSmallPartitions` and `useJoinAuth`
+  partition parameters: DMS now ignores them and names them in `X-EdFi-Warning`, while ODS acts on
+  them (see `reference/adr-unknown-query-parameters-DMS-1589.md`);
 - return evenly sized partitions, and at most the requested count of them, by computing a true
   ceiling. ODS 7.3.2 spells the size as `CEILING(CountOfRows / @numberOfPartitions)` over two
   integer operands, so its `CEILING` receives an already-truncated integer quotient and is a no-op:
@@ -456,8 +453,7 @@ package is referred to everywhere else in this epic.
    configuration and startup validation, and focused unit tests.
 2. **[DMS-1384: Request validation and typed paths](00b-cursor-and-partition-validation.md)** —
    ODS-precedence single-error cursor validation, phase-gated partition validation, the
-   ProblemDetails shell, operation-scoped rejection on `/deletes` and `/keyChanges` (name-based
-   rejection there was later superseded by DMS-1589, which ignores and reports those names), typed
+   ProblemDetails shell, operation-scoped rejection on `/deletes` and `/keyChanges`, typed
    collection/by-id/partition path operations, and parameter canonicalization.
 3. **[DMS-1385: Candidate planning and provider cursor SQL](02-shared-candidate-planning.md)** —
    extend the shared page-document-id spec/compiler, share Core filter validation, add parameter

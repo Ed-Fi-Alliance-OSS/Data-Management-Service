@@ -44,10 +44,8 @@ public sealed class Given_Postgresql_PartitionPublicContract : PostgresqlApiInte
         PartitionPublicContractScenario.It_refuses_a_partition_count_above_the_supported_maximum(Harness);
 
     [Test]
-    public Task It_reports_every_malformed_reserved_parameter_in_canonical_order() =>
-        PartitionPublicContractScenario.It_reports_every_malformed_reserved_parameter_in_canonical_order(
-            Harness
-        );
+    public Task It_reports_every_reserved_parameter_in_canonical_order() =>
+        PartitionPublicContractScenario.It_reports_every_reserved_parameter_in_canonical_order(Harness);
 
     [Test]
     public Task It_answers_a_malformed_count_and_warns_of_an_unknown_field() =>
@@ -60,8 +58,8 @@ public sealed class Given_Postgresql_PartitionPublicContract : PostgresqlApiInte
         );
 
     [Test]
-    public Task It_serves_an_unknown_field_and_a_reserved_parameter_with_a_warning() =>
-        PartitionPublicContractScenario.It_serves_an_unknown_field_and_a_reserved_parameter_with_a_warning(
+    public Task It_answers_an_unknown_field_and_a_reserved_parameter_for_the_reserved_parameter() =>
+        PartitionPublicContractScenario.It_answers_an_unknown_field_and_a_reserved_parameter_for_the_reserved_parameter(
             Harness
         );
 

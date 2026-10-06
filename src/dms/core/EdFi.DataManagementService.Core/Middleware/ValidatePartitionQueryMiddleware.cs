@@ -27,10 +27,6 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// rather than read here, so the pipeline that serves partitions is the only place the default enters
 /// request handling.
 /// </param>
-/// <param name="_maximumPageSize">
-/// The configured maximum page size. A boundary set has no page, so it bounds only the values of the
-/// ignored limit and pageSize parameters, which are judged by the rule GET-many applies.
-/// </param>
 /// <param name="_useLegacyDocumentIdOrderingForChangeQueries">
 /// The deployment-wide kill switch that restores <c>DocumentId</c> boundary ordering for every
 /// change-version window. Supplied the same way and for the same reason as the count.
@@ -43,18 +39,18 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// answers it, with the same problem type: these are sibling operations over one query string, and a
 /// client that discriminates on type should not have to know which of the two it called. Filters are
 /// validated ahead of the partition parameters, so a request with a malformed filter value and a
-/// malformed reserved paging value is answered for the filter. GET-many, which consumes paging and
-/// checks it first, answers the same query string for the paging value.
+/// reserved paging parameter is answered for the filter value. The reserved paging names are excluded
+/// from filter matching, which is what lets the partition phase report <c>?limit=5</c> as a parameter
+/// that does not apply here rather than matching it as a filter.
 /// <para>
-/// A parameter this operation does not consume is ignored and reported: the reserved paging names,
-/// which have no effect on a boundary set, and every name that matches no query field. A malformed
-/// value of a reserved paging name is still rejected.
+/// A name that matches no query field is ignored and reported rather than rejected. A request carrying
+/// both an unknown name and a reserved paging parameter is therefore answered for the reserved
+/// parameter, with the unknown name in the warning.
 /// </para>
 /// </remarks>
 internal class ValidatePartitionQueryMiddleware(
     ILogger _logger,
     int _defaultPartitionCount,
-    int _maximumPageSize,
     ICollectionPagingTelemetry _collectionPagingTelemetry,
     bool _useLegacyDocumentIdOrderingForChangeQueries
 ) : IPipelineStep
@@ -103,10 +99,11 @@ internal class ValidatePartitionQueryMiddleware(
     }
 
     /// <summary>
-    /// The query parameters this operation does not consume, in request order: the reserved paging
-    /// names, and every other name that is not the count, a change-version bound, or a query field.
-    /// Matched the way each is parsed: the owned names case-sensitively, the change-version names
-    /// case-insensitively, and query fields the way filter matching matches them.
+    /// The query parameters this operation does not consume, in request order: every name that is not
+    /// an owned name, a change-version bound, or a query field. Matched the way each is parsed: the
+    /// owned names case-sensitively, the change-version names case-insensitively, and query fields the
+    /// way filter matching matches them. The reserved paging names are owned, because the partition
+    /// phase rejects them by name, and a rejected name is not reported as ignored.
     /// </summary>
     private static string[] IgnoredNames(RequestInfo requestInfo)
     {
@@ -122,15 +119,12 @@ internal class ValidatePartitionQueryMiddleware(
 
         bool IsConsumed(string name)
         {
-            if (_ordinalOwnedParameters.Contains(name, StringComparer.Ordinal))
-            {
-                return name == PartitionRequestValidator.NumberParameter;
-            }
-
-            return ChangeVersionParameterValidator.ReservedParameterNames.Contains(
+            return _ordinalOwnedParameters.Contains(name, StringComparer.Ordinal)
+                || ChangeVersionParameterValidator.ReservedParameterNames.Contains(
                     name,
                     StringComparer.OrdinalIgnoreCase
-                ) || MatchesQueryField(name);
+                )
+                || MatchesQueryField(name);
         }
 
         return [.. requestInfo.FrontendRequest.QueryParameters.Keys.Where(name => !IsConsumed(name))];
@@ -207,8 +201,7 @@ internal class ValidatePartitionQueryMiddleware(
         }
 
         PartitionValidationResult partitionResult = PartitionRequestValidator.Validate(
-            requestInfo.FrontendRequest.QueryParameters,
-            _maximumPageSize
+            requestInfo.FrontendRequest.QueryParameters
         );
 
         if (partitionResult.Errors.Count > 0)

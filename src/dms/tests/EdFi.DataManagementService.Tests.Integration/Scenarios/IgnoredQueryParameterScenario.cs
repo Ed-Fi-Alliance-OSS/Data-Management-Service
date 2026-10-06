@@ -6,8 +6,6 @@
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Paging;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
@@ -29,27 +27,18 @@ internal static class IgnoredQueryParameterScenario
     private const int TrackedKeyChangeCount = 2;
 
     /// <summary>
-    /// A decodable token, so the request is not rejected for its value and what is under test is that a
-    /// Change Query ignores it.
-    /// </summary>
-    private static readonly string DecodablePageToken = PageTokenCodec.Encode(
-        CursorRange.From(1),
-        PageOrderingMode.DocumentId
-    );
-
-    /// <summary>
     /// Resource filters a Change Query does not bind, one of them with a value no date filter would
-    /// accept, plus both cursor parameters.
+    /// accept, plus a name no operation defines. The cursor parameters are not among them: a Change
+    /// Query rejects those by name.
     /// </summary>
-    private static readonly string IgnoredOnChangeQueries =
-        $"pageToken={DecodablePageToken}&pageSize=1&studentUniqueId=no-such-student&birthDate=notadate";
+    private const string IgnoredOnChangeQueries =
+        "studentUniqueId=no-such-student&birthDate=notadate&notAParameter=1";
 
     private static readonly string[] IgnoredOnChangeQueriesNames =
     [
-        "pageToken",
-        "pageSize",
         "studentUniqueId",
         "birthDate",
+        "notAParameter",
     ];
 
     /// <summary>
@@ -78,7 +67,7 @@ internal static class IgnoredQueryParameterScenario
         created.StatusCode.Should().Be(HttpStatusCode.Created, await created.Content.ReadAsStringAsync());
     }
 
-    public static Task It_serves_deletes_unchanged_by_ignored_cursor_parameters_and_filters(
+    public static Task It_serves_deletes_unchanged_by_ignored_filters_and_unknown_names(
         ApiIntegrationHarness harness
     ) =>
         AssertIgnoredAsync(
@@ -89,7 +78,7 @@ internal static class IgnoredQueryParameterScenario
             IgnoredOnChangeQueriesNames
         );
 
-    public static Task It_serves_key_changes_unchanged_by_ignored_cursor_parameters_and_filters(
+    public static Task It_serves_key_changes_unchanged_by_ignored_filters_and_unknown_names(
         ApiIntegrationHarness harness
     ) =>
         AssertIgnoredAsync(

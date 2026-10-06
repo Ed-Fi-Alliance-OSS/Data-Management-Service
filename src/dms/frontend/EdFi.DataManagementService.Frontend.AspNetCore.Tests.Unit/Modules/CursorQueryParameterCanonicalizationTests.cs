@@ -295,7 +295,7 @@ public class CursorQueryParameterCanonicalizationTests
     /// Two segments name a resource collection, not a partitions operation, even when the resource
     /// segment happens to be spelled <c>partitions</c>. On such a collection <c>number</c> is an
     /// ordinary resource query field, and rewriting its spelling would change which field is
-    /// filtered on or which name an unknown-field error reports.
+    /// filtered on or which name the ignored-parameter warning reports.
     /// </summary>
     [TestCase("/data/ed-fi/partitions", "NUMBER")]
     [TestCase("/data/partitions", "Number")]

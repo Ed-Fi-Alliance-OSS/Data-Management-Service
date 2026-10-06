@@ -715,86 +715,83 @@ public class ValidateQueryMiddlewareCursorTests
     }
 
     /// <summary>
-    /// The Change Query composition, which does not page by cursor. A well-formed cursor parameter is
-    /// ignored and reported, a malformed one is rejected by its own per-value rule, and neither starts a
-    /// cursor walk.
+    /// The Change Query composition, which does not page by cursor. A cursor parameter is rejected by
+    /// name whatever its value, so a client cannot believe it is walking a cursor, and a rejected name
+    /// is not reported as ignored.
     /// </summary>
     [TestFixture]
     [Parallelizable]
     public class Given_Cursor_Parameters_Are_Not_Recognized : ValidateQueryMiddlewareCursorTests
     {
-        [TestCase("pageToken")]
-        [TestCase("pageSize")]
-        public async Task It_ignores_a_well_formed_value_and_reports_it(string parameter)
-        {
-            string value = parameter == "pageToken" ? ValidToken : "5";
-            RequestInfo requestInfo = RequestInfoFor(EffectiveTargetKind.Primary, (parameter, value));
+        private static string[] ErrorsOf(RequestInfo requestInfo) =>
+            [
+                .. requestInfo.FrontendResponse.Body!["errors"]!
+                    .AsArray()
+                    .Select(error => error!.GetValue<string>()),
+            ];
 
-            await ValidateQueryMiddlewareTests
-                .MiddlewareWithoutCursorRecognition()
-                .Execute(requestInfo, ValidateQueryMiddlewareTests.NextAnsweringOk(requestInfo));
-
-            requestInfo.FrontendResponse.StatusCode.Should().Be(200);
-            requestInfo
-                .FrontendResponse.Headers.Should()
-                .Contain(IgnoredQueryParameterWarning.HeaderName, $"Ignored query parameters: {parameter}");
-        }
-
-        // The token is only decoded. It was issued for ContentVersion, and a request with no window
-        // resolves DocumentId, so a cursor request would reject it for its anchor.
-        [Test]
-        public async Task It_does_not_compare_a_page_token_with_the_page_anchor()
-        {
-            RequestInfo requestInfo = await Execute(false, ("pageToken", WindowedToken));
-
-            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
-        }
-
-        [TestCase("pageToken", "!!!", "The page token provided was invalid.")]
-        [TestCase("pageSize", "abc", "PageSize must be a value between 0 and 500.")]
-        [TestCase("pageSize", "501", "PageSize must be a value between 0 and 500.")]
-        public async Task It_rejects_a_malformed_value(string parameter, string value, string expectedError)
-        {
-            RequestInfo requestInfo = await Execute(false, (parameter, value));
-
-            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-            requestInfo.FrontendResponse.Body!["errors"]!
-                .AsArray()
-                .Select(error => error!.GetValue<string>())
-                .Should()
-                .Equal(expectedError);
-            requestInfo
-                .FrontendResponse.Headers.Should()
-                .Contain(IgnoredQueryParameterWarning.HeaderName, $"Ignored query parameters: {parameter}");
-        }
-
-        // Only the per-value rule applies. The rules relating cursor parameters to limit and offset
-        // describe a cursor walk, which this operation never starts.
-        [Test]
-        public async Task It_does_not_apply_the_cursor_combination_rules()
+        [TestCase("pageToken", "valid")]
+        [TestCase("pageToken", "!!!")]
+        [TestCase("pageSize", "5")]
+        [TestCase("pageSize", "abc")]
+        public async Task It_rejects_the_parameter_by_name_whatever_its_value(string parameter, string value)
         {
             RequestInfo requestInfo = await Execute(
                 false,
-                ("pageToken", ValidToken),
-                ("pageSize", "5"),
-                ("limit", "25"),
-                ("offset", "10")
+                (parameter, value == "valid" ? ValidToken : value)
             );
 
-            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            requestInfo.FrontendResponse.Body!["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:bad-request");
+            ErrorsOf(requestInfo)
+                .Should()
+                .Equal($"The query field '{parameter}' is not valid for this Change Query endpoint.");
+            requestInfo
+                .FrontendResponse.Headers.Should()
+                .NotContainKey(IgnoredQueryParameterWarning.HeaderName);
+        }
+
+        [Test]
+        public async Task It_reports_both_cursor_parameters_in_one_response()
+        {
+            RequestInfo requestInfo = await Execute(false, ("pageSize", "5"), ("pageToken", ValidToken));
+
+            ErrorsOf(requestInfo)
+                .Should()
+                .Equal(
+                    "The query field 'pageToken' is not valid for this Change Query endpoint.",
+                    "The query field 'pageSize' is not valid for this Change Query endpoint."
+                );
+        }
+
+        [Test]
+        public async Task It_reports_only_the_ignored_names_in_the_warning()
+        {
+            RequestInfo requestInfo = await Execute(false, ("pageSize", "5"), ("notAField", "1"));
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            requestInfo
+                .FrontendResponse.Headers.Should()
+                .Contain(IgnoredQueryParameterWarning.HeaderName, "Ignored query parameters: notAField");
+        }
+
+        [Test]
+        public async Task It_applies_no_paging_to_a_rejected_request()
+        {
+            RequestInfo requestInfo = await Execute(false, ("pageSize", "5"), ("limit", "25"));
+
+            requestInfo.CollectionPaging.Should().Be(No.CollectionPaging);
         }
 
         [Test]
         public async Task It_still_applies_traditional_paging()
         {
-            RequestInfo requestInfo = await Execute(
-                false,
-                ("pageToken", ValidToken),
-                ("pageSize", "5"),
-                ("limit", "25"),
-                ("offset", "10")
-            );
+            RequestInfo requestInfo = await Execute(false, ("limit", "25"), ("offset", "10"));
 
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
             requestInfo
                 .CollectionPaging.Should()
                 .Be(new CollectionPaging.Traditional(requestInfo.PaginationParameters));
@@ -803,15 +800,6 @@ public class ValidateQueryMiddlewareCursorTests
         }
     }
 
-    /// <summary>
-    /// What a request this step answers contributes to the collection-paging metric.
-    /// </summary>
-    /// <remarks>
-    /// Every rejecting exit is covered here rather than split across the two GET-many test files,
-    /// because this step answers a cursor fault, a traditional fault, a change-version fault, and a
-    /// filter fault with the same measurement — and it is the difference between them, in one place,
-    /// that shows the coverage is complete.
-    /// </remarks>
     [TestFixture]
     [Parallelizable]
     public class Given_Collection_Paging_Telemetry_For_A_Rejection : ValidateQueryMiddlewareCursorTests

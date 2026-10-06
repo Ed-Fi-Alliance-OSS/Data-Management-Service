@@ -9,7 +9,6 @@ using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
-using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Telemetry;
 using FluentAssertions;
@@ -328,22 +327,32 @@ public class ValidateQueryMiddlewareIgnoredParameterTests
         }
 
         [Test]
-        public async Task It_lists_filters_cursor_parameters_and_unknown_names_in_request_order()
+        public async Task It_lists_filters_and_unknown_names_in_request_order()
         {
-            string validToken = PageTokenCodec.Encode(new CursorRange(1, 10), PageOrderingMode.DocumentId);
-
             RequestInfo requestInfo = await ExecuteChangeQuery(
-                ("pageSize", "5"),
-                ("schoolId", "1"),
                 ("notAField", "x"),
-                ("pageToken", validToken)
+                ("schoolId", "1"),
+                ("anotherUnknown", "y")
             );
 
             requestInfo.FrontendResponse.StatusCode.Should().Be(200);
-            requestInfo.CollectionPaging.Should().BeOfType<CollectionPaging.Traditional>();
             WarningOf(requestInfo)
                 .Should()
-                .Be("Ignored query parameters: pageSize, schoolId, notAField, pageToken");
+                .Be("Ignored query parameters: notAField, schoolId, anotherUnknown");
+        }
+
+        // The cursor parameters are rejected by name rather than ignored, so the warning names only the
+        // ignored filter.
+        [Test]
+        public async Task It_rejects_a_cursor_parameter_and_reports_only_the_ignored_filter()
+        {
+            RequestInfo requestInfo = await ExecuteChangeQuery(("schoolId", "1"), ("pageSize", "5"));
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            ErrorsOf(requestInfo)
+                .Should()
+                .Equal("The query field 'pageSize' is not valid for this Change Query endpoint.");
+            WarningOf(requestInfo).Should().Be("Ignored query parameters: schoolId");
         }
     }
 }
