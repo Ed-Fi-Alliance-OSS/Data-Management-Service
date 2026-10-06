@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Core.Paging;
 /// </summary>
 /// <param name="Errors">
 /// The ordered validation errors, empty when the request is valid. Unlike cursor validation this may
-/// carry several: unsupported partition parameters are independent mistakes, and a client that sent
+/// carry several: malformed ignored paging values are independent mistakes, and a client that sent
 /// three of them should learn about all three in one response rather than over three round trips.
 /// </param>
 /// <param name="RequestedPartitionCount">
@@ -30,7 +30,7 @@ internal sealed record PartitionValidationResult(IReadOnlyList<string> Errors, i
 /// </summary>
 /// <remarks>
 /// Pure, and phase-gated separately from cursor validation. The count is validated first because it
-/// is the only parameter that controls the partition calculation itself, while the reserved paging
+/// is the only parameter that controls the partition calculation itself, while the ignored paging
 /// parameters have no effect on it at all.
 /// </remarks>
 internal static class PartitionRequestValidator
@@ -51,11 +51,12 @@ internal static class PartitionRequestValidator
     internal const string NumberParameter = "number";
 
     /// <summary>
-    /// The paging parameters the partitions operation reserves, in the canonical order they are
-    /// reported. They belong to GET-many, so a client that confused the two endpoints is told which
-    /// parameter does not apply rather than being given an unknown-query-field answer. Spelled from
-    /// the constants the cursor validator reads, so renaming one cannot leave the names that validator
-    /// recognizes and the names this operation rejects disagreeing.
+    /// The paging parameters the partitions operation reserves, in the canonical order a malformed
+    /// value is reported. They belong to GET-many: a boundary set has no page, so they are never
+    /// matched as filters here, and a well-formed value has no effect and is reported as ignored, as
+    /// the ODS/API ignores it. Spelled from the constants the cursor validator reads, so renaming one
+    /// cannot leave the names that validator recognizes and the names this operation ignores
+    /// disagreeing.
     /// </summary>
     internal static readonly string[] ReservedParameters =
     [
@@ -70,16 +71,20 @@ internal static class PartitionRequestValidator
         $"Number of partitions must be between {AppSettingsValidator.MinimumDefaultPartitionCount} and "
         + $"{AppSettingsValidator.MaximumDefaultPartitionCount}.";
 
-    internal static string UnsupportedParameter(string parameter) =>
-        $"The '{parameter}' parameter is not supported by the partitions endpoint.";
-
     /// <summary>
     /// Validates the partition parameters of a request.
     /// </summary>
     /// <param name="queryParameters">
     /// The request's query parameters, already canonicalized at the HTTP boundary.
     /// </param>
-    internal static PartitionValidationResult Validate(IReadOnlyDictionary<string, string> queryParameters)
+    /// <param name="maximumPageSize">
+    /// The configured maximum page size, which bounds an ignored limit or pageSize value the same way
+    /// it bounds one GET-many consumes.
+    /// </param>
+    internal static PartitionValidationResult Validate(
+        IReadOnlyDictionary<string, string> queryParameters,
+        int maximumPageSize
+    )
     {
         ArgumentNullException.ThrowIfNull(queryParameters);
 
@@ -87,7 +92,7 @@ internal static class PartitionRequestValidator
 
         // Phase 1, count syntax and range. A present-but-blank value is a malformed count rather than
         // an absent one: a client that typed "number=" asked for a partition count, and the parameter
-        // it typed should not be silently ignored. This phase suppresses the reserved-parameter phase,
+        // it typed should not be silently ignored. This phase suppresses the ignored-parameter phase,
         // because the count is the only parameter that controls the calculation. A client-supplied
         // count is bounded by the same constants that bound the configured default, which is what
         // keeps the accepted request range and the accepted configuration range from drifting apart.
@@ -105,15 +110,15 @@ internal static class PartitionRequestValidator
             requestedPartitionCount = number;
         }
 
-        // Phase 2, reserved paging parameters. Reported without parsing their values: the complaint is
-        // that the parameter does not apply here at all, so whether its value is well formed is beside
-        // the point. Resource-property filters and the change-version filters are not reserved and are
-        // deliberately not reported. Every other unknown field is left to the caller's own
-        // unknown-query-field rule, which ValidatePartitionQueryMiddleware applies before this phase.
-        string[] errors =
-        [
-            .. ReservedParameters.Where(queryParameters.ContainsKey).Select(UnsupportedParameter),
-        ];
+        // Phase 2, ignored paging parameters. A well-formed value is ignored, but a malformed one is
+        // still rejected, by the rule GET-many applies to the same parameter. Only the per-value rule:
+        // the rules relating one paging parameter to another describe a page walk, which this
+        // operation never starts.
+        string[] errors = PagingControlValueValidator.ValidateIgnored(
+            queryParameters,
+            ReservedParameters,
+            maximumPageSize
+        );
 
         return errors.Length == 0
             ? new PartitionValidationResult([], requestedPartitionCount)

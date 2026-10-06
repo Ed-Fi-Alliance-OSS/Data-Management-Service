@@ -243,33 +243,57 @@ public class ResourceQueryFilterValidatorTests
     public class Given_An_Unrecognized_Query_Field : ResourceQueryFilterValidatorTests
     {
         [Test]
-        public void It_reports_the_field_the_client_supplied()
+        public void It_skips_the_name_and_keeps_the_recognized_filters()
         {
             var result = ResourceQueryFilterValidator.Validate(
-                new Dictionary<string, string> { ["schoolId"] = "1", ["notAField"] = "x" },
+                new Dictionary<string, string>
+                {
+                    ["notAField"] = "x",
+                    ["schoolId"] = "1",
+                    ["alsoNotAField"] = "y",
+                },
                 Fields(),
                 ordinalExcludedNames: [],
                 ignoreCaseExcludedNames: []
             );
 
-            result
+            ((ResourceQueryFilterResult.Valid)result)
+                .QueryElements.Select(element => (element.QueryFieldName, element.Value))
                 .Should()
-                .BeOfType<ResourceQueryFilterResult.UnknownQueryField>()
-                .Which.QueryFieldName.Should()
-                .Be("notAField");
+                .Equal(("schoolId", "1"));
         }
 
         [Test]
-        public void It_reports_the_first_unrecognized_field_in_request_order()
+        public void It_still_reports_a_faulty_value_that_follows_it()
         {
             var result = ResourceQueryFilterValidator.Validate(
-                new Dictionary<string, string> { ["firstBad"] = "x", ["secondBad"] = "y" },
+                new Dictionary<string, string> { ["notAField"] = "x", ["schoolId"] = "abc" },
                 Fields(),
                 ordinalExcludedNames: [],
                 ignoreCaseExcludedNames: []
             );
 
-            ((ResourceQueryFilterResult.UnknownQueryField)result).QueryFieldName.Should().Be("firstBad");
+            ((ResourceQueryFilterResult.InvalidValues)result)
+                .ValidationErrors["$.schoolId"]
+                .Should()
+                .Equal("The value 'abc' is not valid for schoolId.");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Name_To_Match_Against_The_Query_Fields : ResourceQueryFilterValidatorTests
+    {
+        [Test]
+        public void It_matches_a_query_field_case_insensitively()
+        {
+            ResourceQueryFilterValidator.MatchesQueryField("SCHOOLID", Fields()).Should().BeTrue();
+        }
+
+        [Test]
+        public void It_does_not_match_a_name_that_is_not_a_query_field()
+        {
+            ResourceQueryFilterValidator.MatchesQueryField("studentUniqueld", Fields()).Should().BeFalse();
         }
     }
 
@@ -367,13 +391,16 @@ public class ResourceQueryFilterValidatorTests
         public void It_does_not_exclude_a_case_variant_of_an_ordinal_excluded_name()
         {
             var result = ResourceQueryFilterValidator.Validate(
-                new Dictionary<string, string> { ["LIMIT"] = "10" },
+                new Dictionary<string, string> { ["SCHOOLID"] = "1" },
                 Fields(),
-                ordinalExcludedNames: ["limit"],
+                ordinalExcludedNames: ["schoolId"],
                 ignoreCaseExcludedNames: []
             );
 
-            ((ResourceQueryFilterResult.UnknownQueryField)result).QueryFieldName.Should().Be("LIMIT");
+            ((ResourceQueryFilterResult.Valid)result)
+                .QueryElements.Select(element => element.QueryFieldName)
+                .Should()
+                .Equal("SCHOOLID");
         }
 
         [Test]

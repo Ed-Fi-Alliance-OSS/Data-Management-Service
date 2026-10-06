@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.ChangeQueries;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Model;
@@ -19,12 +20,16 @@ namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
 /// Validates the resource-filter, change-version, and partition query parameters of a partitions
-/// request.
+/// request, and reports the parameters the operation ignores.
 /// </summary>
 /// <param name="_defaultPartitionCount">
 /// The configured partition count applied when the request omits its own. Supplied at composition
 /// rather than read here, so the pipeline that serves partitions is the only place the default enters
 /// request handling.
+/// </param>
+/// <param name="_maximumPageSize">
+/// The configured maximum page size. A boundary set has no page, so it bounds only the values of the
+/// ignored limit and pageSize parameters, which are judged by the rule GET-many applies.
 /// </param>
 /// <param name="_useLegacyDocumentIdOrderingForChangeQueries">
 /// The deployment-wide kill switch that restores <c>DocumentId</c> boundary ordering for every
@@ -37,18 +42,19 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// validated ahead of filters so that a request faulty in both ways is answered the same way GET-many
 /// answers it, with the same problem type: these are sibling operations over one query string, and a
 /// client that discriminates on type should not have to know which of the two it called. Filters are
-/// validated ahead of the partition parameters because the reserved paging names are excluded from
-/// filter matching, and excluding them is what lets the partition phase report <c>?limit=5</c> as a
-/// parameter that does not apply here rather than as an unknown query field.
+/// validated ahead of the partition parameters, so a request with a malformed filter value and a
+/// malformed reserved paging value is answered for the filter. GET-many, which consumes paging and
+/// checks it first, answers the same query string for the paging value.
 /// <para>
-/// A consequence worth stating: a request carrying both an unknown field and a reserved paging
-/// parameter is answered with the unknown-field message alone. Both are client mistakes, and answering
-/// the field first keeps this operation's unknown-field behavior identical to GET-many's.
+/// A parameter this operation does not consume is ignored and reported: the reserved paging names,
+/// which have no effect on a boundary set, and every name that matches no query field. A malformed
+/// value of a reserved paging name is still rejected.
 /// </para>
 /// </remarks>
 internal class ValidatePartitionQueryMiddleware(
     ILogger _logger,
     int _defaultPartitionCount,
+    int _maximumPageSize,
     ICollectionPagingTelemetry _collectionPagingTelemetry,
     bool _useLegacyDocumentIdOrderingForChangeQueries
 ) : IPipelineStep
@@ -87,6 +93,51 @@ internal class ValidatePartitionQueryMiddleware(
             requestInfo.FrontendRequest.TraceId.Value
         );
 
+        // Decided before any validation can answer, so a rejection below carries the warning too.
+        await IgnoredQueryParameterWarning.ReportAround(
+            requestInfo,
+            IgnoredNames(requestInfo),
+            _logger,
+            () => ValidateAndContinue(requestInfo, next)
+        );
+    }
+
+    /// <summary>
+    /// The query parameters this operation does not consume, in request order: the reserved paging
+    /// names, and every other name that is not the count, a change-version bound, or a query field.
+    /// Matched the way each is parsed: the owned names case-sensitively, the change-version names
+    /// case-insensitively, and query fields the way filter matching matches them.
+    /// </summary>
+    private static string[] IgnoredNames(RequestInfo requestInfo)
+    {
+        // Read only when a name has to be matched against it, so a request whose names are all owned
+        // never touches the resource's query field mapping before validation answers.
+        QueryField[]? queryFields = null;
+
+        bool MatchesQueryField(string name)
+        {
+            queryFields ??= requestInfo.ResourceSchema.QueryFields.ToArray();
+            return ResourceQueryFilterValidator.MatchesQueryField(name, queryFields);
+        }
+
+        bool IsConsumed(string name)
+        {
+            if (_ordinalOwnedParameters.Contains(name, StringComparer.Ordinal))
+            {
+                return name == PartitionRequestValidator.NumberParameter;
+            }
+
+            return ChangeVersionParameterValidator.ReservedParameterNames.Contains(
+                    name,
+                    StringComparer.OrdinalIgnoreCase
+                ) || MatchesQueryField(name);
+        }
+
+        return [.. requestInfo.FrontendRequest.QueryParameters.Keys.Where(name => !IsConsumed(name))];
+    }
+
+    private async Task ValidateAndContinue(RequestInfo requestInfo, Func<Task> next)
+    {
         // Both parameter faults answer with the same shell, so they share one construction, and counting
         // the rejection here covers both for the same reason. The media type is not stated here at all,
         // because it comes from the FrontendResponse default.
@@ -125,23 +176,6 @@ internal class ValidatePartitionQueryMiddleware(
 
         switch (filterResult)
         {
-            case ResourceQueryFilterResult.UnknownQueryField unknownQueryField:
-                RecordValidationRejected(requestInfo);
-
-                requestInfo.FrontendResponse = new FrontendResponse(
-                    StatusCode: 400,
-                    Body: ForBadRequest(
-                        "The request could not be processed. See 'errors' for details.",
-                        requestInfo.FrontendRequest.TraceId,
-                        [],
-                        [
-                            $@"The query field '{unknownQueryField.QueryFieldName}' is not valid for this resource.",
-                        ]
-                    ),
-                    []
-                );
-                return;
-
             case ResourceQueryFilterResult.InvalidValues invalidValues:
                 _logger.LogDebug(
                     "Partition query parameter format error - {TraceId}",
@@ -173,7 +207,8 @@ internal class ValidatePartitionQueryMiddleware(
         }
 
         PartitionValidationResult partitionResult = PartitionRequestValidator.Validate(
-            requestInfo.FrontendRequest.QueryParameters
+            requestInfo.FrontendRequest.QueryParameters,
+            _maximumPageSize
         );
 
         if (partitionResult.Errors.Count > 0)

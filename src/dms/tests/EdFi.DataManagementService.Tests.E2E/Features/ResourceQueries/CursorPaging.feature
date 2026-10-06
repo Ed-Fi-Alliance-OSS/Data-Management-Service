@@ -132,20 +132,29 @@ Feature: Cursor paging for GET requests for Ed-Fi Resources
               And the response body has exactly one error "Both offset and pageToken parameters were provided, but they support alternative paging approaches and cannot be used together."
 
         @e2e-ci-shard-2
-        Scenario: 07 A deletes request does not recognize a page token
+        Scenario: 07 A deletes request rejects an undecodable page token and names it in the warning
              When a GET request is made to "/ed-fi/schools/deletes?pageToken=abc"
              Then it should respond with 400
               And the response content type is "application/json"
-              And the response body is the bad request shell
-              And the response body has exactly one error "The query field 'pageToken' is not valid for this Change Query endpoint."
+              And the response body is the parameter validation shell
+              And the response body has exactly one error "The page token provided was invalid."
+              And the response headers include
+                  """
+                  {
+                      "X-EdFi-Warning": "Ignored query parameters: pageToken"
+                  }
+                  """
 
         @e2e-ci-shard-2
-        Scenario: 08 A keyChanges request does not recognize a page size
+        Scenario: 08 A keyChanges request ignores a page size and names it in the warning
              When a GET request is made to "/ed-fi/schools/keyChanges?pageSize=5"
-             Then it should respond with 400
-              And the response content type is "application/json"
-              And the response body is the bad request shell
-              And the response body has exactly one error "The query field 'pageSize' is not valid for this Change Query endpoint."
+             Then it should respond with 200
+              And the response headers include
+                  """
+                  {
+                      "X-EdFi-Warning": "Ignored query parameters: pageSize"
+                  }
+                  """
 
         @e2e-ci-shard-2
         Scenario: 09 The served resources document publishes the cursor parameters and the continuation header

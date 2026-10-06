@@ -1,8 +1,8 @@
 @reset-data-before-scenario
 Feature: The partitions endpoint for Ed-Fi Resources
     The public partitions surface as a client meets it through the deployed stack: the token array, the
-    count that is an upper bound rather than a promise, the exact rejection contract for the parameters
-    the operation does not accept, the profile outcome it shares with the collection GET, and what the
+    count that is an upper bound rather than a promise, the parameters the operation ignores and the
+    malformed values it still rejects, the profile outcome it shares with the collection GET, and what the
     served documents publish about it.
 
         Background:
@@ -63,31 +63,42 @@ Feature: The partitions endpoint for Ed-Fi Resources
                   | 201    |
 
         @e2e-ci-shard-3
-        Scenario: 04 Every reserved paging parameter is reported, in the canonical order
-             When a GET request is made to "/ed-fi/schools/partitions?totalCount=true&offset=5&limit=5&pageSize=5&pageToken=abc"
+        Scenario: 04 Every malformed reserved paging value is reported, in the canonical order, and every reserved parameter is named in the warning
+             When a GET request is made to "/ed-fi/schools/partitions?totalCount=perhaps&offset=-1&limit=abc&pageSize=abc&pageToken=abc"
              Then it should respond with 400
               And the response content type is "application/json"
               And the response body is the parameter validation shell
               And the response body errors are
-                  | error                                                                 |
-                  | The 'pageToken' parameter is not supported by the partitions endpoint. |
-                  | The 'pageSize' parameter is not supported by the partitions endpoint.  |
-                  | The 'limit' parameter is not supported by the partitions endpoint.     |
-                  | The 'offset' parameter is not supported by the partitions endpoint.    |
-                  | The 'totalCount' parameter is not supported by the partitions endpoint. |
+                  | error                                                               |
+                  | The page token provided was invalid.                                |
+                  | PageSize must be a value between 0 and 500.                         |
+                  | Limit must be omitted or set to a numeric value between 0 and 500.  |
+                  | Offset must be a numeric value greater than or equal to 0.          |
+                  | TotalCount must be a boolean value.                                 |
+              And the response headers include
+                  """
+                  {
+                      "X-EdFi-Warning": "Ignored query parameters: totalCount, offset, limit, pageSize, pageToken"
+                  }
+                  """
 
         @e2e-ci-shard-3
-        Scenario Outline: 05 A parameter only ODS defines is an unknown query field
-             When a GET request is made to "/ed-fi/schools/partitions?<parameter>=true"
-             Then it should respond with 400
-              And the response content type is "application/json"
-              And the response body is the bad request shell
-              And the response body has exactly one error "The query field '<parameter>' is not valid for this resource."
+        Scenario Outline: 05 A well-formed reserved paging parameter or a parameter only ODS defines is ignored and named in the warning
+             When a GET request is made to "/ed-fi/schools/partitions?<parameter>=<value>"
+             Then it should respond with 200
+              And the response headers include
+                  """
+                  {
+                      "X-EdFi-Warning": "Ignored query parameters: <parameter>"
+                  }
+                  """
 
         Examples:
-                  | parameter           |
-                  | allowSmallPartitions |
-                  | useJoinAuth          |
+                  | parameter            | value |
+                  | limit                | 5     |
+                  | totalCount           | true  |
+                  | allowSmallPartitions | true  |
+                  | useJoinAuth          | true  |
 
         @e2e-ci-shard-3
         Scenario: 06 A partitions request naming a write-only profile is refused exactly as the collection GET is

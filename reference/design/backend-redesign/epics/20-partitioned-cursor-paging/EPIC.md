@@ -334,18 +334,21 @@ The approved intentional ODS differences are:
   request succeeds with the configured default partition count. The empty-value-binds-to-null step
   rests on ASP.NET Core's standard binding of an empty value to a nullable simple type, the same
   basis as the recorded blank-`pageSize` behavior above;
-- reject `pageToken` and `pageSize` on `/deletes` and `/keyChanges` under DMS's
-  unknown-query-field rule, where ODS binds the same request model on those endpoints, accepts a
-  valid token, and answers a malformed one with `The page token provided was invalid.`;
-- reject all five of `limit`, `offset`, `pageToken`, `pageSize`, and `totalCount` on `/partitions`
-  as unsupported, where ODS 7.3.2 binds those reserved names into the request model its partitions
-  action declares, range-checks only `number`, and ignores `limit`, `offset`, `pageSize`, and
-  `totalCount`: they never reach its partition query, which carries no paging clause. ODS decodes a
-  supplied `pageToken`, answering a malformed one with `The page token provided was invalid.`, then
-  discards the decoded range, so a well-formed token does not move its partition boundaries;
-- reject ODS's undocumented `allowSmallPartitions` and `useJoinAuth` partition parameters under
-  DMS's unknown-query-field rule, where ODS reads them from the separate additional-parameters
-  dictionary that collects query parameters its request model does not define;
+- ignore `pageToken` and `pageSize` on `/deletes` and `/keyChanges` and report them in
+  `X-EdFi-Warning`, but reject a malformed value by the rule a cursor request applies to it, so a
+  `pageSize` outside `0` to `MaximumPageSize` returns `PageSize must be a value between 0 and {N}.`,
+  where ODS binds the same request model on those endpoints and checks only that `pageSize` is an
+  integer. Both answer an undecodable token with `The page token provided was invalid.` (amended by
+  DMS-1589; see `reference/adr-unknown-query-parameters-DMS-1589.md`);
+- ignore `limit`, `offset`, `pageToken`, `pageSize`, and `totalCount` on `/partitions` and report
+  them in `X-EdFi-Warning`, but judge each value by the rule GET-many applies to it, so `?limit=-1`
+  is rejected, where ODS 7.3.2 binds those reserved names into the request model its partitions
+  action declares, checks only their types, and never carries them into its partition query. ODS
+  decodes a supplied `pageToken`, answering a malformed one with `The page token provided was
+  invalid.`, then discards the decoded range, so a well-formed token does not move its partition
+  boundaries; DMS does the same (amended by DMS-1589). DMS-1589 also retired the former difference
+  that rejected ODS's undocumented `allowSmallPartitions` and `useJoinAuth` partition parameters:
+  DMS now ignores and reports them, while ODS acts on them;
 - return evenly sized partitions, and at most the requested count of them, by computing a true
   ceiling. ODS 7.3.2 spells the size as `CEILING(CountOfRows / @numberOfPartitions)` over two
   integer operands, so its `CEILING` receives an already-truncated integer quotient and is a no-op:

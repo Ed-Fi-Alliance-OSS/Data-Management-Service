@@ -65,8 +65,8 @@ public sealed class Given_Postgresql_PartitionEndpoint : PostgresqlApiIntegratio
         PartitionEndpointScenario.It_refuses_write_methods_with_a_get_only_allow_header(Harness);
 
     [Test]
-    public Task It_refuses_a_reserved_paging_parameter() =>
-        PartitionEndpointScenario.It_refuses_a_reserved_paging_parameter(Harness);
+    public Task It_ignores_a_reserved_paging_parameter() =>
+        PartitionEndpointScenario.It_ignores_a_reserved_paging_parameter(Harness);
 
     [Test]
     public Task It_refuses_a_partition_count_outside_the_supported_range() =>

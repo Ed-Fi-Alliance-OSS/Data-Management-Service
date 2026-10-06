@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
@@ -123,18 +124,14 @@ internal static class PartitionPublicContractScenario
     }
 
     /// <summary>
-    /// Every reserved paging parameter present is reported, in the canonical order, without its value
-    /// being parsed.
+    /// Every malformed reserved paging value is reported, in the canonical order, with the message
+    /// GET-many gives it, and every reserved parameter is named in the warning, in request order.
     /// </summary>
     /// <remarks>
-    /// Two claims in one request. The five parameters are supplied in the reverse of the order they are
-    /// reported in, so the response order is the contract's rather than the query string's. And every
-    /// supplied value is malformed: a parsed <c>pageToken</c> would have answered that the token was
-    /// invalid, and a parsed <c>offset</c> or <c>totalCount</c> would have answered with a range or
-    /// boolean message. Getting five unsupported-parameter messages instead shows the complaint is that
-    /// the parameter does not apply here at all.
+    /// The five parameters are supplied in the reverse of the order they are reported in, so the error
+    /// order is the contract's rather than the query string's, while the warning keeps the request's.
     /// </remarks>
-    public static async Task It_reports_every_reserved_parameter_in_canonical_order(
+    public static async Task It_reports_every_malformed_reserved_parameter_in_canonical_order(
         ApiIntegrationHarness harness
     )
     {
@@ -147,24 +144,27 @@ internal static class PartitionPublicContractScenario
 
         await ParameterValidationProblemDetails.AssertShellAsync(
             response,
-            "The 'pageToken' parameter is not supported by the partitions endpoint.",
-            "The 'pageSize' parameter is not supported by the partitions endpoint.",
-            "The 'limit' parameter is not supported by the partitions endpoint.",
-            "The 'offset' parameter is not supported by the partitions endpoint.",
-            "The 'totalCount' parameter is not supported by the partitions endpoint."
+            "The page token provided was invalid.",
+            $"PageSize must be a value between 0 and {HostMaximumPageSize}.",
+            $"Limit must be omitted or set to a numeric value between 0 and {HostMaximumPageSize}.",
+            "Offset must be a numeric value greater than or equal to 0.",
+            "TotalCount must be a boolean value."
+        );
+        IgnoredParameterWarningAssertions.AssertWarnsOf(
+            response,
+            "totalCount",
+            "offset",
+            "limit",
+            "pageSize",
+            "pageToken"
         );
     }
 
     /// <summary>
-    /// A malformed count alongside an unknown query field is answered with the unknown-field message
-    /// alone, in the bad-request shell.
+    /// A malformed count alongside an unknown query field is answered with the count error, and the
+    /// unknown field is named in the warning rather than rejected.
     /// </summary>
-    /// <remarks>
-    /// Both are client mistakes. Answering the field first is what keeps this operation's unknown-field
-    /// behavior identical to the collection GET's, so a client that discriminates on the problem type
-    /// does not have to know which of the two sibling endpoints it called.
-    /// </remarks>
-    public static async Task It_answers_a_malformed_count_and_an_unknown_field_with_the_unknown_field_alone(
+    public static async Task It_answers_a_malformed_count_and_warns_of_an_unknown_field(
         ApiIntegrationHarness harness
     )
     {
@@ -174,10 +174,8 @@ internal static class PartitionPublicContractScenario
             $"{CursorContractSupport.MergeItemsPartitionsEndpoint}?number=abc&{UnknownFieldName}=1"
         );
 
-        await BadRequestProblemDetails.AssertShellAsync(
-            response,
-            BadRequestProblemDetails.UnknownQueryField(UnknownFieldName)
-        );
+        await ParameterValidationProblemDetails.AssertShellAsync(response, NumberOutOfRange);
+        IgnoredParameterWarningAssertions.AssertWarnsOf(response, UnknownFieldName);
     }
 
     /// <summary>
@@ -198,29 +196,21 @@ internal static class PartitionPublicContractScenario
     }
 
     /// <summary>
-    /// An unknown query field alongside a reserved paging parameter is answered with the unknown-field
-    /// message alone.
+    /// An unknown query field alongside a well-formed reserved paging parameter is served, with both
+    /// named in the warning, in request order.
     /// </summary>
-    /// <remarks>
-    /// Filters are validated ahead of the reserved-parameter phase, and the reserved names are excluded
-    /// from filter matching before that happens. Excluding them is what lets <c>?limit=5</c> be reported
-    /// as a parameter that does not apply here rather than as an unknown query field — and this request
-    /// shows the exclusion does not also promote the reserved parameter ahead of a real unknown field.
-    /// </remarks>
-    public static async Task It_answers_an_unknown_field_and_a_reserved_parameter_with_the_unknown_field_alone(
+    public static async Task It_serves_an_unknown_field_and_a_reserved_parameter_with_a_warning(
         ApiIntegrationHarness harness
     )
     {
         ArgumentNullException.ThrowIfNull(harness);
 
         using var response = await harness.HttpClient.GetAsync(
-            $"{CursorContractSupport.MergeItemsPartitionsEndpoint}?{UnknownFieldName}=1&limit=5"
+            $"{CursorContractSupport.MergeItemsPartitionsEndpoint}?{UnknownFieldName}=1&limit=1"
         );
 
-        await BadRequestProblemDetails.AssertShellAsync(
-            response,
-            BadRequestProblemDetails.UnknownQueryField(UnknownFieldName)
-        );
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        IgnoredParameterWarningAssertions.AssertWarnsOf(response, UnknownFieldName, "limit");
     }
 
     /// <summary>
@@ -228,9 +218,8 @@ internal static class PartitionPublicContractScenario
     /// message alone, in the parameter-validation shell rather than the bad-request one.
     /// </summary>
     /// <remarks>
-    /// This is the consequence that pins the shell as well as the message: the window is validated
-    /// before filters, so the answer is the parameter-validation problem type even though an unknown
-    /// field — which would answer with the bad-request type — is also present.
+    /// The unknown field no longer answers at all, so what this pins is that a rejection still carries
+    /// the warning naming it.
     /// </remarks>
     public static async Task It_answers_a_malformed_window_and_an_unknown_field_in_the_parameter_validation_shell(
         ApiIntegrationHarness harness
@@ -243,6 +232,7 @@ internal static class PartitionPublicContractScenario
         );
 
         await ParameterValidationProblemDetails.AssertShellAsync(response, MalformedChangeVersion);
+        IgnoredParameterWarningAssertions.AssertWarnsOf(response, UnknownFieldName);
     }
 
     /// <summary>

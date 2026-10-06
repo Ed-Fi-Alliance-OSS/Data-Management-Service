@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Paging;
 using FluentAssertions;
 using NUnit.Framework;
@@ -14,13 +15,21 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Paging;
 [Parallelizable]
 public class PartitionRequestValidatorTests
 {
+    private const int MaximumPageSize = 500;
+
+    private static readonly string ValidToken = PageTokenCodec.Encode(
+        new CursorRange(1, 100),
+        PageOrderingMode.DocumentId
+    );
+
     private static PartitionValidationResult Validate(params (string Key, string Value)[] queryParameters) =>
         PartitionRequestValidator.Validate(
             queryParameters.ToDictionary(
                 static parameter => parameter.Key,
                 static parameter => parameter.Value,
                 StringComparer.Ordinal
-            )
+            ),
+            MaximumPageSize
         );
 
     [TestFixture]
@@ -58,11 +67,11 @@ public class PartitionRequestValidatorTests
         {
             Validate(
                 (PartitionRequestValidator.NumberParameter, "abc"),
-                ("pageToken", "anything"),
-                ("pageSize", "5"),
-                ("limit", "10"),
-                ("offset", "3"),
-                ("totalCount", "true")
+                ("pageToken", "!!!"),
+                ("pageSize", "abc"),
+                ("limit", "abc"),
+                ("offset", "-1"),
+                ("totalCount", "notabool")
             )
                 .Errors.Should()
                 .ContainSingle()
@@ -113,70 +122,86 @@ public class PartitionRequestValidatorTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_Reserved_Paging_Parameters : PartitionRequestValidatorTests
+    public class Given_Well_Formed_Reserved_Paging_Parameters : PartitionRequestValidatorTests
+    {
+        [Test]
+        public void It_accepts_them_because_they_are_ignored()
+        {
+            PartitionValidationResult result = Validate(
+                (PartitionRequestValidator.NumberParameter, "10"),
+                ("pageToken", ValidToken),
+                ("pageSize", "5"),
+                ("limit", "10"),
+                ("offset", "3"),
+                ("totalCount", "true")
+            );
+
+            result.Errors.Should().BeEmpty();
+            result.RequestedPartitionCount.Should().Be(10);
+        }
+
+        [Test]
+        public void It_accepts_a_page_token_without_comparing_it_with_a_page_anchor()
+        {
+            string contentVersionToken = PageTokenCodec.Encode(
+                new CursorRange(1, 100),
+                PageOrderingMode.ContentVersion
+            );
+
+            Validate(("pageToken", contentVersionToken)).Errors.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_accepts_a_page_size_without_a_page_token()
+        {
+            Validate(("pageSize", "5")).Errors.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_accepts_combinations_only_a_cursor_walk_rejects()
+        {
+            Validate(("pageToken", ValidToken), ("offset", "3"), ("limit", "10")).Errors.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Malformed_Reserved_Paging_Parameters : PartitionRequestValidatorTests
     {
         [Test]
         public void It_reports_every_one_of_them_in_canonical_order()
         {
             Validate(
-                ("totalCount", "true"),
-                ("offset", "3"),
-                ("limit", "10"),
-                ("pageSize", "5"),
-                ("pageToken", "anything")
+                ("totalCount", "notabool"),
+                ("offset", "-1"),
+                ("limit", "abc"),
+                ("pageSize", "abc"),
+                ("pageToken", "!!!")
             )
                 .Errors.Should()
                 .Equal(
-                    PartitionRequestValidator.UnsupportedParameter("pageToken"),
-                    PartitionRequestValidator.UnsupportedParameter("pageSize"),
-                    PartitionRequestValidator.UnsupportedParameter("limit"),
-                    PartitionRequestValidator.UnsupportedParameter("offset"),
-                    PartitionRequestValidator.UnsupportedParameter("totalCount")
+                    "The page token provided was invalid.",
+                    "PageSize must be a value between 0 and 500.",
+                    "Limit must be omitted or set to a numeric value between 0 and 500.",
+                    "Offset must be a numeric value greater than or equal to 0.",
+                    "TotalCount must be a boolean value."
                 );
         }
 
-        [TestCase("pageToken")]
-        [TestCase("pageSize")]
-        [TestCase("limit")]
-        [TestCase("offset")]
-        [TestCase("totalCount")]
-        public void It_reports_a_single_reserved_parameter_on_its_own(string parameter)
+        [TestCase("limit", "501")]
+        [TestCase("limit", "-1")]
+        [TestCase("pageSize", "501")]
+        [TestCase("offset", "abc")]
+        [TestCase("totalCount", "")]
+        public void It_applies_the_range_rule_get_many_applies(string parameter, string value)
         {
-            Validate((parameter, "anything"))
-                .Errors.Should()
-                .ContainSingle()
-                .Which.Should()
-                .Be($"The '{parameter}' parameter is not supported by the partitions endpoint.");
-        }
-
-        [TestCase("pageToken", "!!!")]
-        [TestCase("pageSize", "abc")]
-        [TestCase("limit", "abc")]
-        [TestCase("offset", "-1")]
-        [TestCase("totalCount", "notabool")]
-        public void It_does_not_parse_their_values(string parameter, string malformedValue)
-        {
-            Validate((parameter, malformedValue))
-                .Errors.Should()
-                .ContainSingle()
-                .Which.Should()
-                .Be(PartitionRequestValidator.UnsupportedParameter(parameter));
-        }
-
-        [Test]
-        public void It_reports_them_alongside_a_valid_number()
-        {
-            Validate((PartitionRequestValidator.NumberParameter, "10"), ("limit", "10"))
-                .Errors.Should()
-                .ContainSingle()
-                .Which.Should()
-                .Be(PartitionRequestValidator.UnsupportedParameter("limit"));
+            Validate((parameter, value)).Errors.Should().ContainSingle();
         }
 
         [Test]
         public void It_withholds_the_partition_count_from_a_rejected_request()
         {
-            Validate((PartitionRequestValidator.NumberParameter, "10"), ("limit", "10"))
+            Validate((PartitionRequestValidator.NumberParameter, "10"), ("limit", "abc"))
                 .RequestedPartitionCount.Should()
                 .BeNull("a count from a rejected request must not be usable by mistake");
         }
@@ -213,7 +238,7 @@ public class PartitionRequestValidatorTests
         }
 
         [Test]
-        public void It_leaves_other_unknown_fields_to_the_unknown_query_field_rule()
+        public void It_leaves_other_unknown_fields_to_the_caller()
         {
             Validate(("notAKnownField", "value")).Errors.Should().BeEmpty();
         }

@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.Middleware;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
@@ -22,8 +23,9 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 /// With the toggle on, a request carrying <c>Origin: &lt;Cors:SwaggerUIOrigin&gt;</c> receives
 /// <c>Access-Control-Expose-Headers</c> including <c>Location</c> on the async 202 and on the
 /// incomplete results 200, exercised through the real <c>UseCors</c> pipeline rather than the
-/// policy object directly. A request without an <c>Origin</c> header carries no CORS headers, and
-/// with the toggle off the policy exposes nothing extra on any route.
+/// policy object directly. A request without an <c>Origin</c> header carries no CORS headers. The
+/// ignored-query-parameter warning is exposed whatever the toggle, and with the toggle off it is the
+/// only header exposed.
 /// </summary>
 [TestFixture]
 [NonParallelizable]
@@ -32,6 +34,7 @@ public class IdentityCorsExposeHeadersTests
     // The Cors:SwaggerUIOrigin default (appsettings.json), unchanged by the Test environment.
     private const string SwaggerUiOrigin = "http://localhost:8082";
     private const string ResultsLocationPath = "/identity/v2/identities/results/tok";
+    private const string WarningHeaderName = IgnoredQueryParameterWarning.HeaderName;
 
     private static WebApplicationFactory<Program> CreateFactory(
         IApiService apiService,
@@ -119,6 +122,15 @@ public class IdentityCorsExposeHeadersTests
                 .Headers.GetValues("Access-Control-Expose-Headers")
                 .Should()
                 .Contain(value => value.Contains("Location"));
+        }
+
+        [Test]
+        public void It_exposes_the_warning_header_alongside_location()
+        {
+            _response
+                .Headers.GetValues("Access-Control-Expose-Headers")
+                .Should()
+                .Contain(value => value.Contains(WarningHeaderName));
         }
     }
 
@@ -233,7 +245,13 @@ public class IdentityCorsExposeHeadersTests
             var okResponse = A.Fake<IFrontendResponse>();
             A.CallTo(() => okResponse.StatusCode).Returns(200);
             A.CallTo(() => okResponse.Body).Returns(new JsonObject { ["id"] = "abc" });
-            A.CallTo(() => okResponse.Headers).Returns(new Dictionary<string, string>());
+            A.CallTo(() => okResponse.Headers)
+                .Returns(
+                    new Dictionary<string, string>
+                    {
+                        [WarningHeaderName] = "Ignored query parameters: studentUniqueld",
+                    }
+                );
             A.CallTo(() => okResponse.ContentType).Returns("application/json");
             A.CallTo(() => apiService.Get(A<FrontendRequest>._, A<CancellationToken>._))
                 .Returns(Task.FromResult(okResponse));
@@ -267,9 +285,18 @@ public class IdentityCorsExposeHeadersTests
         }
 
         [Test]
-        public void It_carries_no_access_control_expose_headers()
+        public void It_exposes_only_the_warning_header()
         {
-            _response.Headers.Contains("Access-Control-Expose-Headers").Should().BeFalse();
+            _response.Headers.GetValues("Access-Control-Expose-Headers").Should().Equal(WarningHeaderName);
+        }
+
+        [Test]
+        public void It_emits_the_warning_header_from_the_core_response()
+        {
+            _response
+                .Headers.GetValues(WarningHeaderName)
+                .Should()
+                .Equal("Ignored query parameters: studentUniqueld");
         }
     }
 }

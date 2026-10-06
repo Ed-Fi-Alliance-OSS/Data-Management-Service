@@ -36,14 +36,15 @@ public class ValidateQueryMiddlewareTests
             NullLogger.Instance,
             _maxPageSize,
             _cursorParametersRecognized: true,
+            _resourceFiltersRecognized: true,
             collectionPagingTelemetry ?? NoOpCollectionPagingTelemetry.Instance,
             _useLegacyDocumentIdOrderingForChangeQueries: false
         );
     }
 
     /// <summary>
-    /// The Change Query composition, which does not recognize the cursor parameters and does not count
-    /// its faults as collection-paging traffic. Every argument is fixed here rather than defaulted, so
+    /// The Change Query composition, which consumes neither the cursor parameters nor resource filters
+    /// and does not count its faults as collection-paging traffic. Every argument is fixed here rather than defaulted, so
     /// this factory stays a faithful copy of how CreateGetTrackedChangesPipeline composes the step.
     /// </summary>
     internal static IPipelineStep MiddlewareWithoutCursorRecognition()
@@ -52,10 +53,22 @@ public class ValidateQueryMiddlewareTests
             NullLogger.Instance,
             _maxPageSize,
             _cursorParametersRecognized: false,
+            _resourceFiltersRecognized: false,
             NoOpCollectionPagingTelemetry.Instance,
             _useLegacyDocumentIdOrderingForChangeQueries: false
         );
     }
+
+    /// <summary>
+    /// A rest-of-pipeline that answers 200, so what this step adds to a downstream response can be
+    /// asserted.
+    /// </summary>
+    internal static Func<Task> NextAnsweringOk(RequestInfo requestInfo) =>
+        () =>
+        {
+            requestInfo.FrontendResponse = new FrontendResponse(StatusCode: 200, Body: null, Headers: []);
+            return Task.CompletedTask;
+        };
 
     /// <summary>
     /// The live GET-many composition of a deployment running with the page-ordering kill switch on.
@@ -66,6 +79,7 @@ public class ValidateQueryMiddlewareTests
             NullLogger.Instance,
             _maxPageSize,
             _cursorParametersRecognized: true,
+            _resourceFiltersRecognized: true,
             NoOpCollectionPagingTelemetry.Instance,
             _useLegacyDocumentIdOrderingForChangeQueries: true
         );
@@ -853,7 +867,11 @@ public class ValidateQueryMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            var queryParameters = new Dictionary<string, string> { { "invalidSchoolId", "456" } };
+            var queryParameters = new Dictionary<string, string>
+            {
+                { "invalidSchoolId", "456" },
+                { "schoolId", "255901" },
+            };
 
             FrontendRequest frontendRequest = new(
                 Path: "/ed-fi/academicWeeks",
@@ -867,22 +885,33 @@ public class ValidateQueryMiddlewareTests
 
             _requestInfo = NewRequestInfo(frontendRequest, RequestMethod.GET);
 
-            await Middleware().Execute(_requestInfo, NullNext);
+            await Middleware().Execute(_requestInfo, NextAnsweringOk(_requestInfo));
         }
 
         [Test]
-        public void It_should_send_bad_request()
+        public void It_should_continue_to_the_handler()
         {
-            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(200);
         }
 
         [Test]
-        public void It_should_report_the_existing_invalid_query_field_error()
+        public void It_should_apply_only_the_known_filter()
         {
-            _requestInfo.FrontendResponse.Body!["errors"]![0]!
-                .GetValue<string>()
+            _requestInfo
+                .QueryElements.Select(queryElement => (queryElement.QueryFieldName, queryElement.Value))
                 .Should()
-                .Be("The query field 'invalidSchoolId' is not valid for this resource.");
+                .Equal(("schoolId", "255901"));
+        }
+
+        [Test]
+        public void It_should_report_the_ignored_field()
+        {
+            _requestInfo
+                .FrontendResponse.Headers.Should()
+                .Contain(
+                    IgnoredQueryParameterWarning.HeaderName,
+                    "Ignored query parameters: invalidSchoolId"
+                );
         }
     }
 
@@ -1216,8 +1245,9 @@ public class ValidateQueryMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            // A pagination parameter in non-canonical casing is not parsed as pagination and
-            // must not be silently dropped; it falls through to ordinary query-field matching.
+            // A pagination parameter in non-canonical casing is not parsed as pagination. The frontend
+            // canonicalizes the casing, so a name that arrives here unfolded matches nothing and is
+            // ignored and reported rather than silently dropped.
             var queryParameters = new Dictionary<string, string> { { "Limit", "-1" } };
 
             FrontendRequest frontendRequest = new(
@@ -1231,22 +1261,22 @@ public class ValidateQueryMiddlewareTests
             );
 
             _requestInfo = NewRequestInfo(frontendRequest, RequestMethod.GET);
-            await Middleware().Execute(_requestInfo, NullNext);
+            await Middleware().Execute(_requestInfo, NextAnsweringOk(_requestInfo));
         }
 
         [Test]
-        public void It_should_send_bad_request()
+        public void It_should_not_parse_it_as_a_limit()
         {
-            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+            _requestInfo.PaginationParameters.Limit.Should().BeNull();
         }
 
         [Test]
-        public void It_should_report_the_invalid_query_field()
+        public void It_should_report_the_ignored_parameter()
         {
-            _requestInfo.FrontendResponse.Body!["errors"]![0]!
-                .GetValue<string>()
-                .Should()
-                .Be("The query field 'Limit' is not valid for this resource.");
+            _requestInfo
+                .FrontendResponse.Headers.Should()
+                .Contain(IgnoredQueryParameterWarning.HeaderName, "Ignored query parameters: Limit");
         }
     }
 
@@ -1423,7 +1453,7 @@ public class ValidateQueryMiddlewareTests
             RequestInfo rejectedLater = await Execute(
                 Middleware(),
                 ("maxChangeVersion", "200"),
-                ("notAQueryField", "1")
+                ("schoolId", "notANumber")
             );
 
             rejectedLater

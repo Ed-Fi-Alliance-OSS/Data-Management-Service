@@ -232,6 +232,20 @@ public class CursorQueryParameterCanonicalizationTests
     }
 
     /// <summary>
+    /// The ignored-parameter warning lists names in the order the dictionary enumerates them, so that
+    /// order has to be the order each name first appears. Case variants merge into one entry at the
+    /// first variant's position, carrying the last variant's spelling and value.
+    /// </summary>
+    [Test]
+    public async Task It_keeps_first_appearance_order_for_merged_case_variants()
+    {
+        var queryParameters = await CapturedQueryParameters("/data/ed-fi/schools?B=1&a=2&b=3&x=4");
+
+        queryParameters.Keys.Should().Equal("b", "a", "x");
+        queryParameters["b"].Should().Be("3");
+    }
+
+    /// <summary>
     /// The partition count is generic enough to collide with a resource query field, so its spelling
     /// is only rewritten where it is a paging control.
     /// </summary>

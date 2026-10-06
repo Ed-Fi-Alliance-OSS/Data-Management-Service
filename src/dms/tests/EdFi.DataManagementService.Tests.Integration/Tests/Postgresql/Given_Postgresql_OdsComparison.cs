@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Tests.Integration.Doubles;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using EdFi.DataManagementService.Tests.Integration.Postgresql;
 using EdFi.DataManagementService.Tests.Integration.Scenarios;
@@ -43,6 +45,11 @@ public sealed class Given_Postgresql_OdsComparison : PostgresqlApiIntegrationTes
     protected override FixtureKey Fixture => FixtureKey.CursorPartitionContract;
 
     protected override int? MaximumPageSizeOverride => OdsComparisonScenario.HostMaximumPageSize;
+
+    // The validation group includes Change Query cases that are served, so the client must be able to
+    // read changes for the outcome to be the operation's rather than authorization's.
+    protected override IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
+        new AllowAllClaimSetProvider(fixture, grantReadChanges: true);
 
     [TestCaseSource(nameof(BoundGroups))]
     public Task It_matches_the_recorded_ods_outcomes_for_the_group(string group) =>
