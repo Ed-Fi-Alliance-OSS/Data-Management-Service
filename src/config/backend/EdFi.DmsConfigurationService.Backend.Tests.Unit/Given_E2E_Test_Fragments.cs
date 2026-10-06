@@ -23,7 +23,7 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 /// <summary>
 /// Composes the embedded base claims with the default extension fragments (004/005) and the
 /// test-owned E2E fragments, as the staged E2E claims workspace does, and proves the result matches
-/// the E2E grants the embedded Claims.json carried before the E2E claim sets were removed from it.
+/// the historical E2E grants plus the descriptor CRUD grant needed by the CDC API fixture.
 /// </summary>
 [TestFixture("ds52")]
 [TestFixture("ds61")]
@@ -173,9 +173,14 @@ public class Given_E2E_Test_Fragments(string standardFolder)
     }
 
     [Test]
-    public void It_reproduces_the_pre_change_embedded_E2E_grants()
+    public void It_preserves_the_historical_E2E_grants_and_adds_CDC_descriptor_CRUD()
     {
-        E2EGrants(_composedHierarchy).Should().BeEquivalentTo(PreChangeEmbeddedE2EGrants);
+        E2EGrants(_composedHierarchy)
+            .Should()
+            .BeEquivalentTo([
+                .. PreChangeEmbeddedE2EGrants,
+                "E2E-NoFurtherAuthRequiredClaimSet|http://ed-fi.org/identity/claims/ed-fi/schoolTypeDescriptor|Create[NoFurtherAuthorizationRequired];Read[NoFurtherAuthorizationRequired];Update[NoFurtherAuthorizationRequired];Delete[NoFurtherAuthorizationRequired]",
+            ]);
     }
 
     [Test]
@@ -231,6 +236,28 @@ public class Given_E2E_Test_Fragments(string standardFolder)
                     check.Action,
                     $"{check.ClaimSetName} must grant the probe action on {check.ResourceClaim}"
                 );
+        }
+    }
+
+    [Test]
+    public void It_authorizes_school_type_descriptor_CRUD_for_the_CDC_API_fixture()
+    {
+        var claimSet = _metadata.Single(metadata =>
+            metadata.ClaimSetName == "E2E-NoFurtherAuthRequiredClaimSet"
+        );
+        var claim = claimSet
+            .Claims.Should()
+            .ContainSingle(c => c.Name == "http://ed-fi.org/identity/claims/ed-fi/schoolTypeDescriptor")
+            .Which;
+        var actions = claimSet.Authorizations.Single(a => a.Id == claim.AuthorizationId).Actions;
+
+        actions.Select(action => action.Name).Should().BeEquivalentTo("Create", "Read", "Update", "Delete");
+        foreach (var action in actions)
+        {
+            action
+                .AuthorizationStrategies.Select(strategy => strategy.Name)
+                .Should()
+                .Equal("NoFurtherAuthorizationRequired");
         }
     }
 

@@ -11,6 +11,7 @@ using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
 using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
@@ -22,6 +23,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
@@ -307,6 +309,13 @@ public abstract class ClaimsManagementModuleTests
             builder.ConfigureServices(
                 (ctx, collection) =>
                 {
+                    // The real Bearer scheme reads its keys from the signing-key snapshot. Without a reachable key
+                    // store there is no snapshot, and any request carrying a bearer token answers 503 at the
+                    // boundary. These fixtures assert the ordinary 401 of a token rejected on its own merits, so the
+                    // host gets a store that answers with no keys: a usable, empty snapshot.
+                    collection.RemoveAll<ISigningKeySource>();
+                    collection.AddSingleton<ISigningKeySource>(new EmptySigningKeySource());
+
                     if (addTestAuthentication)
                     {
                         // Mimic the production authentication/authorization setup so that
@@ -342,6 +351,15 @@ public abstract class ClaimsManagementModuleTests
                 }
             );
         });
+    }
+
+    /// <summary>A key store that is reachable and holds no key, so the signing-key snapshot is usable and empty.</summary>
+    private sealed class EmptySigningKeySource : ISigningKeySource
+    {
+        public SigningKeySource Kind => SigningKeySource.Database;
+
+        public Task<SigningKeySourceResult> LoadAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(new SigningKeySourceResult([], 0));
     }
 
     /// <summary>

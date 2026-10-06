@@ -88,7 +88,8 @@ internal class ProfileResolutionMiddleware(
         // Get tenant ID if multi-tenancy is enabled
         string? tenantId = requestInfo.FrontendRequest.Tenant;
 
-        // Resolve the profile
+        // Resolve the profile. A ProfileDataUnavailableException is deliberately not caught here: it
+        // must reach CoreExceptionLoggingMiddleware's 503 arm and never become "no profile applies".
         ProfileResolutionResult resolutionResult = await profileService.ResolveProfileAsync(
             parseResult.ParsedHeader,
             requestInfo.Method,

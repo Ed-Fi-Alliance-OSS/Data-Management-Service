@@ -162,6 +162,31 @@ public class TenantModuleTests
             }
 
             [Test]
+            public async Task It_returns_the_paged_tenant_records()
+            {
+                // Arrange
+                // DMS-1508 adds anonymous GET /tenancy beside this collection; it must stay paged and
+                // keep its id-and-name payload.
+                using var client = SetUpClient(multiTenancyEnabled: true);
+                // NUnit shares one fixture instance, so the fake keeps calls from sibling tests.
+                Fake.ClearRecordedCalls(_tenantRepository);
+
+                // Act
+                var response = await client.GetAsync("/v3/tenants/?offset=0&limit=25");
+                var content = await response.Content.ReadAsStringAsync();
+
+                // Assert
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                content.Should().Be("""[{"id":1,"name":"Test_Tenant"}]""");
+                A.CallTo(() =>
+                        _tenantRepository.QueryTenant(
+                            A<PagingQuery>.That.Matches(q => q.Offset == 0 && q.Limit == 25)
+                        )
+                    )
+                    .MustHaveHappenedOnceExactly();
+            }
+
+            [Test]
             public async Task It_returns_bad_request_for_invalid_order_by()
             {
                 // Arrange
@@ -172,6 +197,26 @@ public class TenantModuleTests
 
                 // Assert
                 response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            }
+        }
+
+        [TestFixture]
+        public class UnauthenticatedTests : Given_MultiTenancy_Is_Enabled
+        {
+            [Test]
+            public async Task It_returns_401_for_get_all_without_credentials()
+            {
+                // Arrange
+                // Unlike anonymous GET /tenancy (DMS-1508), the tenant collection still requires
+                // authentication. Without the scope header TestAuthHandler fails authentication.
+                using var client = SetUpClient(multiTenancyEnabled: true);
+                client.DefaultRequestHeaders.Remove("X-Test-Scope");
+
+                // Act
+                var response = await client.GetAsync("/v3/tenants/");
+
+                // Assert
+                response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
             }
         }
 

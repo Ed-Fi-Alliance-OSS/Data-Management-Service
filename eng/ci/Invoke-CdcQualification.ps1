@@ -9,9 +9,9 @@
 param(
     [ValidateSet('All', 'Contract', 'Postgresql', 'Mssql', 'Kafka')]
     [string] $Lane = 'All',
-    [ValidateSet('All', 'Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History', 'MessageContract')]
+    [ValidateSet('All', 'Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History', 'MessageContract', 'ApiE2E')]
     [string] $Suite = 'All',
-    [string] $ResultsDirectory = 'TestResults/cdc-qualification',
+    [string] $ResultsDirectory = (Join-Path ([IO.Path]::GetTempPath()) ('cdc-results-' + [guid]::NewGuid().ToString('N'))),
     [ValidateSet('Debug', 'Release')]
     [string] $Configuration = 'Release',
     [switch] $PullImages
@@ -23,12 +23,36 @@ $PSNativeCommandUseErrorActionPreference = $false
 Import-Module (Join-Path $PSScriptRoot 'cdc-qualification.psm1') -Force
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $destination = [IO.Path]::GetFullPath($ResultsDirectory)
+$raw = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetTempPath()) ('cdc-qualification-' + [guid]::NewGuid().ToString('N'))))
+foreach ($path in @($destination, $raw)) {
+    if ($path.Equals($repo, [StringComparison]::OrdinalIgnoreCase) -or $path.StartsWith($repo + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Qualification diagnostics must be written outside the repository checkout.'
+    }
+}
 if (Test-Path -LiteralPath $destination) { throw 'Use a new results directory; previous evidence must not be overwritten.' }
 New-Item -ItemType Directory -Path $destination | Out-Null
-$raw = Join-Path ([IO.Path]::GetTempPath()) ('cdc-qualification-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $raw | Out-Null
 if (-not $IsWindows) { & chmod 700 $raw }
 $reports = [System.Collections.Generic.List[object]]::new()
+# Persist invocation/stages before prerequisite checks or fixture preparation.
+$apiReports = @{}
+if ($Suite -in @('All', 'ApiE2E')) {
+    foreach ($provider in @('Postgresql', 'Mssql')) {
+        if ($Lane -in @('All', $provider)) {
+            $apiReports[$provider] = New-CdcApiRunnerReport -Provider $provider
+            $reports.Add($apiReports[$provider])
+        }
+    }
+}
+$persistReports = {
+    $path = Join-Path $destination 'qualification.json'
+    $temporary = "$path.$([guid]::NewGuid().ToString('N')).tmp"
+    try {
+        ConvertTo-Json -InputObject @($reports.ToArray()) -Depth 10 | Set-Content -LiteralPath $temporary
+        [IO.File]::Move($temporary, $path, $true)
+    } finally { if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary } }
+}
+& $persistReports
 $script:qualificationConfiguration = $Configuration
 $oldLocation = Get-Location
 $savedEnvironment = @{}
@@ -58,7 +82,15 @@ function Invoke-QualificationSuite {
     $report = Get-CdcQualificationReport -Path (Join-Path $suiteDirectory "$Name.trx") -ExitCode $LASTEXITCODE
     $report.Name = $Name
     $reports.Add($report)
+    & $persistReports
     Export-CdcQualificationEvidence -RawDirectory $suiteDirectory -Destination (Join-Path $destination $Name)
+    if ($report.Contains('ConnectReadinessFailures') -and (
+            $report.ConnectReadinessFailures -gt 0 -or $report.ConnectReadinessInjectedFailures -gt 0
+        )) {
+        $connectSummary = "$Name Connect readiness: $($report.ConnectReadinessFailures) observed timeouts; $($report.ConnectReadinessRecoveries) recovered; $($report.ConnectReadinessInjectedFailures) injected timeouts; $($report.ConnectReadinessInjectedRecoveries) injected recoveries."
+        Write-Output $connectSummary
+        if ($env:GITHUB_STEP_SUMMARY) { "- $connectSummary" >> $env:GITHUB_STEP_SUMMARY }
+    }
     if ($report.Contains('SqlStartupFailures') -and (
             $report.SqlStartupFailures -gt 0 -or
             $report.SqlStartupRecoveries -gt 0 -or
@@ -79,19 +111,19 @@ try {
     $lanes = if ($Lane -eq 'All') { @('Contract', 'Postgresql', 'Mssql', 'Kafka') } else { @($Lane) }
     if (@($lanes | Where-Object { $_ -ne 'Contract' }).Count -gt 0) {
         $required = @('CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE')
-        if ('Postgresql' -in $lanes -or 'Mssql' -in $lanes -or 'Kafka' -in $lanes) { $required += 'CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE' }
+        if ($Suite -ne 'ApiE2E' -and ('Postgresql' -in $lanes -or 'Mssql' -in $lanes -or 'Kafka' -in $lanes)) { $required += 'CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE' }
         if ('Kafka' -in $lanes) { $required += 'CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE' }
         if ('Postgresql' -in $lanes) {
             $required += 'CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE'
-            if ($Suite -in @('All', 'Admission', 'Lifecycle') -and $env:CDC_RUNBOOK_OWNED_STACK -ne '1') {
-                throw 'EnvironmentUnavailable: PostgreSQL Admission/Lifecycle requires CDC_RUNBOOK_OWNED_STACK=1 on an exclusively owned disposable local stack.'
+            if ($Suite -in @('All', 'Admission', 'Lifecycle', 'ApiE2E') -and $env:CDC_RUNBOOK_OWNED_STACK -ne '1') {
+                throw 'EnvironmentUnavailable: PostgreSQL Admission/Lifecycle/ApiE2E requires CDC_RUNBOOK_OWNED_STACK=1 on an exclusively owned disposable local stack.'
             }
             if ($Suite -in @('All', 'History')) { $required += 'ConnectionStrings__DatabaseConnection' }
         }
         if ('Mssql' -in $lanes) {
             $required += 'CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE'
-            if ($Suite -in @('All', 'Admission', 'Lifecycle') -and $env:CDC_RUNBOOK_OWNED_STACK -ne '1') {
-                throw 'EnvironmentUnavailable: Mssql Admission/Lifecycle requires CDC_RUNBOOK_OWNED_STACK=1 on an exclusively owned disposable local stack.'
+            if ($Suite -in @('All', 'Admission', 'Lifecycle', 'ApiE2E') -and $env:CDC_RUNBOOK_OWNED_STACK -ne '1') {
+                throw 'EnvironmentUnavailable: Mssql Admission/Lifecycle/ApiE2E requires CDC_RUNBOOK_OWNED_STACK=1 on an exclusively owned disposable local stack.'
             }
             if ($Suite -in @('All', 'History')) { $required += 'ConnectionStrings__MssqlAdmin' }
         }
@@ -132,14 +164,37 @@ try {
         if (-not $broker) { throw 'EnvironmentUnavailable: pinned Kafka image unavailable.' }
         & docker info --format '{{.ServerVersion}}' *> (Join-Path $raw 'docker.log')
         if ($LASTEXITCODE -ne 0) { throw 'EnvironmentUnavailable: Docker is unavailable.' }
+        $runtimeInputs = [ordered]@{
+            PowerShell = $PSVersionTable.PSVersion.ToString()
+            Images = @()
+        }
         $images = @($broker) + @($required | Where-Object { $_ -like '*_IMAGE' } | ForEach-Object { [Environment]::GetEnvironmentVariable($_) })
         foreach ($image in $images | Select-Object -Unique) {
             if ($PullImages) {
                 Invoke-CdcQualificationImagePull -Image $image -RawDirectory $raw -Destination $destination
             }
-            & docker image inspect $image --format '{{.Id}}' *> (Join-Path $raw 'inspect.log')
+            $imageId = (& docker image inspect $image --format '{{.Id}}' 2> (Join-Path $raw 'inspect.log')) -join ''
             if ($LASTEXITCODE -ne 0) { throw 'EnvironmentUnavailable: required image is unavailable locally.' }
+            if ($imageId -cmatch '^sha256:[a-f0-9]{64}$') {
+                $identity = [ordered]@{ ImageId = $imageId }
+                if ($image -cmatch '@(sha256:[a-f0-9]{64})$') { $identity.RequestedDigest = $Matches[1] }
+                $runtimeInputs.Images += $identity
+            }
+            $runtimeInputs | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $destination 'runtime-inputs.json')
         }
+        foreach ($tool in @('dotnet', 'docker', 'compose')) {
+            $version = switch ($tool) {
+                dotnet { (& dotnet --version) -join '' }
+                docker { (& docker info --format '{{.ServerVersion}}') -join '' }
+                compose { (& docker compose version --short) -join '' }
+            }
+            if ($LASTEXITCODE -eq 0 -and $version -cmatch '^v?[0-9]+(?:[.][0-9]+){1,3}(?:[-+][a-zA-Z0-9.-]+)?$') { $runtimeInputs[$tool] = $version }
+        }
+        foreach ($name in @('ImageOS', 'ImageVersion')) {
+            $value = [Environment]::GetEnvironmentVariable($name)
+            if ($value -cmatch '^(?:ubuntu[0-9]+|[0-9]+[.][0-9]+[.][0-9]+)$') { $runtimeInputs[$name] = $value }
+        }
+        $runtimeInputs | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $destination 'runtime-inputs.json')
         $qualified | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $destination 'qualified-image.json')
     }
     $backend = 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj'
@@ -157,11 +212,11 @@ try {
             $config.Output.Verbosity = 'Detailed'
             & { $script:qualificationPesterResult = Invoke-Pester -Configuration $config } *> (Join-Path $raw 'pester-private.log')
             $result = $script:qualificationPesterResult
-            $documentation = Get-CdcRunbookPesterReport -Tests @($result.Tests)
+            $documentation = Get-CdcRunbookPesterReport -Tests @($result.Tests) -PesterResult $result
             $reports.Add($documentation)
             $wrapperDirectory = New-Item -ItemType Directory (Join-Path $raw 'wrappers')
-            $documentation | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $wrapperDirectory 'cdc-runbook-wrappers.json')
-            Export-CdcQualificationEvidence -RawDirectory $wrapperDirectory -Destination (Join-Path $destination 'wrappers')
+            Export-CdcRunbookReport -Report $documentation -RawDirectory $wrapperDirectory -Destination (Join-Path $destination 'wrappers') -FileName 'cdc-runbook-wrappers.json'
+            & $persistReports
 
             $success = $result.TotalCount -gt 0 -and $result.PassedCount -eq $result.TotalCount -and
                 $result.FailedContainersCount -eq 0 -and $result.FailedBlocksCount -eq 0
@@ -179,6 +234,11 @@ try {
             $filters = Get-CdcQualificationProviderSuite -Provider $selected
             foreach ($phase in $filters.Keys) {
                 if ($Suite -ne 'All' -and $Suite -ne $phase) { continue }
+                if ($phase -eq 'ApiE2E') {
+                    Invoke-CdcApiQualification -Repo $repo -RawDirectory $raw -Destination $destination -Configuration $Configuration `
+                        -Report $apiReports[$selected] -Persist $persistReports
+                    continue
+                }
                 $project = $backend
                 $name = "$selected-$phase"
                 if ($phase -notin @('History', 'Telemetry', 'MessageContract')) {
@@ -223,11 +283,11 @@ try {
                     $liveConfig.Run.PassThru = $true
                     $liveConfig.Output.Verbosity = 'Detailed'
                     & { $script:liveRunbookResult = Invoke-Pester -Configuration $liveConfig } *> (Join-Path $liveDirectory 'pester-private.log')
-                    $liveReport = Get-CdcRunbookPesterReport -Tests @($script:liveRunbookResult.Tests) -QualificationProfile "$selected$procedure"
+                    $liveReport = Get-CdcRunbookPesterReport -Tests @($script:liveRunbookResult.Tests) -QualificationProfile "$selected$procedure" -PesterResult $script:liveRunbookResult -ProgressPath (Join-Path $liveDirectory 'runbook-progress.json')
                     if ($script:liveRunbookResult.FailedCount -gt 0 -or $script:liveRunbookResult.FailedBlocksCount -gt 0) { $liveReport.Status = 'Failed' }
                     $reports.Add($liveReport)
-                    $liveReport | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $liveDirectory "cdc-runbook-live-$($procedure.ToLowerInvariant()).json")
-                    Export-CdcQualificationEvidence -RawDirectory $liveDirectory -Destination (Join-Path $destination "$selected-runbook-$($procedure.ToLowerInvariant())")
+                    Export-CdcRunbookReport -Report $liveReport -RawDirectory $liveDirectory -Destination (Join-Path $destination "$selected-runbook-$($procedure.ToLowerInvariant())") -FileName "cdc-runbook-live-$($procedure.ToLowerInvariant()).json"
+                    & $persistReports
                     Write-Output "$selected-runbook-$($procedure.ToLowerInvariant()): $($liveReport.Status), passed=$($liveReport.Passed), required=$($liveReport.Total)"
                 }
                 if ($phase -eq 'History') {
@@ -251,12 +311,26 @@ catch {
     Write-Output "CDC qualification: $status. $reason"
 }
 finally {
-    $reports | ConvertTo-Json -Depth 10 -AsArray | Set-Content (Join-Path $destination 'qualification.json')
-    foreach ($name in $savedEnvironment.Keys) {
-        if ($null -eq $savedEnvironment[$name]) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
-        else { [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name]) }
+    foreach ($api in $apiReports.Values) {
+        if ($api.Status -eq 'Running') {
+            $api.Status = 'EnvironmentUnavailable'; $api.Reason = 'PrerequisiteFailed'; $api.Stages.Setup = 'Failed'
+            try {
+                $api.Stages.Export = 'Passed'
+                $unstarted = Join-Path $raw $api.Name
+                $null = New-Item -ItemType Directory -Path $unstarted -Force
+                Export-CdcQualificationEvidence -RawDirectory $unstarted -Destination (Join-Path $destination $api.Name) -ApiRunner $api
+            } catch { $api.Stages.Export = 'Failed'; $api.ExportFailure = 'ExportFailed' }
+        }
     }
-    Set-Location $oldLocation
-    Write-Output "Private local diagnostic logs: $raw (never upload this directory)."
+    try { & $persistReports }
+    finally {
+        foreach ($name in $savedEnvironment.Keys) {
+            if ($null -eq $savedEnvironment[$name]) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
+            else { [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name]) }
+        }
+        Set-Location $oldLocation
+        Write-Output "Qualification results: $destination"
+        Write-Output "Private local diagnostic logs: $raw (never upload this directory)."
+    }
 }
 if ($reports.Count -eq 0 -or @($reports | Where-Object Status -ne 'Passed').Count -gt 0) { exit 1 }

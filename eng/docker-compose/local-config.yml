@@ -68,8 +68,10 @@ services:
       JobSettings__FinishedJobRetention: ${DMS_CONFIG_JOBS_FINISHED_JOB_RETENTION:-7.00:00:00}
       JobSettings__RetentionInterval: ${DMS_CONFIG_JOBS_RETENTION_INTERVAL:-01:00:00}
       JobSettings__RetentionBatchSize: ${DMS_CONFIG_JOBS_RETENTION_BATCH_SIZE:-500}
+      SecretsSettings__CacheExpirationSeconds: ${DMS_CONFIG_SECRETS_CACHE_EXPIRATION_SECONDS:-300}
+      SecretsSettings__ResolveTimeoutSeconds: ${DMS_CONFIG_SECRETS_RESOLVE_TIMEOUT_SECONDS:-10}
       IdentitySettings__EncryptionKey: ${DMS_CONFIG_IDENTITY_ENCRYPTION_KEY:-}
-      IdentitySettings__HashingIterations: ${DMS_CONFIG_IDENTITY_HASHING_ITERATIONS:-210000}
+      IdentitySettings__ClientSecretHashingIterations: ${DMS_CONFIG_IDENTITY_HASHING_ITERATIONS:-210000}
       IdentitySettings__TokenCleanupEnabled: ${DMS_CONFIG_IDENTITY_TOKEN_CLEANUP_ENABLED:-true}
       IdentitySettings__TokenCleanupIntervalMinutes: ${DMS_CONFIG_IDENTITY_TOKEN_CLEANUP_INTERVAL_MINUTES:-30}
       IdentitySettings__BearerTokenPerClientLimit: ${DMS_CONFIG_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT:-5}

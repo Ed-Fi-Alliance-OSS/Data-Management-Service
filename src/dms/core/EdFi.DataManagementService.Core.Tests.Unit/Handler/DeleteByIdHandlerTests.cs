@@ -17,8 +17,10 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Polly;
@@ -947,6 +949,134 @@ actual: {_requestInfo.FrontendResponse.Body}
                 .Equal("uri://sample-a.org", "uri://sample-b.org");
             relationalRequest.AuthorizationContext.CreatorOwnershipTokenId.Should().Be(303);
             relationalRequest.AuthorizationContext.OwnershipTokenIds.Should().Equal(202, 404);
+        }
+    }
+
+    /// <summary>
+    /// DMS-1576: If-None-Match is a GET-only conditional-read validator; DELETE (and POST, PUT) ignore
+    /// it. These fixtures prove the shared Debug-log helper is wired in (fires once with the right method
+    /// when the header is present, not at all when absent) and that no write precondition reaches the
+    /// repository. The helper's own behavior is covered by <see cref="UtilityTests" />.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Delete_That_Carries_An_If_None_Match_Header : DeleteByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public IDeleteRequest? CapturedRequest { get; private set; }
+
+            public override Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
+            {
+                CapturedRequest = deleteRequest;
+                return Task.FromResult<DeleteResult>(new DeleteSuccess());
+            }
+        }
+
+        private const string SentinelTag = "\"sentinel-7f3a\"";
+        private const string RequestTraceId = "if-none-match-trace";
+
+        private RecordingLogger _logger = new();
+        private readonly Repository _repository = new();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(RequestTraceId);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.Method = RequestMethod.DELETE;
+            _requestInfo.FrontendRequest = _requestInfo.FrontendRequest with
+            {
+                Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["If-None-Match"] = SentinelTag,
+                },
+            };
+            _requestInfo.ProjectSchema = new ProjectSchema(
+                new JsonObject
+                {
+                    ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
+                },
+                NullLogger.Instance
+            );
+            _requestInfo.ResourceSchema = GetResourceSchema();
+
+            _logger = new RecordingLogger();
+
+            var serviceProvider = A.Fake<IServiceProvider>();
+            A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository))).Returns(_repository);
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await new DeleteByIdHandler(_logger, ResiliencePipeline.Empty).Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_logs_once_at_debug_that_if_none_match_was_ignored()
+        {
+            _logger
+                .Records.Where(record =>
+                    record.Level == LogLevel.Debug && record.Message.Contains("If-None-Match")
+                )
+                .Should()
+                .ContainSingle();
+        }
+
+        [Test]
+        public void It_logs_the_method_as_a_structured_property()
+        {
+            var record = _logger.Records.Single(record =>
+                record.Level == LogLevel.Debug && record.Message.Contains("If-None-Match")
+            );
+
+            record.Properties["Method"].Should().Be("DELETE");
+        }
+
+        [Test]
+        public void It_passes_no_write_precondition_to_the_repository()
+        {
+            _repository.CapturedRequest!.WritePrecondition.Should().BeOfType<WritePrecondition.None>();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Delete_Without_An_If_None_Match_Header : DeleteByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
+            {
+                return Task.FromResult<DeleteResult>(new DeleteSuccess());
+            }
+        }
+
+        private readonly RecordingLogger _logger = new();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.Method = RequestMethod.DELETE;
+            _requestInfo.ProjectSchema = new ProjectSchema(
+                new JsonObject
+                {
+                    ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
+                },
+                NullLogger.Instance
+            );
+            _requestInfo.ResourceSchema = GetResourceSchema();
+
+            var serviceProvider = A.Fake<IServiceProvider>();
+            A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository)))
+                .Returns(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await new DeleteByIdHandler(_logger, ResiliencePipeline.Empty).Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_does_not_log_that_if_none_match_was_ignored()
+        {
+            _logger.Records.Should().NotContain(record => record.Message.Contains("If-None-Match"));
         }
     }
 }

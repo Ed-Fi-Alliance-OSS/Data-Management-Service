@@ -30,7 +30,12 @@ public class LoggingMiddleware
     {
         var stopwatch = Stopwatch.StartNew();
         var sanitizedMethod = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.Method);
-        var sanitizedPath = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.Path.Value);
+        // Redact an identity get-by-id or results-poll identifier before sanitizing, so the
+        // scope Path property and every rendered message template below carry the redacted value,
+        // never the real identifier. Every other path - including the other three identity routes,
+        // which carry no identifier - passes through unchanged.
+        var redactedPath = RedactPath(context.Request.Path);
+        var sanitizedPath = LoggingSanitizer.SanitizeInternalValueForLogging(redactedPath);
         var pathBase = LoggingSanitizer.SanitizeInternalValueForLogging(context.Request.PathBase.Value);
         // Normalized at the ingestion boundary by AspNetCoreFrontend, so no second,
         // differently-shaped normalization happens here; Method and Path keep the stricter
@@ -245,4 +250,19 @@ public class LoggingMiddleware
 
     private static int GetFailureStatusCode(HttpContext context) =>
         context.Response.HasStarted ? context.Response.StatusCode : StatusCodes.Status500InternalServerError;
+
+    /// <summary>
+    /// Redacts an identity get-by-id or results-poll identifier from <paramref name="path"/>.
+    /// </summary>
+    /// <remarks>
+    /// Matches the identity route shape whatever its number of leading tenant and route-qualifier
+    /// segments, so a path whose prefix does not fit this host's configuration (which routing sends to
+    /// the 404 fallback) is redacted as well, and so is every path on a host whose
+    /// <c>AppSettings</c> failed validation.
+    /// </remarks>
+    private static string? RedactPath(PathString path)
+    {
+        string? value = path.Value;
+        return string.IsNullOrEmpty(value) ? value : IdentityRoutePathRedactor.RedactWithAnyPrefix(value);
+    }
 }

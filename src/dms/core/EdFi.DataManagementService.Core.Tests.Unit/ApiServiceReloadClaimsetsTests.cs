@@ -70,6 +70,7 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
             configServiceClaimSetProvider,
             memoryCache,
             cacheSettings,
+            TimeProvider.System,
             NullLogger<CachedClaimSetProvider>.Instance
         );
 
@@ -91,7 +92,8 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
             cachedClaimSetProvider, // Use as CachedClaimSetProvider
             fakeResourceDependencyGraphMLFactory,
             A.Fake<IProfileService>(),
-            new CircuitBreakerSettings()
+            new CircuitBreakerSettings(),
+            TestHelper.CreateNoOpIdentityTenantSnapshot()
         );
     }
 
@@ -104,7 +106,12 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
         public async Task Setup()
         {
             _fakeConfigServiceClaimSetProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
-            A.CallTo(() => _fakeConfigServiceClaimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() =>
+                    _fakeConfigServiceClaimSetProvider.GetAllClaimSets(
+                        A<string?>.Ignored,
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(new List<ClaimSet> { new("TestClaimSet", []) });
 
             _apiService = CreateApiService(_fakeConfigServiceClaimSetProvider, true);
@@ -116,7 +123,9 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
         public void It_should_reload_claimsets_for_the_specified_tenant()
         {
             // Verify that GetAllClaimSets was called with the correct tenant parameter
-            A.CallTo(() => _fakeConfigServiceClaimSetProvider.GetAllClaimSets(TestTenant))
+            A.CallTo(() =>
+                    _fakeConfigServiceClaimSetProvider.GetAllClaimSets(TestTenant, A<CancellationToken>._)
+                )
                 .MustHaveHappenedOnceExactly();
         }
     }
@@ -128,7 +137,12 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
         public async Task Setup()
         {
             _fakeConfigServiceClaimSetProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
-            A.CallTo(() => _fakeConfigServiceClaimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() =>
+                    _fakeConfigServiceClaimSetProvider.GetAllClaimSets(
+                        A<string?>.Ignored,
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(new List<ClaimSet> { new("TestClaimSet", []) });
 
             _apiService = CreateApiService(_fakeConfigServiceClaimSetProvider, true);
@@ -140,7 +154,7 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
         public void It_should_reload_claimsets_with_null_tenant()
         {
             // Verify that GetAllClaimSets was called with null (single-tenant mode)
-            A.CallTo(() => _fakeConfigServiceClaimSetProvider.GetAllClaimSets(null))
+            A.CallTo(() => _fakeConfigServiceClaimSetProvider.GetAllClaimSets(null, A<CancellationToken>._))
                 .MustHaveHappenedOnceExactly();
         }
     }
@@ -155,7 +169,12 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
         public async Task Setup()
         {
             _fakeConfigServiceClaimSetProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
-            A.CallTo(() => _fakeConfigServiceClaimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() =>
+                    _fakeConfigServiceClaimSetProvider.GetAllClaimSets(
+                        A<string?>.Ignored,
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(new List<ClaimSet> { new("TestClaimSet", []) });
 
             _apiService = CreateApiService(_fakeConfigServiceClaimSetProvider, true);
@@ -167,9 +186,13 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
         [Test]
         public void It_should_reload_claimsets_for_each_tenant()
         {
-            A.CallTo(() => _fakeConfigServiceClaimSetProvider.GetAllClaimSets(TenantA))
+            A.CallTo(() =>
+                    _fakeConfigServiceClaimSetProvider.GetAllClaimSets(TenantA, A<CancellationToken>._)
+                )
                 .MustHaveHappenedOnceExactly();
-            A.CallTo(() => _fakeConfigServiceClaimSetProvider.GetAllClaimSets(TenantB))
+            A.CallTo(() =>
+                    _fakeConfigServiceClaimSetProvider.GetAllClaimSets(TenantB, A<CancellationToken>._)
+                )
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -177,7 +200,8 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
         public void It_should_not_reload_claimsets_for_default_tenant()
         {
             // Verify that GetAllClaimSets was not called with null (default tenant)
-            A.CallTo(() => _fakeConfigServiceClaimSetProvider.GetAllClaimSets(null)).MustNotHaveHappened();
+            A.CallTo(() => _fakeConfigServiceClaimSetProvider.GetAllClaimSets(null, A<CancellationToken>._))
+                .MustNotHaveHappened();
         }
     }
 }
@@ -225,6 +249,7 @@ public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
             configServiceClaimSetProvider,
             memoryCache,
             cacheSettings,
+            TimeProvider.System,
             NullLogger<CachedClaimSetProvider>.Instance
         );
 
@@ -246,7 +271,8 @@ public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
             cachedClaimSetProvider,
             fakeResourceDependencyGraphMLFactory,
             A.Fake<IProfileService>(),
-            new CircuitBreakerSettings()
+            new CircuitBreakerSettings(),
+            TestHelper.CreateNoOpIdentityTenantSnapshot()
         );
     }
 
@@ -269,7 +295,9 @@ public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
     [Test]
     public void It_should_not_reload_claimsets()
     {
-        A.CallTo(() => _fakeConfigServiceClaimSetProvider.GetAllClaimSets(A<string?>._))
+        A.CallTo(() =>
+                _fakeConfigServiceClaimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._)
+            )
             .MustNotHaveHappened();
     }
 }

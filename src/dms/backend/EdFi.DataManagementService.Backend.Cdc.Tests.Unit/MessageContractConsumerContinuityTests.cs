@@ -29,6 +29,7 @@ internal static class MessageContractConsumerContinuityData
 [TestFixture]
 [Category("CdcMessageContract")]
 [Property("ScenarioId", "MC-CONSUMER-CONTINUITY-DURABILITY")]
+[Property("CdcInvariant", "CDC-INV-13")]
 public class Given_MessageContractConsumerContinuity_renewal_durability
 {
     private MessageContractConsumerBootstrap _consumer = null!;
@@ -153,6 +154,7 @@ public class Given_MessageContractConsumerContinuity_renewal_durability
 [TestFixture]
 [Category("CdcMessageContract")]
 [Property("ScenarioId", "MC-CONSUMER-CONTINUITY-IDLE")]
+[Property("CdcInvariant", "CDC-INV-13")]
 public class Given_MessageContractConsumerContinuity_idle_renewal
 {
     private MessageContractConsumerBootstrap _consumer = null!;
@@ -252,6 +254,7 @@ public class Given_MessageContractConsumerContinuity_idle_renewal
 [TestFixture]
 [Category("CdcMessageContract")]
 [Property("ScenarioId", "MC-CONSUMER-CONTINUITY-DEADLINE")]
+[Property("CdcInvariant", "CDC-INV-13")]
 public class Given_MessageContractConsumerContinuity_deadline
 {
     private MessageContractConsumerBootstrap _consumer = null!;
@@ -376,6 +379,7 @@ public enum MessageContractContinuityFault
 [TestFixture(MessageContractContinuityFault.DuplicatePartition)]
 [Category("CdcMessageContract")]
 [Property("ScenarioId", "MC-CONSUMER-CONTINUITY-RECOVERY")]
+[Property("CdcInvariant", "CDC-INV-13")]
 public class Given_MessageContractConsumerContinuity_fault_recovery(MessageContractContinuityFault fault)
 {
     private MessageContractConsumerBootstrap _consumer = null!;
@@ -530,6 +534,7 @@ public class Given_MessageContractConsumerContinuity_fault_recovery(MessageContr
 [TestFixture]
 [Category("CdcMessageContract")]
 [Property("ScenarioId", "MC-CONSUMER-CONTINUITY-DURABLE-ENDS")]
+[Property("CdcInvariant", "CDC-INV-13")]
 public class Given_MessageContractConsumerContinuity_renewal_after_incremental_progress
 {
     private MessageContractConsumerBootstrap _consumer = null!;
@@ -631,6 +636,7 @@ public class Given_MessageContractConsumerContinuity_renewal_after_incremental_p
 [TestFixture]
 [Category("CdcMessageContract")]
 [Property("ScenarioId", "MC-CONSUMER-CONTINUITY-OBSERVATIONS")]
+[Property("CdcInvariant", "CDC-INV-13")]
 public class Given_MessageContractConsumerContinuity_uncertain_barrier_observations
 {
     private MessageContractConsumerBootstrap _consumer = null!;

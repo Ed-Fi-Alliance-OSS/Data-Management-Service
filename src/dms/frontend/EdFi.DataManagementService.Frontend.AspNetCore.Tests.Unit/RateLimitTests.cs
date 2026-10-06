@@ -340,3 +340,46 @@ internal static class RateLimitRejectionTestContext
         }
     }
 }
+
+/// <summary>
+/// The global rate limiter owns a replenishment timer that captures the execution context it was
+/// created in, so a limiter that outlives its host keeps that whole host reachable. Disposing the
+/// host must dispose the limiter.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+public class Given_A_Host_That_Has_Been_Disposed
+{
+    private PartitionedRateLimiter<HttpContext> _globalLimiter = default!;
+
+    [OneTimeSetUp]
+    public async Task Setup()
+    {
+        var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("TestRateLimit");
+            builder.ConfigureServices(collection => TestMockHelper.AddEssentialMocks(collection));
+        });
+        using HttpClient client = factory.CreateClient();
+        using HttpResponseMessage response = await client.GetAsync("/health");
+
+        _globalLimiter = factory.Services.GetRequiredService<PartitionedRateLimiter<HttpContext>>();
+
+        await factory.DisposeAsync();
+    }
+
+    [OneTimeTearDown]
+    public void Teardown()
+    {
+        // Already disposed by the host; disposing again is a no-op that satisfies the analyzer.
+        _globalLimiter.Dispose();
+    }
+
+    [Test]
+    public void It_disposes_the_global_rate_limiter()
+    {
+        Action acquire = () => _globalLimiter.AttemptAcquire(new DefaultHttpContext());
+
+        acquire.Should().Throw<ObjectDisposedException>();
+    }
+}

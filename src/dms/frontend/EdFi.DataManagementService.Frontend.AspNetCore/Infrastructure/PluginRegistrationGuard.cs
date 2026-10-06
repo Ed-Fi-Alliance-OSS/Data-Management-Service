@@ -36,9 +36,9 @@ internal sealed class PluginRegistrationGuard(
     ILogger<PluginRegistrationGuard> logger
 ) : IDmsStartupTask
 {
-    // Inside the 200-299 window Program.cs executes, and above the custom validator guard at 250, so
-    // these checks read a collection that audit has already accepted. Lowering it below 250 was
-    // rejected for that reason.
+    // Inside the 250-299 window the ValidatePluginRegistrations phase executes, and above the custom
+    // validator guard at 250, so these checks read a collection that audit has already accepted.
+    // Lowering it below 250 was rejected for that reason.
     public int Order => 260;
 
     public string Name => "Validate Plugin Service Registrations";

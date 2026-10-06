@@ -1924,7 +1924,9 @@ public class Given_a_configuration_contributor_whose_declared_contributions_did_
                     record.Additions,
                     record.Removals,
                     record.ReplacedServiceTypes,
-                    contributedConfiguration: record.PluginName == PluginFixtures.Contributor
+                    configurationSourceTypes: record.PluginName == PluginFixtures.Contributor
+                        ? ["Acme.Test.ContributedSource"]
+                        : []
                 )),
             ],
             _run.Input.DescriptorsAfterContribution

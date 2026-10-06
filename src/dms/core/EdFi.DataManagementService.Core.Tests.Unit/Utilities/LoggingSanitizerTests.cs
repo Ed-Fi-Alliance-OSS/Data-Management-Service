@@ -502,4 +502,58 @@ public class LoggingSanitizerTests
             LoggingSanitizer.SanitizeForConsole("\n\r\n").Should().Be("\n\r\n");
         }
     }
+
+    [TestFixture]
+    public class Given_Bounded_Free_Text_Within_The_Cap : LoggingSanitizerTests
+    {
+        [Test]
+        public void It_returns_the_sanitized_value_without_a_truncation_suffix()
+        {
+            LoggingSanitizer.SanitizeFreeTextForLogging("abc\r\ndef", 6).Should().Be("abcdef");
+        }
+    }
+
+    [TestFixture]
+    public class Given_Bounded_Free_Text_Longer_Than_The_Cap : LoggingSanitizerTests
+    {
+        [Test]
+        public void It_keeps_the_cap_and_appends_the_truncation_suffix()
+        {
+            LoggingSanitizer
+                .SanitizeFreeTextForLogging(new string('a', 10), 4)
+                .Should()
+                .Be("aaaa" + LoggingSanitizer.TruncationSuffix);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Bounded_Free_Text_Whose_Cap_Would_Split_A_Surrogate_Pair : LoggingSanitizerTests
+    {
+        [Test]
+        public void It_drops_the_whole_pair()
+        {
+            // Three ASCII characters put the emoji's high surrogate at index 3, the last kept unit.
+            LoggingSanitizer
+                .SanitizeFreeTextForLogging("aaa\U0001F600bbb", 4)
+                .Should()
+                .Be("aaa" + LoggingSanitizer.TruncationSuffix);
+        }
+    }
+
+    /// <summary>
+    /// Pins sanitize-then-truncate: truncating first would keep only the padding, which the
+    /// sanitizer then removes, leaving just the suffix.
+    /// </summary>
+    [TestFixture]
+    public class Given_Bounded_Free_Text_Padded_With_Control_Characters_Beyond_The_Cap : LoggingSanitizerTests
+    {
+        [Test]
+        public void It_keeps_the_content_after_the_padding()
+        {
+            LoggingSanitizer
+                .SanitizeFreeTextForLogging(new string('\u0001', 30) + "content", 10)
+                .Should()
+                .Be("content");
+        }
+    }
 }

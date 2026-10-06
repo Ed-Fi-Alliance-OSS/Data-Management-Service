@@ -540,14 +540,16 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
 
         private static VendorInsertCommand VendorCommand(
             string company,
-            string contactName = "Tenant Tester"
+            string contactName = "Tenant Tester",
+            string contactEmailAddress = "tenant@test.com",
+            string namespacePrefixes = "uri://tenant-test.example"
         ) =>
             new()
             {
                 Company = company,
                 ContactName = contactName,
-                ContactEmailAddress = "tenant@test.com",
-                NamespacePrefixes = "uri://tenant-test.example",
+                ContactEmailAddress = contactEmailAddress,
+                NamespacePrefixes = namespacePrefixes,
             };
 
         private static async Task<VendorInsertResult.Success> InsertVendor(
@@ -584,6 +586,25 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
                 return [.. ((VendorQueryResult.Success)result).VendorResponses.Select(vendor => vendor.Id)];
             }
 
+            /// <summary>
+            /// A repeat of <paramref name="company"/> whose every other field differs from
+            /// <see cref="VendorCommand"/>'s defaults, so an update of the existing row would be visible.
+            /// </summary>
+            private static VendorInsertCommand ChangedRepeatCommand(string company) =>
+                VendorCommand(
+                    company,
+                    contactName: "Updated Contact",
+                    contactEmailAddress: "updated@test.com",
+                    namespacePrefixes: "uri://updated.example"
+                );
+
+            private static void ShouldBeUnchanged(VendorResponse vendor)
+            {
+                vendor.ContactName.Should().Be("Tenant Tester");
+                vendor.ContactEmailAddress.Should().Be("tenant@test.com");
+                vendor.NamespacePrefixes.Should().Be("uri://tenant-test.example");
+            }
+
             [SetUp]
             public async Task Setup()
             {
@@ -597,8 +618,6 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
             [Test]
             public void It_should_create_a_new_vendor_in_each_tenant()
             {
-                _tenantAInsert.IsNewVendor.Should().BeTrue();
-                _tenantBInsert.IsNewVendor.Should().BeTrue();
                 _tenantBInsert.Id.Should().NotBe(_tenantAInsert.Id);
             }
 
@@ -618,37 +637,28 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
                 (await GetVendor(_tenantARepository, _tenantAInsert.Id)).Company.Should().Be(SharedCompany);
             }
 
-            // Reject-on-duplicate for POST belongs to DMS-1341; until it lands, a repeat within one
-            // tenant keeps updating the existing vendor.
             [Test]
-            public async Task It_should_still_upsert_a_repeat_within_a_tenant()
+            public async Task It_should_reject_a_repeat_within_a_tenant()
             {
-                var repeat = await InsertVendor(
-                    _tenantARepository,
-                    VendorCommand(SharedCompany, contactName: "Updated Contact")
-                );
+                var repeat = await _tenantARepository.InsertVendor(ChangedRepeatCommand(SharedCompany));
 
-                repeat.IsNewVendor.Should().BeFalse();
-                repeat.Id.Should().Be(_tenantAInsert.Id);
-                (await GetVendor(_tenantARepository, _tenantAInsert.Id))
-                    .ContactName.Should()
-                    .Be("Updated Contact");
-                (await GetVendor(_tenantBRepository, _tenantBInsert.Id))
-                    .ContactName.Should()
-                    .Be("Tenant Tester");
+                repeat.Should().BeOfType<VendorInsertResult.FailureDuplicateCompanyName>();
+                ShouldBeUnchanged(await GetVendor(_tenantARepository, _tenantAInsert.Id));
+                (await QueryVendorIds(_tenantARepository)).Should().Equal(_tenantAInsert.Id);
+                ShouldBeUnchanged(await GetVendor(_tenantBRepository, _tenantBInsert.Id));
             }
 
             [Test]
-            public async Task It_should_still_upsert_a_repeat_in_single_tenant_mode()
+            public async Task It_should_reject_a_repeat_in_single_tenant_mode()
             {
-                var first = await InsertVendor(_repository, VendorCommand("DMS1530 Single Tenant Company"));
-                var repeat = await InsertVendor(
-                    _repository,
-                    VendorCommand("DMS1530 Single Tenant Company", contactName: "Updated Contact")
-                );
+                const string Company = "DMS1341 Single Tenant Company";
+                var first = await InsertVendor(_repository, VendorCommand(Company));
 
-                repeat.IsNewVendor.Should().BeFalse();
-                repeat.Id.Should().Be(first.Id);
+                var repeat = await _repository.InsertVendor(ChangedRepeatCommand(Company));
+
+                repeat.Should().BeOfType<VendorInsertResult.FailureDuplicateCompanyName>();
+                ShouldBeUnchanged(await GetVendor(_repository, first.Id));
+                (await QueryVendorIds(_repository)).Should().Equal(first.Id);
             }
 
             [Test]
@@ -656,7 +666,6 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
             {
                 var singleTenant = await InsertVendor(_repository, VendorCommand(SharedCompany));
 
-                singleTenant.IsNewVendor.Should().BeTrue();
                 singleTenant.Id.Should().NotBe(_tenantAInsert.Id).And.NotBe(_tenantBInsert.Id);
             }
         }

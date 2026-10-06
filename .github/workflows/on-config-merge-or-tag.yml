@@ -12,6 +12,10 @@ on:
       - "v*.*.*"
     paths:
       - "src/config/**"
+      # The plugin contract tree. The Configuration Service frontend references it and the CMS
+      # image build stage copies it, so a plugins-only merge must produce a CMS prerelease like any
+      # other.
+      - "src/plugins/**"
 
 env:
   API_URL: https://api.github.com/repos/${{ github.repository }}

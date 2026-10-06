@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Text;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
@@ -386,6 +387,32 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
                 }
 
                 return Task.FromResult<ApplicationUpdateResult>(new ApplicationUpdateResult.Success());
+            });
+
+        A.CallTo(() => _apiClientRepository.QueryApiClient(A<ApiClientQuery>.Ignored))
+            .ReturnsLazily(call =>
+            {
+                int? applicationId = call.GetArgument<ApiClientQuery>(0)!.ApplicationId;
+                lock (_stateLock)
+                {
+                    return Task.FromResult<ApiClientQueryResult>(
+                        new ApiClientQueryResult.Success(
+                            _clients
+                                .Where(client => client.Value.ApplicationId == applicationId)
+                                .Select(client => new ApiClientResponse
+                                {
+                                    Id = client.Key,
+                                    ApplicationId = client.Value.ApplicationId,
+                                    ClientId = client.Value.ClientId,
+                                    ClientUuid = client.Value.ClientUuid,
+                                    Name = $"Client {client.Key}",
+                                    IsApproved = true,
+                                    DataStoreIds = [1],
+                                })
+                                .ToList()
+                        )
+                    );
+                }
             });
 
         A.CallTo(() => _apiClientRepository.GetApiClientById(A<int>.Ignored))

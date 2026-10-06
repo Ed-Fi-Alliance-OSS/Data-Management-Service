@@ -641,3 +641,89 @@ Feature: DataStores endpoints
                         "dataStoreDerivatives": []
                     }
                   """
+
+        # Data store names are unique within a tenant, on POST and on a PUT rename alike.
+        @DMS-1341 @MssqlRepresentative
+        Scenario: 26 Verify a duplicate dataStore name is rejected on POST and PUT
+             When a POST request is made to "/v3/dataStores" with
+                  """
+                    {
+                        "dataStoreType": "Production",
+                        "name": "Unique Store {scenarioRunId}",
+                        "connectionString": "Server=localhost;Database=UniqueDb;"
+                    }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/dataStores" with
+                  """
+                    {
+                        "dataStoreType": "Development",
+                        "name": "Unique Store {scenarioRunId}",
+                        "connectionString": "Server=localhost;Database=RepeatDb;"
+                    }
+                  """
+             Then it should respond with 400
+              And the response header "location" is not present
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "validationErrors": {
+                          "Name": [
+                              "A data store with this name already exists."
+                          ]
+                      },
+                      "errors": []
+                  }
+                  """
+             When a POST request is made to "/v3/dataStores" with
+                  """
+                    {
+                        "dataStoreType": "Production",
+                        "name": "Other Store {scenarioRunId}",
+                        "connectionString": "Server=localhost;Database=OtherDb;"
+                    }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "otherDataStoreId"
+             When a PUT request is made to "/v3/dataStores/{otherDataStoreId}" with
+                  """
+                    {
+                        "id": {otherDataStoreId},
+                        "dataStoreType": "Production",
+                        "name": "Unique Store {scenarioRunId}",
+                        "connectionString": "Server=localhost;Database=OtherDb;"
+                    }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "validationErrors": {
+                          "Name": [
+                              "A data store with this name already exists."
+                          ]
+                      },
+                      "errors": []
+                  }
+                  """
+             When a GET request is made to "/v3/dataStores/{otherDataStoreId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                      {
+                          "id": {otherDataStoreId},
+                          "dataStoreType": "Production",
+                          "name": "Other Store {scenarioRunId}",
+                          "connectionString": "{ignore}",
+                          "dataStoreContexts": [],
+                          "dataStoreDerivatives": []
+                      }
+                  """

@@ -85,7 +85,9 @@ public sealed record IdentityAsyncResult
     /// <summary>
     /// The failures reported for an <see cref="IdentityResultStatus.InvalidProperties"/> result.
     /// DMS projects entries only for that status; entries returned alongside any other status are
-    /// ignored. Defaults to an empty list.
+    /// ignored. Defaults to an empty list. An <see cref="IdentityResultStatus.InvalidProperties"/>
+    /// result must carry at least one error; DMS treats an empty list as a provider contract
+    /// violation.
     /// </summary>
     public IReadOnlyList<IdentityError> Errors { get; init; } = [];
 }

@@ -10,6 +10,7 @@
         <PackageReference Include="FakeItEasy" />
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+        <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
         <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
         <PackageReference Include="Microsoft.IdentityModel.Protocols" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" />
@@ -24,4 +25,5 @@
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DmsConfigurationService.Frontend.AspNetCore\EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj" />
     </ItemGroup>
+    <Import Project="PluginCmsFixtures.targets" />
 </Project>

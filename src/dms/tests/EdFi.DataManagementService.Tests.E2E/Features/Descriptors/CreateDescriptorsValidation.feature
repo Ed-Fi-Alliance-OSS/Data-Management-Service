@@ -517,7 +517,7 @@ Feature: Create a Descriptor
                   """
 
         @e2e-ci-shard-2
-        Scenario: 19 Use If-None-Match for descriptor conditional GET and guarded create
+        Scenario: 19 Use If-None-Match for descriptor conditional GET, and ignore it on write
              When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with header "If-None-Match" value "*"
                   """
                   {
@@ -540,4 +540,14 @@ Feature: Create a Descriptor
                     "shortDescription": "Conditional Descriptor"
                   }
                   """
-             Then it should respond with 412
+             Then it should respond with 200
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{id}",
+                    "codeValue": "Conditional Descriptor",
+                    "description": "Conditional Descriptor Updated",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Conditional Descriptor"
+                  }
+                  """

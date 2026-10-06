@@ -617,27 +617,132 @@ public class ConfigurationTests
         }
     }
 
+    private static AppSettings SettingsWithRouteQualifierSegments(string routeQualifierSegments) =>
+        new()
+        {
+            AuthenticationService = "http://localhost:5126/connect/token",
+            Datastore = "postgresql",
+            CorrelationIdHeader = "correlationid",
+            RouteQualifierSegments = routeQualifierSegments,
+        };
+
     /// <summary>
-    /// Regression coverage for the ConfigureEndpoints failure catch. Duplicate route qualifier
-    /// segments survive AppSettingsValidator and reach CoreEndpointModule.BuildRoutePattern
-    /// un-deduplicated, producing "/{districtId}/{districtId}/data/{**dmsPath}", which makes
-    /// endpoint mapping throw. Before the catch existed the status file was stranded at Starting
-    /// with no ErrorType or ErrorMessage.
-    /// The trigger works only because <c>AppSettingsValidator</c> does not validate
-    /// <c>RouteQualifierSegments</c> at all - it checks AuthenticationService, Datastore,
-    /// MaxRequestBodySizeMegabytes, and CorrelationIdMaxLength. Adding a duplicate or format check there
-    /// would intercept "districtId,districtId" as an <see cref="OptionsValidationException"/>
-    /// before endpoint mapping runs, and this test would start failing for a reason that has
-    /// nothing to do with the catch it guards. If that happens, replace the trigger rather than
-    /// deleting or weakening the assertions: this fixture is the only coverage for the
-    /// endpoint-mapping catch in <c>Program.cs</c>, so a dropped assertion takes that route to
-    /// zero. A verified replacement is the single segment "dmsPath", which yields
-    /// "/{dmsPath}/data/{**dmsPath}" - it collides with the catch-all parameter name hardcoded in
-    /// BuildRoutePattern rather than with another configured segment, so a within-list duplicate
-    /// or format check does not intercept it.
+    /// A configured route-qualifier segment named like the identity routes' own get-by-id or
+    /// results-token parameter would repeat that parameter name in the identity route template, so
+    /// startup validation refuses it, case-insensitively, and names the offending qualifier. The
+    /// refusal does not depend on whether identity management is enabled.
+    /// </summary>
+    [TestFixture("__identityId")]
+    [TestFixture("__IDENTITYTOKEN")]
+    public class Given_A_Route_Qualifier_Named_Like_A_Reserved_Identity_Parameter(string qualifierName)
+    {
+        private ValidateOptionsResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _result = new AppSettingsValidator().Validate(
+                null,
+                SettingsWithRouteQualifierSegments($"districtId,{qualifierName}")
+            );
+        }
+
+        [Test]
+        public void It_fails_validation()
+        {
+            _result.Succeeded.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_names_the_setting_and_the_reserved_qualifier()
+        {
+            _result.FailureMessage.Should().Contain(nameof(AppSettings.RouteQualifierSegments));
+            _result.FailureMessage.Should().Contain("reserved");
+            _result.FailureMessage.Should().Contain(qualifierName);
+        }
+
+        [Test]
+        public void It_does_not_name_the_ordinary_qualifier()
+        {
+            _result.FailureMessage.Should().NotContain("districtId");
+        }
+    }
+
+    /// <summary>
+    /// Route-qualifier names are compared case-insensitively by ASP.NET Core route templates and by
+    /// the identity request context, so two names differing only by case are the same qualifier and
+    /// startup validation refuses them, naming both.
     /// </summary>
     [TestFixture]
-    public class Given_A_Configuration_With_Duplicate_Route_Qualifier_Segments
+    public class Given_Route_Qualifier_Segments_That_Differ_Only_By_Case
+    {
+        private ValidateOptionsResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _result = new AppSettingsValidator().Validate(
+                null,
+                SettingsWithRouteQualifierSegments("DistrictId,schoolYear,districtid")
+            );
+        }
+
+        [Test]
+        public void It_fails_validation()
+        {
+            _result.Succeeded.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_names_the_setting_and_both_colliding_qualifiers()
+        {
+            _result.FailureMessage.Should().Contain(nameof(AppSettings.RouteQualifierSegments));
+            _result.FailureMessage.Should().Contain("DistrictId");
+            _result.FailureMessage.Should().Contain("districtid");
+        }
+
+        [Test]
+        public void It_does_not_name_the_unrelated_qualifier()
+        {
+            _result.FailureMessage.Should().NotContain("schoolYear");
+        }
+    }
+
+    /// <summary>
+    /// Negative control for the two route-qualifier checks above: distinct ordinary names, including
+    /// "id" and "token" and a name that merely contains a reserved parameter name, validate.
+    /// </summary>
+    [TestFixture]
+    public class Given_Distinct_Ordinary_Route_Qualifier_Segments
+    {
+        [TestCase("")]
+        [TestCase("districtId,schoolYear")]
+        [TestCase("id,token")]
+        [TestCase("__identityIdExtra,district__identityToken")]
+        public void It_validates_successfully(string routeQualifierSegments)
+        {
+            new AppSettingsValidator()
+                .Validate(null, SettingsWithRouteQualifierSegments(routeQualifierSegments))
+                .Succeeded.Should()
+                .BeTrue();
+        }
+    }
+
+    /// <summary>
+    /// Regression coverage for the ConfigureEndpoints failure catch. A route qualifier segment named
+    /// "dmsPath" survives AppSettingsValidator and reaches CoreEndpointModule.BuildRoutePattern,
+    /// producing "/{dmsPath}/data/{**dmsPath}", which makes endpoint mapping throw. Before the catch
+    /// existed the status file was stranded at Starting with no ErrorType or ErrorMessage.
+    /// The trigger collides with the catch-all parameter name hardcoded in BuildRoutePattern rather
+    /// than with another configured segment, so AppSettingsValidator's within-list duplicate and
+    /// reserved-name checks do not intercept it. If a future validator check does intercept it (as
+    /// an <see cref="OptionsValidationException"/> before endpoint mapping runs), replace the
+    /// trigger rather than deleting or weakening the assertions: this fixture is the only coverage
+    /// for the endpoint-mapping catch in <c>Program.cs</c>, so a dropped assertion takes that route
+    /// to zero.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Route_Qualifier_Segment_That_Collides_With_The_Catch_All_Parameter
     {
         private WebApplicationFactory<Program>? _factory;
         private string _statusDirectory = null!;
@@ -658,7 +763,7 @@ public class ConfigurationTests
                         configuration.AddInMemoryCollection(
                             new Dictionary<string, string?>
                             {
-                                ["AppSettings:RouteQualifierSegments"] = "districtId,districtId",
+                                ["AppSettings:RouteQualifierSegments"] = "dmsPath",
                                 ["AppSettings:StartupStatusFilePath"] = _statusFilePath,
                             }
                         );

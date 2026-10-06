@@ -1798,6 +1798,31 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
     }
 
+    /// <summary>
+    /// Creates (or replaces) the [auth].[{strategyName}] custom authorization view over the shared descriptor
+    /// table, authorizing only the descriptors whose CodeValue is in <paramref name="authorizedCodeValues"/>.
+    /// </summary>
+    public async Task CreateDescriptorCustomAuthViewAsync(
+        string strategyName,
+        IReadOnlyList<string> authorizedCodeValues
+    )
+    {
+        var codeValueList = string.Join(
+            ", ",
+            authorizedCodeValues.Select(codeValue => $"N'{codeValue.Replace("'", "''")}'")
+        );
+
+        await DropCustomAuthViewAsync(strategyName);
+        await Database.ExecuteNonQueryAsync(
+            $"""
+            CREATE VIEW [auth].[{EscapeIdentifierPart(strategyName)}] AS
+            SELECT [DocumentId]
+            FROM [dms].[Descriptor]
+            WHERE [CodeValue] IN ({codeValueList});
+            """
+        );
+    }
+
     public async Task DropCustomAuthViewAsync(string strategyName)
     {
         var escapedStrategyName = EscapeIdentifierPart(strategyName);
@@ -1971,7 +1996,8 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         IReadOnlyList<string> strategyNames,
         string? ifMatch = null,
         string? traceId = null,
-        IReadOnlyList<string>? namespacePrefixes = null
+        IReadOnlyList<string>? namespacePrefixes = null,
+        IReadOnlyList<short>? ownershipTokenIds = null
     )
     {
         ResetRecorder();
@@ -1990,7 +2016,9 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         {
             AuthorizationContext = new RelationalAuthorizationContext(
                 claimEducationOrganizationIds,
-                namespacePrefixes ?? []
+                namespacePrefixes ?? [],
+                creatorOwnershipTokenId: null,
+                ownershipTokenIds ?? []
             ),
             AuthorizationStrategyEvaluators =
             [
@@ -2237,6 +2265,63 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             """,
             new SqlParameter("@resourceKeyId", GetCompiledResourceKeyId(projectEndpointName, resourceName))
         );
+
+    /// <summary>
+    /// Issues a PUT under the given strategies with the caller's full ownership context, which the
+    /// resource-specific update helpers do not carry.
+    /// </summary>
+    public async Task<UpdateResult> UpdateWithAuthorizationAsync(
+        string projectEndpointName,
+        string resourceName,
+        JsonNode requestBody,
+        DocumentUuid documentUuid,
+        IReadOnlyList<string> strategyNames,
+        IReadOnlyList<string>? namespacePrefixes = null,
+        short? creatorOwnershipTokenId = null,
+        IReadOnlyList<short>? ownershipTokenIds = null,
+        string? ifMatch = null
+    )
+    {
+        var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
+
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider);
+
+        var request = new UpdateRequest(
+            ResourceInfo: resourceHandle.ResourceInfo,
+            DocumentInfo: RelationalDocumentInfoTestHelper.CreateDocumentInfo(
+                requestBody,
+                resourceHandle.ResourceInfo,
+                resourceHandle.ResourceSchema,
+                MappingSet
+            ),
+            MappingSet: MappingSet,
+            EdfiDoc: requestBody,
+            Headers: CreateHeaders(ifMatch),
+            TraceId: new TraceId($"put-with-authorization-{resourceName}"),
+            DocumentUuid: documentUuid
+        )
+        {
+            AuthorizationContext = new RelationalAuthorizationContext(
+                [],
+                namespacePrefixes ?? [],
+                creatorOwnershipTokenId,
+                ownershipTokenIds ?? []
+            ),
+            AuthorizationStrategyEvaluators =
+            [
+                .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
+                    strategyName,
+                    [],
+                    FilterOperator.And
+                )),
+            ],
+        };
+
+        return await scope
+            .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+            .UpdateDocumentById(request);
+    }
 
     /// <summary>
     /// Returns once a request in this database is blocked by another session, which is how a test knows a write it started is waiting on the

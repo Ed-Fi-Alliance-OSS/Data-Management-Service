@@ -52,15 +52,17 @@ public sealed class LoadedPlugins
     public IReadOnlyList<PluginLoadWarning> Warnings { get; }
 
     /// <summary>
-    /// The plugins whose configuration hook added at least one source and passed the guard.
+    /// The type names of the sources each plugin's configuration hook added, for the plugins whose hook
+    /// added at least one source and passed the guard.
     /// </summary>
     /// <remarks>
     /// Historical: a plugin stays here whatever happens to its sources afterwards. The service phase
-    /// copies the fact into each plugin's contribution record, which is how the audit learns that a
-    /// plugin contributed configuration. Only the fact is kept, not the sources, because nothing reads
-    /// more than that.
+    /// copies the names into each plugin's contribution record, which is how the audit learns that a
+    /// plugin contributed configuration and how the inventory names what it contributed. Only the type
+    /// names are kept, never the sources, because a source can carry a path or a prefix and its data is
+    /// configuration values.
     /// </remarks>
-    private readonly HashSet<LoadedPlugin> _configurationContributors = new(
+    private readonly Dictionary<LoadedPlugin, IReadOnlyList<string>> _configurationSourceTypes = new(
         ReferenceEqualityComparer.Instance
     );
 
@@ -173,7 +175,10 @@ public sealed class LoadedPlugins
 
             IConfigurationRoot contributed = Build(plugin, staging, additions, diagnostics);
 
-            _configurationContributors.Add(plugin);
+            _configurationSourceTypes[plugin] =
+            [
+                .. additions.Select(index => SourceTypeName(staging.Sources[index])),
+            ];
 
             Place(host.Sources, contributed, operatorEnvironment);
         }
@@ -386,6 +391,13 @@ public sealed class LoadedPlugins
     private static string DescribeSource(IConfigurationSource source) =>
         PluginDiagnosticText.Quote(source.GetType().FullName);
 
+    /// <summary>
+    /// The source's type name, unquoted, as the contribution record keeps it. A consumer renders it
+    /// for its own channel.
+    /// </summary>
+    private static string SourceTypeName(IConfigurationSource source) =>
+        source.GetType().FullName ?? source.GetType().Name;
+
     private static PluginCompositionException Refuse(
         PluginCompositionFailure reason,
         LoadedPlugin plugin,
@@ -468,7 +480,9 @@ public sealed class LoadedPlugins
 
             Invoke(plugin, services, configuration, diagnostics);
 
-            records.Add(RecordOf(plugin, before, services, _configurationContributors.Contains(plugin)));
+            records.Add(
+                RecordOf(plugin, before, services, _configurationSourceTypes.GetValueOrDefault(plugin) ?? [])
+            );
         }
 
         return new PluginAuditInput(registry, records, [.. services], Warnings);
@@ -557,7 +571,7 @@ public sealed class LoadedPlugins
         LoadedPlugin plugin,
         List<ServiceDescriptor> before,
         IServiceCollection after,
-        bool contributedConfiguration
+        IReadOnlyList<string> configurationSourceTypes
     )
     {
         List<ServiceDescriptor> additions = [];
@@ -608,7 +622,7 @@ public sealed class LoadedPlugins
                 .Distinct(),
         ];
 
-        return new PluginContributionRecord(plugin, additions, removals, replaced, contributedConfiguration);
+        return new PluginContributionRecord(plugin, additions, removals, replaced, configurationSourceTypes);
     }
 
     private static Dictionary<ServiceDescriptor, int> OccurrencesOf(

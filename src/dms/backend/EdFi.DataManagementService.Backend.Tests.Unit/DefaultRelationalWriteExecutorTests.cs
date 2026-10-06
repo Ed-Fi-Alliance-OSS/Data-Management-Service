@@ -852,6 +852,324 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
+    /// <summary>
+    /// The create-side ownership verdict is returned in the second command, ahead of the missing-reference
+    /// failure the executor holds back until after it: ownership is an authorization failure, and a caller
+    /// refused one is not told what else is wrong with the request. Nothing is persisted and the session is
+    /// rolled back.
+    /// </summary>
+    [Test]
+    public async Task It_returns_the_create_ownership_denial_before_a_deferred_missing_reference_failure()
+    {
+        var denial = CreateOwnershipDenial(
+            OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized
+        );
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            documentReferences:
+            [
+                RelationalAccessTestData.CreateDocumentReference(
+                    new ReferentialId(Guid.NewGuid()),
+                    "$.schoolReference"
+                ),
+            ]
+        ) with
+        {
+            DeferredCreateOwnershipFailureResult = denial,
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result.Should().BeSameAs(denial);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// With proposed authorization configured the If-Match precondition on a create is deferred until that
+    /// authorization has run, and the create-side ownership verdict is part of it: the 403 is returned, not
+    /// the 412, and the relationship check behind the ownership slot never runs.
+    /// </summary>
+    [Test]
+    public async Task It_returns_the_create_ownership_denial_before_a_deferred_if_match_precondition()
+    {
+        var denial = CreateOwnershipDenial(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch);
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+                DeferredCreateOwnershipFailureResult = denial,
+            }
+        );
+
+        result.Should().BeSameAs(denial);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    public enum CreateOwnershipVerdict
+    {
+        NullCreatorToken,
+        CreatorTokenNotHeld,
+        TokenCap,
+        Authorized,
+    }
+
+    /// <summary>
+    /// An If-Match create with only <c>OwnershipBased</c> configured, so nothing proposed would otherwise defer
+    /// the precondition. The create-side verdict is an authorization failure owed ahead of the 412, so a POST
+    /// behaves the same whether or not its target exists: 403 for a null or unheld creator token, the
+    /// security-configuration 500 at the token cap. Only a create the verdict allows reaches the 412. None of
+    /// them persists anything, and each rolls back.
+    /// </summary>
+    [TestCase(CreateOwnershipVerdict.NullCreatorToken)]
+    [TestCase(CreateOwnershipVerdict.CreatorTokenNotHeld)]
+    [TestCase(CreateOwnershipVerdict.TokenCap)]
+    [TestCase(CreateOwnershipVerdict.Authorized)]
+    public async Task It_returns_the_create_ownership_verdict_ahead_of_the_if_match_create_precondition_with_nothing_proposed_to_authorize(
+        CreateOwnershipVerdict verdict
+    )
+    {
+        RelationalWriteExecutorResult? deferredCreateOwnershipFailure = verdict switch
+        {
+            CreateOwnershipVerdict.NullCreatorToken => CreateOwnershipDenial(
+                OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized
+            ),
+            CreateOwnershipVerdict.CreatorTokenNotHeld => CreateOwnershipDenial(
+                OwnershipAuthorizationFailureKind.OwnershipTokenMismatch
+            ),
+            CreateOwnershipVerdict.TokenCap => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureSecurityConfiguration(["ownership token cap"])
+            ),
+            _ => null,
+        };
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+        ) with
+        {
+            DeferredCreateOwnershipFailureResult = deferredCreateOwnershipFailure,
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        switch (verdict)
+        {
+            case CreateOwnershipVerdict.NullCreatorToken or CreateOwnershipVerdict.CreatorTokenNotHeld:
+                result.Should().BeSameAs(deferredCreateOwnershipFailure);
+                break;
+            case CreateOwnershipVerdict.TokenCap:
+                var securityConfiguration = result
+                    .Should()
+                    .BeOfType<RelationalWriteExecutorResult.Upsert>()
+                    .Which.Result.Should()
+                    .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+                    .Subject;
+                securityConfiguration.Errors.Should().Equal("ownership token cap");
+                securityConfiguration.TargetAction.Should().Be(UpsertTargetAction.Create);
+                break;
+            default:
+                result
+                    .Should()
+                    .Be(
+                        RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                            RelationalWriteOperationKind.Post,
+                            ETagPreconditionFailureReason.TargetDoesNotExist
+                        )
+                    );
+                break;
+        }
+
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// A shared-policy POST carries the create verdict whatever its target. Resolving to an existing document,
+    /// it is an upsert-as-update the verdict never decides, so a stale If-Match still owes its 412 rather than
+    /// the create denial.
+    /// </summary>
+    [Test]
+    public async Task It_keeps_the_stale_if_match_412_for_a_post_as_update_carrying_a_create_ownership_denial()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L),
+            writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+        ) with
+        {
+            DeferredCreateOwnershipFailureResult = CreateOwnershipDenial(
+                OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized
+            ),
+        };
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch())
+            );
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// Create and Update policies that differ, with only the Create branch owing the verdict. The branch the
+    /// target selects decides: a create returns the denial ahead of its If-Match 412, and an upsert-as-update
+    /// keeps the Update branch's own precondition outcome, untouched by the Create branch's denial.
+    /// </summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_applies_the_create_ownership_verdict_only_to_the_selected_create_branch_under_an_if_match(
+        bool targetExists
+    )
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var denial = CreateOwnershipDenial(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch);
+        var request = targetExists
+            ? CreateRequest(
+                RelationalWriteOperationKind.Post,
+                targetContext: new RelationalWriteTargetContext.ExistingDocument(
+                    345L,
+                    existingDocumentUuid,
+                    44L
+                ),
+                writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+            )
+            : CreateRequest(
+                RelationalWriteOperationKind.Post,
+                writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+            );
+
+        if (targetExists)
+        {
+            _targetLookupResolver.PostResults.Enqueue(
+                new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+            );
+        }
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                PostTargetAuthorizationBundles = new PostTargetAuthorizationBundles(
+                    new PostBranchAuthorization.Authorized(
+                        EmptyPostBranchInputs() with
+                        {
+                            DeferredCreateOwnershipFailureResult = denial,
+                        }
+                    ),
+                    new PostBranchAuthorization.Authorized(EmptyPostBranchInputs())
+                ),
+            }
+        );
+
+        if (targetExists)
+        {
+            result
+                .Should()
+                .BeEquivalentTo(
+                    new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch())
+                );
+        }
+        else
+        {
+            result.Should().BeSameAs(denial);
+        }
+
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// A token-cap failure owed to a create is a security-configuration failure the POST reaches after its
+    /// target selected the Create action, so it is attributed to Create at the executor boundary.
+    /// </summary>
+    [Test]
+    public async Task It_attributes_a_create_ownership_token_cap_failure_to_the_create_action()
+    {
+        var request = CreateRequest(RelationalWriteOperationKind.Post) with
+        {
+            DeferredCreateOwnershipFailureResult = new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureSecurityConfiguration(["ownership token cap"])
+            ),
+        };
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+            .Which.TargetAction.Should()
+            .Be(UpsertTargetAction.Create);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// A POST resolving to an existing target is an upsert-as-update, which the create-side verdict never
+    /// decides: the same client that could not create updates the row normally.
+    /// </summary>
+    [Test]
+    public async Task It_ignores_the_create_ownership_denial_for_a_post_resolving_to_an_existing_target()
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High Updated"}""")!,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L)
+        ) with
+        {
+            DeferredCreateOwnershipFailureResult = CreateOwnershipDenial(
+                OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized
+            ),
+        };
+        _targetLookupResolver.PostResults.Enqueue(
+            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
+        );
+        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901,
+            currentName: "Lincoln High",
+            mergedName: "Lincoln High Updated"
+        );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpdateSuccess>();
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+    }
+
+    private static RelationalWriteExecutorResult CreateOwnershipDenial(
+        OwnershipAuthorizationFailureKind failureKind
+    ) =>
+        new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureOwnershipNotAuthorized(
+                new OwnershipAuthorizationFailure(failureKind, 0, "OwnershipBased")
+            )
+        );
+
     [Test]
     public async Task It_returns_deferred_missing_document_reference_failures_before_guarded_no_op_success()
     {
@@ -2468,56 +2786,9 @@ public class Given_Default_Relational_Write_Executor
     }
 
     [Test]
-    public async Task It_permits_a_post_insert_under_an_if_none_match_wildcard()
-    {
-        // If-None-Match: * on an insert (CreateNew) is the create-only success case: it proceeds, the
-        // exact inverse of If-Match which 412s on CreateNew.
-        var request = CreateRequest(
-            RelationalWriteOperationKind.Post,
-            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
-        );
-
-        var result = await _sut.ExecuteAsync(request);
-
-        result
-            .Should()
-            .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.InsertSuccess(
-                        new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
-                        ComposedWriteResultEtag(77L)
-                    ),
-                    RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
-                )
-            );
-        _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
-        _noProfilePersister.TryPersistCallCount.Should().Be(1);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
-    }
-
-    [Test]
-    public async Task It_permits_a_post_insert_under_an_if_none_match_specific_tag()
-    {
-        var request = CreateRequest(
-            RelationalWriteOperationKind.Post,
-            writePrecondition: new WritePrecondition.IfNoneMatch("\"5-abc\"")
-        );
-
-        var result = await _sut.ExecuteAsync(request);
-
-        result
-            .Should()
-            .BeOfType<RelationalWriteExecutorResult.Upsert>()
-            .Which.Result.Should()
-            .BeOfType<UpsertResult.InsertSuccess>();
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
-    }
-
-    [Test]
     public async Task It_returns_if_match_failure_for_a_post_insert_under_if_match_wildcard()
     {
-        // Regression: If-Match: * on an insert must still 412 (unchanged inverse of If-None-Match).
+        // Regression: If-Match: * on an insert must still 412.
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             writePrecondition: new WritePrecondition.IfMatch("*", IsWildcard: true)
@@ -2531,290 +2802,6 @@ public class Given_Default_Relational_Write_Executor
             .Which.Result.Should()
             .BeOfType<UpsertResult.UpsertFailureETagMisMatch>();
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_returns_precondition_failure_for_post_as_update_under_if_none_match_when_the_target_exists()
-    {
-        // POST resolving to an existing target under If-None-Match: the before-auth gate evaluates
-        // the precondition against the hydrated current state and reports not-satisfied → 412.
-        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var request = CreateRequest(
-            RelationalWriteOperationKind.Post,
-            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L),
-            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
-        );
-        _targetLookupResolver.PostResults.Enqueue(
-            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
-        );
-
-        var result = await _sut.ExecuteAsync(request);
-
-        result
-            .Should()
-            .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.UpsertFailureETagMisMatch(
-                        ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch
-                    )
-                )
-            );
-        _currentStateLoader.LoadCallCount.Should().Be(1);
-        _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_never_reaches_the_guarded_no_op_check_for_a_post_as_update_no_op_body_under_if_none_match_wildcard()
-    {
-        // Regression (B7): If-None-Match: * against an EXISTING row with an UNCHANGED (no-op) body must
-        // 412 at the precondition check itself, upstream of the guarded no-op machinery. Proven by
-        // asserting the merge synthesizer is never invoked — if the precondition check were skipped
-        // or deferred, this request (default no-op body against the default-named current state)
-        // would instead flow into the guarded-no-op branch.
-        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var request = CreateRequest(
-            RelationalWriteOperationKind.Post,
-            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L),
-            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
-        );
-        _targetLookupResolver.PostResults.Enqueue(
-            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
-        );
-
-        var result = await _sut.ExecuteAsync(request);
-
-        result
-            .Should()
-            .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.UpsertFailureETagMisMatch(
-                        ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch
-                    )
-                )
-            );
-        result.AttemptOutcome.Should().NotBe(RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance);
-        _currentStateLoader.LoadCallCount.Should().Be(1);
-        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
-        _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_applies_a_post_as_update_under_if_none_match_when_the_precondition_is_satisfied()
-    {
-        // A non-matching If-None-Match tag against an existing target is satisfied (client copy stale),
-        // so the write proceeds as an update.
-        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var request = CreateRequest(
-            RelationalWriteOperationKind.Post,
-            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High Updated"}""")!,
-            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L),
-            writePrecondition: new WritePrecondition.IfNoneMatch("\"stale-client-tag\"")
-        );
-        _targetLookupResolver.PostResults.Enqueue(
-            new RelationalWriteTargetLookupResult.ExistingDocument(345L, existingDocumentUuid, 44L)
-        );
-        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
-            request.WritePlan.TablePlansInDependencyOrder[0],
-            currentSchoolId: 255901,
-            mergedSchoolId: 255901,
-            currentName: "Lincoln High",
-            mergedName: "Lincoln High Updated"
-        );
-
-        var result = await _sut.ExecuteAsync(request);
-
-        result
-            .Should()
-            .BeOfType<RelationalWriteExecutorResult.Upsert>()
-            .Which.Result.Should()
-            .BeOfType<UpsertResult.UpdateSuccess>();
-        _currentStateLoader.LoadCallCount.Should().Be(1);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_returns_precondition_failure_for_an_existing_put_under_if_none_match_wildcard()
-    {
-        var request = CreateRequest(
-            RelationalWriteOperationKind.Put,
-            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
-        );
-
-        var result = await _sut.ExecuteAsync(request);
-
-        result
-            .Should()
-            .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Update(
-                    new UpdateResult.UpdateFailureETagMisMatch(
-                        ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch
-                    )
-                )
-            );
-        _currentStateLoader.LoadCallCount.Should().Be(1);
-        _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_never_reaches_the_guarded_no_op_check_for_a_put_no_op_body_under_if_none_match_wildcard()
-    {
-        // Regression (B7): mirrors the POST case above for PUT. If-None-Match: * against an EXISTING row
-        // with an UNCHANGED (no-op) body 412s at the precondition check, never routing through the
-        // guarded no-op path — proven by the merge synthesizer never being invoked.
-        var request = CreateRequest(
-            RelationalWriteOperationKind.Put,
-            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
-        );
-
-        var result = await _sut.ExecuteAsync(request);
-
-        result
-            .Should()
-            .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Update(
-                    new UpdateResult.UpdateFailureETagMisMatch(
-                        ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch
-                    )
-                )
-            );
-        result.AttemptOutcome.Should().NotBe(RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance);
-        _currentStateLoader.LoadCallCount.Should().Be(1);
-        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
-        _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_applies_an_existing_put_under_if_none_match_when_the_precondition_is_satisfied()
-    {
-        var request = CreateRequest(
-            RelationalWriteOperationKind.Put,
-            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High Updated"}""")!,
-            writePrecondition: new WritePrecondition.IfNoneMatch("\"stale-client-tag\"")
-        );
-        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
-            request.WritePlan.TablePlansInDependencyOrder[0],
-            currentSchoolId: 255901,
-            mergedSchoolId: 255901,
-            currentName: "Lincoln High",
-            mergedName: "Lincoln High Updated"
-        );
-
-        var result = await _sut.ExecuteAsync(request);
-
-        result
-            .Should()
-            .BeOfType<RelationalWriteExecutorResult.Update>()
-            .Which.Result.Should()
-            .BeOfType<UpdateResult.UpdateSuccess>();
-        _currentStateLoader.LoadCallCount.Should().Be(1);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_returns_not_exists_for_a_missing_put_under_if_none_match_wildcard()
-    {
-        // Contrast with If-Match: * (which 412s a missing PUT): If-None-Match against a missing target
-        // is the success case and yields the normal 404, never 412.
-        var request = CreateRequest(
-            RelationalWriteOperationKind.Put,
-            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
-        );
-        _targetLookupResolver.PutResults.Enqueue(new RelationalWriteTargetLookupResult.NotFound());
-
-        var result = await _sut.ExecuteAsync(request);
-
-        result
-            .Should()
-            .BeOfType<RelationalWriteExecutorResult.Update>()
-            .Which.Result.Should()
-            .BeOfType<UpdateResult.UpdateFailureNotExists>();
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_returns_not_exists_for_a_missing_put_under_if_none_match_specific_tag()
-    {
-        var request = CreateRequest(
-            RelationalWriteOperationKind.Put,
-            writePrecondition: new WritePrecondition.IfNoneMatch("\"5-abc\"")
-        );
-        _targetLookupResolver.PutResults.Enqueue(new RelationalWriteTargetLookupResult.NotFound());
-
-        var result = await _sut.ExecuteAsync(request);
-
-        result
-            .Should()
-            .BeOfType<RelationalWriteExecutorResult.Update>()
-            .Which.Result.Should()
-            .BeOfType<UpdateResult.UpdateFailureNotExists>();
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_returns_precondition_failure_on_the_deferred_path_for_an_existing_put_under_if_none_match()
-    {
-        // FAIL-OPEN REGRESSION: an authorization boundary defers precondition evaluation to after
-        // proposed authorization. Before the line-107 guard was widened, If-None-Match dropped out of
-        // TryBuildDeferredPreconditionFailureResult and the write proceeded WITHOUT a 412. This proves
-        // the deferred path honors the create-guard.
-        var request = CreateRequest(
-            RelationalWriteOperationKind.Put,
-            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
-        );
-
-        var result = await _sut.ExecuteAsync(
-            request with
-            {
-                StoredRelationshipAuthorization = CreateStoredSchoolIdRelationshipAuthorization(request),
-                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
-            }
-        );
-
-        result
-            .Should()
-            .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Update(
-                    new UpdateResult.UpdateFailureETagMisMatch(
-                        ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch
-                    )
-                )
-            );
-        // The deferred path evaluates the precondition against the hydrated current state.
-        _currentStateLoader.LoadCallCount.Should().Be(1);
-        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
-        _noProfilePersister.TryPersistCallCount.Should().Be(0);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_permits_a_deferred_post_insert_under_if_none_match_wildcard()
-    {
-        // The deferred CreateNew arm proceeds for If-None-Match (create-only success) after successful
-        // proposed authorization, the inverse of If-Match which 412s here.
-        var request = CreateRequest(
-            RelationalWriteOperationKind.Post,
-            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
-        );
-
-        var result = await _sut.ExecuteAsync(
-            request with
-            {
-                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
-            }
-        );
-
-        result
-            .Should()
-            .BeOfType<RelationalWriteExecutorResult.Upsert>()
-            .Which.Result.Should()
-            .BeOfType<UpsertResult.InsertSuccess>();
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
     }
 
     [Test]
@@ -3041,41 +3028,6 @@ public class Given_Default_Relational_Write_Executor
                     )
                 )
             );
-        _writeExceptionClassifier.TryClassifyCallCount.Should().Be(1);
-        _writeConstraintResolver.ResolveCallCount.Should().Be(1);
-        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
-        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_maps_a_losing_IfNoneMatch_wildcard_create_race_to_a_retryable_write_conflict()
-    {
-        var request = CreateRequest(
-            RelationalWriteOperationKind.Post,
-            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!,
-            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
-        );
-        _noProfileMergeSynthesizer.ResultToReturn = CreateMergeResult(
-            request.WritePlan.TablePlansInDependencyOrder[0],
-            currentSchoolId: 255901,
-            mergedSchoolId: 255901,
-            currentName: "Lincoln High",
-            mergedName: "Lincoln High Updated"
-        );
-        _noProfilePersister.ExceptionToThrow = new StubDbException("concurrent duplicate key");
-        _writeExceptionClassifier.ClassificationToReturn =
-            new RelationalWriteExceptionClassification.UniqueConstraintViolation("UK_School_NaturalKey");
-        _writeConstraintResolver.ResolutionToReturn =
-            new RelationalWriteConstraintResolution.RootNaturalKeyUnique("UK_School_NaturalKey");
-
-        var result = await _sut.ExecuteAsync(request);
-
-        result
-            .Should()
-            .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureWriteConflict())
-            );
-        _noProfilePersister.TryPersistCallCount.Should().Be(1);
         _writeExceptionClassifier.TryClassifyCallCount.Should().Be(1);
         _writeConstraintResolver.ResolveCallCount.Should().Be(1);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
@@ -7492,7 +7444,7 @@ public class Given_Default_Relational_Write_Executor
     }
 
     private static PostBranchAuthorizationInputs EmptyPostBranchInputs() =>
-        new(null, null, null, null, null, null, null, null);
+        new(null, null, null, null, null, null, null, null, null);
 
     [Test]
     public async Task It_selects_create_new_post_relationship_plan_before_reference_resolution()

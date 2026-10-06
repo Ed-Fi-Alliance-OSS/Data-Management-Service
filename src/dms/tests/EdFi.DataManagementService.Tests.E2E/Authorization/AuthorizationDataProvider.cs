@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -253,13 +254,14 @@ public static class AuthorizationDataProvider
             systemAdministratorToken
         );
 
-        // Create DataStore first
+        // Create DataStore first. Data store names are unique per tenant, and every provisioning call
+        // creates its own store (derivatives attach to it), so each one gets a distinct name.
         using StringContent dataStoreContent = new(
             JsonSerializer.Serialize(
                 new
                 {
                     dataStoreType = "Test",
-                    name = "E2E Test DMS Instance",
+                    name = $"E2E Test DMS Instance {Guid.NewGuid()}",
                     connectionString = DataStoreConnectionStringProvider.Create(),
                 }
             ),
@@ -271,6 +273,14 @@ public static class AuthorizationDataProvider
             "v3/dataStores",
             dataStoreContent
         );
+
+        if (dataStorePostResponse.StatusCode != HttpStatusCode.Created)
+        {
+            throw new InvalidOperationException(
+                $"Failed to create data store. Status: {dataStorePostResponse.StatusCode}, "
+                    + $"Response: {await dataStorePostResponse.Content.ReadAsStringAsync()}"
+            );
+        }
 
         var dataStoreLocation = dataStorePostResponse.Headers.Location?.AbsoluteUri ?? "";
 

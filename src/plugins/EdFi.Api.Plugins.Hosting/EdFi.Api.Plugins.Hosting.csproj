@@ -1,4 +1,7 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project
+    Sdk="Microsoft.NET.Sdk"
+    TreatAsLocalProperty="Version;VersionPrefix;AssemblyVersion;FileVersion;InformationalVersion"
+>
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>
@@ -30,11 +33,13 @@
         <PackageReference Include="Microsoft.Extensions.Configuration" />
         <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
         <!--
-            Only for the four service type names in the logging carve-out, which are all declared
-            here. The carve-out is written as names rather than as an assembly or namespace rule, so
-            naming the types is the whole of what this reference buys, and the abstractions package
-            carries no implementation. Nothing in this assembly logs: the loader's own channel is
-            Console.Error, deliberately, because it runs before any logging pipeline exists.
+            For the four service type names in the logging carve-out, which are all declared here,
+            and for ILogger in PluginInventoryLog. The carve-out is written as names rather than as an
+            assembly or namespace rule, and the abstractions package carries no implementation. The
+            loader and the composition phases log nothing: their channel is Console.Error,
+            deliberately, because they run before any logging pipeline exists. PluginInventoryLog is
+            the one exception, and it lives here so both hosts emit the inventory in one shape: each
+            host calls it once its own logger exists and hands that logger in.
         -->
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
         <!--
@@ -53,5 +58,12 @@
     -->
     <ItemGroup>
         <InternalsVisibleTo Include="EdFi.Api.Plugins.Hosting.Tests.Unit" />
+        <!--
+            The Configuration Service's frontend tests, for the host-owned predicate and the recording
+            wrapper against real CMS service types. A refused plugin hook ends the boot before any test
+            callback sees the service collection, so whether a refusal left the collection untouched
+            can only be shown by driving the wrapper directly.
+        -->
+        <InternalsVisibleTo Include="EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit" />
     </ItemGroup>
 </Project>

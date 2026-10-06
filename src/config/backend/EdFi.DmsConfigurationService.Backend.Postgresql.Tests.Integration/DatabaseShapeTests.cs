@@ -106,6 +106,8 @@ public class Given_CMS_PostgreSQL_database_shape
             false
         ),
         new("CK_DataStoreDerivative_DerivativeType", "DataStoreDerivative", "c", ["DerivativeType"], false),
+        new("UX_DataStore_TenantId_Name", "DataStore", "u", ["TenantId", "Name"], true),
+        new("UX_ApiClient_ApplicationId_Name", "ApiClient", "u", ["ApplicationId", "Name"], false),
     ];
 
     private static readonly string[] ExpectedNonUniqueLookupIndexes =

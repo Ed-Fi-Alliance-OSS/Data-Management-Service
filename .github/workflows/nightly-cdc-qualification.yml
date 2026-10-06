@@ -19,7 +19,7 @@ on:
         description: "Suite (select Postgresql or Mssql for a specific suite)"
         type: choice
         default: All
-        options: [All, Admission, Lifecycle, Recovery, RecordSize, Telemetry, History, MessageContract]
+        options: [All, Admission, Lifecycle, Recovery, RecordSize, Telemetry, History, MessageContract, ApiE2E]
 
 permissions:
   contents: read
@@ -33,6 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.select.outputs.matrix }}
+      suite-count: ${{ steps.select.outputs.suite-count }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -46,12 +47,15 @@ jobs:
         run: |
           $matrix = ./eng/ci/Get-CdcQualificationMatrix.ps1 -Lane $env:SELECTED_LANE -Suite $env:SELECTED_SUITE
           "matrix=$matrix" >> $env:GITHUB_OUTPUT
+          "suite-count=$(@(($matrix | ConvertFrom-Json).include).Count)" >> $env:GITHUB_OUTPUT
 
   run-cdc-qualification:
     name: CDC Qualification (${{ matrix.lane }} / ${{ matrix.suite }})
     needs: select-suites
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # ApiE2E reserves 30m setup/build + 60m test + 15m cleanup + 2m export
+    # inside the runner, leaving 23m for workflow prerequisites, pulls and upload.
+    timeout-minutes: 130
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select-suites.outputs.matrix) }}
@@ -71,6 +75,10 @@ jobs:
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: "10.0.x"
+
+      - name: Set up Docker Buildx
+        if: matrix.suite == 'ApiE2E'
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Configure qualified Connect image
         run: |
@@ -124,15 +132,18 @@ jobs:
           host-port: "14339"
 
       - name: Run story-owned CDC qualification
-        run: ./eng/ci/Invoke-CdcQualification.ps1 -Lane '${{ matrix.lane }}' -Suite '${{ matrix.suite }}' -ResultsDirectory TestResults/cdc-qualification -PullImages
+        # ApiE2E builds current SchemaTools/DMS/CMS, prepares private credentials
+        # and schema assets, and admits self-contained auth through the runner.
+        # Its finally path owns teardown and sanitized export, including failures.
+        run: ./eng/ci/Invoke-CdcQualification.ps1 -Lane '${{ matrix.lane }}' -Suite '${{ matrix.suite }}' -ResultsDirectory "$env:RUNNER_TEMP/cdc-qualification" -PullImages
 
       - name: Record unavailable qualification environment
         if: failure()
         run: |
-          if (-not (Test-Path TestResults/cdc-qualification/qualification.json)) {
-            New-Item -ItemType Directory -Force TestResults/cdc-qualification | Out-Null
+          if (-not (Test-Path "$env:RUNNER_TEMP/cdc-qualification/qualification.json")) {
+            New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/cdc-qualification" | Out-Null
             @(@{ Name = 'environment-setup'; Status = 'EnvironmentUnavailable'; Total = 0; Passed = 0; Failed = 0; Skipped = 0 }) |
-              ConvertTo-Json -AsArray | Set-Content TestResults/cdc-qualification/qualification.json
+              ConvertTo-Json -AsArray | Set-Content "$env:RUNNER_TEMP/cdc-qualification/qualification.json"
           }
 
       - name: Upload structured CDC qualification evidence
@@ -140,7 +151,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cdc-qualification-${{ matrix.lane }}-${{ matrix.suite }}-${{ github.run_attempt }}
-          path: TestResults/cdc-qualification/**
+          path: ${{ runner.temp }}/cdc-qualification/**
           if-no-files-found: error
           retention-days: 14
 
@@ -161,7 +172,7 @@ jobs:
         uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d # v2.0.0
         with:
           payload: |
-            {"text":":heavy_check_mark: DMS CI nightly CDC qualification passed, all 15 live suites verified"}
+            {"text":":heavy_check_mark: DMS CI nightly CDC qualification passed, all ${{ needs.select-suites.outputs.suite-count }} live suites verified"}
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
 

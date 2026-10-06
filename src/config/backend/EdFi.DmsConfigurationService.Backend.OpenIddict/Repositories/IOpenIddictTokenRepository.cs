@@ -83,6 +83,12 @@ public interface IOpenIddictTokenRepository
     Task<IEnumerable<PublicKeyInfo>> GetActivePublicKeysAsync();
 
     /// <summary>
+    /// Gets all active public keys; <paramref name="cancellationToken"/> cancels both the connection open and the query.
+    /// </summary>
+    /// <returns>Collection of public key information.</returns>
+    Task<IEnumerable<PublicKeyInfo>> GetActivePublicKeysAsync(CancellationToken cancellationToken);
+
+    /// <summary>
     /// Gets application information by client ID.
     /// </summary>
     /// <param name="clientId">The client ID to search for.</param>

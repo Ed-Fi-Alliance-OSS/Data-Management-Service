@@ -37,6 +37,10 @@ public class DataStoreContextTests : DatabaseTest
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<DataStoreDerivativeRepository>.Instance,
                 new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                TestConnectionStringReader.Create(
+                    new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                    new TenantContextProvider()
+                ),
                 new TestAuditContext(),
                 new TenantContextProvider()
             );
@@ -44,6 +48,10 @@ public class DataStoreContextTests : DatabaseTest
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<DataStoreRepository>.Instance,
                 new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                TestConnectionStringReader.Create(
+                    new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                    new TenantContextProvider()
+                ),
                 _repository,
                 derivativeRepository,
                 new TestAuditContext(),
@@ -119,6 +127,10 @@ public class DataStoreContextTests : DatabaseTest
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<DataStoreDerivativeRepository>.Instance,
                 new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                TestConnectionStringReader.Create(
+                    new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                    new TenantContextProvider()
+                ),
                 new TestAuditContext(),
                 new TenantContextProvider()
             );
@@ -126,6 +138,10 @@ public class DataStoreContextTests : DatabaseTest
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<DataStoreRepository>.Instance,
                 new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                TestConnectionStringReader.Create(
+                    new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                    new TenantContextProvider()
+                ),
                 _repository,
                 derivativeRepository,
                 new TestAuditContext(),
@@ -188,6 +204,10 @@ public class DataStoreContextTests : DatabaseTest
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<DataStoreDerivativeRepository>.Instance,
                 new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                TestConnectionStringReader.Create(
+                    new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                    new TenantContextProvider()
+                ),
                 new TestAuditContext(),
                 new TenantContextProvider()
             );
@@ -195,6 +215,10 @@ public class DataStoreContextTests : DatabaseTest
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<DataStoreRepository>.Instance,
                 new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                TestConnectionStringReader.Create(
+                    new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                    new TenantContextProvider()
+                ),
                 _repository,
                 derivativeRepository,
                 new TestAuditContext(),
@@ -245,6 +269,10 @@ public class DataStoreContextTests : DatabaseTest
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<DataStoreDerivativeRepository>.Instance,
                 new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                TestConnectionStringReader.Create(
+                    new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                    new TenantContextProvider()
+                ),
                 new TestAuditContext(),
                 new TenantContextProvider()
             );
@@ -252,6 +280,10 @@ public class DataStoreContextTests : DatabaseTest
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<DataStoreRepository>.Instance,
                 new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                TestConnectionStringReader.Create(
+                    new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                    new TenantContextProvider()
+                ),
                 _repository,
                 derivativeRepository,
                 new TestAuditContext(),
@@ -312,6 +344,10 @@ public class DataStoreContextTests : DatabaseTest
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<DataStoreDerivativeRepository>.Instance,
                 new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                TestConnectionStringReader.Create(
+                    new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                    new TenantContextProvider()
+                ),
                 new TestAuditContext(),
                 new TenantContextProvider()
             );
@@ -319,6 +355,10 @@ public class DataStoreContextTests : DatabaseTest
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<DataStoreRepository>.Instance,
                 new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                TestConnectionStringReader.Create(
+                    new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                    new TenantContextProvider()
+                ),
                 _repository,
                 derivativeRepository,
                 new TestAuditContext(),
@@ -398,6 +438,10 @@ public class DataStoreContextTests : DatabaseTest
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<DataStoreDerivativeRepository>.Instance,
                 new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                TestConnectionStringReader.Create(
+                    new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                    new TenantContextProvider()
+                ),
                 new TestAuditContext(),
                 new TenantContextProvider()
             );
@@ -405,6 +449,10 @@ public class DataStoreContextTests : DatabaseTest
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<DataStoreRepository>.Instance,
                 new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                TestConnectionStringReader.Create(
+                    new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                    new TenantContextProvider()
+                ),
                 _repository,
                 derivativeRepository,
                 new TestAuditContext(),

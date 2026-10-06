@@ -55,6 +55,20 @@ internal sealed class FakeSequentialRelationalWriteSecondCommand(
             );
         }
 
+        // The composite command's create ownership slot: after the proposed namespace check, ahead of the
+        // relationship check and any persistence.
+        if (
+            request.TargetContext is RelationalWriteTargetContext.CreateNew
+            && request.DeferredCreateOwnershipFailureResult is { } deferredCreateOwnershipFailureResult
+        )
+        {
+            return new RelationalWriteSecondCommandResolution(
+                mergeResult,
+                null,
+                deferredCreateOwnershipFailureResult
+            );
+        }
+
         // Authorization-only mode forces the standalone relationship check because it issues no
         // dms.Document insert for the POST create path to prefix the check onto.
         var relationshipBoundary = await _relationshipOrchestrator

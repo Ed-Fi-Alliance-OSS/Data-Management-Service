@@ -69,9 +69,8 @@ Related redesign discussion:
 - **Preserve legacy profile semantics**: readable profiles limit returned fields; writable profiles limit accepted input; hidden stored data is preserved on update.
 - **Preserve write-concurrency compatibility while serving correct representation validators**:
   readable profile filtering changes the served `_etag` through `variantKey.profileCode`, so profiled
-  and unprofiled byte representations have different strong validators. Write-side `If-Match` and
-  `If-None-Match` comparisons project out `profileCode` (along with `format`, `linkFlag`, and
-  `contentCoding`) and
+  and unprofiled byte representations have different strong validators. Write-side `If-Match`
+  comparisons project out `profileCode` (along with `format`, `linkFlag`, and `contentCoding`) and
   compare only the state-significant `ContentVersion` and `schemaEpoch` components.
 - **Core owns profile semantics**: member filtering, value filtering, readable vs writable mode, request validation, stored-state projection, and creatability rules belong in Core.
 - **Backend owns persistence mechanics**: relational flattening, current-state loading, semantic-key matching, `CollectionItemId` reservation, and DML execution remain backend responsibilities.
@@ -132,7 +131,7 @@ The relational redesign must preserve these behaviors:
 - Readable profiles preserve server-generated metadata fields, but the served `_etag` is composed
   for the representation after profile selection and includes that profile's `profileCode`.
   Profile-specific served validators do not create profile-specific write-concurrency state:
-  write-side `If-Match` and `If-None-Match` comparisons project `profileCode` out.
+  write-side `If-Match` comparisons project `profileCode` out (`If-None-Match` is ignored on writes).
 
 ## Ownership Boundary
 
@@ -1078,12 +1077,11 @@ Related redesign discussion:
 - a no-op decision is provisional until backend verifies that the observed `ContentVersion` is still current,
 - if the observed `ContentVersion` is stale:
   - with a specific-tag `If-Match`, return `412 Precondition Failed`,
-  - with wildcard `If-Match`, any `If-None-Match`, or no precondition, abandon the no-op fast path
-    and re-evaluate against current state; this lets a specific `If-None-Match` tag be compared with
-    the winning current state before deciding whether to return `412` or proceed.
+  - with wildcard `If-Match` or no precondition, abandon the no-op fast path and re-evaluate against
+    current state.
 
 Profiles do not require a new concurrency surface. Served tags include `profileCode` for
-conditional-GET correctness, while write-side `If-Match` and `If-None-Match` use the same
+conditional-GET correctness, while write-side `If-Match` uses the same
 state-significant (`ContentVersion`, `schemaEpoch`) projection as the rest of the redesign.
 
 ## Validation and Error Semantics

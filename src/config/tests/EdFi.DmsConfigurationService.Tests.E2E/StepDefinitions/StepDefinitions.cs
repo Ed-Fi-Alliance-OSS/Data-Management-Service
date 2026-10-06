@@ -289,12 +289,24 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     [Given("a POST request is made to {string} with")]
     public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
     {
+        url = await ReplaceIdsAsync(url);
         APIRequestContextOptions? options = new()
         {
             Headers = _authHeaders,
             Data = await ReplaceIdsAsync(body),
         };
         _apiResponse = await playwrightContext.ApiRequestContext?.PostAsync(url, options)!;
+        await ExtractIdFromHeader(_apiResponse);
+    }
+
+    [When("a POST request is made to {string} with no body")]
+    public async Task WhenSendingAPOSTRequestToWithNoBody(string url)
+    {
+        url = await ReplaceIdsAsync(url);
+        _apiResponse = await playwrightContext.ApiRequestContext?.PostAsync(
+            url,
+            new() { Headers = _authHeaders }
+        )!;
         await ExtractIdFromHeader(_apiResponse);
     }
 
@@ -534,6 +546,53 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     {
         string content = await _apiResponse.TextAsync();
         content.Should().NotContain(text);
+    }
+
+    [Then("the response body contains a non-empty authorization strategy override")]
+    public async Task ThenTheResponseBodyContainsANonEmptyAuthorizationStrategyOverride()
+    {
+        string content = await _apiResponse.TextAsync();
+        JsonNode? response = JsonNode.Parse(content);
+        response.Should().NotBeNull("response body should be JSON");
+        ContainsNonEmptyArray(response!, "authorizationStrategyOverrides").Should().BeTrue();
+    }
+
+    [Then("the response body contains no non-empty authorization strategy overrides")]
+    public async Task ThenTheResponseBodyContainsNoNonEmptyAuthorizationStrategyOverrides()
+    {
+        string content = await _apiResponse.TextAsync();
+        JsonNode? response = JsonNode.Parse(content);
+        response.Should().NotBeNull("response body should be JSON");
+        ContainsNonEmptyArray(response!, "authorizationStrategyOverrides").Should().BeFalse();
+    }
+
+    private static bool ContainsNonEmptyArray(JsonNode node, string propertyName)
+    {
+        if (node is JsonObject jsonObject)
+        {
+            foreach (KeyValuePair<string, JsonNode?> property in jsonObject)
+            {
+                if (
+                    property.Key.Equals(propertyName, StringComparison.OrdinalIgnoreCase)
+                    && property.Value is JsonArray array
+                    && array.Count > 0
+                )
+                {
+                    return true;
+                }
+
+                if (property.Value is not null && ContainsNonEmptyArray(property.Value, propertyName))
+                {
+                    return true;
+                }
+            }
+        }
+        else if (node is JsonArray jsonArray)
+        {
+            return jsonArray.Any(item => item is not null && ContainsNonEmptyArray(item, propertyName));
+        }
+
+        return false;
     }
 
     [Then(@"the response body is an array with more than one object where each object")]
@@ -1232,6 +1291,31 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         string content = await _apiResponse.TextAsync();
         var jsonArray = JsonNode.Parse(content)?.AsArray();
         jsonArray.Should().NotBeNull("response body should be a JSON array");
+    }
+
+    [Then("the response body lists tenant names including")]
+    public async Task ThenTheResponseBodyListsTenantNamesIncluding(Table table)
+    {
+        string content = await _apiResponse.TextAsync();
+        var parsed = JsonNode.Parse(content);
+        parsed.Should().BeOfType<JsonObject>("response body should be a JSON object");
+        var body = parsed!.AsObject();
+        body.Select(property => property.Key).Should().Equal(["tenants"], "the body carries names only");
+
+        var tenants = body["tenants"]!.AsArray();
+        tenants
+            .Should()
+            .OnlyContain(
+                element => element != null && element.GetValueKind() == JsonValueKind.String,
+                "every tenant is listed by name alone"
+            );
+
+        // Containment, not equality: tenants created by other scenarios persist between runs.
+        var names = tenants.Select(element => element!.GetValue<string>()).ToList();
+        foreach (var row in table.Rows)
+        {
+            names.Should().Contain(await ReplaceIdsAsync(row["Name"]));
+        }
     }
 
     [Then("the response body has property {string}")]

@@ -7,8 +7,11 @@ using EdFi.DataManagementService.Core.Configuration;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Internal;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Configuration;
@@ -1080,6 +1083,77 @@ public class CachedApplicationContextProviderTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return inner.RemoveByTagAsync(tag, cancellationToken);
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Deleted_Client_And_A_Controlled_Clock : CachedApplicationContextProviderTests
+    {
+        private IConfigurationServiceApplicationProvider _cmsProvider = null!;
+        private ApplicationContextResult _justBeforeExpiry = null!;
+        private ApplicationContextResult _atExpiry = null!;
+
+        /// <summary>Drives HybridCache's in-process IMemoryCache expiry from a <see cref="FakeTimeProvider" />.</summary>
+        private sealed class FakeTimeProviderClock(FakeTimeProvider timeProvider) : ISystemClock
+        {
+            public DateTimeOffset UtcNow => timeProvider.GetUtcNow();
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var timeProvider = new FakeTimeProvider();
+            var services = new ServiceCollection();
+            services.AddSingleton<TimeProvider>(timeProvider);
+            services.AddMemoryCache(options => options.Clock = new FakeTimeProviderClock(timeProvider));
+            services.AddHybridCache();
+            HybridCache hybridCache = services.BuildServiceProvider().GetRequiredService<HybridCache>();
+
+            _cmsProvider = A.Fake<IConfigurationServiceApplicationProvider>();
+            A.CallTo(() => _cmsProvider.GetApplicationByClientIdAsync(ClientId, null, A<CancellationToken>._))
+                .Returns(
+                    Task.FromResult<ApplicationContextResult>(
+                        new ApplicationContextResult.Success(CreateApplicationContext(ClientId, 1))
+                    )
+                )
+                .Once()
+                .Then.Returns(
+                    Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.NotFound())
+                );
+
+            // A request scope per call, matching the scoped provider's production lifetime.
+            CachedApplicationContextProvider CreateScopedProvider() =>
+                new(
+                    _cmsProvider,
+                    hybridCache,
+                    new CacheSettings { ApplicationContextCacheExpirationSeconds = 15 },
+                    NullLogger<CachedApplicationContextProvider>.Instance
+                );
+
+            await CreateScopedProvider().GetApplicationByClientIdAsync(ClientId, null);
+            timeProvider.Advance(TimeSpan.FromSeconds(14));
+            _justBeforeExpiry = await CreateScopedProvider().GetApplicationByClientIdAsync(ClientId, null);
+            timeProvider.Advance(TimeSpan.FromSeconds(1));
+            _atExpiry = await CreateScopedProvider().GetApplicationByClientIdAsync(ClientId, null);
+        }
+
+        [Test]
+        public void It_keeps_serving_the_cached_context_until_expiry()
+        {
+            _justBeforeExpiry.Should().BeOfType<ApplicationContextResult.Success>();
+        }
+
+        [Test]
+        public void It_reports_the_deleted_client_as_not_found_once_the_entry_expires()
+        {
+            _atExpiry.Should().BeOfType<ApplicationContextResult.NotFound>();
+        }
+
+        [Test]
+        public void It_asks_the_Configuration_Service_again_only_after_expiry()
+        {
+            A.CallTo(() => _cmsProvider.GetApplicationByClientIdAsync(ClientId, null, A<CancellationToken>._))
+                .MustHaveHappenedTwiceExactly();
         }
     }
 }

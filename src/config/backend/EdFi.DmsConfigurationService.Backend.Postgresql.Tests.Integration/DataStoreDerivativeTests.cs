@@ -41,6 +41,10 @@ public class DataStoreDerivativeTests : DatabaseTest
             Configuration.DatabaseOptions,
             NullLogger<DataStoreDerivativeRepository>.Instance,
             new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+            TestConnectionStringReader.Create(
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                new TenantContextProvider()
+            ),
             new TestAuditContext(),
             new TenantContextProvider()
         );
@@ -49,6 +53,10 @@ public class DataStoreDerivativeTests : DatabaseTest
             Configuration.DatabaseOptions,
             NullLogger<DataStoreRepository>.Instance,
             new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+            TestConnectionStringReader.Create(
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                new TenantContextProvider()
+            ),
             routeContextRepository,
             _repository,
             new TestAuditContext(),
@@ -773,6 +781,10 @@ public class DataStoreDerivativeTests : DatabaseTest
                 Configuration.DatabaseOptions,
                 NullLogger<DataStoreDerivativeRepository>.Instance,
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                TestConnectionStringReader.Create(
+                    new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                    tenantContextProvider
+                ),
                 new TestAuditContext(),
                 tenantContextProvider
             );
@@ -787,6 +799,10 @@ public class DataStoreDerivativeTests : DatabaseTest
                 Configuration.DatabaseOptions,
                 NullLogger<DataStoreRepository>.Instance,
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                TestConnectionStringReader.Create(
+                    new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                    tenantContextProvider
+                ),
                 new DataStoreContextRepository(
                     Configuration.DatabaseOptions,
                     NullLogger<DataStoreContextRepository>.Instance,

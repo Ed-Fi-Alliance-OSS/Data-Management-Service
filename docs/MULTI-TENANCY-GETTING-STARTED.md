@@ -11,11 +11,11 @@ Multi-tenancy in DMS provides two layers of data isolation:
    `Tenant` HTTP header in Configuration Service requests. Vendors, applications
    and their API clients, data stores with their contexts and derivatives,
    ownership tokens, and profiles each belong to one tenant, and each tenant sees
-   only its own. Vendor company names and profile names need only be unique
-   within a tenant. System-reserved claim sets are visible to every tenant. A
-   claim set a tenant creates is listed and managed only in that tenant, but
-   claim set names are unique across all tenants, so a name another tenant
-   already uses is rejected with 409 even though it is not listed
+   only its own. Vendor company names, profile names and data store names need
+   only be unique within a tenant. System-reserved claim sets are visible to
+   every tenant. A claim set a tenant creates is listed and managed only in that
+   tenant, but claim set names are unique across all tenants, so a name another
+   tenant already uses is rejected with 400 even though it is not listed
 2. **Instance Routing** - Each tenant can have multiple data stores (databases),
    accessible via URL-based routing or credential-based routing
 
@@ -100,7 +100,9 @@ is included in the repository.
 > `CONFIG_SERVICE_TENANT` in the environment file so the script can send the
 > required `Tenant` header.
 > Avoid mixing `-SchoolYearRange` with manual instance creation in the same
-> environment, because it can create duplicate instances/route contexts.
+> environment, because manually named instances can duplicate its route
+> contexts. Re-running `-SchoolYearRange` for a year it already created is
+> rejected with 400, because data store names are unique within a tenant.
 
 Start the DMS stack with your multi-tenancy configuration:
 
@@ -392,6 +394,7 @@ docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2025 \
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/v3/tenants/` | GET, POST | List/create tenants |
+| `/tenancy` | GET | List tenant names; requires no authentication and no Tenant header |
 | `/v3/dataStores` | GET, POST, PUT, DELETE | Manage data stores |
 | `/v3/dataStoreContexts` | GET, POST, PUT, DELETE | Manage data store contexts |
 | `/v3/vendors` | GET, POST, PUT, DELETE | Manage vendors |
@@ -399,7 +402,8 @@ docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2025 \
 
 ### Tenant Header
 
-For multi-tenant Configuration Service requests, include:
+For tenant-scoped Configuration Service requests (the `/v3/*` resources),
+include:
 
 ```
 Tenant: {tenant-name}
@@ -407,6 +411,19 @@ Tenant: {tenant-name}
 
 Tenant names must be alphanumeric with hyphens or underscores only (max 256
 characters).
+
+The discovery endpoints require neither credentials nor a `Tenant` header:
+
+- `GET /`
+- `GET /tenancy`, which also ignores a `Tenant` header if one is supplied
+- `GET /metadata/specifications`
+- `GET /openapi/v1.json`
+
+A client that does not yet know a tenant name reads `GET /`, follows
+`urls.tenancy` to learn the tenant names, and then chooses one.
+
+`/v3/tenants/` also needs no `Tenant` header, but unlike the discovery
+endpoints it does require authentication.
 
 ## Step 7: Access Swagger UI with Multi-Tenancy
 
