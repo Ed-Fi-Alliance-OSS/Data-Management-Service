@@ -892,7 +892,7 @@ Describe "Instance E2E runs the DMS projection reader project once per engine la
         foreach ($name in @(
                 "ConvertTo-NormalizedTestFilter",
                 "Test-InstanceE2ERunsDmsProjectionReader",
-                "Assert-DmsProjectionReaderTrxCounters",
+                "Assert-DmsProjectionReaderTrxResults",
                 "RunDmsProjectionReaderE2E",
                 "RunInstanceE2E"
             )) {
@@ -902,13 +902,38 @@ Describe "Instance E2E runs the DMS projection reader project once per engine la
         # Stands in for the build-helpers command so it can be mocked.
         function Invoke-Execute { param([scriptblock] $Command) & $Command }
 
+        # A TRX shaped as the reader project's: one definition per test, naming its class, and one result per test
+        # with its outcome. Outcomes are "Passed", "Failed" or "NotExecuted" (a skipped test); the counters agree.
         function New-Trx {
-            param([string] $Path, [int] $Total, [int] $Passed)
+            param([string] $Path, [string[]] $LiveOutcomes = @(), [string[]] $HarnessOutcomes = @())
+
+            $definitions = [System.Text.StringBuilder]::new()
+            $results = [System.Text.StringBuilder]::new()
+            $tests = @(
+                $LiveOutcomes | ForEach-Object { [pscustomobject]@{ Class = "EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Live.DmsProjectionReaderTests+Given_a_case"; Outcome = $_ } }
+                $HarnessOutcomes | ForEach-Object { [pscustomobject]@{ Class = "EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Harness.LiveServicesCleanupTests+Given_a_case"; Outcome = $_ } }
+            )
+            for ($index = 0; $index -lt $tests.Count; $index++) {
+                $id = [guid]::NewGuid()
+                [void]$definitions.Append("<UnitTest name=`"It_$index`" id=`"$id`"><TestMethod className=`"$($tests[$index].Class)`" name=`"It_$index`" /></UnitTest>")
+                [void]$results.Append("<UnitTestResult testId=`"$id`" testName=`"It_$index`" outcome=`"$($tests[$index].Outcome)`" />")
+            }
+            $passed = @($tests | Where-Object { $_.Outcome -eq "Passed" }).Count
+            $failed = @($tests | Where-Object { $_.Outcome -eq "Failed" }).Count
+            $executed = @($tests | Where-Object { $_.Outcome -ne "NotExecuted" }).Count
+
             Set-Content -LiteralPath $Path -Value (
-                '<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><ResultSummary outcome="Completed">' +
-                "<Counters total=`"$Total`" executed=`"$Total`" passed=`"$Passed`" failed=`"$($Total - $Passed)`" />" +
+                '<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">' +
+                "<Results>$results</Results><TestDefinitions>$definitions</TestDefinitions>" +
+                '<ResultSummary outcome="Completed">' +
+                "<Counters total=`"$($tests.Count)`" executed=`"$executed`" passed=`"$passed`" failed=`"$failed`" />" +
                 '</ResultSummary></TestRun>'
             )
+        }
+
+        function Repeat {
+            param([string] $Outcome, [int] $Count)
+            return @(1..$Count | ForEach-Object { $Outcome })
         }
     }
 
@@ -927,27 +952,50 @@ Describe "Instance E2E runs the DMS projection reader project once per engine la
         }
     }
 
-    Context "the TRX count guard" {
-        It "passes when at least the minimum ran and all passed" {
-            $trx = Join-Path $TestDrive "pass.trx"
-            New-Trx -Path $trx -Total 8 -Passed 8
-            { Assert-DmsProjectionReaderTrxCounters -TrxFile $trx -MinimumTotal 8 } | Should -Not -Throw
+    Context "the TRX guard" {
+        It "accepts a complete, all-passed run of live and harness tests" {
+            $trx = Join-Path $TestDrive "complete.trx"
+            New-Trx -Path $trx -LiveOutcomes (Repeat "Passed" 20) -HarnessOutcomes (Repeat "Passed" 10)
+            { Assert-DmsProjectionReaderTrxResults -TrxFile $trx -MinimumLiveTests 8 } | Should -Not -Throw
         }
 
-        It "fails when fewer than the minimum ran" {
-            $trx = Join-Path $TestDrive "few.trx"
-            New-Trx -Path $trx -Total 7 -Passed 7
-            { Assert-DmsProjectionReaderTrxCounters -TrxFile $trx -MinimumTotal 8 } | Should -Throw "*ran 7 and passed 7*"
+        It "rejects a run of harness tests only, however many passed" {
+            $trx = Join-Path $TestDrive "harness-only.trx"
+            New-Trx -Path $trx -HarnessOutcomes (Repeat "Passed" 30)
+            { Assert-DmsProjectionReaderTrxResults -TrxFile $trx -MinimumLiveTests 8 } |
+                Should -Throw "*at least 8 live tests*ran 0 and passed 0*"
         }
 
-        It "fails when any test did not pass" {
-            $trx = Join-Path $TestDrive "failed.trx"
-            New-Trx -Path $trx -Total 9 -Passed 8
-            { Assert-DmsProjectionReaderTrxCounters -TrxFile $trx -MinimumTotal 8 } | Should -Throw "*ran 9 and passed 8*"
+        It "rejects too few live tests even when the total reaches the minimum" {
+            $trx = Join-Path $TestDrive "few-live.trx"
+            New-Trx -Path $trx -LiveOutcomes (Repeat "Passed" 7) -HarnessOutcomes (Repeat "Passed" 10)
+            { Assert-DmsProjectionReaderTrxResults -TrxFile $trx -MinimumLiveTests 8 } |
+                Should -Throw "*at least 8 live tests*ran 7 and passed 7*"
         }
 
-        It "fails when the results file is missing" {
-            { Assert-DmsProjectionReaderTrxCounters -TrxFile (Join-Path $TestDrive "absent.trx") -MinimumTotal 8 } |
+        It "rejects a failed live test" {
+            $trx = Join-Path $TestDrive "failed-live.trx"
+            New-Trx -Path $trx -LiveOutcomes @((Repeat "Passed" 19) + "Failed") -HarnessOutcomes (Repeat "Passed" 10)
+            { Assert-DmsProjectionReaderTrxResults -TrxFile $trx -MinimumLiveTests 8 } |
+                Should -Throw "*live tests*ran 20 and passed 19*"
+        }
+
+        It "rejects a skipped live test" {
+            $trx = Join-Path $TestDrive "skipped-live.trx"
+            New-Trx -Path $trx -LiveOutcomes @((Repeat "Passed" 19) + "NotExecuted") -HarnessOutcomes (Repeat "Passed" 10)
+            { Assert-DmsProjectionReaderTrxResults -TrxFile $trx -MinimumLiveTests 8 } |
+                Should -Throw "*live tests*ran 20 and passed 19*"
+        }
+
+        It "rejects a failed harness test when every live test passed" {
+            $trx = Join-Path $TestDrive "failed-harness.trx"
+            New-Trx -Path $trx -LiveOutcomes (Repeat "Passed" 20) -HarnessOutcomes @((Repeat "Passed" 9) + "Failed")
+            { Assert-DmsProjectionReaderTrxResults -TrxFile $trx -MinimumLiveTests 8 } |
+                Should -Throw "*must pass every test; it ran 30 and passed 29*"
+        }
+
+        It "rejects a missing results file" {
+            { Assert-DmsProjectionReaderTrxResults -TrxFile (Join-Path $TestDrive "absent.trx") -MinimumLiveTests 8 } |
                 Should -Throw "*wrote no results file*"
         }
     }
@@ -956,7 +1004,7 @@ Describe "Instance E2E runs the DMS projection reader project once per engine la
         BeforeEach {
             $script:executed = [System.Collections.Generic.List[string]]::new()
             Mock Invoke-Execute { $script:executed.Add($Command.ToString()) }
-            Mock Assert-DmsProjectionReaderTrxCounters { }
+            Mock Assert-DmsProjectionReaderTrxResults { }
             $script:Configuration = "Release"
             $script:testResults = $TestDrive
             $script:solutionRoot = "src/dms"
@@ -992,7 +1040,7 @@ Describe "Instance E2E runs the DMS projection reader project once per engine la
             Mock Invoke-Execute { throw "Error executing command" }
 
             { RunDmsProjectionReaderE2E -DatabaseEngine "postgresql" } | Should -Throw "*Error executing command*"
-            Should -Invoke Assert-DmsProjectionReaderTrxCounters -Times 0 -Exactly
+            Should -Invoke Assert-DmsProjectionReaderTrxResults -Times 0 -Exactly
         }
 
         It "builds the reader project instead of reusing prebuilt output, names its TRX by engine, and guards it" {
@@ -1002,8 +1050,8 @@ Describe "Instance E2E runs the DMS projection reader project once per engine la
             $script:executed[0] | Should -Match "dotnet test \`$project"
             $script:executed[0] | Should -Not -Match "--no-build"
             $script:executed[0] | Should -Not -Match "--no-restore"
-            Should -Invoke Assert-DmsProjectionReaderTrxCounters -Times 1 -Exactly -ParameterFilter {
-                $MinimumTotal -eq 8 -and $TrxFile -like "*EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.mssql.trx"
+            Should -Invoke Assert-DmsProjectionReaderTrxResults -Times 1 -Exactly -ParameterFilter {
+                $MinimumLiveTests -eq 8 -and $TrxFile -like "*EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.mssql.trx"
             }
         }
     }

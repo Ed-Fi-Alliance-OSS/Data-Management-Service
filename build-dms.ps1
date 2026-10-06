@@ -2034,22 +2034,26 @@ function RunDmsProjectionReaderE2E {
             --nologo
     }
 
-    Assert-DmsProjectionReaderTrxCounters -TrxFile $trxFile -MinimumTotal 8
+    Assert-DmsProjectionReaderTrxResults -TrxFile $trxFile -MinimumLiveTests 8
 }
 
-function Assert-DmsProjectionReaderTrxCounters {
+function Assert-DmsProjectionReaderTrxResults {
     <#
     .SYNOPSIS
-        Fails unless the reader project's TRX shows at least -MinimumTotal tests and every one passed, so a run
-        that discovers too few tests, skips any, or loses its results cannot pass.
+        Fails unless the reader project's TRX shows at least -MinimumLiveTests results from the live tests (the
+        project's Live namespace, the only tests that reach DMS), every one of them passed, and every test of the
+        project passed. The live results are counted on their own because the project also holds harness tests
+        that need no stack: a run that discovers or selects no live test must not pass on harness tests alone.
     #>
     param(
         [string]
         $TrxFile,
 
         [int]
-        $MinimumTotal
+        $MinimumLiveTests
     )
+
+    $liveClassPrefix = "EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Live."
 
     if (-not (Test-Path -LiteralPath $TrxFile)) {
         throw "DMS projection reader E2E wrote no results file at '$TrxFile'."
@@ -2061,12 +2065,30 @@ function Assert-DmsProjectionReaderTrxCounters {
         throw "DMS projection reader E2E results file '$TrxFile' has no counters."
     }
 
+    $classByTestId = @{}
+    foreach ($test in @($trx.TestRun.TestDefinitions.UnitTest)) {
+        if ($null -ne $test) {
+            $classByTestId[[string]$test.id] = [string]$test.TestMethod.className
+        }
+    }
+    $liveResults = @(
+        @($trx.TestRun.Results.UnitTestResult) | Where-Object {
+            $null -ne $_ -and
+            $classByTestId.ContainsKey([string]$_.testId) -and
+            $classByTestId[[string]$_.testId].StartsWith($liveClassPrefix, [System.StringComparison]::Ordinal)
+        }
+    )
+    $livePassed = @($liveResults | Where-Object { $_.outcome -eq "Passed" }).Count
     $total = [int]$counters.total
     $passed = [int]$counters.passed
-    Write-Output "DMS projection reader E2E: $passed of $total tests passed."
+    Write-Output "DMS projection reader E2E: $livePassed of $($liveResults.Count) live tests passed; $passed of $total tests passed."
 
-    if ($total -lt $MinimumTotal -or $passed -ne $total) {
-        throw "DMS projection reader E2E must run at least $MinimumTotal tests and pass all of them; it ran $total and passed $passed."
+    if ($liveResults.Count -lt $MinimumLiveTests -or $livePassed -ne $liveResults.Count) {
+        throw "DMS projection reader E2E must run at least $MinimumLiveTests live tests and pass all of them; it ran $($liveResults.Count) and passed $livePassed."
+    }
+
+    if ($passed -ne $total) {
+        throw "DMS projection reader E2E must pass every test; it ran $total and passed $passed."
     }
 }
 
