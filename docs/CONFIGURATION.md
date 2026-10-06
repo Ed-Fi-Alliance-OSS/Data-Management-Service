@@ -88,7 +88,7 @@ For operational workflows, use the
 [DocumentCache operations runbook](../reference/document-cache-documentation/operations-runbook.md).
 For connector setup, publication history and CDC operations, use the
 [CDC operator reference](../reference/cdc-documentation/README.md) and its
-[projection/history handoff](../reference/cdc-documentation/operations-runbook.md#projection-handoff).
+[projection/history handoff](../reference/cdc-documentation/operations-runbook.md#projection-troubleshooting-and-administration-handoff).
 
 | Parameter                               | Description                                                                                                                                                  |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -119,8 +119,8 @@ characters are invalid and leave the DocumentCache status endpoint unmapped.
 
 The [SchemaTools CDC reference](../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands)
 owns the `Cdc` settings catalog and command output. The
-[PostgreSQL](../reference/cdc-documentation/operations-runbook.md#postgresql-setup)
-and [SQL Server](../reference/cdc-documentation/operations-runbook.md#sql-server-setup)
+[PostgreSQL](../reference/cdc-documentation/operations-runbook.md#postgresql-local-setup)
+and [SQL Server](../reference/cdc-documentation/operations-runbook.md#sql-server-local-setup)
 procedures prepare complete DMS settings plus deployment configuration. Direct
 `api-schema-tools cdc` calls accept `DMS_CDC__` overrides; bootstrap wrappers reject
 those overrides and snapshot protected input settings for subsequent commands.
