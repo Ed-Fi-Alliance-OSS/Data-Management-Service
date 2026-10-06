@@ -91,7 +91,7 @@ public class VendorModule : IEndpointModule
                 return Results.Created(resourceUrl, null);
             }
 
-            IResult updateResult = await Update(
+            IResult updateResult = await UpdateCore(
                 success.Id,
                 new VendorUpdateCommand
                 {
@@ -107,7 +107,8 @@ public class VendorModule : IEndpointModule
                 apiClientRepository,
                 clientRepository,
                 lockManager,
-                logger
+                logger,
+                preserveExistingCompanyName: true
             );
 
             if (updateResult is not IStatusCodeHttpResult { StatusCode: StatusCodes.Status204NoContent })
@@ -184,7 +185,7 @@ public class VendorModule : IEndpointModule
     /// A failure part way through restores the clients this request already changed, so the
     /// operation never returns success with the database and the identity provider disagreeing.
     /// </summary>
-    private static async Task<IResult> Update(
+    private static Task<IResult> Update(
         int id,
         VendorUpdateCommand command,
         VendorUpdateCommand.Validator validator,
@@ -194,6 +195,31 @@ public class VendorModule : IEndpointModule
         IIdentityProviderRepository clientRepository,
         IApplicationLockManager lockManager,
         ILogger<VendorModule> logger
+    ) =>
+        UpdateCore(
+            id,
+            command,
+            validator,
+            httpContext,
+            repository,
+            apiClientRepository,
+            clientRepository,
+            lockManager,
+            logger,
+            preserveExistingCompanyName: false
+        );
+
+    private static async Task<IResult> UpdateCore(
+        int id,
+        VendorUpdateCommand command,
+        VendorUpdateCommand.Validator validator,
+        HttpContext httpContext,
+        IVendorRepository repository,
+        IApiClientRepository apiClientRepository,
+        IIdentityProviderRepository clientRepository,
+        IApplicationLockManager lockManager,
+        ILogger<VendorModule> logger,
+        bool preserveExistingCompanyName
     )
     {
         PutGuards.GuardRouteIdMatchesBodyId(id, command.Id);
@@ -209,6 +235,12 @@ public class VendorModule : IEndpointModule
         }
 
         VendorUpdateState state = lockedState!;
+        if (preserveExistingCompanyName)
+        {
+            // POST matched the natural key; keep the stored spelling under the same lock used
+            // for the coordinated update. SQL Server may match a differently cased request.
+            command.Company = state.Company;
+        }
 
         // Each client this request has changed, with the identity-provider client it is now
         // known to carry, so compensation addresses the client that exists rather than the one

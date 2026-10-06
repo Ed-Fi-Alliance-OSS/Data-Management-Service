@@ -464,6 +464,83 @@ public class VendorModuleTests
                 )
                 .MustHaveHappenedOnceExactly();
         }
+
+        [Test]
+        public async Task It_returns_the_update_failure_for_an_existing_vendor()
+        {
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(1))
+                .Returns(new VendorUpdateStateResult.FailureNotExists());
+            using var client = SetUpClient();
+
+            var response = await client.PostAsync(
+                "/v3/vendors",
+                new StringContent(
+                    """
+                    {
+                      "company": "Existing Company",
+                      "contactName": "Test",
+                      "contactEmailAddress": "test@gmail.com",
+                      "namespacePrefixes": ""
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            response.Headers.Location.Should().BeNull();
+            JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
+            body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Vendor 1 not found. It may have been recently deleted.");
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_preserves_the_stored_company_casing_for_an_existing_vendor()
+        {
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(1))
+                .Returns(
+                    new VendorUpdateStateResult.Success(
+                        new VendorUpdateState(
+                            "Acme Corp",
+                            "Original Contact",
+                            "original@example.com",
+                            "uri://old.org",
+                            [new VendorApiClient(51, "client-51", _clientUuid, 10)]
+                        )
+                    )
+                );
+            using var client = SetUpClient();
+
+            var response = await client.PostAsync(
+                "/v3/vendors",
+                new StringContent(
+                    """
+                    {
+                      "company": "acme corp",
+                      "contactName": "Test",
+                      "contactEmailAddress": "test@gmail.com",
+                      "namespacePrefixes": ""
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            A.CallTo(() =>
+                    _vendorRepository.UpdateVendor(
+                        A<VendorUpdateCommand>.That.Matches(command => command.Company == "Acme Corp")
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+        }
     }
 
     /// <summary>
