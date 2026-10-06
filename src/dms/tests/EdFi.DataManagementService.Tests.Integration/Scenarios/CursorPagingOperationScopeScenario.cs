@@ -37,8 +37,6 @@ internal static class CursorPagingOperationScopeScenario
 {
     private const string SchoolsEndpoint = "/data/ed-fi/schools";
 
-    private const string BadRequestType = "urn:ed-fi:api:bad-request";
-
     /// <summary>
     /// Not base64url, so cursor validation would reject it as an undecodable token. An operation that
     /// does not page by cursor must instead report the parameter name, which is what distinguishes the
@@ -65,7 +63,7 @@ internal static class CursorPagingOperationScopeScenario
             $"{SchoolsEndpoint}/deletes?pageToken={UndecodablePageToken}"
         );
 
-        await AssertSingleBadRequestError(
+        await BadRequestProblemDetails.AssertShellAsync(
             response,
             "The query field 'pageToken' is not valid for this Change Query endpoint."
         );
@@ -85,7 +83,7 @@ internal static class CursorPagingOperationScopeScenario
             $"{SchoolsEndpoint}/keyChanges?pageSize={WellFormedPageSize}"
         );
 
-        await AssertSingleBadRequestError(
+        await BadRequestProblemDetails.AssertShellAsync(
             response,
             "The query field 'pageSize' is not valid for this Change Query endpoint."
         );
@@ -228,32 +226,5 @@ internal static class CursorPagingOperationScopeScenario
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden, await response.Content.ReadAsStringAsync());
         IgnoredParameterWarningAssertions.AssertWarnsOf(response, "schoolId");
-    }
-
-    /// <summary>
-    /// Asserts the generic bad-request shell, which is the shell an unrecognized query field is
-    /// reported in. A cursor request that was recognized and rejected would answer with the parameter
-    /// validation shell instead, so the shell is part of what is being asserted.
-    /// </summary>
-    private static async Task AssertSingleBadRequestError(HttpResponseMessage response, string expectedError)
-    {
-        string content = await response.Content.ReadAsStringAsync();
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-
-        JsonNode body = JsonNode.Parse(content)!;
-
-        // The reported message first, so a wrong answer names itself rather than being described only
-        // by the shell it arrived in.
-        body["errors"]!.AsArray().Select(error => error!.GetValue<string>()).Should().Equal(expectedError);
-        body["detail"]!
-            .GetValue<string>()
-            .Should()
-            .Be("The request could not be processed. See 'errors' for details.");
-        body["type"]!.GetValue<string>().Should().Be(BadRequestType);
-        body["title"]!.GetValue<string>().Should().Be("Bad Request");
-        body["status"]!.GetValue<int>().Should().Be(400);
-        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
-        body["validationErrors"]!.AsObject().Should().BeEmpty();
     }
 }
