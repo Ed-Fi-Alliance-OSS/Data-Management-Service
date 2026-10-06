@@ -22,7 +22,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 {
     protected static async Task<Guid> RegisterApplicationAsync(
         OpenIddictDataRepository repository,
-        string clientId
+        string clientId,
+        params string[] scopes
     )
     {
         var applicationId = Guid.NewGuid();
@@ -35,20 +36,42 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     clientId,
                     "hashed-secret",
                     "Integration Test Client",
-                    ["token", "authorization"],
+                    scopes.Length > 0 ? scopes : ["token", "authorization"],
                     ["require_pkce"],
                     "confidential",
                     """[{"claim.name":"namespacePrefixes","claim.value":"uri://ed-fi.org","jsonType.label":"String"}]""",
                     connection,
                     transaction
                 );
+                foreach (string scope in scopes)
+                {
+                    Guid scopeId;
+                    if (
+                        await repository.FindScopeIdByNameAsync(scope, connection, transaction) is
+                        { } existingId
+                    )
+                    {
+                        scopeId = existingId;
+                    }
+                    else
+                    {
+                        scopeId = Guid.NewGuid();
+                        await repository.InsertScopeAsync(scopeId, scope, connection, transaction);
+                    }
+                    await repository.InsertApplicationScopeAsync(
+                        applicationId,
+                        scopeId,
+                        connection,
+                        transaction
+                    );
+                }
             }
         );
 
         return applicationId;
     }
 
-    protected static Task AddApiClientRowAsync(
+    protected static Task<int> AddApiClientRowAsync(
         OpenIddictDataRepository repository,
         string clientId,
         bool isApproved = true
@@ -83,6 +106,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     },
                     transaction
                 );
+                return vendorId;
             }
         );
 
@@ -219,6 +243,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
     [TestFixture(false, 1)]
     [TestFixture(true, -1)]
+    [TestFixture(true, 0)]
     public class Given_Manager_Grants_That_Bypass_Enforcement(bool hasApiClientRow, int configuredLimit)
         : OpenIddictDataRepositoryTests
     {
@@ -230,7 +255,11 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         {
             OpenIddictDataRepository repository = new(Configuration.DatabaseOptions);
             string clientId = Guid.NewGuid().ToString();
-            _applicationId = await RegisterApplicationAsync(repository, clientId);
+            _applicationId = await RegisterApplicationAsync(
+                repository,
+                clientId,
+                hasApiClientRow ? "EdFiSandbox" : "edfi_admin_api/readonly_access"
+            );
             if (hasApiClientRow)
             {
                 await AddApiClientRowAsync(repository, clientId);
@@ -253,6 +282,65 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [Test]
         public async Task It_stores_all_three_tokens() =>
             (await TokenRowCountAsync(_applicationId)).Should().Be(3);
+    }
+
+    [TestFixture]
+    public class Given_Vendor_Deletion_With_Api_Client_Credentials : OpenIddictDataRepositoryTests
+    {
+        private Guid _applicationId;
+        private ApplicationInfo _applicationAfterDeletion = null!;
+        private TokenResult _firstGrant = null!;
+        private TokenResult _secondGrant = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(Configuration.DatabaseOptions);
+            string clientId = Guid.NewGuid().ToString();
+            _applicationId = await RegisterApplicationAsync(repository, clientId, "EdFiSandbox");
+            int vendorId = await AddApiClientRowAsync(repository, clientId);
+            await repository.ExecuteInTransactionAsync(
+                async (connection, transaction) =>
+                {
+                    // Exercise the same vendor-row cascade used by the vendor delete endpoint.
+                    await connection.ExecuteAsync(
+                        """DELETE FROM "dmscs"."Vendor" WHERE "Id" = @VendorId""",
+                        new { VendorId = vendorId },
+                        transaction
+                    );
+                }
+            );
+            _applicationAfterDeletion =
+                await repository.GetApplicationByClientIdAsync(clientId)
+                ?? throw new InvalidOperationException(
+                    "The provider credential should survive vendor deletion."
+                );
+            OpenIddictTokenManager manager = CreateTokenManager(
+                repository,
+                new IdentityOptions { BearerTokenPerClientLimit = 1 }
+            );
+            _firstGrant = await RequestGrantAsync(manager, clientId);
+            _secondGrant = await RequestGrantAsync(manager, clientId);
+        }
+
+        [Test]
+        public void It_cascades_away_the_api_client_row() =>
+            _applicationAfterDeletion.IsTokenLimitExempt.Should().BeTrue();
+
+        [Test]
+        public void It_retains_the_registered_api_scope() =>
+            _applicationAfterDeletion.Scopes.Should().BeEquivalentTo("EdFiSandbox");
+
+        [Test]
+        public void It_admits_the_first_grant() => _firstGrant.Should().BeOfType<TokenResult.Success>();
+
+        [Test]
+        public void It_refuses_the_second_grant_with_the_configured_limit() =>
+            _secondGrant.Should().BeEquivalentTo(new TokenResult.FailureTokenLimitExceeded(1));
+
+        [Test]
+        public async Task It_stores_exactly_one_token() =>
+            (await TokenRowCountAsync(_applicationId)).Should().Be(1);
     }
 
     /// <summary>

@@ -283,6 +283,11 @@ A few things are specific to the MSSQL path:
   either engine. This section documents the CI build/publish/verify pipeline only; no local
   bootstrap flow currently restores these packages.
 
+For a self-contained smoke run, set `DMS_CONFIG_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1`
+in your `.env` before starting or recreating the stack: the Smoke Test Utility requests
+a new token for each resource GET and otherwise exceeds the default limit of 15.
+Restore the configured limit and recreate the stack after the smoke run.
+
 After the stack is up, run the smoke tests the same way as for PostgreSQL:
 
 ```pwsh

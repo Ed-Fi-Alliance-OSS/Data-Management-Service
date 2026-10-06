@@ -221,31 +221,13 @@ public class Given_Dms_Token_Cache
     }
 
     [Test]
-    public async Task It_keeps_uncached_acquisition_fresh_without_replacing_the_reusable_token()
-    {
-        await _cache.GetReusableDmsTokenAsync("endpoint", "client", "secret");
-        var fresh = await _cache.GetDmsTokenAsync("endpoint", "client", "secret");
-        var anotherFresh = await _cache.GetDmsTokenAsync("endpoint", "client", "secret");
-        var reusable = await _cache.GetReusableDmsTokenAsync("endpoint", "client", "secret");
-
-        fresh.Should().Be("token-2");
-        anotherFresh.Should().Be("token-3");
-        reusable.Should().Be("token-1");
-        _acquisitions.Should().Be(3);
-    }
-
-    [TestCase(true)]
-    [TestCase(false)]
-    public async Task It_rejects_a_response_missing_its_access_token(bool reusable)
+    public async Task It_rejects_a_response_missing_its_access_token()
     {
         var cache = new DmsTokenCache(
             (_, _, _) => Task.FromResult(new TokenResponse(null!, "bearer", 120)),
             _time
         );
-        var act = () =>
-            reusable
-                ? cache.GetReusableDmsTokenAsync("endpoint", "client", "secret")
-                : cache.GetDmsTokenAsync("endpoint", "client", "secret");
+        var act = () => cache.GetReusableDmsTokenAsync("endpoint", "client", "secret");
 
         await act.Should().ThrowAsync<InvalidOperationException>();
     }

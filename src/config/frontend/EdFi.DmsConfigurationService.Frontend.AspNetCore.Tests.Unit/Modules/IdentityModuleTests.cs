@@ -971,8 +971,9 @@ public class TokenEndpointTests
     /// status, the content type and every member of the body survive
     /// <c>GlobalExceptionHandler</c> and <c>FrameworkErrorResponseMiddleware</c> unreshaped.
     /// </summary>
-    [TestFixture]
-    public class Given_a_client_that_has_reached_its_token_limit
+    [TestFixture(5)]
+    [TestFixture(15)]
+    public class Given_a_client_that_has_reached_its_token_limit(int configuredLimit)
     {
         private ITokenManager _serviceTokenManager = null!;
         private WebApplicationFactory<Program> _factory = null!;
@@ -989,7 +990,7 @@ public class TokenEndpointTests
                         A<IEnumerable<KeyValuePair<string, string>>>.Ignored
                     )
                 )
-                .Returns(new TokenResult.FailureTokenLimitExceeded(5));
+                .Returns(new TokenResult.FailureTokenLimitExceeded(configuredLimit));
 
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
@@ -1035,7 +1036,7 @@ public class TokenEndpointTests
         {
             JsonNode actualResponse = JsonNode.Parse(_content)!;
             JsonNode expectedResponse = JsonNode.Parse(
-                """
+                $$"""
                 {
                   "detail": "The caller has authenticated too many times in too short of a time period.",
                   "type": "urn:ed-fi:api:security:authentication:too-many-tokens",
@@ -1044,7 +1045,7 @@ public class TokenEndpointTests
                   "correlationId": "{correlationId}",
                   "validationErrors": {},
                   "errors": [
-                    "Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire."
+                    "Too many access tokens have been requested (limit is {{configuredLimit}}). Access tokens should be reused until they expire."
                   ]
                 }
                 """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())

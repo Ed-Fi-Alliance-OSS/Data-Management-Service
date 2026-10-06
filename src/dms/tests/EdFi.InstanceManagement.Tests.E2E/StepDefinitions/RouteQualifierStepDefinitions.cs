@@ -299,14 +299,15 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
         context.LastResponse.Should().NotBeNull("Discovery response must be available");
 
         var responseBody = await context.LastResponse!.Content.ReadAsStringAsync();
-        var responseDoc = JsonDocument.Parse(responseBody);
+        using var responseDoc = JsonDocument.Parse(responseBody);
         var oauthUrl = responseDoc.RootElement.GetProperty("urls").GetProperty("oauth").GetString();
 
         oauthUrl.Should().NotBeNullOrWhiteSpace("Discovery must advertise an oauth url");
         context.ClientKey.Should().NotBeNullOrEmpty("Application must be created first");
         context.ClientSecret.Should().NotBeNullOrEmpty("Application must be created first");
 
-        context.DmsToken = await TokenHelper.GetReusableDmsTokenAsync(
+        // Exercise the advertised endpoint even when another scenario has cached a token.
+        context.DmsToken = await TokenHelper.GetDmsTokenAsync(
             oauthUrl!,
             context.ClientKey!,
             context.ClientSecret!

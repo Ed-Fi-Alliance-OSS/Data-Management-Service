@@ -21,8 +21,9 @@
         // from the database unless IdentitySettings:UseCertificates is set, which nothing sets.
         "EncryptionKey": "QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz",
         // Operators may set below 1 to disable token-limit enforcement globally.
-        // The shipped default is 15 for ApiClient-backed Ed-Fi API clients; non-API
-        // system/admin clients are exempt. See docs/CONFIGURATION.md.
+        // The shipped default is 15. Exemption requires no live ApiClient row and
+        // nonempty registered scopes consisting only of edfi_admin_api/*.
+        // See docs/CONFIGURATION.md.
         "BearerTokenPerClientLimit": 15
     },
     "Serilog": {

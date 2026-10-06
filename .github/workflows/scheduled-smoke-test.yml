@@ -345,6 +345,10 @@ jobs:
       # so the smoke test reuses the same .env.smoke the in-run template was
       # built from. This is smoke coverage only; the product template stays Core+TPDM.
       - name: Start DMS with Core, TPDM, Sample, and Homograph (SmokeTest)
+        # The pinned Smoke Test Utility requests a new token for each resource GET.
+        # Override only this stack startup; tracked environment defaults remain 15.
+        env:
+          DMS_CONFIG_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT: "-1"
         run: |
           $env:LOG_LEVEL="Warning"
           ./start-local-dms.ps1 -EnvironmentFile "${{ matrix.environment_file }}" -EnableConfig -DatabaseEngine "${{ matrix.database_engine }}"

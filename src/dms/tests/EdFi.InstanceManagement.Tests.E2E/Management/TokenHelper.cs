@@ -52,8 +52,13 @@ public static class TokenHelper
     /// <summary>
     /// Get access token from DMS using Basic authentication
     /// </summary>
-    public static Task<string> GetDmsTokenAsync(string tokenUrl, string clientKey, string clientSecret) =>
-        DmsTokens.GetDmsTokenAsync(tokenUrl, clientKey, clientSecret);
+    public static async Task<string> GetDmsTokenAsync(
+        string tokenUrl,
+        string clientKey,
+        string clientSecret
+    ) =>
+        (await AcquireDmsTokenAsync(tokenUrl, clientKey, clientSecret)).AccessToken
+        ?? throw new InvalidOperationException("Failed to get DMS access token");
 
     /// <summary>
     /// Reuse a DMS token until its conservative refresh deadline, sharing concurrent acquisitions.
@@ -103,10 +108,6 @@ internal sealed class DmsTokenCache(
 {
     private readonly object _gate = new();
     private readonly Dictionary<(string TokenUrl, string ClientKey), Lazy<Task<CachedToken>>> _tokens = [];
-
-    public async Task<string> GetDmsTokenAsync(string tokenUrl, string clientKey, string clientSecret) =>
-        (await acquireToken(tokenUrl, clientKey, clientSecret)).AccessToken
-        ?? throw new InvalidOperationException("Failed to get DMS access token");
 
     public async Task<string> GetReusableDmsTokenAsync(string tokenUrl, string clientKey, string clientSecret)
     {

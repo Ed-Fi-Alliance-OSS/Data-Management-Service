@@ -1504,7 +1504,7 @@ public class OpenIddictTokenManagerTests
     /// Arranges an approved client with a matching secret and a usable signing key, which is what
     /// GetAccessTokenAsync needs before it reaches StoreTokenAsync.
     /// </summary>
-    private Guid ArrangeGrantableClient(bool isTokenLimitExempt = false)
+    private Guid ArrangeGrantableClient(bool isTokenLimitExempt = false, params string[] scopes)
     {
         Guid applicationId = Guid.NewGuid();
         ApplicationInfo application = new()
@@ -1514,6 +1514,8 @@ public class OpenIddictTokenManagerTests
             ClientSecret = "hashed-secret",
             IsApproved = true,
             ProtocolMappers = "[]",
+            Scopes = scopes,
+            Permissions = scopes,
         };
         if (isTokenLimitExempt)
         {
@@ -1682,7 +1684,10 @@ public class OpenIddictTokenManagerTests
         [SetUp]
         public async Task Act()
         {
-            ArrangeGrantableClient(isTokenLimitExempt: true);
+            ArrangeGrantableClient(
+                isTokenLimitExempt: true,
+                scopes: ["edfi_admin_api/readonly_access", "edfi_admin_api/full_access"]
+            );
             ArrangeStoreOutcome(TokenStoreOutcome.Stored, call => _call = call);
 
             _result = await CreateTokenManagerWithTokenLimit(3).GetAccessTokenAsync(GrantCredentials());
@@ -1693,6 +1698,43 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_returns_a_success_result() => _result.Should().BeOfType<TokenResult.Success>();
+    }
+
+    [TestFixture(true, "")]
+    [TestFixture(true, "EdFiSandbox")]
+    [TestFixture(true, "edfi_admin_api/full_access,EdFiSandbox")]
+    [TestFixture(true, "EDFI_ADMIN_API/full_access")]
+    [TestFixture(true, "edfi_admin_api")]
+    [TestFixture(false, "edfi_admin_api/full_access")]
+    public class Given_GetAccessTokenAsync_WhenTheApplicationDoesNotQualifyForExemption(
+        bool hasNoApiClientRow,
+        string registeredScopes
+    ) : OpenIddictTokenManagerTests
+    {
+        private StoredTokenCall _call = null!;
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeGrantableClient(
+                isTokenLimitExempt: hasNoApiClientRow,
+                scopes: registeredScopes.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            );
+            ArrangeStoreOutcome(TokenStoreOutcome.Stored, call => _call = call);
+            var credentials = GrantCredentials();
+            // A request cannot make an API or mixed-scope credential exempt by asking for admin scopes.
+            credentials.Add(new("scope", "edfi_admin_api/full_access"));
+
+            _result = await CreateTokenManagerWithTokenLimit(1).GetAccessTokenAsync(credentials);
+        }
+
+        [Test]
+        public void It_passes_the_configured_limit() => _call.MaxActiveTokens.Should().Be(1);
+
+        [Test]
+        public void It_preserves_successful_authentication() =>
+            _result.Should().BeOfType<TokenResult.Success>();
     }
 
     [TestFixture]
