@@ -5,9 +5,10 @@ organizations in one data store, with each one's parent. The DMS Configuration
 Service reads it over HTTP to learn which education organizations a data store
 holds, without ever connecting to that data store's database.
 
-This page currently documents the service contract. Deployment, provisioning,
-Configuration Service settings and measured cost are added as the feature is
-implemented (DMS-1440).
+This page documents the service contract, how DMS serves it and what it costs,
+how to provision the Configuration Service's credential, how the Configuration
+Service reads and classifies the projection, the upgrade order, and what each
+service logs.
 
 The machine-readable contract is
 [education-organization-projection.v1.openapi.yaml](../reference/design/edorg-projection-DMS-1440/education-organization-projection.v1.openapi.yaml),
@@ -542,3 +543,373 @@ Every response echoes `contractVersion`. Discovery lists the versions the
 deployment serves; a client sends the highest version it shares with that list,
 and stops with no request when there is none. A later version is advertised
 alongside `educationOrganizationProjection.v1` for at least one release.
+
+## Request pipeline
+
+DMS runs a projection request through these steps in order. A step that fails
+answers the request, and no later step runs.
+
+1. Request logging and the unexpected-exception handler.
+2. Tenant validation (multi-tenant mode): a malformed tenant segment is
+   `400 urn:ed-fi:api:bad-request`.
+3. Authentication: `401`.
+4. Tenant existence: an unknown tenant is `404 urn:ed-fi:api:not-found`; a
+   tenant list that cannot be loaded is `503`.
+5. Client-to-tenant binding: a client whose application belongs to another
+   tenant is `401`; a binding that cannot be checked is `503`. The client's data
+   store assignments are not consulted.
+6. Service-claim authorization: `403` when the claim set does not grant `Read`
+   on the projection claim, `500 urn:ed-fi:api:system:configuration:security`
+   when it grants it with another authorization strategy.
+7. Parameter parsing: the `400` responses of [Request](#request) and
+   [Cursor](#cursor).
+8. [Target resolution](#target-resolution).
+9. Effective target: the data store's primary database. A snapshot or read
+   replica the data store publishes, and the `Use-Snapshot` header, are ignored.
+10. Schema fingerprint validation.
+11. Mapping-set resolution: a data model that lacks a view, column or reference
+    the projection needs is `409 projection-unsupported`.
+12. The [read](#database-read-stages),
+    [validation](#validation-and-parent-selection), digest comparison and page.
+
+Steps 4 to 6 are the identity endpoints' steps, in the same order, and use the
+same caches. A revoked grant or a moved application stops working when DMS next
+refreshes its claim sets and application context (`CacheSettings` in
+[Configuration](./CONFIGURATION.md#cachesettings), 600 seconds by default).
+
+## Target resolution
+
+`dataStoreId` is the Configuration Service data store id. DMS looks it up in the
+route tenant's catalog. When it is not there, DMS reloads that tenant's catalog
+once and looks again, so a data store registered after DMS started is found by
+its first request.
+
+| Situation | Response |
+| --- | --- |
+| The tenant's catalog cannot be reloaded: the Configuration Service is unreachable, answers an error or a malformed document, or holds a primary connection string that cannot be decrypted | `503 urn:ed-fi:api:service-unavailable` |
+| No data store with this id in the route tenant | `404 target-not-found` |
+| The data store's contexts do not match the route qualifiers | `404 target-not-found`, the same body |
+| The data store's provider is not recognized | `409 target-provider-unsupported` |
+| The data store's provider is recognized but is not the one this deployment serves | `409 target-provider-unsupported` |
+| The data store has no recorded provider (a legacy row) | Read with this deployment's provider, as ordinary routing does |
+| The data store has no connection string | `503 urn:ed-fi:api:service-configuration-error` |
+| The database's schema fingerprint cannot be read | `503 target-unavailable` |
+| The database has no `dms.EffectiveSchema` row | `503 urn:ed-fi:api:database-not-provisioned` |
+| The fingerprint does not match this deployment, or is malformed | `409 target-schema-incompatible` |
+
+The Configuration Service catalog has no flag that enables or disables a data
+store. A data store DMS cannot serve is reported by one of the states above.
+
+### Provider dialect
+
+The Configuration Service records a data store's provider as `postgresql` or
+`sqlserver`. DMS compares that value with the SQL dialect of the mapping
+compiler it has registered: `postgresql` matches `Pgsql` and `sqlserver` matches
+`Mssql`. The deployment setting `AppSettings:Datastore` (`postgresql` or
+`mssql`) is not consulted; the registered dialect decides.
+
+The two providers read the set differently:
+
+| | PostgreSQL | SQL Server |
+| --- | --- | --- |
+| Isolation | `REPEATABLE READ` | `SERIALIZABLE`; the session is restored to `READ COMMITTED` afterwards |
+| Lock wait bound | `SET LOCAL lock_timeout` | `SET LOCK_TIMEOUT` |
+| Name length | `varchar(75)`: 75 code points | `nvarchar(75)`: 75 UTF-16 code units |
+| Names | Read as text; PostgreSQL cannot store an unpaired surrogate | Read as the stored UTF-16 code units, so an unpaired surrogate reaches validation and is answered `409 projection-data-invalid` instead of being replaced by U+FFFD |
+| Connection whose cleanup cannot be confirmed | The read ends its own server session, so the connection is never reused | The connection's pool is cleared, so the connection is never reused |
+
+The lock wait and the statement are bounded by
+`EducationOrganizationProjection:ReadLockTimeoutSeconds` and
+`ReadCommandTimeoutSeconds` ([Configuration](./CONFIGURATION.md#appsettings)).
+The effect of each isolation level on writers is described under
+[effect on writers](#effect-on-writers-and-measured-cost).
+
+## Database read stages
+
+Each read runs four stages, each with its own failure handling, so a missing
+column is never reported as an outage and an outage is never reported as an
+incompatible schema.
+
+| Stage | Covers | A failure becomes |
+| --- | --- | --- |
+| Acquire | Opening the connection | An expected connection failure: `503 target-unavailable` |
+| Prepare | Beginning the transaction; setting the lock and command timeouts | Any database exception: `503 target-unavailable` |
+| Execute and materialize | Running the statement and reading every row | A database exception: by its code, in the table below. A value that cannot be read as its expected type: `409 target-schema-incompatible` |
+| Commit | Ending the transaction | Any database exception or unknown outcome: `503 target-unavailable`, and the rows are discarded |
+
+The classifier that recognizes expected connection failures is used only in the
+Acquire stage, so a missing column raised by the statement is never mistaken
+for an unreachable database. Caller cancellation ends the read in any stage,
+with no response. Any other exception is a defect and reaches the
+unexpected-exception `500`.
+
+Database exceptions in the Execute and materialize stage:
+
+| Provider | `409 target-schema-incompatible` | `503 target-unavailable` |
+| --- | --- | --- |
+| PostgreSQL `SQLSTATE` | `42P01`, `42703`, `3F000`, `42704`, `42809`, `42883` (missing objects); `42804`, `42846`, `42P18`, `22P02`, `22003` (types and conversions) | `40P01` deadlock, `55P03` lock not available, `57014` query cancelled, classes `08`, `28`, `53` and `57`, **and any other or missing code** |
+| SQL Server error number | `207`, `208`, `4104`, `2812`, `1088` (missing objects); `206`, `235`, `241`, `242`, `245`, `257`, `402`, `529`, `8114`, `8115` (types and conversions); `447` (a name column that is no longer character data) | `1205` deadlock, `1222` lock timeout, `-2` timeout, `4060` and `18456` (open and login), `10053`, `10054`, `10060`, `40613` (connection), **and any other number** |
+
+An unrecognized code is treated as transient. The Configuration Service retries
+it a bounded number of times and then fails the job, so a deterministic failure
+missing from the permanent list shows up as a job that keeps failing with
+`target-unavailable`, not as a `409`. Report such a code: it belongs in the
+permanent list.
+
+## Provisioning the Configuration Service credential
+
+The Configuration Service reads the projection as an ordinary DMS API client.
+Its credential is an application whose claim set grants only `Read` on the
+projection claim and which has no data stores and no education organizations.
+No shipped claim set grants the claim.
+
+In multi-tenant mode a client works only in its own tenant, so provision one
+credential per tenant, and send every request below with that tenant's `Tenant`
+header. In single-tenant mode, provision one credential.
+
+1. **Import the claim set.**
+
+   ```http
+   POST /v3/claimSets/import
+   Tenant: Tenant_255901
+   Content-Type: application/json
+
+   {
+     "claimSetName": "EdOrgProjectionReader-Tenant_255901",
+     "resourceClaims": [
+       {
+         "name": "educationOrganizationProjection",
+         "claimName": "http://ed-fi.org/identity/claims/services/educationOrganizationProjection",
+         "actions": [{ "name": "Read", "enabled": true }]
+       }
+     ]
+   }
+   ```
+
+   Claim set names are unique across tenants: a name another tenant already
+   holds is refused with `409`, so give each tenant's claim set its own name.
+   Keep the claim's default `NoFurtherAuthorizationRequired` strategy; a claim
+   set that overrides it is answered
+   `500 urn:ed-fi:api:system:configuration:security`.
+
+2. **Verify the grant.** `GET /v3/claimSets/{id}/export` must show `Read`, and
+   nothing else, on the projection claim. An import skips a resource claim that
+   is missing from the stored claims hierarchy instead of refusing it, so an
+   export without the claim means the hierarchy lacks it; see the
+   [Claims Loading Guide](./CLAIMS-LOADING-GUIDE.md#upgrading-an-existing-deployment-education-organization-projection-claim).
+
+3. **Create the application.** `POST /v3/applications` with the claim set's
+   name, `"dataStoreIds": []` and `"educationOrganizationIds": []`, under a
+   vendor of the tenant. The response's `key` and `secret` are the credential.
+   See
+   [API Client and Data Store Configuration](./API-CLIENT-AND-INSTANCE-CONFIGURATION.md#provisioning-a-client-with-no-data-store-assignment)
+   for the client lifecycle.
+
+4. **Configure the Configuration Service.** Set
+   `DmsEducationOrganizationProjectionSettings:TenantCredentials:<tenant>:ClientId`
+   and `ClientSecret` to the `key` and `secret` (single-tenant mode:
+   `Credentials:ClientId` and `ClientSecret`), together with `DmsBaseUrl`
+   ([settings](./CONFIGURATION.md#dmseducationorganizationprojectionsettings)).
+   Supply the secret through the environment or a secret store, never a
+   committed file. The shared `Credentials` pair is used for every tenant
+   without its own entry, but a client authenticates in its own tenant only, so
+   in multi-tenant mode give every tenant its own entry.
+
+DMS sees the new claim set when it next refreshes its claim sets
+(`ClaimSetsCacheExpirationSeconds`, 600 seconds by default), or at once through
+`POST /management/reload-claimsets` (`/management/{tenant}/reload-claimsets` in
+multi-tenant mode) where the management endpoints are enabled.
+
+Do not grant the projection claim to a vendor application's claim set. A
+credential that holds it can list the education organizations of every data
+store in its tenant.
+
+### Identity providers
+
+The reader takes the token URL from Discovery (`urls.oauth`, the DMS token
+endpoint), sends the credential as HTTP Basic with each value percent-encoded,
+and sends `grant_type=client_credentials` with no `scope`. DMS forwards the
+request to the configured identity provider, as it does for every client.
+
+- **Self-contained.** The Configuration Service issues the token. Each token
+  counts toward `IdentitySettings:BearerTokenPerClientLimit` (default 5) until
+  it expires or is revoked; see [token budget](#token-budget).
+- **Keycloak.** Keycloak issues the token. The Configuration Service creates
+  each application's Keycloak client with its claim set as a default client
+  scope, so a request without `scope` receives it.
+  `BearerTokenPerClientLimit` does not apply.
+
+Provisioning is the same in both modes: the claim set and application are
+created through the Configuration Service API, which registers the client with
+the identity provider. DMS checks the client-to-tenant binding against the
+Configuration Service, whichever provider issued the token.
+
+### Credential rotation
+
+The reader caches one token per tenant and client id, and uses it until
+`TokenExpirySafetyMarginSeconds` (default 60) before it expires. Its settings
+are read at startup, so a changed credential takes effect when the
+Configuration Service restarts.
+
+To rotate without a failed read, use a second client:
+
+1. `POST /v3/apiClients` with the application's `applicationId`, a `name`,
+   `"isApproved": true` and `"dataStoreIds": []`. The response carries the new
+   client's `key` and `secret`.
+2. Set the tenant's `ClientId` and `ClientSecret` to the new pair and restart
+   the Configuration Service instances.
+3. Delete the old client with `DELETE /v3/apiClients/{numeric id}`.
+
+`PUT /v3/apiClients/{numeric id}/reset-credential` also rotates the secret,
+keeping the key. From the reset until the Configuration Service runs with the
+new secret, a read that needs a new token fails with `TokenRejected`, which the
+job layer records as a permanent failure.
+
+### Token budget
+
+With the self-contained provider, each Configuration Service process holds one
+token per credential, and two for up to `TokenExpirySafetyMarginSeconds` while a
+new token overlaps the one it replaces. A restarted process starts with an
+empty cache, and the previous process's token still counts until it expires.
+Size `BearerTokenPerClientLimit` at about two tokens per Configuration Service
+replica, plus headroom for restarts; see
+[Configuration](./CONFIGURATION.md#relevant-parameters-in-appsettingsjson-configuration-service).
+A grant beyond the limit is `429`, which the reader treats as transient
+(`RateLimited`).
+
+## Configuration Service reader
+
+The reader is a library in the Configuration Service backend
+(`AddDmsEducationOrganizationProjectionReader`) for the background jobs that use
+it; see [Configuration Service Background Jobs](./CMS-BACKGROUND-JOBS.md). It
+talks to DMS over HTTP only: it opens no DMS database connection, and the
+backend references no DMS assembly and no database provider. Its settings are
+in
+[`DmsEducationOrganizationProjectionSettings`](./CONFIGURATION.md#dmseducationorganizationprojectionsettings);
+with no `DmsBaseUrl` it is not configured and every read fails with
+`NotConfigured`.
+
+A read of one data store:
+
+1. Reads Discovery at `{DmsBaseUrl}/{tenant}` (single-tenant mode
+   `{DmsBaseUrl}/`), without credentials, and caches it per tenant for
+   `DiscoveryCacheSeconds`. A failed read is never cached.
+2. Chooses the highest contract version that both Discovery and
+   `ContractVersions` list.
+3. Fills the placeholders of both URL templates from the data store's contexts
+   in the Configuration Service catalog. A placeholder no context fills is
+   `TargetNotRoutable`, and no request is sent. Each filled URL must have the
+   scheme, host and port of `DmsBaseUrl` and lie under its path at a segment
+   boundary (`/api` admits `/api/x`, not `/api-other`); otherwise the read is
+   `DiscoveryInvalid`. Redirects are never followed.
+4. Obtains a token, then requests pages of `PageSize` items until `nextCursor`
+   is `null`, checking every page against the contract: members, echoes, page
+   size, ascending ids, no repeated cursor, no empty continuation page. When the
+   set ends, every `parentId` must name an item of the set.
+5. Restarts without a cursor after `409 projection-changed`, or after
+   `400 invalid-cursor` when it sent a cursor, at most `MaxWalkRestarts` times
+   in all.
+
+The result is either every item of one complete read or a failure with no
+items: a read never returns part of a set. `TotalReadTimeoutSeconds` bounds the
+whole read, Discovery, tokens and restarts included. Caller cancellation is
+thrown as `OperationCanceledException` with the caller's token and is never
+reported as a timeout.
+
+A page answered `401` is retried once with a new token. A read that ends in
+`DiscoveryInvalid`, `TargetNotFound` or `Unauthorized` drops the tenant's cached
+Discovery document, so the next read fetches it again.
+
+### Failure classification
+
+A failure has a category, `Transient` or `Permanent`. A job handler throws
+`JobPermanentException` with the failure's job error code for a permanent
+failure, and any other exception for a transient one, so the job layer retries a
+transient failure and ends in `AttemptsExhausted` if no attempt succeeds.
+
+| Observation | Code | Category | Job error code |
+| --- | --- | --- | --- |
+| No `DmsBaseUrl`, or no credential for the tenant | `NotConfigured` | Permanent | `EdOrgProjectionNotConfigured` |
+| Discovery malformed; a URL outside `DmsBaseUrl`; any `3xx` | `DiscoveryInvalid` | Permanent | `EdOrgProjectionDiscoveryInvalid` |
+| Discovery without the projection members (endpoint disabled); `409 projection-unsupported` | `Unsupported` | Permanent | `EdOrgProjectionUnsupported` |
+| No contract version in common; `400 unsupported-contract-version` | `UnsupportedContract` | Permanent | `EdOrgProjectionUnsupported` |
+| Token request answered `400` or `401` | `TokenRejected` | Permanent | `EdOrgProjectionUnauthorized` |
+| A page answered `401` twice | `Unauthorized` | Permanent | `EdOrgProjectionUnauthorized` |
+| `403`; `500 urn:ed-fi:api:system:configuration:security` | `Forbidden` | Permanent | `EdOrgProjectionForbidden` |
+| Discovery or a page answered `404` | `TargetNotFound` | Permanent | `EdOrgProjectionTargetNotFound` |
+| A URL placeholder no data store context fills | `TargetNotRoutable` | Permanent | `EdOrgProjectionTargetNotRoutable` |
+| `409 target-schema-incompatible` or `target-provider-unsupported` | `TargetSchemaIncompatible` | Permanent | `EdOrgProjectionTargetSchemaIncompatible` |
+| `409 projection-data-invalid`; items out of order or repeated, an unknown discriminator, an empty name, a `parentId` naming no item | `DataInvalid` | Permanent | `EdOrgProjectionDataInvalid` |
+| `409 projection-too-large`; a body over `MaxResponseBodyBytes`; more than `MaxPages` pages or `MaxItems` items | `LimitExceeded` | Permanent | `EdOrgProjectionLimitExceeded` |
+| Any other `400`; `invalid-cursor` with no cursor sent or no restarts left | `InvalidRequest` | Permanent | `EdOrgProjectionInvalidRequest` |
+| A `200` that breaks the contract: malformed JSON, a missing or unknown member, a wrong echo, a wrong page size, a repeated cursor, an empty continuation page | `MalformedResponse` | Permanent | `EdOrgProjectionMalformedResponse` |
+| Any other `4xx`, any other `409`, a `2xx` other than `200` | `UnexpectedResponse` | Permanent | `EdOrgProjectionUnexpectedResponse` |
+| `409 projection-changed` with no restarts left | `ProjectionChanged` | Transient | none |
+| `429` | `RateLimited` | Transient | none |
+| Any other `5xx`, including the `{message, traceId}` body | `ServiceUnavailable` | Transient | none |
+| A transport failure | `NetworkError` | Transient | none |
+| A request timeout, or `TotalReadTimeoutSeconds` reached | `Timeout` | Transient | none |
+
+A problem `type` is read only from an `application/problem+json` body of at most
+64 KB; `projection-changed`, `invalid-cursor` and the security-configuration
+type are matched exactly. The job error codes' public messages are fixed; see
+[failure classification](./CMS-BACKGROUND-JOBS.md#failure-classification-and-public-error-text).
+
+## Upgrade order
+
+The endpoint, its Discovery members and its claim are additive. DMS databases
+need no change: the projection reads existing tables, and the effective schema
+hash is unchanged.
+
+1. **Upgrade the Configuration Service.** Its database upgrade adds the
+   projection claim, with no grants, to the resource claims and to an existing
+   catalog's stored claims hierarchy, and leaves existing claims, claim sets
+   and grants unchanged; a new catalog receives the claim from the embedded
+   claims. Deployments that load claims from the filesystem add the claim to
+   their claims files; see the
+   [Claims Loading Guide](./CLAIMS-LOADING-GUIDE.md#upgrading-an-existing-deployment-education-organization-projection-claim).
+2. **Provision** the claim set, application and credential for each tenant
+   ([above](#provisioning-the-configuration-service-credential)).
+3. **Deploy DMS** with `AppSettings:EnableEducationOrganizationProjection`
+   `true`, its default.
+4. **Configure the reader** (`DmsBaseUrl` and the credentials) and restart the
+   Configuration Service. Until a background job uses the reader, its section
+   can stay empty.
+
+Turning the toggle off later removes the route and the two Discovery members;
+reads then fail as `Unsupported`, a permanent failure, until it is turned back
+on.
+
+## Logging and redaction
+
+Neither service logs a cursor, token, client secret, `Authorization` header,
+request or response body, or exception message, at any level.
+
+**DMS.**
+
+- A served page is logged at `Debug` with the data store id, the sanitized
+  tenant, status, row count, read and total time, and the trace id. A refused
+  request is logged with the same identifiers and a reason or stage name; a
+  database failure adds only the exception type name and the provider's code
+  (`SQLSTATE` or error number). SQL, object names, connection strings, digests,
+  schema hashes and education organization names are never logged.
+- Request logs record the path without the query string, and the framework's
+  request events for this route record the query string as `?[redacted]`
+  ([Cursor](#cursor)).
+- The shared components on this path (the data store catalog, the tenant list
+  and the mapping set) log exception type names and HTTP status codes instead of
+  exception objects, and log the mapping set by dialect and mapping version,
+  without its hash.
+
+**Configuration Service.**
+
+- One record per read: `Information` on success, `Warning` on failure, with the
+  sanitized tenant, data store id, stage, code, category, HTTP status, the
+  sanitized problem `type` and DMS `correlationId`, pages read, restarts and
+  elapsed time. A cancelled read writes no record. Match a failure to the DMS
+  logs through its `correlationId`.
+- The reader's `HttpClient` replaces the default request logging with one
+  record per request: method, path without the query string, status and elapsed
+  time, or the exception type names of a failure.
+- A `Failure` result carries the same sanitized values, so a job that stores or
+  logs it adds nothing the record above leaves out.

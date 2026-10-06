@@ -490,6 +490,48 @@ names. Do not use `POST /management/reload-claims` to clear them: a reload repla
 stored claims document, which deletes every claim set that is not system-reserved and every grant
 that is not in the configured claims source.
 
+### Upgrading an Existing Deployment: Education Organization Projection Claim
+
+The embedded claims (every Data Standard) include the service claim
+`http://ed-fi.org/identity/claims/services/educationOrganizationProjection`, with `Read` and the
+`NoFurtherAuthorizationRequired` strategy and no claim set grants. It authorizes the
+[education organization projection](./EDUCATION-ORGANIZATION-PROJECTION.md) endpoint.
+
+Because claims are loaded only into an empty database, the database upgrade
+(`0035_Add_EducationOrganizationProjection_Claim`) adds the claim to an existing catalog itself:
+
+- It adds the claim to the resource claims and appends it, with no grants, to the stored claims
+  hierarchy. Existing claims, claim sets and grants are not changed. The hierarchy's last-modified
+  value advances, so a writer still holding the pre-upgrade hierarchy gets a conflict rather than
+  overwriting it.
+- When the hierarchy already holds the claim, at any depth and in any letter case, nothing is
+  changed: the existing claim is not renamed, replaced or duplicated, and the hierarchy row is not
+  touched. Running the upgrade again changes nothing.
+- A catalog with no stored hierarchy yet is not changed; it receives whatever the configured
+  claims source holds when claims are first loaded.
+- On SQL Server, a resource claim that the unique index treats as the same name but the
+  Configuration Service does not (for example one with trailing spaces) stops the deployment
+  before any change, with an error naming that row's `Id`. Rename or remove that resource claim
+  and its hierarchy entry, then deploy again.
+
+What this means for each loading mode:
+
+| Mode | New catalog | Existing catalog |
+| --- | --- | --- |
+| Embedded | Has the claim | Gains the claim at upgrade |
+| Hybrid | Has the claim, unless a fragment removes it | Gains the claim at upgrade |
+| Filesystem | Has the claim only if the claims files define it | Gains the claim at upgrade |
+
+`POST /management/reload-claims` and `POST /management/upload-claims` replace the stored claims
+hierarchy with their source, so a source without the claim removes it, and every grant of it with
+it. A Filesystem deployment, or an upload, must therefore carry the claim definition above.
+
+To confirm the claim can be granted, import a claim set that grants it and export the claim set
+(`GET /v3/claimSets/{id}/export`): an import silently skips a claim that the stored hierarchy
+lacks, so the export shows whether the grant took effect. The claim set and credential the
+Configuration Service needs are described under
+[Provisioning the Configuration Service credential](./EDUCATION-ORGANIZATION-PROJECTION.md#provisioning-the-configuration-service-credential).
+
 ## Security and Production Considerations
 
 ### Security Warnings

@@ -208,6 +208,8 @@ At least one credential pair, shared or per tenant, is required when `DmsBaseUrl
 
 The reader's HTTP client does not follow redirects, stores no cookies, and replaces the default `HttpClient` request logging with one record per request: method, path without query, status and elapsed time, or the exception type names for a failure. Headers, cursors, tokens, bodies and exception messages are never logged.
 
+Each credential is the `key` and `secret` of a Configuration Service application whose claim set grants only `Read` on the projection service claim and which has no data stores; in multi-tenant mode every tenant needs its own (see [Provisioning the Configuration Service credential](./EDUCATION-ORGANIZATION-PROJECTION.md#provisioning-the-configuration-service-credential), which also covers rotation). The settings are read at startup, so restart the service after changing a credential. With the self-contained identity provider, each Configuration Service instance holds at most about two active tokens per credential; these count against that credential's own client id, not DMS's, under [`IdentitySettings.BearerTokenPerClientLimit`](#relevant-parameters-in-appsettingsjson-configuration-service).
+
 ## Reverse Proxy and Forwarded Headers
 
 When the DMS API or Configuration Service runs behind a reverse proxy or load balancer

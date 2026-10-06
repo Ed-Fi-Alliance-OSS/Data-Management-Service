@@ -55,3 +55,25 @@ Stored in Keycloak as a client with the default role: `dms-client`.
 **dms-client:** This role is assigned to all vendor applications by default.
 Currently, the role is used only as an identity tag and does not enforce any
 specific access control logic.
+
+### Service Claims
+
+Some DMS endpoints are authorized by a **service claim** in the client's claim
+set, not by a role or a custom scope. The client is an ordinary CMS
+application: its token carries its claim set name as the scope, as for any
+vendor application, and DMS checks that claim set for the service claim. No
+role or scope needs to be configured in either identity provider.
+
+| Endpoint | Service claim | Action | Authorization strategy |
+| --- | --- | --- | --- |
+| `GET {prefix}/management/education-organizations` | `http://ed-fi.org/identity/claims/services/educationOrganizationProjection` | `Read` | `NoFurtherAuthorizationRequired` |
+
+No shipped claim set grants the projection claim. Its client is an application
+with no data stores, whose claim set grants only this claim; in multi-tenant
+mode it must belong to the tenant in the route. A claim set without `Read` on
+the claim is answered `403`, and one that grants it with another strategy
+`500`. See
+[Education Organization Projection](./EDUCATION-ORGANIZATION-PROJECTION.md#provisioning-the-configuration-service-credential).
+
+The `edfi_admin_api/*` scopes above are unrelated: they govern access to the
+Configuration Service's own API, not to DMS.

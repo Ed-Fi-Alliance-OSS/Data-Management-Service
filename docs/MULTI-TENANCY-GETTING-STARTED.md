@@ -461,6 +461,35 @@ When using Swagger UI with multi-tenancy:
 Note: API credentials are tenant-specific. A credential created for "DistrictA"
 will only work when the DistrictA tenant is selected.
 
+## Education Organization Projection
+
+The Configuration Service learns which education organizations a data store
+holds by reading the DMS
+[education organization projection](EDUCATION-ORGANIZATION-PROJECTION.md)
+endpoint. In multi-tenant mode it is served per tenant, at
+`/{tenant}/{districtId}/{schoolYear}/management/education-organizations` with
+the route qualifiers of this guide, and each tenant's Discovery document
+(`GET /{tenant}`) advertises it with `{districtId}` and `{schoolYear}` left as
+placeholders. The Configuration Service fills them from the data store's
+contexts.
+
+Each tenant needs its own credential:
+
+- A client works only in the tenant of its application, so a credential from
+  DistrictA is answered `401` at DistrictB's endpoint.
+- Create the claim set, vendor and application with the tenant's `Tenant`
+  header. Claim set names are unique across tenants, so give each tenant's claim
+  set its own name, for example `EdOrgProjectionReader-DistrictA`.
+- Configure each credential under its tenant's name, one pair per tenant:
+  `DmsEducationOrganizationProjectionSettings__TenantCredentials__DistrictA__ClientId`
+  and `DmsEducationOrganizationProjectionSettings__TenantCredentials__DistrictA__ClientSecret`.
+  Tenant names match in any letter case.
+
+A request for a data store of another tenant, or whose contexts do not match
+the route qualifiers, is answered `404 target-not-found`. See
+[Provisioning the Configuration Service credential](EDUCATION-ORGANIZATION-PROJECTION.md#provisioning-the-configuration-service-credential)
+for the full procedure.
+
 ## Upgrading an Existing Multi-Tenant Deployment
 
 Earlier releases stored profiles without a tenant, so every tenant saw every
