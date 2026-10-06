@@ -154,7 +154,9 @@ Before scenario assertions, the pinned-image fixture polls Kafka Connect REST re
 
 `qualification.json` and the CI step summary report `ConnectReadinessFailures` and `ConnectReadinessRecoveries`. The Admission suites for both providers inject one readiness timeout and verify real Docker inspection, recreation, replacement HTTP readiness, and cleanup. Their `ConnectReadinessInjectedFailures` and `ConnectReadinessInjectedRecoveries` remain separate from observed infrastructure failures.
 
-Any observed (non-injected) Connect readiness timeout prevents qualification from passing, even if recreation succeeds and all scenario assertions pass. The report marks an otherwise passing suite `Failed`, and the runner exits nonzero; test counts and recovery evidence remain intact. Deliberately injected timeouts do not fail qualification, but a real replacement timeout during an injected recovery test does. Recovery permits further evidence collection; it does not establish that an unexplained timeout is an acceptable transient.
+For runs through [Invoke-CdcQualification.ps1](../eng/ci/Invoke-CdcQualification.ps1), any observed (non-injected) Connect readiness timeout prevents qualification from passing, even if recreation succeeds and all scenario assertions pass. The report marks an otherwise passing suite `Failed`, and the runner exits nonzero; test counts and recovery evidence remain intact. Deliberately injected timeouts do not fail qualification, but a real replacement timeout during an injected recovery test does. Recovery permits further evidence collection; it does not establish that an unexplained timeout is an acceptable transient.
+
+The manually dispatched connector-template smoke job in [on-dms-pullrequest.yml](../.github/workflows/on-dms-pullrequest.yml) runs `dotnet test` directly with the `CdcConnectorTemplateSmoke` category and does not apply this report-level timeout gate. It can pass after a real Connect readiness timeout if fixture recreation succeeds and all selected tests pass. The same limitation applies to other direct `dotnet test` runs.
 
 ## SQL Server fixture startup recovery and diagnostics
 
@@ -183,6 +185,7 @@ revised matrix does not mean the previous selection passed or its incidents were
 | `It_waits_for_retained_projection_work_in_the_single_start_invocation` (4 cases, 2 per provider) | Lifecycle unit tests retain delayed catch-up, one authorized mutation, durable completion, fresh post-completion observations and operation-deadline rejection. Other live lifecycle tests retain runtime/adapter integration. | A deliberately held real projection writer and retained database work across managed startup. |
 | `It_rejects_unknown_recovery_evidence_and_unauthorized_controller_mutations` (2 cases, 1 per provider) | Native-recovery unit tests cover changed-worker invalidation, exercised observation faults, not-ready results, rejected Start/Restart/Resume, no Create/Resume/Restart, sanitization and recovery after clearing faults. Other required live cases retain actual crashes and revalidation. | The duplicate crash followed by unknown-evidence fault combinations. |
 
-Real Connect readiness timeouts still fail qualification, including successful recovery
-from an observed timeout. Existing lifecycle unit tests outside the narrowed deadline
-case still use real timing; this change does not make that entire fixture deterministic.
+Real Connect readiness timeouts still fail runs through `Invoke-CdcQualification.ps1`,
+including successful recovery from an observed timeout. Existing lifecycle unit tests
+outside the narrowed deadline case still use real timing; this change does not make
+that entire fixture deterministic.
