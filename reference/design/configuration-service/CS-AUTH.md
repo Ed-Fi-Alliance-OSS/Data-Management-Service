@@ -317,11 +317,12 @@ database outage](#cached-keys-do-not-keep-the-service-available-through-a-databa
 
 ### How time is measured
 
-The intervals above count **elapsed time**, so changing the system clock neither stretches nor
-shrinks them. Two measures are used:
+The intervals above count **elapsed time**. Two measures are used, and a change of the system
+clock affects them differently:
 
-- **Backoff and the unknown-key cooldown** use the process's monotonic clock. A wall-clock step,
-  forward or back, neither opens them early nor keeps them closed.
+- **Backoff and the unknown-key cooldown** use the process's monotonic clock, so changing the
+  system clock neither stretches nor shrinks them. A wall-clock step, forward or back, neither
+  opens them early nor keeps them closed.
 - **A snapshot's age** (fresh, overdue, expired, and when its scheduled reload is due) is the
   larger of two measures: the wall-clock time since the load completed, and the monotonic time
   elapsed since then.

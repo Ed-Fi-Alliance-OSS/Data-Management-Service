@@ -2528,3 +2528,236 @@ These are new runs triggered by the push. No job from `aff38f7e2` was rerun.
 - **PR #1317:** open and ready for review at `9bf1bcad0`. Every CI workflow is green;
   merge is blocked only on review.
 - **The ticket stays open.**
+
+## Review remediation, round 1 (2026-10-02 → 2026-10-06)
+
+This section records the remediation of PR #1317 review round 1, defined in
+[DMS-1556-review-remediation.md](./DMS-1556-review-remediation.md) ("the remediation
+spec"). Earlier sections keep their own tested commits and images (the last before this
+remediation is `9bf1bcad0`), and nothing above is relabelled.
+
+### Commits and tested commit
+
+The remediation commits sit on the reviewed head `9ff5a3e8f`. All are local and unpushed.
+
+| Step | Commit | Kind |
+| --- | --- | --- |
+| R1.1 | `c6153aea5` | Remediation spec |
+| R2.1 | `0e7b10b2b` | Docs: rotation, bootstrap, retirement and consumer-refresh procedures |
+| R2.2 | `db09c8baa`, `983f61fa4` | Docs: fast-path wording, log signals, token-status read scope |
+| R3.1 | `39d40d826` | Code: snapshot age is the larger of wall and monotonic time |
+| R3.2 | `c88a25ab3` | Code: monotonic cooldown and backoff, scheduler deadlines, timer round-up |
+| R3.3 | `1088d1e2c` | Docs and XML comments: the clock contract |
+| R4.5 | this commit | Docs only: this section and the clock-wording correction in `CS-AUTH.md` |
+
+- **Tested commit:** every R4 runtime and test result below is attributed to
+  **`1088d1e2cf2286f20a379b68ed08daf3b1eaccd2`**. `git status` was empty when each lane built
+  and after each lane ran.
+- **R4.5 changes Markdown only.** No executable code, test, configuration, script or project
+  file differs from `1088d1e2c`, so the R4 results apply to the R4.5 tree unchanged.
+- **Code changes of the remediation** (R3.1, R3.2): five files under
+  `Backend.OpenIddict/SigningKeys/`, plus unit tests and the frontend bearer-pipeline test
+  host. No `src/dms` path, no schema change, no new setting (remediation spec, *Constraints*).
+- **Mutation checks in R3,** each applied locally and reverted:
+  - R3.1: M16 (wall-only age), M17 (monotonic-only age) and the overtaken-caller check were
+    caught.
+  - R3.2: M18–M22 were caught, and so were the re-run M4, M5, M8a/b, M10a/b and M11–M15.
+
+### R4.1 Automated matrix — approved 2026-10-02
+
+| Lane | Passed | Failed | Not executed |
+| --- | --- | --- | --- |
+| Backend unit | 2,024 | 0 | 0 |
+| Frontend unit (no-database connection string) | 2,021 | 0 | 0 |
+| PostgreSQL integration (`127.0.0.1:5437`) | 959 | 0 | 62 `[Explicit]` DMS-1437 probes |
+| SQL Server integration (`127.0.0.1,14335`) | 979 | 0 | 66 `[Explicit]` DMS-1437 probes |
+| `dotnet csharpier check src/config` | — | 9 files flagged | — |
+
+- The trx test definitions match the post-merge run: 1,021 PostgreSQL and 1,045 SQL Server.
+- The 62 and 66 `[Explicit]` probes are **not executed**, never passes.
+- The nine CSharpier files are untouched since the merge base (pre-existing drift).
+
+### R4.2 E2E on rebuilt images — approved 2026-10-06
+
+| Lane | Exit | Passed | Failed | Skipped / not run |
+| --- | --- | --- | --- | --- |
+| `build-dms.ps1 Build -Configuration Release` | 1 | — | — | NU1008 exception (below) |
+| `build-config.ps1 Build -Configuration Release` | 0 | — | — | — |
+| CMS E2E, self-contained | 0 | 235 | 0 | 10 `@MultitenantOnly` + 2 scenarios with missing step bindings (247 trx entries) |
+| DMS shard 1, run 1 / run 2 | 0 / 0 | 230 / 230 | 0 / 0 | 2 / 2 |
+| DMS shard 2, run 1 / run 2 | 0 / 0 | 220 / 220 | 0 / 0 | 2 / 2 |
+
+- **Counts** are from the trx `<Counters>`. Each lane ran after its own teardown, and the
+  tree was clean after every lane.
+- **The CMS E2E lane is the CMS-before-key bootstrap.** Its CMS log shows the empty Startup
+  snapshot, then one unknown-key reload publishing 1 key: the bounded bootstrap allowance.
+- **DMS shard lanes, CMS logs:** no Error, load failure, dependency 503, JWKS 503 or
+  unknown-key refresh.
+- **DMS image provenance.** The DMS image build was fully cached (Created 2026-10-02, built
+  at `81d95f874`). `git diff 0b8fd96d6 HEAD -- src/dms` is empty, so the image matches the
+  tested commit's DMS sources. The CMS images were freshly built.
+- **Accepted observations:**
+  - One DMS `DbHealthCheck` Unhealthy (`3D000`) during startup in shard 2 run 2, before
+    the E2E database was provisioned. The lane passed, and no rerun was needed.
+  - Both second shard runs were slower (30.4 vs 26.8 and 34.9 vs 22.5 min), with no
+    failures. Not investigated.
+
+### R4.3 Catalog and outage runtime — approved 2026-10-06
+
+Images: CMS `ea21ad970650` (tag `ed-fi-api-config-local:dms1556-1088d1e2c`), DMS
+`0505e42fee54`, both freshly built. Resource profile P-runner-approx, default settings.
+
+- **Healthy catalog gate: PASS.**
+  - 3 cold and 1 warm run, 5 rounds × 87 each: **1,740 / 1,740** responses were 200 with the
+    expected `id`, `name` and `definition`.
+  - No non-200. All §4.9 dependency signals were zero, with no PostgreSQL `53300`.
+  - Sampler coverage failures: 0. Every CMS log covers its burst.
+  - `Worker Min Limit` = 4 (see deviations).
+- **Injected-outage gate (`keylock-cold`): PASS.**
+  - Responses: 957 × 503 category `SigningKeyStore` (all with `Retry-After: 30`,
+    `application/problem+json`, no `WWW-Authenticate`), 6,003 × 200, and 59 × JWKS 503.
+  - Never a 500, never `200 {"keys":[]}`, no unclassified non-200.
+  - Three load failures backed off 4.0 / 10.9 / 18.5 s, each within ±20 % of its base.
+  - The fourth load was in flight at the release *R* and published 1 key at *R* + 0.002 s.
+    The first 200 came at *R* + 0.30 s, inside the *R* + 92 s bound. Every response after
+    *R* was 200.
+- **Deviations** (harness only; accepted):
+  - **Worker Min Limit dump.** `-DumpOncePerBlock` took no dump: a one-element workload
+    array unrolls to a string in `Invoke-ControlBatch.ps1`. The value 4 comes from a
+    standalone dump of the **restarted** CMS process after the outage run, outside every
+    timed window. It is not a direct measurement of each catalog-run process.
+  - **Catalog report.** It was rendered from renamed copies of the run indexes, because
+    `Get-Step41Report.ps1` reads only `h41-*` files. The original captures are unchanged.
+  - **Outage seed manifest.** It is a byte-identical copy of the catalog seed manifest,
+    on the same stack with no recompose. Reseeding was unnecessary.
+
+### R4.4 Runbook drill — approved 2026-10-06
+
+The drill executed the procedures of
+[Rotating and retiring a database signing key](./CS-AUTH.md#rotating-and-retiring-a-database-signing-key)
+on a `dms-local` stack rebuilt from `1088d1e2c`.
+
+- **Stack:** `setup-local-dms.ps1 -EnvironmentFile ./.env.e2e`, Compose files
+  `postgresql.yml`, `local-dms.yml` and `local-config.yml` only. No diagnostics overlay.
+- **Images:** CMS `e6ba1dc4d15a`, DMS `fa93a2953eda`, both freshly built, tagged
+  `:dms1556-1088d1e2c-r44`.
+
+**Topology.** The drill ran two CMS and two DMS instances on one database and the single
+network `dms`:
+
+- **CMS-A and DMS-A** are the Compose `ed-fi-api-config-service` and `ed-fi-api`.
+- **CMS-B and DMS-B** are `docker run` clones, `dms1556-drill-cms-b` and
+  `dms1556-drill-dms-b`, on distinct loopback ports.
+- **Clone fidelity.** Each clone runs its source's image id, with the source's environment
+  minus `HOSTNAME`, the same network, and the same read-only bind mount (CMS). This was
+  asserted by diff.
+- **Routing.**
+  - CMS-A's DNS names include its hostname `ed-fi-api-config`, the address DMS uses for
+    authority, metadata and the Configuration Service URL. Each clone therefore runs under
+    its own hostname.
+  - From DMS-B, `ed-fi-api-config` resolved to CMS-A only.
+  - Issuer and metadata settings are identical across the CMS pair and across the DMS
+    pair.
+- **Feasibility check:** passed. All four instances answered `/health` 200, and DMS-B's
+  warm-up succeeded.
+
+**Gate.**
+
+- The verification gate reads each CMS instance's JWKS on that instance's own port. It
+  fails on a missing or still-listed key id, on a 503, and on a connection failure.
+- Every DMS restart in B, C and D went through a function that re-runs the gate and
+  refuses the restart when it fails.
+- Tokens were identified by their decoded `kid`, `iat` and `exp`. Acceptance is 200, and
+  rejection is 401 with `WWW-Authenticate`.
+
+The scenarios ran once, in order, in one chain:
+
+| Scenario | Result |
+| --- | --- |
+| A1 key before CMS | K0 on both CMS; a K0 DMS token got 200 on both DMS |
+| A2 CMS before key | **Empty JWKS.** After every key row was deleted, both CMS restarts logged `Signing-key snapshot 1 is empty` and served `200 {"keys":[]}`.<br>**Insert lag.** 0.0 and 0.1 s after the K1 insert, both JWKS still lacked K1.<br>**DMS-B start (observational).** DMS-B warmed up with 1 key and accepted a K1 token. CMS-A's log shows a K1-signed bearer request at 06:06:57.83, which used CMS-A's bootstrap allowance (`UnknownKey` reload, `RefreshedFound`) before DMS-B fetched JWKS at 06:07:00.29. That the request was DMS-B's own startup call to CMS is an **inference from timing**; the log does not name the caller. CMS-B, with no traffic, still listed no key.<br>**Gate and restart.** After the gate, both DMS restarts accepted a K1 token. |
+| B normal rotation | **Before the gate.** The new-key token T2-DMS got 401 on both DMS.<br>**Gate, restart DMS-A only.** T2-DMS got 200 on DMS-A and 401 on DMS-B, so refresh is per instance.<br>**Restart DMS-B.** T2-DMS got 200 there too.<br>**Old key retained.** T1-CMS and T1-DMS got 200 on every instance. |
+| C early retirement | **Before retirement.** The same T1-CMS got 200 on both CMS, and the same T1-DMS got 200 on both DMS.<br>**Retirement.** K1 was retired, both CMS restarted, the gate passed (K1 absent, K2 present), and both DMS restarted.<br>**The same tokens again.** T1 got 401 on all four instances, each before `exp` with about 1,732 s to spare. T2 got 200 on all four.<br>**Timing.** B2 → C3 took about 69 s (06:07:33 → 06:08:42). |
+| D1 stale CMS | CMS-B was recreated with a 43,200 s refresh interval and 86,400 s maximum staleness. K3 was inserted and only CMS-A restarted. A CMS-A-only check would have passed. The gate **failed** (K3 absent on CMS-B), and the DMS restart was refused with both DMS start times unchanged. After CMS-B restarted, the gate passed. |
+| D2 unavailable CMS | With CMS-B stopped, the gate check was a **connection failure**, and the DMS restart was refused with both DMS start times unchanged. After `docker start` and the startup load, the gate passed. |
+
+- **Waits shortened by restart.** In A2 and B the gate first failed only because an
+  instance had not yet loaded the change. That instance was restarted (CS-AUTH: a restart
+  shortens the wait), and the JWKS check still decided the gate.
+- **Deviations** (accepted; no scenario voided):
+  - **A1 harness defects.** Two defects stopped A1 before any key, token or container
+    change: a boolean rendered as `true`, and a one-element array unrolled to a string.
+    Both were fixed, and A1 then passed.
+  - **Script recreated.** A shell edit corrupted the drill script before any scenario used
+    it, so it was recreated.
+  - **Failed first launch.** The first launch of the A2 → D chain failed to parse its
+    wrapper and executed nothing.
+  - **Transcript redaction.** Two early transcript lines were redacted in place: the
+    public `.env.e2e` values and the drill's DMS client secret.
+- **Cleanup.**
+  - Only the two clones were removed. The Compose stack was torn down with exit 0.
+  - Other sessions' containers were not touched.
+
+### Acceptance criteria after the remediation
+
+| AC | Evidence | State |
+| --- | --- | --- |
+| AC 1 — failure mechanism, repeatable scenario, runtime evidence | Unchanged: G1 provisional plus G1-S reproduced; mechanism H1 (0.6). Raw captures archived on Jira (comment 99452). | **Met** on the combined basis (P-G1); not changed by the remediation |
+| AC 2 — profiles served reliably during the catalog burst; no auth blocking async DB work | R4.3 healthy catalog gate 1,740 / 1,740 on `1088d1e2c`. R3 adds only a timestamp read and a `max` to the fast path, which stays lock-free. Shards 1 and 2 ×2 green (R4.2). CI on `9bf1bcad0` green. | **Met locally** for the catalog shape. The default 256/128 stress gate stays **FAILED** (exception below). CI on the remediation head is pending a push. |
+| AC 3 — in-memory snapshot, async refresh and coalescing; semantics preserved; no invalid tokens, no indefinite trust of retired keys | **Each CMS instance:** retired-key trust is bounded by `SigningKeyMaxStalenessSeconds` of elapsed time after its last successful load, and a wall-clock step cannot extend it (R3.1 tests; M16/M17 caught). Cooldown and backoff are monotonic (R3.2 tests; M18–M22 caught). Rotation, unknown-key and revocation semantics are unchanged. Retirement takes effect on each CMS at its next successful load, and R4.4 C shows the same unexpired T1 rejected on both CMS. **DMS and other consumers:** they keep their cached key set until a successful metadata refresh or a restart. R4.4 shows the operational procedure working: the gate verifies every CMS instance; refresh is per DMS instance; after the gated restarts, the same unexpired T1 is rejected on every DMS. It also shows the gate stopping on a stale or unavailable CMS. | **Met for the CMS snapshot.** **For DMS,** retirement is an **operational requirement** (a gated refresh or restart of every instance), documented in `CS-AUTH.md` and demonstrated by the drill. The drill does **not** establish automatic downstream retirement: DMS does not refresh on an unknown key id, and its refresh schedule is not a trust bound. A DMS change is out of scope (remediation spec §4), drafted separately and unpublished. |
+| AC 4 — diagnosable dependency errors; failed retrieval never an empty key set | R4.3 outage gate: categorized 503s with `Retry-After`, JWKS 503 while locked, and never `200 {"keys":[]}` from a failed load. Docs (R2.1, R2.2) define an empty JWKS as the last successful load. Fixtures from 4.4 unchanged. | **Met** (PostgreSQL runtime; SQL Server by integration tests only) |
+| AC 5 — coverage for cold requests, interruption/recovery and rotation; affected shards rerun | Existing fixtures, plus the R3.1/R3.2 clock-step, fractional-deadline and no-spin tests. R4.1 matrix on both engines. Shards 1 and 2, two independent runs each on rebuilt images (R4.2). Key-store outage run (R4.3). Rotation and early-retirement drill (R4.4). | **Met locally.** CI on the remediation head is pending a push. |
+| AC 6 — DMS failure handling independent of this fix | `git diff --stat 9ff5a3e8f..HEAD` has no `src/dms` path. DMS-1557 is merged separately. | **Met** |
+
+### Exceptions and exclusions carried forward (unchanged)
+
+- **Default stress gate.** `stress-256x128` stays **FAILED** (`53300` only). It is a
+  ticket-scoped exception, not rerun, with no pool or `max_connections` change.
+- **Waived mutants.** M2a, M2b, the three 2.2 unknown-kid mutants, the 3.1
+  challenge-classification mutant and the 3.1 wiring revert stay **UNRUN, execution waived**.
+  None counts as passed.
+- **Formatting drift.** `csharpier check src/config` flags nine files untouched since the
+  merge base. No remediation file is among them.
+- **NU1008 build exception.** The local `build-dms.ps1 Build -Configuration Release` exits 1
+  in the `Acme.CustomValidationProof` plugin-fixture publish (worktree placement). It was
+  accepted in R4.2 only with build-log evidence that the E2E assemblies were rebuilt from the
+  tested commit and the tree stayed clean. CI is unaffected.
+- **Not executed, never counted as passes:**
+  - the 62 PostgreSQL and 66 SQL Server `[Explicit]` DMS-1437 probes;
+  - the 10 `@MultitenantOnly` CMS E2E scenarios and the 2 with missing step bindings;
+  - the 2 `@ignore` scenarios in each DMS shard;
+  - the stress rerun.
+- **Deferred:** finding 5 (cancellation on the request path; remediation spec §3.3).
+- **Known limits:**
+  - no SQL Server runtime evidence (integration tests only);
+  - P-runner-approx approximates the CI runner;
+  - the Worker Min Limit measurement caveat in R4.3.
+
+### Artifacts
+
+The raw evidence is in the gitignored
+`eng/performance/dms-1556/artifacts/review-remediation-r1/`. Each step folder has a
+`SUMMARY.md` with its review disposition:
+
+- `r4.1/`: trx, logs, database-target checks;
+- `r4.2/`: per-lane trx, build logs, the image index, log-signal analysis;
+- `r4.3/`: catalog and outage captures, reports, container logs;
+- `r4.4/`: the drill and stack scripts, the redacted transcript (`r44-transcript.log` and
+  `.jsonl`), and per-scenario logs of all four instances.
+
+**Local only, never committed or published:**
+
+- `r4.4/r44-state.json` (raw tokens and the drill client's secret);
+- the R4.3 thread-pool memory dump;
+- the unpublished Jira drafts.
+
+None of the R4 captures has been published to Jira. They are added to the evidence bundle
+only after their contents are reviewed and publication is authorized.
+
+### State
+
+- `DMS-1556` is 8 local commits ahead of PR #1317's head `9ff5a3e8f`. **Nothing is pushed.**
+- PR #1317 is unchanged and open, and the ticket is open.
+- **Next:** final commit and push-readiness review. After an authorized push:
+  - CI runs fresh on the new head; old runs are never rerun;
+  - the PR description gains a *Review round 1 remediation* section.
