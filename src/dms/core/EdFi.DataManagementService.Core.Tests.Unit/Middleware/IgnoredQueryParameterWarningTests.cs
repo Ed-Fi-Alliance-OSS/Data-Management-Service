@@ -51,7 +51,7 @@ public class IgnoredQueryParameterWarningTests
         [TestCase("a\u0000b", "ab", TestName = "null")]
         [TestCase("a\u0085b", "ab", TestName = "next line")]
         [TestCase("a\u2028b\u2029c", "abc", TestName = "line and paragraph separators")]
-        [TestCase("a​b‮c", "abc", TestName = "zero width space and bidi override")]
+        [TestCase("a\u200Bb\u202Ec", "abc", TestName = "zero width space and bidi override")]
         public void It_removes_control_format_and_separator_characters(string name, string expected)
         {
             Render(name).Should().Be(expected);
@@ -82,7 +82,7 @@ public class IgnoredQueryParameterWarningTests
         }
 
         [TestCase("", TestName = "empty")]
-        [TestCase("\r\n​", TestName = "nothing left after removal")]
+        [TestCase("\r\n\u200B", TestName = "nothing left after removal")]
         public void It_renders_a_name_with_nothing_left_as_the_empty_marker(string name)
         {
             Render(name).Should().Be("(empty)");
@@ -132,7 +132,7 @@ public class IgnoredQueryParameterWarningTests
         [Test]
         public void It_does_not_mark_a_name_whose_cut_tail_would_have_been_removed()
         {
-            Render(new string('a', 64) + "\r\n​").Should().Be(new string('a', 64));
+            Render(new string('a', 64) + "\r\n\u200B").Should().Be(new string('a', 64));
         }
 
         // Each 'ÿ' encodes as two triplets, so ten fit in 60 characters and the eleventh does not.
