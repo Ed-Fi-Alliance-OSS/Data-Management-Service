@@ -737,7 +737,10 @@ request to the configured identity provider, as it does for every client.
 - **Keycloak.** Keycloak issues the token. The Configuration Service creates
   each application's Keycloak client with its claim set as a default client
   scope, so a request without `scope` receives it.
-  `BearerTokenPerClientLimit` does not apply.
+  `BearerTokenPerClientLimit` does not apply. **The reader's Keycloak path has
+  not been validated end to end:** the mechanism described here follows the
+  code, but the Instance Management E2E suite, which exercises the reader
+  against a running stack, uses the self-contained provider only.
 
 Provisioning is the same in both modes: the claim set and application are
 created through the Configuration Service API, which registers the client with
@@ -767,12 +770,25 @@ job layer records as a permanent failure.
 
 ### Token budget
 
-With the self-contained provider, each Configuration Service process holds one
+With the self-contained provider, every token issued counts toward
+`BearerTokenPerClientLimit` until it expires or is revoked, and the reader never
+revokes a token. In steady state a Configuration Service process holds one
 token per credential, and two for up to `TokenExpirySafetyMarginSeconds` while a
-new token overlaps the one it replaces. A restarted process starts with an
-empty cache, and the previous process's token still counts until it expires.
-Size `BearerTokenPerClientLimit` at about two tokens per Configuration Service
-replica, plus headroom for restarts; see
+new token overlaps the one it replaces. About two tokens per replica is
+therefore a sizing estimate, not a bound. More tokens count when:
+
+- **A process restarts.** Its cache starts empty, and the previous process's
+  token still counts until it expires.
+- **A page is answered `401`.** The reader discards that token and requests
+  another; the discarded token still counts until it expires.
+- **The token lifetime does not exceed the safety margin.** A token whose
+  `expires_in` is at most `TokenExpirySafetyMarginSeconds` is used for one read
+  and never reused, so every read requests a new token, and frequent reads can
+  reach the limit even with a single replica.
+
+Keep `TokenExpirySafetyMarginSeconds` comfortably below the token lifetime (by
+default 60 seconds against the Configuration Service's 30-minute lifetime), and
+size `BearerTokenPerClientLimit` with headroom for restarts and refreshes; see
 [Configuration](./CONFIGURATION.md#relevant-parameters-in-appsettingsjson-configuration-service).
 A grant beyond the limit is `429`, which the reader treats as transient
 (`RateLimited`).
@@ -822,38 +838,98 @@ Discovery document, so the next read fetches it again.
 
 ### Failure classification
 
-A failure has a category, `Transient` or `Permanent`. A job handler throws
-`JobPermanentException` with the failure's job error code for a permanent
-failure, and any other exception for a transient one, so the job layer retries a
-transient failure and ends in `AttemptsExhausted` if no attempt succeeds.
+A failure has a code, a category (`Transient` or `Permanent`) and the stage it
+happened in: `Discovery`, `Token` or `Page`. The same HTTP status can mean
+different things at different stages, so the rules below are per stage.
 
-| Observation | Code | Category | Job error code |
-| --- | --- | --- | --- |
-| No `DmsBaseUrl`, or no credential for the tenant | `NotConfigured` | Permanent | `EdOrgProjectionNotConfigured` |
-| Discovery malformed; a URL outside `DmsBaseUrl`; any `3xx` | `DiscoveryInvalid` | Permanent | `EdOrgProjectionDiscoveryInvalid` |
-| Discovery without the projection members (endpoint disabled); `409 projection-unsupported` | `Unsupported` | Permanent | `EdOrgProjectionUnsupported` |
-| No contract version in common; `400 unsupported-contract-version` | `UnsupportedContract` | Permanent | `EdOrgProjectionUnsupported` |
-| Token request answered `400` or `401` | `TokenRejected` | Permanent | `EdOrgProjectionUnauthorized` |
-| A page answered `401` twice | `Unauthorized` | Permanent | `EdOrgProjectionUnauthorized` |
-| `403`; `500 urn:ed-fi:api:system:configuration:security` | `Forbidden` | Permanent | `EdOrgProjectionForbidden` |
-| Discovery or a page answered `404` | `TargetNotFound` | Permanent | `EdOrgProjectionTargetNotFound` |
-| A URL placeholder no data store context fills | `TargetNotRoutable` | Permanent | `EdOrgProjectionTargetNotRoutable` |
-| `409 target-schema-incompatible` or `target-provider-unsupported` | `TargetSchemaIncompatible` | Permanent | `EdOrgProjectionTargetSchemaIncompatible` |
-| `409 projection-data-invalid`; items out of order or repeated, an unknown discriminator, an empty name, a `parentId` naming no item | `DataInvalid` | Permanent | `EdOrgProjectionDataInvalid` |
-| `409 projection-too-large`; a body over `MaxResponseBodyBytes`; more than `MaxPages` pages or `MaxItems` items | `LimitExceeded` | Permanent | `EdOrgProjectionLimitExceeded` |
-| Any other `400`; `invalid-cursor` with no cursor sent or no restarts left | `InvalidRequest` | Permanent | `EdOrgProjectionInvalidRequest` |
-| A `200` that breaks the contract: malformed JSON, a missing or unknown member, a wrong echo, a wrong page size, a repeated cursor, an empty continuation page | `MalformedResponse` | Permanent | `EdOrgProjectionMalformedResponse` |
-| Any other `4xx`, any other `409`, a `2xx` other than `200` | `UnexpectedResponse` | Permanent | `EdOrgProjectionUnexpectedResponse` |
-| `409 projection-changed` with no restarts left | `ProjectionChanged` | Transient | none |
-| `429` | `RateLimited` | Transient | none |
-| Any other `5xx`, including the `{message, traceId}` body | `ServiceUnavailable` | Transient | none |
-| A transport failure | `NetworkError` | Transient | none |
-| A request timeout, or `TotalReadTimeoutSeconds` reached | `Timeout` | Transient | none |
+**Without a request.** These are found before the request they concern is
+sent, and that request is never made: a missing `DmsBaseUrl` or an unusable
+tenant name before Discovery, an unfilled placeholder after it, a missing credential before
+the token request.
+
+| Observation | Code |
+| --- | --- |
+| No `DmsBaseUrl`; no credential for the tenant | `NotConfigured` |
+| A tenant name that cannot form a URL segment; a URL placeholder no data store context fills | `TargetNotRoutable` |
+
+**Every stage**, checked first, in this order:
+
+| Observation | Code |
+| --- | --- |
+| Caller cancellation | none: `OperationCanceledException` is thrown |
+| The request's timeout, or `TotalReadTimeoutSeconds`, reached | `Timeout` |
+| A transport failure | `NetworkError` |
+| Any `3xx` (redirects are never followed) | `DiscoveryInvalid` |
+| `429` | `RateLimited` |
+| `500 urn:ed-fi:api:system:configuration:security` | `Forbidden` |
+| Any other `5xx`, including the `{message, traceId}` body | `ServiceUnavailable` |
+
+**Discovery request**, then:
+
+| Observation | Code |
+| --- | --- |
+| `200` without the projection members (the endpoint is disabled) | `Unsupported` |
+| `200` that is malformed, over 1 MiB, or has a template outside `DmsBaseUrl` | `DiscoveryInvalid` |
+| `200` with no contract version in common with `ContractVersions` | `UnsupportedContract` |
+| `404` | `TargetNotFound` |
+| Any other status, including `400`, `401`, `403` and a `2xx` other than `200` | `UnexpectedResponse` |
+
+**Token request**, then:
+
+| Observation | Code |
+| --- | --- |
+| `200` that is malformed or over 1 MiB | `MalformedResponse` |
+| `400` or `401` | `TokenRejected` |
+| Any other status, including `403`, `404` and a `2xx` other than `200` | `UnexpectedResponse` |
+
+**Page request**, then. The projection's own problem types are recognized only
+here.
+
+| Observation | Code |
+| --- | --- |
+| `400 unsupported-contract-version` | `UnsupportedContract` |
+| `400 invalid-cursor` | Restart, when a cursor was sent and a restart remains; otherwise `InvalidRequest` |
+| Any other `400` | `InvalidRequest` |
+| `401` | Retry the page once with a new token; a second `401` is `Unauthorized` |
+| `403` | `Forbidden` |
+| `404`, whatever its type | `TargetNotFound` |
+| `409 projection-changed` | Restart, while a restart remains; then `ProjectionChanged` |
+| `409 target-schema-incompatible` or `target-provider-unsupported` | `TargetSchemaIncompatible` |
+| `409 projection-unsupported` | `Unsupported` |
+| `409 projection-too-large` | `LimitExceeded` |
+| `409 projection-data-invalid` | `DataInvalid` |
+| Any other `409` or `4xx`; a `2xx` other than `200` | `UnexpectedResponse` |
+| `200` with a body over `MaxResponseBodyBytes`, or beyond `MaxPages` pages or `MaxItems` items | `LimitExceeded` |
+| `200` that breaks the contract: malformed JSON, a missing or unknown member, a wrong echo, a wrong page size, a repeated cursor, an empty continuation page | `MalformedResponse` |
+| `200` whose items are out of order or repeated, or have an unknown discriminator, an empty name, or a `parentId` equal to the item's own id; at the end of the set, a `parentId` naming no item | `DataInvalid` |
 
 A problem `type` is read only from an `application/problem+json` body of at most
 64 KB; `projection-changed`, `invalid-cursor` and the security-configuration
-type are matched exactly. The job error codes' public messages are fixed; see
+type are matched exactly.
+
+Each code has one category and, when permanent, one job error code. A job
+handler throws `JobPermanentException` with the job error code for a permanent
+failure, and any other exception for a transient one, so the job layer retries a
+transient failure and ends in `AttemptsExhausted` if no attempt succeeds. The
+job error codes' public messages are fixed; see
 [failure classification](./CMS-BACKGROUND-JOBS.md#failure-classification-and-public-error-text).
+
+| Code | Category | Job error code |
+| --- | --- | --- |
+| `NotConfigured` | Permanent | `EdOrgProjectionNotConfigured` |
+| `DiscoveryInvalid` | Permanent | `EdOrgProjectionDiscoveryInvalid` |
+| `Unsupported`, `UnsupportedContract` | Permanent | `EdOrgProjectionUnsupported` |
+| `TokenRejected`, `Unauthorized` | Permanent | `EdOrgProjectionUnauthorized` |
+| `Forbidden` | Permanent | `EdOrgProjectionForbidden` |
+| `TargetNotFound` | Permanent | `EdOrgProjectionTargetNotFound` |
+| `TargetNotRoutable` | Permanent | `EdOrgProjectionTargetNotRoutable` |
+| `TargetSchemaIncompatible` | Permanent | `EdOrgProjectionTargetSchemaIncompatible` |
+| `DataInvalid` | Permanent | `EdOrgProjectionDataInvalid` |
+| `LimitExceeded` | Permanent | `EdOrgProjectionLimitExceeded` |
+| `InvalidRequest` | Permanent | `EdOrgProjectionInvalidRequest` |
+| `MalformedResponse` | Permanent | `EdOrgProjectionMalformedResponse` |
+| `UnexpectedResponse` | Permanent | `EdOrgProjectionUnexpectedResponse` |
+| `ProjectionChanged`, `RateLimited`, `ServiceUnavailable`, `NetworkError`, `Timeout` | Transient | none |
 
 ## Upgrade order
 
@@ -876,9 +952,13 @@ hash is unchanged.
    Configuration Service. Until a background job uses the reader, its section
    can stay empty.
 
-Turning the toggle off later removes the route and the two Discovery members;
-reads then fail as `Unsupported`, a permanent failure, until it is turned back
-on.
+Turning the toggle off later removes the route and the two Discovery members.
+A read that fetches Discovery then fails as `Unsupported`. A read that still
+holds the tenant's cached Discovery document (`DiscoveryCacheSeconds`, 300 by
+default) first requests a page, which DMS answers `404` because the route is
+gone: that read fails as `TargetNotFound` and drops the cached document, so the
+next read fetches Discovery and fails as `Unsupported`. Both failures are
+permanent, and reads keep failing until the toggle is turned back on.
 
 ## Logging and redaction
 

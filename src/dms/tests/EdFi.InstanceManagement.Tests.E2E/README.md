@@ -134,8 +134,8 @@ pins it to `RunDmsProjectionReaderE2E`, to that function's single `dotnet test`,
 project, and fails if any other function omits the flags.
 
 **Result guard.** After the run, `Assert-DmsProjectionReaderTrxResults` reads
-`TestResults/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.<engine>.trx` (which the lanes'
-existing TRX reporters also pick up) and fails the target when:
+`TestResults/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.<engine>.trx` and fails the target
+when:
 
 1. the file is missing or has no counters;
 2. fewer than **8** results are from live tests, or any live result is not `Passed` (failed,
@@ -149,6 +149,17 @@ results are counted on their own: a run that discovered or selected no live test
 harness tests alone, and the overall check still rejects a failed harness test. The minimum of 8
 detects that live execution is missing; it is not a coverage inventory. The project has 20 live
 tests, and a run in which at least 8 live tests ran and every test passed is accepted.
+
+In CI the guard, through the target's exit code, is what fails a lane. The two lanes report the
+TRX differently:
+
+- **PostgreSQL** (`run-instance-management-e2e-tests`): the test reporter's `**/*.trx` wildcard
+  picks up the reader TRX beside the Reqnroll one.
+- **SQL Server** (`run-instance-management-e2e-tests-mssql`): the sanitizer covers every file in
+  `TestResults`, but the reporter and the result upload select only the Reqnroll shard TRX. The
+  reader's results appear in the sanitized setup log (`build-dms-setup.log`), which includes the
+  guard's `DMS projection reader E2E: <n> of <m> live tests passed; ...` line and is shown and
+  uploaded when the lane fails.
 
 **Inputs.** The target exports `INSTANCE_E2E_DMS_BASE_URL`, `INSTANCE_E2E_CONFIG_SERVICE_URL`,
 `INSTANCE_E2E_CONFIG_ADMIN_CLIENT_ID` and `INSTANCE_E2E_CONFIG_ADMIN_CLIENT_SECRET` (the DMS and
