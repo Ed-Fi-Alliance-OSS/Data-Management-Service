@@ -89,48 +89,31 @@ internal class ValidatePartitionQueryMiddleware(
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        // Decided before any validation can answer, so a rejection below carries the warning too.
+        // Materialized once and shared with filter validation, because the schema rebuilds its query
+        // fields on every enumeration.
+        Lazy<QueryField[]> queryFields = new(() => requestInfo.ResourceSchema.QueryFields.ToArray());
+
+        // Decided before any validation can answer, so a rejection below carries the warning too. The
+        // reserved paging names are owned, because the partition phase rejects them by name, and the
+        // change-version names are matched case-insensitively, the way they are parsed.
         await IgnoredQueryParameterWarning.ReportAround(
             requestInfo,
-            IgnoredNames(requestInfo),
+            IgnoredQueryParameterWarning.IgnoredNames(
+                requestInfo.FrontendRequest.QueryParameters,
+                _ordinalOwnedParameters,
+                ChangeVersionParameterValidator.ReservedParameterNames,
+                queryFields
+            ),
             _logger,
-            () => ValidateAndContinue(requestInfo, next)
+            () => ValidateAndContinue(requestInfo, queryFields, next)
         );
     }
 
-    /// <summary>
-    /// The query parameters this operation does not consume, in request order: every name that is not
-    /// an owned name, a change-version bound, or a query field. Matched the way each is parsed: the
-    /// owned names case-sensitively, the change-version names case-insensitively, and query fields the
-    /// way filter matching matches them. The reserved paging names are owned, because the partition
-    /// phase rejects them by name, and a rejected name is not reported as ignored.
-    /// </summary>
-    private static string[] IgnoredNames(RequestInfo requestInfo)
-    {
-        // Read only when a name has to be matched against it, so a request whose names are all owned
-        // never touches the resource's query field mapping before validation answers.
-        QueryField[]? queryFields = null;
-
-        bool MatchesQueryField(string name)
-        {
-            queryFields ??= requestInfo.ResourceSchema.QueryFields.ToArray();
-            return ResourceQueryFilterValidator.MatchesQueryField(name, queryFields);
-        }
-
-        bool IsConsumed(string name)
-        {
-            return _ordinalOwnedParameters.Contains(name, StringComparer.Ordinal)
-                || ChangeVersionParameterValidator.ReservedParameterNames.Contains(
-                    name,
-                    StringComparer.OrdinalIgnoreCase
-                )
-                || MatchesQueryField(name);
-        }
-
-        return [.. requestInfo.FrontendRequest.QueryParameters.Keys.Where(name => !IsConsumed(name))];
-    }
-
-    private async Task ValidateAndContinue(RequestInfo requestInfo, Func<Task> next)
+    private async Task ValidateAndContinue(
+        RequestInfo requestInfo,
+        Lazy<QueryField[]> queryFields,
+        Func<Task> next
+    )
     {
         // Both parameter faults answer with the same shell, so they share one construction, and counting
         // the rejection here covers both for the same reason. The media type is not stated here at all,
@@ -163,7 +146,7 @@ internal class ValidatePartitionQueryMiddleware(
 
         ResourceQueryFilterResult filterResult = ResourceQueryFilterValidator.Validate(
             requestInfo.FrontendRequest.QueryParameters,
-            requestInfo.ResourceSchema.QueryFields.ToArray(),
+            queryFields.Value,
             ordinalExcludedNames: _ordinalOwnedParameters,
             ignoreCaseExcludedNames: ChangeVersionParameterValidator.ReservedParameterNames
         );

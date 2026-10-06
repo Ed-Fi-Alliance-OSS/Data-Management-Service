@@ -81,6 +81,17 @@ internal class ValidateQueryMiddleware(
     ];
 
     /// <summary>
+    /// The names this operation owns, matched case-sensitively: the paging names, matched the way they
+    /// are parsed, and the cursor names. The cursor names are never ignored: an operation that does not
+    /// page by cursor rejects them by name, and a rejected name is not reported as ignored.
+    /// </summary>
+    private static readonly string[] _ordinalOwnedParameters =
+    [
+        .. _paginationQueryParameters,
+        .. CursorRequestValidator.CursorParameters,
+    ];
+
+    /// <summary>
     /// Finds and sets PaginationParameters on the requestInfo by parsing the client request.
     /// Returns any errors found for those parameters.
     /// </summary>
@@ -152,57 +163,31 @@ internal class ValidateQueryMiddleware(
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        // Decided before any validation can answer, so a rejection below carries the warning too.
+        // Materialized once and shared with filter validation, because the schema rebuilds its query
+        // fields on every enumeration.
+        Lazy<QueryField[]> queryFields = new(() => requestInfo.ResourceSchema.QueryFields.ToArray());
+
+        // Decided before any validation can answer, so a rejection below carries the warning too. The
+        // change-version names are matched case-insensitively, consistent with how the validator looks
+        // them up.
         await IgnoredQueryParameterWarning.ReportAround(
             requestInfo,
-            IgnoredNames(requestInfo),
+            IgnoredQueryParameterWarning.IgnoredNames(
+                requestInfo.FrontendRequest.QueryParameters,
+                _ordinalOwnedParameters,
+                ChangeVersionParameterValidator.ReservedParameterNames,
+                _resourceFiltersRecognized ? queryFields : null
+            ),
             _logger,
-            () => ValidateAndContinue(requestInfo, next)
+            () => ValidateAndContinue(requestInfo, queryFields, next)
         );
     }
 
-    /// <summary>
-    /// The query parameters this operation does not consume, in request order.
-    /// </summary>
-    /// <remarks>
-    /// Paging names are matched case-sensitively, consistent with how they are parsed, and the
-    /// change-version names case-insensitively, consistent with how the validator looks them up. The
-    /// cursor names are never ignored: an operation that does not page by cursor rejects them by name,
-    /// and a rejected name is not reported as ignored. A name is a consumed filter only where it would
-    /// be matched as one: never a paging or cursor name, and only when this operation filters at all.
-    /// </remarks>
-    private string[] IgnoredNames(RequestInfo requestInfo)
-    {
-        // Read only when a name has to be matched against it, so a request whose names are all owned
-        // never touches the resource's query field mapping before validation answers.
-        QueryField[]? queryFields = null;
-
-        bool MatchesQueryField(string name)
-        {
-            queryFields ??= requestInfo.ResourceSchema.QueryFields.ToArray();
-            return ResourceQueryFilterValidator.MatchesQueryField(name, queryFields);
-        }
-
-        bool IsConsumed(string name)
-        {
-            if (
-                _paginationQueryParameters.Contains(name, StringComparer.Ordinal)
-                || CursorRequestValidator.CursorParameters.Contains(name, StringComparer.Ordinal)
-            )
-            {
-                return true;
-            }
-
-            return ChangeVersionParameterValidator.ReservedParameterNames.Contains(
-                    name,
-                    StringComparer.OrdinalIgnoreCase
-                ) || (_resourceFiltersRecognized && MatchesQueryField(name));
-        }
-
-        return [.. requestInfo.FrontendRequest.QueryParameters.Keys.Where(name => !IsConsumed(name))];
-    }
-
-    private async Task ValidateAndContinue(RequestInfo requestInfo, Func<Task> next)
+    private async Task ValidateAndContinue(
+        RequestInfo requestInfo,
+        Lazy<QueryField[]> queryFields,
+        Func<Task> next
+    )
     {
         // All three parameter faults below - cursor, traditional pagination, and change-version -
         // answer with the same shell, so they share one construction rather than three copies that
@@ -380,8 +365,8 @@ internal class ValidateQueryMiddleware(
         // cursor validation above has already consumed them.
         ResourceQueryFilterResult filterResult = ResourceQueryFilterValidator.Validate(
             requestInfo.FrontendRequest.QueryParameters,
-            requestInfo.ResourceSchema.QueryFields.ToArray(),
-            ordinalExcludedNames: [.. _paginationQueryParameters, .. CursorRequestValidator.CursorParameters],
+            queryFields.Value,
+            ordinalExcludedNames: _ordinalOwnedParameters,
             ignoreCaseExcludedNames: ChangeVersionParameterValidator.ReservedParameterNames
         );
 

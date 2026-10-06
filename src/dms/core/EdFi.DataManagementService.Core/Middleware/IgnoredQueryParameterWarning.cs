@@ -6,9 +6,11 @@
 using System.Buffers;
 using System.Globalization;
 using System.Text;
+using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
@@ -38,6 +40,39 @@ internal static class IgnoredQueryParameterWarning
     internal const string TruncatedNameMarker = "(truncated)";
 
     private const string Separator = ", ";
+
+    /// <summary>
+    /// The query parameters an operation does not consume, in request order: every name that is not one
+    /// the operation owns or, where it filters, a query field.
+    /// </summary>
+    /// <param name="ordinalOwnedNames">
+    /// The owned names matched case-sensitively, the way the operation parses them. A name the
+    /// operation rejects by name belongs here, because a rejected name is not reported as ignored.
+    /// </param>
+    /// <param name="ignoreCaseOwnedNames">The owned names matched case-insensitively.</param>
+    /// <param name="queryFields">
+    /// The resource's query fields, or <c>null</c> when the operation does not filter. A name is a
+    /// consumed filter only where it would be matched as one, so an owned name is never one. Read only
+    /// when a name has to be matched against it, so a request whose names are all owned never touches
+    /// the resource's query field mapping before validation answers.
+    /// </param>
+    internal static string[] IgnoredNames(
+        IReadOnlyDictionary<string, string> queryParameters,
+        IReadOnlyList<string> ordinalOwnedNames,
+        IReadOnlyList<string> ignoreCaseOwnedNames,
+        Lazy<QueryField[]>? queryFields
+    )
+    {
+        bool IsConsumed(string name) =>
+            ordinalOwnedNames.Contains(name, StringComparer.Ordinal)
+            || ignoreCaseOwnedNames.Contains(name, StringComparer.OrdinalIgnoreCase)
+            || (
+                queryFields is not null
+                && ResourceQueryFilterValidator.MatchesQueryField(name, queryFields.Value)
+            );
+
+        return [.. queryParameters.Keys.Where(name => !IsConsumed(name))];
+    }
 
     /// <summary>
     /// Runs the rest of the step, then adds the warning to whatever response the request ended with:
