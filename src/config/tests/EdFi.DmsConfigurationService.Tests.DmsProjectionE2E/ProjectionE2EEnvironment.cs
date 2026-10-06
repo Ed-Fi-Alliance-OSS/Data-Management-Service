@@ -23,7 +23,7 @@ public sealed class ProjectionE2EEnvironment
 {
     private const string SetupFailure = "DMS projection reader E2E setup failed";
 
-    private ProjectionE2EEnvironment(
+    internal ProjectionE2EEnvironment(
         Uri dmsBaseUrl,
         Uri configServiceUrl,
         string adminClientId,

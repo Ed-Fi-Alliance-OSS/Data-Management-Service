@@ -10,7 +10,7 @@ using FailureCategory = EdFi.DmsConfigurationService.Backend.EducationOrganizati
 using FailureCode = EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection.EducationOrganizationProjectionFailureCode;
 using FailureStage = EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection.EducationOrganizationProjectionStage;
 
-namespace EdFi.DmsConfigurationService.Tests.DmsProjectionE2E;
+namespace EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Live;
 
 /// <summary>
 /// The production reader against the live DMS of the Instance Management stack (DMS-1440 spec §9 step 4.2): real
@@ -178,9 +178,6 @@ public static class DmsProjectionReaderTests
                 connection.ConnectionString,
                 new Dictionary<string, string> { ["districtId"] = "255901", ["schoolYear"] = "2099" }
             );
-            ProjectionE2EFixture.AddCleanup(() =>
-                Fixture.Services.DeleteDataStoreAsync(ProjectionE2EFixture.SeededTenant, _dataStoreId)
-            );
         }
 
         protected override (string Tenant, int DataStoreId) Target() =>
@@ -215,9 +212,6 @@ public static class DmsProjectionReaderTests
                 "Projection Reader E2E no school year",
                 Fixture.Environment.RouteTwoConnectionString,
                 new Dictionary<string, string> { ["districtId"] = "255901" }
-            );
-            ProjectionE2EFixture.AddCleanup(() =>
-                Fixture.Services.DeleteDataStoreAsync(ProjectionE2EFixture.SeededTenant, _dataStoreId)
             );
         }
 
@@ -319,6 +313,7 @@ public static class DmsProjectionReaderTests
         private ReaderHost _host = null!;
         private readonly CancellationTokenSource _caller = new();
         private OperationCanceledException? _cancellation;
+        private bool? _requestCancelledWithCaller;
 
         [OneTimeSetUp]
         public async Task ReadAsync()
@@ -332,8 +327,16 @@ public static class DmsProjectionReaderTests
                     return null;
                 }
 
-                // The page stays outstanding until the reader cancels it: no timing is involved.
+                // CancelAsync completes after every registration has run, so a request token linked to the caller's
+                // is cancelled by now. One that is not escapes at once rather than waiting for the page timeout, and
+                // the observation below fails the case: no timing is involved either way.
                 await _caller.CancelAsync();
+                _requestCancelledWithCaller = cancellationToken.IsCancellationRequested;
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    return ReaderHost.ContractProblem("target-unavailable");
+                }
+
                 await Task.Delay(Timeout.Infinite, cancellationToken);
                 return null;
             };
@@ -363,6 +366,10 @@ public static class DmsProjectionReaderTests
             _host?.Dispose();
             _caller.Dispose();
         }
+
+        [Test]
+        public void It_cancels_the_outstanding_page_request_when_the_caller_cancels() =>
+            _requestCancelledWithCaller.Should().BeTrue();
 
         [Test]
         public void It_throws_with_the_callers_token() =>

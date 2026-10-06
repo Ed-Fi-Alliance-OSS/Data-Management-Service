@@ -7,14 +7,15 @@ using System.Net;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
 
-namespace EdFi.DmsConfigurationService.Tests.DmsProjectionE2E;
+namespace EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Live;
 
 /// <summary>
 /// Run-wide provisioning through the real Configuration Service and DMS: one claim set per tenant granting only
 /// Read on the projection claim, one projection application per tenant with no data stores, and the seeded
 /// hierarchy in <c>Tenant_255901</c> / <c>255901/2025</c>, written by an application on the shipped
 /// <c>EdFiSandbox</c> claim set (the fixture application's claim set cannot write state agencies or service
-/// centers). Everything created here is removed in <see cref="OneTimeTearDownAsync"/>, newest first.
+/// centers). <see cref="LiveServices"/> registers every record it creates in <see cref="Cleanup"/> as soon as its id
+/// is known; <see cref="OneTimeTearDownAsync"/> removes them all, newest first, even when set-up failed part-way.
 /// </summary>
 [SetUpFixture]
 public class ProjectionE2EFixture
@@ -27,7 +28,6 @@ public class ProjectionE2EFixture
     private const string Namespace = "uri://ed-fi.org";
     private const string DescriptorCode = "ProjectionReaderE2E";
 
-    private static readonly List<Func<Task>> _cleanup = [];
     private static ProjectionE2EFixture? _current;
 
     private ProjectionE2EEnvironment? _environment;
@@ -48,6 +48,8 @@ public class ProjectionE2EFixture
     public static ProjectionE2EFixture Current =>
         _current ?? throw new InvalidOperationException("The projection E2E fixture was not set up.");
 
+    public CleanupRegistry Cleanup { get; } = new();
+
     public ProjectionE2EEnvironment Environment => _environment!;
 
     public LiveServices Services => _services!;
@@ -59,24 +61,19 @@ public class ProjectionE2EFixture
     public async Task OneTimeSetUpAsync()
     {
         _environment = ProjectionE2EEnvironment.Read();
-        _services = new LiveServices(_environment);
+        _services = new LiveServices(_environment, Cleanup);
 
         foreach (string tenant in new[] { SeededTenant, EmptyTenant })
         {
             // CMS claim set names are unique across tenants, so each tenant's has its own.
             string claimSetName = $"ProjectionReaderE2E{tenant[^6..]}";
-            int claimSetId = await Services.ImportProjectionClaimSetAsync(tenant, claimSetName);
-            _cleanup.Add(() => Services.DeleteClaimSetAsync(tenant, claimSetId));
-
-            ClientCredentials client = await Services.CreateApplicationAsync(
+            await Services.ImportProjectionClaimSetAsync(tenant, claimSetName);
+            ProjectionClients[tenant] = await Services.CreateApplicationAsync(
                 tenant,
                 $"Projection Reader E2E {tenant}",
                 claimSetName,
                 dataStoreIds: []
             );
-            _cleanup.Add(() => Services.DeleteApplicationAsync(tenant, client.ApplicationId));
-            ProjectionClients[tenant] = client;
-
             await Services.ReloadClaimSetsAsync(tenant);
         }
 
@@ -102,30 +99,15 @@ public class ProjectionE2EFixture
     [OneTimeTearDown]
     public async Task OneTimeTearDownAsync()
     {
-        List<string> failures = [];
-        foreach (Func<Task> step in Enumerable.Reverse(_cleanup))
-        {
-            try
-            {
-                await step();
-            }
-            catch (Exception exception)
-            {
-                failures.Add(exception.Message);
-            }
-        }
-
-        _cleanup.Clear();
+        IReadOnlyList<string> failures = await Cleanup.RunAsync();
         _services?.Dispose();
 
+        // Reported on its own: a set-up failure stays the failure each test reports.
         if (failures.Count > 0)
         {
             Assert.Fail("DMS projection reader E2E cleanup failed: " + string.Join("; ", failures));
         }
     }
-
-    /// <summary>Registers a cleanup step for something a test created, run in reverse order at the end of the run.</summary>
-    public static void AddCleanup(Func<Task> step) => _cleanup.Add(step);
 
     private async Task SeedHierarchyAsync()
     {
@@ -140,7 +122,6 @@ public class ProjectionE2EFixture
                     .Select(r => r.DataStoreId),
             ]
         );
-        _cleanup.Add(() => Services.DeleteApplicationAsync(SeededTenant, seeder.ApplicationId));
         string token = await Services.ClientTokenAsync(seeder);
 
         foreach (
@@ -152,7 +133,9 @@ public class ProjectionE2EFixture
             }
         )
         {
-            await WriteAsync(
+            await Services.PostResourceAsync(
+                token,
+                route,
                 resource,
                 new JsonObject
                 {
@@ -167,39 +150,7 @@ public class ProjectionE2EFixture
         foreach (EducationOrganizationProjectionItem item in SeededItems)
         {
             (string resource, JsonObject body) = Body(item);
-            await WriteAsync(resource, body, allowExisting: false);
-        }
-
-        async Task WriteAsync(string resource, JsonObject body, bool allowExisting)
-        {
-            (HttpStatusCode status, string? location) = await Services.PostResourceAsync(
-                token,
-                route,
-                resource,
-                body,
-                allowExisting
-            );
-            if (status != HttpStatusCode.Created)
-            {
-                // Already present, so not this run's to delete.
-                return;
-            }
-
-            string written =
-                location
-                ?? throw new InvalidOperationException(
-                    $"Setup failed: writing {resource} returned no Location."
-                );
-            _cleanup.Add(async () =>
-            {
-                HttpStatusCode deleted = await Services.DeleteResourceAsync(token, written);
-                if (deleted is not (HttpStatusCode.NoContent or HttpStatusCode.NotFound))
-                {
-                    throw new InvalidOperationException(
-                        $"Cleanup failed: deleting a seeded {resource} document answered {(int)deleted}."
-                    );
-                }
-            });
+            await Services.PostResourceAsync(token, route, resource, body, allowExisting: false);
         }
     }
 

@@ -17,17 +17,36 @@ namespace EdFi.DmsConfigurationService.Tests.DmsProjectionE2E;
 public sealed record ClientCredentials(string Tenant, int ApplicationId, string Key, string Secret);
 
 /// <summary>
-/// The Configuration Service and DMS endpoints the fixture provisions and seeds through. Every call that does not
-/// answer as expected throws <see cref="InvalidOperationException"/> naming the call and its status, never a
-/// credential, token or connection string.
+/// The Configuration Service and DMS endpoints the fixture provisions and seeds through. Every record it creates is
+/// added to <see cref="CleanupRegistry"/> as soon as its id is known, before any later request or check, so a call that
+/// fails part-way still has its record removed. A call that does not answer as expected throws
+/// <see cref="InvalidOperationException"/> naming the call and its status, never a credential, token or connection
+/// string.
 /// </summary>
-public sealed class LiveServices(ProjectionE2EEnvironment environment) : IDisposable
+public sealed class LiveServices : IDisposable
 {
     public const string ProjectionClaimName =
         "http://ed-fi.org/identity/claims/services/educationOrganizationProjection";
 
-    private readonly HttpClient _http = new();
+    private readonly ProjectionE2EEnvironment _environment;
+    private readonly CleanupRegistry _cleanup;
+    private readonly HttpClient _http;
     private string? _adminToken;
+
+    public LiveServices(ProjectionE2EEnvironment environment, CleanupRegistry cleanup)
+        : this(environment, cleanup, new HttpClientHandler()) { }
+
+    /// <summary>Uses <paramref name="handler"/> for every call, so the harness tests can stand in for both services.</summary>
+    internal LiveServices(
+        ProjectionE2EEnvironment environment,
+        CleanupRegistry cleanup,
+        HttpMessageHandler handler
+    )
+    {
+        _environment = environment;
+        _cleanup = cleanup;
+        _http = new HttpClient(handler);
+    }
 
     public async Task<string> AdminTokenAsync()
     {
@@ -39,8 +58,8 @@ public sealed class LiveServices(ProjectionE2EEnvironment environment) : IDispos
         using FormUrlEncodedContent form = new(
             new Dictionary<string, string>
             {
-                ["client_id"] = environment.AdminClientId,
-                ["client_secret"] = environment.AdminClientSecret,
+                ["client_id"] = _environment.AdminClientId,
+                ["client_secret"] = _environment.AdminClientSecret,
                 ["grant_type"] = "client_credentials",
                 ["scope"] = "edfi_admin_api/full_access",
             }
@@ -73,7 +92,8 @@ public sealed class LiveServices(ProjectionE2EEnvironment environment) : IDispos
 
     /// <summary>
     /// Imports a claim set granting exactly Read on the projection claim and reads it back: CMS skips a claim missing
-    /// from its hierarchy instead of rejecting the import, which would otherwise surface later as a 403.
+    /// from its hierarchy instead of rejecting the import, which would otherwise surface later as a 403. The claim set
+    /// is registered for deletion before it is read back, so a failed check still removes it.
     /// </summary>
     public async Task<int> ImportProjectionClaimSetAsync(string tenant, string claimSetName)
     {
@@ -96,6 +116,10 @@ public sealed class LiveServices(ProjectionE2EEnvironment environment) : IDispos
             payload
         );
         int claimSetId = await CreatedIdAsync(imported, $"importing claim set {claimSetName}");
+        _cleanup.Add(
+            $"claim set {claimSetId} in {tenant}",
+            () => CmsDeleteAsync(tenant, $"v3/claimSets/{claimSetId}")
+        );
 
         using HttpResponseMessage exported = await CmsSendAsync(
             HttpMethod.Get,
@@ -144,7 +168,7 @@ public sealed class LiveServices(ProjectionE2EEnvironment environment) : IDispos
             "v3/applications",
             new JsonObject
             {
-                ["vendorId"] = environment.VendorIdsByTenant[tenant],
+                ["vendorId"] = _environment.VendorIdsByTenant[tenant],
                 ["applicationName"] = name,
                 ["claimSetName"] = claimSetName,
                 ["educationOrganizationIds"] = new JsonArray(),
@@ -156,15 +180,24 @@ public sealed class LiveServices(ProjectionE2EEnvironment environment) : IDispos
             HttpStatusCode.Created,
             $"creating application {name}"
         );
+        int applicationId = application["id"]!.GetValue<int>();
+        _cleanup.Add(
+            $"application {applicationId} in {tenant}",
+            () => CmsDeleteAsync(tenant, $"v3/applications/{applicationId}")
+        );
+
         return new ClientCredentials(
             tenant,
-            application["id"]!.GetValue<int>(),
+            applicationId,
             application["key"]!.GetValue<string>(),
             application["secret"]!.GetValue<string>()
         );
     }
 
-    /// <summary>Registers a data store with the given route contexts and returns its id.</summary>
+    /// <summary>
+    /// Registers a data store with the given route contexts and returns its id. The store is registered for deletion
+    /// before its contexts are added, so a failed context still removes it (and the contexts with it).
+    /// </summary>
     public async Task<int> CreateDataStoreAsync(
         string tenant,
         string name,
@@ -181,7 +214,7 @@ public sealed class LiveServices(ProjectionE2EEnvironment environment) : IDispos
                 ["dataStoreType"] = "Local",
                 ["name"] = name,
                 ["connectionString"] = connectionString,
-                ["provider"] = environment.DatabaseEngine == "mssql" ? "sqlserver" : "postgresql",
+                ["provider"] = _environment.DatabaseEngine == "mssql" ? "sqlserver" : "postgresql",
             }
         );
         JsonNode dataStore = await RequireJsonAsync(
@@ -190,6 +223,10 @@ public sealed class LiveServices(ProjectionE2EEnvironment environment) : IDispos
             $"registering data store {name}"
         );
         int dataStoreId = dataStore["id"]!.GetValue<int>();
+        _cleanup.Add(
+            $"data store {dataStoreId} in {tenant}",
+            () => CmsDeleteAsync(tenant, $"v3/dataStores/{dataStoreId}")
+        );
 
         foreach ((string key, string value) in contexts)
         {
@@ -239,13 +276,6 @@ public sealed class LiveServices(ProjectionE2EEnvironment environment) : IDispos
             );
     }
 
-    public Task DeleteApplicationAsync(string tenant, int id) =>
-        CmsDeleteAsync(tenant, $"v3/applications/{id}");
-
-    public Task DeleteClaimSetAsync(string tenant, int id) => CmsDeleteAsync(tenant, $"v3/claimSets/{id}");
-
-    public Task DeleteDataStoreAsync(string tenant, int id) => CmsDeleteAsync(tenant, $"v3/dataStores/{id}");
-
     /// <summary>Makes DMS read the tenant's claim sets again, so a claim set imported after it started is known.</summary>
     public async Task ReloadClaimSetsAsync(string tenant)
     {
@@ -263,8 +293,12 @@ public sealed class LiveServices(ProjectionE2EEnvironment environment) : IDispos
         }
     }
 
-    /// <summary>Writes one resource document and returns its location; anything but 201 or the allowed 200 throws.</summary>
-    public async Task<(HttpStatusCode Status, string? Location)> PostResourceAsync(
+    /// <summary>
+    /// Writes one resource document. A 201 registers the document for deletion with the same token; a 200 (allowed
+    /// only when <paramref name="allowExisting"/>) is a document that already existed and is not this run's to delete.
+    /// Anything else throws.
+    /// </summary>
+    public async Task<HttpStatusCode> PostResourceAsync(
         string token,
         FixtureRoute route,
         string resource,
@@ -282,12 +316,20 @@ public sealed class LiveServices(ProjectionE2EEnvironment environment) : IDispos
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         using HttpResponseMessage response = await _http.SendAsync(request);
 
-        if (
-            response.StatusCode == HttpStatusCode.Created
-            || (allowExisting && response.StatusCode == HttpStatusCode.OK)
-        )
+        if (response.StatusCode == HttpStatusCode.Created)
         {
-            return (response.StatusCode, response.Headers.Location?.ToString());
+            Uri location =
+                response.Headers.Location
+                ?? throw new InvalidOperationException(
+                    $"Setup failed: writing {resource} to {route.Tenant}/{route.Qualifier} returned no Location."
+                );
+            _cleanup.Add($"seeded {resource} document", () => DeleteResourceAsync(token, location, resource));
+            return response.StatusCode;
+        }
+
+        if (allowExisting && response.StatusCode == HttpStatusCode.OK)
+        {
+            return response.StatusCode;
         }
 
         throw new InvalidOperationException(
@@ -296,17 +338,7 @@ public sealed class LiveServices(ProjectionE2EEnvironment environment) : IDispos
         );
     }
 
-    public async Task<HttpStatusCode> DeleteResourceAsync(string token, string location)
-    {
-        using HttpRequestMessage request = new(HttpMethod.Delete, new Uri(environment.DmsBaseUrl, location));
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using HttpResponseMessage response = await _http.SendAsync(request);
-        return response.StatusCode;
-    }
-
-    /// <summary>
-    /// Reads one projection page directly, outside the reader: the empty-store precondition.
-    /// </summary>
+    /// <summary>Reads one projection page directly, outside the reader: the empty-store precondition.</summary>
     public async Task<(HttpStatusCode Status, string Body)> GetProjectionPageAsync(
         string token,
         FixtureRoute route
@@ -329,9 +361,22 @@ public sealed class LiveServices(ProjectionE2EEnvironment environment) : IDispos
     private static string RoutePath(FixtureRoute route) =>
         $"{Uri.EscapeDataString(route.Tenant)}/{route.DistrictId}/{route.SchoolYear}";
 
-    private Uri Cms(string path) => new(environment.ConfigServiceUrl, path);
+    private Uri Cms(string path) => new(_environment.ConfigServiceUrl, path);
 
-    private Uri Dms(string path) => new(environment.DmsBaseUrl, path);
+    private Uri Dms(string path) => new(_environment.DmsBaseUrl, path);
+
+    private async Task DeleteResourceAsync(string token, Uri location, string resource)
+    {
+        using HttpRequestMessage request = new(HttpMethod.Delete, new Uri(_environment.DmsBaseUrl, location));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using HttpResponseMessage response = await _http.SendAsync(request);
+        if (response.StatusCode is not (HttpStatusCode.NoContent or HttpStatusCode.NotFound))
+        {
+            throw new InvalidOperationException(
+                $"deleting a seeded {resource} document answered {(int)response.StatusCode}."
+            );
+        }
+    }
 
     private async Task<HttpResponseMessage> CmsSendAsync(
         HttpMethod method,
@@ -357,7 +402,7 @@ public sealed class LiveServices(ProjectionE2EEnvironment environment) : IDispos
         if (response.StatusCode is not (HttpStatusCode.NoContent or HttpStatusCode.OK))
         {
             throw new InvalidOperationException(
-                $"Cleanup failed: deleting {path} in {tenant} answered {(int)response.StatusCode}."
+                $"deleting {path} in {tenant} answered {(int)response.StatusCode}."
             );
         }
     }

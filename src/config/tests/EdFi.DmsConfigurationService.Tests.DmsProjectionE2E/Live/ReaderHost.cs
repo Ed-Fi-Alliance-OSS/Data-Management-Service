@@ -11,7 +11,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace EdFi.DmsConfigurationService.Tests.DmsProjectionE2E;
+namespace EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Live;
 
 /// <summary>Which DMS call a request was.</summary>
 public enum RequestKind
