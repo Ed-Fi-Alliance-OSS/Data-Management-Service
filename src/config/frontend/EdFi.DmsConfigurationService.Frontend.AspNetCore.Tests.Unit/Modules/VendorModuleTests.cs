@@ -217,126 +217,38 @@ public class VendorModuleTests
         }
     }
 
-    [TestFixture]
-    public class Given_namespace_prefixes_in_vendor_requests : VendorModuleTests
+    [TestFixture("POST", "\"\"", "")]
+    [TestFixture("POST", "", "")]
+    [TestFixture("POST", "null", "")]
+    [TestFixture("POST", "\"   \"", "")]
+    [TestFixture("POST", "\" , prefix1, , prefix2 , \"", "prefix1,prefix2")]
+    [TestFixture("PUT", "\"\"", "")]
+    [TestFixture("PUT", "", "")]
+    [TestFixture("PUT", "null", "")]
+    [TestFixture("PUT", "\"   \"", "")]
+    [TestFixture("PUT", "\" , prefix1, , prefix2 , \"", "prefix1,prefix2")]
+    public class Given_namespace_prefixes_in_vendor_requests(
+        string method,
+        string namespacePrefixesJson,
+        string expectedPrefixes
+    ) : VendorModuleTests
     {
-        private const string EmptyPrefixesBody = """
-            {
-              "id": 1,
-              "company": "Test Company",
-              "contactName": "Test Contact",
-              "contactEmailAddress": "test@example.com",
-              "namespacePrefixes": ""
-            }
-            """;
+        private HttpResponseMessage _response = null!;
+        private readonly List<string> _repositoryPrefixes = [];
+        private readonly List<string> _providerPrefixes = [];
 
-        private const string OmittedPrefixesBody = """
-            {
-              "id": 1,
-              "company": "Test Company",
-              "contactName": "Test Contact",
-              "contactEmailAddress": "test@example.com"
-            }
-            """;
-
-        private const string NullPrefixesBody = """
-            {
-              "id": 1,
-              "company": "Test Company",
-              "contactName": "Test Contact",
-              "contactEmailAddress": "test@example.com",
-              "namespacePrefixes": null
-            }
-            """;
-
-        private const string WhitespacePrefixesBody = """
-            {
-              "id": 1,
-              "company": "Test Company",
-              "contactName": "Test Contact",
-              "contactEmailAddress": "test@example.com",
-              "namespacePrefixes": "   "
-            }
-            """;
-
-        private const string PaddedPrefixesBody = """
-            {
-              "id": 1,
-              "company": "Test Company",
-              "contactName": "Test Contact",
-              "contactEmailAddress": "test@example.com",
-              "namespacePrefixes": " , prefix1, , prefix2 , "
-            }
-            """;
-
-        [Test]
-        public Task It_passes_empty_prefixes_from_post_to_the_repository() =>
-            AssertPostAcceptsPrefixesAsync(EmptyPrefixesBody, "");
-
-        [Test]
-        public Task It_passes_omitted_prefixes_from_post_to_the_repository() =>
-            AssertPostAcceptsPrefixesAsync(OmittedPrefixesBody, "");
-
-        [Test]
-        public Task It_passes_empty_prefixes_from_put_to_the_repository() =>
-            AssertPutPassesCanonicalPrefixesToRepositoryAndProviderAsync(EmptyPrefixesBody, "");
-
-        [Test]
-        public Task It_passes_omitted_prefixes_from_put_to_the_repository() =>
-            AssertPutPassesCanonicalPrefixesToRepositoryAndProviderAsync(OmittedPrefixesBody, "");
-
-        [Test]
-        public Task It_passes_null_prefixes_from_post_as_empty() =>
-            AssertPostAcceptsPrefixesAsync(NullPrefixesBody, "");
-
-        [Test]
-        public Task It_passes_null_prefixes_from_put_as_empty() =>
-            AssertPutPassesCanonicalPrefixesToRepositoryAndProviderAsync(NullPrefixesBody, "");
-
-        [Test]
-        public Task It_passes_whitespace_prefixes_from_post_as_empty() =>
-            AssertPostAcceptsPrefixesAsync(WhitespacePrefixesBody, "");
-
-        [Test]
-        public Task It_passes_whitespace_prefixes_from_put_as_empty() =>
-            AssertPutPassesCanonicalPrefixesToRepositoryAndProviderAsync(WhitespacePrefixesBody, "");
-
-        [Test]
-        public Task It_passes_canonical_prefixes_from_post_to_the_repository() =>
-            AssertPostAcceptsPrefixesAsync(PaddedPrefixesBody, "prefix1,prefix2");
-
-        [Test]
-        public Task It_passes_canonical_prefixes_from_put_to_the_repository() =>
-            AssertPutPassesCanonicalPrefixesToRepositoryAndProviderAsync(
-                PaddedPrefixesBody,
-                "prefix1,prefix2"
-            );
-
-        private async Task AssertPostAcceptsPrefixesAsync(string body, string expectedPrefixes)
+        [SetUp]
+        public async Task Setup()
         {
-            List<VendorInsertCommand> commands = [];
+            _repositoryPrefixes.Clear();
+            _providerPrefixes.Clear();
+
             A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
-                .Invokes(call => commands.Add(call.GetArgument<VendorInsertCommand>(0)!))
+                .Invokes(call =>
+                    _repositoryPrefixes.Add(call.GetArgument<VendorInsertCommand>(0)!.NamespacePrefixes)
+                )
                 .Returns(new VendorInsertResult.Success(1));
-            using var client = SetUpClient();
-
-            var response = await client.PostAsync(
-                "/v3/vendors",
-                new StringContent(body, Encoding.UTF8, "application/json")
-            );
-
-            response.StatusCode.Should().Be(HttpStatusCode.Created);
-            commands.Should().ContainSingle().Which.NamespacePrefixes.Should().Be(expectedPrefixes);
-        }
-
-        private async Task AssertPutPassesCanonicalPrefixesToRepositoryAndProviderAsync(
-            string body,
-            string expectedPrefixes
-        )
-        {
             Guid clientUuid = Guid.NewGuid();
-            List<VendorUpdateCommand> commands = [];
-            List<string> providerPrefixes = [];
             A.CallTo(() => _vendorRepository.GetVendorUpdateState(1))
                 .Returns(
                     new VendorUpdateStateResult.Success(
@@ -355,23 +267,54 @@ public class VendorModuleTests
                         A<string>.Ignored
                     )
                 )
-                .Invokes(call => providerPrefixes.Add(call.GetArgument<string>(1)!))
+                .Invokes(call => _providerPrefixes.Add(call.GetArgument<string>(1)!))
                 .Returns(new ClientUpdateResult.Success(clientUuid));
             A.CallTo(() => _apiClientRepository.SyncApiClientUuid(51, clientUuid, clientUuid))
                 .Returns(new ApiClientUuidSyncResult.AlreadyApplied());
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
-                .Invokes(call => commands.Add(call.GetArgument<VendorUpdateCommand>(0)!))
+                .Invokes(call =>
+                    _repositoryPrefixes.Add(call.GetArgument<VendorUpdateCommand>(0)!.NamespacePrefixes)
+                )
                 .Returns(new VendorUpdateResult.Success());
+
+            JsonObject body = new()
+            {
+                ["id"] = 1,
+                ["company"] = "Test Company",
+                ["contactName"] = "Test Contact",
+                ["contactEmailAddress"] = "test@example.com",
+            };
+            if (namespacePrefixesJson.Length > 0)
+            {
+                body["namespacePrefixes"] = JsonNode.Parse(namespacePrefixesJson);
+            }
+
             using var client = SetUpClient();
+            using var request = new HttpRequestMessage(
+                new HttpMethod(method),
+                method is "POST" ? "/v3/vendors" : "/v3/vendors/1"
+            )
+            {
+                Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"),
+            };
+            _response = await client.SendAsync(request);
+        }
 
-            var response = await client.PutAsync(
-                "/v3/vendors/1",
-                new StringContent(body, Encoding.UTF8, "application/json")
-            );
+        [Test]
+        public void It_returns_success() =>
+            _response
+                .StatusCode.Should()
+                .Be(method is "POST" ? HttpStatusCode.Created : HttpStatusCode.NoContent);
 
-            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-            commands.Should().ContainSingle().Which.NamespacePrefixes.Should().Be(expectedPrefixes);
-            providerPrefixes.Should().Equal(expectedPrefixes);
+        [Test]
+        public void It_passes_canonical_prefixes_to_the_repository() =>
+            _repositoryPrefixes.Should().Equal(expectedPrefixes);
+
+        [Test]
+        public void It_updates_existing_client_claims_only_on_put()
+        {
+            string[] expectedProviderPrefixes = method is "PUT" ? [expectedPrefixes] : [];
+            _providerPrefixes.Should().Equal(expectedProviderPrefixes);
         }
     }
 

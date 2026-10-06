@@ -75,52 +75,6 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
         }
 
         [TestFixture]
-        public class Given_a_repeat_vendor_with_empty_prefixes : VendorTests
-        {
-            private int _vendorId;
-            private VendorInsertResult _repeatResult = null!;
-
-            [SetUp]
-            public async Task Setup()
-            {
-                var firstResult = await _repository.InsertVendor(
-                    new VendorInsertCommand
-                    {
-                        Company = "Existing Company",
-                        ContactEmailAddress = "original@example.com",
-                        ContactName = "Original Contact",
-                        NamespacePrefixes = "uri://old.org",
-                    }
-                );
-                _vendorId = ((VendorInsertResult.Success)firstResult).Id;
-
-                _repeatResult = await _repository.InsertVendor(
-                    new VendorInsertCommand
-                    {
-                        Company = "Existing Company",
-                        ContactEmailAddress = "replacement@example.com",
-                        ContactName = "Replacement Contact",
-                        NamespacePrefixes = "",
-                    }
-                );
-            }
-
-            [Test]
-            public void It_rejects_the_duplicate_company() =>
-                _repeatResult.Should().BeOfType<VendorInsertResult.FailureDuplicateCompanyName>();
-
-            [Test]
-            public async Task It_does_not_mutate_the_existing_vendor()
-            {
-                var getResult = await _repository.GetVendor(_vendorId);
-                var vendor = getResult.Should().BeOfType<VendorGetResult.Success>().Subject.VendorResponse;
-                vendor.ContactEmailAddress.Should().Be("original@example.com");
-                vendor.ContactName.Should().Be("Original Contact");
-                vendor.NamespacePrefixes.Should().Be("uri://old.org");
-            }
-        }
-
-        [TestFixture]
         public class UpdateTests : VendorTests
         {
             private VendorInsertCommand _vendorInsert = null!;

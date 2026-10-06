@@ -1125,7 +1125,7 @@ public class MetadataModuleTests
     }
 
     [Test]
-    public async Task OpenApi_Vendor_Request_Schemas_Keep_NamespacePrefixes_Optional_Nullable_String()
+    public async Task OpenApi_Vendor_Request_Schemas_Describe_NamespacePrefixes_As_Optional_Nullable_String()
     {
         await using var factory = CreateFactory();
         using var client = factory.CreateClient();
