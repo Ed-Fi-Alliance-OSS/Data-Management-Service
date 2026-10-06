@@ -234,15 +234,19 @@ public class CursorQueryParameterCanonicalizationTests
     /// <summary>
     /// The ignored-parameter warning lists names in the order the dictionary enumerates them, so that
     /// order has to be the order each name first appears. Case variants merge into one entry at the
-    /// first variant's position, carrying the last variant's spelling and value.
+    /// first variant's position, carrying the last variant's value. Which spelling the merged key
+    /// keeps is ASP.NET Core's choice, so it is not asserted.
     /// </summary>
     [Test]
     public async Task It_keeps_first_appearance_order_for_merged_case_variants()
     {
-        var queryParameters = await CapturedQueryParameters("/data/ed-fi/schools?B=1&a=2&b=3&x=4");
+        var queryParameters = await CapturedQueryParameters("/data/ed-fi/schools?B=1&a=2&b=3&x=4&B=5");
 
-        queryParameters.Keys.Should().Equal("b", "a", "x");
-        queryParameters["b"].Should().Be("3");
+        queryParameters.Keys.Should().Equal(["b", "a", "x"], StringComparer.OrdinalIgnoreCase.Equals);
+        queryParameters
+            .Single(entry => entry.Key.Equals("b", StringComparison.OrdinalIgnoreCase))
+            .Value.Should()
+            .Be("5");
     }
 
     /// <summary>

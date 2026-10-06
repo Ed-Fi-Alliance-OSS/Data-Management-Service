@@ -150,7 +150,9 @@ X-EdFi-Warning: Ignored query parameters: studentUniqueld, foo%20bar
 - The value is `Ignored query parameters: ` followed by the rendered names, separated by `, `.
   Values never appear.
 - Each name is listed once, in the order of its first occurrence. ASP.NET Core merges names that
-  differ only in case, keeping the position of the first and the spelling of the last.
+  differ only in case, keeping the position of the first. The listed spelling is whichever one
+  ASP.NET Core's parsed key retains, which is not necessarily the first or the last; DMS does not
+  reparse the raw query string to choose one.
 - Each name is rendered in this order:
   1. Remove control characters, format characters, `U+2028`/`U+2029` and unpaired surrogates.
   2. If nothing remains, the name renders as `(empty)`.
