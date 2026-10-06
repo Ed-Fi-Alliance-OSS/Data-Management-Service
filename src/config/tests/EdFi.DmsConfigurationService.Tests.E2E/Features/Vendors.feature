@@ -386,10 +386,10 @@ Feature: Vendors endpoints
                   """
 
 
-        # POST /v3/vendors is create-only: a company the tenant already holds is rejected and the
-        # existing vendor is left exactly as it was.
-        @DMS-1341 @MssqlRepresentative
-        Scenario: 18 POST with an existing company name returns 400 and leaves the vendor unchanged
+        # POST /v3/vendors upserts by company: new vendors return 201 and existing vendors return
+        # 200 after their contact details and namespace prefixes are updated.
+        @MssqlRepresentative
+        Scenario: 18 POST with an existing company name updates the vendor
              When a POST request is made to "/v3/vendors" with
                   """
                    {
@@ -416,23 +416,14 @@ Feature: Vendors endpoints
                        "namespacePrefixes": "Updated"
                    }
                   """
-             Then it should respond with 400
-              And the response header "location" is not present
-              And the response body is
+             Then it should respond with 200
+              And the response headers include
                   """
                   {
-                      "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
-                      "title": "Data Validation Failed",
-                      "status": 400,
-                      "validationErrors": {
-                          "Company": [
-                              "A vendor with this company name already exists."
-                          ]
-                      },
-                      "errors": []
+                      "location": "/v3/vendors/{vendorId}"
                   }
                   """
+              And the response body is empty
              When a GET request is made to "/v3/vendors/{vendorId}"
              Then it should respond with 200
               And the response body is
@@ -440,9 +431,9 @@ Feature: Vendors endpoints
                   {
                       "id": {vendorId},
                       "company": "Repeat Co {scenarioRunId}",
-                      "contactName": "Initial Contact",
-                      "contactEmailAddress": "initial@example.com",
-                      "namespacePrefixes": "Test"
+                      "contactName": "Updated Contact",
+                      "contactEmailAddress": "updated@example.com",
+                      "namespacePrefixes": "Updated"
                   }
                   """
 
