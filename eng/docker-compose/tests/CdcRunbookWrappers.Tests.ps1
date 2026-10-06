@@ -45,6 +45,24 @@ Describe 'CDC live snippet process boundary' {
             $ArgumentList -contains (Join-Path $TestDrive '.env') -and $InputText -eq '' -and $TimeoutSeconds -eq 600
         }
     }
+    It 'preserves a failing native snippet exit code in its result and progress report' {
+        $script:runbookProgress = @{}
+        $script:runbookCase = 'cdc-stack-teardown'
+        $savedEvidenceDirectory = $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY
+        try {
+            $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = $TestDrive
+            $result = Invoke-CdcRunbookScript -Id 'cdc-stack-teardown' -FixtureRoot $TestDrive `
+                -Code "pwsh -NoProfile -NonInteractive -Command 'exit 7'"
+            $result.FailureKind | Should -Be 'None'
+            $result.ExitCode | Should -Be 7
+            $progress = Get-Content (Join-Path $TestDrive 'runbook-progress.json') -Raw | ConvertFrom-Json
+            $progress.'cdc-stack-teardown'[0].Phase | Should -Be 'Teardown'
+            $progress.'cdc-stack-teardown'[0].ExitCode | Should -Be 7
+        } finally {
+            $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = $savedEvidenceDirectory
+            Remove-Variable runbookProgress, runbookOperation, runbookOperationCase, runbookCase, runbookTimer -Scope Script -ErrorAction SilentlyContinue
+        }
+    }
     It 'allows preparation and the internal readiness wait for <Id>' -ForEach @(
         @{ Id = 'cdc-pg-e2e-setup' },
         @{ Id = 'cdc-sqlserver-e2e-setup' }

@@ -194,6 +194,19 @@ These are coverage decisions, not root-cause corrections:
 - [October 5 native recovery](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/37285839756/job/111684553201): recovery failed before fault injection, at worker recovery after roughly 90 seconds. A Connect readiness timeout is an inference from the boundary and duration, not a retained exception diagnosis. Initial-start recreation does not retry in-scenario crash recovery.
 - [October 4 interrupted retirement](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/37195034647/job/111415058701): the final `cdc-retire` returned `Kafka / Unavailable`. The retained retirement journal verified cleanup through `PublicTopic` and `ProgressTopic`, then recorded `SchemaHistoryTopic` intent without verification. This identifies schema-history topic cleanup/read-back as the failing boundary, but does not distinguish its initial inspection from post-deletion inspection or establish the broker/client cause. Interrupted retirement and its required-method guard remain required; this is not established as a harness flake.
 
+The [October 5 revised-selection matrix](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/37368465544/job/111971238574)
+passed all 43 SQL Server controller Admission cases, but published-stack teardown
+left its deployment inventory behind. The following E2E setup case failed its
+container-ownership check before setup began. The enclosing teardown snippet
+completed after 7.2 seconds and reported exit 0; an offline regression demonstrated that a
+nested `pwsh` failure can be hidden unless its exit code is explicitly forwarded.
+The snippet runner now preserves that native exit code in its result and progress
+report. This corrects the process reporting boundary, not the unexplained underlying
+teardown failure. Required runbooks and teardown postconditions remain intact, and
+the failed matrix is retained rather than replaced by a failed-job rerun.
+A focused local replay passed published setup and teardown, including inventory
+removal; it did not reproduce or explain the CI failure.
+
 A focused local SQL Server interrupted-retirement run on October 5, 2026, against
 `22d30cae6` passed once (1 case, 2m22s). It did not reproduce the historical failure.
 The existing journal and command diagnostic identify the boundary and classification;

@@ -136,6 +136,23 @@ function Invoke-CdcRunbookLiveWrapper {
     return [pscustomobject]@{ SnippetId = $Id; ExitCode = $result.ExitCode; FailureKind = $result.FailureKind; LogPrefix = $prefix }
 }
 
+function Invoke-CdcRunbookScript {
+    param([string] $Id, [string] $Code, [string] $FixtureRoot, [int] $TimeoutSeconds = 600)
+    $path = Join-Path $FixtureRoot ($Id + '.ps1')
+    # A -File script otherwise reports success after a failing nested native command.
+    ($Code + "`nexit `$LASTEXITCODE") | Set-Content -LiteralPath $path
+    if (-not $IsWindows) { & chmod 600 $path }
+    $phase = if ($Id -eq 'cdc-stack-teardown') { 'Teardown' } elseif ($Id -match 'infrastructure|settings') { 'Setup' } else { 'Test' }
+    Set-CdcRunbookOperation -Operation $Id -Phase $phase -TimeoutSeconds $TimeoutSeconds
+    $result = Invoke-NativeCommandWithInput -FilePath 'pwsh' -ArgumentList @('-NoProfile', '-NonInteractive', '-File', $path) -InputText '' -TimeoutSeconds $TimeoutSeconds
+    Complete-CdcRunbookOperation $result
+    $result.StandardOutput | Set-Content (Join-Path $FixtureRoot "$Id.stdout")
+    $result.StandardError | Set-Content (Join-Path $FixtureRoot "$Id.stderr")
+    if (-not $IsWindows) { & chmod 600 (Join-Path $FixtureRoot "$Id.stdout") (Join-Path $FixtureRoot "$Id.stderr") }
+    $result.FailureKind | Should -Be 'None' -Because "the private $Id process must complete"
+    return $result
+}
+
 # Live fixture progress is private input to the allowlisted qualification exporter.
 # Persist before invoking work so a killed child still has an attributable operation.
 function Save-CdcRunbookProgress {

@@ -31,21 +31,6 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
         if ($LASTEXITCODE -ne 0 -or $published.Count -or $publishedVolumes.Count) { throw 'EnvironmentUnavailable: published fixture requires no existing dms-published resources.' }
         $script:originalLocation = Get-Location
         Set-Location $script:repo
-        function Invoke-PrivateScript {
-            param([string] $Id, [string] $Code, [int] $TimeoutSeconds = 600)
-            $path = Join-Path $script:fixture ($Id + '.ps1')
-            $Code | Set-Content -LiteralPath $path
-            & chmod 600 $path
-            $phase = if ($Id -eq 'cdc-stack-teardown') { 'Teardown' } elseif ($Id -match 'infrastructure|settings') { 'Setup' } else { 'Test' }
-            Set-CdcRunbookOperation -Operation $Id -Phase $phase -TimeoutSeconds $TimeoutSeconds
-            $result = Invoke-NativeCommandWithInput -FilePath 'pwsh' -ArgumentList @('-NoProfile', '-NonInteractive', '-File', $path) -InputText '' -TimeoutSeconds $TimeoutSeconds
-            Complete-CdcRunbookOperation $result
-            $result.StandardOutput | Set-Content (Join-Path $script:fixture "$Id.stdout")
-            $result.StandardError | Set-Content (Join-Path $script:fixture "$Id.stderr")
-            & chmod 600 (Join-Path $script:fixture "$Id.stdout") (Join-Path $script:fixture "$Id.stderr")
-            $result.FailureKind | Should -Be 'None' -Because "the private $Id process must complete"
-            return $result
-        }
     }
 
     BeforeEach {
@@ -106,7 +91,7 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
         $infra = (Get-CdcRunbookCode "$prefix-infrastructure").Replace('./eng/docker-compose/.env', $environmentFile)
         if ($E2e) { $infra = $infra.Replace('-InfraOnly', '-InfraOnly -AddExtensionSecurityMetadata') }
         if ($Published) { $infra = $infra.Replace('start-local-dms.ps1', 'start-published-dms.ps1') }
-        (Invoke-PrivateScript "$prefix-infrastructure" $infra).ExitCode | Should -Be 0
+        (Invoke-CdcRunbookScript -Id "$prefix-infrastructure" -Code $infra -FixtureRoot $script:fixture).ExitCode | Should -Be 0
         (& docker inspect $databaseContainer --format '{{.Config.Image}}') | Should -Be $providerImage
         $LASTEXITCODE | Should -Be 0
         (& docker inspect $databaseContainer --format '{{.Image}}') | Should -Be $providerImageId
@@ -143,7 +128,7 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
         $settings = $settings.Replace('CallMilliseconds = 30000', 'CallMilliseconds = 120000').Replace('WaitMilliseconds = 300000', 'WaitMilliseconds = 600000')
         if ($Procedure -eq 'Lifecycle') { $settings = $settings.Replace('HeapBytes = 536870912', 'HeapBytes = 1073741824') }
         $settings = "function Read-Host { param([string]`$Prompt, [switch]`$MaskInput) return (Get-Content -LiteralPath '$inputPath' -Raw).Trim() }`n" + $settings
-        (Invoke-PrivateScript "$prefix-settings" $settings).ExitCode | Should -Be 0
+        (Invoke-CdcRunbookScript -Id "$prefix-settings" -Code $settings -FixtureRoot $script:fixture).ExitCode | Should -Be 0
         Test-Path $settingsPath | Should -BeTrue
         # Cold infrastructure may return an unavailable observation. Retry only the
         # intact initial workflow, never a generation that authorized writers.
@@ -208,7 +193,7 @@ REVERT;
             $configuration = if ($env:CDC_RUNBOOK_CONFIGURATION) { $env:CDC_RUNBOOK_CONFIGURATION } else { 'Release' }
             $tool = Join-Path $script:repo "src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/$configuration/net10.0/api-schema-tools"
             $code = (Get-CdcRunbookCode $observation).Replace('api-schema-tools', "& '$tool'").Replace('<retained-settings-path>', $entry.SettingsPath).Replace('<original-state-root>', $statePath).Replace('--maximum-passes 20', '--maximum-passes 2')
-            $observed = Invoke-PrivateScript $observation ($code + "`nexit `$LASTEXITCODE")
+            $observed = Invoke-CdcRunbookScript -Id $observation -Code $code -FixtureRoot $script:fixture
             $output = $observed.StandardOutput | ConvertFrom-Json
             $observed.ExitCode | Should -Be 1
             $output.exitCode | Should -Be $observed.ExitCode
@@ -239,7 +224,7 @@ REVERT;
         }
         if ($E2e) {
             $smokeCode = (Get-CdcRunbookCode 'cdc-pg-e2e-test').Replace('edfi_datamanagementservice_e2e', $database)
-            $smoke = Invoke-PrivateScript 'cdc-pg-e2e-test' $smokeCode
+            $smoke = Invoke-CdcRunbookScript -Id 'cdc-pg-e2e-test' -Code $smokeCode -FixtureRoot $script:fixture
             $smoke.ExitCode | Should -Be 0
             $smoke.StandardOutput | Should -Match 'Passed:\s+2'
             $smoke.StandardOutput | Should -Match 'Skipped:\s+0'
@@ -276,7 +261,7 @@ REVERT;
         # Complete governed retirement while services remain reachable; never erase provenance to retry.
         $teardown = Get-CdcRunbookCode 'cdc-stack-teardown'
         if ($Published) { $teardown = $teardown.Replace('bootstrap-local-dms.ps1', 'bootstrap-published-dms.ps1') }
-        (Invoke-PrivateScript 'cdc-stack-teardown' $teardown).ExitCode | Should -Be 0
+        (Invoke-CdcRunbookScript -Id 'cdc-stack-teardown' -Code $teardown -FixtureRoot $script:fixture).ExitCode | Should -Be 0
         Test-Path $inventoryPath | Should -BeFalse
         Set-CdcRunbookOperation -Operation retire-workspace -Phase Teardown
         $workspace = Join-Path $script:repo 'eng/docker-compose/.bootstrap'
