@@ -67,7 +67,7 @@ param(
     $PackageId,
 
     # The version the package must declare, which the caller reads from the contract's own
-    # csproj via Get-PluginsContractVersion. Passed in rather than read here so that this script
+    # csproj via Get-IdentityContractVersion. Passed in rather than read here so that this script
     # asserts against the lane's single declared version instead of re-deriving one and agreeing
     # with itself.
     [Parameter(Mandatory)]
@@ -129,7 +129,13 @@ $requiredXmlDocLandmarks = @(
     "while the same GUID in 32-character hyphen-free form does",
 
     # The $[n].property JSONPath form IdentityError.Path documents for an array-item failure.
-    'with an array item addressed as <c>$[n].property</c>'
+    'with an array item addressed as <c>$[n].property</c>',
+
+    # The Cardinality paragraph's reason a plugin must never use TryAdd for IIdentityService.
+    'so a plain <c>TryAdd</c> is declined and the replacement never happens',
+
+    # The Keying paragraph's reason the implementation must be registered unkeyed.
+    'DMS resolves this contract unkeyed from the request scope'
 )
 
 $expectedReadme = "IDENTITY.md"

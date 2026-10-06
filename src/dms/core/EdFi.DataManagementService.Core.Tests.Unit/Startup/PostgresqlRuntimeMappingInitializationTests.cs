@@ -222,6 +222,11 @@ public class PostgresqlRuntimeMappingInitializationTests
             cancellationToken
         );
         await orchestrator.RunByOrderRangeAsync(
+            DmsStartupTaskOrderRanges.PluginRegistrationValidationMinimum,
+            DmsStartupTaskOrderRanges.PluginRegistrationValidationMaximum,
+            cancellationToken
+        );
+        await orchestrator.RunByOrderRangeAsync(
             DmsStartupTaskOrderRanges.BackendMappingMinimum,
             DmsStartupTaskOrderRanges.BackendMappingMaximum,
             cancellationToken

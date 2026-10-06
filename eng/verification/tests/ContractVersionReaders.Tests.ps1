@@ -5,7 +5,7 @@
 
 #Requires -Version 7
 
-# The two contract version readers in package-helpers.psm1.
+# The contract version readers in package-helpers.psm1.
 #
 # Each contract declares its version in exactly one file, and every lane that needs that version
 # calls one of these rather than repeating a literal. What is pinned here is the behaviour that
@@ -13,8 +13,8 @@
 # declares no version is an error rather than an empty string, and a second declaration cannot
 # stringify into a version no package will ever carry.
 #
-# The repository's own two declarations are read as well, because a reader that agreed with a
-# fixture and disagreed with the tree would leave every lane packing something else.
+# The repository's own declarations are read as well, because a reader that agreed with a fixture
+# and disagreed with the tree would leave every lane packing something else.
 
 BeforeAll {
     $script:repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
@@ -139,6 +139,97 @@ Describe "Get-CustomValidationContractVersion" {
     }
 }
 
+Describe "Get-IdentityContractVersion" {
+    It "returns the version the repository's own contract csproj declares" {
+        $declared = Get-IdentityContractVersion
+
+        $csprojPath = Join-Path $script:repositoryRoot `
+            "src/dms/core/EdFi.DataManagementService.Identity/EdFi.DataManagementService.Identity.csproj"
+        $expected = ([xml] (Get-Content -LiteralPath $csprojPath -Raw)).SelectSingleNode(
+            "//PropertyGroup/VersionPrefix"
+        ).InnerText.Trim()
+
+        $declared | Should -BeExactly $expected
+    }
+
+    It "reads the version out of a supplied csproj" {
+        $path = New-FixtureFile -Name "declared.csproj" -Content @"
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <VersionPrefix>2.3.4</VersionPrefix>
+    </PropertyGroup>
+</Project>
+"@
+
+        Get-IdentityContractVersion -ProjectPath $path | Should -BeExactly "2.3.4"
+    }
+
+    It "trims surrounding whitespace rather than returning it as part of the version" {
+        $path = New-FixtureFile -Name "padded.csproj" -Content @"
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <VersionPrefix>
+            1.0.0
+        </VersionPrefix>
+    </PropertyGroup>
+</Project>
+"@
+
+        Get-IdentityContractVersion -ProjectPath $path | Should -BeExactly "1.0.0"
+    }
+
+    It "throws when the project file does not exist" {
+        $missing = Join-Path $script:fixtureRoot "absent.csproj"
+
+        { Get-IdentityContractVersion -ProjectPath $missing } |
+            Should -Throw -ExpectedMessage "*does not exist*"
+    }
+
+    It "throws when the project declares no VersionPrefix" {
+        $path = New-FixtureFile -Name "undeclared.csproj" -Content @"
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+    </PropertyGroup>
+</Project>
+"@
+
+        { Get-IdentityContractVersion -ProjectPath $path } |
+            Should -Throw -ExpectedMessage "*declares no VersionPrefix*"
+    }
+
+    It "throws when the project declares an empty VersionPrefix" {
+        $path = New-FixtureFile -Name "empty.csproj" -Content @"
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <VersionPrefix>   </VersionPrefix>
+    </PropertyGroup>
+</Project>
+"@
+
+        { Get-IdentityContractVersion -ProjectPath $path } |
+            Should -Throw -ExpectedMessage "*declares no VersionPrefix*"
+    }
+
+    # A second PropertyGroup is the shape that makes property access return an array and stringify
+    # into something like "1.0.0 2.0.0", which no package would ever carry.
+    It "throws rather than stringifying two declarations into one version" {
+        $path = New-FixtureFile -Name "duplicated.csproj" -Content @"
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <VersionPrefix>1.0.0</VersionPrefix>
+    </PropertyGroup>
+    <PropertyGroup>
+        <VersionPrefix>2.0.0</VersionPrefix>
+    </PropertyGroup>
+</Project>
+"@
+
+        { Get-IdentityContractVersion -ProjectPath $path } |
+            Should -Throw -ExpectedMessage "*more than one*"
+    }
+}
+
 Describe "Get-PluginsContractVersion" {
     It "returns the version the repository's own contract props declares" {
         $declared = Get-PluginsContractVersion
@@ -240,18 +331,21 @@ Describe "Get-SecretsContractVersion" {
     }
 }
 
-Describe "The two contracts version independently" {
-    # The whole point of the second reader. If these ever collapsed onto one source, a contract's
-    # version would move when the other contract's surface moved, and the loader's skew preflight
-    # compares exactly these values.
+Describe "The three Data Management Service contracts version independently" {
+    # The whole point of a reader per contract. If these ever collapsed onto one source, a
+    # contract's version would move when another contract's surface moved, and the DMS loader's skew
+    # preflight compares exactly these values.
     It "reads each contract's version from its own declaration file" {
         $pluginsPropsPath = Join-Path $script:repositoryRoot "src/plugins/Directory.Build.props"
         $customValidationProjectPath = Join-Path $script:repositoryRoot `
             "src/dms/core/EdFi.DataManagementService.CustomValidation/EdFi.DataManagementService.CustomValidation.csproj"
+        $identityProjectPath = Join-Path $script:repositoryRoot `
+            "src/dms/core/EdFi.DataManagementService.Identity/EdFi.DataManagementService.Identity.csproj"
 
         Get-PluginsContractVersion -PropsPath $pluginsPropsPath | Should -Not -BeNullOrEmpty
         Get-CustomValidationContractVersion -ProjectPath $customValidationProjectPath |
             Should -Not -BeNullOrEmpty
+        Get-IdentityContractVersion -ProjectPath $identityProjectPath | Should -Not -BeNullOrEmpty
     }
 
     It "declares a custom-validation version that is not the DMS assembly version" {

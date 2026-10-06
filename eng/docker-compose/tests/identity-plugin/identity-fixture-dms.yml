@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# Test-owned configuration of Acme.IdentityFixture for the Instance Management identity plugin slice.
+# Compose it after plugins-dms.yml and tests/plugin-deployment/plugins-allowed-dms.yml, which mount
+# and allow the fixture; this file only configures it. See
+# eng/fixtures/plugins/Acme.IdentityFixture/README.md for the keys.
+#
+# One namespace maps both Tenant_255901 contexts the suite-owned fixture registers (district 255901,
+# school years 2024 and 2025), so an id issued through either route resolves through both. The
+# grant is the explicit tenant-wide one (ClientId "*"): CMS mints client ids at run time, so a
+# per-client grant cannot be written ahead of the run. Tenant_255902 has no namespace.
+#
+# PollsUntilComplete=1 makes the first poll of an async job answer incomplete.
+services:
+  dms:
+    environment:
+      IdentityFixture__Namespaces__0__Name: ns-255901
+      IdentityFixture__Namespaces__0__Contexts__0__Tenant: Tenant_255901
+      IdentityFixture__Namespaces__0__Contexts__0__Qualifiers__districtId: "255901"
+      IdentityFixture__Namespaces__0__Contexts__0__Qualifiers__schoolYear: "2024"
+      IdentityFixture__Namespaces__0__Contexts__1__Tenant: Tenant_255901
+      IdentityFixture__Namespaces__0__Contexts__1__Qualifiers__districtId: "255901"
+      IdentityFixture__Namespaces__0__Contexts__1__Qualifiers__schoolYear: "2025"
+      IdentityFixture__Grants__0__ClientId: "*"
+      IdentityFixture__Grants__0__Tenant: Tenant_255901
+      IdentityFixture__Grants__0__Namespace: ns-255901
+      IdentityFixture__PollsUntilComplete: "1"
