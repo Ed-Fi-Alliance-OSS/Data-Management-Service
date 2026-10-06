@@ -8,13 +8,13 @@ on:
   release:
     types:
       - prereleased
-  # A dispatch is a dry run of the two contract chains, and only ever that. It runs pack-plugins
-  # and pack-custom-validation and, through their needs, the two SBOM jobs, the two SLSA provenance
-  # jobs and the two read-only check jobs, so a branch can prove it produces both nupkgs, both
-  # SPDX 2.2 manifests and both provenance files with the real generator, and reaches a publish
-  # decision against the live feed, before a release ever fires this workflow.
+  # A dispatch is a dry run of the three contract chains, and only ever that. It runs pack-plugins,
+  # pack-custom-validation and pack-secrets and, through their needs, the three SBOM jobs, the three
+  # SLSA provenance jobs and the three read-only check jobs, so a branch can prove it produces all
+  # three nupkgs, SPDX 2.2 manifests and provenance files with the real generator, and reaches a
+  # publish decision against the live feed, before a release ever fires this workflow.
   #
-  # Nothing is published on a dispatch. The two contract publish jobs test event_name and skip,
+  # Nothing is published on a dispatch. The three contract publish jobs test event_name and skip,
   # which is where the package pushes live; the check jobs only read the feed. Every other job here
   # is either gated on github.event.release.tag_name, which a dispatch does not carry, or follows by
   # needs from a job that is, so pack-dms, pack-schema-tools, pack-cs and everything downstream of
@@ -35,6 +35,7 @@ env:
   SCHEMA_TOOLS_PACKAGE_NAME: "EdFi.Api.SchemaTools"
   PLUGINS_PACKAGE_NAME: "EdFi.Api.Plugins"
   CUSTOM_VALIDATION_PACKAGE_NAME: "EdFi.Api.CustomValidation"
+  SECRETS_PACKAGE_NAME: "EdFi.Api.Secrets"
   CS_PACKAGE_NAME: "EdFi.Api.ConfigurationService"
   IMAGE_NAME: ${{ vars.IMAGE_NAME }}
   CONFIG_IMAGE_NAME: "edfialliance/ed-fi-api-configuration-service"
@@ -520,7 +521,7 @@ jobs:
 
   pack-custom-validation:
     name: Build and Pack Custom Validation Contract
-    # Same as pack-plugins: a dispatch is the dry run, and this is one of the two chains it runs.
+    # Same as pack-plugins: a dispatch is the dry run, and this is one of the three chains it runs.
     if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'dms-') }}
     runs-on: ubuntu-latest
     defaults:
@@ -609,9 +610,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # The four contract SBOM and provenance jobs below produce run artifacts that nothing attaches to
-  # a GitHub release, and the two provenance jobs run the real SLSA generator with id-token: write
-  # to produce a file only the run holds. Deliberate, and not a step left unfinished.
+  # The four DMS contract SBOM and provenance jobs below, and the two for the secrets contract further
+  # down, produce run artifacts that nothing attaches to a GitHub release, and the provenance jobs
+  # run the real SLSA generator with id-token: write to produce a file only the run holds.
+  # Deliberate, and not a step left unfinished.
   #
   # The three release-stamped siblings can attach because their version moves with every release,
   # so the non-alpha prerelease run that populates the vX.Y.Z release is the run that pushed the
@@ -1255,8 +1257,318 @@ jobs:
               -InFile $uploadName
 
   # jobs for Config
+
+  # The Configuration Service's contract chain: pack, an SBOM, provenance, a read-only publish
+  # decision, and a publish job, in the shape the two DMS contract chains above have and for the same
+  # reason. EdFi.Api.Secrets is packed and published at the version its own csproj declares, never at
+  # the release version, so this workflow offers the same version to the feed on every cs-
+  # prerelease, and the publish job consults Invoke-ContractPublishCheck rather than pushing.
+  pack-secrets:
+    name: Build and Pack Secrets Contract
+    # A dispatch reaches this job as well as a cs- prerelease, as the trigger comment describes.
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'cs-') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    outputs:
+      hash-code: ${{ steps.hash-code.outputs.hash-code }}
+      contract-version: ${{ steps.contract-version.outputs.contract-version }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set Config Version Numbers
+        id: versions
+        run: |
+          Import-Module ./package-helpers.psm1
+          Get-VersionNumber -projectPrefix "cs"
+
+      - name: Read Secrets Contract Version
+        id: contract-version
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # The contract's own declared version, read from the file the compiler reads. Every step
+          # below names the package by this value rather than by the release version.
+          Import-Module ./package-helpers.psm1
+          $contractVersion = Get-SecretsContractVersion
+
+          "contract-version=$contractVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Build Config .NET Assemblies
+        run: |
+          # The release build pack-cs runs, with the same explicit versions, so that what is packed
+          # below is the contract assembly a release build produces. Its csproj keeps its own
+          # declared version against both the regenerated props file and these global properties.
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "cs-v", ""
+          $assemblyVersion = "${{ steps.versions.outputs.cs-assembly-version }}"
+
+          ./build-config.ps1 -Command BuildAndPublish `
+              -Configuration Release `
+              -DmsCSVersion $packageVersion `
+              -DmsCSAssemblyVersion $assemblyVersion `
+              -LockedMode
+
+      - name: Pack and Verify Secrets Contract Package
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Packs the build above without rebuilding it, then, before anything is uploaded and
+          # therefore before anything can be published: the AssemblyVersion inside the nupkg equals
+          # the package version, the packed readme is the implementer guide, and the scratch
+          # consumer and the guide's worked examples compile against the package. No version is
+          # passed: the csproj's declared version decides.
+          $runId = [guid]::NewGuid().ToString('N')
+          $feed = Join-Path $env:RUNNER_TEMP "secrets-feed-$runId"
+          ./eng/verification/Invoke-SecretsConsumerCheck.ps1 `
+            -Configuration Release `
+            -NoBuild `
+            -FeedDirectory $feed `
+            -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-secrets-$runId")
+
+          # By its exact name, never a wildcard: the feed also holds the EdFi.Api.Plugins package the
+          # worked examples compiled against, which this chain does not publish.
+          $packageFile = "${{ env.SECRETS_PACKAGE_NAME }}.${{ steps.contract-version.outputs.contract-version }}.nupkg"
+          Copy-Item -LiteralPath (Join-Path $feed $packageFile) -Destination $packageFile
+
+      - name: Assert Secrets Package Contents
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Before anything is uploaded, and therefore before anything can be published: this is the
+          # check that decides what a published version contains. The publish check pushes a version
+          # the feed does not hold without opening the package, so nothing else reads it.
+          ./eng/verification/Assert-SecretsPackage.ps1 `
+            -PackageFile "${{ env.SECRETS_PACKAGE_NAME }}.${{ steps.contract-version.outputs.contract-version }}.nupkg" `
+            -ExtractTo (Join-Path $env:RUNNER_TEMP "secrets-nupkg-$([guid]::NewGuid().ToString('N'))") `
+            -PackageId "${{ env.SECRETS_PACKAGE_NAME }}" `
+            -ExpectedPackageVersion "${{ steps.contract-version.outputs.contract-version }}"
+
+      - name: Generate Secrets hash for NuGet package
+        id: hash-code
+        run: |
+          $packageFile = "${{ env.SECRETS_PACKAGE_NAME }}.${{ steps.contract-version.outputs.contract-version }}.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected secrets contract package was not found: $packageFile"
+          }
+
+          "hash-code=$(sha256sum $packageFile | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload Secrets Package as Artifact
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: "${{ env.SECRETS_PACKAGE_NAME }}-NuGet"
+          path: ${{ github.workspace }}/${{ env.SECRETS_PACKAGE_NAME }}.${{ steps.contract-version.outputs.contract-version }}.nupkg
+          if-no-files-found: error
+          retention-days: 30
+
+  # Run artifacts only, like the four DMS contract SBOM and provenance jobs, and for the reason
+  # recorded above them: a contract version is first pushed by an alpha prerelease, whose release
+  # attaches nothing.
+  sbom-create-secrets:
+    name: Create Secrets Contract SBOM
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    needs: pack-secrets
+    permissions:
+      actions: read
+      contents: write
+    outputs:
+      sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Get Secrets Artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.SECRETS_PACKAGE_NAME }}-NuGet
+
+      - name: Generate Secrets Software Bill of Materials (SBOM)
+        run: |
+          $packageName = "${{ env.SECRETS_PACKAGE_NAME }}"
+          $version = "${{ needs.pack-secrets.outputs.contract-version }}"
+
+          $packageFile = "$packageName.$version.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected secrets contract package was not found: $packageFile"
+          }
+          (Resolve-Path $packageFile).Path > buildfilelist.txt
+
+          dotnet tool install --global Microsoft.Sbom.DotNetTool
+
+          sbom-tool generate `
+              -b ./ `
+              -bl ./buildfilelist.txt `
+              -bc "./" `
+              -pn "$packageName" `
+              -pv $version `
+              -nsb https://ed-fi.org `
+              -m ./ `
+              -ps "Ed-Fi Alliance"
+
+          cp _manifest/spdx_2.2/manifest.spdx.* .
+
+      - name: Upload Secrets SBOM
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.SECRETS_PACKAGE_NAME }}-SBOM
+          path: ${{ env.MANIFEST_FILE }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Generate Secrets hash code for SBOM
+        id: sbom-hash-code
+        shell: bash
+        run: |
+          sbom_hash=$(sha256sum "./${{ env.MANIFEST_FILE }}" | awk '{split($0,a); print a[1]}')
+          echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
+
+  provenance-create-secrets:
+    name: Create Secrets Contract Provenance
+    needs: pack-secrets
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
+    with:
+      base64-subjects: ${{ needs.pack-secrets.outputs.hash-code }}
+      provenance-name: edfiApiSecrets.intoto.jsonl
+      upload-assets: false
+      compile-generator: true
+
+  # The read-only publish decision, separate from the mutation so it can gate what ships the
+  # contract DLL: pack-cs needs it, because the Configuration Service package carries the contract
+  # assembly, and a contract refused at its declared version must not be built into a release
+  # artifact. A dispatch runs it against the live feed and mutates nothing.
+  check-secrets-contract:
+    name: Check Secrets Contract Against the Feed
+    needs: pack-secrets
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'cs-') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    outputs:
+      should-push: ${{ steps.decide.outputs.should-push }}
+      reason: ${{ steps.decide.outputs.reason }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Get Secrets Artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.SECRETS_PACKAGE_NAME }}-NuGet
+
+      - name: Decide Whether the Secrets Contract May Be Published
+        id: decide
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Publish when absent, skip when unchanged, fail when changed. Reads the feed only. The
+          # package id is EdFi.Api.Secrets and its assembly is EdFi.DmsConfigurationService.Secrets;
+          # the check names the package by id and reads the one assembly the package carries.
+          ./eng/verification/Invoke-ContractPublishCheck.ps1 `
+            -PackageFile "${{ env.SECRETS_PACKAGE_NAME }}.${{ needs.pack-secrets.outputs.contract-version }}.nupkg" `
+            -PackageId "${{ env.SECRETS_PACKAGE_NAME }}" `
+            -PackageVersion "${{ needs.pack-secrets.outputs.contract-version }}" `
+            -WorkingDirectory (Join-Path $env:RUNNER_TEMP "secrets-check-$([guid]::NewGuid().ToString('N'))") `
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
+            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            ./eng/verification/Write-ContractPublishOutput.ps1 |
+            Out-Null
+
+  publish-package-secrets:
+    name: Publish Secrets Contract NuGet Package
+    needs:
+      - pack-secrets
+      - check-secrets-contract
+    # Not on a dispatch, for the reason publish-package-plugins records: the push is here, and a
+    # dry run must not push.
+    if: ${{ github.event_name != 'workflow_dispatch' }}
+    # Serialized across runs, for the reason publish-package-plugins records.
+    concurrency:
+      group: publish-package-secrets
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Get Secrets Artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.SECRETS_PACKAGE_NAME }}-NuGet
+
+      - name: Recheck Immediately Before Pushing
+        id: decide
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          ./eng/verification/Invoke-ContractPublishCheck.ps1 `
+            -PackageFile "${{ env.SECRETS_PACKAGE_NAME }}.${{ needs.pack-secrets.outputs.contract-version }}.nupkg" `
+            -PackageId "${{ env.SECRETS_PACKAGE_NAME }}" `
+            -PackageVersion "${{ needs.pack-secrets.outputs.contract-version }}" `
+            -WorkingDirectory (Join-Path $env:RUNNER_TEMP "secrets-publish-decide-$([guid]::NewGuid().ToString('N'))") `
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
+            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            ./eng/verification/Write-ContractPublishOutput.ps1 |
+            Out-Null
+
+      - name: Install-credential-handler Secrets
+        if: steps.decide.outputs.should-push == 'true'
+        run: |
+          Import-Module ./package-helpers.psm1
+          InstallCredentialHandler
+
+      - name: Push Secrets Package to Azure Artifacts
+        if: steps.decide.outputs.should-push == 'true'
+        run: |
+          $packageFile = "${{ env.SECRETS_PACKAGE_NAME }}.${{ needs.pack-secrets.outputs.contract-version }}.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected secrets contract package was not found: $packageFile"
+          }
+
+          $arguments = @{
+            EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
+            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            PackageFile = $packageFile
+          }
+
+          ./build-config.ps1 Push @arguments
+
   pack-cs:
     name: Build and Pack Config
+    # The Configuration Service package ships the secrets contract assembly, so it is not built
+    # until the read-only contract check has passed, as pack-dms waits for its two. A contract that
+    # passed its check and then failed to push is caught by the needs on publish-package-cs. A
+    # dispatch runs the check and this job stays skipped by its own condition.
+    needs:
+      - check-secrets-contract
     if: startsWith(github.event.release.tag_name, 'cs-')
     runs-on: ubuntu-latest
     defaults:
@@ -1352,6 +1664,25 @@ jobs:
 
             Write-Output "Plugin contract version verified: $pluginsDllName $pluginsAssemblyVersion"
           }
+
+          # The secrets contract ships in the same publish output and keeps its own declared version
+          # there for the same reason: it is published at that version, and an implementer's
+          # reference names it.
+          $declaredSecrets = [version](Get-SecretsContractVersion)
+          $expectedSecretsVersion = [version]::new($declaredSecrets.Major, $declaredSecrets.Minor, [Math]::Max($declaredSecrets.Build, 0), 0)
+          $secretsDll = Get-ChildItem -Path $publishDir -Filter "EdFi.DmsConfigurationService.Secrets.dll" -Recurse | Select-Object -First 1
+          if ($null -eq $secretsDll) {
+            Write-Error "DLL not found: EdFi.DmsConfigurationService.Secrets.dll under $publishDir"
+            exit 1
+          }
+
+          $secretsAssemblyVersion = [System.Reflection.AssemblyName]::GetAssemblyName($secretsDll.FullName).Version
+          if ($secretsAssemblyVersion -ne $expectedSecretsVersion) {
+            Write-Error "Assembly version mismatch: expected EdFi.DmsConfigurationService.Secrets.dll at the declared secrets contract version '$expectedSecretsVersion' but DLL reports '$secretsAssemblyVersion'"
+            exit 1
+          }
+
+          Write-Output "Secrets contract version verified: EdFi.DmsConfigurationService.Secrets.dll $secretsAssemblyVersion"
 
       - name: Create Config NuGet Package
         run: |
@@ -1450,7 +1781,13 @@ jobs:
 
   publish-package-cs:
     name: Publish Config NuGet Package
-    needs: pack-cs
+    # The contract publish job, not only the check pack-cs waited on, for the reason
+    # publish-package-dms records: without it a release could ship this package, and through
+    # docker-publish-cs an image, carrying a contract assembly at a version an implementer cannot
+    # restore.
+    needs:
+      - pack-cs
+      - publish-package-secrets
     runs-on: ubuntu-latest
     defaults:
       run:

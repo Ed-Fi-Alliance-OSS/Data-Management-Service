@@ -207,10 +207,10 @@ function Convert-ToAssemblyVersion {
 
 <#
 .DESCRIPTION
-Reads one declared version element out of an MSBuild file, for the two contract packages that carry
-their own version rather than the DMS release version.
+Reads one declared version element out of an MSBuild file, for the three contract packages that
+carry their own version rather than a release version.
 
-Not exported. The two readers below are the callable surface, because a caller naming its own
+Not exported. The three readers below are the callable surface, because a caller naming its own
 element would be free to read a property the compiler does not use.
 
 SelectNodes rather than property access, and a count check rather than SelectSingleNode: property
@@ -317,6 +317,36 @@ function Get-CustomValidationContractVersion {
         -Path $ProjectPath `
         -ElementName "VersionPrefix" `
         -ContractDescription "custom-validation contract"
+}
+
+<#
+.DESCRIPTION
+Reads the secrets contract's own declared version out of its csproj.
+
+EdFi.Api.Secrets is versioned on its own public surface, independently of the Configuration Service
+release, and its csproj is where that version is stated: it declares Version, AssemblyVersion,
+FileVersion and InformationalVersion, and marks all four TreatAsLocalProperty so neither the
+release-stamped src/config/Directory.Build.props nor a global /p:Version can replace them. Every
+lane that names the package by version reads it through here rather than from a release tag.
+
+The element is Version rather than the VersionPrefix the other two contracts declare, because that
+is the property this csproj states; the reader asks for the element the file actually carries.
+
+.EXAMPLE
+Get-SecretsContractVersion
+# Returns: 1.0.0
+#>
+function Get-SecretsContractVersion {
+    param (
+        # The project file declaring the contract version. Defaults to the repository's own.
+        [string]
+        $ProjectPath = (Join-Path $PSScriptRoot "src/config/contracts/EdFi.DmsConfigurationService.Secrets/EdFi.DmsConfigurationService.Secrets.csproj")
+    )
+
+    return Get-DeclaredVersionElement `
+        -Path $ProjectPath `
+        -ElementName "Version" `
+        -ContractDescription "secrets contract"
 }
 
 <#
@@ -662,6 +692,7 @@ Export-ModuleMember -Function `
     Convert-ToAssemblyVersion, `
     Get-PluginsContractVersion, `
     Get-CustomValidationContractVersion, `
+    Get-SecretsContractVersion, `
     Get-ViewScopedServiceIndexUrl, `
     Test-PackageInView, `
     Get-FeedViewVersion, `

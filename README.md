@@ -50,6 +50,8 @@ for detailed information on how to contribute source code.
 - [Running in Local Context](./docs/RUNNING-LOCALLY.md)
 - [Data Standard Versions](./docs/DATA-STANDARD-VERSIONS.md)
 - [Configuration](./docs/CONFIGURATION.md)
+- [Secrets](./docs/SECRETS.md) - serving the API's secrets from a vault through a secrets
+  plugin, rotation, and the trust position
 - [Relational Backend Developer Guide](./docs/RELATIONAL-BACKEND.md)
 - [Docker](./docs/DOCKER.md)
 - [Removing reference validation](./docs/REFERENCE-VALIDATION.md)

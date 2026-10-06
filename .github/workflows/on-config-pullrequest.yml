@@ -675,14 +675,19 @@ jobs:
           path: |
             **/*.trx
 
-  # DMS-1552: the EdFi.Api.Secrets contract package. Packs it into a local folder feed, asserts the
-  # packed assembly's version equals the package version, and compiles a scratch consumer that
-  # implements both contracts against that feed alone. Then runs the versioning proofs once per
-  # pull request: the packed nupkg's identity and version, solution membership, a real
-  # build-config.ps1 BuildAndPublish with explicit versions, and a real DockerBuild with an explicit
-  # assembly version, each with a control showing the Configuration Service assemblies were built
-  # by that run. Kept out of run-parity-pester-tests because the last two build the whole solution
-  # and the image.
+  # DMS-1552 and DMS-1555: the EdFi.Api.Secrets contract package. Packs it into a local folder feed,
+  # asserts the packed assembly's version equals the package version and that the packed readme is
+  # the implementer guide, compiles a scratch consumer that implements both contracts against that
+  # feed alone, and compiles the guide's worked examples against it and the packed EdFi.Api.Plugins.
+  # It also compiles the scratch consumer against the package published on the Ed-Fi feed once the
+  # declared version is there, and reports in as many words when it is not yet. Then asserts the
+  # packed contents - metadata, exported types, XML docs, no dependencies - as the prerelease lane
+  # does before publishing. Then runs the versioning and publication-wiring proofs once per pull
+  # request: the packed nupkg's identity and version, solution membership, the prerelease and
+  # release lanes' wiring, a real build-config.ps1 BuildAndPublish with explicit versions followed
+  # by a pack of what it built, and a real DockerBuild with an explicit assembly version, each with
+  # a control showing the Configuration Service assemblies were built by that run. Kept out of
+  # run-parity-pester-tests because the last two build the whole solution and the image.
   verify-secrets-contract:
     name: Verify Secrets Contract Package
     needs: detect-fresh-build-changes
@@ -708,17 +713,33 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
-      - name: Pack EdFi.Api.Secrets and Compile the Scratch Consumer
+      - name: Pack EdFi.Api.Secrets and Compile the Scratch Consumer and Worked Examples
         run: |
           $ErrorActionPreference = "Stop"
 
           # Fresh feed and global-packages folders per run. The script refuses non-empty ones, so a
           # stale nupkg or an already-extracted same-version package can never be what it restores.
+          # The published check reads the Ed-Fi feed anonymously, as every restore in this workflow
+          # already does, so it needs no secret and runs the same on a fork. An unreadable feed fails
+          # the step rather than reading as "not yet published".
           $runId = [guid]::NewGuid().ToString('N')
+          $feed = Join-Path $env:RUNNER_TEMP "secrets-feed-$runId"
           ./eng/verification/Invoke-SecretsConsumerCheck.ps1 `
             -Configuration ${{ env.CONFIGURATION }} `
-            -FeedDirectory (Join-Path $env:RUNNER_TEMP "secrets-feed-$runId") `
-            -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-secrets-$runId")
+            -FeedDirectory $feed `
+            -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-secrets-$runId") `
+            -PublishedServiceIndexUrl "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json" `
+            -PublishedNuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-published-secrets-$runId")
+
+          # The check the prerelease lane runs before it uploads the package for publication, run
+          # here on the same packed artifact so a contents change fails its pull request first.
+          Import-Module ./package-helpers.psm1
+          $contractVersion = Get-SecretsContractVersion
+          ./eng/verification/Assert-SecretsPackage.ps1 `
+            -PackageFile (Join-Path $feed "EdFi.Api.Secrets.$contractVersion.nupkg") `
+            -ExtractTo (Join-Path $env:RUNNER_TEMP "secrets-nupkg-$runId") `
+            -PackageId "EdFi.Api.Secrets" `
+            -ExpectedPackageVersion $contractVersion
 
       - name: Install Pester
         run: Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force
