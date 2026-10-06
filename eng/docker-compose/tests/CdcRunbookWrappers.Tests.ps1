@@ -96,6 +96,31 @@ Describe 'CDC live snippet process boundary' {
     }
 }
 
+Describe 'CDC live lifecycle snippet boundary' {
+    BeforeAll {
+        . (Join-Path $PSScriptRoot 'cdc-runbook-snippets.ps1')
+        . (Join-Path $PSScriptRoot 'cdc-runbook-lifecycle.ps1')
+        Import-Module (Join-Path $PSScriptRoot '../env-utility.psm1') -DisableNameChecking
+    }
+    It 'executes the retained inventory snippet before requesting managed stop' {
+        $script:repo = $TestDrive
+        $state = Join-Path $TestDrive 'state'
+        $settings = Join-Path $TestDrive 'settings.json'
+        $inventory = Join-Path $TestDrive 'inventory.json'
+        $null = New-Item -ItemType Directory -Force -Path (Join-Path $state 'bindings'), (Join-Path $TestDrive 'eng/docker-compose/.bootstrap')
+        '{}' | Set-Content $settings
+        '{}' | Set-Content $inventory
+        '{}' | Set-Content (Join-Path $state 'bindings/binding.json')
+        Mock Invoke-CdcRunbookLiveWrapper { throw 'Reached managed stop' }
+
+        { Invoke-CdcRunbookLifecycle -Entry @{ SettingsPath = $settings } -InventoryPath $inventory `
+            -StatePath $state -Project 'dms-local' -FixtureRoot $TestDrive } | Should -Throw 'Reached managed stop'
+
+        Should -Invoke Invoke-CdcRunbookLiveWrapper -Times 1 -Exactly -ParameterFilter { $Id -eq 'cdc-managed-stop' -and $FixtureRoot -eq $TestDrive }
+        (Get-Content (Join-Path $TestDrive 'cdc-state-inventory.stdout') -Raw).TrimStart() | Should -Match '^FullName\b'
+    }
+}
+
 Describe 'CDC provider image environment retention' -ForEach @(
     @{ Engine = 'postgresql'; ImageVariable = 'POSTGRES_IMAGE'; DefaultImage = 'postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0' },
     @{ Engine = 'mssql'; ImageVariable = 'MSSQL_IMAGE'; DefaultImage = 'mcr.microsoft.com/mssql/server:2025-latest' }

@@ -19,7 +19,7 @@ function Invoke-CdcRunbookLifecycle {
     function Invoke-MarkedCommand {
         param([string] $Id)
         $code = (Get-CdcRunbookCode $Id).Replace('api-schema-tools', "& '$tool'").Replace('<retained-settings-path>', $commandSettingsPath).Replace('<original-state-root>', $StatePath)
-        $result = Invoke-PrivateScript $Id ($code + "`nexit `$LASTEXITCODE")
+        $result = Invoke-CdcRunbookScript -Id $Id -Code $code -FixtureRoot $FixtureRoot
         $json = $result.StandardOutput | ConvertFrom-Json
         $json.exitCode | Should -Be $result.ExitCode
         $expectedOperation = switch ($Id) {
@@ -32,7 +32,7 @@ function Invoke-CdcRunbookLifecycle {
         return $json
     }
     $inventoryCode = (Get-CdcRunbookCode 'cdc-state-inventory').Replace('<original-state-root>', $StatePath).Replace('<retained-settings-path>', $Entry.SettingsPath).Replace('<deployment-inventory-path>', $InventoryPath).Replace('<retained-bootstrap-root>', (Join-Path $script:repo 'eng/docker-compose/.bootstrap'))
-    (Invoke-PrivateScript 'cdc-state-inventory' $inventoryCode).ExitCode | Should -Be 0
+    (Invoke-CdcRunbookScript -Id 'cdc-state-inventory' -Code $inventoryCode -FixtureRoot $FixtureRoot).ExitCode | Should -Be 0
 
     # A successful complete shared-worker stop is recorded separately from a binding result.
     (Invoke-CdcRunbookLiveWrapper -Id 'cdc-managed-stop' -FixtureRoot $FixtureRoot).ExitCode | Should -Be 0

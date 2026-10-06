@@ -139,8 +139,8 @@ function Invoke-CdcRunbookLiveWrapper {
 function Invoke-CdcRunbookScript {
     param([string] $Id, [string] $Code, [string] $FixtureRoot, [int] $TimeoutSeconds = 600)
     $path = Join-Path $FixtureRoot ($Id + '.ps1')
-    # A -File script otherwise reports success after a failing nested native command.
-    ($Code + "`nexit `$LASTEXITCODE") | Set-Content -LiteralPath $path
+    # Forward native failures; normal completion flushes deferred PowerShell output.
+    ($Code + "`nif (`$LASTEXITCODE) { exit `$LASTEXITCODE }") | Set-Content -LiteralPath $path
     if (-not $IsWindows) { & chmod 600 $path }
     $phase = if ($Id -eq 'cdc-stack-teardown') { 'Teardown' } elseif ($Id -match 'infrastructure|settings') { 'Setup' } else { 'Test' }
     Set-CdcRunbookOperation -Operation $Id -Phase $phase -TimeoutSeconds $TimeoutSeconds
