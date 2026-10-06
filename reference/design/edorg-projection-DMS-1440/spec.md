@@ -79,6 +79,8 @@ Branch: `DMS-1440` (created from `main` at `5c964676f`). Before approval only th
 | Step 4.2 approval (2026-10-05) | `ac188e6ec` and the review corrections `1e8f94071` (cancellation proof, cleanup registered at creation) and `7cdac30f0` (live results counted on their own). | Approved; no blocking findings. **The live minimum stays 8:** the guard detects missing live execution and is not a coverage inventory, so accepting a run of 19 passing live results is consistent with it. The separate live check closes the harness-only loophole, and the overall check still rejects harness failures. Go-ahead for step 4.3 only: documentation, recording the accepted execution order, build exemption and live-test guard semantics; local commit, stop for review. Before push: the full API lanes on both engines and the DS 6.1 Discovery E2E. |
 | Step 4.3 decisions | (1) **Files.** `docs/EDUCATION-ORGANIZATION-PROJECTION.md` gains request pipeline, target resolution and provider dialect (with a provider-differences table), database read stages with the execution code table, provisioning (claim set import and export check, application with no data stores, per-tenant credentials, identity providers, rotation, token budget), the Configuration Service reader (read steps, failure classification with job error codes), upgrade order, and logging and redaction; the contract sections and the step 2.5/2.6 measurement tables are unchanged. `docs/CONFIGURATION.md` (credential source, restart on change, token count per instance), `docs/ROLES-SCOPES.md` (service claims), `docs/MULTI-TENANCY-GETTING-STARTED.md` (per-tenant projection credentials), `docs/CLAIMS-LOADING-GUIDE.md` (the `0035` upgrade, behavior per loading mode, reload and upload remove a claim their source lacks), `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md` (purpose, result files, test structure, and a reader-project section). (2) **Where the step 4.2 decisions are recorded.** Execution order, the build exemption and the guard live in the Instance E2E README's reader-project section, beside the target they govern: no document described the DMS-1474 rule that every `build-dms.ps1` `dotnet test` reuses the artifact, so the exemption is stated with the rule, and the guard section states that 8 detects missing live execution and is not an inventory of the 20 live tests. (3) **Keycloak.** Documented from the code: the Configuration Service registers each application's Keycloak client with its claim set as a default client scope, and the reader, like any client of the DMS token endpoint, sends no `scope`. No automated test runs the reader against Keycloak; the Instance Management E2E suite is self-contained only. (4) **Rotation.** A second API client on the same application is the recommended rotation, because the reader's settings are bound once at startup and its token cache is keyed by client id; `reset-credential` is documented with its window of `TokenRejected` (permanent) failures until the Configuration Service runs with the new secret. (5) **Token budget.** About two active tokens per Configuration Service instance per credential (the safety-margin overlap), counted against the credential's own client id, not DMS's. (6) **Not changed.** The OpenAPI document, the contract examples and all code. The harness-test command the README gives was run: 10 of 10, no stack. | Review 1 (2026-10-05): the default-scope mechanism and the second-client rotation are accepted; corrections follow in the review 1 row. |
 | Step 4.3 review 1 (2 × P2, 2 corrections) | (P2) The single failure table lost stage-specific behavior: a Discovery or token `403` is `UnexpectedResponse`, not `Forbidden`; a Discovery `400` is `UnexpectedResponse`, not `InvalidRequest`; the projection's `400`/`409` types apply to Page responses only. The toggle-off note ignored a cached Discovery document. (P2) "About two tokens per replica" read as a bound, while a token whose lifetime does not exceed the safety margin is never reused and a page `401` discards a token without revoking it. The README said both lanes' reporters collect the reader TRX. The unvalidated Keycloak path was recorded only here. | The page's classification is split by stage, as `ProjectionFailureClassifier` applies it: failures found without a request, the rules every stage checks first, then Discovery, Token and Page, followed by a code-to-category-and-job-code table. Toggle off: a fresh Discovery read is `Unsupported`; a read holding the cached document gets a page `404` (`TargetNotFound`), which drops the cache, so the next read is `Unsupported`. The token budget, on the page and in `docs/CONFIGURATION.md`, is an estimate with its exceptions (restarts, `401` refreshes, lifetime at or under the margin, no revocation) and the advice to keep the margin comfortably below the lifetime. README: PostgreSQL's `**/*.trx` reporter picks up the reader TRX; the SQL Server lane sanitizes it but reports and uploads only the Reqnroll TRX, and the reader's results reach that lane through the guard's exit code and the sanitized setup log; no workflow change. The page states that the reader's Keycloak path has not been validated end to end. Documentation only. |
+| Step 4.3 approval (2026-10-06) | `525d45386` and the review 1 correction `e1a682883`; Phase 5 wording fix `afcb8938e`. | Approved; no blocking findings. The stage-specific tables, cached-Discovery behavior, token-budget qualifications and CI reporting descriptions address the review; the Keycloak path's unvalidated end-to-end status is recorded. `afcb8938e` (approved with the Phase 5 instructions): a token whose lifetime does not exceed the safety margin serves **one page request**, not one complete read, so a multi-page read can request several tokens (`docs/EDUCATION-ORGANIZATION-PROJECTION.md`, `docs/CONFIGURATION.md`). Go-ahead for Phase 5: the validation checklist, the full API lanes on both engines and DS 6.1 Discovery E2E, everything local, stop before push. |
+| Phase 5 validation (2026-10-06) | Full §11 run on `afcb8938e` in a detached worktree outside the main checkout; report `reference/design/edorg-projection-DMS-1440/phase5-validation-report.md`, evidence `C:\dev\ed-fi\reviews\DMS-1440-phase5\`. | **All lanes that exercise branch code pass:** API integration PostgreSQL 353/353, SQL Server 329/329, plugin 78/78; backend PostgreSQL 1,331/0 (9 `[Explicit]` measurements not run) and SQL Server shards 279, 245, 316 (rerun) and 604 of 607; CMS unit 4,444, integration 964 + 1,050; CMS E2E 235/0/10, 24/0, 10/0; Instance E2E reader 30/30 and Reqnroll 117/117 on each engine, reader TRX guard `20 of 20 live tests passed; 30 of 30 tests passed` on both; DS 6.1 E2E 12/12 on each engine; DS 5.2 Discovery scenario 1/1 (focused run accepted in place of the full shard 4 lane, which the host's low-memory reaper interrupted with zero results); CI Pester lane 3,451 passed. **Every remaining failure also fails on the merge-base `5c964676f`:** DMS unit Backend.Cdc 63 and SchemaTools 581 (same names), CDC integration 3, SchemaTools 7 + 4, Pester 6 (Windows-only), and shard 4's two alias-mutex timeouts (the alias rewrites `127.0.0.1` to `localhost` against an IPv4-only local port); shard 4's third failure (`DocumentCacheWriter` telemetry) passes alone on both. The first shard 3 pass lost 9 tests to a Modern Standby; the rerun passed 316/316. `RelationalMappingVersion` stays `v3`; lock files contain only the step 3.1 `Microsoft.Extensions.Http` additions and step 4.2's new test-project lock file. §11 corrected: the DS 5.2 Discovery scenario is in shard 4, not shard 1, and is selected by name; per-lane integration commands; the Pester lane. Phase 5 stays open until these results are reviewed; nothing pushed. |
 
 ### 0.1 Round 3 findings (v3 → v4), 2026-10-02
 
@@ -752,19 +754,33 @@ Operational limits: page ≤ 2 000 by default (≤ 4 MiB); set ≤ 50 000 rows b
 Prerequisites: Docker; PostgreSQL and SQL Server integration containers per the DMS and CMS local-setup notes (DMS integration lanes need the tuned containers and `127.0.0.1`; CMS integration needs trust-auth Postgres 5432 plus `ConnectionStrings__MssqlAdmin` for the MSSQL half); `pwsh`; .NET 10 SDK. Known pre-existing Windows failures to diff against a merge-base run: `Backend.Cdc` and `SchemaTools` unit tests. Format gate scoped to touched directories.
 
 ```powershell
+# Run from a worktree OUTSIDE the main checkout (a worktree under the main checkout's src\ fails the
+# Tests.Integration build with NU1008 while publishing the plugin fixtures).
+
 # Formatting
 dotnet csharpier check src/dms/core src/dms/backend src/dms/frontend src/dms/tests src/config
 
-# DMS unit
+# DMS build and unit (plus the CI step that runs the Instance E2E project's pure unit tests)
+./build-dms.ps1 Build -Configuration Release
 ./build-dms.ps1 UnitTest -Configuration Release
+dotnet test src/dms/tests/EdFi.InstanceManagement.Tests.E2E/EdFi.InstanceManagement.Tests.E2E.csproj -c Release --no-build --filter "Category=InstanceFixtureUnit"
 
-# DMS backend integration, both engines (env per local setup notes)
-./build-dms.ps1 IntegrationTest -Configuration Release -DatabaseEngine postgresql
-./build-dms.ps1 IntegrationTest -Configuration Release -DatabaseEngine mssql
+# DMS integration, one CI job at a time (build-dms.ps1 IntegrationTest runs every *.Tests.Integration
+# assembly whatever -DatabaseEngine says). Env: ConnectionStrings__DatabaseConnection (PostgreSQL) and
+# ConnectionStrings__MssqlAdmin (SQL Server) per the local setup notes; SchemaTools reads PostgresAdmin.
+$bin = "bin/Release/net10.0"
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/$bin/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.dll
+1..4 | ForEach-Object { dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/$bin/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.dll --filter "Category=MssqlCiShard$_" }
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/$bin/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.dll --filter "Category!=DatabaseIntegration"
+dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/$bin/EdFi.DataManagementService.SchemaTools.Tests.Integration.dll --filter "Category!=DatabaseIntegration"
+dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/$bin/EdFi.DataManagementService.SchemaTools.Tests.Integration.dll --filter "Category=PostgresqlIntegration"
+dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/$bin/EdFi.DataManagementService.SchemaTools.Tests.Integration.dll --filter "Category=MssqlIntegration"
 
-# DMS API-level integration, both engines
-dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj -c Release --filter "Category=PostgresqlIntegration"
-dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj -c Release --filter "Category=MssqlIntegration"
+# DMS API-level integration, both engines, plus the plugin lane
+$api = "src/dms/tests/EdFi.DataManagementService.Tests.Integration/$bin/EdFi.DataManagementService.Tests.Integration.dll"
+dotnet test $api --filter "Category=PostgresqlIntegration"
+dotnet test $api --filter "Category=MssqlIntegration"
+dotnet test $api --filter "Category=PluginIntegration"
 
 # CMS unit; CMS integration (PostgreSQL always; MSSQL when ConnectionStrings__MssqlAdmin is set)
 ./build-config.ps1 Build -Configuration Release
@@ -772,17 +788,23 @@ dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.Data
 $env:ConnectionStrings__MssqlAdmin = "<per local setup notes>"
 ./build-config.ps1 IntegrationTest -Configuration Release
 
-# CMS E2E — the three CI lanes
+# CMS E2E — the three CI lanes, each in a fresh process
 ./build-config.ps1 E2ETest -Configuration Release -IdentityProvider self-contained
 ./build-config.ps1 E2ETest -Configuration Release -IdentityProvider self-contained -EnvironmentFile "./.env.config.mssql.e2e" -E2ETestFilter "TestCategory=MssqlRepresentative"
 ./build-config.ps1 E2ETest -Configuration Release -IdentityProvider self-contained -EnvironmentFile "./.env.config.mssql.multitenant.e2e" -E2ETestFilter "TestCategory=MssqlMultitenantRepresentative"
 
-# Cross-component: Instance Management E2E (DMS features + production-reader project), both engines
+# Cross-component: Instance Management E2E (DMS features + production-reader project and its TRX guard), both engines
 pwsh ./build-dms.ps1 InstanceE2ETest -Configuration Release
 pwsh ./build-dms.ps1 InstanceE2ETest -Configuration Release -DatabaseEngine mssql
 
-# Discovery regression in the standard DMS E2E shard carrying DiscoveryAPI.feature
-./build-dms.ps1 E2ETest -Configuration Release -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-1'
+# Discovery. DiscoveryAPI.feature scenario 01 (DS 5.2) is tagged @e2e-ci-shard-4; select it by name, or run
+# the whole shard 4 lane. Its DS 6.1 variant is tagged @StandardVersion-6_1 and runs in the DS 6.1 lanes.
+./build-dms.ps1 E2ETest -Configuration Release -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Name=_01GETReturnsTheRootDiscoveryAPIDocument'
+./build-dms.ps1 E2ETest -Configuration Release -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1'
+./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1'
+
+# CI Pester lane: the $paths list of run-bootstrap-pester-tests in .github/workflows/on-dms-pullrequest.yml
+# (Pester 5.7.1), run in the foreground; the lane fails on FailedCount, FailedContainersCount or FailedBlocksCount.
 ```
 
 Deliverables attached to the final validation report: the step 2.5 and 2.6 measurement tables; TRX count-guard output for the reader project on both engines. Review checklist before push: authentication denial matrix with four credential shapes; tenant isolation; exact hierarchy values incl. slot-corruption and non-selected-reference cases; nullable fields; large ids; empty store precondition; §4.6 concurrency suite on both engines; stage-separated classification (dropped column and changed type permanent; unresolvable host transient) on both providers; engine-appropriate Unicode body bound; cache lag (store registered after DMS start → reload on miss); failed later pages through the production reader; Trace-level redaction in both services; `RelationalMappingVersion == "v3"`; no CMS→DMS reference; lock files unchanged except the approved step 3.1 `Microsoft.Extensions.Http` additions (§0.0, "Step 3.1 approval").
