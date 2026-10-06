@@ -384,6 +384,152 @@ internal class Given_SqlServer_admission_samples_an_older_upper_range(bool remai
 
 [TestFixture(false)]
 [TestFixture(true)]
+internal class Given_SqlServer_continuity_is_unknown_without_a_stale_range_end(bool initialAdmission)
+    : CdcReadinessTestBase(Ddl.CdcProvider.SqlServer)
+{
+    private CdcSourceHistoryObservationRequest _historyRequest = null!;
+    private CdcSourceHistoryClassificationResult _history = null!;
+    private int _sourceReads;
+
+    protected override TimeProvider CreateObservationTime() =>
+        new ContinuityRefreshClock(TimeSpan.FromMilliseconds(5))
+        {
+            AutoAdvanceAmount = TimeSpan.FromTicks(1),
+        };
+
+    [SetUp]
+    public async Task SetupUnknownContinuity()
+    {
+        ShortTiming(1000);
+        _sourceReads = 0;
+        var original = _change;
+        _change = r =>
+        {
+            _sourceReads++;
+            var result = original(r);
+            return result with
+            {
+                ProviderHistoryObservations = result
+                    .ProviderHistoryObservations.Select(h =>
+                        h with
+                        {
+                            SafeObservedValues = new Dictionary<string, string>(h.SafeObservedValues)
+                            {
+                                ["retained_min_lsn"] = "",
+                            },
+                        }
+                    )
+                    .ToArray(),
+            };
+        };
+        var positions = _positions;
+        _positions = A.Fake<ICdcProviderSourcePositionAdapter>(options => options.Wrapping(positions));
+        A.CallTo(() =>
+                _positions.ObserveSourceHistoryAsync(
+                    A<CdcSourceHistoryObservationRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(
+                async (CdcSourceHistoryObservationRequest request, CancellationToken token) =>
+                {
+                    _historyRequest = request;
+                    _history = await positions.ObserveSourceHistoryAsync(request, token);
+                    return _history;
+                }
+            );
+        ResetReadiness();
+        using var cancellation = new CancellationTokenSource();
+        var observation = ObserveAsync(cancellation.Token);
+        try
+        {
+            await ((ContinuityRefreshClock)ObservationTime).RequireCompletionWithoutPollAsync(observation);
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+            try
+            {
+                await observation;
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+            {
+                // Drain an unexpected refresh before fixture teardown.
+            }
+        }
+    }
+
+    private async Task ObserveAsync(CancellationToken token)
+    {
+        if (initialAdmission)
+        {
+            var result = await ReadyAsync(token);
+            result.Should().BeOfType<CdcTransportResult<CdcWriterPublicationResult>.Unavailable>();
+            result
+                .Diagnostics.Should()
+                .ContainSingle()
+                .Which.Failure.Should()
+                .Be(CdcDeploymentFailure.ValidationFailed);
+        }
+        else
+        {
+            var validation = new CdcEstablishedValidation(
+                _store,
+                _services.GetRequiredService<ICdcBindingLifecycleService>(),
+                _provider,
+                _templates,
+                _kafka,
+                _connect,
+                _worker,
+                _metrics,
+                _positions,
+                ObservationTime
+            );
+            var result = await validation.ValidateAsync(
+                _request,
+                _runtime,
+                CdcEstablishedValidationMode.PreStart,
+                1000,
+                cancellationToken: token
+            );
+            result
+                .Should()
+                .BeOfType<CdcTransportResult<CdcEstablishedValidationObservation>.Observed>()
+                .Which.Value.PreStartEligible.Should()
+                .BeFalse();
+        }
+    }
+
+    [Test]
+    public void It_observes_an_offset_before_rejecting_unknown_continuity() =>
+        _historyRequest.ConnectorOffset.Should().NotBeNull();
+
+    [Test]
+    public void It_preserves_unknown_continuity() =>
+        _history.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Unknown);
+
+    [Test]
+    public void It_has_no_stale_range_end_diagnostic() =>
+        _history
+            .Observation.Diagnostics.Should()
+            .NotContain(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.ProviderHistoryUnknown
+                && diagnostic.Path == "$.providerHistory.retainedRangeEnd"
+            );
+
+    [Test]
+    public void It_reads_the_provider_only_once() => _sourceReads.Should().Be(1);
+
+    [Test]
+    public void It_reads_the_offset_only_once() => _trace.Count(call => call == "offset").Should().Be(1);
+
+    [Test]
+    public void It_keeps_writer_publication_unauthorized() =>
+        ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+}
+
+[TestFixture(false)]
+[TestFixture(true)]
 [Platform(Exclude = "Win", Reason = "Local CDC state requires Unix owner-only permissions.")]
 internal class Given_established_validation_deadlines_use_the_injected_clock(bool overallDeadline)
     : CdcReadinessTestBase(Ddl.CdcProvider.SqlServer)
@@ -527,5 +673,20 @@ file sealed class ContinuityRefreshClock(TimeSpan pollInterval) : FakeTimeProvid
             .Should()
             .BeSameAs(poll);
         return await poll;
+    }
+
+    public async Task RequireCompletionWithoutPollAsync(Task observation)
+    {
+        using var cancellation = new CancellationTokenSource();
+        Task<ITimer> poll = _polls.Reader.ReadAsync(cancellation.Token).AsTask();
+        try
+        {
+            (await Task.WhenAny(poll, observation)).Should().BeSameAs(observation);
+            await observation;
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+        }
     }
 }
