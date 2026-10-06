@@ -58,8 +58,8 @@ public class JsonCharsetValidationTests
     private HttpClient SetUpVendorClient(string? scope)
     {
         _vendorRepository = A.Fake<IVendorRepository>();
-        A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored, A<bool>.Ignored))
-            .Returns(new VendorInsertResult.Success(1, IsNewVendor: true));
+        A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+            .Returns(new VendorInsertResult.Success(1));
 
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {

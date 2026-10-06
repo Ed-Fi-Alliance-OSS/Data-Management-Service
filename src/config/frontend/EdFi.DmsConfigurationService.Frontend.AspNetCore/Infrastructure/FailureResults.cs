@@ -134,15 +134,6 @@ internal static class FailureResults
         );
     }
 
-    public static IResult NonUniqueIdentity(string detail, string correlationId)
-    {
-        return Results.Json(
-            FailureResponse.ForNonUniqueIdentity(detail, correlationId),
-            contentType: _errorContentType,
-            statusCode: 409
-        );
-    }
-
     // invalid_client and unauthorized_client both map to the same 401 contract.
     public static IResult InvalidClient(string detail, string correlationId) =>
         Unauthorized(detail, correlationId);

@@ -454,8 +454,8 @@ public class JwtValidationServiceTests
     [Parallelizable]
     public class Given_A_Valid_Token_With_An_Explicitly_Empty_Namespace_Claim : JwtValidationServiceTests
     {
-        private ClaimsPrincipal? _principal = null;
-        private ClientAuthorizations? _clientAuthorizations = null;
+        private ClaimsPrincipal _principal = null!;
+        private ClientAuthorizations _clientAuthorizations = null!;
 
         [SetUp]
         public async Task Setup()
@@ -485,10 +485,12 @@ public class JwtValidationServiceTests
                 tokenHandler
             );
 
-            (_principal, _clientAuthorizations) = await service.ValidateAndExtractClientAuthorizationsAsync(
+            var result = await service.ValidateAndExtractClientAuthorizationsAsync(
                 token,
                 CancellationToken.None
             );
+            _principal = result.Principal!;
+            _clientAuthorizations = result.ClientAuthorizations!;
         }
 
         [Test]
@@ -496,7 +498,7 @@ public class JwtValidationServiceTests
 
         [Test]
         public void It_returns_empty_namespace_prefixes() =>
-            _clientAuthorizations!.NamespacePrefixes.Should().BeEmpty();
+            _clientAuthorizations.NamespacePrefixes.Should().BeEmpty();
     }
 
     /// <summary>

@@ -123,8 +123,8 @@ public class VendorModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored, A<bool>.Ignored))
-                .Returns(new VendorInsertResult.Success(1, IsNewVendor: true));
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+                .Returns(new VendorInsertResult.Success(1));
 
             A.CallTo(() => _vendorRepository.QueryVendor(A<VendorQuery>.Ignored))
                 .Returns(
@@ -279,11 +279,11 @@ public class VendorModuleTests
 
         [Test]
         public Task It_passes_empty_prefixes_from_put_to_the_repository() =>
-            AssertPutAcceptsPrefixesAsync(EmptyPrefixesBody, "");
+            AssertPutPassesCanonicalPrefixesToRepositoryAndProviderAsync(EmptyPrefixesBody, "");
 
         [Test]
         public Task It_passes_omitted_prefixes_from_put_to_the_repository() =>
-            AssertPutAcceptsPrefixesAsync(OmittedPrefixesBody, "");
+            AssertPutPassesCanonicalPrefixesToRepositoryAndProviderAsync(OmittedPrefixesBody, "");
 
         [Test]
         public Task It_passes_null_prefixes_from_post_as_empty() =>
@@ -291,7 +291,7 @@ public class VendorModuleTests
 
         [Test]
         public Task It_passes_null_prefixes_from_put_as_empty() =>
-            AssertPutAcceptsPrefixesAsync(NullPrefixesBody, "");
+            AssertPutPassesCanonicalPrefixesToRepositoryAndProviderAsync(NullPrefixesBody, "");
 
         [Test]
         public Task It_passes_whitespace_prefixes_from_post_as_empty() =>
@@ -307,14 +307,17 @@ public class VendorModuleTests
 
         [Test]
         public Task It_passes_canonical_prefixes_from_put_to_the_repository() =>
-            AssertPutAcceptsPrefixesAsync(PaddedPrefixesBody, "prefix1,prefix2");
+            AssertPutPassesCanonicalPrefixesToRepositoryAndProviderAsync(
+                PaddedPrefixesBody,
+                "prefix1,prefix2"
+            );
 
         private async Task AssertPostAcceptsPrefixesAsync(string body, string expectedPrefixes)
         {
             List<VendorInsertCommand> commands = [];
-            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored, A<bool>.Ignored))
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
                 .Invokes(call => commands.Add(call.GetArgument<VendorInsertCommand>(0)!))
-                .Returns(new VendorInsertResult.Success(1, IsNewVendor: true));
+                .Returns(new VendorInsertResult.Success(1));
             using var client = SetUpClient();
 
             var response = await client.PostAsync(
@@ -323,23 +326,6 @@ public class VendorModuleTests
             );
 
             response.StatusCode.Should().Be(HttpStatusCode.Created);
-            commands.Should().ContainSingle().Which.NamespacePrefixes.Should().Be(expectedPrefixes);
-        }
-
-        private async Task AssertPutAcceptsPrefixesAsync(string body, string expectedPrefixes)
-        {
-            List<VendorUpdateCommand> commands = [];
-            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
-                .Invokes(call => commands.Add(call.GetArgument<VendorUpdateCommand>(0)!))
-                .Returns(new VendorUpdateResult.Success());
-            using var client = SetUpClient();
-
-            var response = await client.PutAsync(
-                "/v3/vendors/1",
-                new StringContent(body, Encoding.UTF8, "application/json")
-            );
-
-            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
             commands.Should().ContainSingle().Which.NamespacePrefixes.Should().Be(expectedPrefixes);
         }
 
@@ -390,165 +376,61 @@ public class VendorModuleTests
     }
 
     [TestFixture]
-    public class UpsertTests : VendorModuleTests
+    public class Given_a_repeat_vendor_post_without_namespace_prefixes : VendorModuleTests
     {
-        private readonly Guid _clientUuid = Guid.NewGuid();
+        private HttpResponseMessage _response = null!;
 
         [SetUp]
-        public void SetUp()
+        public async Task Setup()
         {
-            Fake.ClearRecordedCalls(_vendorRepository);
-            Fake.ClearRecordedCalls(_apiClientRepository);
-            Fake.ClearRecordedCalls(_identityProviderRepository);
-
-            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored, A<bool>.Ignored))
-                .Returns(new VendorInsertResult.Success(1, IsNewVendor: false));
-            A.CallTo(() => _vendorRepository.GetVendorUpdateState(1))
-                .Returns(
-                    new VendorUpdateStateResult.Success(
-                        new VendorUpdateState(
-                            "Existing Company",
-                            "Original Contact",
-                            "original@example.com",
-                            "uri://old.org",
-                            [new VendorApiClient(51, "client-51", _clientUuid, 10)]
-                        )
-                    )
-                );
-            A.CallTo(() =>
-                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(_clientUuid.ToString(), "")
-                )
-                .Returns(new ClientUpdateResult.Success(_clientUuid));
-            A.CallTo(() => _apiClientRepository.SyncApiClientUuid(51, _clientUuid, _clientUuid))
-                .Returns(new ApiClientUuidSyncResult.AlreadyApplied());
-            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
-                .Returns(new VendorUpdateResult.Success());
-        }
-
-        [Test]
-        public async Task Should_synchronize_clients_before_returning_200_for_an_existing_vendor()
-        {
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+                .Returns(new VendorInsertResult.FailureDuplicateCompanyName());
             using var client = SetUpClient();
 
-            var response = await client.PostAsync(
+            _response = await client.PostAsync(
                 "/v3/vendors",
                 new StringContent(
                     """
                     {
                       "company": "Existing Company",
-                      "contactName": "Test",
-                      "contactEmailAddress": "test@gmail.com",
-                      "namespacePrefixes": ""
+                      "contactName": "Replacement Contact",
+                      "contactEmailAddress": "replacement@example.com"
                     }
                     """,
                     Encoding.UTF8,
                     "application/json"
                 )
             );
-
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            response.Headers.Location!.IsAbsoluteUri.Should().BeTrue();
-            response.Headers.Location!.ToString().Should().EndWith("/v3/vendors/1");
-            var body = await response.Content.ReadAsStringAsync();
-            body.Should().BeEmpty();
-            A.CallTo(() =>
-                    _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored, updateExisting: false)
-                )
-                .MustHaveHappenedOnceExactly();
-            A.CallTo(() =>
-                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(_clientUuid.ToString(), "")
-                )
-                .MustHaveHappenedOnceExactly();
-            A.CallTo(() =>
-                    _vendorRepository.UpdateVendor(
-                        A<VendorUpdateCommand>.That.Matches(command =>
-                            command.Id == 1 && command.NamespacePrefixes.Length == 0
-                        )
-                    )
-                )
-                .MustHaveHappenedOnceExactly();
         }
 
         [Test]
-        public async Task It_returns_the_update_failure_for_an_existing_vendor()
+        public void It_returns_bad_request() => _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        [Test]
+        public async Task It_returns_the_company_validation_error() =>
+            await AssertDuplicateCompanyNameBodyAsync(_response);
+
+        [Test]
+        public void It_sets_no_location_header() => _response.Headers.Location.Should().BeNull();
+
+        [Test]
+        public void It_does_not_start_the_vendor_update_workflow()
         {
-            A.CallTo(() => _vendorRepository.GetVendorUpdateState(1))
-                .Returns(new VendorUpdateStateResult.FailureNotExists());
-            using var client = SetUpClient();
-
-            var response = await client.PostAsync(
-                "/v3/vendors",
-                new StringContent(
-                    """
-                    {
-                      "company": "Existing Company",
-                      "contactName": "Test",
-                      "contactEmailAddress": "test@gmail.com",
-                      "namespacePrefixes": ""
-                    }
-                    """,
-                    Encoding.UTF8,
-                    "application/json"
-                )
-            );
-
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-            response.Headers.Location.Should().BeNull();
-            JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
-            body["detail"]!
-                .GetValue<string>()
-                .Should()
-                .Be("Vendor 1 not found. It may have been recently deleted.");
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(A<int>.Ignored)).MustNotHaveHappened();
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
                 .MustNotHaveHappened();
-        }
-
-        [Test]
-        public async Task It_preserves_the_stored_company_casing_for_an_existing_vendor()
-        {
-            A.CallTo(() => _vendorRepository.GetVendorUpdateState(1))
-                .Returns(
-                    new VendorUpdateStateResult.Success(
-                        new VendorUpdateState(
-                            "Acme Corp",
-                            "Original Contact",
-                            "original@example.com",
-                            "uri://old.org",
-                            [new VendorApiClient(51, "client-51", _clientUuid, 10)]
-                        )
-                    )
-                );
-            using var client = SetUpClient();
-
-            var response = await client.PostAsync(
-                "/v3/vendors",
-                new StringContent(
-                    """
-                    {
-                      "company": "acme corp",
-                      "contactName": "Test",
-                      "contactEmailAddress": "test@gmail.com",
-                      "namespacePrefixes": ""
-                    }
-                    """,
-                    Encoding.UTF8,
-                    "application/json"
-                )
-            );
-
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
             A.CallTo(() =>
-                    _vendorRepository.UpdateVendor(
-                        A<VendorUpdateCommand>.That.Matches(command => command.Company == "Acme Corp")
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored
                     )
                 )
-                .MustHaveHappenedOnceExactly();
+                .MustNotHaveHappened();
         }
     }
 
     /// <summary>
-    /// The complete 409 body a duplicate company name answers, on both create and rename.
+    /// The complete 400 body a duplicate company name answers, on both create and rename.
     /// </summary>
     protected static async Task AssertDuplicateCompanyNameBodyAsync(HttpResponseMessage response)
     {
@@ -556,15 +438,17 @@ public class VendorModuleTests
         var expectedResponse = JsonNode.Parse(
             """
             {
-              "detail": "The identifying value(s) of the item are the same as another item that already exists.",
-              "type": "urn:ed-fi:api:conflict:non-unique-identity",
-              "title": "Identifying Values Are Not Unique",
-              "status": 409,
+              "detail": "Data validation failed. See 'validationErrors' for details.",
+              "type": "urn:ed-fi:api:bad-request:data",
+              "title": "Data Validation Failed",
+              "status": 400,
               "correlationId": "{correlationId}",
-              "validationErrors": {},
-              "errors": [
-                "A vendor with this company name already exists."
-              ]
+              "validationErrors": {
+                "Company": [
+                  "A vendor with this company name already exists."
+                ]
+              },
+              "errors": []
             }
             """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
         );
@@ -576,19 +460,17 @@ public class VendorModuleTests
     [TestFixture]
     public class FailureDuplicateCompanyNameTests : VendorModuleTests
     {
-        [SetUp]
-        public void SetUp()
-        {
-            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored, A<bool>.Ignored))
-                .Returns(new VendorInsertResult.FailureDuplicateCompanyName());
-        }
+        private HttpResponseMessage _response = null!;
 
-        [Test]
-        public async Task Should_return_conflict_with_the_non_unique_identity_body()
+        [SetUp]
+        public async Task SetUp()
         {
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+                .Returns(new VendorInsertResult.FailureDuplicateCompanyName());
+
             using var client = SetUpClient();
 
-            var response = await client.PostAsync(
+            _response = await client.PostAsync(
                 "/v3/vendors",
                 new StringContent(
                     """
@@ -603,10 +485,17 @@ public class VendorModuleTests
                     "application/json"
                 )
             );
-
-            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-            await AssertDuplicateCompanyNameBodyAsync(response);
         }
+
+        [Test]
+        public void It_returns_bad_request() => _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        [Test]
+        public async Task It_returns_the_data_validation_body() =>
+            await AssertDuplicateCompanyNameBodyAsync(_response);
+
+        [Test]
+        public void It_sets_no_location_header() => _response.Headers.Location.Should().BeNull();
     }
 
     [TestFixture]
@@ -859,7 +748,7 @@ public class VendorModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored, A<bool>.Ignored))
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
                 .Returns(new VendorInsertResult.FailureUnknown(""));
 
             A.CallTo(() => _vendorRepository.QueryVendor(A<VendorQuery>.Ignored))
@@ -932,7 +821,7 @@ public class VendorModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored, A<bool>.Ignored))
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
                 .Returns(new VendorInsertResult());
 
             A.CallTo(() => _vendorRepository.QueryVendor(A<VendorQuery>.Ignored))
@@ -1920,10 +1809,10 @@ public class VendorModuleTests
         }
 
         [Test]
-        public void It_returns_conflict() => _response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        public void It_returns_bad_request() => _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         [Test]
-        public async Task It_returns_the_non_unique_identity_body() =>
+        public async Task It_returns_the_data_validation_body() =>
             await AssertDuplicateCompanyNameBodyAsync(_response);
 
         [Test]
@@ -1967,7 +1856,7 @@ public class VendorModuleTests
         }
 
         [Test]
-        public void It_replaces_the_conflict_with_a_sanitized_server_error() =>
+        public void It_replaces_the_rejection_with_a_sanitized_server_error() =>
             _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
 
         // The rejected rollback is stubbed ahead of the recorder, so it never reaches the

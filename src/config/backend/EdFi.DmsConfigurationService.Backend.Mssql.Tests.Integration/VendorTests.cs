@@ -75,7 +75,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
         }
 
         [TestFixture]
-        public class DetectExistingVendorTests : VendorTests
+        public class Given_a_repeat_vendor_with_empty_prefixes : VendorTests
         {
             private int _vendorId;
             private VendorInsertResult _repeatResult = null!;
@@ -101,18 +101,13 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
                         ContactEmailAddress = "replacement@example.com",
                         ContactName = "Replacement Contact",
                         NamespacePrefixes = "",
-                    },
-                    updateExisting: false
+                    }
                 );
             }
 
             [Test]
-            public void It_returns_the_existing_vendor_without_reporting_a_new_insert()
-            {
-                var success = _repeatResult.Should().BeOfType<VendorInsertResult.Success>().Subject;
-                success.Id.Should().Be(_vendorId);
-                success.IsNewVendor.Should().BeFalse();
-            }
+            public void It_rejects_the_duplicate_company() =>
+                _repeatResult.Should().BeOfType<VendorInsertResult.FailureDuplicateCompanyName>();
 
             [Test]
             public async Task It_does_not_mutate_the_existing_vendor()
@@ -691,31 +686,25 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
             }
 
             [Test]
-            public async Task It_should_detect_a_repeat_without_mutating_within_a_tenant()
+            public async Task It_should_reject_a_repeat_within_a_tenant()
             {
-                var repeat = await _tenantARepository.InsertVendor(
-                    ChangedRepeatCommand(SharedCompany),
-                    updateExisting: false
-                );
+                var repeat = await _tenantARepository.InsertVendor(ChangedRepeatCommand(SharedCompany));
 
-                repeat.Should().BeOfType<VendorInsertResult.Success>().Subject.IsNewVendor.Should().BeFalse();
+                repeat.Should().BeOfType<VendorInsertResult.FailureDuplicateCompanyName>();
                 ShouldBeUnchanged(await GetVendor(_tenantARepository, _tenantAInsert.Id));
                 (await QueryVendorIds(_tenantARepository)).Should().Equal(_tenantAInsert.Id);
                 ShouldBeUnchanged(await GetVendor(_tenantBRepository, _tenantBInsert.Id));
             }
 
             [Test]
-            public async Task It_should_detect_a_repeat_without_mutating_in_single_tenant_mode()
+            public async Task It_should_reject_a_repeat_in_single_tenant_mode()
             {
                 const string Company = "DMS1341 Single Tenant Company";
                 var first = await InsertVendor(_repository, VendorCommand(Company));
 
-                var repeat = await _repository.InsertVendor(
-                    ChangedRepeatCommand(Company),
-                    updateExisting: false
-                );
+                var repeat = await _repository.InsertVendor(ChangedRepeatCommand(Company));
 
-                repeat.Should().BeOfType<VendorInsertResult.Success>().Subject.IsNewVendor.Should().BeFalse();
+                repeat.Should().BeOfType<VendorInsertResult.FailureDuplicateCompanyName>();
                 ShouldBeUnchanged(await GetVendor(_repository, first.Id));
                 (await QueryVendorIds(_repository)).Should().Equal(first.Id);
             }

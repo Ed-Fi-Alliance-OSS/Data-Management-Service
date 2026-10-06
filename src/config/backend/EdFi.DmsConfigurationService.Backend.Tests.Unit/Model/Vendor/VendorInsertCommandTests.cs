@@ -280,15 +280,16 @@ public class VendorInsertCommandTests
         command.NamespacePrefixes.Should().Be("prefix1,prefix2");
     }
 
-    [Test]
-    public void Validate_With128CharacterNamespacePrefix_ShouldPassValidation()
+    [TestCase(1)]
+    [TestCase(2)]
+    public void Validate_With128CharacterNamespacePrefixes_ShouldPassValidation(int prefixCount)
     {
         var command = new VendorInsertCommand
         {
             Company = "ValidCompany",
             ContactName = "ValidContactName",
             ContactEmailAddress = "valid@example.com",
-            NamespacePrefixes = new string('a', 128),
+            NamespacePrefixes = string.Join(',', Enumerable.Repeat(new string('a', 128), prefixCount)),
         };
 
         var result = _validator.Validate(command);
@@ -296,8 +297,9 @@ public class VendorInsertCommandTests
         result.IsValid.Should().BeTrue();
     }
 
-    [Test]
-    public void Validate_With129CharacterNamespacePrefix_ShouldFailWithLengthMessage()
+    [TestCase("")]
+    [TestCase("prefix1,")]
+    public void Validate_With129CharacterNamespacePrefix_ShouldFailWithLengthMessage(string precedingPrefixes)
     {
         // Arrange
         var command = new VendorInsertCommand
@@ -305,7 +307,7 @@ public class VendorInsertCommandTests
             Company = "ValidCompany",
             ContactName = "ValidContactName",
             ContactEmailAddress = "valid@example.com",
-            NamespacePrefixes = new string('a', 129),
+            NamespacePrefixes = precedingPrefixes + new string('a', 129),
         };
 
         // Act

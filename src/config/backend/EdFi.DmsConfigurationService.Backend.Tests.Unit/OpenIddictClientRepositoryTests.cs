@@ -604,10 +604,13 @@ public class OpenIddictClientRepositoryTests
                     }
                 );
 
-        protected async Task ActUpdateAsync(string? clientUuid = null, string? namespacePrefixes = null) =>
+        protected async Task ActUpdateAsync(
+            string? clientUuid = null,
+            string namespacePrefixes = NewPrefixes
+        ) =>
             _result = await _repository.UpdateClientNamespaceClaimAsync(
                 clientUuid ?? _clientUuid.ToString(),
-                namespacePrefixes ?? NewPrefixes
+                namespacePrefixes
             );
 
         protected List<Dictionary<string, string>> AppliedMappers() =>

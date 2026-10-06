@@ -1102,9 +1102,9 @@ public class MetadataModuleTests
             .BeTrue("POST /v3/vendors should define a 201 response for new resources");
 
         responses
-            .TryGetProperty("200", out var updatedResponse)
+            .TryGetProperty("200", out _)
             .Should()
-            .BeTrue("POST /v3/vendors should define a 200 response when it updates an existing vendor");
+            .BeFalse("POST /v3/vendors is create-only and never updates an existing vendor");
 
         createdResponse
             .TryGetProperty("headers", out var headers)
@@ -1122,16 +1122,6 @@ public class MetadataModuleTests
             .TryGetProperty("content", out _)
             .Should()
             .BeFalse("201 response body should be empty per CMS-GAP-009");
-
-        updatedResponse
-            .TryGetProperty("headers", out var updatedHeaders)
-            .Should()
-            .BeTrue("200 response should define headers");
-        updatedHeaders
-            .TryGetProperty("Location", out var updatedLocationHeader)
-            .Should()
-            .BeTrue("200 response headers should include Location");
-        updatedLocationHeader.GetProperty("required").GetBoolean().Should().BeTrue();
     }
 
     [Test]
