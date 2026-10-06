@@ -467,10 +467,11 @@ function Wait-CmsClientAvailable {
 
 <#
     .SYNOPSIS
-        Creates or updates a vendor by sending a POST request to the specified API.
+        Creates a vendor by sending a POST request to the specified API.
 
     .DESCRIPTION
-        Adds a new vendor if it doesn't exist, or updates the existing vendor if it does.
+        Adds a new vendor. POST /v3/vendors is create-only: a company that already exists in the
+        tenant is rejected with 400, so update an existing vendor with PUT /v3/vendors/{id}.
         The NamespacePrefixes parameter accepts one or multiple comma-separated values as a string.
         This string is sent as-is in the JSON payload (no splitting or conversion to array).
 
@@ -495,10 +496,10 @@ function Wait-CmsClientAvailable {
         The Keycloak bearer token for authorization (mandatory).
 
     .OUTPUTS
-        [long] Returns the vendor ID of the newly created or updated vendor.
+        [long] Returns the vendor ID of the newly created vendor.
 
     .EXAMPLE
-        # Create or update a vendor
+        # Create a vendor
         $vendorId = Add-Vendor -AccessToken $token -NamespacePrefixes "uri://ed-fi.org,uri://another.org"
 #>
 function Add-Vendor {
@@ -1549,6 +1550,66 @@ function Get-SeedLoaderNamespacePrefixes {
 
 <#
 .SYNOPSIS
+    Looks up an existing CMS vendor by company name.
+
+.DESCRIPTION
+    GETs v3/vendors?company={company} in the caller's tenant. The Configuration Service compares
+    the company exactly as the vendor uniqueness constraint does, so a match is the vendor a
+    POST /v3/vendors with this company would collide with. POST /v3/vendors is create-only, so
+    callers that may run more than once reuse the returned vendor instead of creating it again.
+
+.PARAMETER CmsUrl
+    The base URL of the Config server. Defaults to http://localhost:8081.
+
+.PARAMETER Company
+    The exact company name to match (mandatory).
+
+.PARAMETER AccessToken
+    Bearer token for authorization (mandatory).
+
+.PARAMETER Tenant
+    Optional tenant header value.
+
+.OUTPUTS
+    The vendor object (id, company, contactName, contactEmailAddress, namespacePrefixes), or
+    $null when the tenant has no vendor with this company.
+
+.EXAMPLE
+    $vendor = Find-CmsVendorByCompany -Company "Demo Vendor" -AccessToken $token
+#>
+function Find-CmsVendorByCompany {
+    [CmdletBinding()]
+    param(
+        [ValidateNotNullOrEmpty()]
+        [string]$CmsUrl = "http://localhost:8081",
+
+        [Parameter(Mandatory)]
+        [string]$Company,
+
+        [Parameter(Mandatory)]
+        [string]$AccessToken,
+
+        [string]$Tenant = ""
+    )
+
+    $headers = @{ Authorization = "Bearer $AccessToken" }
+    if ($Tenant) {
+        $headers["Tenant"] = $Tenant
+    }
+
+    $invokeParams = @{
+        BaseUrl     = $CmsUrl
+        RelativeUrl = "v3/vendors?company=$([uri]::EscapeDataString($Company))"
+        Method      = "Get"
+        ContentType = "application/json"
+        Headers     = $headers
+    }
+
+    return @(Invoke-Api @invokeParams) | Select-Object -First 1
+}
+
+<#
+.SYNOPSIS
     Looks up an existing CMS application by name and vendor ID.
 
 .DESCRIPTION
@@ -1681,7 +1742,7 @@ function Remove-CmsApplication {
     Orchestrates the CMS bootstrap steps required for seed delivery:
       1. Registers the admin client (idempotent).
       2. Obtains a CMS bearer token.
-      3. Creates (or reuses) the SeedLoader vendor.
+      3. Creates the SeedLoader vendor, or reuses it and replaces its namespace prefixes.
       4. Deletes any existing Seed Loader application for that vendor so fresh credentials are returned.
       5. Creates a new application with ClaimSetName="SeedLoader" bound to the supplied DMS instance IDs.
     Returns Key, Secret, VendorId, and ApplicationId in a hashtable; credentials are not logged.
@@ -1779,12 +1840,44 @@ function New-SeedLoaderCredentials {
             -ClientSecret $AdminClientSecret
     }
 
-    $vendorId = Add-Vendor `
+    $vendorHeaders = @{ Authorization = "Bearer $token" }
+    if ($Tenant) {
+        $vendorHeaders["Tenant"] = $Tenant
+    }
+    $namespacePrefixList = $NamespacePrefixes -join ", "
+
+    # POST /v3/vendors is create-only (a repeat company is rejected with 400), so a re-run finds
+    # the vendor by company and refreshes its namespace prefixes with PUT.
+    $existingVendor = Find-CmsVendorByCompany `
         -CmsUrl $CmsUrl `
         -Company $VendorCompany `
-        -NamespacePrefixes ($NamespacePrefixes -join ", ") `
         -AccessToken $token `
         -Tenant $Tenant
+
+    if ($existingVendor) {
+        $vendorId = [long]$existingVendor.id
+        $vendorData = @{
+            id                  = $vendorId
+            company             = $existingVendor.company
+            contactName         = $existingVendor.contactName
+            contactEmailAddress = $existingVendor.contactEmailAddress
+            namespacePrefixes   = $namespacePrefixList
+        }
+        Invoke-RestMethod `
+            -Uri "$($CmsUrl.TrimEnd('/'))/v3/vendors/$vendorId" `
+            -Method Put `
+            -ContentType "application/json" `
+            -Body (ConvertTo-Json -InputObject $vendorData -Depth 10) `
+            -Headers $vendorHeaders | Out-Null
+    }
+    else {
+        $vendorId = Add-Vendor `
+            -CmsUrl $CmsUrl `
+            -Company $VendorCompany `
+            -NamespacePrefixes $namespacePrefixList `
+            -AccessToken $token `
+            -Tenant $Tenant
+    }
 
     # Discard ALL existing applications matching the SeedLoader name so fresh credentials
     # are returned each invocation. Previous runs that leaked duplicates would otherwise leave
@@ -1897,4 +1990,4 @@ function Assert-CmsSeedLoaderClaimSetLoaded {
     }
 }
 
-Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Wait-CmsClientAvailable, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, New-DataStoreConnectionString, New-E2EDataStoreConnectionStrings, Get-E2EStartupPhasePlan, Add-DataStore, Get-DataStore, Add-DataStoreContext, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api, Get-HttpErrorResponse, Get-SeedLoaderNamespacePrefixes, Find-CmsApplicationIdsByNameAndVendor, Remove-CmsApplication, New-SeedLoaderCredentials, Assert-CmsSeedLoaderClaimSetLoaded, ConvertTo-FormBody, ConvertTo-PostgresCredential
+Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Wait-CmsClientAvailable, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, New-DataStoreConnectionString, New-E2EDataStoreConnectionStrings, Get-E2EStartupPhasePlan, Add-DataStore, Get-DataStore, Add-DataStoreContext, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api, Get-HttpErrorResponse, Get-SeedLoaderNamespacePrefixes, Find-CmsVendorByCompany, Find-CmsApplicationIdsByNameAndVendor, Remove-CmsApplication, New-SeedLoaderCredentials, Assert-CmsSeedLoaderClaimSetLoaded, ConvertTo-FormBody, ConvertTo-PostgresCredential

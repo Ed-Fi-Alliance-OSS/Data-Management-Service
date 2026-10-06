@@ -3,8 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DmsConfigurationService.Backend;
+using System.Security.Cryptography;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using OpenIddictIdentityOptions = EdFi.DmsConfigurationService.Backend.OpenIddict.Models.IdentityOptions;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -15,26 +18,55 @@ public class JwksEndpointModule : IEndpointModule
         endpoints.MapGet("/.well-known/jwks.json", GetJwksConfiguration);
     }
 
-    private async Task<IResult> GetJwksConfiguration(ITokenManager tokenManager)
+    /// <summary>
+    /// Publishes the keys of the shared signing-key snapshot (spec §4.7). A snapshot with no keys is a successful
+    /// retrieval of none and is served as the empty key set. With no usable snapshot the answer is the dependency 503,
+    /// never an empty key set: a failed retrieval is not published as empty (I-8).
+    /// </summary>
+    private static async Task<IResult> GetJwksConfiguration(
+        HttpContext httpContext,
+        ISigningKeySnapshotProvider signingKeyProvider,
+        IOptions<OpenIddictIdentityOptions> identityOptions,
+        ILogger<JwksEndpointModule> logger
+    )
     {
-        // Fetch public keys from the token manager (database-backed)
-        var publicKeys = await tokenManager.GetPublicKeysAsync();
-        if (publicKeys == null || !publicKeys.Any())
+        SigningKeySnapshot snapshot;
+        try
         {
-            return Results.Ok(new { keys = Array.Empty<object>() });
+            snapshot = await signingKeyProvider.GetUsableAsync(httpContext.RequestAborted);
+        }
+        catch (SigningKeysUnavailableException exception)
+        {
+            logger.LogError(
+                exception,
+                "The JWKS could not be served: the {Category} is unavailable (trace {TraceId})",
+                exception.Category,
+                httpContext.TraceIdentifier
+            );
+            await SigningKeyDependencyResponse.WriteAsync(
+                httpContext,
+                SigningKeyDependencyResponse.RetryAfterSeconds(
+                    SigningKeySettings.FromIdentityOptions(identityOptions.Value)
+                )
+            );
+            return Results.Empty;
         }
 
         var jwks = new
         {
-            keys = publicKeys
-                .Select(pk => new JsonWebKey
+            keys = snapshot
+                .Keys.Select(entry =>
                 {
-                    Kty = "RSA",
-                    Use = "sig",
-                    Kid = pk.KeyId,
-                    E = Base64UrlEncoder.Encode(pk.RsaParameters.Exponent ?? Array.Empty<byte>()),
-                    N = Base64UrlEncoder.Encode(pk.RsaParameters.Modulus ?? Array.Empty<byte>()),
-                    Alg = "RS256",
+                    RSAParameters parameters = entry.PublicParameters;
+                    return new JsonWebKey
+                    {
+                        Kty = "RSA",
+                        Use = "sig",
+                        Kid = entry.KeyId,
+                        E = Base64UrlEncoder.Encode(parameters.Exponent),
+                        N = Base64UrlEncoder.Encode(parameters.Modulus),
+                        Alg = "RS256",
+                    };
                 })
                 .ToArray(),
         };

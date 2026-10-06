@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.Api.Plugins.Hosting;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Deploy;
@@ -13,7 +14,19 @@ using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddServices();
+// Before AddServices, because AddServices reads configuration and composes against what this returns.
+// A deployment that allowlisted nothing gets LoadedPlugins.Empty without the loader touching the
+// filesystem, which keeps a plugin-free boot on exactly the path it took before.
+//
+// The configuration phase runs as soon as loading returns, because AddServices is the first reader
+// of a value a plugin can supply: its first line configures logging from the Serilog section.
+LoadedPlugins loadedPlugins = PluginLoader.Load(
+    builder.Configuration,
+    CmsPluginContracts.Registry.ContractAssemblyNames
+);
+loadedPlugins.ContributeConfiguration(builder.Configuration);
+
+builder.AddServices(loadedPlugins);
 builder.Services.AddHttpClient();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
@@ -51,6 +64,10 @@ if (useReverseProxyHeaders)
 builder.Services.Configure<RouteHandlerOptions>(o => o.ThrowOnBadRequest = true);
 
 var app = builder.Build();
+
+// Immediately after the container exists and before anything else resolves from it, so a plugin
+// registration problem stops startup before any schema deployment and before a request can be served.
+await AuditPluginRegistrations(app);
 
 var pathBase = app.Configuration.GetValue<string>("AppSettings:PathBase");
 if (!string.IsNullOrEmpty(pathBase))
@@ -111,6 +128,85 @@ app.UseMiddleware<JsonCharsetValidationMiddleware>();
 app.MapRouteEndpoints();
 app.MapOpenApi();
 await app.RunAsync();
+
+/// <summary>
+/// Emits the plugin inventory, then runs the plugin registration checks that can only be made once the
+/// container exists, all over the one audit input AddServices registered after every plugin hook had
+/// run. Every finding is written to Console.Error and any finding stops startup. This is deliberately
+/// not reported through ReportInvalidConfigurationMiddleware: a refused plugin registration is not a
+/// configuration section the host can keep running with.
+/// </summary>
+async Task AuditPluginRegistrations(WebApplication app)
+{
+    PluginAuditInput auditInput = app.Services.GetRequiredService<PluginAuditInput>();
+
+    // First, so what each plugin brought into the process reaches an operator before any check below
+    // can abort startup naming a type rather than the plugin that supplied it. The per-file loaded
+    // flags are read at this moment, because an assembly first touched inside a contribution hook
+    // loaded after loading returned.
+    PluginInventoryLog.Emit(app.Logger, auditInput);
+
+    // Before the shared audit, whose last step activates the declared contracts: a registration this
+    // host has already refused on its shape is never constructed.
+    await AbortOnPluginRegistrationProblems(
+        PluginContractShapeCheck.Check(auditInput),
+        activationException: null
+    );
+
+    PluginAuditResult result = await PluginRegistrationAudit.AuditAsync(auditInput, app.Services);
+
+    if (result.ScopeCleanupFailure is not null)
+    {
+        // A warning rather than a failure, and reported separately so it can neither stand in for nor
+        // hide an activation failure. Releasing the probe's scope runs implementer code, and the
+        // container abandons the rest of a scope's disposables after the first one throws.
+        app.Logger.LogWarning(
+            result.ScopeCleanupFailure,
+            "Releasing the plugin activation scope threw. Any instance the scope had not yet released "
+                + "stays unreleased; this did not affect the plugin registration checks"
+        );
+    }
+
+    await AbortOnPluginRegistrationProblems(
+        [.. result.Findings.Select(finding => finding.Message)],
+        // The first original activation exception, where there was one. The rest travel in the
+        // messages; a wrapper that dropped every one of them would leave an operator with a
+        // description of the failure and no stack.
+        result
+            .Findings.Select(finding => finding.ActivationException)
+            .FirstOrDefault(activationException => activationException is not null)
+    );
+
+    // After the shared audit, so an activation failure is reported as one rather than surfacing here
+    // as a resolve that throws. A factory that returned null passed that activation.
+    await AbortOnPluginRegistrationProblems(
+        PluginContractShapeCheck.CheckResolvedInstances(auditInput, app.Services),
+        activationException: null
+    );
+}
+
+/// <summary>
+/// Writes each plugin registration problem to Console.Error and stops startup if there is one.
+/// </summary>
+async Task AbortOnPluginRegistrationProblems(IReadOnlyList<string> problems, Exception? activationException)
+{
+    if (problems.Count == 0)
+    {
+        return;
+    }
+
+    foreach (string problem in problems)
+    {
+        await Console.Error.WriteLineAsync($"Plugin registration problem: {problem}");
+    }
+
+    throw new InvalidOperationException(
+        $"Startup aborted: {problems.Count} plugin registration problem(s). Correct the plugin, "
+            + "or remove it from Plugins:Allowed, then restart: "
+            + string.Join(" | ", problems),
+        activationException
+    );
+}
 
 /// <summary>
 /// Triggers configuration validation. If configuration is invalid, injects a short-circuit middleware to report.

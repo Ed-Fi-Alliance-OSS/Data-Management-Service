@@ -446,6 +446,100 @@ public class DataStoreModuleTests
     }
 
     [TestFixture]
+    public class Given_a_duplicate_data_store_name : DataStoreModuleTests
+    {
+        private HttpResponseMessage _postResponse = null!;
+        private HttpResponseMessage _putResponse = null!;
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            A.CallTo(() => _dataStoreRepository.InsertDataStore(A<DataStoreInsertCommand>._))
+                .Returns(new DataStoreInsertResult.FailureDuplicateName());
+            A.CallTo(() => _dataStoreRepository.UpdateDataStore(A<DataStoreUpdateCommand>._))
+                .Returns(new DataStoreUpdateResult.FailureDuplicateName());
+
+            using var client = SetUpClient();
+
+            _postResponse = await client.PostAsync(
+                "/v3/dataStores/",
+                new StringContent(
+                    JsonSerializer.Serialize(
+                        new DataStoreInsertCommand
+                        {
+                            DataStoreType = "Production",
+                            Name = "Taken Name",
+                            ConnectionString = "Server=localhost;Database=TestDb;",
+                        }
+                    ),
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+            _putResponse = await client.PutAsync(
+                "/v3/dataStores/1",
+                new StringContent(
+                    JsonSerializer.Serialize(
+                        new DataStoreUpdateCommand
+                        {
+                            Id = 1,
+                            DataStoreType = "Production",
+                            Name = "Taken Name",
+                            ConnectionString = "Server=localhost;Database=TestDb;",
+                        }
+                    ),
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+        }
+
+        private static async Task AssertDuplicateNameBodyAsync(HttpResponseMessage response)
+        {
+            var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
+            var expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "Name": [
+                      "A data store with this name already exists."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+            );
+
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().BeTrue();
+        }
+
+        [Test]
+        public void It_rejects_the_post_with_bad_request() =>
+            _postResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        [Test]
+        public async Task It_returns_the_data_validation_body_on_post() =>
+            await AssertDuplicateNameBodyAsync(_postResponse);
+
+        [Test]
+        public void It_sets_no_location_header_on_post() => _postResponse.Headers.Location.Should().BeNull();
+
+        [Test]
+        public void It_rejects_the_rename_with_bad_request() =>
+            _putResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        [Test]
+        public async Task It_returns_the_data_validation_body_on_put() =>
+            await AssertDuplicateNameBodyAsync(_putResponse);
+    }
+
+    [TestFixture]
     public class Given_Invalid_PagingQuery : DataStoreModuleTests
     {
         [SetUp]

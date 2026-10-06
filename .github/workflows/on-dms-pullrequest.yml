@@ -252,6 +252,7 @@ jobs:
             "eng/docker-compose/tests/E2EEngineForwarding.Tests.ps1",
             "eng/docker-compose/tests/E2ETestProcessContext.Tests.ps1",
             "eng/docker-compose/tests/E2EIdentityEnvironment.Tests.ps1",
+            "eng/docker-compose/tests/IdentityToggleWiring.Tests.ps1",
             "eng/docker-compose/tests/E2ETeardownSafety.Tests.ps1",
             "eng/docker-compose/tests/InstanceE2EForwarding.Tests.ps1",
             "eng/ci/tests/BuildScriptTestGuards.Tests.ps1",
@@ -266,6 +267,7 @@ jobs:
             "eng/ci/tests/PullCiImages.Tests.ps1",
             "eng/ci/tests/DocumentCacheAdminPackageTarget.Tests.ps1",
             "eng/ci/tests/ScheduledMergeQueueEnqueue.Tests.ps1",
+            "eng/ci/tests/KeycloakNightlyNotifications.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-WorkflowInputs.Tests.ps1",
             "eng/smoke_test/tests/SmokeTest.Tests.ps1",
@@ -567,8 +569,7 @@ jobs:
           $ErrorActionPreference = "Stop"
 
           Import-Module ./package-helpers.psm1
-          $contractVersion = Get-PluginsContractVersion `
-            -PropsPath "src/dms/core/EdFi.DataManagementService.Identity/EdFi.DataManagementService.Identity.csproj"
+          $contractVersion = Get-IdentityContractVersion
 
           # A fresh extraction directory per run. The script refuses a non-empty one rather than
           # emptying it, so a warm runner would otherwise fail here.
@@ -1614,15 +1615,15 @@ jobs:
         run: Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force
 
       - name: Run story-owned CDC qualification
-        run: ./eng/ci/Invoke-CdcQualification.ps1 -Lane Contract -ResultsDirectory TestResults/cdc-qualification
+        run: ./eng/ci/Invoke-CdcQualification.ps1 -Lane Contract -ResultsDirectory "$env:RUNNER_TEMP/cdc-qualification"
 
       - name: Record unavailable qualification environment
         if: failure()
         run: |
-          if (-not (Test-Path TestResults/cdc-qualification/qualification.json)) {
-            New-Item -ItemType Directory -Force TestResults/cdc-qualification | Out-Null
+          if (-not (Test-Path "$env:RUNNER_TEMP/cdc-qualification/qualification.json")) {
+            New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/cdc-qualification" | Out-Null
             @(@{ Name = 'environment-setup'; Status = 'EnvironmentUnavailable'; Total = 0; Passed = 0; Failed = 0; Skipped = 0 }) |
-              ConvertTo-Json -AsArray | Set-Content TestResults/cdc-qualification/qualification.json
+              ConvertTo-Json -AsArray | Set-Content "$env:RUNNER_TEMP/cdc-qualification/qualification.json"
           }
 
       - name: Upload structured CDC qualification evidence
@@ -1630,7 +1631,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cdc-qualification-Contract-All-${{ github.run_attempt }}
-          path: TestResults/cdc-qualification/**
+          path: ${{ runner.temp }}/cdc-qualification/**
           if-no-files-found: error
           retention-days: 14
 
@@ -3238,6 +3239,206 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
+  run-instance-management-identity-plugin-e2e-tests:
+    name: Run Instance Management Identity Plugin E2E Tests
+    needs: [build-ci-docker-images, build-dms-solution]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
+      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Login to GitHub Container Registry
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Pull CI Docker images
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
+        uses: ./.github/actions/pull-ci-images
+        with:
+          images: |
+            ${{ needs.build-ci-docker-images.outputs.dms_image }}
+            ${{ needs.build-ci-docker-images.outputs.config_image }}
+
+      - name: Set up Docker Buildx
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Cache Docker layers
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('src/Directory.Packages.props', 'src/nuget.config', 'src/dms/Dockerfile', 'src/dms/**', 'src/config/Dockerfile', 'src/config/**') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build DMS Docker image
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          load: true
+          context: ./src/dms
+          file: ./src/dms/Dockerfile
+          build-contexts: |
+            parentdir=./src
+          push: false
+          tags: ed-fi-api-local:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
+
+      - name: Build Config Docker image
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          load: true
+          context: ./src/config
+          file: ./src/config/Dockerfile
+          build-contexts: |
+            parentdir=./src
+          push: false
+          tags: ed-fi-api-config-local:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
+
+      - name: Cache Nuget packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dms-build-output
+          path: ${{ runner.temp }}/dms-build-output
+
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
+
+      - name: Prepare identity plugin environment
+        run: |
+          $fixtureRoot = "${{ github.workspace }}/src/dms/tests/EdFi.DataManagementService.Tests.Integration/bin/${{ env.CONFIGURATION }}/net10.0/PackedContractPluginFixtures"
+          $fixtureDll = Join-Path $fixtureRoot "Acme.IdentityFixture/Acme.IdentityFixture.dll"
+          if (-not (Test-Path -LiteralPath $fixtureDll -PathType Leaf)) {
+              throw "The staged identity fixture plugin is missing from the extracted dms-build-output artifact: expected '$fixtureDll'. The artifact must carry PackedContractPluginFixtures/Acme.IdentityFixture."
+          }
+
+          $envFile = Join-Path $env:RUNNER_TEMP "identity-plugin.env"
+          ./src/dms/tests/EdFi.InstanceManagement.Tests.E2E/New-IdentityPluginEnvironmentFile.ps1 `
+            -PluginRoot $fixtureRoot `
+            -Destination $envFile
+          "IDENTITY_PLUGIN_ENV_FILE=$envFile" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Run Instance Management Identity Plugin E2E Tests
+        if: success()
+        env:
+          DMS_API_URL: http://localhost:8080
+        run: |
+          # Build script handles Docker environment setup, database configuration, and test execution
+          ./build-dms.ps1 InstanceE2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -EnvironmentFile "$env:IDENTITY_PLUGIN_ENV_FILE" -TestFilter 'Category=@instance-management-identity-plugin'
+
+      - name: Export Docker Logs
+        if: failure()
+        run: |
+          Write-Host "Capturing Docker container logs before teardown..." -ForegroundColor Cyan
+          $logDir = "${{ github.workspace }}/logs"
+          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+          docker ps -a --format "{{.Names}}" | ForEach-Object {
+              $container = $_
+              Write-Host "Capturing logs for container: $container" -ForegroundColor Yellow
+              $logPath = Join-Path $logDir "$container.log"
+              docker logs $container > $logPath 2>&1
+
+              if ($container -eq "dms-postgresql") {
+                  $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
+                  docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
+                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+              }
+
+              # Also display DMS logs in the workflow output for easier debugging
+              if ($container -eq "ed-fi-api") {
+                  Write-Host "`n========== DMS Container Logs ==========" -ForegroundColor Cyan
+                  docker logs $container 2>&1
+                  Write-Host "`n========================================`n" -ForegroundColor Cyan
+              }
+          }
+        shell: pwsh
+
+      - name: Teardown Instance Management Test Environment
+        if: always()
+        run: |
+          # Use the Instance Management teardown script to stop Docker
+          ./src/dms/tests/EdFi.InstanceManagement.Tests.E2E/teardown-local-dms.ps1
+
+      - name: Upload Logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: instance-management-identity-plugin-test-logs
+          path: |
+            ${{ github.workspace }}/logs
+          retention-days: 10
+
+      - name: Upload Test Results
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        if: (success() || failure())
+        with:
+          name: Instance Management Identity Plugin E2E Test Results
+          path: "**/*.trx"
+          path-replace-backslashes: "true"
+          reporter: dotnet-trx
+          list-tests: failed
+          use-actions-summary: "true"
+
+      - name: Summarize Instance Management Identity Plugin Test Timings
+        if: always()
+        run: |
+          ./eng/ci/summarize-test-timings.ps1 `
+            -Path "./TestResults/EdFi.InstanceManagement.Tests.E2E.trx" `
+            -OutputDirectory "./TestResults/test-timings/instance-identity-plugin" `
+            -SuiteName "Instance Management Identity Plugin E2E" `
+            -AppendToGitHubStepSummary
+
+      - name: Upload Instance Management Identity Plugin Timing Artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: test-timings-instance-identity-plugin
+          path: |
+            TestResults/EdFi.InstanceManagement.Tests.E2E.trx
+            TestResults/test-timings/instance-identity-plugin/**
+          if-no-files-found: ignore
+          retention-days: 30
+
   # SQL Server Instance Management E2E lane. Mirrors run-instance-management-e2e-tests but drives the
   # suite-owned fixture against the MSSQL engine (-DatabaseEngine mssql). -EnvironmentFile is omitted
   # so the InstanceE2ETest default resolves the tracked eng/docker-compose/.env.routeContext.e2e,
@@ -3817,6 +4018,7 @@ jobs:
         run-e2e-tests-mssql-ds61,
         run-instance-management-e2e-tests,
         run-instance-management-e2e-tests-mssql,
+        run-instance-management-identity-plugin-e2e-tests,
         run-backend-mssql-integration-tests,
         run-dms-api-mssql-integration-tests,
       ]
@@ -3877,6 +4079,7 @@ jobs:
         e2e-summary,
         run-instance-management-e2e-tests,
         run-instance-management-e2e-tests-mssql,
+        run-instance-management-identity-plugin-e2e-tests,
         run-backend-mssql-integration-tests,
         test-timing-summary,
         run-backend-postgresql-integration-tests,
@@ -3944,6 +4147,7 @@ jobs:
       - e2e-summary
       - run-instance-management-e2e-tests
       - run-instance-management-e2e-tests-mssql
+      - run-instance-management-identity-plugin-e2e-tests
       - build-and-start-dms
       - validate-resources-spec
       - validate-descriptors-spec

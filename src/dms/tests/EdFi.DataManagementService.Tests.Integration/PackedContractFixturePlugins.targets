@@ -1,0 +1,283 @@
+<Project>
+    <!--
+        Packs the plugin contracts - the plugin contract, the custom-validation contract and the
+        identity contract - into a local folder feed, then publishes every fixture plugin named in
+        the PackedContractFixture item list against that feed into this project's output as a real
+        plugin directory.
+
+        Why this is not an entry in PluginIntegrationFixtures.targets' two lists, and why it does
+        not import src/dms/PluginFixtureStaging.targets: that shared file publishes every fixture
+        with one fixed command carrying no version properties, no package source and no cache
+        override, and its prune removes the whole PluginFixtures tree. These fixtures consume their
+        contracts as packed nupkgs rather than by project reference, which is the whole point of the
+        story they belong to, so they need a pack step ahead of the publish, one version argument per
+        contract and an isolated package cache during it. That is a different staging shape rather than a
+        longer list, and the shared file's own header records that generalizing it is not wanted -
+        the plugin hosting test project already declines to import it for the same kind of reason.
+
+        So this file owns its own stage root, PackedContractPluginFixtures, which the shared prune
+        can never reach, and the shared machinery is left exactly as it was.
+
+        Freshness is a recorded fingerprint rather than an Inputs/Outputs comparison against the
+        staged files, for the reason the shared file explains: a publish copies files, a copy
+        carries the source file's modification time, so a staged file is routinely older than an
+        input that has just been edited and the comparison would find the tree out of date forever.
+        Hashing the input list rather than only comparing timestamps is also what makes a deleted
+        input invalidate the record, which a timestamp comparison alone cannot do, and hashing the
+        staged list is what notices an output that has gone missing.
+    -->
+    <PropertyGroup>
+        <!-- This file's directory walked up to the repository root, so each path below reads once. -->
+        <PackedContractFixtureRepositoryRoot
+        >$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', '..', '..', '..'))</PackedContractFixtureRepositoryRoot>
+        <!--
+            The feed the fixtures' own nuget.config files name. Its path cannot vary by
+            configuration, because a nuget.config cannot expand an MSBuild property, so the
+            configuration is carried in the package version instead: a Debug and a Release build
+            write two differently named nupkgs into this one folder and never race over a file.
+            Every fixture's contract PackageReferences are bracket-pinned, so several nupkgs per id
+            resolve to the pinned one or fail rather than silently resolving another.
+        -->
+        <PackedContractFixtureFeed
+        >$(PackedContractFixtureRepositoryRoot)eng/fixtures/plugins/.local-feed</PackedContractFixtureFeed>
+        <PackedContractFixturePackageVersion
+        >0.0.0-pcf-$(Configuration.ToLowerInvariant())</PackedContractFixturePackageVersion>
+        <CustomValidationContractProject
+        >$(PackedContractFixtureRepositoryRoot)src/dms/core/EdFi.DataManagementService.CustomValidation/EdFi.DataManagementService.CustomValidation.csproj</CustomValidationContractProject>
+        <CustomValidationPluginsContractProject
+        >$(PackedContractFixtureRepositoryRoot)src/plugins/EdFi.Api.Plugins/EdFi.Api.Plugins.csproj</CustomValidationPluginsContractProject>
+        <IdentityContractProject
+        >$(PackedContractFixtureRepositoryRoot)src/dms/core/EdFi.DataManagementService.Identity/EdFi.DataManagementService.Identity.csproj</IdentityContractProject>
+    </PropertyGroup>
+
+    <!--
+        The fixture plugins this file stages, one item per directory under
+        eng/fixtures/plugins/, each consuming the plugin contract plus one of the other two
+        contracts above (custom validation or identity) as packed nupkgs instead of by project
+        reference. A fixture's directory name, its csproj name, its assembly name and its
+        published entry file name are all this one Identity, so naming it here is the only
+        place a fixture is named: the input closure below, the pack-once publish-per-fixture loop,
+        and the fingerprint all key off this list rather than off a per-fixture copy of this file.
+    -->
+    <ItemGroup>
+        <PackedContractFixture Include="Acme.CustomValidationProof" />
+        <PackedContractFixture Include="Acme.UniqueIdValidation" />
+        <PackedContractFixture Include="Acme.IdentityFixture" />
+        <PackedContractFixture Include="Acme.SecondIdentityReplacement" />
+    </ItemGroup>
+
+    <!--
+        Everything whose change can alter what the pack and the publish produce, as directories
+        rather than as a hand-written list of files: an enumeration of the files a closure happens
+        to reach today silently omits the next one somebody adds. bin/ and obj/ are excluded
+        everywhere, because generated sources change on every build and would leave the record
+        permanently out of date. The feed and the scratch package cache are outputs of this file and
+        are not inputs to it.
+
+        Each directory is written out rather than derived from an item transform, because an item
+        transform does not glob: '%(Directory)**/*' arrives as one item whose identity is that
+        literal string, so a transform here would watch nothing at all. Every fixture's own
+        directory is globbed the same way, batched over @(PackedContractFixture); that batching
+        only expands inside a target (a plain, unbatched ItemGroup like this one never resolves
+        %(Identity)), so that one entry is added to this list from inside
+        PrunePackedContractFixturePlugins below rather than here, and a deleted or edited file
+        under any fixture's directory still changes that fixture's contribution to the list and so
+        still invalidates the record.
+    -->
+    <ItemGroup>
+        <!-- These rules themselves, since a change to them changes what they produce. -->
+        <PackedContractFixtureInput Include="$(MSBuildThisFileFullPath)" />
+
+        <!-- The three contracts that are packed into the feed. -->
+        <PackedContractFixtureInput
+            Include="$(PackedContractFixtureRepositoryRoot)src/dms/core/EdFi.DataManagementService.CustomValidation/**/*;$(PackedContractFixtureRepositoryRoot)src/plugins/EdFi.Api.Plugins/**/*;$(PackedContractFixtureRepositoryRoot)src/dms/core/EdFi.DataManagementService.Identity/**/*"
+            Exclude="$(PackedContractFixtureRepositoryRoot)src/dms/core/EdFi.DataManagementService.CustomValidation/bin/**;$(PackedContractFixtureRepositoryRoot)src/dms/core/EdFi.DataManagementService.CustomValidation/obj/**;$(PackedContractFixtureRepositoryRoot)src/plugins/EdFi.Api.Plugins/bin/**;$(PackedContractFixtureRepositoryRoot)src/plugins/EdFi.Api.Plugins/obj/**;$(PackedContractFixtureRepositoryRoot)src/dms/core/EdFi.DataManagementService.Identity/bin/**;$(PackedContractFixtureRepositoryRoot)src/dms/core/EdFi.DataManagementService.Identity/obj/**"
+        />
+
+        <!--
+            The build metadata a pack of those three reads: the props each tree carries, the central
+            package versions they chain to, and the NuGet configuration their restore reads.
+        -->
+        <PackedContractFixtureInput
+            Include="$(PackedContractFixtureRepositoryRoot)src/dms/Directory.Build.props;$(PackedContractFixtureRepositoryRoot)src/dms/Directory.Build.targets;$(PackedContractFixtureRepositoryRoot)src/plugins/Directory.Build.props;$(PackedContractFixtureRepositoryRoot)src/Directory.Packages.props;$(PackedContractFixtureRepositoryRoot)src/nuget.config"
+        />
+    </ItemGroup>
+
+    <Target
+        Name="PrunePackedContractFixturePlugins"
+        Condition="'$(BuildingPluginFixtures)' != 'true' AND '$(DesignTimeBuild)' != 'true'"
+    >
+        <!--
+            Every fixture: its sources, its csproj, and the nuget.config that binds it to the feed.
+            Added to the shared PackedContractFixtureInput list from inside this target, which is
+            where %(PackedContractFixture.Identity) actually batches into one glob per fixture;
+            this target's own DependsOnTargets ordering runs it, and so populates the list, before
+            StagePackedContractFixturePlugins's Inputs attribute below is evaluated.
+        -->
+        <ItemGroup>
+            <PackedContractFixtureInput
+                Include="$(PackedContractFixtureRepositoryRoot)eng/fixtures/plugins/%(PackedContractFixture.Identity)/**/*"
+                Exclude="$(PackedContractFixtureRepositoryRoot)eng/fixtures/plugins/%(PackedContractFixture.Identity)/bin/**;$(PackedContractFixtureRepositoryRoot)eng/fixtures/plugins/%(PackedContractFixture.Identity)/obj/**"
+            />
+        </ItemGroup>
+
+        <PropertyGroup>
+            <PackedContractFixtureStageRoot
+            >$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(OutDir)', 'PackedContractPluginFixtures'))</PackedContractFixtureStageRoot>
+            <PackedContractFixtureStampDir
+            >$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'packedcontractfixtures'))</PackedContractFixtureStampDir>
+            <PackedContractFixtureFingerprintFile
+            >$(PackedContractFixtureStampDir)staging.fingerprint</PackedContractFixtureFingerprintFile>
+            <!--
+                A package cache of this staging's own, because the global packages folder is
+                consulted before any source: an already-extracted package of the same version would
+                otherwise satisfy a fixture's restore and validate bits the current pack did not
+                produce. It is shared by every fixture's publish and is emptied on every repack
+                below, which is what keeps a fixed local version honest for all of them.
+            -->
+            <PackedContractFixturePackageCache
+            >$(PackedContractFixtureStampDir)packages</PackedContractFixturePackageCache>
+            <PackedContractFixtureInputList>@(PackedContractFixtureInput->'%(Identity)@%(ModifiedTime)', '|')</PackedContractFixtureInputList>
+            <PackedContractFixtureFingerprintPrefix
+            >$(Configuration)+$(NETCoreSdkRuntimeIdentifier)+$(PackedContractFixturePackageVersion)+$([MSBuild]::StableStringHash($(PackedContractFixtureInputList)))</PackedContractFixtureFingerprintPrefix>
+        </PropertyGroup>
+
+        <ItemGroup Condition="Exists('$(PackedContractFixtureStageRoot)')">
+            <PackedContractFixtureStagedFile Include="$(PackedContractFixtureStageRoot)**/*" />
+        </ItemGroup>
+
+        <PropertyGroup>
+            <PackedContractFixtureStagedList>@(PackedContractFixtureStagedFile->'%(RecursiveDir)%(Filename)%(Extension)', '|')</PackedContractFixtureStagedList>
+            <PackedContractFixtureFingerprint
+            >$(PackedContractFixtureFingerprintPrefix)+$([MSBuild]::StableStringHash($(PackedContractFixtureStagedList)))</PackedContractFixtureFingerprint>
+        </PropertyGroup>
+
+        <ReadLinesFromFile
+            File="$(PackedContractFixtureFingerprintFile)"
+            Condition="Exists('$(PackedContractFixtureFingerprintFile)')"
+        >
+            <Output TaskParameter="Lines" ItemName="PackedContractFixturePreviousLine" />
+        </ReadLinesFromFile>
+
+        <PropertyGroup>
+            <PackedContractFixturePrevious>@(PackedContractFixturePreviousLine)</PackedContractFixturePrevious>
+            <PackedContractFixtureStale
+                Condition="'$(PackedContractFixturePrevious)' != '$(PackedContractFixtureFingerprint)'"
+            >true</PackedContractFixtureStale>
+        </PropertyGroup>
+
+        <!--
+            Removed wholesale rather than patched, so a file dropped from a fixture's closure
+            cannot survive as a leftover: dotnet publish overwrites what it produces and removes
+            nothing it no longer produces. The path is composed from OutDir and a literal, so it is
+            always inside this project's own output, and it is the one root every fixture publishes
+            under, so one staleness verdict prunes all of them together.
+        -->
+        <RemoveDir
+            Directories="$(PackedContractFixtureStageRoot)"
+            Condition="'$(PackedContractFixtureStale)' == 'true' AND '$(PackedContractFixtureStageRoot)' != '' AND Exists('$(PackedContractFixtureStageRoot)')"
+        />
+        <Delete
+            Files="$(PackedContractFixtureFingerprintFile)"
+            Condition="'$(PackedContractFixtureStale)' == 'true'"
+        />
+    </Target>
+
+    <Target
+        Name="StagePackedContractFixturePlugins"
+        AfterTargets="Build"
+        DependsOnTargets="PrunePackedContractFixturePlugins"
+        Condition="'$(BuildingPluginFixtures)' != 'true' AND '$(DesignTimeBuild)' != 'true'"
+        Inputs="@(PackedContractFixtureInput)"
+        Outputs="$(PackedContractFixtureFingerprintFile)"
+    >
+        <!--
+            Both emptied before anything is produced. The feed is not, because a Debug and a Release
+            build each own their own file in it and neither may delete the other's.
+        -->
+        <RemoveDir
+            Directories="$(PackedContractFixtureStageRoot);$(PackedContractFixturePackageCache)"
+            Condition="'$(PackedContractFixtureStageRoot)' != '' AND '$(PackedContractFixturePackageCache)' != ''"
+        />
+        <MakeDir Directories="$(PackedContractFixtureFeed)" />
+
+        <!--
+            The pack neither builds nor restores, deliberately. The contracts are already in this
+            project's reference closure, so this target runs after the build that produced them and
+            packing can take those exact assemblies. It also keeps the pack from touching either
+            project's committed lock file, which a restore could rewrite for a story that has no
+            business editing them. Exactly one pack of each contract runs here regardless of how
+            many fixtures are in @(PackedContractFixture), because every fixture restores the same
+            pinned version from the one feed and packing twice would race two dotnet processes over
+            the same nupkg file.
+
+            PackageVersion rather than Version, so only the nupkg's version moves. Every contract
+            declares AssemblyVersion and FileVersion explicitly - the custom-validation and identity
+            contracts in their own csprojs, 1.0.0 today, and the plugin contract in
+            src/plugins/Directory.Build.props, 1.1.0 today - and the loader's
+            newer-plugin-on-older-host preflight compares contract AssemblyVersions, so a local
+            repack must not move them. The configuration-specific package version here is fixture
+            isolation, not a contract's published version. Under host-first resolution the host
+            serves the plugin its own copies of the contract assemblies at run time, and identical
+            assembly versions are what keeps that from being recorded as a substitution.
+        -->
+        <Exec
+            Command="&quot;$(DOTNET_HOST_PATH)&quot; pack &quot;$(CustomValidationContractProject)&quot; --configuration $(Configuration) --no-build --no-restore --output &quot;$(PackedContractFixtureFeed)&quot; -p:PackageVersion=$(PackedContractFixturePackageVersion) -p:BuildingPluginFixtures=true --nologo --verbosity quiet"
+            EnvironmentVariables="DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1;MSBUILDDISABLENODEREUSE=1"
+            WorkingDirectory="$(MSBuildProjectDirectory)"
+        />
+        <Exec
+            Command="&quot;$(DOTNET_HOST_PATH)&quot; pack &quot;$(CustomValidationPluginsContractProject)&quot; --configuration $(Configuration) --no-build --no-restore --output &quot;$(PackedContractFixtureFeed)&quot; -p:PackageVersion=$(PackedContractFixturePackageVersion) -p:BuildingPluginFixtures=true --nologo --verbosity quiet"
+            EnvironmentVariables="DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1;MSBUILDDISABLENODEREUSE=1"
+            WorkingDirectory="$(MSBuildProjectDirectory)"
+        />
+        <!--
+            The identity contract, packed the same way and for the same reasons: it is in this
+            project's reference closure through the core project, so the build already produced it,
+            and PackageVersion keeps its AssemblyVersion at the 1.0.0 it declares for itself.
+        -->
+        <Exec
+            Command="&quot;$(DOTNET_HOST_PATH)&quot; pack &quot;$(IdentityContractProject)&quot; --configuration $(Configuration) --no-build --no-restore --output &quot;$(PackedContractFixtureFeed)&quot; -p:PackageVersion=$(PackedContractFixturePackageVersion) -p:BuildingPluginFixtures=true --nologo --verbosity quiet"
+            EnvironmentVariables="DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1;MSBUILDDISABLENODEREUSE=1"
+            WorkingDirectory="$(MSBuildProjectDirectory)"
+        />
+
+        <!--
+            The publish forces its restore, because a fixture keeps its own obj/ between builds
+            and an existing project.assets.json naming the same version would otherwise let the
+            restore stand without reading the nupkg the pack Exec calls above just wrote. Emptying
+            the package cache above and forcing the restore here are the two halves of the same
+            guarantee, and neither alone is enough.
+
+            This one Exec batches over @(PackedContractFixture), so it runs once per fixture,
+            publishing each into its own named directory under the one stage root; the pack above
+            still ran exactly once regardless. NUGET_PACKAGES points every one of those restores at
+            the shared cache. No runtime identifier: a runtime-specific publish restores its
+            references with that identifier too, and the framework-dependent publish is what the
+            plugin contract documents.
+        -->
+        <Exec
+            Command="&quot;$(DOTNET_HOST_PATH)&quot; publish &quot;$(PackedContractFixtureRepositoryRoot)eng/fixtures/plugins/%(PackedContractFixture.Identity)/%(PackedContractFixture.Identity).csproj&quot; --configuration $(Configuration) --no-self-contained --force --output &quot;$(PackedContractFixtureStageRoot)%(PackedContractFixture.Identity)&quot; -p:PluginsPackageVersion=$(PackedContractFixturePackageVersion) -p:CustomValidationPackageVersion=$(PackedContractFixturePackageVersion) -p:IdentityPackageVersion=$(PackedContractFixturePackageVersion) -p:BuildingPluginFixtures=true --nologo --verbosity quiet"
+            EnvironmentVariables="DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER=1;MSBUILDDISABLENODEREUSE=1;NUGET_PACKAGES=$(PackedContractFixturePackageCache)"
+            WorkingDirectory="$(MSBuildProjectDirectory)"
+        />
+
+        <ItemGroup>
+            <PackedContractFixtureAfterPublish Include="$(PackedContractFixtureStageRoot)**/*" />
+        </ItemGroup>
+
+        <PropertyGroup>
+            <PackedContractFixtureStagedListAfterPublish>@(PackedContractFixtureAfterPublish->'%(RecursiveDir)%(Filename)%(Extension)', '|')</PackedContractFixtureStagedListAfterPublish>
+            <PackedContractFixtureFingerprintAfterPublish
+            >$(PackedContractFixtureFingerprintPrefix)+$([MSBuild]::StableStringHash($(PackedContractFixtureStagedListAfterPublish)))</PackedContractFixtureFingerprintAfterPublish>
+        </PropertyGroup>
+
+        <MakeDir Directories="$(PackedContractFixtureStampDir)" />
+        <WriteLinesToFile
+            File="$(PackedContractFixtureFingerprintFile)"
+            Lines="$(PackedContractFixtureFingerprintAfterPublish)"
+            Overwrite="true"
+            WriteOnlyWhenDifferent="true"
+        />
+    </Target>
+</Project>

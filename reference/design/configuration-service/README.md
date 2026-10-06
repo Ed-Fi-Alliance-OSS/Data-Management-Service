@@ -12,4 +12,8 @@ Detailed design notes:
 * [Expired Access Token Cleanup](./TOKEN-CLEANUP.md)
 * [Keycloak Client Provisioning Compensation (DMS-1365)](./DMS-1365-keycloak-client-provisioning-compensation.md)
 * [Secret Management](./SECRET-MANAGEMENT.md)
+* [Signing-Key Resolution Under Load (DMS-1556)](./DMS-1556-cms-signing-key-resolution-under-load.md),
+  with its [investigation and test evidence](./DMS-1556-investigation.md); operator-facing
+  behavior is in [Authorization: Signing keys in self-contained mode](./CS-AUTH.md#signing-keys-in-self-contained-mode),
+  and the PR #1317 review follow-up is in its [review remediation addendum](./DMS-1556-review-remediation.md)
 * [Vendor Namespace-Prefix Update Consistency (DMS-1356)](./DMS-1356-vendor-namespace-update-consistency.md)

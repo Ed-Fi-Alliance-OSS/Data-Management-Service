@@ -22,6 +22,9 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [Category("CdcMessageContract")]
 [Category("CdcMessageContractKafka")]
 [Category("PostgresqlIntegration")]
+[Property("CdcInvariant", "CDC-INV-07")]
+[Property("CdcInvariant", "CDC-INV-13")]
+[Property("CdcInvariant", "CDC-INV-14")]
 public sealed class Given_MessageContractConsumerBroker
 {
     private static readonly DateTimeOffset Epoch = new(2026, 9, 5, 0, 0, 0, TimeSpan.Zero);

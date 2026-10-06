@@ -3077,10 +3077,10 @@ public sealed class RelationalDocumentStoreRepository(
 
         // A POST may resolve to create or upsert-as-update in-session, so plan both the stored and
         // proposed namespace checks here; the executor applies the stored check only when the write
-        // resolves to an existing target. The ownership token cap is deferred for the same reason: a create
-        // never parameterizes the list, so the planner hands the plan back and AuthorizePostPlan carries the
-        // failure into the session, to be returned only once the target proves to exist. The cap terminal is
-        // therefore never returned to this switch and has no arm in it.
+        // resolves to an existing target. The ownership token cap is deferred for the same reason: the planner
+        // hands the plan back and AuthorizePostPlan carries the failure into the session once for each target
+        // kind, to be returned in the ownership slot of whichever branch the target selects. The cap terminal
+        // is therefore never returned to this switch and has no arm in it.
         var orchestratorOutcome = RelationalAuthorizationPlanner.Plan(
             mappingSet,
             mappingSet.GetConcreteResourceModelOrThrow(resource),
@@ -3218,10 +3218,10 @@ public sealed class RelationalDocumentStoreRepository(
 
         // After the namespace parameterization, as on every other path: both are setup failures reported as
         // the same security-configuration 500, and NamespaceBased executes ahead of OwnershipBased. Unlike
-        // every other path, an over-limit list does not stop a POST here. The check authorizes the stored
-        // token, so a create is never denied by it and never parameterizes the list; the failure is carried
-        // into the write session instead and returned in the ownership slot only if the target proves to
-        // exist — after the custom-view and namespace checks, before the relationship check and any DML.
+        // every other path, an over-limit list does not stop a POST here, because the branch is not yet
+        // known. The stored-token check decides an upsert-as-update, so its failure is carried into the write
+        // session and returned in the ownership slot only if the target proves to exist — after the
+        // custom-view and namespace checks, before the relationship check and any DML.
         RelationalWriteExecutorResult? deferredStoredOwnershipFailureResult = null;
 
         if (
@@ -3243,6 +3243,16 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
+        // The create has no stored token, so its verdict is decided here from the application context: the
+        // cap, a missing creator token, or a creator token the client could not reach. It is carried into the
+        // write session the same way and returned in a create's ownership slot, after the proposed custom-view
+        // and namespace checks, before the create-new relationship check and any DML.
+        var createOwnershipFailure = CreateOwnershipAuthorization.Evaluate(
+            mappingSet.Key.Dialect,
+            plan.OwnershipCheck,
+            authorizationContext
+        );
+
         return AuthorizePostRelationshipBucket(
             mappingSet,
             resource,
@@ -3253,7 +3263,10 @@ public sealed class RelationalDocumentStoreRepository(
             proposedNamespaceAuthorization,
             customViewAuthorization,
             storedOwnershipAuthorization,
-            deferredStoredOwnershipFailureResult: deferredStoredOwnershipFailureResult
+            deferredStoredOwnershipFailureResult: deferredStoredOwnershipFailureResult,
+            deferredCreateOwnershipFailureResult: createOwnershipFailure is null
+                ? null
+                : new RelationalWriteExecutorResult.Upsert(createOwnershipFailure)
         );
     }
 
@@ -3296,7 +3309,8 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalCustomViewAuthorization? customViewAuthorization = null,
         RelationalOwnershipAuthorization? storedOwnershipAuthorization = null,
         IReadOnlyList<SupportedCustomViewAuthorizationStrategy>? supportedCustomViewStrategies = null,
-        RelationalWriteExecutorResult? deferredStoredOwnershipFailureResult = null
+        RelationalWriteExecutorResult? deferredStoredOwnershipFailureResult = null,
+        RelationalWriteExecutorResult? deferredCreateOwnershipFailureResult = null
     )
     {
         supportedCustomViewStrategies ??= [];
@@ -3367,7 +3381,8 @@ public sealed class RelationalDocumentStoreRepository(
                     proposedNamespaceAuthorization,
                     customViewAuthorization: customViewAuthorization,
                     storedOwnershipAuthorization: storedOwnershipAuthorization,
-                    deferredStoredOwnershipFailureResult: deferredStoredOwnershipFailureResult
+                    deferredStoredOwnershipFailureResult: deferredStoredOwnershipFailureResult,
+                    deferredCreateOwnershipFailureResult: deferredCreateOwnershipFailureResult
                 ),
 
             RelationshipAuthorizationResult.Authorized => CreatePostRelationshipAuthorizationContinue(
@@ -3381,22 +3396,24 @@ public sealed class RelationalDocumentStoreRepository(
                 proposedNamespaceAuthorization,
                 customViewAuthorization,
                 storedOwnershipAuthorization,
-                deferredStoredOwnershipFailureResult
+                deferredStoredOwnershipFailureResult,
+                deferredCreateOwnershipFailureResult
             ),
 
             // NamespaceBased, custom view-based and ownership all AND-compose before relationship OR
             // strategies (auth.md), with ownership last among them. When any of them is planned, defer
             // NoClaims through Continue so those filters get to deny first; the write path's second command
             // emits the NoClaims failure only once they have authorized. Ownership has to be in this
-            // predicate because a POST resolving to upsert-as-update is exactly where the stored-token check
-            // can deny, and stopping here would report the relationship denial in its place — and a deferred
-            // ownership failure is that same pending check, owed on the same branch. With no AND filter
-            // planned at all, short-circuit at preflight to avoid a needless executor roundtrip.
+            // predicate because it can deny either branch — the stored-token check or its deferred failure an
+            // upsert-as-update, the create-side verdict a create — and stopping here would report the
+            // relationship denial in its place. With no AND filter planned at all, short-circuit at preflight
+            // to avoid a needless executor roundtrip.
             RelationshipAuthorizationResult.NoClaims noClaims => proposedNamespaceAuthorization is null
             && storedNamespaceAuthorization is null
             && customViewAuthorization is null
             && storedOwnershipAuthorization is null
             && deferredStoredOwnershipFailureResult is null
+            && deferredCreateOwnershipFailureResult is null
                 ? BuildNoClaimsPostRelationshipAuthorizationFailure(noClaims, authorizationContext)
                 : new WriteGuardRailPreflightResult<UpsertResult>.Continue(
                     null,
@@ -3405,7 +3422,8 @@ public sealed class RelationalDocumentStoreRepository(
                     proposedNamespaceAuthorization,
                     customViewAuthorization: customViewAuthorization,
                     storedOwnershipAuthorization: storedOwnershipAuthorization,
-                    deferredStoredOwnershipFailureResult: deferredStoredOwnershipFailureResult
+                    deferredStoredOwnershipFailureResult: deferredStoredOwnershipFailureResult,
+                    deferredCreateOwnershipFailureResult: deferredCreateOwnershipFailureResult
                 ),
 
             RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled =>
@@ -3449,7 +3467,8 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
         RelationalCustomViewAuthorization? customViewAuthorization = null,
         RelationalOwnershipAuthorization? storedOwnershipAuthorization = null,
-        RelationalWriteExecutorResult? deferredStoredOwnershipFailureResult = null
+        RelationalWriteExecutorResult? deferredStoredOwnershipFailureResult = null,
+        RelationalWriteExecutorResult? deferredCreateOwnershipFailureResult = null
     )
     {
         var createNewProposedValues = _relationshipAuthorizationPlanner.PlanProposedValues(
@@ -3479,7 +3498,8 @@ public sealed class RelationalDocumentStoreRepository(
                 ),
                 customViewAuthorization,
                 storedOwnershipAuthorization,
-                deferredStoredOwnershipFailureResult
+                deferredStoredOwnershipFailureResult,
+                deferredCreateOwnershipFailureResult
             );
 
         return createNewProposedValues switch
@@ -3492,14 +3512,15 @@ public sealed class RelationalDocumentStoreRepository(
             ),
 
             // A pending custom view or ownership check is an AND filter too, so each has to run before this
-            // denial is reported. Ownership is vacuous for the create this plan describes, but preflight does
-            // not yet know the branch, and stopping here would also discard the stored-token check — or the
-            // deferred ownership failure standing in for it — that the existing-resource plan owes an
-            // upsert-as-update.
+            // denial is reported. The create-side ownership verdict this plan describes is returned ahead of
+            // it, and stopping here would also discard the stored-token check — or the deferred ownership
+            // failure standing in for it — that the existing-resource plan owes an upsert-as-update, since
+            // preflight does not yet know the branch.
             RelationshipAuthorizationResult.NoClaims noClaims => proposedNamespaceAuthorization is null
             && customViewAuthorization is null
             && storedOwnershipAuthorization is null
             && deferredStoredOwnershipFailureResult is null
+            && deferredCreateOwnershipFailureResult is null
                 ? BuildNoClaimsPostRelationshipAuthorizationFailure(noClaims, authorizationContext)
                 : DeferToExecutor(noClaims),
 
@@ -4114,7 +4135,8 @@ public sealed class RelationalDocumentStoreRepository(
                 PostRelationshipAuthorizationPlans? postRelationshipAuthorizationPlans = null,
                 RelationalCustomViewAuthorization? customViewAuthorization = null,
                 RelationalOwnershipAuthorization? storedOwnershipAuthorization = null,
-                RelationalWriteExecutorResult? deferredStoredOwnershipFailureResult = null
+                RelationalWriteExecutorResult? deferredStoredOwnershipFailureResult = null,
+                RelationalWriteExecutorResult? deferredCreateOwnershipFailureResult = null
             )
             {
                 Authorization = Validated(
@@ -4126,7 +4148,8 @@ public sealed class RelationalDocumentStoreRepository(
                         postRelationshipAuthorizationPlans,
                         customViewAuthorization,
                         storedOwnershipAuthorization,
-                        deferredStoredOwnershipFailureResult
+                        deferredStoredOwnershipFailureResult,
+                        deferredCreateOwnershipFailureResult
                     )
                 );
             }

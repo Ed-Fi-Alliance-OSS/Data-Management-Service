@@ -62,10 +62,25 @@ param(
     [string] $DatabaseEngine = "postgresql",
 
     [switch] $EnableKafkaCdc,
+    # Returns the private CDC_API_E2E_HANDOFF_PATH value after HTTP-only rollout.
+    [switch] $CdcApiE2E,
     [string] $CdcSettingsPath,
     [string] $CdcBindingStatePath,
     [switch] $SkipDockerBuild
 )
+
+function Write-SetupQualificationFailure {
+    param([object[]] $Records)
+    if (-not $env:CDC_RUNBOOK_CHILD_FAILURE_PATH) { return }
+    try {
+        . (Join-Path $PSScriptRoot '../../../../eng/ci/cdc-runbook-diagnostics.ps1')
+        Write-CdcRunbookChildFailure -Records $Records
+    } catch { # Diagnostic collection must not change the setup outcome.
+        return
+    }
+}
+
+if ($CdcApiE2E -and -not $EnableKafkaCdc) { throw '-CdcApiE2E requires -EnableKafkaCdc.' }
 
 function Get-DirectSetupTeardownCommand {
     # Builds a copyable teardown command that carries the same engine and environment file this setup
@@ -99,6 +114,7 @@ try {
     }
 }
 catch {
+    Write-SetupQualificationFailure -Records @($_)
     Write-Host ""
     Write-Error "Docker is not running or not installed. Please start Docker and try again."
     Write-Host ""
@@ -172,7 +188,7 @@ try {
     if ($EnableKafkaCdc) {
         Invoke-E2ECdcSetup -EnvironmentFile $resolvedEnvironmentFile -OriginalEnvironmentFile $baseEnvironmentFile `
             -DatabaseEngine $DatabaseEngine -DatabaseName $e2eDatabaseName -SnapshotDatabaseName $e2eSnapshotDatabaseName `
-            -CdcSettingsPath $CdcSettingsPath -CdcBindingStatePath $CdcBindingStatePath -SkipDockerBuild:$SkipDockerBuild
+            -CdcSettingsPath $CdcSettingsPath -CdcBindingStatePath $CdcBindingStatePath -SkipDockerBuild:$SkipDockerBuild -CdcApiE2E:$CdcApiE2E
         $teardownCommand = Get-DirectSetupTeardownCommand -DatabaseEngine $DatabaseEngine -EnvironmentFile $baseEnvironmentFile
         Write-Host "CDC E2E setup complete. Governed teardown: $teardownCommand" -ForegroundColor Green
         return
@@ -282,6 +298,10 @@ try {
     $teardownCommand = Get-DirectSetupTeardownCommand -DatabaseEngine $DatabaseEngine -EnvironmentFile $resolvedEnvironmentFile
     Write-Host "`nDMS E2E environment setup complete!" -ForegroundColor Green
     Write-Host "To tear down this environment, run: $teardownCommand" -ForegroundColor Cyan
+}
+catch {
+    Write-SetupQualificationFailure -Records @($_)
+    throw
 }
 finally {
     # Return to original location

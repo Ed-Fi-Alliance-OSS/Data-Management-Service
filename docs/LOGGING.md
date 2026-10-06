@@ -73,6 +73,17 @@ request logging layer:
   normalization](#correlation-id-normalization).
 * `Method`: sanitized HTTP method.
 * `Path`: sanitized request path without the query string.
+  For an identity get-by-id or results-poll route, the identifier segment is replaced by a placeholder before sanitizing, so it never reaches the log.
+  Every other route is unaffected.
+  The existing sanitizer allowlist strips `{` and `}` from every path like it always has, so the placeholder itself is not literally bracketed in the logged value (for example `/identity/v2/identities/id`, not `/identity/v2/identities/{id}`).
+* `RequestPath`: raw request path from the ASP.NET Core request log scope, which is attached to every event logged while a request runs, including framework routing events and DMS frontend, core, and handler events.
+  For an identity get-by-id or results-poll route, DMS replaces the identifier segment with the same placeholder before any sink writes the event, and this value is not sanitized, so the placeholder keeps its braces (for example `/identity/v2/identities/{id}` or `/identity/v2/identities/results/{token}`).
+  Every other route keeps its raw value.
+  For those identity routes, DMS also drops the framework's own `Microsoft.AspNetCore.Hosting.Diagnostics` request-starting and request-finished events and the Debug-level `Microsoft.AspNetCore.Routing.Matching.DfaMatcher` candidate events, because they carry the raw path in their `Path` property and rendered message.
+  This `Path` and `RequestPath` redaction, and the dropping of those framework events, is always on as defense in depth, independent of `AppSettings:EnableIdentityManagement` and of the configured tenant and route-qualifier segments.
+  With the flag off, or with a leading-segment shape that does not match this host's configuration, an identity-shaped path returns 404, and it is still redacted and its framework hosting start and finish events are still dropped.
+  The redaction does not extend to identity provider exception detail logged at `Debug` by the Core identity provider boundary (logger category `EdFi.DataManagementService.Core.Identity.IdentityProviderBoundary`), which may quote the unique id, the results token, or submitted person data.
+  Do not enable `Debug` for that category in production unless logging that detail is acceptable.
 * `StatusCode`: HTTP response status code. An unhandled exception before a
   response is produced is logged as `500`.
 * `DurationMs`: elapsed request duration in milliseconds as a numeric `long`.
@@ -847,6 +858,9 @@ These examples are general guidelines and not 100% exhaustive.
   * Will require anonymization of the natural key fields when reporting a
     referential integrity problem.
 * Entered a function
+* Ignored an `If-None-Match` header on POST, PUT, or DELETE (DMS honors it only on
+  GET) → the request is processed as if the header were absent, which explains a
+  create-only request that overwrote a record
 * About to connect to a service or run through an interesting algorithm
 * Received information back from a service
   * Metadata only

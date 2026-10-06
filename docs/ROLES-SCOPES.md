@@ -21,11 +21,17 @@ application, the following defaults are automatically assigned:
 |------------------------------------------------|-----------------------------------------------------------------------------|
 | `edfi_admin_api/full_access`                   | Provides **full access** to all API endpoints (read and write operations). |
 | `edfi_admin_api/readonly_access`               | Grants **read-only** access to all `GET` endpoints.                        |
-| `edfi_admin_api/authMetadata_readonly_access`  | Allows read-only access to the `/v3/authorizationMetadata` endpoint.         |
+| `edfi_admin_api/authMetadata_readonly_access`  | Allows read-only access to `GET /v3/authorizationMetadata`, `/v3/claimSets`, `/v3/apiClients`, `/v3/apiClients/{id}`, `/v3/dataStores`, `/v3/dataStores/{id}`, `/v3/dataStoreContexts`, `/v3/dataStoreContexts/{id}`, `/v3/dataStoreDerivatives`, `/v3/dataStoreDerivatives/{id}`, `/v3/applications/{id}`, `/v3/profiles`, and `/v3/profiles/{id}`. |
 
 > [!NOTE]
 > Scopes define the level of access granted to a client. Assign
 > appropriate scopes based on the client’s needs.
+
+> [!IMPORTANT]
+> `edfi_admin_api/authMetadata_readonly_access` covers every Configuration
+> Service read a single-tenant DMS makes. With multi-tenancy enabled, DMS also
+> reads `GET /v3/tenants`, which this scope does not grant, so a multi-tenant
+> DMS needs `edfi_admin_api/readonly_access`.
 
 ### CMS Role Usage
 

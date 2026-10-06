@@ -16,6 +16,8 @@ There are two parts to the lab:
 These instructions have been tested in Windows with current (April, 2025)
 versions of both Docker Desktop and Podman. This repository uses PowerShell for
 scripting, which _should_ work on any OS where PowerShell Core 7+ is installed.
+The bootstrap also runs the in-repository `api-schema-tools` CLI on the host, so
+the .NET 10 SDK is required.
 
 On Linux, Docker Engine with the Compose plugin is sufficient. Verify `docker ps`
 and `docker compose version` succeed before starting the stack. If the Engine is
@@ -89,25 +91,40 @@ cd Data-Management-Service/eng/docker-compose
 cp .env.example .env
 ```
 
-Now, start all of the required services, building from source code, with the
-following command. The .NET SDK is not required, as the build will occur inside
-a container.
+On a clean checkout, publish the schema tool to the location the bootstrap
+auto-discovers. Repeat this after switching branches when the tool may have
+changed:
 
 ```powershell
-./start-local-dms.ps1 -EnableConfig
+$schemaToolProject = "../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
+$schemaToolOutput = ".bootstrap/tools/api-schema-tools"
+dotnet publish $schemaToolProject -c Release -p:UseAppHost=true -o $schemaToolOutput
 ```
 
-This may take around a minute to startup. This script not only starts the
-containers, it also calls an additional script for configuring Keycloak.
-
-Next, create the initial data store. As of DMS-1153, `start-local-dms.ps1` is
-infrastructure-only and no longer creates one automatically; the DMS container
-keeps restarting until at least one data store is registered in the
-Configuration Service:
+Start the complete local environment with the bootstrap wrapper:
 
 ```powershell
-./configure-local-data-store.ps1
+./bootstrap-local-dms.ps1
 ```
+
+The wrapper stages the schema and claims workspaces, starts the infrastructure,
+configures the data store, provisions its schema, and then starts DMS. Application
+images build inside containers; the host SDK is used only for the schema tool
+published above. Startup may take around a minute.
+
+Existing local images are reused by default, and stopping the stack (even with
+`-d -v`) does not remove them. After updating your checkout, rebuild them before
+startup by explicitly passing `-Rebuild` (or its shorter `-r` alias):
+
+```powershell
+./bootstrap-local-dms.ps1 -Rebuild
+```
+
+For advanced workflows that need phase-level control, the individual commands
+remain available. For example, `start-local-dms.ps1 -InfraOnly` starts the
+infrastructure without DMS, and `configure-local-data-store.ps1` registers or
+selects the data store. Their help and terminal guidance describe the inputs for
+the subsequent provisioning and DMS-start phases.
 
 Once started, try the following HTTP request, which will load the Ed-Fi
 Discovery API endpoint from the DMS.
@@ -123,6 +140,34 @@ instructions and sample HTTP commands. If using the Rest Client extension, you
 can right-click on any command to generate a Curl command. Alternatively, you
 can create a code snippet in one of more than a dozen supported languages,
 including C# and Python.
+
+To authenticate with DMS, first call the Discovery endpoint and read the DMS
+token-proxy URL from `urls.oauth`. POST the client-credentials grant to that URL
+using HTTP Basic credentials:
+
+```http
+###
+# @name discovery
+GET http://localhost:8080
+
+###
+@tokenUrl={{discovery.response.body.urls.oauth}}
+
+###
+POST {{tokenUrl}}
+Authorization: Basic <client-id>:<client-secret>
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+```
+
+The DMS token proxy accepts the client credentials through the `Authorization`
+header, not as form fields. The example uses Rest Client syntax, which
+Base64-encodes `<client-id>:<client-secret>` before sending; other HTTP clients
+must send the standard Base64-encoded Basic value, for example with
+`curl -u <client-id>:<client-secret>`. Calling the Configuration Service `/connect/token`
+endpoint directly is a separate endpoint contract; see the working examples in
+[getting-started.http](./getting-started.http).
 
 For the most part, interacting with the Data Management Service is the same as
 interacting with the Ed-Fi ODS/API. The following ODS/API documentation pertains
@@ -154,31 +199,19 @@ Explore the `.env` file you just created to see what configuration options are
 available; however, most of them should not be altered. After editing the
 `.env`, stop and then restart the containers.
 
-## Load Seed Data Using Database Template Package
+## Load Seed Data
 
-To load initial seed data into the database, set the appropriate database
-template package name using the .env variable:
-
-**Example:**
-
-```env
-DATABASE_TEMPLATE_PACKAGE=EdFi.Api.Minimal.Template.PostgreSql.5.2.0
-```
-
-Then, run the following commands in PowerShell to start the local DMS instance,
-create the data store, and load the seed data. As of DMS-1153,
-`start-local-dms.ps1` no longer accepts `-LoadSeedData`; the database-template
-load is invoked directly from `setup-database-template.psm1`:
+The bootstrap wrapper can load the built-in Minimal or Populated seed data
+through the running API after it configures and provisions the data store. For
+example:
 
 ```powershell
-./start-local-dms.ps1 -EnableConfig
-./configure-local-data-store.ps1
-Import-Module ./setup-database-template.psm1
-LoadSeedData -EnvironmentFile ./.env
+./bootstrap-local-dms.ps1 -LoadSeedData -SeedTemplate Minimal
 ```
 
-This will ensure your environment is initialized with the required schema and
-data from the specified template package.
+Use `-SeedTemplate Populated` for the populated sample. The wrapper also accepts
+`-SeedDataPath` for developer-supplied XML interchange files; see
+`Get-Help ./bootstrap-local-dms.ps1 -Detailed` for that expert workflow.
 
 ## Stopping the Containers
 
@@ -186,12 +219,17 @@ When you are ready to stop the containers, append the `-d` ("down") flag to the
 command:
 
 ```powershell
-./start-local-dms.ps1 -EnableConfig -d
+./bootstrap-local-dms.ps1 -d
 ```
 
-And to shut down and delete all data, add the `-v` ("volumes") flag. This is
-useful when you need to start over with a clean slate.
+And to shut down and delete all data, add the `-v` ("volumes") flag. This also
+removes the staged `.bootstrap/` workspace, which is useful when you need to
+start over with a clean slate. Pass the same infrastructure options you started
+with, such as `-DatabaseEngine`, so the command stops the same services.
 
 ```powershell
-./start-local-dms.ps1 -EnableConfig -d -v
+./bootstrap-local-dms.ps1 -d -v
 ```
+
+Before the next bootstrap, repeat the schema-tool publish step from the setup
+section because `-d -v` removes its `.bootstrap/tools/api-schema-tools` output.

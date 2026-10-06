@@ -534,6 +534,302 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
     }
 
     /// <summary>
+    /// Each result a create can owe in its ownership slot — the two denials and the token cap — in both
+    /// modes. The mode travels as a flag because the mode enum is internal to the backend.
+    /// </summary>
+    private static IEnumerable<TestCaseData> CreateOwnershipFailureCases()
+    {
+        foreach (var dmlMode in new[] { true, false })
+        {
+            var modeName = dmlMode ? "Dml" : "AuthorizationOnly";
+
+            yield return new TestCaseData(
+                OwnershipDenial(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized),
+                dmlMode
+            ).SetArgDisplayNames("uninitialized", modeName);
+            yield return new TestCaseData(
+                OwnershipDenial(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch),
+                dmlMode
+            ).SetArgDisplayNames("mismatch", modeName);
+            yield return new TestCaseData(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureSecurityConfiguration(["ownership token cap"])
+                ),
+                dmlMode
+            ).SetArgDisplayNames("token-cap", modeName);
+        }
+    }
+
+    private static RelationalWriteSecondCommandMode ModeFor(bool dmlMode) =>
+        dmlMode ? RelationalWriteSecondCommandMode.Dml : RelationalWriteSecondCommandMode.AuthorizationOnly;
+
+    private static RelationalWriteExecutorResult OwnershipDenial(
+        OwnershipAuthorizationFailureKind failureKind
+    ) =>
+        new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureOwnershipNotAuthorized(
+                new OwnershipAuthorizationFailure(failureKind, 0, "OwnershipBased")
+            )
+        );
+
+    /// <summary>
+    /// With no proposed filter ahead of it, a create owed an ownership failure is decided in process: no
+    /// command at all, so no <c>dms.Document</c> insert, no resource-table statement and no collection-key
+    /// reservation can exist for the denied attempt — in either mode.
+    /// </summary>
+    [TestCaseSource(nameof(CreateOwnershipFailureCases))]
+    public async Task It_returns_the_create_ownership_failure_without_issuing_any_command(
+        RelationalWriteExecutorResult deferred,
+        bool dmlMode
+    )
+    {
+        var request = CreateCreatedTargetRequest() with
+        {
+            CreatorOwnershipTokenId = 42,
+            DeferredCreateOwnershipFailureResult = deferred,
+        };
+        var session = new ScriptedWriteSession();
+
+        var resolution = await CreateSut()
+            .ResolveAsync(request, CreateNewRootMergeResult(request), ModeFor(dmlMode), session);
+
+        resolution.ImmediateResult.Should().BeSameAs(deferred);
+        resolution.PersistResult.Should().BeNull();
+        session.Commands.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The proposed namespace check still runs ahead of the ownership slot and authorizes; then the create's
+    /// ownership failure is returned from a command that carries nothing but that check — no relationship
+    /// statement, no <c>dms.Document</c> row, no resource-table statement, no collection-key reservation.
+    /// </summary>
+    [TestCaseSource(nameof(CreateOwnershipFailureCases))]
+    public async Task It_runs_the_proposed_filters_before_the_create_ownership_failure_and_sends_nothing_after_them(
+        RelationalWriteExecutorResult deferred,
+        bool dmlMode
+    )
+    {
+        var request = CreateCreatedTargetRequest(withProposedAuthorization: true) with
+        {
+            DeferredCreateOwnershipFailureResult = deferred,
+        };
+        var session = new ScriptedWriteSession(CreateReader(Authorized()));
+
+        var resolution = await CreateSut()
+            .ResolveAsync(request, CreateNewRootMergeResult(request), ModeFor(dmlMode), session);
+
+        resolution.ImmediateResult.Should().BeSameAs(deferred);
+        resolution.PersistResult.Should().BeNull();
+        var command = session.Commands.Should().ContainSingle().Subject;
+        command
+            .Parameters.Should()
+            .Contain(parameter =>
+                parameter.Name.Contains("namespacePrefixes", StringComparison.OrdinalIgnoreCase)
+            );
+        command
+            .Parameters.Should()
+            .NotContain(parameter =>
+                parameter.Name.Contains("ClaimEducationOrganizationIds", StringComparison.OrdinalIgnoreCase)
+            );
+        command.CommandText.Should().NotContain("CollectionItemIdSequence");
+        command.CommandText.Should().NotContain("ContentVersion");
+        ShouldCarryNoDataModifyingStatement(command);
+    }
+
+    /// <summary>
+    /// Namespace AND-composes ahead of ownership, so a proposed namespace denial outranks the create's
+    /// ownership failure.
+    /// </summary>
+    [Test]
+    public async Task It_returns_the_proposed_namespace_denial_ahead_of_the_create_ownership_failure()
+    {
+        var request = CreateCreatedTargetRequest(withProposedAuthorization: true) with
+        {
+            DeferredCreateOwnershipFailureResult = OwnershipDenial(
+                OwnershipAuthorizationFailureKind.OwnershipTokenMismatch
+            ),
+        };
+        var session = new ScriptedWriteSession(new FakeDbException("AUTH1", "AUTH1"));
+
+        var resolution = await CreateSut(
+                providerFailureExtractor: new StubProviderFailureExtractor(
+                    "AUTH1",
+                    NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+                        new NamespaceAuthorizationAuth1FailurePayload(
+                            0,
+                            NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+                        )
+                    )
+                )
+            )
+            .ResolveAsync(
+                request,
+                CreateNewRootMergeResult(request),
+                RelationalWriteSecondCommandMode.Dml,
+                session
+            );
+
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>();
+        resolution.PersistResult.Should().BeNull();
+        session.Commands.Should().ContainSingle();
+    }
+
+    /// <summary>
+    /// Ownership AND-composes ahead of the relationship OR-group, so a create owed an ownership failure reports
+    /// it in place of a deferred no-claims relationship denial.
+    /// </summary>
+    [Test]
+    public async Task It_returns_the_create_ownership_failure_ahead_of_a_deferred_relationship_denial()
+    {
+        var deferred = OwnershipDenial(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized);
+        var request = CreateDeferredNoClaimsRequest() with
+        {
+            DeferredCreateOwnershipFailureResult = deferred,
+        };
+        var session = new ScriptedWriteSession(CreateReader(Authorized()));
+
+        var resolution = await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateNewRootMergeResult(request),
+                RelationalWriteSecondCommandMode.Dml,
+                session
+            );
+
+        resolution.ImmediateResult.Should().BeSameAs(deferred);
+        ShouldCarryNoDataModifyingStatement(session.Commands.Should().ContainSingle().Subject);
+    }
+
+    /// <summary>
+    /// The slot is a create's alone. An existing target — a PUT, or a POST resolving to upsert-as-update —
+    /// applies its DML exactly as it would with nothing owed.
+    /// </summary>
+    [Test]
+    public async Task It_ignores_the_create_ownership_failure_for_an_existing_target()
+    {
+        var request = CreateExistingTargetRequest() with
+        {
+            DeferredCreateOwnershipFailureResult = OwnershipDenial(
+                OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized
+            ),
+        };
+        var session = new ScriptedWriteSession(CreateReader(Sentinel(0), PersistObservation(77L)));
+
+        var resolution = await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateChangedRootMergeResult(request),
+                RelationalWriteSecondCommandMode.Dml,
+                session
+            );
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution.PersistResult!.ContentVersion.Should().Be(77L);
+        session.Commands.Should().ContainSingle();
+    }
+
+    /// <summary>
+    /// The positive control for the reservation assertion below: this create's collection key is bound by
+    /// another table's statement, so an authorized attempt reserves it in a command of its own before any DML
+    /// command. Only the first command matters here, so the session scripts nothing after it.
+    /// </summary>
+    [Test]
+    public async Task It_reserves_the_shared_collection_key_for_an_authorized_create()
+    {
+        var request = CreateSharedCollectionKeyCreateRequest(out var mergeResult);
+        var session = new ScriptedWriteSession(Reserved(910L));
+
+        var act = () =>
+            CreateSut().ResolveAsync(request, mergeResult, RelationalWriteSecondCommandMode.Dml, session);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("No command script remains*");
+        session.Commands[0].CommandText.Should().Contain("CollectionItemIdSequence");
+    }
+
+    /// <summary>
+    /// The same create owed an ownership failure consumes no collection key: the reservation above is never
+    /// issued, nor is any other command.
+    /// </summary>
+    [Test]
+    public async Task It_reserves_no_collection_key_for_a_create_owed_an_ownership_failure()
+    {
+        var deferred = OwnershipDenial(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch);
+        var request = CreateSharedCollectionKeyCreateRequest(out var mergeResult) with
+        {
+            DeferredCreateOwnershipFailureResult = deferred,
+        };
+        var session = new ScriptedWriteSession();
+
+        var resolution = await CreateSut()
+            .ResolveAsync(request, mergeResult, RelationalWriteSecondCommandMode.Dml, session);
+
+        resolution.ImmediateResult.Should().BeSameAs(deferred);
+        session.Commands.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// A create whose collection row and its aligned extension scope share one collection key, which the
+    /// scope's statement binds and so cannot be inlined into the collection insert.
+    /// </summary>
+    private static RelationalWriteExecutorRequest CreateSharedCollectionKeyCreateRequest(
+        out RelationalWriteMergeResult mergeResult
+    )
+    {
+        var rootPlan = Given_Relational_Write_No_Profile_Persister.CreateRootPlan();
+        var collectionPlan = Given_Relational_Write_No_Profile_Persister.CreateCollectionPlan();
+        var scopePlan = Given_Relational_Write_No_Profile_Persister.CreateCollectionExtensionScopePlan();
+        var request = Given_Relational_Write_No_Profile_Persister.CreateRequest(
+            Given_Relational_Write_No_Profile_Persister.CreateWritePlan([
+                rootPlan,
+                scopePlan,
+                collectionPlan,
+            ]),
+            RelationalWriteOperationKind.Post
+        );
+        var addressCollectionItemId = Given_Relational_Write_No_Profile_Persister.NewCollectionItemId();
+
+        mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [],
+                    [
+                        Given_Relational_Write_No_Profile_Persister.CreateRow(
+                            FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                            255901,
+                            "Lincoln High"
+                        ),
+                    ]
+                ),
+                new RelationalWriteMergedTableState(
+                    scopePlan,
+                    [],
+                    [Given_Relational_Write_No_Profile_Persister.CreateRow(addressCollectionItemId, "Blue")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionPlan,
+                    [],
+                    [
+                        Given_Relational_Write_No_Profile_Persister.CreateRow(
+                            addressCollectionItemId,
+                            FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                            0,
+                            "Home"
+                        ),
+                    ]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
+
+        return request;
+    }
+
+    /// <summary>
     /// A create carrying both proposed checks, whose relationship check is the deferred no-claims denial
     /// that needs no statement of its own.
     /// </summary>

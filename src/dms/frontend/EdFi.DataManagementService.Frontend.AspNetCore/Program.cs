@@ -40,12 +40,25 @@ bool useReverseProxyHeaders = false;
 // returns, and after the status signal above, so a loader fatal has somewhere to record itself. A
 // deployment that allowlisted nothing gets LoadedPlugins.Empty without the loader touching the
 // filesystem, which is what keeps a plugin-free boot on exactly the path it took before.
+//
+// The configuration phase runs in the same bootstrap phase, as soon as loading returns, because
+// AddServices is the first reader of a value a plugin can supply: its first line configures logging
+// from the Serilog section. builder.Configuration is each plugin's bootstrap configuration, and the
+// loader inserts what each plugin added into it as one source.
 LoadedPlugins loadedPlugins = RunBootstrapPhaseWithResult(
     DmsStartupPhases.LoadPlugins,
-    "Loading plugins named in Plugins:Allowed.",
-    "Loaded plugins named in Plugins:Allowed.",
-    "Loading plugins failed before DMS services were configured.",
-    () => PluginLoader.Load(builder.Configuration, DmsPluginContracts.Registry.ContractAssemblyNames)
+    "Loading plugins named in Plugins:Allowed and running their configuration hooks.",
+    "Loaded plugins named in Plugins:Allowed and ran their configuration hooks.",
+    "Loading plugins or running their configuration hooks failed before DMS services were configured.",
+    () =>
+    {
+        LoadedPlugins loaded = PluginLoader.Load(
+            builder.Configuration,
+            DmsPluginContracts.Registry.ContractAssemblyNames
+        );
+        loaded.ContributeConfiguration(builder.Configuration);
+        return loaded;
+    }
 );
 
 RunBootstrapPhase(
@@ -128,6 +141,13 @@ RunBootstrapPhase(
                 policy =>
                 {
                     policy.WithOrigins(swaggerUiOrigin).AllowAnyHeader().AllowAnyMethod();
+
+                    // The identity surface's async 202 and incomplete results 200 carry a Location
+                    // the Swagger UI must read; with the surface off, nothing extra is exposed.
+                    if (builder.Configuration.GetValue<bool>("AppSettings:EnableIdentityManagement"))
+                    {
+                        policy.WithExposedHeaders("Location");
+                    }
                 }
             );
         });
@@ -189,6 +209,13 @@ if (invalidConfigurationException is null)
         () => InitializeApiSchemas(app)
     );
     await startupPhaseExecutor.RunFatalAsync(
+        DmsStartupPhases.ValidatePluginRegistrations,
+        "Validating custom validator and plugin service registrations.",
+        "Custom validator and plugin service registration validation completed successfully.",
+        "Custom validator or plugin registration validation failed. DMS cannot start with invalid custom validator or plugin service registrations.",
+        () => ValidatePluginRegistrations(app)
+    );
+    await startupPhaseExecutor.RunFatalAsync(
         DmsStartupPhases.InitializeBackendMappings,
         "Compiling backend mappings from initialized effective schemas.",
         "Backend mapping initialization completed successfully.",
@@ -218,9 +245,11 @@ if (invalidConfigurationException is null)
 
         app.UseRouting();
 
+        app.UseMiddleware<IdentityResponseCachePolicyMiddleware>();
+
         if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
         {
-            app.UseRateLimiter();
+            app.UseMiddleware<GlobalRateLimitingMiddleware>();
         }
 
         app.UseCors("AllowSwaggerUI");
@@ -339,6 +368,20 @@ async Task InitializeApiSchemas(WebApplication app)
     );
     app.Logger.LogInformation(
         "API schema loading and effective schema initialization completed successfully"
+    );
+}
+
+async Task ValidatePluginRegistrations(WebApplication app)
+{
+    app.Logger.LogInformation("Validating custom validator and plugin service registrations at startup");
+    var orchestrator = app.Services.GetRequiredService<DmsStartupOrchestrator>();
+    await orchestrator.RunByOrderRangeAsync(
+        DmsStartupTaskOrderRanges.PluginRegistrationValidationMinimum,
+        DmsStartupTaskOrderRanges.PluginRegistrationValidationMaximum,
+        CancellationToken.None
+    );
+    app.Logger.LogInformation(
+        "Custom validator and plugin service registration validation completed successfully"
     );
 }
 

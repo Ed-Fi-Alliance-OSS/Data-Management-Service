@@ -196,10 +196,22 @@ externally-issued tokens), the following compensating controls bound the risk:
 - **Bounded clock skew.** Lifetime validation allows only a small, fixed clock-skew
   tolerance, limiting acceptance of marginally-expired tokens.
 - **Signing-key rotation (measurable app-side control).** Retiring a signing key
-  makes every token issued under it fail signature validation, which cuts short the
-  acceptance window for tokens already in circulation. Combined with the short TTL
-  above, this is the measurable control on the stateless paths; rotate per IdP
-  guidance.
+  makes every token issued under it fail signature validation once validators have
+  successfully refreshed their keys, which cuts short the acceptance window for tokens
+  already in circulation. Combined with the short TTL above, this is the measurable
+  control on the stateless paths; rotate per IdP guidance. For the CMS self-contained
+  provider there are two separate caches:
+  - **CMS instances.** A retired key's tokens are rejected on the CMS's own endpoints
+    only after each instance reloads its signing-key snapshot: within a bounded delay
+    on a healthy instance, and up to the maximum staleness while an instance cannot
+    read the key store.
+  - **DMS instances.** DMS validates against its own cached JWKS, which the CMS
+    bounds do not cover. A DMS instance stops accepting the retired key only after it
+    successfully re-fetches JWKS or is restarted. A failed re-fetch keeps the old key
+    set.
+
+  See
+  [Rotating and retiring a database signing key](../reference/design/configuration-service/CS-AUTH.md#rotating-and-retiring-a-database-signing-key).
 - **IdP-side revocation (constraint, not an app-side control).** Revoking a token at
   the IdP does **not** retroactively reject it on the stateless app paths (DMS for
   all tokens; CMS for externally-issued tokens) — a revoked externally-issued token
@@ -234,6 +246,36 @@ The behaviors above are exercised by automated tests:
   valid token, expired token, invalid signature, missing claims, **valid token
   validated repeatedly (replay is accepted)**, and **`jti` is informational
   (malformed/opaque `jti` does not affect the decision)**.
+
+  The DMS **issuer pin** is covered in the same file:
+  - a metadata document whose issuer differs from the configured authority is rejected; the
+    error log names both values, and a metadata refresh is requested;
+  - repeated mismatches are logged as an error only once per episode, while every one still
+    requests a metadata refresh;
+  - a **legitimate token is rejected while the metadata issuer mismatches**, and accepted again
+    once the metadata matches;
+  - the comparison is exact: an issuer that differs only by a trailing slash, or only by letter
+    case, is rejected;
+  - a token whose `iss` differs from the configured authority is rejected.
+
+  `EdFi.DataManagementService.Core.Tests.Unit/Security/HttpDocumentRetrieverTests.cs` covers the
+  **signing-key origin pin**: a document address on another host, port or scheme than
+  `MetadataAddress` is refused before any request is sent, and a metadata document that asserts
+  the right issuer but names a foreign `jwks_uri` fails retrieval without contacting that host.
+  The check compares parsed origins, so an address carrying the metadata origin as userinfo, or
+  on a host that merely starts with the metadata host, is refused too. With an `https`
+  `MetadataAddress`, an `http` address on another host is refused and logged by the same origin
+  check, and repeated refusals are logged as an error only once per episode.
+
+  `EdFi.DataManagementService.Core.Tests.Unit/Startup/AuthStartupTaskRegistrationTests.cs` covers
+  the **registered configuration manager** enforcing that pin (a foreign `jwks_uri` fails
+  retrieval without being contacted), and DMS refusing an `http` `MetadataAddress` when
+  `RequireHttpsMetadata` is true.
+
+  `EdFi.DataManagementService.Core.Tests.Unit/Startup/WarmUpOidcMetadataTaskTests.cs` covers
+  **DMS startup failing** on a metadata issuer mismatch, with both values named and sanitized
+  in the error. These fixtures cover DMS only; the CMS's own issuer validation is not
+  exercised by them.
 - CMS — `EdFi.DmsConfigurationService.Backend.Tests.Unit/OpenIddictTokenManagerTests.cs`:
   `ValidateTokenAsync` accepts a token whose status is `valid` on repeated
   presentation (reusable while valid) and **rejects** expired (lifetime check, before

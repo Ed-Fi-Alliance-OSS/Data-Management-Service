@@ -5,9 +5,6 @@
 
 using System.Collections.Generic;
 using System.Net;
-using EdFi.DmsConfigurationService.Backend.Repositories;
-using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
-using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -98,6 +95,8 @@ public class MetadataModuleTests
     /// </summary>
     private static readonly string[] ExpectedSchemaIdentifierFormats =
     [
+        "AddResourceClaimActionsOnClaimSetRequest.claimSetId int32",
+        "AddResourceClaimActionsOnClaimSetRequest.resourceClaimId int32",
         "ApiClientCredentialsResponse.id int32",
         "ApiClientCredentialsResponse.applicationId int32",
         "ApiClientInsertCommand.applicationId int32",
@@ -140,8 +139,16 @@ public class MetadataModuleTests
         "DataStoreDerivativeUpdateCommand.id int32",
         "DataStoreDerivativeUpdateCommand.dataStoreId int32",
         "DataStoreUpdateCommand.id int32",
+        "EditResourceClaimActionsOnClaimSetRequest.claimSetId int32",
+        "EditResourceClaimActionsOnClaimSetRequest.resourceClaimId int32",
+        "OverrideAuthStategyOnClaimSetRequest.authStrategyIds int32",
+        "OverrideAuthStategyOnClaimSetRequest.claimSetId int32",
+        "OverrideAuthStategyOnClaimSetRequest.resourceClaimId int32",
         "OwnershipTokenResponse.id int32",
         "OwnershipTokenUpdateCommand.id int32",
+        // Not an identifier: the framework ProblemDetails schema that GET /v3/jobs/{jobId} declares for its
+        // problem responses carries the HTTP status as an int32.
+        "ProblemDetails.status int32",
         "ProfileUpdateCommand.id int32",
         "VendorUpdateCommand.id int32",
     ];
@@ -372,16 +379,10 @@ public class MetadataModuleTests
         // Tenants are out of scope for DMS-1337 - no numeric tenant identifier exists anywhere else
         // in the Ed-Fi platform to align with - so TenantModule keeps a long id. Pinning it here is
         // what makes a careless sweep of the frontend handlers fail loudly.
-        // TenantModule is only registered when multi-tenancy is enabled, and with multi-tenancy on,
-        // TenantResolutionMiddleware requires a resolvable Tenant header on every request that is
-        // not tenant-agnostic, including /openapi/v1.json.
-        var tenantRepository = A.Fake<ITenantRepository>();
-        A.CallTo(() => tenantRepository.GetTenantByName("test-tenant"))
-            .Returns(new TenantGetByNameResult.Success(new TenantResponse { Id = 1, Name = "test-tenant" }));
-
-        await using var factory = CreateFactory(multiTenancy: true, tenantRepository: tenantRepository);
+        // TenantModule is only registered when multi-tenancy is enabled. /openapi/v1.json is
+        // tenant-agnostic (DMS-1506), so no Tenant header is needed to read it.
+        await using var factory = CreateFactory(multiTenancy: true);
         using var client = factory.CreateClient();
-        client.DefaultRequestHeaders.Add("Tenant", "test-tenant");
 
         // Act
         var doc = await FetchOpenApiDocumentAsync(client);
@@ -402,6 +403,208 @@ public class MetadataModuleTests
         schema.GetProperty("format").GetString().Should().Be("int64");
     }
 
+    [Test]
+    public async Task MetadataSpecifications_Declares_Tenancy_As_Anonymous()
+    {
+        // Arrange
+        // DMS-1508: GET /tenancy is anonymous. MetadataModule adds a document-wide OAuth requirement,
+        // so without an empty operation-level security array the operation would inherit it.
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        // Act
+        using var doc = await FetchMetadataSpecificationsAsync(client);
+
+        // Assert
+        var security = doc
+            .RootElement.GetProperty("paths")
+            .GetProperty("/tenancy")
+            .GetProperty("get")
+            .GetProperty("security");
+        security.ValueKind.Should().Be(System.Text.Json.JsonValueKind.Array);
+        security.GetArrayLength().Should().Be(0);
+    }
+
+    [Test]
+    public async Task MetadataSpecifications_Keeps_Secured_Operations_Inheriting_OAuth()
+    {
+        // Arrange
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        // Act
+        using var doc = await FetchMetadataSpecificationsAsync(client);
+
+        // Assert
+        // The /tenancy override must not leak: secured operations declare no security of their own
+        // and inherit the root requirement.
+        var vendorsGet = doc
+            .RootElement.GetProperty("paths")
+            .EnumerateObject()
+            .Single(path => path.Name.TrimEnd('/') == "/v3/vendors")
+            .Value.GetProperty("get");
+        vendorsGet.TryGetProperty("security", out _).Should().BeFalse();
+
+        doc.RootElement.GetProperty("security")
+            .EnumerateArray()
+            .Select(requirement => requirement.TryGetProperty("oauth2_client_credentials", out _))
+            .Should()
+            .Equal(true);
+    }
+
+    [Test]
+    public async Task OpenApi_Documents_The_Tenancy_Response_As_A_String_Array()
+    {
+        // Arrange
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        // Act
+        using var doc = await FetchMetadataSpecificationsAsync(client);
+        var properties = ResolveJsonResponseSchemaProperties(
+            doc,
+            doc.RootElement.GetProperty("paths").GetProperty("/tenancy"),
+            "get",
+            "200"
+        );
+
+        // Assert
+        properties.Keys.Should().Equal("tenants");
+        TypeIncludes(properties["tenants"].GetProperty("type"), "array").Should().BeTrue();
+        TypeIncludes(properties["tenants"].GetProperty("items").GetProperty("type"), "string")
+            .Should()
+            .BeTrue();
+    }
+
+    private static async Task<System.Text.Json.JsonDocument> FetchMetadataSpecificationsAsync(
+        HttpClient client
+    )
+    {
+        var response = await client.GetAsync("/metadata/specifications");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        return System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+    }
+
+    /// <summary>
+    /// DMS-1506: with multi-tenancy on, /metadata/specifications must return a valid document without a
+    /// Tenant header. It is assembled from a header-less self-request for /openapi/v1.json, which goes back
+    /// through the real TenantResolutionMiddleware via TestServerHttpClientFactory, so this fails with a
+    /// 500 if either path stops being tenant-agnostic.
+    /// </summary>
+    [TestFixture("")]
+    [TestFixture("mt-config")]
+    public class Given_MultiTenancy_Is_Enabled_And_A_Metadata_Discovery_Request_Without_A_Tenant_Header(
+        string pathBase
+    )
+    {
+        private HttpStatusCode _statusCode;
+        private string _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await using var factory = CreateFactory(multiTenancy: true, pathBase: pathBase);
+            using var client = factory.CreateClient();
+
+            // No Tenant header and no credentials
+            var response = await client.GetAsync(
+                pathBase.Length == 0 ? "/metadata/specifications" : $"/{pathBase}/metadata/specifications"
+            );
+            _statusCode = response.StatusCode;
+            _body = await response.Content.ReadAsStringAsync();
+        }
+
+        [Test]
+        public void It_returns_200()
+        {
+            _statusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void It_returns_a_valid_openapi_document()
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(_body);
+            doc.RootElement.GetProperty("openapi").GetString().Should().Be("3.1.1");
+            doc.RootElement.GetProperty("info")
+                .GetProperty("title")
+                .GetString()
+                .Should()
+                .Be("Ed-Fi API Configuration Service API");
+            doc.RootElement.GetProperty("paths").EnumerateObject().Should().NotBeEmpty();
+        }
+
+        [Test]
+        public void It_is_not_an_error_body()
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(_body);
+            doc.RootElement.TryGetProperty("type", out _).Should().BeFalse();
+            doc.RootElement.TryGetProperty("status", out _).Should().BeFalse();
+        }
+    }
+
+    [TestFixture]
+    public class Given_MultiTenancy_Is_Enabled_And_An_OpenApi_Discovery_Request_Without_A_Tenant_Header
+    {
+        private HttpStatusCode _statusCode;
+        private string _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await using var factory = CreateFactory(multiTenancy: true);
+            using var client = factory.CreateClient();
+
+            // No Tenant header and no credentials
+            var response = await client.GetAsync("/openapi/v1.json");
+            _statusCode = response.StatusCode;
+            _body = await response.Content.ReadAsStringAsync();
+        }
+
+        [Test]
+        public void It_returns_200()
+        {
+            _statusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void It_returns_the_openapi_document()
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(_body);
+            doc.RootElement.GetProperty("openapi").GetString().Should().Be("3.1.1");
+            doc.RootElement.GetProperty("paths").EnumerateObject().Should().NotBeEmpty();
+        }
+    }
+
+    [TestFixture("/metadataX")]
+    [TestFixture("/openapiX")]
+    public class Given_MultiTenancy_Is_Enabled_And_A_Discovery_Lookalike_Request_Without_A_Tenant_Header(
+        string path
+    )
+    {
+        private HttpStatusCode _statusCode;
+        private string _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await using var factory = CreateFactory(multiTenancy: true);
+            using var client = factory.CreateClient();
+
+            // No Tenant header and no credentials
+            var response = await client.GetAsync(path);
+            _statusCode = response.StatusCode;
+            _body = await response.Content.ReadAsStringAsync();
+        }
+
+        [Test]
+        public void It_returns_400_tenant_required()
+        {
+            _statusCode.Should().Be(HttpStatusCode.BadRequest);
+            _body.Should().Contain("The 'Tenant' header is required when multi-tenancy is enabled");
+        }
+    }
+
     private static async Task<System.Text.Json.JsonDocument> FetchOpenApiDocumentAsync(HttpClient client)
     {
         var response = await client.GetAsync("/openapi/v1.json");
@@ -412,7 +615,6 @@ public class MetadataModuleTests
 
     private static WebApplicationFactory<Program> CreateFactory(
         bool multiTenancy = false,
-        ITenantRepository? tenantRepository = null,
         string? pathBase = null,
         ICollection<Uri?>? recordedRequestUris = null
     )
@@ -447,11 +649,6 @@ public class MetadataModuleTests
                         provider.GetRequiredService<IServer>(),
                         recordedRequestUris
                     ));
-                }
-
-                if (tenantRepository is not null)
-                {
-                    services.AddTransient(_ => tenantRepository);
                 }
             });
         });
@@ -900,35 +1097,31 @@ public class MetadataModuleTests
         var responses = postOp.GetProperty("responses");
 
         responses
-            .TryGetProperty("201", out _)
+            .TryGetProperty("201", out var createdResponse)
             .Should()
             .BeTrue("POST /v3/vendors should define a 201 response for new resources");
 
         responses
             .TryGetProperty("200", out _)
             .Should()
-            .BeTrue("POST /v3/vendors should define a 200 response for updated resources");
+            .BeFalse("POST /v3/vendors is create-only and never updates an existing vendor");
 
-        foreach (var code in new[] { "201", "200" })
-        {
-            responses.TryGetProperty(code, out var codeResponse).Should().BeTrue();
-            codeResponse
-                .TryGetProperty("headers", out var headers)
-                .Should()
-                .BeTrue($"{code} response should define headers");
-            headers
-                .TryGetProperty("Location", out var locationHeader)
-                .Should()
-                .BeTrue($"{code} response headers should include Location");
-            locationHeader.GetProperty("required").GetBoolean().Should().BeTrue();
-            locationHeader.GetProperty("schema").GetProperty("type").GetString().Should().Be("string");
-            locationHeader.GetProperty("schema").GetProperty("format").GetString().Should().Be("uri");
-            locationHeader.GetProperty("description").GetString().Should().NotBeNullOrWhiteSpace();
-            codeResponse
-                .TryGetProperty("content", out _)
-                .Should()
-                .BeFalse($"{code} response body should be empty per CMS-GAP-009");
-        }
+        createdResponse
+            .TryGetProperty("headers", out var headers)
+            .Should()
+            .BeTrue("201 response should define headers");
+        headers
+            .TryGetProperty("Location", out var locationHeader)
+            .Should()
+            .BeTrue("201 response headers should include Location");
+        locationHeader.GetProperty("required").GetBoolean().Should().BeTrue();
+        locationHeader.GetProperty("schema").GetProperty("type").GetString().Should().Be("string");
+        locationHeader.GetProperty("schema").GetProperty("format").GetString().Should().Be("uri");
+        locationHeader.GetProperty("description").GetString().Should().NotBeNullOrWhiteSpace();
+        createdResponse
+            .TryGetProperty("content", out _)
+            .Should()
+            .BeFalse("201 response body should be empty per CMS-GAP-009");
     }
 
     private static bool TypeIncludes(System.Text.Json.JsonElement type, string expectedType)

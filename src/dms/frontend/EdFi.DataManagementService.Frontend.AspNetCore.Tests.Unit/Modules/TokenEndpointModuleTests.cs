@@ -183,12 +183,19 @@ public class TokenEndpointModuleTests
         }
     }
 
-    [TestFixture]
-    public class When_Posting_To_The_Internal_Token_Endpoint_With_Multi_Tenancy_Enabled
+    [TestFixture(false)]
+    [TestFixture(true)]
+    public class When_Posting_To_The_Unqualified_Internal_Token_Endpoint_With_Route_Contexts
         : TokenEndpointModuleTests
     {
+        private readonly bool _multiTenancy;
         private JsonNode? _jsonContent;
         private HttpResponseMessage? _response;
+
+        public When_Posting_To_The_Unqualified_Internal_Token_Endpoint_With_Route_Contexts(bool multiTenancy)
+        {
+            _multiTenancy = multiTenancy;
+        }
 
         [SetUp]
         public void SetUp()
@@ -224,7 +231,7 @@ public class TokenEndpointModuleTests
                         collection.AddTransient((x) => oAuthManager);
                         collection.Configure<AppSettings>(opts =>
                         {
-                            opts.MultiTenancy = true;
+                            opts.MultiTenancy = _multiTenancy;
                             opts.RouteQualifierSegments = "schoolYear";
                         });
                     }

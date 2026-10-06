@@ -58,7 +58,7 @@ public class Given_AspNetCoreFrontend_Request_Body_Extraction
     private static IApiService CreateApiServiceForTokenInfo(Action<FrontendRequest> captureRequest)
     {
         var apiService = A.Fake<IApiService>();
-        A.CallTo(() => apiService.GetTokenInfo(A<FrontendRequest>._))
+        A.CallTo(() => apiService.GetTokenInfo(A<FrontendRequest>._, A<CancellationToken>._))
             .Invokes(call => captureRequest(call.GetArgument<FrontendRequest>(0)!))
             .Returns(Task.FromResult<IFrontendResponse>(new FrontendResponse(200, null, [])));
 
@@ -232,6 +232,40 @@ public class Given_AspNetCoreFrontend_Request_Body_Extraction
             .Returns(Task.FromResult<IFrontendResponse>(new FrontendResponse(200, null, [])));
 
         await AspNetCoreFrontend.UpdateById(httpContext, apiService, "ed-fi/schools", AppSettings());
+
+        capturedCancellationToken.Should().Be(cancellationTokenSource.Token);
+    }
+
+    [Test]
+    public async Task It_passes_the_http_context_request_aborted_token_to_delete_by_id()
+    {
+        CancellationToken? capturedCancellationToken = null;
+        var httpContext = CreateHttpContext(string.Empty);
+        using var cancellationTokenSource = new CancellationTokenSource();
+        httpContext.RequestAborted = cancellationTokenSource.Token;
+        var apiService = A.Fake<IApiService>();
+        A.CallTo(() => apiService.DeleteById(A<FrontendRequest>._, A<CancellationToken>._))
+            .Invokes(call => capturedCancellationToken = call.GetArgument<CancellationToken>(1))
+            .Returns(Task.FromResult<IFrontendResponse>(new FrontendResponse(204, null, [])));
+
+        await AspNetCoreFrontend.DeleteById(httpContext, apiService, "ed-fi/schools", AppSettings());
+
+        capturedCancellationToken.Should().Be(cancellationTokenSource.Token);
+    }
+
+    [Test]
+    public async Task It_passes_the_http_context_request_aborted_token_to_get_token_info()
+    {
+        CancellationToken? capturedCancellationToken = null;
+        var httpContext = CreateHttpContext("""{ "Token":"abc" }""", "application/json");
+        using var cancellationTokenSource = new CancellationTokenSource();
+        httpContext.RequestAborted = cancellationTokenSource.Token;
+        var apiService = A.Fake<IApiService>();
+        A.CallTo(() => apiService.GetTokenInfo(A<FrontendRequest>._, A<CancellationToken>._))
+            .Invokes(call => capturedCancellationToken = call.GetArgument<CancellationToken>(1))
+            .Returns(Task.FromResult<IFrontendResponse>(new FrontendResponse(200, null, [])));
+
+        await AspNetCoreFrontend.GetTokenInfo(httpContext, apiService, AppSettings());
 
         capturedCancellationToken.Should().Be(cancellationTokenSource.Token);
     }

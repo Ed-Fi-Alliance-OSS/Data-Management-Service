@@ -29,6 +29,7 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend\EdFi.DmsConfigurationService.Backend.csproj" />
+        <ProjectReference Include="..\..\contracts\EdFi.DmsConfigurationService.Secrets\EdFi.DmsConfigurationService.Secrets.csproj" />
     </ItemGroup>
     <ItemGroup>
         <Folder Include="Extensions\" />

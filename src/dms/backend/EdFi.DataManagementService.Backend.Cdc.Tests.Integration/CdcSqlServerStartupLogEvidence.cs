@@ -26,6 +26,8 @@ internal sealed record CdcSqlServerStartupLogEvidence(
     public bool LsaInitializationTimeout { get; init; }
     public bool InjectedFailure { get; init; }
     public IReadOnlyList<string> StatusCodes { get; init; } = [];
+    public IReadOnlyList<string> LsaLoadStatusCodes { get; init; } = [];
+    public IReadOnlyList<string> AppLoaderExitStatusCodes { get; init; } = [];
     public IReadOnlyList<string> Parameters { get; init; } = [];
     public IReadOnlyList<string> StackFrames { get; init; } = [];
     public string MessageKind { get; init; } = "NotObserved";
@@ -105,6 +107,18 @@ internal static partial class CdcSqlServerStartupLogClassifier
                 .Distinct()
                 .Take(8)
                 .ToArray(),
+            LsaLoadStatusCodes = LsaLoadStatuses()
+                .Matches(text)
+                .Select(m => m.Groups[1].Value.ToUpperInvariant())
+                .Distinct()
+                .Take(8)
+                .ToArray(),
+            AppLoaderExitStatusCodes = AppLoaderExitStatuses()
+                .Matches(text)
+                .Select(m => m.Groups[1].Value.ToUpperInvariant())
+                .Distinct()
+                .Take(8)
+                .ToArray(),
             Parameters = ParameterValues()
                 .Matches(text)
                 .Select(m => m.Groups[1].Value.ToUpperInvariant())
@@ -171,6 +185,22 @@ internal static partial class CdcSqlServerStartupLogClassifier
         100
     )]
     private static partial Regex Statuses();
+
+    // Keep the two startup statuses separate: the generic AppLoader termination message
+    // alone does not establish an LSA timeout. These observations never authorize recovery.
+    [GeneratedRegex(
+        @"^[ \t]*\*\* ERROR: \[AppLoader\] Failed to load LSA:[ \t]*(0x[0-9a-f]{8})\b",
+        RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        100
+    )]
+    private static partial Regex LsaLoadStatuses();
+
+    [GeneratedRegex(
+        @"^[ \t]*AppLoader: Exiting with status=(0x[0-9a-f]{8})\b",
+        RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        100
+    )]
+    private static partial Regex AppLoaderExitStatuses();
 
     [GeneratedRegex(
         @"^\s*\[[0-7]\][ \t]+(0x[0-9a-f]{1,16})\b",

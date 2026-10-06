@@ -754,6 +754,7 @@ function Invoke-CdcDeploymentLifecycle {
             $deployment.Phase = 'Transition'
             Write-CdcDeployment $Project $deployment
             $preparation = $infrastructure + @{ InfraOnly = $true; CdcDatabaseInfrastructure = $true; SuppressWriterGuidance = $true }
+            if ($Parameters['Rebuild'] -or $Parameters['r']) { $preparation.r = $true }
             $preparation.Remove('CdcKafkaInfrastructure')
             $preparation.Remove('EnableKafkaUI')
             $preparation.Remove('CdcBrokerSizeOverrideFile')

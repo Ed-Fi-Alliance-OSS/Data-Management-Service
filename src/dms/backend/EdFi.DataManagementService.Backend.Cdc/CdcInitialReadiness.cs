@@ -93,11 +93,12 @@ public sealed class CdcInitialReadiness
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(runtime);
         var boundary = new Boundary();
+        using var deadline = new CancellationTokenSource(request.Timing.WaitTimeout, _time);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
-            operationDeadline
+            operationDeadline,
+            deadline.Token
         );
-        timeout.CancelAfter(request.Timing.WaitTimeout);
         var token = timeout.Token;
         bool disposed = false;
         try
@@ -287,7 +288,13 @@ public sealed class CdcInitialReadiness
                             await DelayAsync(request, token);
                         }
                         if (
-                            request.Binding.Provider == CoreProvider.Postgresql
+                            (
+                                request.Binding.Provider == CoreProvider.Postgresql
+                                || continuity.Observation.Diagnostics.Any(diagnostic =>
+                                    diagnostic.Category == CdcDiagnosticCategory.ProviderHistoryUnknown
+                                    && diagnostic.Path == "$.providerHistory.retainedRangeEnd"
+                                )
+                            )
                             && continuity.Observation.Continuity == CdcSourceHistoryContinuity.Unknown
                         )
                         {
@@ -833,14 +840,14 @@ public sealed class CdcInitialReadiness
     private Task DelayAsync(CdcDeploymentRequest request, CancellationToken token) =>
         Task.Delay(request.Timing.PollInterval, _time, token);
 
-    private static async Task<T> CallAsync<T>(
+    private async Task<T> CallAsync<T>(
         CdcDeploymentRequest request,
         Func<CancellationToken, Task<T>> action,
         CancellationToken token
     )
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-        timeout.CancelAfter(request.Timing.CallTimeout);
+        using var deadline = new CancellationTokenSource(request.Timing.CallTimeout, _time);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token);
         try
         {
             var result = await action(timeout.Token).WaitAsync(timeout.Token);

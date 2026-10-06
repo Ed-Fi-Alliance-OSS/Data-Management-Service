@@ -26,6 +26,10 @@ public sealed class Given_Postgresql_DescriptorRuntime : PostgresqlApiIntegratio
         DescriptorRuntimeScenario.It_updates_descriptor_non_identity_fields_and_advances_metadata(Harness);
 
     [Test]
+    public Task It_ignores_a_wildcard_if_none_match_on_a_descriptor_put() =>
+        DescriptorRuntimeScenario.It_ignores_a_wildcard_if_none_match_on_a_descriptor_put(Harness);
+
+    [Test]
     public Task It_preserves_metadata_for_unchanged_descriptor_put() =>
         DescriptorRuntimeScenario.It_preserves_metadata_for_unchanged_descriptor_put(Harness);
 

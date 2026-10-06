@@ -54,6 +54,7 @@ public class ApiServiceOpenApiTests
             A.Fake<IConfigurationServiceClaimSetProvider>(),
             CreateMemoryCache(),
             new CacheSettings(),
+            TimeProvider.System,
             NullLogger<CachedClaimSetProvider>.Instance
         );
 
@@ -88,7 +89,8 @@ public class ApiServiceOpenApiTests
             cachedClaimSetProvider,
             A.Fake<IResourceDependencyGraphMLFactory>(),
             profileService ?? A.Fake<IProfileService>(),
-            new CircuitBreakerSettings()
+            new CircuitBreakerSettings(),
+            TestHelper.CreateNoOpIdentityTenantSnapshot()
         );
     }
 

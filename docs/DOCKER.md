@@ -81,7 +81,8 @@ The Ed-Fi API supports two identity provider modes: **keycloak** and **self-cont
 ```none
 # keycloak
 KEYCLOAK_OAUTH_TOKEN_ENDPOINT=http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token
-KEYCLOAK_DMS_JWT_AUTHORITY=http://dms-keycloak:8080/realms/edfi
+KEYCLOAK_DMS_JWT_AUTHORITY=http://localhost:8045/realms/edfi
+KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY=http://dms-keycloak:8080/realms/edfi
 KEYCLOAK_DMS_JWT_METADATA_ADDRESS=http://dms-keycloak:8080/realms/edfi/.well-known/openid-configuration
 
 # Self-contained (OpenIddict)
@@ -104,6 +105,10 @@ The selected identity provider will determine the values for the following param
 
 These will be replaced with the corresponding keycloak or self-contained values based on your choice.
 
+In keycloak mode the two authorities differ. `DMS_JWT_AUTHORITY` is Keycloak's public issuer, which
+DMS requires to match the `issuer` in the metadata document exactly. `DMS_CONFIG_IDENTITY_AUTHORITY` is
+the in-network URL the Configuration Service calls. Self-contained mode uses one value for both.
+
 > **Note:**
 > Advanced identity provider configuration can also be set directly in the `appsettings.json` files for each service (`src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.json` and `src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/appsettings.json`).
 > For most deployments, environment variables and the setup script are sufficient, but for custom scenarios you may edit these files directly.
@@ -113,7 +118,7 @@ These will be replaced with the corresponding keycloak or self-contained values 
 | Parameter                          | Description                                                      | Example (Keycloak)                                   | Example (Self-contained)                      |
 |------------------------------------|------------------------------------------------------------------|------------------------------------------------------|-----------------------------------------------|
 | `IdentityProvider`                 | Selects the identity provider                                    | `keycloak`                                           | `self-contained`                              |
-| `Authority`                        | URL of the identity provider's authority (issuer)                | `http://dms-keycloak:8080/realms/edfi`              | `http://ed-fi-api-config:8081`              |
+| `Authority`                        | Identity provider issuer. In self-contained mode, also the base URL for every advertised discovery endpoint: omit `AppSettings:PathBase` from this value, and keep DMS `JwtAuthentication:MetadataAddress` on the same origin (scheme, host, and port). DMS `JwtAuthentication:Authority` must exactly match the issuer. | `http://dms-keycloak:8080/realms/edfi` | `http://ed-fi-api-config:8081` |
 | `EncryptionKey`                    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
 | `TokenCleanupEnabled`              | Enables the expired-token cleanup sweep (self-contained only)    | _(not used)_                                         | `true`                                        |
 | `TokenCleanupIntervalMinutes`      | Minutes between expired-token cleanup sweeps (self-contained only) | _(not used)_                                       | `30`                                          |
@@ -127,7 +132,7 @@ while a refreshed token overlaps the one it replaces.
 
 | Parameter                  | Description                                         | Example (Keycloak)                                   | Example (Self-contained)                      |
 |---------------------------|-----------------------------------------------------|------------------------------------------------------|-----------------------------------------------|
-| `Authority`               | URL of the identity provider's authority (issuer)   | `http://dms-keycloak:8080/realms/edfi`              | `http://ed-fi-api-config:8081`              |
-| `MetadataAddress`         | OpenID Connect metadata endpoint                    | `http://dms-keycloak:8080/realms/edfi/.well-known/openid-configuration` | `http://ed-fi-api-config:8081/.well-known/openid-configuration` |
+| `Authority`               | URL of the identity provider's authority (issuer). It must equal the metadata document's `issuer` exactly | `http://localhost:8045/realms/edfi`              | `http://ed-fi-api-config:8081`              |
+| `MetadataAddress`         | OpenID Connect metadata endpoint. The document's `jwks_uri` must share this address's origin | `http://dms-keycloak:8080/realms/edfi/.well-known/openid-configuration` | `http://ed-fi-api-config:8081/.well-known/openid-configuration` |
 
 Refer to the API service's `appsettings.json` for additional options and defaults.

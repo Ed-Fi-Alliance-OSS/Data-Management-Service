@@ -196,6 +196,13 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
                     new JsonObject { ["oauth2_client_credentials"] = new JsonArray() },
                 };
 
+                // GET /tenancy is anonymous: an empty operation-level security array drops the inherited
+                // global requirement.
+                if (document["paths"]?["/tenancy"]?["get"] is JsonObject tenancyGet)
+                {
+                    tenancyGet["security"] = new JsonArray();
+                }
+
                 context.Response.ContentType = "application/json";
                 await context.Response.WriteAsync(
                     document.ToJsonString(new JsonSerializerOptions { WriteIndented = true })

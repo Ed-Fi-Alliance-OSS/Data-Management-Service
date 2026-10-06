@@ -16,9 +16,8 @@
 @adminSecret = REPLACE_WITH_BOOTSTRAP_ADMIN_SECRET
 
 ### Discovery (no auth)
-# NOTE: do NOT follow urls.oauth from this response -- for /mt-dms the DMS wrongly appends
-# /{tenant}/{schoolYear} to the token URL (docs/infrastructure.md issue 11). Use the token
-# request below instead.
+# urls.oauth in this response is the DMS token proxy (/mt-dms/{tenant}/{schoolYear}/oauth/token);
+# the token request below goes to the same Keycloak realm directly.
 GET {{base}}/mt-dms
 
 ### DMS app token -- shared Keycloak realm

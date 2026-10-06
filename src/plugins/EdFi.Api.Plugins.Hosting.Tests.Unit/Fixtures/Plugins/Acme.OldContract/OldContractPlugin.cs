@@ -10,12 +10,13 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Acme.OldContract;
 
 /// <summary>
-/// An ordinary plugin, written against contract 1.0.0 and knowing nothing of any later version.
+/// An ordinary plugin, written against contract 1.1.0 and knowing nothing of any later version.
 /// </summary>
 /// <remarks>
-/// It overrides the one hook 1.0.0 declares. On a 1.1.0 host that override still has to run, which is
-/// the compatibility direction the upgrade story needs, and the marker it registers is how the runner
-/// reports that the hook really ran rather than merely resolved.
+/// It overrides only <c>ContributeServices</c> and leaves <c>ContributeConfiguration</c> to its no-op
+/// base. On a 1.2.0 host that override still has to run, which is the compatibility direction the
+/// upgrade story needs, and the marker it registers is how the runner reports that the hook really ran
+/// rather than merely resolved.
 /// </remarks>
 public sealed class OldContractPlugin : EdFiApiPlugin
 {

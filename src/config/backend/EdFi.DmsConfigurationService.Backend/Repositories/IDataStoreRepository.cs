@@ -24,6 +24,11 @@ public record DataStoreInsertResult
 {
     public record Success(int Id) : DataStoreInsertResult();
 
+    /// <summary>
+    /// Another data store in the caller's tenant already has this name; nothing was written
+    /// </summary>
+    public record FailureDuplicateName() : DataStoreInsertResult();
+
     public record FailureUnknown(string FailureMessage) : DataStoreInsertResult();
 }
 
@@ -48,6 +53,11 @@ public record DataStoreUpdateResult
     public record Success() : DataStoreUpdateResult();
 
     public record FailureNotExists() : DataStoreUpdateResult();
+
+    /// <summary>
+    /// Another data store in the caller's tenant already has this name; nothing was written
+    /// </summary>
+    public record FailureDuplicateName() : DataStoreUpdateResult();
 
     public record FailureUnknown(string FailureMessage) : DataStoreUpdateResult();
 }

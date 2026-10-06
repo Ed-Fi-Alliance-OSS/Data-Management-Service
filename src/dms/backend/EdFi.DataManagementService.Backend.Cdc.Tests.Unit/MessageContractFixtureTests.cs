@@ -12,6 +12,9 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 
 [TestFixture]
 [Category("CdcMessageContract")]
+[Property("CdcInvariant", "CDC-INV-02")]
+[Property("CdcInvariant", "CDC-INV-07")]
+[Property("CdcInvariant", "CDC-INV-08")]
 public class Given_MessageContractFixtureCatalog
 {
     private IReadOnlyList<MessageContractFixture> _fixtures = [];
@@ -279,6 +282,9 @@ public class Given_MessageContractFixtureCatalog
 
 [TestFixture]
 [Category("CdcMessageContract")]
+[Property("CdcInvariant", "CDC-INV-02")]
+[Property("CdcInvariant", "CDC-INV-07")]
+[Property("CdcInvariant", "CDC-INV-08")]
 public class Given_MessageContractFixtureExactJson
 {
     [TestCase("{}", "{\"x\":null}", false)]
@@ -309,6 +315,9 @@ public class Given_MessageContractFixtureExactJson
 
 [TestFixture]
 [Category("CdcMessageContract")]
+[Property("CdcInvariant", "CDC-INV-02")]
+[Property("CdcInvariant", "CDC-INV-07")]
+[Property("CdcInvariant", "CDC-INV-08")]
 public class Given_MessageContractFixtureValidation
 {
     [TestCase("{\"type\":\"INT64\",\"optional\":false}", "\"42\"")]
@@ -362,6 +371,9 @@ public class Given_MessageContractFixtureValidation
 
 [TestFixture]
 [Category("CdcMessageContract")]
+[Property("CdcInvariant", "CDC-INV-02")]
+[Property("CdcInvariant", "CDC-INV-07")]
+[Property("CdcInvariant", "CDC-INV-08")]
 public class Given_MessageContractFixtureArtifactFiles
 {
     private string _directory = "";

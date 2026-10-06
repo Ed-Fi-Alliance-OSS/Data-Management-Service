@@ -72,6 +72,8 @@ public abstract class DatabaseTestBase
                     new("dmscs", "openiddictclientrole"),
                     new("dmscs", "openiddicttoken"),
                     new("dmscs", "openiddictkey"),
+                    new("dmscs", "job"),
+                    new("dmscs", "jobschedule"),
                 ],
                 DbAdapter = DbAdapter.SqlServer,
             }

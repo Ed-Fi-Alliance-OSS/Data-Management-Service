@@ -61,7 +61,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
         public string EncryptionKey { get; set; } = string.Empty;
 
         /// <summary>
-        /// Maximum size of key format cache.
+        /// Formerly the maximum size of the key format cache. No longer read: the cache was removed (DMS-1556, Q7) and
+        /// key formats are detected on every load. The setting still binds, so existing configuration keeps working.
         /// </summary>
         public int KeyFormatCacheSize { get; set; } = 100;
 
@@ -69,8 +70,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
         /// Number of PBKDF2 iterations for client secret hashing.
         /// Higher values increase security but also increase computation time.
         /// Recommended minimum: 100,000 for SHA-256.
+        /// Bound from <c>IdentitySettings:ClientSecretHashingIterations</c>. The count is not stored
+        /// with the hash, so changing it invalidates every client secret hashed at the old count.
         /// </summary>
-        public int HashingIterations { get; set; } = 210000;
+        public int ClientSecretHashingIterations { get; set; } = 210000;
 
         /// <summary>
         /// Whether the background sweep that deletes expired OpenIddict tokens runs.
@@ -92,5 +95,29 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
         /// no tokens, so the setting is inert there.
         /// </summary>
         public int BearerTokenPerClientLimit { get; set; } = 5;
+
+        /// <summary>
+        /// Seconds between scheduled reloads of the signing-key snapshot. Bounds how long a
+        /// healthy instance takes to see a key-table change without request-driven refresh.
+        /// </summary>
+        public int SigningKeyRefreshIntervalSeconds { get; set; } = 300;
+
+        /// <summary>
+        /// Seconds after the last successful key retrieval beyond which the snapshot is no longer
+        /// trusted and every authenticated request fails closed. Bounds how long a key retired
+        /// during a key-store outage can still be accepted.
+        /// </summary>
+        public int SigningKeyMaxStalenessSeconds { get; set; } = 3600;
+
+        /// <summary>
+        /// Minimum seconds between the end of one completed key load and an unknown-kid refresh,
+        /// shared by all requests, so tokens carrying arbitrary key ids cannot drive key-store load.
+        /// </summary>
+        public int SigningKeyUnknownKeyRefreshCooldownSeconds { get; set; } = 30;
+
+        /// <summary>
+        /// Seconds a single signing-key load may run before it is canceled and counted as failed.
+        /// </summary>
+        public int SigningKeyLoadTimeoutSeconds { get; set; } = 10;
     }
 }

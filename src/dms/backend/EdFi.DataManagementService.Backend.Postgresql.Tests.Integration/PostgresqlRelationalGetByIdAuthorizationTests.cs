@@ -49,8 +49,8 @@ public class Given_A_Postgresql_Relational_Get_By_Id_Authorization_With_A_Synthe
     ];
 
     /// <summary>
-    /// OwnershipBased is enforced for GET-by-id and withheld everywhere else, so this composition plans
-    /// rather than returning the known-but-not-enabled 501 that the write and query routes still return.
+    /// OwnershipBased is enforced for GET-by-id, so this composition plans the ownership check beside the
+    /// relationship strategy rather than returning the known-but-not-enabled 501 it once did.
     /// </summary>
     private static readonly IReadOnlyList<string> _normalPlusOwnershipStrategy =
     [

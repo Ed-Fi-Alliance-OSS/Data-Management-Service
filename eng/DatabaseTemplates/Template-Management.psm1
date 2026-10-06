@@ -69,7 +69,6 @@ function Initialize-BulkLoad {
     This function performs the following tasks in sequence:
     - Adds a new client to the DMS configuration.
     - Retrieves an access token for the client.
-    - Adds a vendor entity to the system.
     - Initializes a new application for the vendor using a predefined claim set.
     It returns the application ID, key and secret required for authenticated communication with the DMS API.
 
@@ -85,11 +84,16 @@ function Initialize-BulkLoad {
 .PARAMETER ApplicationName
     The name of the application to create.
 
+.PARAMETER VendorId
+    An existing vendor to create the application under. POST /v3/vendors is create-only, so a
+    caller that creates several applications passes the id of one vendor instead of creating the
+    same company again.
+
 .OUTPUTS
     A hashtable containing the Id, Key and Secret for the initialized DMS application.
 
 .EXAMPLE
-    $secrets = Get-KeySecret -CmsUrl "http://localhost:8081" -CmsToken $token -ClaimSetName "EdfiSandbox"
+    $secrets = Get-KeySecret -CmsUrl "http://localhost:8081" -CmsToken $token -ClaimSetName "EdfiSandbox" -VendorId $vendorId
 #>
 function Get-KeySecret() {
     param (
@@ -109,7 +113,10 @@ function Get-KeySecret() {
         # Education organizations the application is scoped to. When empty, Add-Application applies
         # its own default; pass an explicit set to authorize relationship-scoped resources beyond
         # the default district hierarchy (e.g. the DS 6.1 Educator Preparation Provider orgs).
-        [long[]]$EducationOrganizationIds = @()
+        [long[]]$EducationOrganizationIds = @(),
+
+        [Parameter(Mandatory = $true)]
+        [long]$VendorId
     )
 
     $params = @{
@@ -117,8 +124,7 @@ function Get-KeySecret() {
         AccessToken = $CmsToken
     }
 
-    # Add Vendor
-    $params.VendorId = Add-Vendor @params
+    $params.VendorId = $VendorId
 
     # Add an Application and get Id, Key and Secret
     $params.ClaimSetName = $ClaimSetName
@@ -1500,8 +1506,14 @@ function Build-Template {
             -MssqlPassword $MssqlPassword
     }
 
+    # POST /v3/vendors is create-only, so the bootstrap and sandbox applications share one vendor,
+    # and a re-run against the same Configuration Service reuses it.
+    $vendorCompany = "Demo Vendor"
+    $existingVendor = Find-CmsVendorByCompany -CmsUrl $CmsUrl -Company $vendorCompany -AccessToken $cmsToken
+    $vendorId = $existingVendor ? [long]$existingVendor.id : (Add-Vendor -CmsUrl $CmsUrl -Company $vendorCompany -AccessToken $cmsToken)
+
     # Create Bootstrap application and assign to the data store
-    $bootstrapApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'BootstrapDescriptorsandEdOrgs' -ApplicationName "$ApplicationName Bootstrap" -DataStoreIds @($targetDataStoreId)
+    $bootstrapApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'BootstrapDescriptorsandEdOrgs' -ApplicationName "$ApplicationName Bootstrap" -DataStoreIds @($targetDataStoreId) -VendorId $vendorId
 
     $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $bootstrapApp.Key -Secret $bootstrapApp.Secret
 
@@ -1553,6 +1565,7 @@ function Build-Template {
             ClaimSetName    = 'EdFiSandbox'
             ApplicationName = "$ApplicationName Sandbox"
             DataStoreIds    = @($targetDataStoreId)
+            VendorId        = $vendorId
         }
         if ($sandboxEducationOrganizationIds.Count -gt 0) {
             Write-Host "Scoping sandbox application to $($sandboxEducationOrganizationIds.Count) education organizations from the populated sample data."
