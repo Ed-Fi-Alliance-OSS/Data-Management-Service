@@ -303,6 +303,18 @@ Describe "Register-InstanceE2EFixture registers the canonical suite-owned fixtur
             $route.DistrictContextId | Should -Not -Be $route.SchoolYearContextId
         }
     }
+
+    It "returns the env-file endpoints and the DmsConfigurationService admin credential (DMS-1440)" {
+        Mock Get-EnvValue -ModuleName env-utility { "env-identity-secret" } -ParameterFilter { $Name -eq "DMS_CONFIG_IDENTITY_CLIENT_SECRET" }
+        $script:settings.EnvironmentValues = @{ DMS_HTTP_PORTS = "9080" }
+
+        $fixture = Register-InstanceE2EFixture -InstanceE2ESettings $script:settings
+
+        $fixture.DmsBaseUrl | Should -Be "http://localhost:9080"
+        $fixture.ConfigServiceUrl | Should -Be "http://localhost:8081"
+        $fixture.ConfigAdminClientId | Should -Be "DmsConfigurationService"
+        $fixture.ConfigAdminClientSecret | Should -Be "env-identity-secret"
+    }
 }
 
 Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment state exactly (DMS-1284)" {
@@ -336,6 +348,10 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
             )
             DataStoreIds   = @(201, 202, 203)
             ApplicationIds = @(301, 302)
+            DmsBaseUrl              = "http://localhost:9080"
+            ConfigServiceUrl        = "http://localhost:9081"
+            ConfigAdminClientId     = "DmsConfigurationService"
+            ConfigAdminClientSecret = "admin-secret"
             Routes         = @(
                 [pscustomobject]@{ TenantName = "Tenant_255901"; DistrictId = "255901"; SchoolYear = "2024"; DatabaseOrdinal = 1; DatabaseName = "db1"; DataStoreId = 201; DistrictContextId = 401; SchoolYearContextId = 402 },
                 [pscustomobject]@{ TenantName = "Tenant_255901"; DistrictId = "255901"; SchoolYear = "2025"; DatabaseOrdinal = 2; DatabaseName = "db2"; DataStoreId = 202; DistrictContextId = 403; SchoolYearContextId = 404 },
@@ -352,7 +368,8 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
             "INSTANCE_E2E_FIXTURE_TENANT_1_CLIENT_SECRET", "INSTANCE_E2E_FIXTURE_TENANT_2_NAME",
             "INSTANCE_E2E_FIXTURE_TENANT_2_VENDOR_ID", "INSTANCE_E2E_FIXTURE_TENANT_2_APPLICATION_ID",
             "INSTANCE_E2E_FIXTURE_TENANT_2_CLIENT_KEY", "INSTANCE_E2E_FIXTURE_TENANT_2_CLIENT_SECRET",
-            "INSTANCE_E2E_FIXTURE_DATASTORE_IDS"
+            "INSTANCE_E2E_FIXTURE_DATASTORE_IDS", "INSTANCE_E2E_DMS_BASE_URL", "INSTANCE_E2E_CONFIG_SERVICE_URL",
+            "INSTANCE_E2E_CONFIG_ADMIN_CLIENT_ID", "INSTANCE_E2E_CONFIG_ADMIN_CLIENT_SECRET"
         )
     }
 
@@ -378,6 +395,21 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
         $script:observed.Key1 | Should -Be "key1"
         $script:observed.Secret2 | Should -Be "secret2"
         $script:observed.Stores | Should -Be "201,202,203"
+    }
+
+    It "sets the endpoints and admin credential the DMS projection reader project reads (DMS-1440)" {
+        $script:observedReaderInputs = $null
+        Invoke-WithInstanceE2ETestProcessContext -InstanceE2ESettings $script:settings -Fixture $script:fixture -Action {
+            $script:observedReaderInputs = @(
+                $env:INSTANCE_E2E_DMS_BASE_URL
+                $env:INSTANCE_E2E_CONFIG_SERVICE_URL
+                $env:INSTANCE_E2E_CONFIG_ADMIN_CLIENT_ID
+                $env:INSTANCE_E2E_CONFIG_ADMIN_CLIENT_SECRET
+            )
+        }
+
+        $script:observedReaderInputs | Should -Be @("http://localhost:9080", "http://localhost:9081", "DmsConfigurationService", "admin-secret")
+        (Test-Path Env:INSTANCE_E2E_CONFIG_ADMIN_CLIENT_SECRET) | Should -BeFalse
     }
 
     It "sets the three opaque engine-correct connection strings verbatim for the action" {
@@ -841,5 +873,138 @@ Describe "InstanceE2ETest environment-file wiring (DMS-1284)" {
         # The forward must use the $EnvironmentFile variable (guarded), never a hard-coded env-file
         # literal such as the standard suite's ./.env.e2e default.
         $dispatchText | Should -Not -Match 'EnvironmentFile\s*=\s*"[^"]*\.e2e"'
+    }
+}
+
+Describe "Instance E2E runs the DMS projection reader project once per engine lane (DMS-1440)" {
+    BeforeAll {
+        function Get-BuildScriptFunctionText {
+            param([Parameter(Mandatory)] [string] $ScriptPath, [Parameter(Mandatory)] [string] $FunctionName)
+            $parseErrors = $null
+            $tokens = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
+            $functionAst = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName }, $true) | Select-Object -First 1
+            if ($null -eq $functionAst) { throw "Function '$FunctionName' was not found in '$ScriptPath'." }
+            return $functionAst.Extent.Text
+        }
+
+        $script:buildScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../build-dms.ps1"))
+        foreach ($name in @(
+                "ConvertTo-NormalizedTestFilter",
+                "Test-InstanceE2ERunsDmsProjectionReader",
+                "Assert-DmsProjectionReaderTrxCounters",
+                "RunDmsProjectionReaderE2E",
+                "RunInstanceE2E"
+            )) {
+            . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName $name)))
+        }
+
+        # Stands in for the build-helpers command so it can be mocked.
+        function Invoke-Execute { param([scriptblock] $Command) & $Command }
+
+        function New-Trx {
+            param([string] $Path, [int] $Total, [int] $Passed)
+            Set-Content -LiteralPath $Path -Value (
+                '<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><ResultSummary outcome="Completed">' +
+                "<Counters total=`"$Total`" executed=`"$Total`" passed=`"$Passed`" failed=`"$($Total - $Passed)`" />" +
+                '</ResultSummary></TestRun>'
+            )
+        }
+    }
+
+    Context "selecting the run" {
+        It "runs the reader for a full run and for shard 1, under either category spelling" {
+            Test-InstanceE2ERunsDmsProjectionReader -NormalizedTestFilter "" | Should -BeTrue
+            Test-InstanceE2ERunsDmsProjectionReader -NormalizedTestFilter "Category=instance-management-ci-shard-1" | Should -BeTrue
+            Test-InstanceE2ERunsDmsProjectionReader -NormalizedTestFilter "TestCategory=instance-management-ci-shard-1" | Should -BeTrue
+            Test-InstanceE2ERunsDmsProjectionReader -NormalizedTestFilter (ConvertTo-NormalizedTestFilter -TestFilter "Category=@instance-management-ci-shard-1") | Should -BeTrue
+        }
+
+        It "does not run the reader for shard 2, a shard 1 prefix, or another filter" {
+            Test-InstanceE2ERunsDmsProjectionReader -NormalizedTestFilter "Category=instance-management-ci-shard-2" | Should -BeFalse
+            Test-InstanceE2ERunsDmsProjectionReader -NormalizedTestFilter "Category=instance-management-ci-shard-10" | Should -BeFalse
+            Test-InstanceE2ERunsDmsProjectionReader -NormalizedTestFilter "Category=EducationOrganizationProjection" | Should -BeFalse
+        }
+    }
+
+    Context "the TRX count guard" {
+        It "passes when at least the minimum ran and all passed" {
+            $trx = Join-Path $TestDrive "pass.trx"
+            New-Trx -Path $trx -Total 8 -Passed 8
+            { Assert-DmsProjectionReaderTrxCounters -TrxFile $trx -MinimumTotal 8 } | Should -Not -Throw
+        }
+
+        It "fails when fewer than the minimum ran" {
+            $trx = Join-Path $TestDrive "few.trx"
+            New-Trx -Path $trx -Total 7 -Passed 7
+            { Assert-DmsProjectionReaderTrxCounters -TrxFile $trx -MinimumTotal 8 } | Should -Throw "*ran 7 and passed 7*"
+        }
+
+        It "fails when any test did not pass" {
+            $trx = Join-Path $TestDrive "failed.trx"
+            New-Trx -Path $trx -Total 9 -Passed 8
+            { Assert-DmsProjectionReaderTrxCounters -TrxFile $trx -MinimumTotal 8 } | Should -Throw "*ran 9 and passed 8*"
+        }
+
+        It "fails when the results file is missing" {
+            { Assert-DmsProjectionReaderTrxCounters -TrxFile (Join-Path $TestDrive "absent.trx") -MinimumTotal 8 } |
+                Should -Throw "*wrote no results file*"
+        }
+    }
+
+    Context "running the project" {
+        BeforeEach {
+            $script:executed = [System.Collections.Generic.List[string]]::new()
+            Mock Invoke-Execute { $script:executed.Add($Command.ToString()) }
+            Mock Assert-DmsProjectionReaderTrxCounters { }
+            $script:Configuration = "Release"
+            $script:testResults = $TestDrive
+            $script:solutionRoot = "src/dms"
+            $script:UsePrebuiltOutput = $true
+        }
+
+        It "runs the reader for shard 1, with the engine, before the Reqnroll suite removes the fixture" {
+            Mock RunDmsProjectionReaderE2E { $script:executed.Add("reader") }
+            RunInstanceE2E -TestFilter "Category=@instance-management-ci-shard-1" -DatabaseEngine "mssql"
+
+            Should -Invoke RunDmsProjectionReaderE2E -Times 1 -Exactly -ParameterFilter { $DatabaseEngine -eq "mssql" }
+            $script:executed | Should -HaveCount 2
+            $script:executed[0] | Should -Be "reader"
+            $script:executed[1] | Should -Match "dotnet test @dotNetTestArguments"
+        }
+
+        It "does not run the reader for shard 2" {
+            Mock RunDmsProjectionReaderE2E { }
+            RunInstanceE2E -TestFilter "Category=@instance-management-ci-shard-2" -DatabaseEngine "postgresql"
+
+            Should -Invoke RunDmsProjectionReaderE2E -Times 0 -Exactly
+            Should -Invoke Invoke-Execute -Times 1 -Exactly
+        }
+
+        It "fails the target, without running the Reqnroll suite, when the reader fails" {
+            Mock RunDmsProjectionReaderE2E { throw "reader failed" }
+
+            { RunInstanceE2E -TestFilter "" -DatabaseEngine "postgresql" } | Should -Throw "*reader failed*"
+            Should -Invoke Invoke-Execute -Times 0 -Exactly
+        }
+
+        It "fails the target when the reader's dotnet test exits non-zero" {
+            Mock Invoke-Execute { throw "Error executing command" }
+
+            { RunDmsProjectionReaderE2E -DatabaseEngine "postgresql" } | Should -Throw "*Error executing command*"
+            Should -Invoke Assert-DmsProjectionReaderTrxCounters -Times 0 -Exactly
+        }
+
+        It "builds the reader project instead of reusing prebuilt output, names its TRX by engine, and guards it" {
+            RunDmsProjectionReaderE2E -DatabaseEngine "mssql"
+
+            $script:executed | Should -HaveCount 1
+            $script:executed[0] | Should -Match "dotnet test \`$project"
+            $script:executed[0] | Should -Not -Match "--no-build"
+            $script:executed[0] | Should -Not -Match "--no-restore"
+            Should -Invoke Assert-DmsProjectionReaderTrxCounters -Times 1 -Exactly -ParameterFilter {
+                $MinimumTotal -eq 8 -and $TrxFile -like "*EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.mssql.trx"
+            }
+        }
     }
 }
