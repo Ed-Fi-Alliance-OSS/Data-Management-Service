@@ -782,9 +782,10 @@ therefore a sizing estimate, not a bound. More tokens count when:
 - **A page is answered `401`.** The reader discards that token and requests
   another; the discarded token still counts until it expires.
 - **The token lifetime does not exceed the safety margin.** A token whose
-  `expires_in` is at most `TokenExpirySafetyMarginSeconds` is used for one read
-  and never reused, so every read requests a new token, and frequent reads can
-  reach the limit even with a single replica.
+  `expires_in` is at most `TokenExpirySafetyMarginSeconds` is used for one page
+  request and never reused, so every page requests a new token: a multi-page
+  read requests several, and frequent reads can reach the limit even with a
+  single replica.
 
 Keep `TokenExpirySafetyMarginSeconds` comfortably below the token lifetime (by
 default 60 seconds against the Configuration Service's 30-minute lifetime), and

@@ -199,7 +199,7 @@ The Configuration Service reads the DMS education-organization projection over H
 | MaxItems | Items one read attempt may collect. | `500000` | 1 – 10000000 |
 | MaxResponseBodyBytes | Largest response body read. | `8388608` | At least `PageSize × 2048 + 1024` |
 | MaxWalkRestarts | Restarts from the first page after DMS reports that the projection changed during the read. | `3` | 0 – 10 |
-| TokenExpirySafetyMarginSeconds | How long before its expiry a cached token stops being used. Tokens are cached per tenant and client id, and the lifetime counts from when the token request started; a token whose lifetime does not exceed the margin is used for one read only. | `60` | 0 – 3600 |
+| TokenExpirySafetyMarginSeconds | How long before its expiry a cached token stops being used. Tokens are cached per tenant and client id, and the lifetime counts from when the token request started; a token whose lifetime does not exceed the margin is used for one page request only, so a multi-page read then requests a token per page. | `60` | 0 – 3600 |
 | DiscoveryCacheSeconds | How long a tenant's Discovery document is cached. `0` reads Discovery for every read. A failed Discovery read is never cached. | `300` | 0 – 86400 |
 
 At least one credential pair, shared or per tenant, is required when `DmsBaseUrl` is set. A shared pair with both values empty counts as absent, so an environment template that sets both to empty strings is accepted.
