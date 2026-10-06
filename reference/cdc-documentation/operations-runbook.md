@@ -1174,6 +1174,24 @@ handoff below. A partial record-size rollout remains not ready and belongs to
 The same `1`/`2`/`130` failure conventions described above apply. Native recovery can
 publish before revalidation; a later healthy result cannot certify the unsampled interval.
 
+For SQL Server, an offset below the retained minimum means `Lost`. An offset above the
+sampled maximum means `Unknown`: the range was sampled before the Connect offset and may
+have advanced. This result alone proves neither continuity nor terminal loss.
+
+The controller refreshes SQL Server range evidence only for `Unknown` with the
+`ProviderHistoryUnknown` diagnostic at `$.providerHistory.retainedRangeEnd`. Established
+validation requires an observed offset and samples at most three provider/offset pairs
+in total. Initial writer admission repeats its admission pass until evidence is conclusive
+or its existing deadline expires. Both paths wait the configured poll interval before
+refreshing, read the provider range before a fresh Connect offset, and retain the original
+operation deadline. Unrelated `Unknown` results do not trigger this range refresh.
+
+If evidence remains unknown, retain the diagnostics and keep admission/readiness withheld;
+do not reset offsets or recreate capture instances to force acceptance. A later complete
+affirmative observation is required. Above-range `Unknown` is not permission to resume CDC
+on a clone or restored database; follow the
+[physical-source replacement restriction](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral).
+
 <a id="unsupported-provenance"></a>
 
 ## Missing provenance and source mismatch
