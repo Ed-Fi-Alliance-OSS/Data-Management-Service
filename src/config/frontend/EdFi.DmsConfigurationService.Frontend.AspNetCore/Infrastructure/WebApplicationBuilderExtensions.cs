@@ -17,6 +17,7 @@ using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Mssql;
 using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using EdFi.DmsConfigurationService.Backend.Postgresql;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
@@ -398,59 +399,19 @@ public static class WebApplicationBuilderExtensions
                                 logger.Error("Authentication failed: {Message}", context.Exception.Message);
                                 return Task.CompletedTask;
                             },
-                            OnTokenValidated = async context =>
-                            {
-                                var tokenManager =
-                                    context.HttpContext.RequestServices.GetService<ITokenManager>();
-                                if (tokenManager != null)
-                                {
-                                    // Extract the raw token from the Authorization header
-                                    var authHeader = context.Request.Headers["Authorization"].ToString();
-                                    var rawToken = authHeader.StartsWith(
-                                        "Bearer ",
-                                        StringComparison.OrdinalIgnoreCase
-                                    )
-                                        ? authHeader.Substring("Bearer ".Length).Trim()
-                                        : authHeader.Trim();
-                                    var isValid = await tokenManager.ValidateTokenAsync(rawToken);
-                                    if (!isValid)
-                                    {
-                                        context.Fail("Token has been revoked or is invalid.");
-                                    }
-                                }
-                            },
                         };
                     }
                 );
 
-            // Configure dynamic key resolution using IssuerSigningKeyResolver
+            // Validation keys come from the shared signing-key snapshot through its configuration manager, and the
+            // shared request boundary classifies dependency failures as 503 (spec D-2, D-3, step 3.1). The token-status
+            // check runs in the shared token-validated handler. Authority and MetadataAddress above stay set but are
+            // inert: with a manager supplied, nothing fetches discovery or JWKS over HTTP (C-2).
             webApplicationBuilder
                 .Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
-                .Configure<ITokenManager>(
-                    (options, tokenManager) =>
-                    {
-                        options.TokenValidationParameters.IssuerSigningKeyResolver = (
-                            token,
-                            securityToken,
-                            kid,
-                            validationParameters
-                        ) =>
-                        {
-                            // This resolver will be called when a token needs to be validated
-                            // Using ConfigureAwait(false) to avoid deadlocks in the sync context
-                            var keysTask = tokenManager.GetPublicKeysAsync();
-                            var publicKeysList = keysTask.ConfigureAwait(false).GetAwaiter().GetResult();
-
-                            return publicKeysList.Select(rsaParams =>
-                            {
-                                var key = new RsaSecurityKey(rsaParams.RsaParameters)
-                                {
-                                    KeyId = rsaParams.KeyId,
-                                };
-                                return (SecurityKey)key;
-                            });
-                        };
-                    }
+                .Configure<SigningKeyConfigurationManager, SigningKeyBearerEvents>(
+                    (options, configurationManager, bearerEvents) =>
+                        options.UseSigningKeySnapshot(configurationManager, bearerEvents)
                 );
 
             // Add authorization services for OpenIddict (same as Keycloak)

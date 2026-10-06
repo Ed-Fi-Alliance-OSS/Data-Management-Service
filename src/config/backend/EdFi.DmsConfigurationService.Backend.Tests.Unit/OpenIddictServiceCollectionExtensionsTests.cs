@@ -3,15 +3,23 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
+using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.SigningKeys;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 
@@ -31,12 +39,17 @@ public class OpenIddictServiceCollectionExtensionsTests
 {
     private static IdentityOptions BindIdentityOptions(Dictionary<string, string?> settings)
     {
+        return BuildProvider(settings).GetRequiredService<IOptions<IdentityOptions>>().Value;
+    }
+
+    private static ServiceProvider BuildProvider(Dictionary<string, string?> settings)
+    {
         IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
 
         ServiceCollection services = new();
         services.AddOpenIddictIdentityOptions(configuration);
 
-        return services.BuildServiceProvider().GetRequiredService<IOptions<IdentityOptions>>().Value;
+        return services.BuildServiceProvider();
     }
 
     /// <summary>
@@ -127,6 +140,390 @@ public class OpenIddictServiceCollectionExtensionsTests
         [Test]
         public void It_binds_the_negative_value_unchanged() =>
             _options.BearerTokenPerClientLimit.Should().Be(-1);
+    }
+
+    [TestFixture]
+    public class Given_no_signing_key_settings_are_configured
+    {
+        private IdentityOptions _options = null!;
+
+        [SetUp]
+        public void Setup() => _options = BindIdentityOptions([]);
+
+        [Test]
+        public void It_defaults_the_refresh_interval_to_300_seconds() =>
+            _options.SigningKeyRefreshIntervalSeconds.Should().Be(300);
+
+        [Test]
+        public void It_defaults_the_max_staleness_to_3600_seconds() =>
+            _options.SigningKeyMaxStalenessSeconds.Should().Be(3600);
+
+        [Test]
+        public void It_defaults_the_unknown_key_cooldown_to_30_seconds() =>
+            _options.SigningKeyUnknownKeyRefreshCooldownSeconds.Should().Be(30);
+
+        [Test]
+        public void It_defaults_the_load_timeout_to_10_seconds() =>
+            _options.SigningKeyLoadTimeoutSeconds.Should().Be(10);
+    }
+
+    [TestFixture]
+    public class Given_signing_key_settings_are_configured
+    {
+        private IdentityOptions _options = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _options = BindIdentityOptions(
+                new Dictionary<string, string?>
+                {
+                    ["IdentitySettings:SigningKeyRefreshIntervalSeconds"] = "120",
+                    ["IdentitySettings:SigningKeyMaxStalenessSeconds"] = "900",
+                    ["IdentitySettings:SigningKeyUnknownKeyRefreshCooldownSeconds"] = "15",
+                    ["IdentitySettings:SigningKeyLoadTimeoutSeconds"] = "5",
+                }
+            );
+
+        // Each value differs from its default, so a misspelled key would come back as the default and fail here.
+        [Test]
+        public void It_binds_the_refresh_interval() =>
+            _options.SigningKeyRefreshIntervalSeconds.Should().Be(120);
+
+        [Test]
+        public void It_binds_the_max_staleness() => _options.SigningKeyMaxStalenessSeconds.Should().Be(900);
+
+        [Test]
+        public void It_binds_the_unknown_key_cooldown() =>
+            _options.SigningKeyUnknownKeyRefreshCooldownSeconds.Should().Be(15);
+
+        [Test]
+        public void It_binds_the_load_timeout() => _options.SigningKeyLoadTimeoutSeconds.Should().Be(5);
+    }
+
+    [TestFixture]
+    public class Given_an_invalid_signing_key_setting
+    {
+        private ServiceProvider _provider = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _provider = BuildProvider(
+                new Dictionary<string, string?> { ["IdentitySettings:SigningKeyLoadTimeoutSeconds"] = "0" }
+            );
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        // The host runs IStartupValidator before it starts serving, so the options are rejected at startup rather
+        // than on the first authenticated request.
+        [Test]
+        public void It_fails_startup_validation()
+        {
+            Action validate = () => _provider.GetRequiredService<IStartupValidator>().Validate();
+
+            validate
+                .Should()
+                .Throw<OptionsValidationException>()
+                .Which.Failures.Should()
+                .Equal("IdentitySettings:SigningKeyLoadTimeoutSeconds must be between 1 and 60; it is 0.");
+        }
+    }
+
+    [TestFixture]
+    public class Given_the_options_are_registered_twice
+    {
+        private ServiceProvider _provider = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            IConfiguration configuration = new ConfigurationBuilder().Build();
+            ServiceCollection services = new();
+            services.AddOpenIddictIdentityOptions(configuration);
+            services.AddOpenIddictIdentityOptions(configuration);
+            _provider = services.BuildServiceProvider();
+        }
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        [Test]
+        public void It_registers_the_signing_key_validator_once() =>
+            _provider
+                .GetServices<IValidateOptions<IdentityOptions>>()
+                .OfType<SigningKeyOptionsValidator>()
+                .Should()
+                .ContainSingle();
+    }
+
+    /// <summary>
+    /// The options, logging, a faked key repository, and the signing-key services registered
+    /// <paramref name="registrations"/> times.
+    /// </summary>
+    private static ServiceProvider BuildSigningKeyProvider(
+        IOpenIddictTokenRepository repository,
+        Dictionary<string, string?>? settings = null,
+        int registrations = 1,
+        Action<IServiceCollection>? before = null
+    )
+    {
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(settings ?? [])
+            .Build();
+        ServiceCollection services = new();
+        before?.Invoke(services);
+        services.AddOpenIddictIdentityOptions(configuration);
+        services.AddLogging();
+        services.AddSingleton(repository);
+        for (int registration = 0; registration < registrations; registration++)
+        {
+            services.AddSigningKeyServices();
+        }
+
+        return services.BuildServiceProvider();
+    }
+
+    // Step 2.1: registering twice still yields one provider and one refresh service, and that service refreshes the
+    // provider every consumer resolves.
+    [TestFixture]
+    public class Given_the_signing_key_services_are_registered_twice
+    {
+        private ServiceProvider _provider = null!;
+        private IReadOnlyList<IHostedService> _refreshServices = [];
+        private ISigningKeySnapshotProvider _first = null!;
+        private ISigningKeySnapshotProvider _second = null!;
+        private SigningKeySnapshot? _loadedByTheService;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            KeyRepositoryHarness harness = new(TimeProvider.System);
+            harness.ReturnsKeys("key-1");
+            _provider = BuildSigningKeyProvider(harness.Repository, registrations: 2);
+
+            _refreshServices =
+            [
+                .. _provider.GetServices<IHostedService>().OfType<SigningKeyRefreshService>(),
+            ];
+            _first = _provider.GetRequiredService<ISigningKeySnapshotProvider>();
+            _second = _provider.GetRequiredService<ISigningKeySnapshotProvider>();
+
+            foreach (IHostedService service in _refreshServices)
+            {
+                await service.StartAsync(CancellationToken.None);
+            }
+
+            await SigningKeyTestSupport.WaitUntilAsync(
+                () => _first.Current is not null,
+                () => "The refresh service did not load into the shared provider."
+            );
+            _loadedByTheService = _first.Current;
+
+            foreach (IHostedService service in _refreshServices)
+            {
+                await service.StopAsync(CancellationToken.None);
+            }
+        }
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        [Test]
+        public void It_registers_one_refresh_service() => _refreshServices.Should().ContainSingle();
+
+        [Test]
+        public void It_registers_one_provider_descriptor() =>
+            _provider.GetServices<ISigningKeySnapshotProvider>().Should().ContainSingle();
+
+        [Test]
+        public void It_shares_one_provider_instance() => _second.Should().BeSameAs(_first);
+
+        [Test]
+        public void It_refreshes_the_shared_provider() =>
+            _loadedByTheService!.ContainsKeyId("key-1").Should().BeTrue();
+    }
+
+    [TestFixture]
+    public class Given_database_signing_keys
+    {
+        private ServiceProvider _provider = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _provider = BuildSigningKeyProvider(new KeyRepositoryHarness(TimeProvider.System).Repository);
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        [Test]
+        public void It_selects_the_database_source() =>
+            _provider.GetRequiredService<ISigningKeySource>().Should().BeOfType<DatabaseSigningKeySource>();
+
+        [Test]
+        public void It_uses_the_system_clock() =>
+            _provider.GetRequiredService<TimeProvider>().Should().BeSameAs(TimeProvider.System);
+    }
+
+    [TestFixture]
+    public class Given_certificate_signing_keys
+    {
+        private ServiceProvider _provider = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _provider = BuildSigningKeyProvider(
+                new KeyRepositoryHarness(TimeProvider.System).Repository,
+                new Dictionary<string, string?> { ["IdentitySettings:UseCertificates"] = "true" }
+            );
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        [Test]
+        public void It_selects_the_certificate_source() =>
+            _provider
+                .GetRequiredService<ISigningKeySource>()
+                .Should()
+                .BeOfType<CertificateSigningKeySource>();
+
+        [Test]
+        public void It_registers_one_development_certificate_store() =>
+            _provider
+                .GetRequiredService<DevelopmentCertificateStore>()
+                .Should()
+                .BeSameAs(_provider.GetRequiredService<DevelopmentCertificateStore>());
+    }
+
+    [TestFixture]
+    public class Given_a_time_provider_registered_first
+    {
+        private ServiceProvider _provider = null!;
+        private FakeTimeProvider _time = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _time = new FakeTimeProvider();
+            _provider = BuildSigningKeyProvider(
+                new KeyRepositoryHarness(TimeProvider.System).Repository,
+                before: services => services.AddSingleton<TimeProvider>(_time)
+            );
+        }
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        [Test]
+        public void It_keeps_the_registered_clock() =>
+            _provider.GetRequiredService<TimeProvider>().Should().BeSameAs(_time);
+    }
+
+    // Step 2.3: the configuration manager and the shared bearer events are one singleton each, however often the
+    // signing-key services are registered.
+    [TestFixture]
+    public class Given_the_request_boundary_services_are_registered_twice
+    {
+        private ServiceProvider _provider = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _provider = BuildSigningKeyProvider(
+                new KeyRepositoryHarness(TimeProvider.System).Repository,
+                registrations: 2,
+                before: services => services.AddSingleton(A.Fake<ITokenManager>())
+            );
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        [Test]
+        public void It_registers_one_configuration_manager() =>
+            _provider.GetServices<SigningKeyConfigurationManager>().Should().ContainSingle();
+
+        [Test]
+        public void It_shares_one_configuration_manager_instance() =>
+            _provider
+                .GetRequiredService<SigningKeyConfigurationManager>()
+                .Should()
+                .BeSameAs(_provider.GetRequiredService<SigningKeyConfigurationManager>());
+
+        [Test]
+        public void It_registers_one_bearer_events() =>
+            _provider.GetServices<SigningKeyBearerEvents>().Should().ContainSingle();
+
+        [Test]
+        public void It_shares_one_bearer_events_instance() =>
+            _provider
+                .GetRequiredService<SigningKeyBearerEvents>()
+                .Should()
+                .BeSameAs(_provider.GetRequiredService<SigningKeyBearerEvents>());
+    }
+
+    // Each self-contained store registration adds the signing-key services, once however often it is called.
+    [TestFixture("postgresql")]
+    [TestFixture("postgresql-jwt-settings")]
+    [TestFixture("mssql")]
+    public class Given_a_self_contained_store_registration_called_twice(string registration)
+    {
+        private ServiceCollection _services = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(
+                    new Dictionary<string, string?>
+                    {
+                        ["IdentitySettings:Authority"] = "http://localhost",
+                        ["IdentitySettings:Audience"] = "account",
+                    }
+                )
+                .Build();
+            _services = [];
+            for (int call = 0; call < 2; call++)
+            {
+                _ = registration switch
+                {
+                    "postgresql" => _services.AddPostgresOpenIddictStores(configuration, "http://localhost"),
+                    "postgresql-jwt-settings" => _services.AddPostgresOpenIddictStores(
+                        configuration,
+                        "http://localhost",
+                        new JwtSettings { Issuer = "http://localhost", Audience = "account" }
+                    ),
+                    _ => _services.AddMssqlOpenIddictStores(configuration, "http://localhost"),
+                };
+            }
+        }
+
+        private int Count(Type serviceType, Type? implementationType = null) =>
+            _services.Count(descriptor =>
+                descriptor.ServiceType == serviceType
+                && (implementationType is null || descriptor.ImplementationType == implementationType)
+            );
+
+        [Test]
+        public void It_registers_one_provider() => Count(typeof(ISigningKeySnapshotProvider)).Should().Be(1);
+
+        [Test]
+        public void It_registers_one_refresh_service() =>
+            Count(typeof(IHostedService), typeof(SigningKeyRefreshService)).Should().Be(1);
+
+        [Test]
+        public void It_registers_one_source() => Count(typeof(ISigningKeySource)).Should().Be(1);
+
+        [Test]
+        public void It_registers_one_development_certificate_store() =>
+            Count(typeof(DevelopmentCertificateStore)).Should().Be(1);
+
+        [Test]
+        public void It_registers_one_clock() => Count(typeof(TimeProvider)).Should().Be(1);
+
+        [Test]
+        public void It_registers_one_configuration_manager() =>
+            Count(typeof(SigningKeyConfigurationManager)).Should().Be(1);
+
+        [Test]
+        public void It_registers_one_bearer_events() => Count(typeof(SigningKeyBearerEvents)).Should().Be(1);
     }
 
     [TestFixture]

@@ -927,6 +927,74 @@ Configuration Service outage.
 > configured count. Raising (or lowering) the value makes every client secret hashed at the old
 > count fail verification; the remedy is to re-issue those client secrets.
 
+### Signing-key settings (Configuration Service, self-contained only)
+
+In `self-contained` mode the Configuration Service keeps the public signing keys it validates
+tokens with in an in-memory snapshot, shared by every request. The snapshot is loaded at startup
+and reloaded in the background. In steady state a request does not read the key table. A load
+runs on a request's behalf in these cases only:
+
+- **No snapshot, or an expired one.** The request starts a load, or joins the one already
+  running, and waits for it. The load is bounded by `SigningKeyLoadTimeoutSeconds`. The request
+  is refused at once, without a key read, during a retry backoff and while a load that outlived
+  its deadline is still finishing.
+- **An overdue snapshot.** The request is served from it and starts a background load. It does
+  not wait for that load.
+- **An unknown key id.** The token's key id is not in the snapshot. The request may start a
+  load, subject to the cooldown and backoff, or join one already running, and waits for it.
+
+These settings control
+the snapshot. They are `IdentitySettings` keys, set in the environment as, for example,
+`IdentitySettings__SigningKeyRefreshIntervalSeconds`. The provided Docker Compose files do not map
+them, so the defaults apply unless you add them.
+
+| Parameter | Default | Accepted values | Meaning |
+| --- | --- | --- | --- |
+| `IdentitySettings.SigningKeyRefreshIntervalSeconds` | `300` | 30–43,200 | Time between scheduled reloads. Each reload is due when the snapshot's age reaches this interval ±10 %. Bounds how long a healthy instance takes to see a key-table change. |
+| `IdentitySettings.SigningKeyMaxStalenessSeconds` | `3600` | from 2 × the refresh interval to 86,400 | How long after its last successful load a snapshot can still be used while reloads fail. After that, every authenticated request answers 503. Also bounds how long a key retired during a key-store outage can still be accepted. The snapshot's age is the larger of its wall-clock age and the elapsed (monotonic) time, so setting the system clock back does not extend this bound. |
+| `IdentitySettings.SigningKeyUnknownKeyRefreshCooldownSeconds` | `30` | 1–3,600 | Minimum elapsed time after the last completed load before a token with an unknown key id may trigger a reload. It is measured on the monotonic clock, so a system clock change neither shortens nor extends it. It applies to the whole instance, not to each caller, and protects the key store's database from reads driven by made-up key ids. One exception per instance: when the first successful load finds no key, one reload may start inside the cooldown, so a fresh store's first key, inserted after startup, is accepted promptly. |
+| `IdentitySettings.SigningKeyLoadTimeoutSeconds` | `10` | 1–60, and less than the refresh interval | How long one load may run before it is canceled and counted as failed. |
+| `IdentitySettings.KeyFormatCacheSize` | `100` | any | **Ignored.** The key-format cache it sized was removed. The setting still binds, so existing configuration keeps working, but it has no effect. |
+
+The Configuration Service checks these values at startup and refuses to start when one is out of
+range. It reports every failing rule, and each message names the `IdentitySettings:` key, its
+accepted range, and the configured value. The check runs only in `self-contained` mode.
+Keycloak mode registers none of these components, so there the settings are neither validated
+nor used.
+
+The defaults were not changed by the work that introduced the snapshot (DMS-1556). The rules
+that relate settings to each other are policy:
+
+- A maximum staleness of at least twice the refresh interval lets a snapshot survive one failed
+  scheduled reload while retries run. It does not guarantee that an instance stays available
+  through a longer outage.
+- A load timeout shorter than the refresh interval keeps each load well inside one interval.
+  Overlapping loads are already prevented: an instance runs one load at a time.
+
+[Signing keys in self-contained mode](../reference/design/configuration-service/CS-AUTH.md#signing-keys-in-self-contained-mode)
+describes refresh, backoff, staleness, key rotation and retirement, and which failures answer
+401 or 503. These settings bound each Configuration Service instance's own snapshot only.
+DMS and other JWKS consumers keep their own cached key set, and a consumer drops a retired
+key only after it successfully re-fetches JWKS or is restarted. Before you rely on a key
+change, follow
+[Rotating and retiring a database signing key](../reference/design/configuration-service/CS-AUTH.md#rotating-and-retiring-a-database-signing-key):
+it covers verifying the change on every instance and refreshing each consumer.
+
+> [!NOTE]
+> **Connection capacity.** The snapshot removes key reads from the steady-state request path
+> (the exceptions are listed above). Bearer authentication and introspection still read the
+> status of every token that passes verification with a valid `jti` from the database,
+> uncached. Most endpoints then read their own data, so request concurrency still drives
+> database connections. In local
+> stress testing (256 requests at 128 concurrent), the Configuration Service's default Npgsql
+> `Max Pool Size` (100) equalled PostgreSQL's `max_connections` (100) on a server that DMS also
+> used. Some requests were then refused by PostgreSQL with `53300: sorry, too many clients
+> already`. They answered 503 at authentication (token-status store) or 500 afterwards. The
+> catalog-shaped workloads that motivated the change (87 concurrent profile reads) were not
+> affected. No pool size, `max_connections` or concurrency default was changed. This is a
+> connection-capacity limitation, separate from signing keys. When you size a deployment,
+> account for every client that shares the database server's connection limit.
+
 ### JwtAuthentication parameters in `appsettings.json` (DMS API Service)
 
 | Parameter         | Description                                         | Example (Keycloak)                                   | Example (Self-contained)                      |

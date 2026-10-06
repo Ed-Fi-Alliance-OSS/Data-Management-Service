@@ -533,11 +533,35 @@ UPDATE dmscs.OpenIddictApplication
         public async Task<string?> GetTokenStatusAsync(Guid tokenId)
         {
             await using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync();
+            await OpenForTokenStatusAsync(connection);
             return await connection.QuerySingleOrDefaultAsync<string>(
                 "SELECT Status FROM dmscs.OpenIddictToken WHERE Id = @Id",
                 new { Id = tokenId }
             );
+        }
+
+        /// <summary>
+        /// Opens the connection for the per-request token-status read. SqlClient reports a pooled-open timeout (every
+        /// pooled connection stayed leased for the whole connect timeout) as an <see cref="InvalidOperationException"/>,
+        /// not a <see cref="SqlException"/>, so the token manager's store-failure filter would miss it and answer the
+        /// request as an invalid token. Only this open is translated: on a new connection it is the pool, or an unusable
+        /// connection string, that fails, and either way the status was not read (DMS-1556 D-7). Exceptions from the
+        /// query itself are left to the manager.
+        /// </summary>
+        private static async Task OpenForTokenStatusAsync(SqlConnection connection)
+        {
+            try
+            {
+                await connection.OpenAsync();
+            }
+            catch (InvalidOperationException exception)
+            {
+                throw new AuthenticationDependencyUnavailableException(
+                    AuthenticationDependencyCategory.TokenStatusStore,
+                    "The token status store could not be read.",
+                    exception
+                );
+            }
         }
 
         public async Task<bool> RevokeTokenAsync(Guid tokenId)
@@ -586,12 +610,22 @@ UPDATE dmscs.OpenIddictApplication
             return keyRecord;
         }
 
-        public async Task<IEnumerable<(string KeyId, byte[] PublicKey)>> GetActivePublicKeysInternalAsync()
+        public Task<IEnumerable<(string KeyId, byte[] PublicKey)>> GetActivePublicKeysInternalAsync()
+        {
+            return GetActivePublicKeysInternalAsync(CancellationToken.None);
+        }
+
+        public async Task<IEnumerable<(string KeyId, byte[] PublicKey)>> GetActivePublicKeysInternalAsync(
+            CancellationToken cancellationToken
+        )
         {
             await using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
             return await connection.QueryAsync<(string KeyId, byte[] PublicKey)>(
-                "SELECT KeyId, PublicKey FROM dmscs.OpenIddictKey WHERE IsActive = 1"
+                new CommandDefinition(
+                    "SELECT KeyId, PublicKey FROM dmscs.OpenIddictKey WHERE IsActive = 1",
+                    cancellationToken: cancellationToken
+                )
             );
         }
 

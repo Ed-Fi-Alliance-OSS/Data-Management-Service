@@ -27,6 +27,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict
         {
             // Add identity options
             services.AddOpenIddictIdentityOptions(configuration);
+            services.AddSigningKeyServices();
             services.AddSingleton<IOpenIddictDataRepository, OpenIddictDataRepository>();
             services.AddSingleton<IIdentityProviderRepository, OpenIddictClientRepository>();
             services.AddSingleton<IOpenIddictTokenRepository, OpenIddictTokenRepository>();
