@@ -31,7 +31,7 @@ public class HealthCheckEndpointModule(
             if (!string.IsNullOrWhiteSpace(statusOptions.RequiredRole))
             {
                 logger.LogWarning(
-                    "DocumentCache status endpoint was not mapped because DataManagement:DocumentCache:Status:RequiredRole is invalid. Configure a single role token such as dms-document-cache-operator."
+                    "DocumentCache status endpoint was not mapped because DataManagement:DocumentCache:Status:RequiredRole is invalid. Configure a single role token such as dms-client."
                 );
             }
 
