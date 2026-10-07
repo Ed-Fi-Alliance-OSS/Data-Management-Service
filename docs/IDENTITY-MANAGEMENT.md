@@ -49,7 +49,7 @@ The implementer guide's [results and status codes](../src/dms/core/EdFi.DataMana
 
 | Status | Problem type | Cause |
 | --- | --- | --- |
-| `400` | `urn:ed-fi:api:bad-request`, or `urn:ed-fi:api:bad-request:data-validation-failed` | A malformed or empty body, a duplicate property, a body of the wrong top-level shape, a blank route value, or `InvalidProperties` from the provider. |
+| `400` | `urn:ed-fi:api:bad-request`, or `urn:ed-fi:api:bad-request:data-validation-failed` | On a multi-tenant host, a tenant in the URL of the wrong format, checked before authentication. Otherwise a malformed or empty body, a duplicate property, a body of the wrong top-level shape, a blank route value, or `InvalidProperties` from the provider. |
 | `401` | | No bearer token, a token that cannot be validated, or an API client that does not belong to the tenant in the URL. |
 | `403` | | The client's claim set does not grant the identity service claim for the operation. |
 | `404` | see below | Four different situations. |
@@ -77,16 +77,19 @@ The Ed-Fi API adds it to every non-successful response, the catch-all `404` for 
 
 ### Wrong tenant, missing tenant, and an unanswerable check
 
-On a multi-tenant host three different answers can come from the tenant in the URL, and an operator diagnosing a client should tell them apart.
+On a multi-tenant host four different answers can come from the tenant in the URL, and an operator diagnosing a client should tell them apart.
 
 | Answer | Meaning |
 | --- | --- |
+| `400` with `The tenant identifier has an invalid format.` | The tenant name is not made only of letters, digits, hyphens and underscores, or it is longer than 256 characters. |
 | `401` | The token is valid and the tenant exists, but the API client's application is not bound to that tenant. |
 | `404` with `The specified tenant could not be found.` | The tenant does not exist. |
 | `503` | The Ed-Fi API could not answer: the tenant list could not be refreshed, or the Configuration Service could not say whether the client belongs to the tenant. |
 
 The order matters.
-Authentication runs first, then the tenant-exists check, then the client-to-tenant binding, so a caller with no valid token never learns whether a tenant exists.
+The tenant name's format is checked first, before authentication, so a request with no token still gets that `400`.
+That check reads only the name, and says nothing about whether a tenant exists.
+Authentication runs next, then the tenant-exists check, then the client-to-tenant binding, so a caller with no valid token never learns whether a tenant exists.
 A `503` is a statement about the Ed-Fi API's ability to answer, never a statement that the tenant or the binding is absent.
 The Ed-Fi API never serves a stale membership answer after the tenant snapshot expires.
 See [Datastore independence and the tenant snapshot](#datastore-independence-and-the-tenant-snapshot).

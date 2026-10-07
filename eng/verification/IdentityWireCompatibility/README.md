@@ -2,6 +2,7 @@
 
 When the identity contract version is incremented, the gate compares the last published baseline with the served document, and the published package with the packed one: its provider surface, its XML documentation and its declared dependencies.
 Each difference that is not a hard failure needs a review record entry in `<published>-to-<current>.json` in this directory.
+The published version compared against is the highest one on the feed that is not greater than the contract version, so an increment on a servicing branch is compared with the last release of its own line rather than with a newer line's release.
 
 ```json
 {

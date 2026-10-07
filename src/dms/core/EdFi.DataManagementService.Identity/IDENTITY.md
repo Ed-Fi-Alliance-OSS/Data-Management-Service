@@ -109,7 +109,8 @@ in PLUGINS.md state the registration rules in full.
 
 **Register unkeyed.**
 The host resolves this contract unkeyed, from the request scope.
-A keyed registration is accepted at startup and never reached by a request, so the host default keeps serving.
+A registration under a concrete key is accepted at startup and never reached by a request, so the host default keeps serving.
+A registration under the wildcard key, `KeyedService.AnyKey`, is refused at startup.
 
 Singleton, scoped and transient lifetimes are all supported, and [Lifetimes and concurrency](#lifetimes-and-concurrency) says what each one means for your class.
 
@@ -865,7 +866,7 @@ Every one of them is `application/problem+json`, except the `400` for a malforme
 
 | Status | Cause |
 | --- | --- |
-| `400` | a malformed or empty body, a duplicate property, a body of the wrong top-level shape, a blank route value, or `InvalidProperties` from the provider |
+| `400` | on a multi-tenant host, a tenant in the URL of the wrong format, which is checked before authentication and says nothing about whether the tenant exists; otherwise a malformed or empty body, a duplicate property, a body of the wrong top-level shape, a blank route value, or `InvalidProperties` from the provider |
 | `401` | no bearer token, a token that cannot be validated, or a client not bound to the URL's tenant |
 | `403` | the client's claim set does not grant the identity service claim for the operation |
 | `404` | the four situations above |
