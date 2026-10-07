@@ -30,7 +30,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 [NonParallelizable]
 public class Given_ManagementEndpointModule
 {
-    private const string ValidRequiredRole = "dms-management-operator";
+    private const string ValidRequiredRole = "cms-client";
     private const string RoleClaimType = "operator_role";
     private const string ValidBearerToken = "valid-token";
 
@@ -203,7 +203,7 @@ public class Given_ManagementEndpointModule
     [TestCase(null)]
     [TestCase("")]
     [TestCase("   ")]
-    [TestCase("dms management operator")]
+    [TestCase("cms client")]
     public void It_does_not_map_the_single_tenant_claimset_routes_when_the_role_is_unusable(
         string? requiredRole
     )
@@ -226,7 +226,7 @@ public class Given_ManagementEndpointModule
 
     [TestCase(null)]
     [TestCase("")]
-    [TestCase("dms management operator")]
+    [TestCase("cms client")]
     public void It_does_not_map_the_tenant_scoped_claimset_routes_when_the_role_is_unusable(
         string? requiredRole
     )
@@ -348,7 +348,7 @@ public class Given_ManagementEndpointModule
         var loggerProvider = new RecordingLoggerProvider();
         using WebApplicationFactory<Program> factory = CreateFactory(
             FakeApiService(),
-            requiredRole: "dms management operator",
+            requiredRole: "cms client",
             enableClaimsetReload: true,
             loggerProvider: loggerProvider
         );
@@ -361,7 +361,8 @@ public class Given_ManagementEndpointModule
             )
             .Subject;
         warning.Message.Should().Contain("AppSettings:ManagementEndpoints:RequiredRole");
-        warning.Message.Should().NotContain("dms management operator");
+        warning.Message.Should().Contain("such as cms-client");
+        warning.Message.Should().NotContain("cms client");
     }
 
     [Test]

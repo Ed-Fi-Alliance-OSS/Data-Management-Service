@@ -44,12 +44,12 @@ public class Given_ManagementEndpointsOptionsBinding
     [Test]
     public void It_binds_the_configured_required_role()
     {
-        using WebApplicationFactory<Program> factory = CreateFactory("dms-management-operator");
+        using WebApplicationFactory<Program> factory = CreateFactory("cms-client");
 
         factory
             .Services.GetRequiredService<IOptions<ManagementEndpointsOptions>>()
             .Value.RequiredRole.Should()
-            .Be("dms-management-operator");
+            .Be("cms-client");
     }
 
     [Test]

@@ -35,7 +35,7 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.DocumentCache;
 [Category("DocumentCacheStatusEndpointAuthorization")]
 public class Given_DocumentCacheStatusEndpointAuthorization
 {
-    private const string RequiredRole = "dms-document-cache-operator";
+    private const string RequiredRole = "dms-client";
     private const string RoleClaimType = "operator_role";
     private const string ValidBearerToken = "valid-token";
     private const string TestAudience = "ed-fi-ods-api";
@@ -175,7 +175,7 @@ public class Given_DocumentCacheStatusEndpointAuthorization
         ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
         await using WebApplicationFactory<Program> factory = CreateFactory(
             documentCacheStatusService,
-            requiredRole: "dms document cache operator"
+            requiredRole: "dms client"
         );
         using HttpClient client = factory.CreateClient();
 
