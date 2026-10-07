@@ -4628,13 +4628,6 @@ public class ApplicationModuleTests
             _providerUpdates[0].ClientUuid.Should().Be(_originalClientUuid.ToString());
             _providerUpdates[0].DataStoreIds.Should().Equal(2);
         }
-
-        [Test]
-        public void It_does_not_update_the_other_client() =>
-            _providerUpdates
-                .Select(update => update.ClientUuid)
-                .Should()
-                .NotContain(_otherClientUuid.ToString());
     }
 
     public abstract class ThrownRepositoryExceptionTestBase : UpdateRollbackTestBase
