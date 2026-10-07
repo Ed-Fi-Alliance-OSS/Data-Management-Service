@@ -15,8 +15,9 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
 /// ranges tile the candidate set has to be made on each engine.
 /// </summary>
 /// <remarks>
-/// The unknown-query-field row is deliberately absent: it is answered before any provider is involved.
-/// Leases the cursor-partition-contract fixture for the same reason the PostgreSQL twin does.
+/// Leases the cursor-partition-contract fixture for the same reason the PostgreSQL twin does. The
+/// ignored <c>number</c> row is included because the request it makes is now served by the provider
+/// rather than refused before one is involved.
 /// </remarks>
 public sealed class Given_Mssql_PartitionWalkCoverage : MssqlApiIntegrationTestBase
 {
@@ -66,6 +67,12 @@ public sealed class Given_Mssql_PartitionWalkCoverage : MssqlApiIntegrationTestB
     [Test]
     public Task It_consumes_a_number_query_key_as_a_filter_on_a_collection_and_as_a_count_on_partitions() =>
         PartitionWalkCoverageScenario.It_consumes_a_number_query_key_as_a_filter_on_a_collection_and_as_a_count_on_partitions(
+            Harness
+        );
+
+    [Test]
+    public Task It_ignores_a_number_query_key_on_a_collection_whose_schema_omits_it() =>
+        PartitionWalkCoverageScenario.It_ignores_a_number_query_key_on_a_collection_whose_schema_omits_it(
             Harness
         );
 }

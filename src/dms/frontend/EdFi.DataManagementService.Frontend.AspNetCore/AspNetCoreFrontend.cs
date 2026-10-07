@@ -640,7 +640,7 @@ public static class AspNetCoreFrontend
     /// The segment must be the third of the <c>{project}/{resource}/partitions</c> shape. Testing only
     /// the final segment would also recognize a two-segment collection whose resource is itself named
     /// <c>partitions</c>, where <c>number</c> is an ordinary query field and rewriting its spelling
-    /// would change which field is filtered on or which name an unknown-field error reports. The
+    /// would change which field is filtered on or which name the ignored-parameter warning reports. The
     /// position requirement is what makes that impossible rather than merely unlikely, so nothing
     /// here rests on an assumption about which resource names a schema declares.
     /// </remarks>
@@ -701,7 +701,7 @@ public static class AspNetCoreFrontend
     /// The cursor parameters are canonicalized everywhere. The partition count is canonicalized only
     /// on the partitions operation, because <c>number</c> is generic enough to collide with a
     /// resource query field, and rewriting its spelling elsewhere would change resource filtering and
-    /// unknown-field error text on collections this feature does not otherwise touch.
+    /// the ignored-parameter warning on collections this feature does not otherwise touch.
     /// </remarks>
     /// <remarks>
     /// Recognition is an ordinal case-insensitive comparison, which is the same relation the query

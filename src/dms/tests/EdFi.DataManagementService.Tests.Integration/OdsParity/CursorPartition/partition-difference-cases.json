@@ -109,37 +109,27 @@
       "group": "validation",
       "executor": "partitions-get",
       "query": "?allowSmallPartitions=true",
-      "shell": "badRequest",
       "dms": {
-        "status": 400,
-        "errors": [
-          "The query field 'allowSmallPartitions' is not valid for this resource."
-        ]
+        "status": 200
       },
       "ods": {
         "status": 200
       },
-      "outcome": "difference",
-      "approvedDifference": "ods-only-partition-parameters-rejected",
-      "note": "ODS reads this from the separate additional-parameters dictionary that collects query parameters its request model does not define."
+      "outcome": "parity",
+      "note": "DMS ignores this ODS-only parameter and names it in X-EdFi-Warning; ODS reads it from its additional-parameters dictionary, so the boundaries can differ."
     },
     {
       "id": "partition-ods-only-use-join-auth",
       "group": "validation",
       "executor": "partitions-get",
       "query": "?useJoinAuth=true",
-      "shell": "badRequest",
       "dms": {
-        "status": 400,
-        "errors": [
-          "The query field 'useJoinAuth' is not valid for this resource."
-        ]
+        "status": 200
       },
       "ods": {
         "status": 200
       },
-      "outcome": "difference",
-      "approvedDifference": "ods-only-partition-parameters-rejected"
+      "outcome": "parity"
     },
     {
       "id": "change-query-rejects-page-token",

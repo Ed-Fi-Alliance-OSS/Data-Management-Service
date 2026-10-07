@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
+using System.Net;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
@@ -333,17 +334,16 @@ internal static class PartitionWalkCoverageScenario
     }
 
     /// <summary>
-    /// The partitions endpoint reports the count as unsupported nowhere, but the collection endpoint has
-    /// no partition count: a bare <c>number</c> on the collection GET that no query field matches is an
-    /// unknown query field, which is what keeps the collision confined to schemas that declare the
-    /// field.
+    /// The collection endpoint has no partition count: a bare <c>number</c> on the collection GET that no
+    /// query field matches is ignored and named in the warning, which is what keeps the collision
+    /// confined to schemas that declare the field.
     /// </summary>
     /// <remarks>
     /// Asserted on the regular resource, whose schema declares no <c>number</c> query field. Without
     /// this row the collision test above could be read as evidence that <c>number</c> is globally
     /// reserved on collection GETs, which would be the opposite of the recorded behavior.
     /// </remarks>
-    public static async Task It_rejects_a_number_query_key_on_a_collection_whose_schema_omits_it(
+    public static async Task It_ignores_a_number_query_key_on_a_collection_whose_schema_omits_it(
         ApiIntegrationHarness harness
     )
     {
@@ -353,10 +353,8 @@ internal static class PartitionWalkCoverageScenario
             $"{CursorContractSupport.MergeItemsEndpoint}?number=5"
         );
 
-        await BadRequestProblemDetails.AssertShellAsync(
-            response,
-            BadRequestProblemDetails.UnknownQueryField("number")
-        );
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        IgnoredParameterWarningAssertions.AssertWarnsOf(response, "number");
     }
 
     private static async Task CoverRegularResourceAsync(

@@ -478,24 +478,6 @@ public class PipelineOrderingTests
         }
 
         [Test]
-        public void It_places_tracked_change_query_validation_after_query_validation()
-        {
-            var queryValidationIndex = _stepTypes.IndexOf(typeof(ValidateQueryMiddleware));
-            var trackedQueryValidationIndex = _stepTypes.IndexOf(
-                typeof(ValidateTrackedChangeQueryMiddleware)
-            );
-
-            queryValidationIndex.Should().BeGreaterThanOrEqualTo(0);
-            trackedQueryValidationIndex.Should().BeGreaterThanOrEqualTo(0);
-            trackedQueryValidationIndex
-                .Should()
-                .BeGreaterThan(
-                    queryValidationIndex,
-                    "ValidateTrackedChangeQueryMiddleware must reject parsed resource query filters"
-                );
-        }
-
-        [Test]
         public void It_contains_ValidateResourceKeySeedMiddleware()
         {
             _stepTypes.Should().Contain(typeof(ValidateResourceKeySeedMiddleware));
@@ -533,20 +515,18 @@ public class PipelineOrderingTests
         }
 
         [Test]
-        public void It_places_tracked_change_query_validation_before_the_handler()
+        public void It_places_query_validation_before_the_handler()
         {
-            var trackedQueryValidationIndex = _stepTypes.IndexOf(
-                typeof(ValidateTrackedChangeQueryMiddleware)
-            );
+            var queryValidationIndex = _stepTypes.IndexOf(typeof(ValidateQueryMiddleware));
             var handlerIndex = _stepTypes.IndexOf(typeof(TrackedChangeQueryRequestHandler));
 
-            trackedQueryValidationIndex.Should().BeGreaterThanOrEqualTo(0);
+            queryValidationIndex.Should().BeGreaterThanOrEqualTo(0);
             handlerIndex.Should().BeGreaterThanOrEqualTo(0);
-            trackedQueryValidationIndex
+            queryValidationIndex
                 .Should()
                 .BeLessThan(
                     handlerIndex,
-                    "resource query filters must be rejected before repository request construction"
+                    "query parameters must be validated before repository request construction"
                 );
         }
     }

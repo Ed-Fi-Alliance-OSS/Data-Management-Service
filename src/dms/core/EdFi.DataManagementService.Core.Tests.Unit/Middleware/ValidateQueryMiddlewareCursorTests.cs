@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -46,7 +47,7 @@ public class ValidateQueryMiddlewareCursorTests
     );
 
     /// <summary>
-    /// A resource with one query field, so the unknown-query-field loop runs for real and can prove
+    /// A resource with one query field, so filter matching runs for real and can prove
     /// which parameters reached it.
     /// </summary>
     private static ApiSchemaDocuments NewApiSchemaDocuments() =>
@@ -245,14 +246,6 @@ public class ValidateQueryMiddlewareCursorTests
     public class Given_A_Request_Rejected_After_Its_Paging_Was_Determined : ValidateQueryMiddlewareCursorTests
     {
         [Test]
-        public async Task It_leaves_cursor_paging_unapplied_for_an_unknown_query_field()
-        {
-            AssertRejectedWithoutPaging(
-                await Execute(true, ("pageToken", ValidToken), ("notAQueryField", "1"))
-            );
-        }
-
-        [Test]
         public async Task It_leaves_cursor_paging_unapplied_for_an_invalid_change_version()
         {
             AssertRejectedWithoutPaging(
@@ -269,9 +262,9 @@ public class ValidateQueryMiddlewareCursorTests
         }
 
         [Test]
-        public async Task It_leaves_traditional_paging_unapplied_for_an_unknown_query_field()
+        public async Task It_leaves_traditional_paging_unapplied_for_a_query_field_of_the_wrong_type()
         {
-            AssertRejectedWithoutPaging(await Execute(true, ("limit", "25"), ("notAQueryField", "1")));
+            AssertRejectedWithoutPaging(await Execute(true, ("limit", "25"), ("schoolId", "notANumber")));
         }
 
         private static void AssertRejectedWithoutPaging(RequestInfo requestInfo)
@@ -722,69 +715,91 @@ public class ValidateQueryMiddlewareCursorTests
     }
 
     /// <summary>
-    /// The Change Query composition. Cursor parameters must reach the step that rejects them by
-    /// name, so they are neither answered here with the resource-field wording nor accepted as
-    /// resource filters.
+    /// The Change Query composition, which does not page by cursor. A cursor parameter is rejected by
+    /// name whatever its value, so a client cannot believe it is walking a cursor, and a rejected name
+    /// is not reported as ignored.
     /// </summary>
     [TestFixture]
     [Parallelizable]
     public class Given_Cursor_Parameters_Are_Not_Recognized : ValidateQueryMiddlewareCursorTests
     {
-        [TestCase("pageToken")]
-        [TestCase("pageSize")]
-        public async Task It_does_not_answer_with_the_resource_field_wording(string parameter)
+        private static string[] ErrorsOf(RequestInfo requestInfo) =>
+            [
+                .. requestInfo.FrontendResponse.Body!["errors"]!
+                    .AsArray()
+                    .Select(error => error!.GetValue<string>()),
+            ];
+
+        [TestCase("pageToken", "valid")]
+        [TestCase("pageToken", "!!!")]
+        [TestCase("pageSize", "5")]
+        [TestCase("pageSize", "abc")]
+        public async Task It_rejects_the_parameter_by_name_whatever_its_value(string parameter, string value)
         {
-            RequestInfo requestInfo = await Execute(false, (parameter, "5"));
+            RequestInfo requestInfo = await Execute(
+                false,
+                (parameter, value == "valid" ? ValidToken : value)
+            );
 
-            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
-        }
-
-        /// <summary>
-        /// Paired with a real resource filter so the request reaches the accepting exit, where query
-        /// elements are assigned. A request answered earlier carries none of them either way.
-        /// </summary>
-        [TestCase("pageToken")]
-        [TestCase("pageSize")]
-        public async Task It_does_not_accept_them_as_resource_filters(string parameter)
-        {
-            RequestInfo requestInfo = await Execute(false, (parameter, "5"), ("schoolId", "1"));
-
-            requestInfo
-                .QueryElements.Select(static queryElement => queryElement.QueryFieldName)
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            requestInfo.FrontendResponse.Body!["type"]!
+                .GetValue<string>()
                 .Should()
-                .Equal("schoolId");
+                .Be("urn:ed-fi:api:bad-request");
+            ErrorsOf(requestInfo)
+                .Should()
+                .Equal($"The query field '{parameter}' is not valid for this Change Query endpoint.");
+            requestInfo
+                .FrontendResponse.Headers.Should()
+                .NotContainKey(IgnoredQueryParameterWarning.HeaderName);
         }
 
         [Test]
-        public async Task It_does_not_run_cursor_validation()
+        public async Task It_reports_both_cursor_parameters_in_one_response()
         {
-            RequestInfo requestInfo = await Execute(false, ("pageToken", "!!!"));
+            RequestInfo requestInfo = await Execute(false, ("pageSize", "5"), ("pageToken", ValidToken));
 
+            ErrorsOf(requestInfo)
+                .Should()
+                .Equal(
+                    "The query field 'pageToken' is not valid for this Change Query endpoint.",
+                    "The query field 'pageSize' is not valid for this Change Query endpoint."
+                );
+        }
+
+        [Test]
+        public async Task It_reports_only_the_ignored_names_in_the_warning()
+        {
+            RequestInfo requestInfo = await Execute(false, ("pageSize", "5"), ("notAField", "1"));
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
             requestInfo
-                .FrontendResponse.Should()
-                .Be(No.FrontendResponse, "an undecodable token is not this operation's complaint");
+                .FrontendResponse.Headers.Should()
+                .Contain(IgnoredQueryParameterWarning.HeaderName, "Ignored query parameters: notAField");
+        }
+
+        [Test]
+        public async Task It_applies_no_paging_to_a_rejected_request()
+        {
+            RequestInfo requestInfo = await Execute(false, ("pageSize", "5"), ("limit", "25"));
+
+            requestInfo.CollectionPaging.Should().Be(No.CollectionPaging);
         }
 
         [Test]
         public async Task It_still_applies_traditional_paging()
         {
-            RequestInfo requestInfo = await Execute(false, ("pageSize", "5"), ("limit", "25"));
+            RequestInfo requestInfo = await Execute(false, ("limit", "25"), ("offset", "10"));
 
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
             requestInfo
                 .CollectionPaging.Should()
                 .Be(new CollectionPaging.Traditional(requestInfo.PaginationParameters));
+            requestInfo.PaginationParameters.Limit.Should().Be(25);
+            requestInfo.PaginationParameters.Offset.Should().Be(10);
         }
     }
 
-    /// <summary>
-    /// What a request this step answers contributes to the collection-paging metric.
-    /// </summary>
-    /// <remarks>
-    /// Every rejecting exit is covered here rather than split across the two GET-many test files,
-    /// because this step answers a cursor fault, a traditional fault, a change-version fault, and a
-    /// filter fault with the same measurement — and it is the difference between them, in one place,
-    /// that shows the coverage is complete.
-    /// </remarks>
     [TestFixture]
     [Parallelizable]
     public class Given_Collection_Paging_Telemetry_For_A_Rejection : ValidateQueryMiddlewareCursorTests
@@ -844,7 +859,6 @@ public class ValidateQueryMiddlewareCursorTests
         [
             new TestCaseData(new[] { ("limit", "-1") }).SetName("{m}(paging fault)"),
             new TestCaseData(new[] { ("minChangeVersion", "abc") }).SetName("{m}(change-version fault)"),
-            new TestCaseData(new[] { ("notAField", "1") }).SetName("{m}(unknown query field)"),
             new TestCaseData(new[] { ("schoolId", "not-a-number") }).SetName("{m}(invalid filter value)"),
         ];
 
