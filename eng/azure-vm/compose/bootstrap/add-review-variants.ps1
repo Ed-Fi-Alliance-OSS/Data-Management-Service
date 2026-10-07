@@ -27,18 +27,7 @@ $ErrorActionPreference = "Stop"
 Import-Module "$PSScriptRoot/../../../Dms-Management.psm1" -Force
 Import-Module "$PSScriptRoot/review-variants.psm1" -Force
 
-if ($Insecure) {
-    # Invoke-RestMethod/Invoke-WebRequest run in each module's own session state, which does not
-    # inherit $global:PSDefaultParameterValues, so set the defaults in every module that calls them.
-    $global:PSDefaultParameterValues['Invoke-RestMethod:SkipCertificateCheck'] = $true
-    $global:PSDefaultParameterValues['Invoke-WebRequest:SkipCertificateCheck'] = $true
-    foreach ($module in @(Get-Module -All Dms-Management) + @(Get-Module review-variants)) {
-        & $module {
-            $PSDefaultParameterValues['Invoke-RestMethod:SkipCertificateCheck'] = $true
-            $PSDefaultParameterValues['Invoke-WebRequest:SkipCertificateCheck'] = $true
-        }
-    }
-}
+if ($Insecure) { Disable-ReviewCertificateCheck -Module (Get-Module review-variants) }
 
 $envValues = Read-ReviewEnvFile -Path $EnvFile
 function EnvVal([string]$key, [string]$default = "") {

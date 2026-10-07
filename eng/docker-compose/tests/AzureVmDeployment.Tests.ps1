@@ -622,6 +622,25 @@ Describe "Azure VM educator-prep load" {
         Should -Invoke Invoke-RestMethod -ModuleName educator-prep -Times 0 -Exactly -ParameterFilter { $Method -eq "Delete" }
     }
 
+    It "skips certificate checks in every module instance its CMS calls resolve to under -Insecure" {
+        # Template-Management force-reimports Dms-Management, so the instance educator-prep calls can be
+        # one that Get-Module no longer lists; only resolving the commands themselves reaches it.
+        Import-Module ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm/compose/bootstrap/review-variants.psm1"))) -Force
+        $educatorPrep = Get-Module educator-prep
+
+        Disable-ReviewCertificateCheck -Module $educatorPrep
+
+        $resolved = & $educatorPrep {
+            foreach ($name in @("Get-CmsToken", "Add-Vendor", "Add-Application", "Get-BulkLoadClient")) {
+                $module = (Get-Command $name).Module
+                & $module { [bool]$PSDefaultParameterValues["Invoke-RestMethod:SkipCertificateCheck"] -and [bool]$PSDefaultParameterValues["Invoke-WebRequest:SkipCertificateCheck"] }
+            }
+            [bool]$PSDefaultParameterValues["Invoke-RestMethod:SkipCertificateCheck"]
+        }
+        $resolved | Should -Not -Contain $false
+        Remove-Module review-variants -ErrorAction SilentlyContinue
+    }
+
     It "resolves the pinned BulkLoadClient from the package it downloads" {
         Mock Get-BulkLoadClient -ModuleName educator-prep { ".packages/edfi.suite3.bulkloadclient.console.1.2.3" }
         $clientDirectory = Join-Path $script:work ".packages/edfi.suite3.bulkloadclient.console.1.2.3/tools/net10.0/any"

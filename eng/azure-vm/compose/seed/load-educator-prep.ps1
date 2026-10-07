@@ -40,22 +40,12 @@ Import-Module (Join-Path $engRoot "Dms-Management.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "../bootstrap/review-variants.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "educator-prep.psm1") -Force
 # Fail fast if an import change ever hides a helper this script calls directly.
-foreach ($command in @("Read-ReviewEnvFile", "Get-ReviewDeployment", "Get-EducatorPrepLoadFile", "Get-EducatorPrepRepostFile",
+foreach ($command in @("Disable-ReviewCertificateCheck", "Read-ReviewEnvFile", "Get-ReviewDeployment", "Get-EducatorPrepLoadFile", "Get-EducatorPrepRepostFile",
         "Get-ReviewBulkLoadClientDirectory", "Get-ReviewEducationOrganizationId", "Invoke-EducatorPrepLoad")) {
     if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { throw "Helper '$command' is not available after the module imports." }
 }
 
-if ($Insecure) {
-    # Each module's Invoke-RestMethod/Invoke-WebRequest calls use that module's own defaults.
-    $global:PSDefaultParameterValues['Invoke-RestMethod:SkipCertificateCheck'] = $true
-    $global:PSDefaultParameterValues['Invoke-WebRequest:SkipCertificateCheck'] = $true
-    foreach ($module in @(Get-Module -All Dms-Management) + @(Get-Module educator-prep, review-variants)) {
-        & $module {
-            $PSDefaultParameterValues['Invoke-RestMethod:SkipCertificateCheck'] = $true
-            $PSDefaultParameterValues['Invoke-WebRequest:SkipCertificateCheck'] = $true
-        }
-    }
-}
+if ($Insecure) { Disable-ReviewCertificateCheck -Module (Get-Module educator-prep), (Get-Module review-variants) }
 
 $sampleDirectory = (Resolve-Path -LiteralPath $SampleDataDirectory).Path
 $loadFiles = @(Get-EducatorPrepLoadFile -SampleDataDirectory $sampleDirectory)

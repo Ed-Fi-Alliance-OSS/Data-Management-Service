@@ -49,12 +49,14 @@ if ($Insecure) {
     $global:PSDefaultParameterValues['Invoke-RestMethod:SkipCertificateCheck'] = $true
     $global:PSDefaultParameterValues['Invoke-WebRequest:SkipCertificateCheck'] = $true
 
-    foreach ($module in @(Get-Module -All Dms-Management) + @(Get-Module review-variants)) {
-        & $module {
+    $dmsModule = Get-Module Dms-Management
+    if ($dmsModule) {
+        & $dmsModule {
             $PSDefaultParameterValues['Invoke-RestMethod:SkipCertificateCheck'] = $true
             $PSDefaultParameterValues['Invoke-WebRequest:SkipCertificateCheck'] = $true
         }
     }
+    Disable-ReviewCertificateCheck -Module (Get-Module review-variants)
 }
 
 # --- Parse .env -------------------------------------------------------------

@@ -11,6 +11,37 @@
 # -Insecure certificate defaults set on that instance also cover the calls made from here.
 Import-Module (Join-Path $PSScriptRoot "../../../Dms-Management.psm1")
 
+function Disable-ReviewCertificateCheck {
+    <#
+    .SYNOPSIS
+        Skips TLS certificate checks for the CMS calls the given modules make (self-signed gateway cert).
+    .DESCRIPTION
+        Invoke-RestMethod/Invoke-WebRequest read -SkipCertificateCheck from the calling module's own
+        $PSDefaultParameterValues, not the global one. A module may call into a Dms-Management instance
+        that Get-Module no longer lists (Template-Management force-reimports it), so the defaults are set
+        in each given module and in the module behind every CMS helper as that module resolves it.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][System.Management.Automation.PSModuleInfo[]]$Module)
+
+    $global:PSDefaultParameterValues['Invoke-RestMethod:SkipCertificateCheck'] = $true
+    $global:PSDefaultParameterValues['Invoke-WebRequest:SkipCertificateCheck'] = $true
+    foreach ($caller in $Module) {
+        $targets = @($caller) + @(& $caller {
+                foreach ($name in @("Get-CmsToken", "Add-Vendor", "Add-Application", "Get-BulkLoadClient")) {
+                    $command = Get-Command $name -ErrorAction SilentlyContinue
+                    if ($command -and $command.Module) { $command.Module }
+                }
+            })
+        foreach ($target in $targets) {
+            & $target {
+                $PSDefaultParameterValues['Invoke-RestMethod:SkipCertificateCheck'] = $true
+                $PSDefaultParameterValues['Invoke-WebRequest:SkipCertificateCheck'] = $true
+            }
+        }
+    }
+}
+
 function Read-ReviewEnvFile {
     <#
     .SYNOPSIS
@@ -157,4 +188,4 @@ function Add-ReviewVariantSet {
     return $created.ToArray()
 }
 
-Export-ModuleMember -Function Read-ReviewEnvFile, Get-ReviewVariant, Get-ReviewDeployment, Add-ReviewVariantSet
+Export-ModuleMember -Function Disable-ReviewCertificateCheck, Read-ReviewEnvFile, Get-ReviewVariant, Get-ReviewDeployment, Add-ReviewVariantSet
