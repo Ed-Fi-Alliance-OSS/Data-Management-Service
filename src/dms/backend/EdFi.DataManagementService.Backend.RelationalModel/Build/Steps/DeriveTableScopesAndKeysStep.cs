@@ -30,6 +30,19 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
     private static readonly DbTableName _descriptorTableName = new(_dmsSchemaName, "Descriptor");
 
     /// <summary>
+    /// Delete action of the safety-net foreign keys from every resource root table and
+    /// <c>dms.Descriptor</c> to <c>dms.Document</c>. The write path deletes the root (or Descriptor) row
+    /// before the <c>dms.Document</c> row, so these foreign keys never have anything to cascade; they
+    /// only guard direct database modification. <see cref="ReferentialAction.Restrict"/> is the
+    /// single-probe check on both engines: <c>ON DELETE CASCADE</c> compiled every root delete into the
+    /// SQL Server <c>dms.Document</c> DELETE plan (16x slower on the volume test), and
+    /// <c>NO ACTION</c> on PostgreSQL re-checks the parent key before probing each referencing table
+    /// (two statements per foreign key per delete). Child collection, extension and abstract-identity
+    /// foreign keys keep <see cref="ReferentialAction.Cascade"/>: their rows are cascade-maintained.
+    /// </summary>
+    private const ReferentialAction DocumentSafetyNetDeleteAction = ReferentialAction.Restrict;
+
+    /// <summary>
     /// Walks the JSON schema and populates <see cref="RelationalModelBuilderContext.ResourceModel"/> with the
     /// base table inventory (root + collection tables) and their key/foreign-key columns.
     /// </summary>
@@ -145,7 +158,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
                 [RelationalNameConventions.DocumentIdColumnName],
                 _documentTableName,
                 [RelationalNameConventions.DocumentIdColumnName],
-                OnDelete: ReferentialAction.Cascade
+                OnDelete: DocumentSafetyNetDeleteAction
             ),
         ];
 
@@ -197,7 +210,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
                 [RelationalNameConventions.DocumentIdColumnName],
                 _documentTableName,
                 [RelationalNameConventions.DocumentIdColumnName],
-                OnDelete: ReferentialAction.Cascade
+                OnDelete: DocumentSafetyNetDeleteAction
             ),
         ];
 

@@ -469,7 +469,7 @@ ALTER TABLE [dms].[Descriptor]
 ADD CONSTRAINT [FK_Descriptor_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
+ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -1066,7 +1066,7 @@ ALTER TABLE [edfi].[DateTimeKeyResource]
 ADD CONSTRAINT [FK_DateTimeKeyResource_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
+ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -1077,7 +1077,7 @@ ALTER TABLE [edfi].[DecimalKeyResource]
 ADD CONSTRAINT [FK_DecimalKeyResource_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
+ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -1099,7 +1099,7 @@ ALTER TABLE [edfi].[DecimalRefResource]
 ADD CONSTRAINT [FK_DecimalRefResource_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
+ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -1110,7 +1110,7 @@ ALTER TABLE [edfi].[EdOrgDependentChildResource]
 ADD CONSTRAINT [FK_EdOrgDependentChildResource_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
+ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -1132,7 +1132,7 @@ ALTER TABLE [edfi].[EdOrgDependentResource]
 ADD CONSTRAINT [FK_EdOrgDependentResource_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
+ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -1154,7 +1154,7 @@ ALTER TABLE [edfi].[KeyUnifiedResource]
 ADD CONSTRAINT [FK_KeyUnifiedResource_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
+ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -1187,7 +1187,7 @@ ALTER TABLE [edfi].[ResourceA]
 ADD CONSTRAINT [FK_ResourceA_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
+ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -1209,7 +1209,7 @@ ALTER TABLE [edfi].[ResourceB]
 ADD CONSTRAINT [FK_ResourceB_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
+ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -1231,7 +1231,7 @@ ALTER TABLE [edfi].[School]
 ADD CONSTRAINT [FK_School_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
+ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -1242,7 +1242,7 @@ ALTER TABLE [edfi].[Student]
 ADD CONSTRAINT [FK_Student_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
+ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -1253,7 +1253,7 @@ ALTER TABLE [edfi].[StudentSchoolAssociation]
 ADD CONSTRAINT [FK_StudentSchoolAssociation_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
+ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (

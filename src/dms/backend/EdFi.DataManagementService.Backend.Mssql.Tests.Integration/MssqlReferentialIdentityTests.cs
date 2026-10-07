@@ -1376,9 +1376,11 @@ public class MssqlReferentialIdentityTests
         ((Guid)referentialId["ReferentialId"]!).Should().Be(expectedReferentialId);
         ((long)referentialId["DocumentId"]!).Should().Be(documentId);
 
-        // Act — delete the dms.Document row (CASCADE removes RI via FK)
+        // Act — delete in the write path's order: the root row first (its FK to dms.Document is
+        // ON DELETE NO ACTION), then the dms.Document row, whose kept CASCADE removes the RI row.
         await _database.ExecuteNonQueryAsync(
             """
+            DELETE FROM [edfi].[Student] WHERE [DocumentId] = @documentId;
             DELETE FROM [dms].[Document] WHERE [DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId)
@@ -1400,9 +1402,10 @@ public class MssqlReferentialIdentityTests
         referentialIds.Should().HaveCount(2);
         referentialIds.All(r => (long)r["DocumentId"]! == documentId).Should().BeTrue();
 
-        // Act
+        // Act — root row first (ON DELETE NO ACTION safety-net FK), then the dms.Document row
         await _database.ExecuteNonQueryAsync(
             """
+            DELETE FROM [edfi].[School] WHERE [DocumentId] = @documentId;
             DELETE FROM [dms].[Document] WHERE [DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId)

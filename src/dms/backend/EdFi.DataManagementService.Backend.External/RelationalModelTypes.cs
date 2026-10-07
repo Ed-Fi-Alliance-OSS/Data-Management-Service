@@ -164,6 +164,17 @@ public enum ReferentialAction
     /// Cascading behavior on update/delete.
     /// </summary>
     Cascade,
+
+    /// <summary>
+    /// Reject the update/delete when referencing rows exist, checked immediately with a single probe per
+    /// foreign key. Used for safety-net foreign keys whose referencing rows the application removes first
+    /// (the resource root and <c>dms.Descriptor</c> rows that reference <c>dms.Document</c>). PostgreSQL
+    /// renders <c>RESTRICT</c>; <c>NO ACTION</c> there performs an extra parent re-check per foreign key
+    /// because its check is deferred to the end of the statement. SQL Server has no <c>RESTRICT</c> and
+    /// renders <c>NO ACTION</c>, which is already a single immediate probe compiled into the parent's
+    /// DELETE plan.
+    /// </summary>
+    Restrict,
 }
 
 /// <summary>
