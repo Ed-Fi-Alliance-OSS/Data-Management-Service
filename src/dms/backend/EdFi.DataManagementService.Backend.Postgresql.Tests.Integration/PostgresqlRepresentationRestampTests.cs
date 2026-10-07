@@ -386,7 +386,7 @@ public class Given_A_Postgresql_RepresentationRestampStore
             await session.CommitAsync();
         }
         // The document "disappears" the way the write path removes it: root row first (its FK to
-        // dms.Document is ON DELETE RESTRICT, DMS-1236), then the dms.Document row.
+        // dms.Document is ON DELETE RESTRICT), then the dms.Document row.
         await _database.ExecuteNonQueryAsync(
             """
             DELETE FROM "edfi"."Student" WHERE "DocumentId" = @id;

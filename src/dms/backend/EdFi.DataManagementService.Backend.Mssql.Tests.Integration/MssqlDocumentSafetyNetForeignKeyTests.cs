@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 /// <summary>
 /// SQL Server counterpart to the PostgreSQL
-/// <c>Given_A_Provisioned_Postgresql_Database_Document_Safety_Net_Foreign_Keys</c> fixture (DMS-1236).
+/// <c>Given_A_Provisioned_Postgresql_Database_Document_Safety_Net_Foreign_Keys</c> fixture.
 /// The relational model's <c>Restrict</c> delete action renders as <c>ON DELETE NO ACTION</c> here,
 /// because SQL Server has no RESTRICT and its NO ACTION is already a single immediate probe. What
 /// matters is that no resource root or <c>dms.Descriptor</c> key cascades any more: with CASCADE the

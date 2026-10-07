@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 /// <summary>
 /// Proves the delete action of the safety-net foreign keys that reference <c>dms.Document</c> on a
-/// database provisioned from the authoritative <c>ds-5.2</c> DDL (DMS-1236). Every resource root
+/// database provisioned from the authoritative <c>ds-5.2</c> DDL. Every resource root
 /// table and <c>dms.Descriptor</c> must carry <c>ON DELETE RESTRICT</c>: the write path deletes the
 /// root row before the <c>dms.Document</c> row, so the key never has anything to cascade, and
 /// RESTRICT is PostgreSQL's single-probe check (NO ACTION would re-check the parent key before

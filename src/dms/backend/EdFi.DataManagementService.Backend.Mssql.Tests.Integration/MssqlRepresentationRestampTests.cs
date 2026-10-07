@@ -454,7 +454,7 @@ public class Given_A_Mssql_RepresentationRestampStore
         }
 
         // The document "disappears" the way the write path removes it: root row first (its FK to
-        // dms.Document is ON DELETE NO ACTION, DMS-1236), then the dms.Document row.
+        // dms.Document is ON DELETE NO ACTION), then the dms.Document row.
         await _database.ExecuteNonQueryAsync(
             """
             DELETE FROM [edfi].[Student] WHERE [DocumentId] = @id;

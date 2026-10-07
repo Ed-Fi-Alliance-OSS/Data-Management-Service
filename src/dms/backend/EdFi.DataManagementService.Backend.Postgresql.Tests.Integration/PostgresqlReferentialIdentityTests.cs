@@ -1358,7 +1358,7 @@ public class PostgresqlReferentialIdentityTests
         ((long)referentialId["DocumentId"]!).Should().Be(documentId);
 
         // Act — delete in the write path's order: the root row first (its FK to dms.Document is
-        // ON DELETE RESTRICT, DMS-1236), then the dms.Document row, whose kept CASCADE removes the RI row.
+        // ON DELETE RESTRICT), then the dms.Document row, whose kept CASCADE removes the RI row.
         await _database.ExecuteNonQueryAsync(
             """
             DELETE FROM "edfi"."Student" WHERE "DocumentId" = @documentId;
