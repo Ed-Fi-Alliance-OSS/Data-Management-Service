@@ -37,9 +37,13 @@ param(
 $ErrorActionPreference = "Stop"
 $engRoot = Join-Path $PSScriptRoot "../../.."
 Import-Module (Join-Path $engRoot "Dms-Management.psm1") -Force
-Import-Module (Join-Path $engRoot "Package-Management.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "../bootstrap/review-variants.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "educator-prep.psm1") -Force
+# Fail fast if an import change ever hides a helper this script calls directly.
+foreach ($command in @("Read-ReviewEnvFile", "Get-ReviewDeployment", "Get-EducatorPrepLoadFile", "Get-EducatorPrepRepostFile",
+        "Get-ReviewBulkLoadClientDirectory", "Get-ReviewEducationOrganizationId", "Invoke-EducatorPrepLoad")) {
+    if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { throw "Helper '$command' is not available after the module imports." }
+}
 
 if ($Insecure) {
     # Each module's Invoke-RestMethod/Invoke-WebRequest calls use that module's own defaults.
@@ -72,17 +76,11 @@ foreach ($stage in $stages.Keys) {
     foreach ($name in $stages[$stage]) { Copy-Item -LiteralPath (Join-Path $sampleDirectory $name) -Destination $stageDirectory }
 }
 
-# Package-Management downloads into ./.packages, so resolve the pinned client from the work directory.
-Push-Location $work
-try { $clientPackage = (Get-BulkLoadClient).Trim() }
-finally { Pop-Location }
-$clientRoot = if ([System.IO.Path]::IsPathRooted($clientPackage)) { $clientPackage } else { Join-Path $work $clientPackage }
-$clientDll = Get-ChildItem -Path (Join-Path $clientRoot "tools") -Recurse -Filter "EdFi.BulkLoadClient.Console.dll" | Select-Object -First 1
-if (-not $clientDll) { throw "EdFi.BulkLoadClient.Console.dll not found under $clientPackage." }
+$clientDirectory = Get-ReviewBulkLoadClientDirectory -WorkDirectory $work
 
 # Scope the loader to every education organization the full sample set defines, as Build-Template
 # does, so records that reference core Grand Bend EdOrgs authorize too.
-$edOrgIds = @(Get-EducationOrganizationIdsFromSampleData -SampleDataDirectory $sampleDirectory)
+$edOrgIds = Get-ReviewEducationOrganizationId -SampleDataDirectory $sampleDirectory
 
 $envValues = Read-ReviewEnvFile -Path $EnvFile
 function EnvVal([string]$key, [string]$default = "") {
@@ -101,7 +99,7 @@ foreach ($d in $deployments) {
         $result = Invoke-EducatorPrepLoad -Deployment $d -DataDirectory (Join-Path $work $stage) -LogDirectory $work `
             -AdminClientId (EnvVal "BOOTSTRAP_ADMIN_CLIENT_ID" "dms-bootstrap-admin") `
             -AdminClientSecret (EnvVal "BOOTSTRAP_ADMIN_CLIENT_SECRET") `
-            -BulkLoadClientDirectory $clientDll.DirectoryName -EducationOrganizationIds $edOrgIds -Network $Network
+            -BulkLoadClientDirectory $clientDirectory -EducationOrganizationIds $edOrgIds -Network $Network
         $results.Add($result)
         Write-Output ("[{0}] {1}: exit {2} in {3:mm\:ss} (log: {4})" -f $result.Deployment, $result.Data, $result.ExitCode, $result.Elapsed, $result.LogPath)
     }

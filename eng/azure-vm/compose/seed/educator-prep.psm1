@@ -9,7 +9,10 @@
 # template: 1959 students in 9 schools instead of 960 in 3.
 
 # No -Force on Dms-Management: reuse a loaded instance so -Insecure defaults set on it apply here.
+# Template-Management force-reimports Package-Management and Dms-Management as nested modules, which
+# drops copies a caller imported earlier, so every helper the entry script needs is wrapped here.
 Import-Module (Join-Path $PSScriptRoot "../../../Dms-Management.psm1")
+Import-Module (Join-Path $PSScriptRoot "../../../Package-Management.psm1")
 Import-Module (Join-Path $PSScriptRoot "../../../DatabaseTemplates/Template-Management.psm1")
 
 function Get-EducatorPrepLoadFile {
@@ -55,6 +58,39 @@ function Get-EducatorPrepRepostFile {
         if ($hit) { $file.Name }
     }
     return @($repost)
+}
+
+function Get-ReviewEducationOrganizationId {
+    <#
+    .SYNOPSIS
+        Returns every education organization id the sample data defines (Template-Management's parser),
+        the scope Build-Template gives its populated-load application.
+    #>
+    [CmdletBinding()]
+    [OutputType([long[]])]
+    param([Parameter(Mandatory)][string]$SampleDataDirectory)
+
+    return [long[]]@(Get-EducationOrganizationIdsFromSampleData -SampleDataDirectory $SampleDataDirectory)
+}
+
+function Get-ReviewBulkLoadClientDirectory {
+    <#
+    .SYNOPSIS
+        Downloads the repo-pinned BulkLoadClient into WorkDirectory/.packages and returns the folder
+        that holds EdFi.BulkLoadClient.Console.dll.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][string]$WorkDirectory)
+
+    # Package-Management downloads into ./.packages relative to the working directory.
+    Push-Location $WorkDirectory
+    try { $package = (Get-BulkLoadClient).Trim() }
+    finally { Pop-Location }
+    $packageRoot = if ([System.IO.Path]::IsPathRooted($package)) { $package } else { Join-Path $WorkDirectory $package }
+    $dll = Get-ChildItem -Path (Join-Path $packageRoot "tools") -Recurse -Filter "EdFi.BulkLoadClient.Console.dll" | Select-Object -First 1
+    if (-not $dll) { throw "EdFi.BulkLoadClient.Console.dll not found under $packageRoot." }
+    return $dll.DirectoryName
 }
 
 function Remove-ReviewLoaderApplication {
@@ -158,7 +194,7 @@ function Invoke-EducatorPrepLoad {
         Add-Vendor -CmsUrl $d.CmsUrl -Company $company -NamespacePrefixes "uri://ed-fi.org, uri://gbisd.edu" -AccessToken $token -Tenant $d.Tenant
     }
     $edOrgIds = if ($EducationOrganizationIds.Count -gt 0) { $EducationOrganizationIds } else {
-        @(Get-EducationOrganizationIdsFromSampleData -SampleDataDirectory $DataDirectory)
+        Get-ReviewEducationOrganizationId -SampleDataDirectory $DataDirectory
     }
     $applicationName = "EdPrep Loader ($($d.Code))"
     $application = Add-Application -CmsUrl $d.CmsUrl -ApplicationName $applicationName -ClaimSetName "EdFiSandbox" `
@@ -184,5 +220,6 @@ function Invoke-EducatorPrepLoad {
     }
 }
 
-Export-ModuleMember -Function Get-EducatorPrepLoadFile, Get-EducatorPrepRepostFile, Remove-ReviewLoaderApplication, `
+Export-ModuleMember -Function Get-EducatorPrepLoadFile, Get-EducatorPrepRepostFile, Get-ReviewEducationOrganizationId, `
+    Get-ReviewBulkLoadClientDirectory, Remove-ReviewLoaderApplication, `
     Invoke-BulkLoadClientContainer, Invoke-EducatorPrepLoad

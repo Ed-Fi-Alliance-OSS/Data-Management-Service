@@ -622,6 +622,15 @@ Describe "Azure VM educator-prep load" {
         Should -Invoke Invoke-RestMethod -ModuleName educator-prep -Times 0 -Exactly -ParameterFilter { $Method -eq "Delete" }
     }
 
+    It "resolves the pinned BulkLoadClient from the package it downloads" {
+        Mock Get-BulkLoadClient -ModuleName educator-prep { ".packages/edfi.suite3.bulkloadclient.console.1.2.3" }
+        $clientDirectory = Join-Path $script:work ".packages/edfi.suite3.bulkloadclient.console.1.2.3/tools/net10.0/any"
+        New-Item -ItemType Directory -Path $clientDirectory -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $clientDirectory "EdFi.BulkLoadClient.Console.dll") -Value "stub"
+
+        Get-ReviewBulkLoadClientDirectory -WorkDirectory $script:work | Should -Be (Get-Item -LiteralPath $clientDirectory).FullName
+    }
+
     It "removes the loader application even when the bulk load fails" {
         Mock Get-CmsToken -ModuleName educator-prep { "token" }
         Mock Invoke-RestMethod -ModuleName educator-prep -ParameterFilter { $Uri -like "*v3/dataStores*" } {
@@ -640,6 +649,32 @@ Describe "Azure VM educator-prep load" {
 
         $result.ExitCode | Should -Be 1
         Should -Invoke Remove-ReviewLoaderApplication -ModuleName educator-prep -Times 1 -Exactly -ParameterFilter { $ApplicationId -eq 42 }
+    }
+}
+
+Describe "Azure VM entry scripts" {
+    BeforeAll {
+        $script:seedRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm/compose/seed"))
+    }
+
+    BeforeEach {
+        $script:work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-azure-vm-entry-$([Guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $script:work -Force | Out-Null
+    }
+
+    AfterEach {
+        if (Test-Path -LiteralPath $script:work) {
+            Remove-Item -LiteralPath $script:work -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "load-educator-prep.ps1 resolves every helper it calls after its imports" {
+        # Template-Management force-reimports Package-Management and Dms-Management as nested modules,
+        # which can drop copies imported earlier; the script must still resolve every helper.
+        $output = & pwsh -NoProfile -File (Join-Path $script:seedRoot "load-educator-prep.ps1") -SampleDataDirectory $script:work 2>&1
+
+        $LASTEXITCODE | Should -Not -Be 0
+        $output | Out-String | Should -Match "No educator-prep files found"
     }
 }
 

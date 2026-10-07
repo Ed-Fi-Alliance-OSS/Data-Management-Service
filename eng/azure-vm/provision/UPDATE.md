@@ -67,9 +67,13 @@ Commands are labeled **[bash]** (WSL shell) or **[pwsh]** (`pwsh` inside WSL) an
 ## Part B: Update to a newer build  [bash]
 
 ```bash
-cd ~/dms-src && git fetch origin --tags && git switch --detach origin/main   # or a release tag
-cd eng/azure-vm/compose && SKIP_GIT=1 ./update.sh
+cd ~/dms-src && git fetch --force --tags origin && git switch --detach origin/main && git log -1 --oneline &&
+  cd eng/azure-vm/compose && SKIP_GIT=1 ./update.sh
 ```
+
+Replace `origin/main` with a release tag to deploy a release.
+The single `&&` chain matters: if the fetch or switch fails, `update.sh` must not pull new images against the old checkout.
+`--force` lets the fetch move a tag that was re-pointed upstream; without it the fetch fails with `would clobber existing tag`.
 
 `update.sh` pulls the images for the current `DMS_IMAGE_TAG` (`pre` by default) and recreates the changed containers.
 The Configuration Service applies its database migrations at startup.
@@ -79,9 +83,11 @@ Keycloak: `keycloak.yml` pins the floating minor tag `26.7`.
 `update.sh` refuses a changed pin, because the H2 realm volume cannot cross minor versions, but it does apply a patch release published under the same tag.
 The 26.7.4 to 26.7.5 move has been rehearsed; Keycloak migrated the realm and every key kept working.
 
-Verify with the existing keys:
+Verify with the existing keys once the DMS services report healthy (`update.sh` returns while they are still starting):
 
 ```bash
+until [ "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/st-dms/health)" = 200 ] &&
+  [ "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/mt-dms/health)" = 200 ]; do sleep 5; done
 for p in st-dms st-config mt-dms mt-config; do echo -n "$p: "; curl -sk -o /dev/null -w "%{http_code}\n" "https://localhost/$p/health"; done
 cd ~/dms-src/eng/azure-vm/http
 FQDN=<FQDN> ST_CREDS='key:secret' T1_CREDS='key:secret' T2_CREDS='key:secret' ./sample-all.sh
