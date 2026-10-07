@@ -36,7 +36,6 @@ file.
 | ReverseProxy:UseForwardedHeaders | When `true`, the application respects reverse proxy `X-Forwarded-*` headers for URL generation, but only from trusted sources configured in `ReverseProxy`. Default: `false`. See [Reverse Proxy and Forwarded Headers](#reverse-proxy-and-forwarded-headers). |
 | ReverseProxy:KnownProxies        | Comma-separated list of exact trusted reverse-proxy IP addresses (IPv4 or IPv6) whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.5,10.0.0.6` |
 | ReverseProxy:KnownNetworks       | Comma-separated list of trusted reverse-proxy networks in CIDR notation whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.0/8,172.16.0.0/12` |
-| EnableApplicationResetEndpoint   | When `true`, enables the `/v3/applications/{id}/reset-credential` endpoint in the Configuration Service, allowing application credentials to be reset via API. When `false`, the endpoint is not registered and will return a 404 (Not Found) response. <br>**Recommended:** Set to `false` if you need to support multiple API clients per application, as enabling this endpoint may interfere with multi-client scenarios. Default: `false` |
 
 Claimset management endpoints use three separate controls. `EnableManagementEndpoints` is the
 global exposure switch; when it is `false`, the claimset management routes are not mapped.

@@ -492,10 +492,6 @@ Authorization: bearer {{token2}}
 ### ============================================================================
 ### Use these requests to regenerate key/secret for existing applications.
 ### After resetting, you will need to re-run the token requests above with the new credentials.
-###
-### IMPORTANT: This endpoint requires the feature flag to be enabled:
-###   DMS_CONFIG_ENABLE_APPLICATION_RESET_ENDPOINT=true
-### Add this to your .env file and restart the config service.
 
 ### Reset credentials for Tenant 1 Application
 # @name resetApp1Credentials
