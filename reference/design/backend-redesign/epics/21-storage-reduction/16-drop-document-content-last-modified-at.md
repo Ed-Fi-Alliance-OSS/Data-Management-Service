@@ -20,14 +20,17 @@ Moving `ContentVersion` out of `dms.Document` is outside this story's scope.
 ## Dependencies and independent delivery
 
 DMS-1401 has no prerequisite among the other DMS-1402 child stories. It must pass on PostgreSQL
-and SQL Server against the existing descriptor and ReferentialIdentity implementation and may be
-merged and closed independently.
+and SQL Server against the descriptor schema on its implementation baseline and the existing
+ReferentialIdentity implementation and may be merged and closed independently. For this branch's
+planned order, that baseline includes DMS-1404's compact descriptor schema; standalone delivery
+does not require maintaining an additional legacy-descriptor runtime mode or test matrix.
 
 This story does not depend on DMS-1403's creation-time changes, DMS-1404's compact descriptor IDs,
 or the DMS-1443 through DMS-1456 natural-key/ReferentialIdentity removal workstream. It must not
-require those stories' new keys, lookup contracts, schema invariants, or PostgreSQL version
-upgrade. The fourteen-story release-atomicity requirement in DMS-1402 applies to that natural-key
-workstream and does not include DMS-1401.
+introduce absent stories' new keys, lookup contracts, schema invariants, or PostgreSQL version
+upgrade as prerequisites. When DMS-1404 has already landed, use its compact schema and lookup
+contracts as the baseline. The fourteen-story release-atomicity requirement in DMS-1402 applies
+to the natural-key workstream and does not include DMS-1401.
 
 Shared DDL emitters, generated fixtures, and descriptor code may require merge coordination.
 That overlap does not make the other stories prerequisites. DMS-1401 owns all changes needed to
@@ -39,6 +42,27 @@ delivery without making DMS-1404 an implementation prerequisite. DMS-1404 retain
 its descriptor-specific schema expectations; when those changes are present in the implementation
 baseline, the combined package evidence must also demonstrate them. DMS-1401's timestamp-column
 check alone does not establish that the compact descriptor schema is present.
+
+## Implementation order and handoff from DMS-1404
+
+For the planned branch sequence, start this story after DMS-1404's runtime, fresh-schema, fixture,
+affected load/copy tooling, and descriptor catalog checks pass on both engines. At that checkpoint,
+both document stamp columns remain present and the current stamp ownership still applies.
+DMS-1404 owns the separate int
+DescriptorId and bigint DocumentId contracts, compact reference joins, removed descriptor columns,
+and legacy-dump descriptor conversion; this story owns moving timestamp authority to the roots.
+
+When changing descriptor timestamp reads, stamping, and representation restamping, locate the
+descriptor by its owning DocumentId for document-oriented operations and use DescriptorId for
+stored resource-reference joins. Retain DMS-1404's reference-resolution contracts and RI behavior.
+Extend its unequal-ID regression fixtures so the timestamp change cannot mask an ID interchange.
+
+Complete runtime and tooling changes and regenerate fixtures before producing the shared packages
+from the combined schema. Reuse DMS-1404's executable descriptor catalog assertions in the source
+and restored database checks alongside this story's timestamp assertions, then run the eight-leg
+build/restore matrix and update affected consumer pins to the verified prereleases. Select the
+descriptor expectations from the implementation baseline; missing compact-schema features in an
+old package must fail verification rather than cause those checks to be skipped.
 
 ## Implementation scope
 
@@ -69,7 +93,10 @@ check alone does not establish that the compact descriptor schema is present.
   check explicitly reads `dms.Document.ContentLastModifiedAt`; remove that document-column
   dependency while retaining checks that authoritative root and descriptor timestamps survive
   the copy unchanged. Verify carry-forward from an older dump into the new schema without
-  requiring the other storage-reduction stories.
+  requiring the other storage-reduction stories. When DMS-1404 is present, retain its source-shape
+  staging, compact-ID allocation/reference remapping, descriptor-history conversion, and sequence
+  checks. Its descriptor conversion must already work with the document timestamp present;
+  this story adds coverage with that column absent.
 - Regenerate affected CDC inventories, SQL Server capture-column expectations, and fixtures from
   the new physical schema. Verify CDC bootstrap and Kafka streaming against the changed schema.
 - Rebuild **Minimal and Populated** database-template packages on PostgreSQL and SQL Server.
@@ -118,15 +145,17 @@ overhead remain hypotheses.
 4. Integration tests on both engines cover creation, root updates, child-only
    inserts/updates/deletes, identity cascades, descriptor changes, no-op writes, and representation
    restamping. Tests demonstrate that meaningful changes receive the correct stamps and no-op
-   writes preserve them.
+   writes preserve them. When DMS-1404 is present, descriptor timestamp reads, stamping,
+   restamping, and cache tests use unequal DescriptorId and DocumentId values.
 5. Projection enqueueing and cache freshness remain correct after normal writes and restamping.
    Concurrent-write tests retain coverage for SQL Server recursion and deadlock protections.
 6. Generated fixtures and schema documentation match the new ownership model, and deployment
    instructions explicitly require reprovisioning affected databases and using rebuilt Minimal
    and Populated template packages on both engines.
 7. The story compiles and passes its required PostgreSQL and SQL Server checks against the existing
-   descriptor and ReferentialIdentity implementation, without implementation prerequisites from
-   other DMS-1402 child stories.
+   ReferentialIdentity implementation and the descriptor schema on its implementation baseline
+   (compact when DMS-1404 has landed), without implementation prerequisites from other DMS-1402
+   child stories.
 8. Before story closure, fresh build-and-restore verification succeeds for Minimal and Populated
    packages on both engines for each supported template Data Standard (`5.2.0` and `6.1.0`:
    eight legs). Sources are freshly provisioned from the changed DDL and packages are restored
@@ -145,8 +174,12 @@ overhead remain hypotheses.
 11. When the implementation baseline includes DMS-1404, the combined rebuild evidence also
     demonstrates its compact descriptor primary key and foreign keys, separate DocumentId,
     ResourceKeyId-based descriptor typing and change tracking, and required URI storage/index
-    shape. Use DMS-1404's descriptor-specific expectations. These conditional checks preserve
-    DMS-1401's standalone acceptance against the descriptor implementation on its baseline.
+    shape. Run DMS-1404's reusable provider-catalog assertions against both source and restored
+    databases before API probes. Regression coverage rejects a timestamp-correct schema missing
+    the compact descriptor features even when the `v3` fingerprint matches. These conditional
+    checks preserve DMS-1401's standalone acceptance against the descriptor implementation on
+    its baseline; the condition is whether DMS-1404 is included in that baseline, not whether the
+    package being checked has its schema features.
 
 ## Release and deployment
 

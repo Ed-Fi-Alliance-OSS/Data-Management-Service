@@ -21,12 +21,42 @@ This implements the descriptor optimization identified in DMS-1398. ODS's compac
 - Remove the physically stored Uri and its (Uri, Discriminator) uniqueness constraint. Enforce uniqueness by ResourceKeyId and the reconstructed, unlowered whole URI (Namespace + "#" + CodeValue), preserving the existing provider collation behavior. Reconstruct URIs wherever previously stored URI values were consumed, including hashing, identity verification, and response materialization.
 - Use ResourceKeyId instead of string discriminators in descriptor tracked-change records and their query and authorization paths.
 - Update both dialects, model derivation, DDL, compiled plans, reference-resolution contracts, flattening, query preprocessing, hydration, cache integration, change-tracking joins, and affected fixtures/tests.
+- Update affected data-loading and carry-forward tooling, including
+  `eng/northridge/Copy-NorthridgeDataForward.ps1` and its tests, for the compact descriptor schema.
+  Legacy dumps carry descriptor DocumentIds in resource references and include the removed
+  Discriminator and stored Uri columns. Stage the source shape, allocate independent compact IDs,
+  remap affected stored descriptor references, and initialize and verify the new descriptor
+  allocation sequence. Translate descriptor tracked-change type identity to ResourceKeyId using
+  the source discriminator and provisioned resource-key catalog, including tombstones whose live
+  descriptor/document rows are gone. Preserve document IDs, RI rows, stamps, and the existing copy
+  integrity checks; do not narrow or reuse global DocumentIds as compact IDs. DMS-1401 owns the
+  later removal of this tool's document-timestamp dependency.
 
 Current runtime contracts sometimes call a descriptor DocumentId a DescriptorId. Make the distinction explicit throughout the affected code. The PostgreSQL reference lookup already joins dms.Descriptor, allowing it to return both IDs without another round trip.
 
 DMS-1404 is independently deliverable against the current RI-based runtime and supported database versions. It has no dependency on another story in this epic, including DMS-1447, and does not share the DMS-1443–DMS-1456 same-release atomicity requirement. Preserve existing normalization, RI matching and maintenance, provider collation behavior, and descriptor POST/PUT behavior. Natural-key resolution, RI removal, new validation and equality rules, expanded Unicode alias matching, platform upgrades, and stored-wins descriptor semantics remain in their existing stories.
 
 Abstract-identity discriminator replacement is explicitly out of scope. Existing abstract-identity discriminator columns, union-view discriminator outputs, and their authorization behavior remain unchanged. This exclusion does not exempt descriptor FK columns in those structures from the compact-ID conversion where applicable.
+
+## Implementation order and handoff to DMS-1401
+
+Implement and validate this story first with `dms.Document.ContentVersion` and
+`dms.Document.ContentLastModifiedAt` still present. Adapt descriptor stamping, no-op guards,
+restamping, cache paths, and UUID lookups only as required by the separate IDs and removed
+descriptor columns; retain the current document-to-root/descriptor stamp ownership. Timestamp
+ownership moves in DMS-1401.
+
+The handoff is a working RI-based runtime on freshly provisioned compact-descriptor schemas on
+both engines, regenerated fixtures, executable descriptor catalog assertions, and working affected
+load/copy tooling. Exercise descriptor metadata, stamping, restamping, and cache operations with
+unequal DescriptorId and DocumentId values before handing off. DMS-1401 must build on these ID
+roles and retain this story's descriptor behavior and physical-schema checks.
+
+DMS-1401 then removes the document timestamp and completes the combined template build/restore
+matrix and affected consumer-pin updates. The shared package exercise is deferred; the runtime,
+tooling, fixture, and fresh-schema checks needed to complete DMS-1404 are not. If DMS-1401 does
+not follow immediately, DMS-1404 can still close after its checks, but template-backed deployment
+requires compatible templates to be rebuilt and verified before use.
 
 ## Acceptance criteria
 
@@ -83,11 +113,14 @@ Abstract-identity discriminator replacement is explicitly out of scope. Existing
 - Both providers have regression cases for distinct component pairs that reconstruct the same URI and for spaces immediately before "#" in references and descriptor-valued filters.
 - Regression coverage verifies existing RI matching for repeated POSTs and document references whose identities contain descriptors, including mixed-case descriptor values reached through document-reference identity paths.
 - Replacing stored URI reads with reconstruction preserves each existing path's comparison and normalization behavior, including RI hashing, PUT identity checks, and tombstone recreation detection.
+- Descriptor stamping, representation restamping, and cache materialization continue to use the owning DocumentId for document stamps and the correct descriptor row when the two IDs differ. These checks pass with the document timestamp still present, before DMS-1401 changes timestamp ownership.
 
 ### 7. Schema storage changes validated
 
 - Regenerated DS 5.2 and extension fixtures demonstrate the new column types, keys, constraints, and indexes for both providers.
 - DMS-1404 owns the descriptor-specific physical-schema expectations used to verify combined template builds: the independently generated int DescriptorId primary key, unique non-null DocumentId FK, compact stored descriptor FKs, removal of descriptor Discriminator, required reconstructed-URI storage/index shape, and ResourceKeyId-based descriptor change tracking. When DMS-1401 follows this story, its shared package rebuild evidence must also demonstrate these expectations; timestamp-column absence alone does not prove the compact descriptor schema. These expectations apply to builds containing DMS-1404 and do not make compact descriptor IDs a prerequisite for DMS-1401's standalone acceptance.
+- Provide reusable provider-catalog assertions for those descriptor expectations and exercise them against fresh DMS-1404 schemas on both engines while the document timestamp remains present. DMS-1401 reuses them against both source and restored catalogs in the combined template gate. Expected schema features come from the implementation baseline, not from detecting which features an older source or restored database happens to contain.
+- Carry-forward regression coverage proves that a legacy dump loads into the compact schema with correctly remapped descriptor references, ResourceKeyId-based descriptor history, unchanged document IDs and stamps, valid foreign keys, and a descriptor allocation sequence ready for the next insert. Use representative legacy-dump fixtures with unequal descriptor and document IDs in the target. This descriptor conversion is complete before DMS-1401 removes the document timestamp; the full Northridge dataset run and shared template rebuilds are not DMS-1404 closure gates.
 - Measured storage savings and performance benchmarks are not completion requirements.
 
 ### 8. Provisioning and scope documented

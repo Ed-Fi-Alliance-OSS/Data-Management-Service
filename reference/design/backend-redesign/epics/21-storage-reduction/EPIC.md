@@ -38,6 +38,14 @@ package verification also uses the descriptor-specific schema expectations owned
 This coordinates artifact delivery without adding an implementation dependency; the individual
 stories define the closure and v8.1 release gates.
 
+For this sequence, DMS-1404 completes its compact-ID runtime and affected load/copy tooling while
+both document stamp columns remain present, and supplies reusable descriptor catalog assertions
+validated on fresh schemas. DMS-1401 then moves timestamp authority to resource roots and
+`dms.Descriptor`, extends copy-forward stamp checks, and applies both stories' catalog assertions
+to the combined package sources and restores. DMS-1401 builds on the compact descriptor baseline;
+independent deliverability does not require a second legacy-descriptor runtime mode. Until the
+shared packages are verified, use freshly provisioned compatible databases for the changed runtime.
+
 The remaining DMS-1398 storage-reduction ideas stay outside this local story set until their approved
 scope and Jira children are available. Mapping-pack functionality, DMS-1015, DMS-1016, and the closed
 DMS-946 are not included in these stories. In particular, mapping packs / AOT
