@@ -2950,6 +2950,20 @@ public class RevocationRequestContractTests
     private static FormUrlEncodedContent Form(params (string Key, string Value)[] fields) =>
         new(fields.Select(field => new KeyValuePair<string, string>(field.Key, field.Value)));
 
+    /// <summary>
+    /// The body exactly as written, for encodings <see cref="FormUrlEncodedContent"/> cannot produce:
+    /// it would escape every <c>%</c> and send a well-formed body.
+    /// </summary>
+    private static ByteArrayContent RawForm(
+        string encoded,
+        string contentType = "application/x-www-form-urlencoded"
+    )
+    {
+        ByteArrayContent content = new(Encoding.UTF8.GetBytes(encoded));
+        content.Headers.TryAddWithoutValidation("Content-Type", contentType).Should().BeTrue();
+        return content;
+    }
+
     private static (string, string)[] WithFormCredentials(params (string, string)[] fields) =>
         [("client_id", ClientId), ("client_secret", ClientSecret), .. fields];
 
@@ -3181,6 +3195,193 @@ public class RevocationRequestContractTests
             Logs
                 .Records.Should()
                 .NotContain(record => record.EventId.Id == RequestLoggingEventIds.HttpRequestFailed.Id);
+    }
+
+    // ----- D-03 row 2: malformed URL encoding, which ReadFormAsync accepts without throwing -----
+
+    private const string MalformedFormDescription = "The request form payload is malformed.";
+
+    /// <summary>
+    /// <c>ReadFormAsync</c> keeps a malformed escape as literal text and passes percent-encoded bytes
+    /// that are not UTF-8 through undecoded, so none of these bodies makes it throw.
+    /// </summary>
+    public static IEnumerable<TestFixtureData> MalformedEncodings()
+    {
+        yield return new TestFixtureData("%").SetArgDisplayNames("a bare percent sign");
+        yield return new TestFixtureData("%GG").SetArgDisplayNames("an escape with non-hex digits");
+        yield return new TestFixtureData("%FF").SetArgDisplayNames("an escape that is not UTF-8");
+    }
+
+    [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(MalformedEncodings))]
+    public class Given_a_revocation_request_with_a_malformed_url_encoded_token(string encodedToken)
+        : RevocationRequestFixture
+    {
+        protected override HttpContent? Body =>
+            RawForm($"token={encodedToken}&client_id={ClientId}&client_secret={Sentinel}");
+
+        [Test]
+        public void It_answers_invalid_request() =>
+            AssertOAuthError(HttpStatusCode.BadRequest, "invalid_request", MalformedFormDescription);
+
+        [Test]
+        public void It_does_not_call_the_manager() => AssertManagerNotCalled();
+
+        [Test]
+        public void It_does_not_log_the_credentials() => AssertNotLogged(Sentinel);
+
+        [Test]
+        public void It_is_not_logged_as_a_failed_request() =>
+            Logs
+                .Records.Should()
+                .NotContain(record => record.EventId.Id == RequestLoggingEventIds.HttpRequestFailed.Id);
+    }
+
+    /// <summary>
+    /// Controls for the fixture above: correctly encoded input, including an encoded literal
+    /// <c>%</c> followed by text that would itself be a malformed escape, reaches the manager
+    /// decoded exactly once.
+    /// </summary>
+    public static IEnumerable<TestFixtureData> WellFormedEncodings()
+    {
+        yield return new TestFixtureData("%25", "%").SetArgDisplayNames("an encoded percent sign");
+        yield return new TestFixtureData("%25GG", "%GG").SetArgDisplayNames(
+            "an encoded percent sign before non-hex text"
+        );
+        yield return new TestFixtureData("%2B", "+").SetArgDisplayNames("an encoded plus sign");
+        yield return new TestFixtureData("a+b", "a b").SetArgDisplayNames("a plus sign for a space");
+        yield return new TestFixtureData("%C3%A9", "é").SetArgDisplayNames("an encoded UTF-8 sequence");
+    }
+
+    [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(WellFormedEncodings))]
+    public class Given_a_revocation_request_with_a_well_formed_url_encoded_token(
+        string encodedToken,
+        string decodedToken
+    ) : RevocationRequestFixture
+    {
+        protected override HttpContent? Body =>
+            RawForm($"token={encodedToken}&client_id={ClientId}&client_secret={ClientSecret}");
+
+        [Test]
+        public void It_answers_an_empty_200()
+        {
+            Response.StatusCode.Should().Be(HttpStatusCode.OK, Content);
+            Content.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_hands_the_manager_the_token_decoded_once() =>
+            Manager.Requests.Should().ContainSingle().Which.Token.Should().Be(decodedToken);
+    }
+
+    /// <summary>
+    /// The form is rejected before any credential is processed: the malformed Basic value alone would
+    /// be answered 401 <c>invalid_client</c> with a challenge.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_with_a_malformed_url_encoded_form_and_malformed_basic_credentials
+        : RevocationRequestFixture
+    {
+        protected override HttpContent? Body => RawForm("token=%GG");
+
+        protected override IEnumerable<string> AuthorizationValues => [$"Basic {Sentinel}"];
+
+        [Test]
+        public void It_answers_invalid_request_rather_than_invalid_client() =>
+            AssertOAuthError(HttpStatusCode.BadRequest, "invalid_request", MalformedFormDescription);
+
+        [Test]
+        public void It_does_not_send_a_challenge() => AssertNoChallenge();
+
+        [Test]
+        public void It_does_not_call_the_manager() => AssertManagerNotCalled();
+
+        [Test]
+        public void It_does_not_log_the_header() => AssertNotLogged(Sentinel);
+    }
+
+    /// <summary>
+    /// <c>ReadFormAsync</c> decodes with the declared charset and the endpoint's encoding check is
+    /// UTF-8, so only no charset or UTF-8 is accepted; the token is then decoded as UTF-8.
+    /// </summary>
+    public static IEnumerable<TestFixtureData> AcceptedCharsets()
+    {
+        yield return new TestFixtureData("application/x-www-form-urlencoded").SetArgDisplayNames(
+            "no charset"
+        );
+        yield return new TestFixtureData(
+            "application/x-www-form-urlencoded; charset=utf-8"
+        ).SetArgDisplayNames("charset=utf-8");
+        yield return new TestFixtureData(
+            "Application/X-WWW-Form-UrlEncoded; Charset=\"UTF-8\""
+        ).SetArgDisplayNames("a quoted upper-case UTF-8 charset");
+    }
+
+    [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(AcceptedCharsets))]
+    public class Given_a_revocation_request_declaring_an_accepted_charset(string contentType)
+        : RevocationRequestFixture
+    {
+        protected override HttpContent? Body =>
+            RawForm($"token=%C3%A9&client_id={ClientId}&client_secret={ClientSecret}", contentType);
+
+        [Test]
+        public void It_answers_an_empty_200()
+        {
+            Response.StatusCode.Should().Be(HttpStatusCode.OK, Content);
+            Content.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_hands_the_manager_the_token_decoded_as_utf8() =>
+            Manager.Requests.Should().ContainSingle().Which.Token.Should().Be("é");
+    }
+
+    /// <summary>
+    /// Bodies the encoding check would accept as UTF-8 but <c>ReadFormAsync</c> would decode
+    /// differently under the declared charset (<c>%C3%A9</c> as <c>??</c> under US-ASCII, raw UTF-8
+    /// <c>é</c> as <c>Ã©</c> under ISO-8859-1), and a charset .NET does not know.
+    /// </summary>
+    public static IEnumerable<TestFixtureData> RejectedCharsets()
+    {
+        yield return new TestFixtureData(
+            "token=%C3%A9",
+            "application/x-www-form-urlencoded; charset=us-ascii"
+        ).SetArgDisplayNames("an escaped UTF-8 token declared US-ASCII");
+        yield return new TestFixtureData(
+            "token=é",
+            "application/x-www-form-urlencoded; charset=iso-8859-1"
+        ).SetArgDisplayNames("a raw UTF-8 token declared ISO-8859-1");
+        yield return new TestFixtureData(
+            "token=opaque",
+            "application/x-www-form-urlencoded; charset=x-unknown"
+        ).SetArgDisplayNames("an unknown charset");
+        yield return new TestFixtureData(
+            "token=opaque",
+            "application/x-www-form-urlencoded; charset=utf-7"
+        ).SetArgDisplayNames("UTF-7, which .NET refuses to load");
+    }
+
+    [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(RejectedCharsets))]
+    public class Given_a_revocation_request_declaring_an_unsupported_charset(
+        string fields,
+        string contentType
+    ) : RevocationRequestFixture
+    {
+        protected override HttpContent? Body =>
+            RawForm($"{fields}&client_id={ClientId}&client_secret={Sentinel}", contentType);
+
+        [Test]
+        public void It_answers_invalid_request() =>
+            AssertOAuthError(
+                HttpStatusCode.BadRequest,
+                "invalid_request",
+                "The request form payload must be encoded as UTF-8."
+            );
+
+        [Test]
+        public void It_does_not_call_the_manager() => AssertManagerNotCalled();
+
+        [Test]
+        public void It_does_not_log_the_credentials() => AssertNotLogged(Sentinel);
     }
 
     // ----- D-03 row 3: duplicated parameters or Authorization header -----

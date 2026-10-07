@@ -22,6 +22,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
+using Microsoft.Net.Http.Headers;
 using OpenIddict.Abstractions;
 using static EdFi.DmsConfigurationService.Backend.IdentityProviderError;
 
@@ -395,14 +396,20 @@ public class IdentityModule : IEndpointModule
 
     private const string InvalidClientCredentialsDescription = "Invalid client or Invalid client credentials";
     private const string ClientAuthenticationRequiredDescription = "Client authentication is required.";
+    private const string MalformedFormDescription = "The request form payload is malformed.";
+    private const string UnsupportedCharsetDescription = "The request form payload must be encoded as UTF-8.";
 
     /// <summary>
     /// RFC 7009 token revocation. The checks run in the DMS-1327 D-03 order and the first failure
     /// answers: request shape (form body, duplicates, mixed mechanisms, token), then client
     /// authentication, then the manager's outcome. Shape and authentication checks never touch the
-    /// token, the database or the identity provider. A malformed form body throws from
-    /// <c>ReadFormAsync</c> and is answered in the OAuth format by <c>GlobalExceptionHandler</c>,
-    /// selected by the route's <see cref="OAuthErrorContractMetadata"/>.
+    /// token, the database or the identity provider. A form body <c>ReadFormAsync</c> cannot parse
+    /// throws and is answered in the OAuth format by <c>GlobalExceptionHandler</c>, selected by the
+    /// route's <see cref="OAuthErrorContractMetadata"/>. <c>ReadFormAsync</c> does not reject
+    /// malformed URL encoding, though: it keeps an invalid escape such as <c>%GG</c> as literal text
+    /// and leaves percent-encoded bytes that are not UTF-8 undecoded, so that is checked here. The
+    /// check is UTF-8 and <c>ReadFormAsync</c> decodes with the declared charset, so a URL-encoded
+    /// body may declare no charset or UTF-8 only; the two then always decode the same way.
     /// </summary>
     private static async Task<IResult> RevokeToken(
         [FromServices] ILogger<IdentityModule> logger,
@@ -417,7 +424,31 @@ public class IdentityModule : IEndpointModule
             return InvalidRequest("The request body must be application/x-www-form-urlencoded.");
         }
 
+        UrlEncodedFormValidatingStream? encodingCheck = null;
+        MediaTypeHeaderValue? contentType = httpRequest.GetTypedHeaders().ContentType;
+        if (
+            contentType?.MediaType.Equals(
+                "application/x-www-form-urlencoded",
+                StringComparison.OrdinalIgnoreCase
+            )
+            is true
+        )
+        {
+            if (!IsAbsentOrUtf8(contentType.Charset))
+            {
+                return InvalidRequest(UnsupportedCharsetDescription);
+            }
+
+            encodingCheck = new UrlEncodedFormValidatingStream(httpRequest.Body);
+            httpRequest.Body = encodingCheck;
+        }
+
         IFormCollection form = await httpRequest.ReadFormAsync(httpContext.RequestAborted);
+        if (encodingCheck?.IsMalformed() is true)
+        {
+            return InvalidRequest(MalformedFormDescription);
+        }
+
         StringValues authorization = httpRequest.Headers.Authorization;
 
         if (authorization.Count > 1 || Array.Exists(_revocationParameters, name => form[name].Count > 1))
@@ -703,6 +734,194 @@ public class IdentityModule : IEndpointModule
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// True for no <c>charset</c> parameter, an empty one, or one naming UTF-8 in any casing,
+    /// quoted or not; false for any other value, an unknown charset included.
+    /// </summary>
+    private static bool IsAbsentOrUtf8(StringSegment charset)
+    {
+        StringSegment name = HeaderUtilities.RemoveQuotes(charset);
+        if (StringSegment.IsNullOrEmpty(name))
+        {
+            return true;
+        }
+
+        try
+        {
+            return Encoding.GetEncoding(name.ToString()).CodePage == Encoding.UTF8.CodePage;
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Passes the request body through unchanged and checks it, as <c>ReadFormAsync</c> reads it,
+    /// against <c>application/x-www-form-urlencoded</c> as RFC 6749 Appendix B uses it: every
+    /// <c>%</c> starts an escape of exactly two hex digits, and every name and value decodes to
+    /// valid UTF-8. Nothing is buffered and nothing is decoded for use, so the request's size
+    /// limits, its cancellation and the form reader's own limits apply as before, and the form
+    /// reader remains the only decoder of the values the endpoint uses.
+    /// </summary>
+    private sealed class UrlEncodedFormValidatingStream(Stream inner) : Stream
+    {
+        private readonly Decoder _utf8 = _strictUtf8.GetDecoder();
+        private int _escapeDigitsPending;
+        private int _escapedByte;
+        private bool _malformed;
+
+        /// <summary>
+        /// Whether the body is malformed, an escape or UTF-8 sequence left unfinished at its end
+        /// included. Called once the form has been read.
+        /// </summary>
+        public bool IsMalformed()
+        {
+            EndSegment();
+            return _malformed;
+        }
+
+        private void Inspect(ReadOnlySpan<byte> bytes)
+        {
+            foreach (byte value in bytes)
+            {
+                if (_malformed)
+                {
+                    return;
+                }
+
+                if (_escapeDigitsPending > 0)
+                {
+                    int digit = HexDigitValue(value);
+                    if (digit < 0)
+                    {
+                        _malformed = true;
+                        return;
+                    }
+
+                    _escapedByte = (_escapedByte << 4) | digit;
+                    if (--_escapeDigitsPending == 0)
+                    {
+                        AddDecodedByte((byte)_escapedByte);
+                    }
+                    continue;
+                }
+
+                switch (value)
+                {
+                    case (byte)'%':
+                        _escapeDigitsPending = 2;
+                        _escapedByte = 0;
+                        break;
+                    case (byte)'&' or (byte)'=':
+                        EndSegment();
+                        break;
+                    case (byte)'+':
+                        AddDecodedByte((byte)' ');
+                        break;
+                    default:
+                        AddDecodedByte(value);
+                        break;
+                }
+            }
+        }
+
+        private static int HexDigitValue(byte value) =>
+            value switch
+            {
+                >= (byte)'0' and <= (byte)'9' => value - '0',
+                >= (byte)'A' and <= (byte)'F' => value - 'A' + 10,
+                >= (byte)'a' and <= (byte)'f' => value - 'a' + 10,
+                _ => -1,
+            };
+
+        /// <summary>
+        /// Feeds one decoded byte to the stateful decoder; <c>GetChars</c> rather than
+        /// <c>GetCharCount</c>, which does not carry a partial sequence into the next call.
+        /// </summary>
+        private void AddDecodedByte(byte value)
+        {
+            ReadOnlySpan<byte> decoded = [value];
+            Span<char> chars = stackalloc char[2];
+            try
+            {
+                _utf8.GetChars(decoded, chars, flush: false);
+            }
+            catch (DecoderFallbackException)
+            {
+                _malformed = true;
+            }
+        }
+
+        /// <summary>Ends a name or value: no escape or UTF-8 sequence may be left unfinished.</summary>
+        private void EndSegment()
+        {
+            if (_malformed)
+            {
+                return;
+            }
+
+            if (_escapeDigitsPending > 0)
+            {
+                _malformed = true;
+                return;
+            }
+
+            Span<char> chars = stackalloc char[2];
+            try
+            {
+                _utf8.GetChars([], chars, flush: true);
+            }
+            catch (DecoderFallbackException)
+            {
+                _malformed = true;
+            }
+            _utf8.Reset();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            int read = inner.Read(buffer, offset, count);
+            Inspect(buffer.AsSpan(offset, read));
+            return read;
+        }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
+        {
+            int read = await inner.ReadAsync(buffer, cancellationToken);
+            Inspect(buffer.Span[..read]);
+            return read;
+        }
+
+        public override Task<int> ReadAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken
+        ) => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush() { }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     /// <summary>

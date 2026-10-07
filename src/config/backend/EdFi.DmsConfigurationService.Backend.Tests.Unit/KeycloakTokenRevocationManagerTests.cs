@@ -189,8 +189,9 @@ public class KeycloakTokenRevocationManagerTests
                 .MustHaveHappenedOnceExactly();
 
         [Test]
-        public void It_uses_the_named_keycloak_client() =>
-            A.CallTo(() => _httpClientFactory.CreateClient("KeycloakClient")).MustHaveHappenedOnceExactly();
+        public void It_uses_the_named_revocation_client() =>
+            A.CallTo(() => _httpClientFactory.CreateClient("KeycloakRevocationClient"))
+                .MustHaveHappenedOnceExactly();
 
         [Test]
         public void It_sends_exactly_one_post_to_the_realm_revocation_endpoint()

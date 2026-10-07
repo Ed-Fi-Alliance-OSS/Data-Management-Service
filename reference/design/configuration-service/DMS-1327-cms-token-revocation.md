@@ -321,6 +321,7 @@ Checks run in this order; the first failure answers.
 |---|---|---|
 | 1 | Request has no form content type | 400 `invalid_request` |
 | 2 | `ReadFormAsync` throws `InvalidDataException` (malformed form) | 400 `invalid_request`, written by the OAuth branch of `GlobalExceptionHandler` selected by the route metadata (D-17) |
+| 2a | A URL-encoded body `ReadFormAsync` accepts although its encoding is malformed: a `%` not followed by two hex digits, or a name or value that does not decode to valid UTF-8. `ReadFormAsync` keeps such escapes as literal text, so the endpoint checks the raw bytes as they are read (no buffering). The check is UTF-8 and `ReadFormAsync` decodes with the declared charset, so a `charset` other than UTF-8 (absent is accepted) is refused before parsing | 400 `invalid_request` "The request form payload is malformed.", or "The request form payload must be encoded as UTF-8." for the charset (added after review `dms-1327-01` finding 3) |
 | 3 | The `Authorization` header carries more than one value, **or** any of `token`, `token_type_hint`, `client_id`, `client_secret` appears more than once (`StringValues.Count > 1`) | 400 `invalid_request` |
 | 4 | "Basic attempted" (defined below) **and** the form **contains the key** `client_id` and/or `client_secret`, whatever their values (empty included, so partial and degenerate combinations are mixed too). Evaluated on key presence **before** the Basic value is parsed, so a malformed Basic value plus any form credential key is mixed, not malformed | 400 `invalid_request` |
 | 5 | `token` missing or empty | 400 `invalid_request` |
@@ -522,7 +523,10 @@ the manager and tests).
 ### D-09 Keycloak manager (`KeycloakTokenRevocationManager`, new, Keycloak project) (AC2, AC3, AC6)
 
 Request: `POST {KeycloakContext.Url}/realms/{KeycloakContext.Realm}/protocol/openid-connect/revoke`
-through `IHttpClientFactory.CreateClient("KeycloakClient")` (existing timeout), body
+through `IHttpClientFactory.CreateClient("KeycloakRevocationClient")` (the `TokenRequestTimeoutSeconds`
+timeout of `"KeycloakClient"`, with automatic redirects off so a 3xx is mapped by D-10 rather than
+followed; `"KeycloakClient"` and `/connect/token` are unchanged; corrected after review `dms-1327-01`
+finding 1), body
 `application/x-www-form-urlencoded`: `client_id`, `client_secret` (the **caller's**, never the CMS
 service credentials), `token`, and `token_type_hint` only per D-06. `using var response`;
 `cancellationToken` forwarded. Response body read as a string only to parse `error` and
@@ -550,7 +554,7 @@ Exception classification:
 | 400, `error == "unsupported_token_type"` | `UnsupportedTokenType` | no ownership information: this fires before `checkIssuedFor` in Keycloak, and CMS never decodes the token |
 | 400 or 401, `error ∈ {"invalid_client", "unauthorized_client"}` | `InvalidClient` | CMS chooses 400 vs 401 by D-03, never by Keycloak's status |
 | 400, `error == "invalid_request"` with any other description | `InvalidRequest` | fixed CMS description (D-01); never forwarded |
-| 403, 404, 5xx, any other status, missing/unparseable body on a non-200 | `TemporarilyUnavailable` | logged at Error with the integer status code and the D-15 error category only (403 "HTTPS required" / 404 wrong realm are operator misconfigurations; they are still "cannot revoke right now" to the caller, and the log line is the corrective signal) |
+| 3xx (never followed, D-09), 403, 404, 5xx, any other status, missing/unparseable body on a non-200 | `TemporarilyUnavailable` | logged at Error with the integer status code and the D-15 error category only (403 "HTTPS required" / 404 wrong realm are operator misconfigurations; they are still "cannot revoke right now" to the caller, and the log line is the corrective signal) |
 
 ### D-11 Public (secretless) clients under Keycloak (AC2, AC6)
 
@@ -601,7 +605,9 @@ with the token. If A-01 turns out to allow a `CancellationToken`, the wrapper is
 propagation at P3.1 without changing the decision table.
 
 Cost: one admin read per revocation. Accepted for a low-volume endpoint; recorded as a limitation
-(Q-01, resolved: keep).
+(Q-01, resolved: keep). The read precedes Keycloak's authentication of the caller, so any request
+supplying a client id and secret pays it, valid or not; expected low traffic does not bound that
+(L-04, L-14).
 
 ### D-12 DI and startup registration check (AC7)
 
@@ -1639,14 +1645,15 @@ requirement).
 |---|---|---|
 | L-01 | **Replacement-hasher compatibility.** A replacement `IClientSecretHasher` is called through `VerifySecretAsync`; only a plugin that throws for operational failures keeps them apart from `invalid_client`. A suppressing plugin is non-conforming, and the contract is not changed to enforce it. | Q-09 |
 | L-02 | **Shared-validator failure suppression.** `JwtTokenValidator.ValidateToken` reports every verification failure as a token outcome, so a key that imports but cannot be used at request time makes revocation answer `200` without revoking. Not bounded by this design. | D-07.6 |
-| L-03 | **Synchronous admin-token fetching.** Keycloak.Net fetches the admin token with `.GetAwaiter().GetResult()` and no cancellation inside `GetBaseUrl`. The bounded wait stops waiting, but the fetch cannot be aborted: it holds a pool thread until Flurl's 100 s default timeout and its result is discarded. | §9.3 P3.1, D-11.4 |
-| L-04 | **Two admin requests per revocation** (token, then client list), before the revoke itself. | Q-01, §9.3 P3.1 |
+| L-03 | **Synchronous admin-token fetching.** Keycloak.Net fetches the admin token with `.GetAwaiter().GetResult()` and no cancellation inside `GetBaseUrl`. The bounded wait stops waiting, but timing out the wait does not stop an in-flight fetch: it cannot be aborted, holds a pool thread until Flurl's 100 s default timeout and its result is discarded. | §9.3 P3.1, D-11.4 |
+| L-04 | **Two admin requests per revocation** (token, then client list), before the revoke itself and before Keycloak authenticates the caller: any request supplying a client id and secret triggers them, valid or not. A request without credentials is refused locally; an unknown client id never reaches the revoke. | Q-01, §9.3 P3.1 |
 | L-05 | **Separate timeout windows.** Admin read, revoke send (until headers) and error-body read each get their own `TokenRequestTimeoutSeconds` window: up to 3× the setting (2× when Keycloak answers `200`). | §9.3 P3.1 |
 | L-06 | **Basic decoding differs from `/connect/token`.** `/connect/revoke` decodes strictly per RFC 6749 §2.3.1 (`+` is a space, complete `%` escapes, strict UTF-8 and base64, `1*SP` separator, no fallback to form fields); `/connect/token` keeps `Uri.UnescapeDataString` and its form fallback. | D-04 |
 | L-07 | **Propagation.** CMS and DMS validate Keycloak tokens locally (CMS default 5 min skew, DMS `ClockSkewSeconds` default 30 s) and DMS self-inspects self-contained tokens, so a revoked token is accepted there until `exp` plus skew. No per-request introspection (non-goal). | D-16 |
 | L-08 | **Token types not verified end to end.** Offline tokens are untested. Keycloak refresh-token revocation is characterized directly against Keycloak (K-14), not through a CMS scenario. Bearer-only clients, a missing `azp` and an unresolvable session remain source-derived (§7). | D-16, §7 |
-| L-09 | **Keycloak versions.** CMS end-to-end evidence is on the pinned 26.1.4 image only. 26.7.5 is a direct characterization of Keycloak's endpoints (§9.1.3), identical on revocation; CMS was not run against it. Not a support policy. | Q-02 |
+| L-09 | **Keycloak versions.** CMS end-to-end evidence is on the pinned 26.1.4 image only. 26.7.5 is a direct characterization of Keycloak's endpoints (§9.1.3), identical on revocation; CMS was not run against it. Not a support policy. Changing the Keycloak image requires rerunning `KeycloakRevocationCharacterizationTests` and confirming the exact ownership-mismatch answer D-10 normalizes is unchanged. | Q-02 |
 | L-10 | **MSSQL evidence engine.** SQL Server integration tests and the MSSQL representative E2E lanes run on LocalDB 17.0 (SQL Server 2025 Express), with the Configuration Service as a host process for the E2E lanes, because the SQL Server container crashes under emulation on the ARM64 host. Accepted for this ticket, which is not about the engine. | §9.3 P2.2, §9.2 |
 | L-11 | **Outside the exception content boundary.** An exception raised before routing (tenant resolution, reverse-proxy and security-header middleware) and transport failures before the endpoint is selected keep their framework handling. The stack trace is given up on the revoke route. TestServer does not run Kestrel, so the server's own log of an escaping replacement is covered by unit fixtures, not end to end. | D-17, §9.3 P4.1 |
 | L-12 | **Pre-change token casing.** Self-contained tokens minted before DMS-1478 with a non-canonical `client_id` casing may resist revocation by a canonically cased caller until they expire. | DMS-1478, `CS-AUTH.md` |
 | L-13 | **Stale ADR reference.** `reference/adr-client-id-casing.md` still names `ITokenRevocationManager.AuthenticateClientAsync`, removed by D-02. The ADR is a decision record and is unchanged by this ticket (§5 AC1); the decision it records is kept inside `RevokeTokenAsync`. | D-02, §5 |
+| L-14 | **Unauthenticated admin load (deferred).** Because of L-03 and L-04, requests carrying unverified credentials can cause admin traffic and, with a slow Keycloak, hold pool threads. Bounding it (admin-token caching, rate limiting `/connect/revoke`) is deferred availability work, not part of this ticket; AC2 permits authentication in the delegated request and requires the supplementary check to fail closed, which it does. Token caching alone would also have to handle concurrent cache misses and refresh failures. | Review `dms-1327-01` finding 2 |

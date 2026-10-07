@@ -117,6 +117,16 @@ public static class WebApplicationBuilderExtensions
             }
         );
 
+        webApplicationBuilder
+            .Services.AddHttpClient(
+                KeycloakTokenRevocationManager.HttpClientName,
+                client =>
+                {
+                    client.Timeout = TimeSpan.FromSeconds(appSettings.TokenRequestTimeoutSeconds);
+                }
+            )
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
         webApplicationBuilder.Services.AddTransient<IClaimsHierarchyManager, ClaimsHierarchyManager>();
         webApplicationBuilder.Services.AddTransient<
             IAuthorizationMetadataResponseFactory,

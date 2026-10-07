@@ -1017,7 +1017,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     if (_keyFormatCache.Count >= _identityOptions.Value.KeyFormatCacheSize)
                     {
                         var keyToRemove = _keyFormatCache.Keys.FirstOrDefault();
-                        if (keyToRemove != null)
+                        if (keyToRemove is not null)
                         {
                             _keyFormatCache.TryRemove(keyToRemove, out _);
                         }

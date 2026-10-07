@@ -42,7 +42,13 @@ public sealed class KeycloakTokenRevocationManager(
     /// <summary>The largest error body read; a larger one is treated as unparseable (D-09).</summary>
     internal const int MaxResponseBodyBytes = 64 * 1024;
 
-    internal const string HttpClientName = "KeycloakClient";
+    /// <summary>
+    /// The named client for the delegated revoke request, registered with automatic redirects off:
+    /// a followed redirect could turn an unconfirmed revocation into a 200, and on a 307 or 308 would
+    /// resend the form, the caller's secret and token included, to the redirect target. A 3xx is
+    /// then answered here like any other unrecognized status (D-09).
+    /// </summary>
+    public const string HttpClientName = "KeycloakRevocationClient";
 
     private const string ClientTypeTimeoutReason = "client-type-timeout";
     private const string ClientTypeReadRefusedReason = "client-type-read-refused";

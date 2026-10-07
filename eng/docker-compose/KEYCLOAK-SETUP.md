@@ -124,10 +124,17 @@ Keycloak needs the following for this to work:
   `http://dms-keycloak:8080` on the Docker network, which works because the realm's
   `Require SSL` setting (`sslRequired`) is `external requests` (the default; private
   addresses may use HTTP). With `all requests`, Keycloak answers every plain-HTTP revocation
-  `403` "HTTPS required", and CMS answers `503`.
+  `403` "HTTPS required", and CMS answers `503`. CMS does not follow redirects on the
+  revocation request, so the base URL must be one Keycloak answers on directly: a redirect,
+  an HTTP-to-HTTPS redirect included, is answered `503`.
 - **Timeouts.** The client-type read, the revocation request and the reading of an error
   response each get their own `AppSettings:TokenRequestTimeoutSeconds` window, so a slow
   Keycloak can hold a revocation for up to three times that setting before CMS answers `503`.
+- **Changing the Keycloak image.** CMS recognises Keycloak's answer for another client's token
+  by its exact text (`400 invalid_request` "Unmatching clients") and answers it `200`. After
+  changing the image, rerun `KeycloakRevocationCharacterizationTests` (CMS E2E, Keycloak
+  stack) and confirm that answer is unchanged; if the text changed, revoking another client's
+  token is answered `400` instead of `200`.
 
 ### Confirming a revocation at Keycloak
 

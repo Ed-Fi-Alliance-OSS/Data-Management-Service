@@ -74,7 +74,10 @@ The endpoint checks the request in a fixed order and the first failure answers, 
 request-shape problem is never hidden behind an authentication result, and an
 authentication failure is never hidden behind a token outcome:
 
-1. The body must be `application/x-www-form-urlencoded` and parse as a form.
+1. The body must be `application/x-www-form-urlencoded` and parse as a form. Its encoding must
+   be well formed: every `%` starts a two-hex-digit escape (a literal `%` is sent as `%25`), and
+   every name and value decodes to valid UTF-8. A `charset` parameter, if present, must name
+   UTF-8; any other charset is refused with `400 invalid_request`.
 2. `token`, `token_type_hint`, `client_id` and `client_secret` may each appear at most
    once, and the `Authorization` header at most once.
 3. **Exactly one** client authentication mechanism. A request that attempts HTTP Basic
@@ -194,7 +197,9 @@ service credentials are never sent with the revocation. Keycloak authenticates t
 and enforces ownership itself (the token's `azp` must be the caller). Its answer for another
 client's token, `400 invalid_request` "Unmatching clients", is the **only** provider error CMS
 normalizes to `200`; it is matched on both members exactly. Keycloak client ids are
-case-sensitive, so a case variant of a real client id is an unknown client.
+case-sensitive, so a case variant of a real client id is an unknown client. CMS does not follow
+a redirect from the revoke endpoint: any `3xx` is answered `503`, and the form carrying the
+caller's secret and the token is never resent to the redirect target.
 
 ### Keycloak client-type check
 
@@ -371,11 +376,17 @@ using `VerifySecretAsync`.
   Ordinary signature failures are token outcomes by design. Confirm through introspection.
 - **Synchronous Keycloak admin token.** The Keycloak admin client library fetches its admin
   access token synchronously and without cancellation before each admin call. CMS runs the
-  read on the thread pool and stops waiting after the timeout, but the abandoned token fetch
-  cannot be aborted: it holds a pool thread until it ends (bounded by the library's own
-  100-second default timeout) and its result is discarded.
-- **Two admin requests per revocation.** Each Keycloak revocation costs an admin token request
-  and a client read before the revoke itself. This is acceptable for a low-volume endpoint.
+  read on the thread pool and stops waiting after the timeout, but timing out the wait does not
+  stop the fetch: an in-flight token fetch cannot be aborted, holds a pool thread until it ends
+  (bounded by the library's own 100-second default timeout) and its result is discarded.
+- **Admin requests before the caller is authenticated.** Each Keycloak revocation request that
+  supplies a client id and a secret costs an admin token request and a client read before
+  Keycloak authenticates the caller, so the credentials need not be valid to trigger them. A
+  request without credentials is refused before any admin call, and an unknown client id never
+  reaches the revoke request. The endpoint's request volume, not its authenticated volume,
+  therefore sets the admin load, and a slow Keycloak lets such requests hold pool threads as
+  described above. Bounding this (admin-token caching, rate limiting) is deferred availability
+  work; token caching would also have to handle concurrent cache misses and refresh failures.
 - **Separate timeout windows.** The admin read, the revoke request (until its response
   headers) and the reading of an error body each get their own window of
   `AppSettings:TokenRequestTimeoutSeconds`. A Keycloak revocation can therefore take up to
@@ -390,7 +401,11 @@ using `VerifySecretAsync`.
 - **Keycloak versions.** Verification runs against the pinned Keycloak 26.1 image of the E2E
   stack (26.1.4). A direct characterization of Keycloak's revocation endpoint on 26.7.5 found
   revocation behaviour identical to 26.1.4 (only introspection differs); CMS itself was not run
-  end to end against 26.7. This is a compatibility record, not a support policy.
+  end to end against 26.7. This is a compatibility record, not a support policy. Changing the
+  Keycloak image requires rerunning `KeycloakRevocationCharacterizationTests` (CMS E2E) and
+  confirming that the ownership-mismatch answer CMS normalizes (`400 invalid_request`
+  "Unmatching clients", matched exactly) is unchanged. If Keycloak changes that text, revoking
+  another client's token is answered `400` instead of `200`.
 
 ### Client id casing
 

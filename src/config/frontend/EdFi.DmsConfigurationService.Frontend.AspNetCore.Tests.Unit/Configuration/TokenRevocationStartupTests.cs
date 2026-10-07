@@ -893,6 +893,147 @@ public class TokenRevocationStartupTests
     }
 
     /// <summary>
+    /// The shipped Keycloak manager and the host's own client registration, over a real loopback
+    /// transport, against a revoke endpoint that answers with a redirect. Only the admin client-type
+    /// read is faked, to a confidential client, and the realm URL points at the redirecting server.
+    /// The redirect target answers 200, so a followed redirect would turn the unconfirmed revocation
+    /// into a success, and a followed 307 would resend the caller's secret and token to the target.
+    /// </summary>
+    [TestFixture(HttpStatusCode.Found)]
+    [TestFixture(HttpStatusCode.TemporaryRedirect)]
+    public class Given_a_keycloak_revoke_endpoint_that_answers_with_a_redirect(HttpStatusCode redirect)
+    {
+        private RedirectingProvider _provider = null!;
+        private RevocationBoot _boot = null!;
+        private HttpResponseMessage _response = null!;
+
+        [OneTimeSetUp]
+        public async Task OneTimeSetUp()
+        {
+            _provider = await RedirectingProvider.StartAsync(redirect);
+            IKeycloakClientFacade facade = A.Fake<IKeycloakClientFacade>();
+            A.CallTo(() =>
+                    facade.GetClientsByClientIdAsync(
+                        A<string>._,
+                        A<string>._,
+                        A<TimeSpan>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .Returns(
+                    Task.FromResult<IEnumerable<Keycloak.Net.Models.Clients.Client>>([
+                        new() { ClientId = "revocation-caller", PublicClient = false },
+                    ])
+                );
+
+            _boot = RevocationBoot.Run(
+                "keycloak",
+                "postgresql",
+                services =>
+                {
+                    services.RemoveAll<IKeycloakClientFacade>();
+                    services.AddScoped(_ => facade);
+                    services.RemoveAll<KeycloakContext>();
+                    services.AddScoped(_ => new KeycloakContext(
+                        _provider.BaseUrl,
+                        "edfi",
+                        "cms-service",
+                        "cms-secret",
+                        "role"
+                    ));
+                }
+            );
+            _response = await RevokeAsync(_boot.Client!);
+        }
+
+        [OneTimeTearDown]
+        public async Task OneTimeTearDown()
+        {
+            _response.Dispose();
+            _boot.Dispose();
+            await _provider.DisposeAsync();
+        }
+
+        [Test]
+        public async Task It_answers_503_temporarily_unavailable()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            (await OAuthErrorAsync(_response)).Should().Be("temporarily_unavailable");
+        }
+
+        [Test]
+        public void It_sends_the_revocation_to_the_realm_revoke_endpoint_once() =>
+            _provider.RevokeRequests.Should().Be(1);
+
+        [Test]
+        public void It_does_not_follow_the_redirect() => _provider.RedirectTargetRequests.Should().Be(0);
+    }
+
+    /// <summary>
+    /// A loopback HTTP server standing in for Keycloak: the realm's revoke endpoint answers with the
+    /// given redirect to a target on the same server, which answers 200. Each path counts its
+    /// requests before answering, so a request has been counted by the time its caller sees the
+    /// response.
+    /// </summary>
+    private sealed class RedirectingProvider : IAsyncDisposable
+    {
+        private const string RevokePath = "/realms/edfi/protocol/openid-connect/revoke";
+        private const string RedirectTargetPath = "/redirect-target";
+
+        private readonly WebApplication _app;
+        private int _revokeRequests;
+        private int _redirectTargetRequests;
+
+        private RedirectingProvider(HttpStatusCode redirect)
+        {
+            WebApplicationBuilder builder = WebApplication.CreateEmptyBuilder(new WebApplicationOptions());
+            builder
+                .WebHost.UseKestrelCore()
+                .ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 0));
+            _app = builder.Build();
+            _app.Run(context =>
+            {
+                if (context.Request.Path == RevokePath)
+                {
+                    Interlocked.Increment(ref _revokeRequests);
+                    context.Response.StatusCode = (int)redirect;
+                    context.Response.Headers.Location = RedirectTargetPath;
+                }
+                else if (context.Request.Path == RedirectTargetPath)
+                {
+                    Interlocked.Increment(ref _redirectTargetRequests);
+                    context.Response.StatusCode = StatusCodes.Status200OK;
+                }
+                else
+                {
+                    context.Response.StatusCode = StatusCodes.Status404NotFound;
+                }
+                return Task.CompletedTask;
+            });
+        }
+
+        internal static async Task<RedirectingProvider> StartAsync(HttpStatusCode redirect)
+        {
+            RedirectingProvider provider = new(redirect);
+            await provider._app.StartAsync();
+            return provider;
+        }
+
+        /// <summary>The server's base URL, the shape of <see cref="KeycloakContext.Url"/>.</summary>
+        internal string BaseUrl => _app.Urls.Single();
+
+        internal int RevokeRequests => Volatile.Read(ref _revokeRequests);
+
+        internal int RedirectTargetRequests => Volatile.Read(ref _redirectTargetRequests);
+
+        public async ValueTask DisposeAsync()
+        {
+            await _app.StopAsync();
+            await _app.DisposeAsync();
+        }
+    }
+
+    /// <summary>
     /// A self-contained host signing with a development certificate, booted through the real pipeline:
     /// authentication middleware, the shipped <see cref="OpenIddictTokenManager"/>, its real secret
     /// hasher and certificate loaders. Only the token store is a fake, so every token write is
