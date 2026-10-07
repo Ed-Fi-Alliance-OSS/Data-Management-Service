@@ -56,6 +56,35 @@ Describe "sanitize-e2e-artifacts Get-SanitizedText (DMS-1284)" {
         $result | Should -Match "database=db"
     }
 
+    It "preserves plain-text connection-string fields after an entity-like password" -ForEach @(
+        @{ Entity = 'amp' }
+        @{ Entity = 'quot' }
+        @{ Entity = 'apos' }
+        @{ Entity = 'lt' }
+        @{ Entity = 'gt' }
+        @{ Entity = '#38' }
+        @{ Entity = '#x26' }
+    ) {
+        $result = Get-SanitizedText -Text "Server=s;Password=Aa1!&$Entity;Database=d;TrustServerCertificate=true"
+
+        $result | Should -Be 'Server=s;Password=***REDACTED***;Database=d;TrustServerCertificate=true'
+    }
+
+    It "redacts the entire XML-escaped password while preserving following fields and markup" -ForEach @(
+        @{ Entity = 'amp' }
+        @{ Entity = 'quot' }
+        @{ Entity = 'apos' }
+        @{ Entity = 'lt' }
+        @{ Entity = 'gt' }
+        @{ Entity = '#38' }
+        @{ Entity = '#x26' }
+    ) {
+        $result = Get-SanitizedText -PreserveMarkup -Text "<Output>Server=s;Password=Aa1!&$Entity;SECRET_SUFFIX;Database=d;TrustServerCertificate=true</Output>"
+
+        $result | Should -Be '<Output>Server=s;Password=***REDACTED***;Database=d;TrustServerCertificate=true</Output>'
+        { [xml]$result } | Should -Not -Throw
+    }
+
     It "redacts an XML-escaped connection-string password as it appears inside a TRX" {
         $result = Get-SanitizedText -PreserveMarkup -Text '<Output>connect failed: Server=s;Password=&quot;Aa1!xmlSecretValue&quot;;TrustServerCertificate=true</Output>'
 
@@ -506,6 +535,18 @@ Describe "sanitize-e2e-artifacts Invoke-ArtifactSanitization (DMS-1284)" {
         $content = Get-Content -LiteralPath $logFile -Raw
         $content | Should -Not -Match "leakedValue123"
         $content | Should -Match "host=dms-mssql"
+    }
+
+    It "selects entity handling for <Extension> artifacts" -ForEach @(
+        @{ Extension = 'log'; Original = 'Server=s;Password=Aa1!&amp;Database=d'; Expected = 'Server=s;Password=***REDACTED***;Database=d' }
+        @{ Extension = 'trx'; Original = '<Output>Server=s;Password=Aa1!&amp;SECRET_SUFFIX;Database=d</Output>'; Expected = '<Output>Server=s;Password=***REDACTED***;Database=d</Output>' }
+    ) {
+        $artifact = Join-Path $TestDrive "entity-password.$Extension"
+        Set-Content -LiteralPath $artifact -Value $Original -NoNewline
+
+        Invoke-ArtifactSanitization -Path $artifact
+
+        Get-Content -LiteralPath $artifact -Raw | Should -Be $Expected
     }
 
     It "keeps a .trx artifact parseable by stopping the redaction before the closing tag" {

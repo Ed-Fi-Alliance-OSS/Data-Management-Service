@@ -10,9 +10,9 @@ Describe 'Scheduled pre-image workflow safeguards' {
 
         function Get-JobBlock {
             param([Parameter(Mandatory)] [string] $Name)
-            $matches = @($script:lines | Select-String -Pattern "^  $([regex]::Escape($Name)):\s*$" -AllMatches)
-            if ($matches.Count -ne 1) { throw "Expected one job named $Name." }
-            $start = $matches[0].LineNumber - 1
+            $jobMatches = @($script:lines | Select-String -Pattern "^  $([regex]::Escape($Name)):\s*$" -AllMatches)
+            if ($jobMatches.Count -ne 1) { throw "Expected one job named $Name." }
+            $start = $jobMatches[0].LineNumber - 1
             $end = $script:lines.Count
             for ($i = $start + 1; $i -lt $script:lines.Count; $i++) {
                 if ($script:lines[$i] -match '^  [A-Za-z0-9_-]+:\s*$') { $end = $i; break }
@@ -22,9 +22,9 @@ Describe 'Scheduled pre-image workflow safeguards' {
 
         function Get-StepChunk {
             param([Parameter(Mandatory)] [string] $Name)
-            $matches = @([regex]::Matches($script:job, "(?m)^      - name: $([regex]::Escape($Name))\s*$"))
-            if ($matches.Count -ne 1) { throw "Expected one step named $Name." }
-            $start = $matches[0].Index
+            $stepMatches = @([regex]::Matches($script:job, "(?m)^      - name: $([regex]::Escape($Name))\s*$"))
+            if ($stepMatches.Count -ne 1) { throw "Expected one step named $Name." }
+            $start = $stepMatches[0].Index
             $next = [regex]::Match($script:job.Substring($start + 1), '(?m)^      - name:')
             $end = if ($next.Success) { $start + 1 + $next.Index } else { $script:job.Length }
             return $script:job.Substring($start, $end - $start)
@@ -32,16 +32,47 @@ Describe 'Scheduled pre-image workflow safeguards' {
 
         function Get-RunBlock {
             param([Parameter(Mandatory)] [string] $Name)
-            $step = Get-StepChunk -Name $Name
-            $match = [regex]::Match($step, '(?ms)^        run: \|\r?\n(?<body>(?:^          .*\r?\n|^\r?\n)*)')
-            if (-not $match.Success) { throw "Step $Name has no block run command." }
-            return (($match.Groups['body'].Value -split "\r?\n" | ForEach-Object { if ($_.Length -ge 10) { $_.Substring(10) } else { '' } }) -join "`n")
+            $lines = (Get-StepChunk -Name $Name) -split "\r?\n"
+            $start = [array]::IndexOf($lines, '        run: |')
+            if ($start -lt 0) { throw "Step $Name has no block run command." }
+            $body = [System.Collections.Generic.List[string]]::new()
+            for ($i = $start + 1; $i -lt $lines.Count; $i++) {
+                if ([string]::IsNullOrWhiteSpace($lines[$i])) { $body.Add('') }
+                elseif ($lines[$i].StartsWith('          ')) { $body.Add($lines[$i].Substring(10)) }
+                else { break }
+            }
+            return ($body -join "`n").TrimEnd()
+        }
+
+        function Invoke-CapturedRunBlock {
+            param([Parameter(Mandatory)] [string] $RunBlock)
+            # Collect incrementally so output emitted before a terminating error is retained.
+            $output = [System.Collections.Generic.List[object]]::new()
+            $failure = $null
+            try { & ([scriptblock]::Create($RunBlock)) *>&1 | ForEach-Object { $output.Add($_) } }
+            catch { $failure = $_ }
+            return [pscustomobject]@{ Output = ($output | Out-String); Failure = $failure }
         }
 
         $script:job = Get-JobBlock -Name 'test'
     }
 
     Context 'matrix and publication boundaries' {
+        It 'retains scheduled and manual triggers without reducing the matrix' {
+            $script:workflow | Should -Match '(?m)^  workflow_dispatch:'
+            $script:workflow | Should -Match '(?m)^  schedule:'
+            $script:job.Substring(0, $script:job.IndexOf('    steps:')) | Should -Not -Match 'github.event_name|exclude:|include:'
+        }
+
+        It 'bounds executable content before subsequent step properties' {
+            $oldJob = $script:job
+            try {
+                $script:job = "      - name: fixture`n        run: |`n          Write-Host 'safe'`n`n        env:`n          VALUE: ignored`n"
+                Get-RunBlock -Name 'fixture' | Should -Be "Write-Host 'safe'"
+            }
+            finally { $script:job = $oldJob }
+        }
+
         It 'uses both engines and preserves both identity providers' {
             $script:job | Should -Match 'database_engine: \[postgresql, mssql\]'
             $script:job | Should -Match 'identityprovider: \[keycloak, self-contained\]'
@@ -69,6 +100,23 @@ Describe 'Scheduled pre-image workflow safeguards' {
     }
 
     Context 'step runtime failure behavior' {
+        It 'retains every console-visible PowerShell stream emitted before a terminating error' {
+            $result = Invoke-CapturedRunBlock -RunBlock @'
+Write-Output 'output-sentinel'
+Write-Error 'error-sentinel' -ErrorAction Continue
+Write-Warning 'warning-sentinel'
+Write-Verbose 'verbose-sentinel' -Verbose
+Write-Debug 'debug-sentinel' -Debug
+Write-Information 'information-sentinel' -InformationAction Continue
+Write-Host 'host-sentinel'
+throw 'safe failure'
+'@
+            $result.Failure.Exception.Message | Should -Be 'safe failure'
+            foreach ($stream in @('output', 'error', 'warning', 'verbose', 'debug', 'information', 'host')) {
+                $result.Output | Should -Match "$stream-sentinel"
+            }
+        }
+
         It 'uses ordered always-run capture, teardown, and sanitizer stages' {
             $capture = Get-StepChunk -Name 'Capture DMS E2E Docker Logs'
             $teardown = Get-StepChunk -Name 'Teardown DMS E2E Environment'
@@ -111,7 +159,11 @@ exit 7
                 $env:E2E_DIAGNOSTIC_DIRECTORY = $diagnosticDirectory
                 $env:E2E_TRX_PATH = $trxPath
                 $runBlock = Get-RunBlock -Name 'Run DMS End to End Tests'
-                { & ([scriptblock]::Create($runBlock)) } | Should -Throw '*exit code 7*'
+                $result = Invoke-CapturedRunBlock -RunBlock $runBlock
+                $result.Failure | Should -Not -BeNullOrEmpty
+                $result.Failure.Exception.Message | Should -Match 'exit code 7'
+                $result.Failure.Exception.Message | Should -Not -Match 'sentinel-secret'
+                $result.Output | Should -Not -Match 'sentinel-secret'
 
                 Test-Path -LiteralPath $trxPath | Should -BeFalse
                 Test-Path -LiteralPath (Join-Path $workingDirectory 'trx-existed-at-child-start.txt') | Should -BeFalse
@@ -139,19 +191,24 @@ exit 7
             }
         }
 
-        It 'distinguishes failed Docker enumeration from empty enumeration' {
+        It 'captures Docker <Mode> failure privately and accepts empty enumeration' -ForEach @(
+            @{ Mode = 'enumeration'; Message = 'enumeration failed'; Diagnostic = 'docker-ps.err' }
+            @{ Mode = 'logs'; Message = 'log capture failed'; Diagnostic = 'dms-container.log' }
+        ) {
             $workingDirectory = Join-Path $TestDrive 'docker-capture'
             $diagnosticDirectory = Join-Path $workingDirectory 'diagnostics'
             New-Item -ItemType Directory -Path $workingDirectory -Force | Out-Null
             $oldLocation = Get-Location
             $oldDirectory = $env:E2E_DIAGNOSTIC_DIRECTORY
-            $script:dockerMode = 'failure'
+            $script:dockerMode = $Mode
             function docker {
-                if ($script:dockerMode -eq 'failure') {
+                if (($script:dockerMode -eq 'enumeration' -and $args[0] -eq 'ps') -or
+                    ($script:dockerMode -eq 'logs' -and $args[0] -eq 'logs')) {
                     Write-Error -Message 'Password=sentinel-secret' -ErrorAction Continue
                     $global:LASTEXITCODE = 7
                     return
                 }
+                if ($script:dockerMode -eq 'logs' -and $args[0] -eq 'ps') { 'dms-container' }
                 $global:LASTEXITCODE = 0
             }
             try {
@@ -160,11 +217,17 @@ exit 7
                 New-Item -ItemType Directory -Path $diagnosticDirectory -Force | Out-Null
                 Set-Content -LiteralPath (Join-Path $diagnosticDirectory 'build-dms-setup.log') -Value 'setup-output-sentinel'
                 $runBlock = Get-RunBlock -Name 'Capture DMS E2E Docker Logs'
-                { & ([scriptblock]::Create($runBlock)) } | Should -Throw '*enumeration failed*'
-                (Get-Content -LiteralPath (Join-Path $diagnosticDirectory 'docker-ps.err') -Raw) | Should -Match 'sentinel-secret'
+                $result = Invoke-CapturedRunBlock -RunBlock $runBlock
+                $result.Failure | Should -Not -BeNullOrEmpty
+                $result.Failure.Exception.Message | Should -Match $Message
+                $result.Failure.Exception.Message | Should -Not -Match 'sentinel-secret'
+                $result.Output | Should -Not -Match 'sentinel-secret'
+                (Get-Content -LiteralPath (Join-Path $diagnosticDirectory $Diagnostic) -Raw) | Should -Match 'sentinel-secret'
 
                 $script:dockerMode = 'empty'
-                { & ([scriptblock]::Create($runBlock)); 'resumed' } | Should -Not -Throw
+                $result = Invoke-CapturedRunBlock -RunBlock $runBlock
+                $result.Failure | Should -BeNullOrEmpty
+                $result.Output | Should -Not -Match 'sentinel-secret'
                 Test-Path -LiteralPath (Join-Path $diagnosticDirectory 'docker-ps.err') | Should -BeTrue
                 (Get-Content -LiteralPath (Join-Path $diagnosticDirectory 'build-dms-setup.log') -Raw).Trim() | Should -Be 'setup-output-sentinel'
             }
@@ -190,7 +253,11 @@ exit 7
                 $env:E2E_DATABASE_ENGINE = 'mssql'
                 $env:E2E_DIAGNOSTIC_DIRECTORY = $diagnosticDirectory
                 $runBlock = Get-RunBlock -Name 'Teardown DMS E2E Environment'
-                { & ([scriptblock]::Create($runBlock)) } | Should -Throw '*exit code 9*'
+                $result = Invoke-CapturedRunBlock -RunBlock $runBlock
+                $result.Failure | Should -Not -BeNullOrEmpty
+                $result.Failure.Exception.Message | Should -Match 'exit code 9'
+                $result.Failure.Exception.Message | Should -Not -Match 'sentinel-secret'
+                $result.Output | Should -Not -Match 'sentinel-secret'
                 $teardownLog = Get-Content -LiteralPath (Join-Path $diagnosticDirectory 'teardown.log') -Raw
                 $teardownLog | Should -Match 'sentinel-secret'
             }
@@ -216,11 +283,11 @@ exit 7
                 $env:E2E_DIAGNOSTIC_DIRECTORY = Join-Path $workingDirectory 'diagnostics'
                 $env:E2E_TRX_PATH = Join-Path $workingDirectory 'missing.trx'
                 $runBlock = Get-RunBlock -Name 'Sanitize DMS E2E Diagnostic Artifacts'
-                $message = $null
-                try { & ([scriptblock]::Create($runBlock)) }
-                catch { $message = $_.Exception.Message }
-                $message | Should -Match 'sanitization failed'
-                $message | Should -Not -Match 'sentinel-secret'
+                $result = Invoke-CapturedRunBlock -RunBlock $runBlock
+                $result.Failure | Should -Not -BeNullOrEmpty
+                $result.Failure.Exception.Message | Should -Match 'sanitization failed'
+                $result.Failure.Exception.Message | Should -Not -Match 'sentinel-secret'
+                $result.Output | Should -Not -Match 'sentinel-secret'
             }
             finally {
                 Set-Location $oldLocation
@@ -233,23 +300,6 @@ exit 7
     }
 
     Context 'positive TRX execution evidence' {
-        It 'accepts namespaced execution with an ordinary skipped scenario' {
-            $path = Join-Path $TestDrive 'passed.trx'
-            Set-Content -LiteralPath $path -Value @'
-<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Results><UnitTestResult testName="passed" outcome="Passed"/><UnitTestResult testName="skipped" outcome="NotExecuted"/></Results><ResultSummary><Counters executed="1"/></ResultSummary></TestRun>
-'@
-            $oldPath = $env:E2E_TRX_PATH
-            try {
-                $env:E2E_TRX_PATH = $path
-                $runBlock = Get-RunBlock -Name 'Verify DMS E2E Execution'
-                { & ([scriptblock]::Create($runBlock)) } | Should -Not -Throw
-            }
-            finally {
-                if ($null -eq $oldPath) { Remove-Item Env:E2E_TRX_PATH -ErrorAction SilentlyContinue }
-                else { $env:E2E_TRX_PATH = $oldPath }
-            }
-        }
-
         It 'rejects missing, malformed, empty, and non-executed TRX evidence safely' -ForEach @(
             @{ Case = 'missing file'; Xml = $null }
             @{ Case = 'empty file'; Xml = '' }
@@ -271,12 +321,11 @@ exit 7
             try {
                 $env:E2E_TRX_PATH = $path
                 $runBlock = Get-RunBlock -Name 'Verify DMS E2E Execution'
-                $message = $null
-                try { & ([scriptblock]::Create($runBlock)) }
-                catch { $message = $_.Exception.Message }
-                $message | Should -Not -BeNullOrEmpty -Because $Case
-                $message | Should -Match 'valid executed test result'
-                $message | Should -Not -Match 'sentinel-secret'
+                $result = Invoke-CapturedRunBlock -RunBlock $runBlock
+                $result.Failure | Should -Not -BeNullOrEmpty -Because $Case
+                $result.Failure.Exception.Message | Should -Match 'valid executed test result'
+                $result.Failure.Exception.Message | Should -Not -Match 'sentinel-secret'
+                $result.Output | Should -Not -Match 'sentinel-secret'
             }
             finally {
                 if ($null -eq $oldPath) { Remove-Item Env:E2E_TRX_PATH -ErrorAction SilentlyContinue }
@@ -284,12 +333,12 @@ exit 7
             }
         }
 
-        It 'accepts namespaced and unnamespaced passed TRX after sanitization' -ForEach @(
-            @{ Namespace = ''; Prefix = '' }
-            @{ Namespace = ' xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"'; Prefix = '' }
+        It 'accepts namespaced and unnamespaced execution with an ordinary skipped scenario' -ForEach @(
+            @{ Namespace = '' }
+            @{ Namespace = ' xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"' }
         ) {
-            $path = Join-Path $TestDrive 'sanitized.trx'
-            $xml = "<TestRun$Namespace><Results><UnitTestResult testName=`"passed`" outcome=`"Passed`"><Output><StdOut>password=***REDACTED***</StdOut></Output></UnitTestResult></Results><ResultSummary><Counters executed=`"1`"/></ResultSummary></TestRun>"
+            $path = Join-Path $TestDrive 'passed.trx'
+            $xml = "<TestRun$Namespace><Results><UnitTestResult testName=`"passed`" outcome=`"Passed`"/><UnitTestResult testName=`"skipped`" outcome=`"NotExecuted`"/></Results><ResultSummary><Counters executed=`"1`"/></ResultSummary></TestRun>"
             Set-Content -LiteralPath $path -Value $xml
             $oldPath = $env:E2E_TRX_PATH
             try {
@@ -311,11 +360,6 @@ exit 7
             $oldPath = $env:E2E_TRX_PATH
             try {
                 & (Join-Path $PSScriptRoot '../sanitize-e2e-artifacts.ps1') -Path $path
-                $sanitized = Get-Content -LiteralPath $path -Raw
-                $sanitized | Should -Not -Match 'prefix|SECRET_SUFFIX'
-                $sanitized | Should -Match 'Password=\*\*\*REDACTED\*\*\*;Database=d'
-                { [xml]$sanitized } | Should -Not -Throw
-
                 $env:E2E_TRX_PATH = $path
                 $runBlock = Get-RunBlock -Name 'Verify DMS E2E Execution'
                 { & ([scriptblock]::Create($runBlock)) } | Should -Not -Throw

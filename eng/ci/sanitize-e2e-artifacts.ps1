@@ -45,6 +45,10 @@ $script:RedactionMarker = "***REDACTED***"
 # least one other member, so the empty (plain-text) expansion is still a valid class.
 $script:MarkupExclusionToken = "{markup}"
 
+# Only markup treats an entity's semicolon as part of the encoded password. Plain text must stop
+# there, even when the literal password happens to end with an entity-like spelling such as '&amp'.
+$script:MarkupEntityToken = "{markupEntities}"
+
 # Ordered redaction rules. Each rule keeps its non-secret capture group(s) and replaces the secret
 # value with the marker. Rules are intentionally conservative about non-secret text: they anchor on a
 # key name or scheme so ordinary diagnostics (ids, hostnames, ports, timings) are preserved.
@@ -66,16 +70,16 @@ $script:RedactionRules = @(
     # (undoubled) closing delimiter. The bare (unquoted) alternative runs to the real ';' terminator
     # (or end of line): commas and spaces are legal inside an unquoted ADO.NET value, so stopping at a
     # comma or space left the remainder of the secret (e.g. Password=Aa1!,tail) in the artifact. For XML,
-    # consume predefined entities as units so the semicolon in &amp; is not mistaken for the connection
+    # consume predefined entities and numeric references as units so their semicolon is not mistaken for the connection
     # string delimiter; otherwise, a secret suffix after that encoded character can escape redaction.
-    # whole matched span is redacted so the enclosed secret is not left behind; a following key/value
+    # The whole matched span is redacted so the enclosed secret is not left behind; a following key/value
     # after the real delimiter is preserved.
     # The whitespace around '=' is horizontal only: a `\s*` span crosses a newline, so a key with an empty
     # value at end of line consumed the next line's first token as its value and replaced it with the
     # marker - over-redaction that corrupts the following line rather than leaking anything.
     [pscustomobject]@{
         Name             = "connection-string-password"
-        Pattern          = "(?i)((?:password|pwd)[ \t]*=[ \t]*)(&quot;(?:(?!&quot;).|&quot;&quot;)*&quot;|""(?:[^""]|"""")*""|'(?:[^']|'')*'|(?:&(?:amp|quot|apos|lt|gt);|[^;{markup}\r\n])+)"
+        Pattern          = "(?i)((?:password|pwd)[ \t]*=[ \t]*)(&quot;(?:(?!&quot;).|&quot;&quot;)*&quot;|""(?:[^""]|"""")*""|'(?:[^']|'')*'|(?:{markupEntities}[^;{markup}\r\n])+)"
         MarkupExclusions = '"<'
         Replacement      = "`${1}$($script:RedactionMarker)"
     },
@@ -186,9 +190,10 @@ function Get-SanitizedText {
     )
 
     $sanitized = $Text
+    $markupEntities = if ($PreserveMarkup) { '&(?:amp|quot|apos|lt|gt|#[0-9]+|#x[0-9a-f]+);|' } else { '' }
     foreach ($rule in $script:RedactionRules) {
         $markupExclusions = if ($PreserveMarkup) { $rule.MarkupExclusions } else { "" }
-        $pattern = $rule.Pattern.Replace($script:MarkupExclusionToken, $markupExclusions)
+        $pattern = $rule.Pattern.Replace($script:MarkupExclusionToken, $markupExclusions).Replace($script:MarkupEntityToken, $markupEntities)
         $sanitized = [regex]::Replace($sanitized, $pattern, $rule.Replacement)
     }
 
