@@ -1671,32 +1671,6 @@ public class ApplicationModuleTests
                     )
                 )
                 .Returns(new ApplicationInsertResult.FailureDataStoreNotFound());
-
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureDataStoreNotFound());
-
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
-                .Returns(
-                    new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid(), true)])
-                );
-
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
         }
 
         [Test]
@@ -1751,124 +1725,6 @@ public class ApplicationModuleTests
         }
 
         [Test]
-        public async Task Should_return_conflict_when_data_store_not_found_at_repository_on_update()
-        {
-            // Arrange
-            var originalUuid = Guid.NewGuid();
-            A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
-                )
-                .Returns(
-                    new ApplicationUpdateStateResult.Success(
-                        new ApplicationUpdateState(
-                            "Original Application",
-                            7,
-                            "OriginalClaim",
-                            [9],
-                            [],
-                            "clientId",
-                            originalUuid,
-                            true,
-                            [1]
-                        )
-                    )
-                );
-
-            var updatedUuid = Guid.NewGuid();
-            var rollbackUuid = Guid.NewGuid();
-            List<string> clientUpdateNames = [];
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .Invokes(call => clientUpdateNames.Add(call.GetArgument<string>(1)!))
-                .ReturnsNextFromSequence(
-                    new ClientUpdateResult.Success(updatedUuid),
-                    new ClientUpdateResult.Success(rollbackUuid)
-                );
-
-            List<ApplicationUpdateCommand> updateCommands = [];
-            List<ApiClientCommand> apiClientCommands = [];
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Invokes(call =>
-                {
-                    updateCommands.Add(call.GetArgument<ApplicationUpdateCommand>(0)!);
-                    apiClientCommands.Add(call.GetArgument<ApiClientCommand>(1)!);
-                })
-                .Returns(new ApplicationUpdateResult.FailureDataStoreNotFound());
-
-            List<(Guid ExpectedUuid, Guid NewUuid)> syncCalls = [];
-            A.CallTo(() =>
-                    _applicationRepository.SyncApplicationApiClientUuid(
-                        A<int>.Ignored,
-                        A<string>.Ignored,
-                        A<Guid>.Ignored,
-                        A<Guid>.Ignored
-                    )
-                )
-                .Invokes(call => syncCalls.Add((call.GetArgument<Guid>(2), call.GetArgument<Guid>(3))))
-                .Returns(new ApiClientUuidSyncResult.Success());
-
-            using var client = SetUpClient();
-
-            // Act
-            var updateResponse = await client.PutAsync(
-                "/v3/applications/1",
-                new StringContent(
-                    """
-                    {
-                        "Id": 1,
-                        "ApplicationName": "Test Application",
-                        "ClaimSetName": "TestClaimSet",
-                        "VendorId": 1,
-                        "EducationOrganizationIds": [1],
-                        "DataStoreIds": [999]
-                    }
-                    """,
-                    Encoding.UTF8,
-                    "application/json"
-                )
-            );
-
-            // Assert
-            updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
-            updateResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-            string responseBody = await updateResponse.Content.ReadAsStringAsync();
-            var actualResponse = JsonNode.Parse(responseBody);
-            var expectedResponse = JsonNode.Parse(
-                """
-                {
-                  "detail": "Data store does not exist.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
-                  "title": "Unresolved Reference",
-                  "status": 409,
-                  "correlationId": "{correlationId}",
-                  "validationErrors": {},
-                  "errors": []
-                }
-                """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
-            );
-            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
-
-            clientUpdateNames.Should().Equal("Test Application", "Original Application");
-            updateCommands.Should().HaveCount(1);
-            apiClientCommands[0].ClientUuid.Should().Be(updatedUuid);
-            syncCalls.Should().Equal((originalUuid, rollbackUuid));
-        }
-
-        [Test]
         public async Task Should_not_create_identity_provider_client_when_insert_data_store_id_is_invalid()
         {
             // Arrange
@@ -1919,62 +1775,6 @@ public class ApplicationModuleTests
             A.CallTo(() =>
                     _applicationRepository.InsertApplication(
                         A<ApplicationInsertCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .MustNotHaveHappened();
-        }
-
-        [Test]
-        public async Task Should_not_update_identity_provider_when_update_data_store_id_is_invalid()
-        {
-            // Arrange
-            A.CallTo(() =>
-                    _dataStoreRepository.GetExistingDataStoreIds(
-                        A<int[]>.That.Matches(ids => ids.Length == 1 && ids[0] == 999)
-                    )
-                )
-                .Returns(new DataStoreIdsExistResult.Success([]));
-
-            using var client = SetUpClient();
-
-            // Act
-            var updateResponse = await client.PutAsync(
-                "/v3/applications/1",
-                new StringContent(
-                    """
-                    {
-                        "Id": 1,
-                        "ApplicationName": "Test Application",
-                        "ClaimSetName": "TestClaimSet",
-                        "VendorId": 1,
-                        "EducationOrganizationIds": [1],
-                        "DataStoreIds": [999]
-                    }
-                    """,
-                    Encoding.UTF8,
-                    "application/json"
-                )
-            );
-
-            // Assert
-            updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
-            updateResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .MustNotHaveHappened();
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
                         A<ApiClientCommand>.Ignored
                     )
                 )
@@ -2349,6 +2149,7 @@ public class ApplicationModuleTests
 
     public abstract class UpdateRollbackTestBase : ApplicationModuleTests
     {
+        // DataStoreIds is intentionally stale: it models a caller written before the update stopped applying it.
         private const string UpdateRequestBody = """
             {
                 "Id": 1,
@@ -4841,6 +4642,88 @@ public class ApplicationModuleTests
         public void It_releases_the_lock() => _recordingLockManager.Handle.Disposed.Should().BeTrue();
     }
 
+    [TestFixture]
+    public class Given_an_application_update_of_a_multi_client_application : UpdateRollbackTestBase
+    {
+        private Guid _otherClientUuid;
+        private List<(string ClientUuid, int[]? DataStoreIds)> _providerUpdates = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _otherClientUuid = Guid.NewGuid();
+            _providerUpdates = [];
+
+            // The selected client is assigned data store 2; the request body still sends [1].
+            _originalState = _originalState with
+            {
+                ClientDataStoreIds = [2],
+            };
+            A.CallTo(() =>
+                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
+                )
+                .Returns(new ApplicationUpdateStateResult.Success(_originalState));
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
+                .Returns(
+                    new ApplicationApiClientsResult.Success([
+                        new ApiClient("clientId", _originalClientUuid, true),
+                        new ApiClient("otherClientId", _otherClientUuid, true),
+                    ])
+                );
+
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call =>
+                    _providerUpdates.Add((call.GetArgument<string>(0)!, call.GetArgument<int[]?>(4)))
+                )
+                .Returns(new ClientUpdateResult.Success(_originalClientUuid));
+
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .Returns(new ApplicationUpdateResult.Success());
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_no_content() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_does_not_look_up_data_stores() =>
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<int[]>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_sends_the_selected_clients_existing_data_stores_to_the_identity_provider()
+        {
+            _providerUpdates.Should().ContainSingle();
+            _providerUpdates[0].ClientUuid.Should().Be(_originalClientUuid.ToString());
+            _providerUpdates[0].DataStoreIds.Should().Equal(2);
+        }
+
+        [Test]
+        public void It_does_not_update_the_other_client() =>
+            _providerUpdates
+                .Select(update => update.ClientUuid)
+                .Should()
+                .NotContain(_otherClientUuid.ToString());
+    }
+
     public abstract class ThrownRepositoryExceptionTestBase : UpdateRollbackTestBase
     {
         protected const string Sentinel = "SENTINEL_THROWN_REPO_must_not_leak";
@@ -4961,6 +4844,54 @@ public class ApplicationModuleTests
 
         [Test]
         public void It_does_not_synchronize_the_uuid() => _syncCalls.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_a_thrown_repository_exception_whose_transaction_committed_for_a_stale_data_store_request
+        : ThrownRepositoryExceptionTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeProviderUpdates();
+
+            // The client keeps data store 2 although the request body still sends [1]; the
+            // committed update must be recognized against the preserved set, not the request's.
+            _originalState = _originalState with
+            {
+                ClientDataStoreIds = [2],
+            };
+            A.CallTo(() =>
+                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
+                )
+                .ReturnsNextFromSequence(
+                    new ApplicationUpdateStateResult.Success(_originalState),
+                    new ApplicationUpdateStateResult.Success(
+                        CommandMatchingState() with
+                        {
+                            ClientDataStoreIds = [2],
+                        }
+                    )
+                );
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_recovered_success()
+        {
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            string responseBody = await _updateResponse.Content.ReadAsStringAsync();
+            responseBody.Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public void It_performs_no_rollback_or_deletion()
+        {
+            _updatedClientUuids.Should().HaveCount(1);
+            _syncCalls.Should().BeEmpty();
+            _deletedClientIds.Should().BeEmpty();
+        }
     }
 
     [TestFixture]

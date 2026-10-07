@@ -126,7 +126,6 @@ public class MetadataModuleTests
         "ApplicationUpdateCommand.id int32",
         "ApplicationUpdateCommand.vendorId int32",
         "ApplicationUpdateCommand.educationOrganizationIds int64",
-        "ApplicationUpdateCommand.dataStoreIds int32",
         "ApplicationUpdateCommand.profileIds int32",
         "AuthorizationStrategy.id int32",
         "ClaimSetCopyCommand.originalId int32",
@@ -472,6 +471,30 @@ public class MetadataModuleTests
         properties.Keys.Should().Equal("tenants");
         TypeIncludes(properties["tenants"].GetProperty("type"), "array").Should().BeTrue();
         TypeIncludes(properties["tenants"].GetProperty("items").GetProperty("type"), "string")
+            .Should()
+            .BeTrue();
+    }
+
+    [Test]
+    public async Task It_marks_the_application_response_enabled_property_read_only()
+    {
+        // Arrange
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        // Act
+        using var doc = await FetchOpenApiDocumentAsync(client);
+
+        // Assert
+        // enabled is an aggregate computed across the application's API clients; no
+        // application-level write sets it.
+        doc.RootElement.GetProperty("components")
+            .GetProperty("schemas")
+            .GetProperty("ApplicationResponse")
+            .GetProperty("properties")
+            .GetProperty("enabled")
+            .GetProperty("readOnly")
+            .GetBoolean()
             .Should()
             .BeTrue();
     }
