@@ -227,4 +227,83 @@ exit 7
             }
         }
     }
+
+    Context 'positive TRX execution evidence' {
+        It 'accepts namespaced execution with an ordinary skipped scenario' {
+            $path = Join-Path $TestDrive 'passed.trx'
+            Set-Content -LiteralPath $path -Value @'
+<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Results><UnitTestResult testName="passed" outcome="Passed"/><UnitTestResult testName="skipped" outcome="NotExecuted"/></Results><ResultSummary><Counters executed="1"/></ResultSummary></TestRun>
+'@
+            $oldPath = $env:E2E_TRX_PATH
+            try {
+                $env:E2E_TRX_PATH = $path
+                $runBlock = Get-RunBlock -Name 'Verify DMS E2E Execution'
+                { & ([scriptblock]::Create($runBlock)) } | Should -Not -Throw
+            }
+            finally {
+                if ($null -eq $oldPath) { Remove-Item Env:E2E_TRX_PATH -ErrorAction SilentlyContinue }
+                else { $env:E2E_TRX_PATH = $oldPath }
+            }
+        }
+
+        It 'rejects missing, malformed, empty, and non-executed TRX evidence safely' -ForEach @(
+            @{ Case = 'missing file'; Xml = $null }
+            @{ Case = 'empty file'; Xml = '' }
+            @{ Case = 'malformed secret'; Xml = '<TestRun Password="sentinel-secret">' }
+            @{ Case = 'wrong root'; Xml = '<Other><ResultSummary><Counters executed="1"/></ResultSummary><Results><UnitTestResult outcome="Passed"/></Results></Other>' }
+            @{ Case = 'missing counters'; Xml = '<TestRun><ResultSummary/><Results><UnitTestResult outcome="Passed"/></Results></TestRun>' }
+            @{ Case = 'missing executed'; Xml = '<TestRun><ResultSummary><Counters/></ResultSummary><Results><UnitTestResult outcome="Passed"/></Results></TestRun>' }
+            @{ Case = 'negative executed'; Xml = '<TestRun><ResultSummary><Counters executed="-1"/></ResultSummary><Results><UnitTestResult outcome="Passed"/></Results></TestRun>' }
+            @{ Case = 'fractional executed'; Xml = '<TestRun><ResultSummary><Counters executed="1.5"/></ResultSummary><Results><UnitTestResult outcome="Passed"/></Results></TestRun>' }
+            @{ Case = 'nonnumeric executed'; Xml = '<TestRun><ResultSummary><Counters executed="one"/></ResultSummary><Results><UnitTestResult outcome="Passed"/></Results></TestRun>' }
+            @{ Case = 'zero executed'; Xml = '<TestRun><ResultSummary><Counters executed="0"/></ResultSummary><Results><UnitTestResult outcome="NotExecuted"/></Results></TestRun>' }
+            @{ Case = 'positive count without result records'; Xml = '<TestRun><ResultSummary><Counters executed="1"/></ResultSummary><Results/></TestRun>' }
+            @{ Case = 'positive count without a passed record'; Xml = '<TestRun><ResultSummary><Counters executed="1"/></ResultSummary><Results><UnitTestResult outcome="Failed"/></Results></TestRun>' }
+        ) {
+            $path = Join-Path $TestDrive 'invalid.trx'
+            if ($null -eq $Xml) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+            else { Set-Content -LiteralPath $path -Value $Xml }
+            $oldPath = $env:E2E_TRX_PATH
+            try {
+                $env:E2E_TRX_PATH = $path
+                $runBlock = Get-RunBlock -Name 'Verify DMS E2E Execution'
+                $message = $null
+                try { & ([scriptblock]::Create($runBlock)) }
+                catch { $message = $_.Exception.Message }
+                $message | Should -Not -BeNullOrEmpty -Because $Case
+                $message | Should -Match 'valid executed test result'
+                $message | Should -Not -Match 'sentinel-secret'
+            }
+            finally {
+                if ($null -eq $oldPath) { Remove-Item Env:E2E_TRX_PATH -ErrorAction SilentlyContinue }
+                else { $env:E2E_TRX_PATH = $oldPath }
+            }
+        }
+
+        It 'accepts namespaced and unnamespaced passed TRX after sanitization' -ForEach @(
+            @{ Namespace = ''; Prefix = '' }
+            @{ Namespace = ' xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"'; Prefix = '' }
+        ) {
+            $path = Join-Path $TestDrive 'sanitized.trx'
+            $xml = "<TestRun$Namespace><Results><UnitTestResult testName=`"passed`" outcome=`"Passed`"><Output><StdOut>password=***REDACTED***</StdOut></Output></UnitTestResult></Results><ResultSummary><Counters executed=`"1`"/></ResultSummary></TestRun>"
+            Set-Content -LiteralPath $path -Value $xml
+            $oldPath = $env:E2E_TRX_PATH
+            try {
+                $env:E2E_TRX_PATH = $path
+                $runBlock = Get-RunBlock -Name 'Verify DMS E2E Execution'
+                { & ([scriptblock]::Create($runBlock)) } | Should -Not -Throw
+            }
+            finally {
+                if ($null -eq $oldPath) { Remove-Item Env:E2E_TRX_PATH -ErrorAction SilentlyContinue }
+                else { $env:E2E_TRX_PATH = $oldPath }
+            }
+        }
+
+        It 'requires successful E2E and sanitization before evidence validation' {
+            $evidence = Get-StepChunk -Name 'Verify DMS E2E Execution'
+            $evidence | Should -Match 'always\(\)'
+            $evidence | Should -Match "steps.e2e.outcome == 'success'"
+            $evidence | Should -Match "steps.sanitize.outcome == 'success'"
+        }
+    }
 }

@@ -136,6 +136,60 @@ jobs:
             throw 'E2E artifact sanitization failed; raw diagnostic content was withheld.'
           }
 
+      - name: Verify DMS E2E Execution
+        id: evidence
+        if: always() && steps.e2e.outcome == 'success' && steps.sanitize.outcome == 'success'
+        run: |
+          try {
+            if (-not (Test-Path -LiteralPath $env:E2E_TRX_PATH -PathType Leaf)) {
+              throw 'TRX file is missing.'
+            }
+
+            $readerSettings = [System.Xml.XmlReaderSettings]::new()
+            $readerSettings.DtdProcessing = [System.Xml.DtdProcessing]::Prohibit
+            $readerSettings.XmlResolver = $null
+            $reader = [System.Xml.XmlReader]::Create($env:E2E_TRX_PATH, $readerSettings)
+            try {
+              $document = [System.Xml.XmlDocument]::new()
+              $document.XmlResolver = $null
+              $document.Load($reader)
+            }
+            finally {
+              $reader.Dispose()
+            }
+
+            if ($null -eq $document.DocumentElement -or $document.DocumentElement.LocalName -ne 'TestRun') {
+              throw 'TRX root is invalid.'
+            }
+
+            $summary = $document.DocumentElement.SelectSingleNode("./*[local-name()='ResultSummary']")
+            $counters = if ($null -ne $summary) { $summary.SelectSingleNode("./*[local-name()='Counters']") } else { $null }
+            if ($null -eq $counters -or -not $counters.HasAttribute('executed')) {
+              throw 'TRX execution counter is missing.'
+            }
+
+            $executedCount = 0
+            $executedIsInteger = [int]::TryParse(
+              $counters.GetAttribute('executed'),
+              [System.Globalization.NumberStyles]::None,
+              [System.Globalization.CultureInfo]::InvariantCulture,
+              [ref]$executedCount
+            )
+            if (-not $executedIsInteger -or $executedCount -le 0) {
+              throw 'TRX execution counter is not positive.'
+            }
+
+            $passedResults = $document.SelectNodes("/*[local-name()='TestRun']/*[local-name()='Results']/*[local-name()='UnitTestResult'][@outcome='Passed']")
+            if ($passedResults.Count -eq 0) {
+              throw 'TRX has no passed test result.'
+            }
+
+            Write-Host "Validated E2E execution: executed=$executedCount, passed=$($passedResults.Count)."
+          }
+          catch {
+            throw 'Published-image E2E produced no valid executed test result.'
+          }
+
       - name: Upload DMS E2E Logs
         id: upload_logs
         if: always() && steps.sanitize.outcome == 'success'
