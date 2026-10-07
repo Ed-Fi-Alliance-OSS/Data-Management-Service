@@ -303,6 +303,29 @@ exit 7
             }
         }
 
+        It 'sanitizes XML-escaped connection-string credentials before accepting E2E evidence' {
+            $path = Join-Path $TestDrive 'escaped-password.trx'
+            Set-Content -LiteralPath $path -Value @'
+<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Results><UnitTestResult testName="passed" outcome="Passed"><Output><StdOut>Server=dms;Password=prefix&amp;SECRET_SUFFIX;Database=d</StdOut></Output></UnitTestResult></Results><ResultSummary><Counters executed="1"/></ResultSummary></TestRun>
+'@
+            $oldPath = $env:E2E_TRX_PATH
+            try {
+                & (Join-Path $PSScriptRoot '../sanitize-e2e-artifacts.ps1') -Path $path
+                $sanitized = Get-Content -LiteralPath $path -Raw
+                $sanitized | Should -Not -Match 'prefix|SECRET_SUFFIX'
+                $sanitized | Should -Match 'Password=\*\*\*REDACTED\*\*\*;Database=d'
+                { [xml]$sanitized } | Should -Not -Throw
+
+                $env:E2E_TRX_PATH = $path
+                $runBlock = Get-RunBlock -Name 'Verify DMS E2E Execution'
+                { & ([scriptblock]::Create($runBlock)) } | Should -Not -Throw
+            }
+            finally {
+                if ($null -eq $oldPath) { Remove-Item Env:E2E_TRX_PATH -ErrorAction SilentlyContinue }
+                else { $env:E2E_TRX_PATH = $oldPath }
+            }
+        }
+
         It 'requires successful E2E and sanitization before evidence validation' {
             $evidence = Get-StepChunk -Name 'Verify DMS E2E Execution'
             $evidence | Should -Match 'always\(\)'

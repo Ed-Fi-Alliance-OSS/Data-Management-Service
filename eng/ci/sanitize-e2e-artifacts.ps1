@@ -65,7 +65,9 @@ $script:RedactionRules = @(
     # quote does not terminate the match early and leak the remainder, stopping only at a single
     # (undoubled) closing delimiter. The bare (unquoted) alternative runs to the real ';' terminator
     # (or end of line): commas and spaces are legal inside an unquoted ADO.NET value, so stopping at a
-    # comma or space left the remainder of the secret (e.g. Password=Aa1!,tail) in the artifact. The
+    # comma or space left the remainder of the secret (e.g. Password=Aa1!,tail) in the artifact. For XML,
+    # consume predefined entities as units so the semicolon in &amp; is not mistaken for the connection
+    # string delimiter; otherwise, a secret suffix after that encoded character can escape redaction.
     # whole matched span is redacted so the enclosed secret is not left behind; a following key/value
     # after the real delimiter is preserved.
     # The whitespace around '=' is horizontal only: a `\s*` span crosses a newline, so a key with an empty
@@ -73,7 +75,7 @@ $script:RedactionRules = @(
     # marker - over-redaction that corrupts the following line rather than leaking anything.
     [pscustomobject]@{
         Name             = "connection-string-password"
-        Pattern          = "(?i)((?:password|pwd)[ \t]*=[ \t]*)(&quot;(?:(?!&quot;).|&quot;&quot;)*&quot;|""(?:[^""]|"""")*""|'(?:[^']|'')*'|[^;{markup}\r\n]+)"
+        Pattern          = "(?i)((?:password|pwd)[ \t]*=[ \t]*)(&quot;(?:(?!&quot;).|&quot;&quot;)*&quot;|""(?:[^""]|"""")*""|'(?:[^']|'')*'|(?:&(?:amp|quot|apos|lt|gt);|[^;{markup}\r\n])+)"
         MarkupExclusions = '"<'
         Replacement      = "`${1}$($script:RedactionMarker)"
     },
