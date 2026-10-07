@@ -117,10 +117,6 @@ public class ApplicationModuleTests
             {
                 // Use the new test authentication extension that mimics production setup
                 collection.AddTestAuthentication();
-                collection.Configure<AppSettings>(options =>
-                {
-                    options.EnableApplicationResetEndpoint = true;
-                });
                 if (clientSecretMinimumLength is not null)
                 {
                     collection.Configure<ClientSecretValidationOptions>(options =>
@@ -4008,11 +4004,10 @@ public class ApplicationModuleTests
     }
 
     [TestFixture]
-    public class ResetCredentialEndpointEnabledTests : ApplicationModuleTests
+    public class ResetCredentialTests : ApplicationModuleTests
     {
         /// <summary>
-        /// Tests that verify the reset-credential endpoint is available when
-        /// EnableApplicationResetEndpoint is true.
+        /// Tests that verify the application-level credential reset for a single-client application.
         /// </summary>
         [SetUp]
         public void SetUp()
@@ -4025,7 +4020,7 @@ public class ApplicationModuleTests
         }
 
         [Test]
-        public async Task Should_successfully_reset_credentials_when_endpoint_enabled()
+        public async Task Should_successfully_reset_credentials_for_a_single_client_application()
         {
             // Arrange
             using var client = SetUpClient();
@@ -4302,88 +4297,6 @@ public class ApplicationModuleTests
             using var client = SetUpClient();
             var response = await client.GetAsync("/v3/applications?direction=asc");
             response.StatusCode.Should().Be(HttpStatusCode.OK);
-        }
-    }
-
-    [TestFixture]
-    public class ResetCredentialEndpointDisabledTests : ApplicationModuleTests
-    {
-        /// <summary>
-        /// Tests that verify the reset-credential endpoint returns 404 when
-        /// EnableApplicationResetEndpoint is false. This scenario is typical when
-        /// using multiple API clients per application to avoid credential confusion.
-        /// </summary>
-        private HttpClient SetUpClientWithEndpointDisabled()
-        {
-            var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    collection.AddTestAuthentication();
-
-                    // Override AppSettings to disable the reset endpoint
-                    collection.Configure<EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration.AppSettings>(
-                        options =>
-                        {
-                            options.EnableApplicationResetEndpoint = false;
-                        }
-                    );
-
-                    collection
-                        .AddTransient((_) => _applicationRepository)
-                        .AddTransient((_) => _clientRepository)
-                        .AddTransient((_) => _dataStoreRepository)
-                        .AddTransient((_) => _vendorRepository)
-                        .AddTransient((_) => _profileRepository);
-                });
-            });
-            _factoryTracker.Track(factory);
-            var client = factory.CreateClient();
-            client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
-            return client;
-        }
-
-        [Test]
-        public async Task Should_return_not_found_when_endpoint_disabled()
-        {
-            // Arrange
-            using var client = SetUpClientWithEndpointDisabled();
-
-            // Act
-            var resetResponse = await client.PutAsync("/v3/applications/1/reset-credential", null);
-
-            // Assert
-            resetResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        }
-
-        [Test]
-        public async Task Should_still_allow_other_application_endpoints_when_reset_disabled()
-        {
-            // Arrange
-            using var client = SetUpClientWithEndpointDisabled();
-
-            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
-                .Returns(
-                    new ApplicationGetResult.Success(
-                        new ApplicationResponse()
-                        {
-                            Id = 1,
-                            ApplicationName = "Test Application",
-                            ClaimSetName = "ClaimSet",
-                            VendorId = 1,
-                            EducationOrganizationIds = [1],
-                            DataStoreIds = [1],
-                            ProfileIds = [],
-                        }
-                    )
-                );
-
-            // Act - Verify GET still works
-            var getResponse = await client.GetAsync("/v3/applications/1");
-
-            // Assert
-            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         }
     }
 
@@ -5359,6 +5272,73 @@ public class ApplicationModuleTests
         [Test]
         public void It_calls_no_repository_or_identity_provider_dependency() =>
             _dependencyCalls.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_an_application_credential_reset_for_a_multi_client_application : ApplicationModuleTests
+    {
+        private List<string> _callOrder = null!;
+        private HttpResponseMessage _resetResponse = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _callOrder = [];
+            _lockManager = new RecordingLockManager(() => _callOrder.Add("lock"));
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
+                .Invokes(_ => _callOrder.Add("clients-read"))
+                .Returns(
+                    new ApplicationApiClientsResult.Success([
+                        new ApiClient("firstClientId", Guid.NewGuid(), true),
+                        new ApiClient("secondClientId", Guid.NewGuid(), true),
+                    ])
+                );
+
+            // Arranged to succeed so that a handler resetting one of the clients would answer 200.
+            A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored))
+                .Returns(new ClientResetResult.Success("NEW_SECRET"));
+
+            using var client = SetUpClient();
+            _resetResponse = await client.PutAsync(
+                "/v3/applications/1/reset-credential",
+                new StringContent("{}", Encoding.UTF8, "application/json")
+            );
+        }
+
+        [TearDown]
+        public void TearDownResponse() => _resetResponse?.Dispose();
+
+        [Test]
+        public async Task It_returns_409_with_the_conflict_problem_details()
+        {
+            _resetResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            _resetResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            string responseBody = await _resetResponse.Content.ReadAsStringAsync();
+            JsonNode actualResponse = JsonNode.Parse(responseBody)!;
+            JsonNode expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "The application has more than one API client. Reset a specific client's credentials with PUT /v3/apiClients/{id}/reset-credential.",
+                  "type": "urn:ed-fi:api:conflict",
+                  "title": "Conflict",
+                  "status": 409,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+
+        [Test]
+        public void It_resets_no_client() =>
+            A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored)).MustNotHaveHappened();
+
+        [Test]
+        public void It_reads_the_clients_under_the_aggregate_lock() =>
+            _callOrder.Should().Equal("lock", "clients-read");
     }
 
     [TestFixture]

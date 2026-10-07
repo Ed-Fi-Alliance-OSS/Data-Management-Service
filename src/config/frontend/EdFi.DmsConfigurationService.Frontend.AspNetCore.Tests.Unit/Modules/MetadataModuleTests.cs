@@ -649,10 +649,6 @@ public class MetadataModuleTests
                 configuration.AddInMemoryCollection(
                     new Dictionary<string, string?>
                     {
-                        // The application reset-credential route is registered only when this flag is
-                        // set, and it is false in both appsettings.json and appsettings.Test.json, so
-                        // without this the route is absent from the document under test.
-                        ["AppSettings:EnableApplicationResetEndpoint"] = "true",
                         ["AppSettings:MultiTenancy"] = multiTenancy.ToString(),
                         // Left null by default so the existing cases keep exercising the no-path-base
                         // shape; Program only calls UsePathBase when this carries a value.

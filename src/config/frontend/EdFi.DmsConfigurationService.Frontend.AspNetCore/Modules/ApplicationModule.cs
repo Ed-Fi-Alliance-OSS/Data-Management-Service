@@ -32,18 +32,7 @@ public class ApplicationModule : IEndpointModule
         endpoints.MapSecuredPut($"/v3/applications/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v3/applications/{{id}}", Delete);
 
-        // Only register the reset-credential endpoint if the feature flag is enabled.
-        // It is recommended to disable this endpoint when using multiple API clients for a single application.
-        // This avoids confusion and potential credential mismatches when resetting credentials, since
-        // the reset operation only affects the first API client found.
-        var enableResetEndpoint = endpoints
-            .ServiceProvider.GetRequiredService<IOptions<AppSettings>>()
-            .Value.EnableApplicationResetEndpoint;
-
-        if (enableResetEndpoint)
-        {
-            endpoints.MapSecuredPut($"/v3/applications/{{id}}/reset-credential", ResetCredential);
-        }
+        endpoints.MapSecuredPut($"/v3/applications/{{id}}/reset-credential", ResetCredential);
     }
 
     private async Task<IResult> InsertApplication(
@@ -1081,8 +1070,18 @@ public class ApplicationModule : IEndpointModule
         var apiClientsResult = await repository.GetApplicationApiClients(id);
         switch (apiClientsResult)
         {
+            case ApplicationApiClientsResult.Success { Clients.Length: > 1 }:
+                // An application-level reset cannot tell which client's credentials to rotate.
+                return Results.Json(
+                    FailureResponse.ForConflict(
+                        "The application has more than one API client. Reset a specific client's credentials with PUT /v3/apiClients/{id}/reset-credential.",
+                        httpContext.TraceIdentifier
+                    ),
+                    contentType: "application/problem+json",
+                    statusCode: (int)HttpStatusCode.Conflict
+                );
             case ApplicationApiClientsResult.Success success:
-                var client = success.Clients.FirstOrDefault();
+                var client = success.Clients.SingleOrDefault();
                 if (client != null)
                 {
                     try
