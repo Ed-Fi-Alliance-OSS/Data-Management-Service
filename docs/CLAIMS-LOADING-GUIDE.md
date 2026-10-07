@@ -498,7 +498,7 @@ The embedded claims (every Data Standard) include the service claim
 [education organization projection](./EDUCATION-ORGANIZATION-PROJECTION.md) endpoint.
 
 Because claims are loaded only into an empty database, the database upgrade
-(`0035_Add_EducationOrganizationProjection_Claim`) adds the claim to an existing catalog itself:
+(`0036_Add_EducationOrganizationProjection_Claim`) adds the claim to an existing catalog itself:
 
 - It adds the claim to the resource claims and appends it, with no grants, to the stored claims
   hierarchy. Existing claims, claim sets and grants are not changed. The hierarchy's last-modified

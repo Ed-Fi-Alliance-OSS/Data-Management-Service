@@ -133,7 +133,7 @@ public class DeployTests : DatabaseTestBase
 
         strategyCount.Should().Be(13);
         // The seed script's VALUES list has 429 rows (identifiers are sparse, max Id 437),
-        // matching the PostgreSQL seed script row-for-row. Script 0035 adds the education
+        // matching the PostgreSQL seed script row-for-row. Script 0036 adds the education
         // organization projection service claim.
         resourceClaimCount.Should().Be(430);
     }

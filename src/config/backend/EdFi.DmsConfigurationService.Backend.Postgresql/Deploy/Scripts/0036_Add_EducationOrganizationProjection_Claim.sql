@@ -54,7 +54,7 @@ SET "Hierarchy" = h."Hierarchy" || jsonb_build_array(
     ),
     "LastModifiedDate" = now(),
     "LastModifiedAt" = now() AT TIME ZONE 'UTC',
-    "ModifiedBy" = '0035_Add_EducationOrganizationProjection_Claim'
+    "ModifiedBy" = '0036_Add_EducationOrganizationProjection_Claim'
 WHERE jsonb_typeof(h."Hierarchy") = 'array'
   AND NOT EXISTS (
         SELECT 1 FROM "HierarchyClaim" hc

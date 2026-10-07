@@ -40,7 +40,7 @@ DECLARE @conflictingResourceClaimId INT = (
 IF @conflictingResourceClaimId IS NOT NULL
 BEGIN
     DECLARE @message NVARCHAR(2047) = CONCAT(
-        N'0035_Add_EducationOrganizationProjection_Claim: dmscs.ResourceClaim row with Id ',
+        N'0036_Add_EducationOrganizationProjection_Claim: dmscs.ResourceClaim row with Id ',
         @conflictingResourceClaimId,
         N' has a ClaimName that the unique index UX_ResourceClaim_ClaimName treats as equal to ',
         N'''http://ed-fi.org/identity/claims/services/educationOrganizationProjection'' (for example because of ',
@@ -87,7 +87,7 @@ SET Hierarchy = JSON_MODIFY(
     ),
     LastModifiedDate = SYSUTCDATETIME(),
     LastModifiedAt = SYSUTCDATETIME(),
-    ModifiedBy = N'0035_Add_EducationOrganizationProjection_Claim'
+    ModifiedBy = N'0036_Add_EducationOrganizationProjection_Claim'
 FROM dmscs.ClaimsHierarchy h
 WHERE ISJSON(h.Hierarchy) = 1
   AND LEFT(LTRIM(h.Hierarchy), 1) = N'['

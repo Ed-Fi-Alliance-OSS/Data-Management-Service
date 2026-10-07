@@ -26,10 +26,10 @@ public abstract class Given_a_SqlServer_catalog_upgraded_with_the_projection_cla
     protected const string CaseInsensitiveCollation = "SQL_Latin1_General_CP1_CI_AS";
     protected const string CaseSensitiveCollation = "Latin1_General_100_CS_AS";
     protected const string ProjectionClaimScriptName =
-        "EdFi.DmsConfigurationService.Backend.Mssql.Deploy.Scripts.0035_Add_EducationOrganizationProjection_Claim.sql";
+        "EdFi.DmsConfigurationService.Backend.Mssql.Deploy.Scripts.0036_Add_EducationOrganizationProjection_Claim.sql";
 
-    private const int PreviousScript = 34;
-    private const int ProjectionClaimScript = 35;
+    private const int PreviousScript = 35;
+    private const int ProjectionClaimScript = 36;
     private const string ParentClaimName = "http://ed-fi.org/identity/claims/services/identity";
 
     protected sealed record ResourceClaimRow(int Id, string ResourceName, string ClaimName);
@@ -286,7 +286,7 @@ public class Given_a_SqlServer_catalog_without_the_projection_claim(string colla
     public void It_appends_the_canonical_claim()
     {
         ClaimNames(HierarchyAfter.Hierarchy).Where(IsProjectionClaimName).Should().Equal(ProjectionClaimName);
-        HierarchyAfter.ModifiedBy.Should().Be("0035_Add_EducationOrganizationProjection_Claim");
+        HierarchyAfter.ModifiedBy.Should().Be("0036_Add_EducationOrganizationProjection_Claim");
     }
 }
 
@@ -372,7 +372,7 @@ public class Given_a_SqlServer_catalog_with_a_trailing_space_variant_in_the_hier
 
         namesAfter.Where(name => name == ProjectionClaimName).Should().ContainSingle();
         namesAfter.Where(name => name == TrailingSpaceName).Should().ContainSingle();
-        HierarchyAfter.ModifiedBy.Should().Be("0035_Add_EducationOrganizationProjection_Claim");
+        HierarchyAfter.ModifiedBy.Should().Be("0036_Add_EducationOrganizationProjection_Claim");
     }
 }
 
@@ -405,7 +405,7 @@ public class Given_a_SqlServer_catalog_with_a_conflicting_trailing_space_resourc
         error.Number.Should().Be(50000);
         error
             .Message.Should()
-            .StartWith("0035_Add_EducationOrganizationProjection_Claim:")
+            .StartWith("0036_Add_EducationOrganizationProjection_Claim:")
             .And.Contain($"dmscs.ResourceClaim row with Id {conflictingId} ")
             .And.Contain("UX_ResourceClaim_ClaimName")
             .And.Contain("No changes were made.")

@@ -33,10 +33,10 @@ public abstract class EducationOrganizationProjectionClaimTests
         "http://ed-fi.org/identity/claims/services/educationOrganizationProjection";
     protected const string StudentClaimName = "http://ed-fi.org/identity/claims/ed-fi/student";
 
-    private const int PreviousScript = 34;
-    protected const int ProjectionClaimScript = 35;
+    private const int PreviousScript = 35;
+    protected const int ProjectionClaimScript = 36;
     protected const string ProjectionClaimScriptName =
-        "EdFi.DmsConfigurationService.Backend.Mssql.Deploy.Scripts.0035_Add_EducationOrganizationProjection_Claim.sql";
+        "EdFi.DmsConfigurationService.Backend.Mssql.Deploy.Scripts.0036_Add_EducationOrganizationProjection_Claim.sql";
 
     // The claim the migration appends, in the form the hierarchy repository stores.
     protected static JsonNode ExpectedProjectionClaim =>
