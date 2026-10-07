@@ -67,12 +67,19 @@ Commands are labeled **[bash]** (WSL shell) or **[pwsh]** (`pwsh` inside WSL) an
 ## Part B: Update to a newer build  [bash]
 
 ```bash
-cd ~/dms-src && git fetch --force --tags origin && git switch --detach origin/main && git log -1 --oneline &&
+cd ~/dms-src && git status --short --untracked-files=no | grep -v 'packages\.lock\.json$'   # expect no output
+```
+
+```bash
+cd ~/dms-src && git restore -- '*packages.lock.json' &&
+  git fetch --force --tags origin && git switch --detach origin/main && git log -1 --oneline &&
   cd eng/azure-vm/compose && SKIP_GIT=1 ./update.sh
 ```
 
 Replace `origin/main` with a release tag to deploy a release.
 The single `&&` chain matters: if the fetch or switch fails, `update.sh` must not pull new images against the old checkout.
+The schema tool build ([`REDEPLOY.md`](REDEPLOY.md) Part C step 1) adds `linux-x64` entries to the tracked `packages.lock.json` files, and `git switch` refuses to overwrite them; `git restore` discards only those files.
+If the first command lists anything else, it was edited on the VM: keep or discard it before switching.
 `--force` lets the fetch move a tag that was re-pointed upstream; without it the fetch fails with `would clobber existing tag`.
 
 `update.sh` pulls the images for the current `DMS_IMAGE_TAG` (`pre` by default) and recreates the changed containers.

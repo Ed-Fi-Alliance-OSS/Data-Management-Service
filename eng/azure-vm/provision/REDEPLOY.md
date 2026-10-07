@@ -82,6 +82,9 @@ docker run --rm --user "$(id -u):$(id -g)" \
   -v ~/dms-src:/src -w /src/eng/docker-compose mcr.microsoft.com/dotnet/sdk:10.0 \
   dotnet publish ../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj \
   -c Release -r linux-x64 --self-contained -p:UseAppHost=true -o .bootstrap/tools/api-schema-tools
+#    The linux-x64 publish adds runtime entries to the tracked packages.lock.json files; discard
+#    them so the checkout stays clean and a later update (UPDATE.md Part B) can switch commits.
+git -C ~/dms-src restore -- '*packages.lock.json'
 
 # 2. Stage the ApiSchema workspace (downloads the ApiSchema packages from the Ed-Fi feed).
 #    -EnvironmentFile .env.template stages the SAME package surface the populated template is
