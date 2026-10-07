@@ -258,6 +258,7 @@ jobs:
             "eng/ci/tests/BuildScriptTestGuards.Tests.ps1",
             "eng/ci/tests/Sanitize-E2EArtifacts.Tests.ps1",
             "eng/ci/tests/DmsPullRequestMssqlWorkflow.Tests.ps1",
+            "eng/ci/tests/ScheduledPreImageWorkflow.Tests.ps1",
             "eng/ci/tests/DmsChangeCategories.Tests.ps1",
             "eng/ci/tests/DmsPullRequestCiBudget.Tests.ps1",
             "eng/ci/tests/DmsPrereleaseImageTags.Tests.ps1",

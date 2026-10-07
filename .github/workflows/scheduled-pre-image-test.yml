@@ -14,7 +14,7 @@ permissions: read-all
 
 jobs:
   test:
-    name: pre Image Tests (${{ matrix.identityprovider }})
+    name: pre Image Tests (${{ matrix.database_engine }}, ${{ matrix.identityprovider }})
     # Scheduled runs only in Ed-Fi-Alliance-OSS: a fork inherits the schedule but not the Slack
     # webhook or the Ed-Fi resources the run acts on. workflow_dispatch still runs anywhere.
     if: (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
@@ -22,9 +22,15 @@ jobs:
     defaults:
       run:
         shell: pwsh
+    env:
+      E2E_DATABASE_ENGINE: ${{ matrix.database_engine }}
+      E2E_IDENTITY_PROVIDER: ${{ matrix.identityprovider }}
+      E2E_DIAGNOSTIC_DIRECTORY: ${{ github.workspace }}/logs/scheduled-pre-image-${{ matrix.database_engine }}-${{ matrix.identityprovider }}
+      E2E_TRX_PATH: ${{ github.workspace }}/TestResults/EdFi.DataManagementService.Tests.E2E.filtered.trx
     strategy:
       fail-fast: false
       matrix:
+        database_engine: [postgresql, mssql]
         identityprovider: [keycloak, self-contained]
     steps:
       - name: Checkout the repo
@@ -45,62 +51,114 @@ jobs:
 
       - name: DMS Build
         id: build_step
-        run: ./build-dms.ps1 Build -Configuration Release -IdentityProvider ${{matrix.identityprovider}}
+        run: ./build-dms.ps1 Build -Configuration Release -IdentityProvider ${{ matrix.identityprovider }}
 
       - name: Run DMS End to End Tests
         id: e2e
         if: success()
         continue-on-error: true
-        # This lane runs against the default DS 5.2 stack at the shipped MAXIMUM_PAGE_SIZE of 500,
-        # so exclude the DS 6.1 version-coupled scenarios, the local-compose-only DocumentCache
-        # fixture, and the partition sizing scenarios. DocumentCache runs with its explicit overlay
-        # in dms-weekend-build.yml; partition sizing needs .env.cursorpartitions.e2e, whose
-        # MAXIMUM_PAGE_SIZE of 2 is the only setting under which a collection an E2E scenario can
-        # seed over HTTP is cut into more than one partition, and runs per-PR in
-        # run-e2e-tests-partition-sizing. The non-empty filter writes the filtered TRX.
-        run: ./build-dms.ps1 E2ETest -UsePublishedImage -Configuration Release -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)'
-
-      - name: Export DMS E2E Docker Logs
-        if: always() && steps.e2e.outcome == 'failure'
         run: |
-          $logDir = "${{ github.workspace }}/logs/e2e"
-          Remove-Item -Path $logDir -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
-
-          $containers = @(docker ps -a --format "{{.Names}}" | Sort-Object)
-
-          if ($containers.Count -eq 0) {
-              Write-Host "No Docker containers found for log export."
-              exit 0
+          $PSNativeCommandUseErrorActionPreference = $false
+          $diagnosticDirectory = $env:E2E_DIAGNOSTIC_DIRECTORY
+          New-Item -ItemType Directory -Path $diagnosticDirectory -Force | Out-Null
+          $setupLog = Join-Path $diagnosticDirectory 'build-dms-setup.log'
+          if (Test-Path -LiteralPath $env:E2E_TRX_PATH) {
+            Remove-Item -LiteralPath $env:E2E_TRX_PATH -Force
           }
 
-          foreach ($container in $containers) {
-              $logPath = Join-Path $logDir "$container.log"
-              docker logs $container > $logPath 2>&1
+          $testFilter = switch ($env:E2E_DATABASE_ENGINE) {
+            'postgresql' { '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)' }
+            'mssql' { 'Category=@MssqlRepresentative' }
+            default { throw 'Unsupported E2E database engine.' }
+          }
+
+          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest `
+            -UsePublishedImage `
+            -Configuration Release `
+            -DatabaseEngine $env:E2E_DATABASE_ENGINE `
+            -IdentityProvider $env:E2E_IDENTITY_PROVIDER `
+            -EnvironmentFile './.env.e2e' `
+            -TestFilter $testFilter *> $setupLog
+          $buildExitCode = $LASTEXITCODE
+          if ($buildExitCode -ne 0) {
+            throw "Published-image E2E child process failed with exit code $buildExitCode."
+          }
+
+      - name: Capture DMS E2E Docker Logs
+        id: capture
+        if: always()
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $diagnosticDirectory = $env:E2E_DIAGNOSTIC_DIRECTORY
+          New-Item -ItemType Directory -Path $diagnosticDirectory -Force | Out-Null
+          $enumerationErrorPath = Join-Path $diagnosticDirectory 'docker-ps.err'
+          $containerNames = @(docker ps -a --filter 'label=com.docker.compose.project=dms-published' --format '{{.Names}}' 2> $enumerationErrorPath)
+          $dockerExitCode = $LASTEXITCODE
+          if ($dockerExitCode -ne 0) {
+            throw 'Docker container enumeration failed; diagnostic details were retained privately.'
+          }
+
+          foreach ($container in ($containerNames | Sort-Object)) {
+            if ([string]::IsNullOrWhiteSpace($container)) { continue }
+            $logPath = Join-Path $diagnosticDirectory "$container.log"
+            docker logs $container *> $logPath
+            $dockerExitCode = $LASTEXITCODE
+            if ($dockerExitCode -ne 0) {
+              throw 'Docker log capture failed; diagnostic details were retained privately.'
+            }
+          }
+
+      - name: Teardown DMS E2E Environment
+        id: teardown
+        if: always()
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $diagnosticDirectory = $env:E2E_DIAGNOSTIC_DIRECTORY
+          New-Item -ItemType Directory -Path $diagnosticDirectory -Force | Out-Null
+          $teardownLog = Join-Path $diagnosticDirectory 'teardown.log'
+          & pwsh -NoProfile -File ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/teardown-local-dms.ps1 `
+            -DatabaseEngine $env:E2E_DATABASE_ENGINE `
+            -EnvironmentFile './.env.e2e' *> $teardownLog
+          $teardownExitCode = $LASTEXITCODE
+          if ($teardownExitCode -ne 0) {
+            throw "DMS E2E teardown failed with exit code $teardownExitCode; details were retained privately."
+          }
+
+      - name: Sanitize DMS E2E Diagnostic Artifacts
+        id: sanitize
+        if: always()
+        run: |
+          try {
+            ./eng/ci/sanitize-e2e-artifacts.ps1 -Path $env:E2E_DIAGNOSTIC_DIRECTORY
+            ./eng/ci/sanitize-e2e-artifacts.ps1 -Path $env:E2E_TRX_PATH
+          }
+          catch {
+            throw 'E2E artifact sanitization failed; raw diagnostic content was withheld.'
           }
 
       - name: Upload DMS E2E Logs
-        if: always() && steps.e2e.outcome == 'failure'
+        id: upload_logs
+        if: always() && steps.sanitize.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: scheduled-pre-image-logs-${{ matrix.identityprovider }}-e2e
-          path: |
-            ${{ github.workspace }}/logs/e2e
+          name: scheduled-pre-image-${{ matrix.database_engine }}-${{ matrix.identityprovider }}-logs
+          path: ${{ github.workspace }}/logs/scheduled-pre-image-${{ matrix.database_engine }}-${{ matrix.identityprovider }}
           retention-days: 10
+          if-no-files-found: ignore
 
       - name: Upload DMS End to End Test Results
-        if: always()
+        id: upload_results
+        if: always() && steps.sanitize.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: scheduled-pre-image-e2e-results-${{ matrix.identityprovider }}
+          name: scheduled-pre-image-${{ matrix.database_engine }}-${{ matrix.identityprovider }}-results
           path: TestResults/EdFi.DataManagementService.Tests.E2E.filtered.trx
           if-no-files-found: ignore
 
       - name: Fail if DMS E2E failed
         if: always() && steps.e2e.outcome == 'failure'
         run: |
-          Write-Host "DMS E2E outcome: ${{ steps.e2e.outcome }}"
-          throw "DMS E2E failed."
+          throw 'DMS E2E failed.'
 
       - name: Notify Slack on success
         if: success() && github.event_name != 'workflow_dispatch'
