@@ -1952,6 +1952,10 @@ function RunInstanceE2E {
 
     # Run only the instance management E2E tests
     $testProject = "$solutionRoot/tests/EdFi.InstanceManagement.Tests.E2E/EdFi.InstanceManagement.Tests.E2E.csproj"
+    # Decided from the caller's filter, before an empty one is replaced by the identity-plugin exclusion, so a
+    # full run still runs the reader project.
+    $runsDmsProjectionReader = Test-InstanceE2ERunsDmsProjectionReader `
+        -NormalizedTestFilter (ConvertTo-NormalizedTestFilter -TestFilter $TestFilter)
     if ([string]::IsNullOrWhiteSpace($TestFilter)) {
         $TestFilter = $instanceIdentityPluginExcludedFilter
     }
@@ -1996,7 +2000,7 @@ function RunInstanceE2E {
 
     # The reader project runs first: the Reqnroll suite's AfterTestRun hook deletes the suite-owned fixture
     # (applications, data stores, vendors) the reader project provisions against.
-    if (Test-InstanceE2ERunsDmsProjectionReader -NormalizedTestFilter $normalizedTestFilter) {
+    if ($runsDmsProjectionReader) {
         RunDmsProjectionReaderE2E -DatabaseEngine $DatabaseEngine
     }
 

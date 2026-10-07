@@ -899,6 +899,14 @@ Describe "Instance E2E runs the DMS projection reader project once per engine la
             . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName $name)))
         }
 
+        # RunInstanceE2E replaces an empty filter with this script-level constant; it is read from the script's
+        # own assignment so the tests see the default a real run uses.
+        $constantMatch = [regex]::Match(
+            (Get-Content -LiteralPath $script:buildScript -Raw),
+            '(?m)^\$instanceIdentityPluginExcludedFilter\s*=\s*"([^"]+)"'
+        )
+        $script:instanceIdentityPluginExcludedFilter = $constantMatch.Groups[1].Value
+
         # Stands in for the build-helpers command so it can be mocked.
         function Invoke-Execute { param([scriptblock] $Command) & $Command }
 
@@ -1021,6 +1029,20 @@ Describe "Instance E2E runs the DMS projection reader project once per engine la
             $script:executed[1] | Should -Match "dotnet test @dotNetTestArguments"
         }
 
+        It "runs the reader for a full run although an empty filter becomes the identity-plugin exclusion" -TestCases @(
+            @{ Filter = "" }
+            @{ Filter = "  " }
+        ) {
+            param($Filter)
+            $script:instanceIdentityPluginExcludedFilter | Should -Not -BeNullOrEmpty
+            Mock RunDmsProjectionReaderE2E { $script:executed.Add("reader") }
+            RunInstanceE2E -TestFilter $Filter -DatabaseEngine "postgresql"
+
+            Should -Invoke RunDmsProjectionReaderE2E -Times 1 -Exactly -ParameterFilter { $DatabaseEngine -eq "postgresql" }
+            $script:executed | Should -HaveCount 2
+            $script:executed[0] | Should -Be "reader"
+        }
+
         It "does not run the reader for shard 2" {
             Mock RunDmsProjectionReaderE2E { }
             RunInstanceE2E -TestFilter "Category=@instance-management-ci-shard-2" -DatabaseEngine "postgresql"
@@ -1073,6 +1095,7 @@ Describe "RunInstanceE2E defaults to excluding the identity plugin slice (DMS-15
         $script:buildSource = Get-Content -LiteralPath $script:buildScript -Raw
         . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName "ConvertTo-NormalizedTestFilter")))
         . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName "RunInstanceE2E")))
+        . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName "Test-InstanceE2ERunsDmsProjectionReader")))
 
         # The named constant is read from the script's own assignment so the test follows its value.
         $constantMatch = [regex]::Match($script:buildSource, '(?m)^\$instanceIdentityPluginExcludedFilter\s*=\s*"([^"]+)"')
@@ -1083,9 +1106,10 @@ Describe "RunInstanceE2E defaults to excluding the identity plugin slice (DMS-15
         $script:instanceIdentityPluginExcludedFilter = $constantMatch.Groups[1].Value
 
         # Leaf boundaries: Invoke-Execute runs its block, and dotnet records the arguments it was given
-        # instead of starting a test run.
+        # instead of starting a test run. The DMS projection reader run (DMS-1440) is covered by its own tests.
         function Invoke-Execute { param([scriptblock] $Command) & $Command }
         function dotnet { $script:dotnetArguments = @($args) }
+        function RunDmsProjectionReaderE2E { param([string] $DatabaseEngine) }
     }
 
     BeforeEach {
