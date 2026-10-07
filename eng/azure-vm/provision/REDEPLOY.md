@@ -54,7 +54,7 @@ docker system prune -f
 ```bash
 cd ~/dms-src
 REF=origin/main   # or a release tag, or the branch under review (e.g. origin/DMS-1196)
-git fetch origin --tags
+git fetch --force --tags origin   # --force: a tag re-pointed upstream must not abort the fetch
 git switch --detach "$REF"
 git log -1 --oneline
 ```
@@ -107,21 +107,22 @@ ls ~/dms-src/eng/azure-vm/compose/.bootstrap/ApiSchema/*.json   # sanity: should
 
 ## Part D — Stand up infra + bootstrap (NOT the DMS yet)  [pwsh]
 
+> **Data Standard 6.1:** run this first, before `setup-env.ps1` starts the Configuration Service,
+> because it loads claims only into an empty database. `setup-env.ps1` then generates the secrets
+> into this `.env` (it still holds the `.env.example` placeholders) and keeps every other value:
+>
+> ```bash
+> cd ~/dms-src/eng/azure-vm/compose
+> cp .env.example .env
+> sed -i -e 's/^DMS_CONFIG_DATA_STANDARD_VERSION=.*/DMS_CONFIG_DATA_STANDARD_VERSION=6.1/' \
+>   -e 's/^DATABASE_TEMPLATE_PACKAGE_ID=.*/DATABASE_TEMPLATE_PACKAGE_ID=EdFi.Api.Populated.Template.PostgreSql.6.1.0/' .env
+> ```
+
 ```bash
 cd ~/dms-src/eng/azure-vm/compose
 pwsh ../provision/setup-env.ps1 -PublicHost <FQDN> -LetsEncryptEmail you@org.tld
 # omit -LetsEncryptEmail to use a self-signed cert instead
 ```
-
-> **Data Standard 6.1:** set it before this first run, because the Configuration Service loads
-> claims only into an empty database. `setup-env.ps1` generates the secrets into a `.env` that still
-> holds the `.env.example` placeholders and keeps every other value:
->
-> ```bash
-> cp .env.example .env
-> sed -i -e 's/^DMS_CONFIG_DATA_STANDARD_VERSION=.*/DMS_CONFIG_DATA_STANDARD_VERSION=6.1/' \
->   -e 's/^DATABASE_TEMPLATE_PACKAGE_ID=.*/DATABASE_TEMPLATE_PACKAGE_ID=EdFi.Api.Populated.Template.PostgreSql.6.1.0/' .env
-> ```
 
 Generates `.env` (secrets, locked to `0600`), obtains the TLS cert, starts PostgreSQL + Keycloak +
 both Config Services + gateway, and runs `bootstrap.ps1` (Keycloak realm/clients, tenants, CMS

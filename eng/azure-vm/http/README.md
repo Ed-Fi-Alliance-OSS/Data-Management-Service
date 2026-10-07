@@ -23,6 +23,6 @@ raw form.
 - `sample-all.sh` — curl-based smoke sampler: tokens each environment (ST + both tenants)
   and reads a spread of resources; exits nonzero if any token or read fails, so it doubles
   as a handoff check. Run `./sample-all.sh` (override host with `FQDN=...`).
-- `sample-variants.py` — access matrix for the review-variant keys: tokens each credential in the
+- `sample-variants.py` - access matrix for the review-variant keys: tokens each credential in the
   JSON that `bootstrap/add-review-variants.ps1 -OutFile` writes and prints how many schools,
   students and assessments it sees. Read-only; verifies TLS unless `INSECURE=1`.
