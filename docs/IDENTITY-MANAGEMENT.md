@@ -38,11 +38,11 @@ Three things must all be true before an identity operation runs.
 
 The provider declares which of the five operations it supports.
 An operation the provider does not advertise answers `404` with `urn:ed-fi:api:identities:operation-not-supported`.
-This check runs before a `POST` body is read, so the answer does not depend on the body.
+This check runs before the content type, the body and duplicate properties are validated, so a request with a malformed body still gets this `404`.
 
 ## What a client sees
 
-Every problem response is `application/problem+json`.
+Problem responses are `application/problem+json`, except the `400` for a malformed or empty body or a duplicate property, which DMS sends as `application/json` with the same problem body.
 The table lists the statuses a client can see and where each comes from.
 The implementer guide's [results and status codes](../src/dms/core/EdFi.DataManagementService.Identity/IDENTITY.md#results-and-status-codes) section is the complete table, including the statuses that come from the provider's own results.
 
@@ -111,7 +111,7 @@ Identity access is decided from cached facts, and a change in the Configuration 
 | --- | --- | --- |
 | The API client's application context, per client and tenant | `600` seconds (`CacheSettings:ApplicationContextCacheExpirationSeconds`) | Whether the client still exists and belongs to the tenant. |
 | The claim sets, per tenant spelling | `600` seconds (`CacheSettings:ClaimSetsCacheExpirationSeconds`) | Which claims and actions a claim set grants. |
-| A validated bearer token | Until the token's own expiry plus `JwtAuthentication:ClockSkewSeconds` (default `30`) | Whether the token is accepted at all. |
+| A successful bearer-token validation | `300` seconds (`JwtAuthentication:ValidatedTokenCacheEntryMaxLifetimeSeconds`), and never past the token's expiry less `JwtAuthentication:ClockSkewSeconds` | Whether the token is validated again. A token is accepted until its expiry plus the clock skew whether or not it is cached. |
 | The tenant snapshot | `60` seconds, fixed | Whether the tenant in the URL exists. |
 | A provider's own policy caches | Set by the provider | Which clients and namespaces the provider grants. |
 
@@ -242,8 +242,9 @@ Three things that all look like "the request was cancelled" are different.
   A cancelled or dropped request does not cancel a job the provider already accepted, and the provider retains its result for its own documented period.
   See [Asynchronous requests and jobs](../src/dms/core/EdFi.DataManagementService.Identity/IDENTITY.md#asynchronous-requests-and-jobs).
 
-The refresh of the tenant snapshot is the one fetch the host owns and bounds: it has a **30-second maximum**, after which it counts as a failure.
-That bound is separate from the provider calls.
+The host bounds two of its own fetches at **30 seconds** each: the tenant snapshot refresh and the claim-set fill.
+A fetch that runs past that bound counts as a failure.
+Those bounds are separate from the provider calls.
 **The Ed-Fi API applies no timeout to a call into an `IIdentityService` and never retries it.**
 A slow provider holds the request open until the provider answers or the client gives up, so a provider must bound its own calls.
 

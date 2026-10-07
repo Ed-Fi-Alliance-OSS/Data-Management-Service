@@ -116,11 +116,11 @@ Singleton, scoped and transient lifetimes are all supported, and [Lifetimes and 
 
 The sample provider is a real implementation of every member of `IIdentityService`, against an in-memory store that stands in for an identity system.
 It is shown in six consecutive parts, and the parts together are the whole of the compiled file.
-This repository's verification lane compiles the sample against the packed `EdFi.Api.Identity` package, and a check holds each block in this guide to the file it came from.
-So these are samples that have been compiled rather than samples that look right.
+This repository's verification lane compiles the sample against the packed `EdFi.Api.Identity` package and runs assertions against what it returns, and a check holds each block in this guide to the file it came from.
+So these are samples that have been compiled and run rather than samples that look right.
 
 Everything the sample does that is specific to its in-memory store is incidental.
-What it demonstrates is the shape of a provider: a namespace-access check before any identity work, payloads shaped as the contract defines them, a job and a token for asynchronous lookups, cancellation, and `InvalidProperties` errors that name a property and never its value.
+What it demonstrates is the shape of a provider: a namespace-access check before any identity work, request values checked against the served schema before they are stored, payloads shaped as the contract defines them, a job and a token for asynchronous lookups, cancellation, and `InvalidProperties` errors that name a property and never its value.
 
 ### The class and its capabilities
 
@@ -258,6 +258,8 @@ internal sealed class AcmeIdentityService(AcmeIdentityStore store) : IIdentitySe
         new() { Message = message, Path = $"{path}.{property}" };
 ```
 
+DMS checks no property values, so the sample checks each standard property against the type the served schema gives it before it stores anything.
+A value it stored unchecked would come back from a later get in a shape the schema does not allow, such as a `BirthDate` that is a date and not a `date-time`.
 The create payload is the issued UniqueId as a bare JSON string.
 [Payloads](#payloads) and [Issuing UniqueIds](#issuing-uniqueids) say what a created UniqueId must satisfy.
 
@@ -857,7 +859,7 @@ That `type`, rather than the status code, is the portable terminal signal: a cli
 ### The other statuses a client can see
 
 The host produces these without calling your provider, and a client sees them whatever the provider does.
-Every one of them is `application/problem+json`.
+Every one of them is `application/problem+json`, except the `400` for a malformed or empty body or a duplicate property, which DMS sends as `application/json` with the same problem body.
 
 | Status | Cause |
 | --- | --- |
@@ -916,7 +918,7 @@ return Task.FromResult(
         [
             new IdentityError { Message = "FirstName is required.", Path = "$.FirstName" },
             new IdentityError { Message = "FirstName must not exceed 75 characters.", Path = "$.FirstName" },
-            new IdentityError { Message = "BirthDate must be a date-time.", Path = "$.BirthDate" },
+            new IdentityError { Message = "BirthDate must be a date-time with a UTC offset.", Path = "$.BirthDate" },
         ],
     }
 );
@@ -943,7 +945,7 @@ Cache-Control: no-store
       "FirstName must not exceed 75 characters."
     ],
     "$.BirthDate": [
-      "BirthDate must be a date-time."
+      "BirthDate must be a date-time with a UTC offset."
     ]
   },
   "errors": []
@@ -1084,7 +1086,8 @@ Keep a token short enough that this never arises.
 ### What a job owes the client
 
 A provider that accepts jobs owns the lifecycle of each one, because DMS keeps no job state of its own.
-These are obligations, and the sample provider shows each of them in its `ResultsAsync` and its store.
+These are obligations.
+The sample provider shows each of them in its `ResultsAsync` and its store except a permanent failure, which its in-memory jobs cannot have.
 
 - **Bind the job to the complete request context.**
   Record the tenant, the route qualifiers and the `ClientId` the job was accepted under, compared under the [equality rules](#namespaces-grants-and-context-equality) below.
@@ -1379,14 +1382,16 @@ Once a contract has been published, a missing or unreadable published baseline f
   An entry that matches no difference is stale and fails.
   Example validation is never an approval path.
 - **An increment can never carry a breaking category.**
-  These cannot be waived by any entry: a change to the request body, parameters or media type of an existing operation, a change to the response schema, status code, media type, header or problem type of an existing operation, a change to security, a removed path or operation, and, for the package, a removed public member, a new interface member or a new required member.
+  These cannot be waived by any entry: a change to the request body, parameters or media type of an existing operation, a change to the response schema, status code, media type, header or problem type of an existing operation, a change to security, a removed path or operation, and, for the package, a removed public member, a new interface member without a default implementation or a new required member.
 
 ### Additive changes only
 
 **Existing providers must keep working on newer hosts, so a change to this contract is additive.**
 A member added to `IIdentityService` after publication must carry a default interface implementation.
 Adding a member without one is a breaking change to an interface that plugins implement, and it can never ship as a new version of this package.
-A new operation, a new optional property and similar additions go through the compatibility record above, and each is reviewed for whether it narrows what clients may send, widens what they may receive, adds a response alternative, or expects more of an existing provider than it already does.
+A new operation, a new optional member of a contract type, an interface member with a default implementation and similar additions go through the compatibility record above, and each is reviewed for whether it narrows what clients may send, widens what they may receive, adds a response alternative, or expects more of an existing provider than it already does.
+A new standard property on the request or response of an existing operation changes that operation's schema, which is one of the categories above, so no version can carry it.
+A custom property needs no change at all, because DMS already passes custom properties through.
 A provider that conformed to the guide when it was written keeps its loadability, its callability, and the payloads and context behavior it relied on.
 
 A newer package does not make a provider compatible with an older host.

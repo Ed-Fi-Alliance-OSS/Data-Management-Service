@@ -19,5 +19,6 @@ An entry must match a difference exactly by pointer and change.
 An entry that matches no difference is stale and fails the gate.
 
 Hard-fail categories cannot be waived, and an entry naming one does not help.
-They are changes to a request body, request parameter or request media type of an existing operation, changes to a response schema, status code, media type, header or problem type of an existing operation, changes to security, removed paths or operations, and provider surface removals, new interface members and new required members.
+They are changes to a request body, request parameter or request media type of an existing operation, changes to a response schema, status code, media type, header or problem type of an existing operation, changes to security, removed paths or operations, and provider surface removals, new interface members without a default implementation, new abstract members and new required members.
+An interface member with a default implementation is inherited by every existing provider, so it needs an entry like any other addition.
 Example validation is never an approval path.
