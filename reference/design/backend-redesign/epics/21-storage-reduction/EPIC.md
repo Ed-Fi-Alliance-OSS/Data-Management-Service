@@ -26,6 +26,18 @@ ordering. Jira carries the same direct dependency chain with `blocks` links.
 DMS-1404 covers compact descriptor IDs and descriptor storage optimizations as an additional child
 story, separate from the T1–T14 natural-key/ReferentialIdentity removal chain.
 
+DMS-1401 removes the denormalized `dms.Document.ContentLastModifiedAt`, retaining
+`dms.Document.ContentVersion` for locking and concurrency and making resource-root and descriptor
+timestamps authoritative. DMS-1401 and DMS-1404 may merge and close independently of each other
+and the T1–T14 workstream.
+
+The planned implementation sequence runs DMS-1401 after DMS-1404 on the same branch. DMS-1401
+owns the shared Minimal and Populated template rebuild/restore evidence on both engines and
+supported template Data Standards, plus affected consumer package-version updates. Combined
+package verification also uses the descriptor-specific schema expectations owned by DMS-1404.
+This coordinates artifact delivery without adding an implementation dependency; the individual
+stories define the closure and v8.1 release gates.
+
 The remaining DMS-1398 storage-reduction ideas stay outside this local story set until their approved
 scope and Jira children are available. Mapping-pack functionality, DMS-1015, DMS-1016, and the closed
 DMS-946 are not included in these stories. In particular, mapping packs / AOT
@@ -54,11 +66,17 @@ DMS-1454 (T12) because it owns the cross-engine Unicode verdict fixture matrix a
 
 ## Release Atomicity
 
-All fourteen stories ship in the same release. Intermediate trunk states between stories are
-internal checkpoints only and are never deployed. In particular, the transient RI-hash mismatch
+The fourteen natural-key/ReferentialIdentity stories (DMS-1443 through DMS-1456) ship in the same
+release. Intermediate trunk states between those stories are internal checkpoints only and are
+never deployed. In particular, the transient RI-hash mismatch
 recorded in
 [`09-natural-key-resolver-and-core-contract-cutover.md`](09-natural-key-resolver-and-core-contract-cutover.md#known-transient-trunk-state)
 is accepted on trunk between DMS-1451 and DMS-1452/DMS-1454.
+
+DMS-1401 and DMS-1404 remain independently deliverable and are outside this release-atomicity
+requirement. Their physical-schema changes require deliberate reprovisioning and compatible
+rebuilt templates before template-backed deployment, with `RelationalMappingVersion` held at
+`v3` for the current v8.1 release target.
 
 E2E gating is engine-asymmetric: PostgreSQL runs the full suite, SQL Server runs only the
 `@MssqlRepresentative` or `@MssqlOnly` cross-section plus the DS 6.1 set in its own lane. Every E2E
@@ -85,3 +103,4 @@ by roughly half a dozen scenarios as an accepted lane-time cost.
 - **DMS-1455 (T13)** — [`13-change-query-descriptor-identity-cutover.md`](13-change-query-descriptor-identity-cutover.md) — Cut over Change Query descriptor identity resolution and own the cross-engine Unicode verdict fixture matrix and `Turkish_100_CS_AS` live fixture.
 - **DMS-1456 (T14)** — [`14-remove-referential-identity-infrastructure.md`](14-remove-referential-identity-infrastructure.md) — Remove ReferentialIdentity fixtures, maintenance, and infrastructure.
 - **DMS-1404** — [`15-compact-descriptor-id-and-storage-optimizations.md`](15-compact-descriptor-id-and-storage-optimizations.md) — Give descriptors a compact int surrogate, plus other optimizations.
+- **DMS-1401** — [`16-drop-document-content-last-modified-at.md`](16-drop-document-content-last-modified-at.md) — Drop the denormalized ContentLastModifiedAt from dms.Document while retaining document-level ContentVersion and authoritative root/descriptor timestamps.
