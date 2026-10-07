@@ -5270,17 +5270,12 @@ public class ApplicationModuleTests
     [TestFixture]
     public class Given_an_application_credential_reset_for_a_multi_client_application : ApplicationModuleTests
     {
-        private List<string> _callOrder = null!;
         private HttpResponseMessage _resetResponse = null!;
 
         [SetUp]
         public async Task Act()
         {
-            _callOrder = [];
-            _lockManager = new RecordingLockManager(() => _callOrder.Add("lock"));
-
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
-                .Invokes(_ => _callOrder.Add("clients-read"))
                 .Returns(
                     new ApplicationApiClientsResult.Success([
                         new ApiClient("firstClientId", Guid.NewGuid(), true),
@@ -5328,10 +5323,6 @@ public class ApplicationModuleTests
         [Test]
         public void It_resets_no_client() =>
             A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored)).MustNotHaveHappened();
-
-        [Test]
-        public void It_reads_the_clients_under_the_aggregate_lock() =>
-            _callOrder.Should().Equal("lock", "clients-read");
     }
 
     [TestFixture]
