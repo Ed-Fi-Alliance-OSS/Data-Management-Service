@@ -360,6 +360,8 @@ exit 7
             $oldPath = $env:E2E_TRX_PATH
             try {
                 & (Join-Path $PSScriptRoot '../sanitize-e2e-artifacts.ps1') -Path $path
+                $sanitized = [xml](Get-Content -LiteralPath $path -Raw)
+                $sanitized.TestRun.Results.UnitTestResult.Output.StdOut | Should -Be 'Server=dms;Password=***REDACTED***;Database=d'
                 $env:E2E_TRX_PATH = $path
                 $runBlock = Get-RunBlock -Name 'Verify DMS E2E Execution'
                 { & ([scriptblock]::Create($runBlock)) } | Should -Not -Throw
