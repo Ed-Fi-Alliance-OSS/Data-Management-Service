@@ -512,18 +512,20 @@ Feature: Tenants endpoints
                         "definition": "<Profile name=\"Shared Profile {scenarioRunId}\"><Resource name=\"School\"></Resource></Profile>"
                     }
                   """
-             Then it should respond with 409
+             Then it should respond with 400
               And the response body is
                   """
                     {
-                        "detail": "The identifying value(s) of the item are the same as another item that already exists.",
-                        "type": "urn:ed-fi:api:conflict:non-unique-identity",
-                        "title": "Identifying Values Are Not Unique",
-                        "status": 409,
-                        "validationErrors": {},
-                        "errors": [
-                            "A profile with this name already exists."
-                        ]
+                        "detail": "Data validation failed. See 'validationErrors' for details.",
+                        "type": "urn:ed-fi:api:bad-request:data",
+                        "title": "Data Validation Failed",
+                        "status": 400,
+                        "validationErrors": {
+                            "Name": [
+                                "A profile with this name already exists."
+                            ]
+                        },
+                        "errors": []
                     }
                   """
 

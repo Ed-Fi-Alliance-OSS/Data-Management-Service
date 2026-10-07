@@ -20,7 +20,10 @@
           runs the API in an isolated Docker environment and executes API Calls.
         * InstanceE2ETest: executes instance management E2E tests in
           EdFi.InstanceManagement.Tests.E2E, which require special setup with route
-          qualifiers and multiple databases.
+          qualifiers and multiple databases. Without -TestFilter the run excludes the
+          identity plugin slice (Category!=instance-management-identity-plugin), which
+          needs a plugin mounted into the DMS container; to run it, see the "Identity
+          plugin slice" section of src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md.
         * IntegrationTest: executes NUnit test in projects named `*.IntegrationTests`,
           which connect to a database.
         * BuildAndPublish: build and publish with `dotnet publish`
@@ -45,7 +48,9 @@
         .\build-dms.ps1 InstanceE2ETest -Configuration Release
 
         Starts Docker environment with route qualifiers, configures test databases,
-        and runs instance management E2E tests.
+        and runs instance management E2E tests. With no -TestFilter the identity plugin
+        slice is excluded; see the "Identity plugin slice" section of
+        src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md to run it.
 
     .EXAMPLE
         .\build-dms.ps1 push -NuGetApiKey $env:nuget_key -PackageFile .\EdFi.Api.8.0.0.nupkg
@@ -206,6 +211,9 @@ $pluginsPackageName = "EdFi.Api.Plugins"
 $pluginsProjectName = "EdFi.Api.Plugins"
 $pluginsRoot = "$PSScriptRoot/src/plugins"
 $identityPackageName = "EdFi.Api.Identity"
+# The InstanceE2ETest slice that needs a plugin mounted into the DMS container. An unfiltered
+# InstanceE2ETest run excludes it, because its first step fails without the plugin environment file.
+$instanceIdentityPluginExcludedFilter = "Category!=instance-management-identity-plugin"
 $identityProjectName = "EdFi.DataManagementService.Identity"
 $documentCacheAdminPackageName = "EdFi.Api.DocumentCacheAdmin"
 $testResults = "$PSScriptRoot/TestResults"
@@ -1944,6 +1952,9 @@ function RunInstanceE2E {
 
     # Run only the instance management E2E tests
     $testProject = "$solutionRoot/tests/EdFi.InstanceManagement.Tests.E2E/EdFi.InstanceManagement.Tests.E2E.csproj"
+    if ([string]::IsNullOrWhiteSpace($TestFilter)) {
+        $TestFilter = $instanceIdentityPluginExcludedFilter
+    }
     $normalizedTestFilter = ConvertTo-NormalizedTestFilter -TestFilter $TestFilter
     $resultNameSuffix =
         if ($normalizedTestFilter -match '(?i)\b(?:TestCategory|Category)\s*=\s*instance-management-ci-shard-(\d+)\b') {
@@ -2346,7 +2357,7 @@ function BuildIdentityPackage {
     # Deliberately NOT $DMSVersion, same reasoning as BuildPluginsPackage above: this contract is
     # versioned on its own public surface independently of the DMS release, so the pack passes no
     # -p:PackageVersion and the project's own declared version decides.
-    $packageVersion = Get-PluginsContractVersion -PropsPath $projectPath
+    $packageVersion = Get-IdentityContractVersion -ProjectPath $projectPath
     $expectedPackagePath = "$PSScriptRoot/$identityPackageName.$packageVersion.nupkg"
 
     Write-Info "Building $identityPackageName package version $packageVersion"

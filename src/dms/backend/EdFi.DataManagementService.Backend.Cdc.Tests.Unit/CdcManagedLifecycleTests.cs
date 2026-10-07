@@ -1140,17 +1140,38 @@ internal class Given_CdcManagedLifecycle(Ddl.CdcProvider provider) : CdcReadines
     [TestCase(true)]
     public async Task It_requires_fresh_post_mutation_lag_and_projection(bool backlog)
     {
-        ShortTiming(100);
+        using var deadline = new CancellationTokenSource();
         _backlog = backlog;
         _lag = backlog ? 1 : 1001;
-        var elapsed = System.Diagnostics.Stopwatch.StartNew();
-        var result = await Execute(CdcManagedLifecycleOperation.Restart);
-        elapsed
-            .Elapsed.Should()
-            .BeGreaterThanOrEqualTo(_request.Timing.WaitTimeout - TimeSpan.FromMilliseconds(20))
-            .And.BeLessThan(TimeSpan.FromSeconds(3));
+        bool completionPersisted = false;
+        int catchUpObservations = 0;
+        _onWrite = boundary =>
+        {
+            if (boundary == CdcWorkflowWriteBoundary.AfterAtomicReplacement && _restarts > 0)
+            {
+                ReadJournal().Operations.Last().Completions.Should().ContainSingle();
+                completionPersisted = true;
+            }
+        };
+        _onCall = call =>
+        {
+            if (call == "metrics" && completionPersisted && ++catchUpObservations == 2)
+            {
+                // Let the first post-completion pass reject lag/backlog before ending catch-up.
+                deadline.Cancel();
+            }
+        };
+        var result = await _managed.ExecuteAsync(
+            new(_request, _runtime, 1000),
+            CdcManagedLifecycleOperation.Restart,
+            operationDeadline: deadline.Token
+        );
+        completionPersisted.Should().BeTrue();
+        catchUpObservations.Should().BeGreaterThanOrEqualTo(2);
+        deadline.IsCancellationRequested.Should().BeTrue();
         result.Diagnostics.Should().Contain(d => d.Failure == CdcDeploymentFailure.Timeout);
         ReadJournal().Operations.Last().Completions.Should().ContainSingle();
+        ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
         _restarts.Should().Be(1);
         result.Ready.Should().BeFalse();
         result.Succeeded.Should().BeFalse();

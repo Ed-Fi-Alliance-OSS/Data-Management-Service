@@ -11,9 +11,12 @@ namespace EdFi.DmsConfigurationService.Backend.Services;
 /// <summary>
 /// Validates a submitted data store connection string, deferring the parse itself to the provider
 /// backend. Everything except the parse is engine independent, so it is settled here and each
-/// provider supplies only its own builder.
+/// provider supplies only its own builder. That same builder is what
+/// <see cref="IDataStoreConnectionStringBuilderSource"/> hands out.
 /// </summary>
-public abstract class DataStoreConnectionStringValidator : IDataStoreConnectionStringValidator
+public abstract class DataStoreConnectionStringValidator
+    : IDataStoreConnectionStringValidator,
+        IDataStoreConnectionStringBuilderSource
 {
     /// <summary>
     /// The messages are engine independent on purpose: the same request has to produce the same
@@ -81,4 +84,8 @@ public abstract class DataStoreConnectionStringValidator : IDataStoreConnectionS
     /// does not accept it.
     /// </summary>
     protected abstract DbConnectionStringBuilder CreateBuilder(string connectionString);
+
+    DbConnectionStringBuilder IDataStoreConnectionStringBuilderSource.CreateBuilder(
+        string connectionString
+    ) => CreateBuilder(connectionString);
 }

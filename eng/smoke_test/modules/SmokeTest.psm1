@@ -163,11 +163,18 @@ function Get-SmokeTestCredential {
             }
         }
 
-        # Step 4: Create vendor using Dms-Management module
-        Write-Host "Creating vendor..."
-        $vendorId = Add-Vendor -CmsUrl $ConfigServiceUrl -Company $VendorName -ContactName "Smoke Test Contact" -ContactEmailAddress "smoketest@example.com" -NamespacePrefixes "uri://ed-fi.org,uri://gbisd.edu,uri://tpdm.ed-fi.org,uri://sample.ed-fi.org" -AccessToken $configToken -Tenant $Tenant
-
-        Write-Host "Vendor created with ID: $vendorId"
+        # Step 4: Create the vendor, or reuse it. POST /v3/vendors is create-only, so a repeat call
+        # (another -ApplicationName, or a retry after Add-Application failed) reuses the vendor.
+        Write-Host "Resolving vendor..."
+        $existingVendor = Find-CmsVendorByCompany -CmsUrl $ConfigServiceUrl -Company $VendorName -AccessToken $configToken -Tenant $Tenant
+        if ($existingVendor) {
+            $vendorId = [long]$existingVendor.id
+            Write-Host "Reusing existing vendor with ID: $vendorId"
+        }
+        else {
+            $vendorId = Add-Vendor -CmsUrl $ConfigServiceUrl -Company $VendorName -ContactName "Smoke Test Contact" -ContactEmailAddress "smoketest@example.com" -NamespacePrefixes "uri://ed-fi.org,uri://gbisd.edu,uri://tpdm.ed-fi.org,uri://sample.ed-fi.org" -AccessToken $configToken -Tenant $Tenant
+            Write-Host "Vendor created with ID: $vendorId"
+        }
 
         # Step 5: Create application using Dms-Management module
         Write-Host "Creating application..."

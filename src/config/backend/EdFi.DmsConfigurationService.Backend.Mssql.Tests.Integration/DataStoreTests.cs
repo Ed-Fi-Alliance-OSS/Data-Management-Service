@@ -40,6 +40,10 @@ public class DataStoreTests : DatabaseTest
         MssqlTestConfiguration.DatabaseOptions,
         NullLogger<DataStoreDerivativeRepository>.Instance,
         new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+        TestConnectionStringReader.Create(
+            new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+            new TenantContextProvider()
+        ),
         new TestAuditContext(),
         new TenantContextProvider()
     );
@@ -52,6 +56,10 @@ public class DataStoreTests : DatabaseTest
             MssqlTestConfiguration.DatabaseOptions,
             NullLogger<DataStoreRepository>.Instance,
             new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+            TestConnectionStringReader.Create(
+                new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                new TenantContextProvider()
+            ),
             _routeContextRepository,
             _derivativeRepository,
             new TestAuditContext(),
@@ -303,7 +311,7 @@ public class DataStoreTests : DatabaseTest
             insertResult.Should().BeOfType<DataStoreInsertResult.Success>();
             var id = ((DataStoreInsertResult.Success)insertResult).Id;
 
-            _storedCipherTextBeforeRotation = await StoredCipherText(id);
+            _storedCipherTextBeforeRotation = await StoredCipherText(_repository, id);
 
             _rotatedKeyEncryptionService = new ConnectionStringEncryptionService(
                 Options.Create(
@@ -321,6 +329,7 @@ public class DataStoreTests : DatabaseTest
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<DataStoreRepository>.Instance,
                 _rotatedKeyEncryptionService,
+                TestConnectionStringReader.Create(_rotatedKeyEncryptionService, new TenantContextProvider()),
                 _routeContextRepository,
                 _derivativeRepository,
                 new TestAuditContext(),
@@ -338,16 +347,17 @@ public class DataStoreTests : DatabaseTest
             );
             updateResult.Should().BeOfType<DataStoreUpdateResult.Success>();
 
-            _storedCipherTextAfterRotation = await StoredCipherText(id);
+            _storedCipherTextAfterRotation = await StoredCipherText(repositoryOnRotatedKey, id);
         }
 
         /// <summary>
-        /// A get returns the stored bytes as Base64 without decrypting them, so this is the cipher text
-        /// as persisted.
+        /// A get decrypts the stored value and, when it carries no secret reference, returns the stored
+        /// bytes as Base64 unchanged, so this is the cipher text as persisted. Each read goes through a
+        /// repository on the key the value was written under, because a read now has to decrypt it.
         /// </summary>
-        private async Task<string> StoredCipherText(int id)
+        private static async Task<string> StoredCipherText(IDataStoreRepository repository, int id)
         {
-            var getResult = await _repository.GetDataStore(id);
+            var getResult = await repository.GetDataStore(id);
             getResult.Should().BeOfType<DataStoreGetResult.Success>();
 
             var storedConnectionString = ((DataStoreGetResult.Success)getResult)
@@ -671,6 +681,156 @@ public class DataStoreTests : DatabaseTest
     }
 
     [TestFixture]
+    public class Given_data_store_names_within_and_across_tenants : DataStoreTests
+    {
+        private const string SharedName = "DMS1341 Shared Data Store";
+        private const string OtherName = "DMS1341 Other Data Store";
+
+        private IDataStoreRepository _tenantARepository = null!;
+        private int _otherDataStoreId;
+        private DataStoreInsertResult _sameTenantDuplicate = null!;
+        private DataStoreInsertResult _otherTenantInsert = null!;
+        private DataStoreInsertResult _noTenantInsert = null!;
+        private DataStoreInsertResult _noTenantDuplicate = null!;
+        private DataStoreUpdateResult _renameOntoTakenName = null!;
+        private string _nameAfterRejectedRename = string.Empty;
+        private DataStoreUpdateResult _updateKeepingOwnName = null!;
+
+        private static async Task<IDataStoreRepository> CreateTenantRepository(string suffix)
+        {
+            var tenantName = $"DMS1341-DataStoreNames-{suffix}-{Guid.NewGuid()}";
+            var tenantResult = await new TenantRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<TenantRepository>.Instance,
+                new TestAuditContext()
+            ).InsertTenant(new TenantInsertCommand { Name = tenantName });
+            tenantResult.Should().BeOfType<TenantInsertResult.Success>();
+
+            var tenantContextProvider = new TenantContextProvider
+            {
+                Context = new TenantContext.Multitenant(
+                    ((TenantInsertResult.Success)tenantResult).Id,
+                    tenantName
+                ),
+            };
+
+            return new DataStoreRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<DataStoreRepository>.Instance,
+                new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                TestConnectionStringReader.Create(
+                    new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                    tenantContextProvider
+                ),
+                new DataStoreContextRepository(
+                    MssqlTestConfiguration.DatabaseOptions,
+                    NullLogger<DataStoreContextRepository>.Instance,
+                    new TestAuditContext(),
+                    tenantContextProvider
+                ),
+                new DataStoreDerivativeRepository(
+                    MssqlTestConfiguration.DatabaseOptions,
+                    NullLogger<DataStoreDerivativeRepository>.Instance,
+                    new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                    TestConnectionStringReader.Create(
+                        new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                        tenantContextProvider
+                    ),
+                    new TestAuditContext(),
+                    tenantContextProvider
+                ),
+                new TestAuditContext(),
+                tenantContextProvider
+            );
+        }
+
+        private static DataStoreInsertCommand InsertCommand(string name) =>
+            new()
+            {
+                DataStoreType = "Production",
+                Name = name,
+                ConnectionString = "Server=localhost;Database=TestDb;",
+            };
+
+        private DataStoreUpdateCommand UpdateCommand(string name, string dataStoreType) =>
+            new()
+            {
+                Id = _otherDataStoreId,
+                DataStoreType = dataStoreType,
+                Name = name,
+            };
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _tenantARepository = await CreateTenantRepository("A");
+            IDataStoreRepository tenantBRepository = await CreateTenantRepository("B");
+
+            (await _tenantARepository.InsertDataStore(InsertCommand(SharedName)))
+                .Should()
+                .BeOfType<DataStoreInsertResult.Success>();
+            var otherInsert = await _tenantARepository.InsertDataStore(InsertCommand(OtherName));
+            _otherDataStoreId = ((DataStoreInsertResult.Success)otherInsert).Id;
+
+            _sameTenantDuplicate = await _tenantARepository.InsertDataStore(InsertCommand(SharedName));
+            _otherTenantInsert = await tenantBRepository.InsertDataStore(InsertCommand(SharedName));
+            _noTenantInsert = await _repository.InsertDataStore(InsertCommand(SharedName));
+            _noTenantDuplicate = await _repository.InsertDataStore(InsertCommand(SharedName));
+
+            _renameOntoTakenName = await _tenantARepository.UpdateDataStore(
+                UpdateCommand(SharedName, "Production")
+            );
+            var reread = await _tenantARepository.GetDataStore(_otherDataStoreId);
+            _nameAfterRejectedRename = ((DataStoreGetResult.Success)reread).DataStoreResponse.Name;
+
+            _updateKeepingOwnName = await _tenantARepository.UpdateDataStore(
+                UpdateCommand(OtherName, "Staging")
+            );
+        }
+
+        [Test]
+        public void It_should_reject_a_duplicate_name_within_a_tenant() =>
+            _sameTenantDuplicate.Should().BeOfType<DataStoreInsertResult.FailureDuplicateName>();
+
+        [Test]
+        public void It_should_accept_the_same_name_in_another_tenant() =>
+            _otherTenantInsert.Should().BeOfType<DataStoreInsertResult.Success>();
+
+        [Test]
+        public void It_should_accept_a_tenant_name_for_a_data_store_without_a_tenant() =>
+            _noTenantInsert.Should().BeOfType<DataStoreInsertResult.Success>();
+
+        [Test]
+        public void It_should_reject_a_duplicate_name_without_a_tenant() =>
+            _noTenantDuplicate.Should().BeOfType<DataStoreInsertResult.FailureDuplicateName>();
+
+        [Test]
+        public void It_should_reject_a_rename_onto_a_taken_name() =>
+            _renameOntoTakenName.Should().BeOfType<DataStoreUpdateResult.FailureDuplicateName>();
+
+        [Test]
+        public void It_should_leave_the_rejected_rename_unchanged() =>
+            _nameAfterRejectedRename.Should().Be(OtherName);
+
+        [Test]
+        public void It_should_accept_an_update_that_keeps_its_own_name() =>
+            _updateKeepingOwnName.Should().BeOfType<DataStoreUpdateResult.Success>();
+
+        [Test]
+        public async Task It_should_keep_one_row_per_name_in_the_tenant()
+        {
+            var queryResult = await _tenantARepository.QueryDataStore(
+                new DataStoreQuery() { Limit = 25, Offset = 0 }
+            );
+
+            ((DataStoreQueryResult.Success)queryResult)
+                .DataStoreResponses.Select(dataStore => dataStore.Name)
+                .Should()
+                .BeEquivalentTo(SharedName, OtherName);
+        }
+    }
+
+    [TestFixture]
     public class Given_data_store_is_assigned_to_applications : DataStoreTests
     {
         private int _dataStoreId1;
@@ -684,7 +844,7 @@ public class DataStoreTests : DatabaseTest
             DataStoreInsertCommand instance1 = new()
             {
                 DataStoreType = "Production",
-                Name = "Test Instance",
+                Name = "Assigned Test Instance 1",
                 ConnectionString = "Server=localhost;Database=TestDb;User Id=user;Password=pass;",
             };
 
@@ -696,7 +856,7 @@ public class DataStoreTests : DatabaseTest
             DataStoreInsertCommand instance2 = new()
             {
                 DataStoreType = "Staging",
-                Name = "Test Instance",
+                Name = "Assigned Test Instance 2",
                 ConnectionString = "Server=localhost;Database=TestDb;User Id=user;Password=pass;",
             };
 
@@ -708,7 +868,7 @@ public class DataStoreTests : DatabaseTest
             DataStoreInsertCommand unassignedInstance = new()
             {
                 DataStoreType = "Unassigned",
-                Name = "Test Instance",
+                Name = "Unassigned Test Instance",
                 ConnectionString = "Server=localhost;Database=TestDb;User Id=user;Password=pass;",
             };
 
@@ -919,6 +1079,10 @@ public class DataStoreTests : DatabaseTest
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<DataStoreDerivativeRepository>.Instance,
                 new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                TestConnectionStringReader.Create(
+                    new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                    tenantContextProvider
+                ),
                 new TestAuditContext(),
                 tenantContextProvider
             );
@@ -927,6 +1091,10 @@ public class DataStoreTests : DatabaseTest
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<DataStoreRepository>.Instance,
                 new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                TestConnectionStringReader.Create(
+                    new ConnectionStringEncryptionService(MssqlTestConfiguration.DatabaseOptions),
+                    tenantContextProvider
+                ),
                 contextRepository,
                 derivativeRepository,
                 new TestAuditContext(),

@@ -210,6 +210,19 @@ The reader's HTTP client does not follow redirects, stores no cookies, and repla
 
 Each credential is the `key` and `secret` of a Configuration Service application whose claim set grants only `Read` on the projection service claim and which has no data stores; in multi-tenant mode every tenant needs its own (see [Provisioning the Configuration Service credential](./EDUCATION-ORGANIZATION-PROJECTION.md#provisioning-the-configuration-service-credential), which also covers rotation). The settings are read at startup, so restart the service after changing a credential. With the self-contained identity provider, the reader's tokens count against that credential's own client id, not DMS's, under [`IdentitySettings.BearerTokenPerClientLimit`](#relevant-parameters-in-appsettingsjson-configuration-service). About two active tokens per Configuration Service instance is an estimate, not a bound: restarts and page `401` refreshes leave tokens counting until they expire (the reader never revokes one), and a token whose lifetime does not exceed `TokenExpirySafetyMarginSeconds` is never reused, so every read then requests a new one and frequent reads can reach the limit with a single instance. Keep the margin comfortably below the token lifetime; see [Token budget](./EDUCATION-ORGANIZATION-PROJECTION.md#token-budget).
 
+## SecretsSettings
+
+A stored data store or derivative connection string may name a secret instead of carrying it, as a `${secret:<name>}` token inside a value, for example `Password=${secret:prod/dms/ds-2026}`. When the Configuration Service reads the row, it asks the `ISecretResolver` a Configuration Service plugin registers for each token's value. These settings control how often it asks and how long it waits (`appsettings.json` section `SecretsSettings`; in the provided Docker Compose files, `SecretsSettings__<Parameter>` is set from `DMS_CONFIG_SECRETS_<PARAMETER>`, for example `DMS_CONFIG_SECRETS_CACHE_EXPIRATION_SECONDS`). The service validates both values at startup and refuses to start, naming `SecretsSettings:<Parameter>` and the accepted range, when one is out of bounds.
+
+| Parameter              | Description                                                                                                                                                                                                                       | Default | Accepted range  |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | --------------- |
+| CacheExpirationSeconds | How long a resolved value is reused, per tenant and secret name, before the resolver is asked again. The expiration is absolute from when the value was fetched; reads do not extend it. It is measured on the system clock, so a step back in that clock lengthens it by the size of the step. `0` disables caching, so every read that needs a value asks the resolver; reads that ask for the same value at the same moment still share one call. | `300`   | `0` or greater  |
+| ResolveTimeoutSeconds  | How long one read may spend waiting on the resolver, across all the calls it makes, before the reference it is waiting for fails. It covers each whole call, including any work the resolver does before it returns, and it counts from the first reference the read resolves, so a store that answers each call slowly costs one allowance per read, not one per secret name. Once it has passed, the rest of that read uses only values already cached and does not ask the resolver again. A reference the read can no longer ask for is unresolved: a data store that holds one fails the whole read with an HTTP 500, collection or single row, and a derivative read as part of its data store is returned with a null connection string. A call the read stopped waiting for keeps running until its own deadline, which is this value counted from when the call started, and caches a value it returns by then, so with caching on a later read finds it and recovers. For the first reference a read resolves the two deadlines coincide, to within timer resolution, so a value that call returns after the read stopped waiting is dropped. With `CacheExpirationSeconds` at `0` nothing is kept, not even within one read: every reference on every row the read returns is its own call, one after another, including a name already resolved for an earlier row or keyword. A collection read of twenty data stores that share one secret makes twenty calls, so a store whose calls for one read take longer than this value in total fails that read every time. Size this value for the slowest whole read, counting every reference on every row, not the slowest call, or leave caching on. A read that joins a call another read started stops waiting when that call reaches its own deadline, which can come before the joining read's allowance is spent; that reference is unresolved, and the read keeps the time it has left for the references after it. A data store read includes one derivative read, so it waits at most twice this value however many rows it returns. DMS fetches a tenant's data stores with a 100-second HTTP client timeout, so keep twice this value well under 100 seconds. | `10`    | `1` – `4294967` |
+
+**Writing a connection string can direct any secret the plugin can reach.** Nothing restricts which name a reference uses, and the value of every string keyword is resolved, not only `Password`; a typed keyword such as `Port` refuses a reference when the value is written. A client allowed to create or update data stores or derivatives (`edfi_admin_api/full_access`), in any existing tenant, since a request names its tenant in the `Tenant` header, can therefore store a connection string such as `Host=<a server it controls>;Username=${secret:<any name>}`. CMS resolves it, and DMS sends the resolved value to that server when it connects, which it does at startup for every data store it loads, whether or not an application is bound to it; nothing checks the host. Without secret resolution, that client could replace a stored password but never read one. A value resolved into a keyword other than `Password`, such as a username or database name, can also appear in DMS's own error logs, because the database driver repeats it in a failed-login or unknown-database message and DMS logs that exception; CMS's logs never carry a resolved value, but DMS's are outside that rule. Grant write access to data stores accordingly, and scope the vault identity the plugin uses to the secrets CMS is meant to serve; that narrows what such a client can reach but does not close the path.
+
+**A rotation reaches DMS within the sum of two windows.** A secret rotated in the store is seen by the Configuration Service within `CacheExpirationSeconds`, and by a running DMS within its own `CacheSettings:DataStoreCacheExpirationSeconds` after that (see [CacheSettings](#cachesettings)). On the defaults that is up to 300 + 600 seconds, about fifteen minutes. For that whole window DMS keeps using the previous value, so write the new credential first and revoke the old one only after the window has elapsed. Both windows are measured on the system clock, so allow longer if a host's clock may have been stepped back during it. Nothing pushes a rotation sooner; to apply one immediately, restart both the Configuration Service and DMS. When DMS's `DataStoreCacheRefreshEnabled` is `false` or its `DataStoreCacheExpirationSeconds` is not positive, DMS keeps the value it loaded until it restarts.
+
 ## Reverse Proxy and Forwarded Headers
 
 When the DMS API or Configuration Service runs behind a reverse proxy or load balancer
@@ -323,18 +336,39 @@ These settings configure how the DMS API connects to the Configuration Service t
 > Configuration Service were encrypted with the previous key and are not
 > re-encrypted automatically. After setting a new key, re-submit each data store
 > and data store derivative connection string through the Admin API; an update
-> stores the value encrypted under the currently configured key. Until a
-> connection string has been re-submitted, DMS cannot decrypt it and reports a
-> decryption failure.
+> stores the value encrypted under the currently configured key. The
+> Configuration Service decrypts every stored connection string when it is read,
+> so until a connection string has been re-submitted:
+> - A data store still under the previous key fails every data store read that
+>   includes it, the collection as well as the single row, with an HTTP 500 whose
+>   log entry says the stored connection string could not be decrypted. DMS
+>   therefore cannot load that tenant's data stores. The stored format is not
+>   authenticated, so about one value in 256 decrypts under the wrong key into
+>   unreadable text instead of failing; that read succeeds, and returns a
+>   connection string DMS cannot use.
+> - A derivative still under the previous key fails the data store derivative
+>   reads the same way. Read as part of its data store, it is returned with a null
+>   connection string, which DMS treats as not configured, and the data store and
+>   its other derivatives are unaffected.
+>
+> Re-submitting a value is a write, which does not decrypt the stored one, so the
+> procedure works while reads fail. The update replaces the other fields too, and
+> needs their values: a data store's `id`, `dataStoreType` and `name` (`provider`
+> is kept when omitted), and a derivative's `id`, `dataStoreId` and
+> `derivativeType`. While reads fail the Admin API cannot supply them, so record
+> them before changing the key, or read them from the data store and derivative
+> tables, where only `ConnectionString` is encrypted: `dmscs.DataStore` and
+> `dmscs.DataStoreDerivative` on SQL Server, `"dmscs"."DataStore"` and
+> `"dmscs"."DataStoreDerivative"` on PostgreSQL, where the quotes are required.
 >
 > This applies to local Docker Compose stacks as well, where the environment
 > files under `eng/docker-compose/` supply the key. Picking up an updated
 > environment file changes the derived key, so a database volume created before
 > the change still holds connection strings encrypted under the previous one.
-> `provision-dms-schema.ps1` then fails with a decryption error even though CMS
-> and DMS agree on the new value — the mismatch is with the stored data, not
-> between the services. Recreate the database volume, or apply the re-submission
-> procedure above.
+> `provision-dms-schema.ps1` then fails when it lists the data stores, with the
+> Configuration Service's HTTP 500, even though CMS and DMS agree on the new
+> value — the mismatch is with the stored data, not between the services.
+> Recreate the database volume, or apply the re-submission procedure above.
 
 ## CacheSettings
 
@@ -430,22 +464,26 @@ and what a startup failure means, and
 [eng/docker-compose/README.md](../eng/docker-compose/README.md) for running them
 against a local development stack.
 
-A plugin is built against two published contract packages, on the Ed-Fi Azure
-Artifacts feed at
+A plugin is built against up to three published contract packages, on the Ed-Fi
+Azure Artifacts feed at
 `https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json`:
 
-| Package                     | What it declares                                                    |
-| --------------------------- | ------------------------------------------------------------------- |
-| `EdFi.Api.Plugins`          | `EdFiApiPlugin`, the base class a plugin implements.                  |
-| `EdFi.Api.CustomValidation` | `ICustomResourceValidator`, for a plugin that registers a validator.  |
+| Package                     | What it declares                                                                                                   |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `EdFi.Api.Plugins`          | `EdFiApiPlugin`, the base class a plugin implements.                                                               |
+| `EdFi.Api.CustomValidation` | `ICustomResourceValidator`, for a plugin that registers a validator.                                               |
+| `EdFi.Api.Secrets`          | `ISecretResolver` and `IClientSecretHasher`, for a [Configuration Service plugin](#configuration-service-plugins). |
 
-Neither carries the Data Management Service release version. Each declares its own
-semantic version, in its own source, and moves it only when its public surface, its
-XML documentation or its declared dependencies change, because the loader compares
-contract assembly versions when it decides whether a plugin may run. Which contract
-versions a given release carries is stated in the host assembly manifest attached to
-that release. None of this is configuration: it is what a vendor compiles against
-before the directory this section governs ever exists.
+None carries a Data Management Service or Configuration Service release version.
+Each declares its own semantic version, in its own source, and moves it only when
+its public surface, its XML documentation or its declared dependencies change,
+because the loader compares contract assembly versions when it decides whether a
+plugin may run. Which contract versions a Data Management Service release carries
+is stated in the host assembly manifest attached to that release. A Configuration
+Service release has no such manifest; the versions it carries, `EdFi.Api.Secrets`
+included, are the ones declared in source at that release's tag. None of this is
+configuration: it is what a vendor compiles against before the directory this
+section governs ever exists.
 
 | Parameter | Description                                                                                                                                                                                                                  |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -924,6 +962,74 @@ Configuration Service outage.
 > count is not stored with a hashed secret, so verification always derives at the currently
 > configured count. Raising (or lowering) the value makes every client secret hashed at the old
 > count fail verification; the remedy is to re-issue those client secrets.
+
+### Signing-key settings (Configuration Service, self-contained only)
+
+In `self-contained` mode the Configuration Service keeps the public signing keys it validates
+tokens with in an in-memory snapshot, shared by every request. The snapshot is loaded at startup
+and reloaded in the background. In steady state a request does not read the key table. A load
+runs on a request's behalf in these cases only:
+
+- **No snapshot, or an expired one.** The request starts a load, or joins the one already
+  running, and waits for it. The load is bounded by `SigningKeyLoadTimeoutSeconds`. The request
+  is refused at once, without a key read, during a retry backoff and while a load that outlived
+  its deadline is still finishing.
+- **An overdue snapshot.** The request is served from it and starts a background load. It does
+  not wait for that load.
+- **An unknown key id.** The token's key id is not in the snapshot. The request may start a
+  load, subject to the cooldown and backoff, or join one already running, and waits for it.
+
+These settings control
+the snapshot. They are `IdentitySettings` keys, set in the environment as, for example,
+`IdentitySettings__SigningKeyRefreshIntervalSeconds`. The provided Docker Compose files do not map
+them, so the defaults apply unless you add them.
+
+| Parameter | Default | Accepted values | Meaning |
+| --- | --- | --- | --- |
+| `IdentitySettings.SigningKeyRefreshIntervalSeconds` | `300` | 30–43,200 | Time between scheduled reloads. Each reload is due when the snapshot's age reaches this interval ±10 %. Bounds how long a healthy instance takes to see a key-table change. |
+| `IdentitySettings.SigningKeyMaxStalenessSeconds` | `3600` | from 2 × the refresh interval to 86,400 | How long after its last successful load a snapshot can still be used while reloads fail. After that, every authenticated request answers 503. Also bounds how long a key retired during a key-store outage can still be accepted. The snapshot's age is the larger of its wall-clock age and the elapsed (monotonic) time, so setting the system clock back does not extend this bound. |
+| `IdentitySettings.SigningKeyUnknownKeyRefreshCooldownSeconds` | `30` | 1–3,600 | Minimum elapsed time after the last completed load before a token with an unknown key id may trigger a reload. It is measured on the monotonic clock, so a system clock change neither shortens nor extends it. It applies to the whole instance, not to each caller, and protects the key store's database from reads driven by made-up key ids. One exception per instance: when the first successful load finds no key, one reload may start inside the cooldown, so a fresh store's first key, inserted after startup, is accepted promptly. |
+| `IdentitySettings.SigningKeyLoadTimeoutSeconds` | `10` | 1–60, and less than the refresh interval | How long one load may run before it is canceled and counted as failed. |
+| `IdentitySettings.KeyFormatCacheSize` | `100` | any | **Ignored.** The key-format cache it sized was removed. The setting still binds, so existing configuration keeps working, but it has no effect. |
+
+The Configuration Service checks these values at startup and refuses to start when one is out of
+range. It reports every failing rule, and each message names the `IdentitySettings:` key, its
+accepted range, and the configured value. The check runs only in `self-contained` mode.
+Keycloak mode registers none of these components, so there the settings are neither validated
+nor used.
+
+The defaults were not changed by the work that introduced the snapshot (DMS-1556). The rules
+that relate settings to each other are policy:
+
+- A maximum staleness of at least twice the refresh interval lets a snapshot survive one failed
+  scheduled reload while retries run. It does not guarantee that an instance stays available
+  through a longer outage.
+- A load timeout shorter than the refresh interval keeps each load well inside one interval.
+  Overlapping loads are already prevented: an instance runs one load at a time.
+
+[Signing keys in self-contained mode](../reference/design/configuration-service/CS-AUTH.md#signing-keys-in-self-contained-mode)
+describes refresh, backoff, staleness, key rotation and retirement, and which failures answer
+401 or 503. These settings bound each Configuration Service instance's own snapshot only.
+DMS and other JWKS consumers keep their own cached key set, and a consumer drops a retired
+key only after it successfully re-fetches JWKS or is restarted. Before you rely on a key
+change, follow
+[Rotating and retiring a database signing key](../reference/design/configuration-service/CS-AUTH.md#rotating-and-retiring-a-database-signing-key):
+it covers verifying the change on every instance and refreshing each consumer.
+
+> [!NOTE]
+> **Connection capacity.** The snapshot removes key reads from the steady-state request path
+> (the exceptions are listed above). Bearer authentication and introspection still read the
+> status of every token that passes verification with a valid `jti` from the database,
+> uncached. Most endpoints then read their own data, so request concurrency still drives
+> database connections. In local
+> stress testing (256 requests at 128 concurrent), the Configuration Service's default Npgsql
+> `Max Pool Size` (100) equalled PostgreSQL's `max_connections` (100) on a server that DMS also
+> used. Some requests were then refused by PostgreSQL with `53300: sorry, too many clients
+> already`. They answered 503 at authentication (token-status store) or 500 afterwards. The
+> catalog-shaped workloads that motivated the change (87 concurrent profile reads) were not
+> affected. No pool size, `max_connections` or concurrency default was changed. This is a
+> connection-capacity limitation, separate from signing keys. When you size a deployment,
+> account for every client that shares the database server's connection limit.
 
 ### JwtAuthentication parameters in `appsettings.json` (DMS API Service)
 

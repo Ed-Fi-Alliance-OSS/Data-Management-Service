@@ -19,6 +19,15 @@ public class Given_E2E_Feature_File_Guardrails
     /// than in the sharded default-version lane.
     /// </summary>
     private const string DedicatedSizingLaneTag = "@CursorPartitionSizing";
+
+    /// <summary>
+    /// The dedicated identity plugin lane. Its scenarios need a deployment with the identity fixture
+    /// plugin mounted and allowlisted, so they run in their own job against a generated environment
+    /// file rather than in the sharded instance management lane, whose deployment answers every
+    /// identity operation with the host default.
+    /// </summary>
+    private const string DedicatedIdentityPluginLaneTag = "@instance-management-identity-plugin";
+    private const string InstanceManagementShardTagPrefix = "@instance-management-ci-shard-";
     private static readonly string RemovedBackendLaneTag = "@relational-" + "backend";
     private static readonly string RemovedRelationalShardTagPrefix = "@relational-" + "ci-shard-";
 
@@ -187,9 +196,13 @@ public class Given_E2E_Feature_File_Guardrails
     public void It_assigns_exactly_one_instance_management_ci_shard_tag_to_every_instance_management_scenario()
     {
         string[] offendingScenarios = EnumerateScenariosWithTags(_instanceManagementFeaturesDirectory)
+            // The identity plugin lane is exempt: its scenarios require a deployment with the identity
+            // fixture plugin mounted, which the sharded lane's deployment is not, so they run only in
+            // their own job.
+            .Where(s => !s.Tags.Contains(DedicatedIdentityPluginLaneTag, StringComparer.OrdinalIgnoreCase))
             .Where(s =>
                 s.Tags.Count(t =>
-                    t.StartsWith("@instance-management-ci-shard-", StringComparison.OrdinalIgnoreCase)
+                    t.StartsWith(InstanceManagementShardTagPrefix, StringComparison.OrdinalIgnoreCase)
                 ) != 1
             )
             .Select(s => $"{s.RelativePath}:{s.LineNumber} ({s.Title})")
@@ -198,7 +211,30 @@ public class Given_E2E_Feature_File_Guardrails
         offendingScenarios
             .Should()
             .BeEmpty(
-                "every instance management E2E scenario must carry exactly one @instance-management-ci-shard-N tag so PR CI shards never drop coverage"
+                "every instance management E2E scenario must carry exactly one @instance-management-ci-shard-N tag so PR CI shards never drop coverage (identity plugin scenarios run in their own lane and are exempt)"
+            );
+    }
+
+    [Test]
+    public void It_runs_every_identity_plugin_scenario_in_its_own_lane_without_a_shard_tag()
+    {
+        // A @instance-management-identity-plugin scenario is run by its own job, which filters on that
+        // tag and mounts the identity fixture plugin. A shard tag would also enlist it in the sharded
+        // lane, whose deployment has no plugin, so it would fail there at its first step.
+        string[] offendingScenarios = EnumerateScenariosWithTags(_instanceManagementFeaturesDirectory)
+            .Where(s => s.Tags.Contains(DedicatedIdentityPluginLaneTag, StringComparer.OrdinalIgnoreCase))
+            .Where(s =>
+                s.Tags.Any(t =>
+                    t.StartsWith(InstanceManagementShardTagPrefix, StringComparison.OrdinalIgnoreCase)
+                )
+            )
+            .Select(s => $"{s.RelativePath}:{s.LineNumber} ({s.Title})")
+            .ToArray();
+
+        offendingScenarios
+            .Should()
+            .BeEmpty(
+                "each @instance-management-identity-plugin scenario must carry no @instance-management-ci-shard-N tag, since it runs in its own lane against a deployment with the identity fixture plugin mounted"
             );
     }
 
@@ -208,7 +244,7 @@ public class Given_E2E_Feature_File_Guardrails
         string[] offendingTags = EnumerateScenariosWithTags(_instanceManagementFeaturesDirectory)
             .SelectMany(s =>
                 s.Tags.Where(t =>
-                        t.StartsWith("@instance-management-ci-shard-", StringComparison.OrdinalIgnoreCase)
+                        t.StartsWith(InstanceManagementShardTagPrefix, StringComparison.OrdinalIgnoreCase)
                     )
                     .Select(t => new
                     {
@@ -219,7 +255,7 @@ public class Given_E2E_Feature_File_Guardrails
             )
             .Where(x =>
             {
-                string suffix = x.Tag.Substring("@instance-management-ci-shard-".Length);
+                string suffix = x.Tag.Substring(InstanceManagementShardTagPrefix.Length);
                 return !int.TryParse(suffix, out int n) || n < 1 || n > 2;
             })
             .Select(x => $"{x.RelativePath}:{x.LineNumber} ({x.Tag})")

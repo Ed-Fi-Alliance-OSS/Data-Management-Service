@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -122,6 +123,23 @@ public sealed class Given_APluginRegistersAValidatorTheAuditRefuses
         PluginHostProbe.DeleteIfPresent(_pluginRoot);
         PluginHostProbe.DeleteIfPresent(_startupStatusFilePath);
         PluginHostProbe.DeleteIfPresent(_observationPath);
+    }
+
+    [Test]
+    public void It_recorded_the_failure_under_the_plugin_registration_validation_phase()
+    {
+        // The audit runs after the container is built, so it is not a LoadPlugins failure, and it is
+        // not a schema failure either: the schema phase has already completed by the time it runs.
+        JsonObject status = PluginHostProbe.ReadStartupStatus(_startupStatusFilePath!);
+
+        status["State"]!.GetValue<string>().Should().Be("Failed");
+        status["Phase"]!.GetValue<string>().Should().Be("ValidatePluginRegistrations");
+        status["Summary"]!
+            .GetValue<string>()
+            .Should()
+            .Be(
+                "Custom validator or plugin registration validation failed. DMS cannot start with invalid custom validator or plugin service registrations."
+            );
     }
 
     [Test]

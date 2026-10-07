@@ -1097,35 +1097,31 @@ public class MetadataModuleTests
         var responses = postOp.GetProperty("responses");
 
         responses
-            .TryGetProperty("201", out _)
+            .TryGetProperty("201", out var createdResponse)
             .Should()
             .BeTrue("POST /v3/vendors should define a 201 response for new resources");
 
         responses
             .TryGetProperty("200", out _)
             .Should()
-            .BeTrue("POST /v3/vendors should define a 200 response for updated resources");
+            .BeFalse("POST /v3/vendors is create-only and never updates an existing vendor");
 
-        foreach (var code in new[] { "201", "200" })
-        {
-            responses.TryGetProperty(code, out var codeResponse).Should().BeTrue();
-            codeResponse
-                .TryGetProperty("headers", out var headers)
-                .Should()
-                .BeTrue($"{code} response should define headers");
-            headers
-                .TryGetProperty("Location", out var locationHeader)
-                .Should()
-                .BeTrue($"{code} response headers should include Location");
-            locationHeader.GetProperty("required").GetBoolean().Should().BeTrue();
-            locationHeader.GetProperty("schema").GetProperty("type").GetString().Should().Be("string");
-            locationHeader.GetProperty("schema").GetProperty("format").GetString().Should().Be("uri");
-            locationHeader.GetProperty("description").GetString().Should().NotBeNullOrWhiteSpace();
-            codeResponse
-                .TryGetProperty("content", out _)
-                .Should()
-                .BeFalse($"{code} response body should be empty per CMS-GAP-009");
-        }
+        createdResponse
+            .TryGetProperty("headers", out var headers)
+            .Should()
+            .BeTrue("201 response should define headers");
+        headers
+            .TryGetProperty("Location", out var locationHeader)
+            .Should()
+            .BeTrue("201 response headers should include Location");
+        locationHeader.GetProperty("required").GetBoolean().Should().BeTrue();
+        locationHeader.GetProperty("schema").GetProperty("type").GetString().Should().Be("string");
+        locationHeader.GetProperty("schema").GetProperty("format").GetString().Should().Be("uri");
+        locationHeader.GetProperty("description").GetString().Should().NotBeNullOrWhiteSpace();
+        createdResponse
+            .TryGetProperty("content", out _)
+            .Should()
+            .BeFalse("201 response body should be empty per CMS-GAP-009");
     }
 
     private static bool TypeIncludes(System.Text.Json.JsonElement type, string expectedType)

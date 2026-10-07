@@ -710,6 +710,19 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
             -not $Parameters.ContainsKey('CdcBrokerSizeOverrideFile') -and $Parameters.SuppressWriterGuidance
         }
     }
+    It 'forwards an explicit retained local rebuild only to infrastructure preparation' {
+        Invoke-TestLifecycle @{ d = $true }
+        $script:trace.Clear()
+
+        Invoke-TestLifecycle @{ Rebuild = $true }
+
+        Should -Invoke -ModuleName cdc-lifecycle Invoke-CdcInfrastructure -Times 1 -Exactly -ParameterFilter {
+            $Parameters['InfraOnly'] -and $Parameters['r']
+        }
+        Should -Invoke -ModuleName cdc-lifecycle Invoke-CdcInfrastructure -Times 1 -Exactly -ParameterFilter {
+            $Parameters['DmsOnly'] -and -not $Parameters.ContainsKey('r')
+        }
+    }
     It 'waits for managed <project> <operation> startup evidence: <scenario>' -ForEach @(
         foreach ($project in @('dms-local', 'dms-published')) {
             foreach ($operation in @('start', 'retire')) {
@@ -1809,5 +1822,33 @@ $global:LASTEXITCODE = 0
     It 'ends ownership after a child failure' {
         { Invoke-CdcInfrastructure -StartScript $script:child -Parameters @{ Fail = $true } } | Should -Throw '*Child failure*'
         Test-CdcInfrastructureInvocation | Should -BeFalse
+    }
+}
+
+Describe 'Live runbook SQL Server lifecycle fixture commands' {
+    BeforeAll {
+        Import-Module (Join-Path $PSScriptRoot 'cdc-fixture-inputs.psm1') -Force
+        # Execute the actual nested adapter without provisioning a full live stack.
+        $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'cdc-runbook-lifecycle.ps1'), [ref]$null, [ref]$null)
+        $adapter = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-OwnedSql' }, $true)
+        . ([scriptblock]::Create($adapter.Extent.Text))
+    }
+    It 'uses the shared SQL transport with session options before the requested SQL' {
+        $Provider = 'Mssql'
+        Mock -ModuleName cdc-fixture-inputs Invoke-NativeCommandWithInput {
+            [pscustomobject]@{ FailureKind = 'None'; ExitCode = 0; StandardOutput = "  17`n" }
+        }
+        Invoke-OwnedSql -Database 'owned-target' -Sql 'SELECT 17;' | Should -Be '17'
+        Should -Invoke -ModuleName cdc-fixture-inputs Invoke-NativeCommandWithInput -Times 1 -Exactly -ParameterFilter {
+            $FilePath -eq 'docker' -and $ArgumentList[-1] -eq 'owned-target' -and
+            $InputText -eq "SET NOCOUNT ON;`nSET QUOTED_IDENTIFIER ON;`nSELECT 17;"
+        }
+    }
+    It 'does not accept a failed SQL process as an observation' {
+        $Provider = 'Mssql'
+        Mock -ModuleName cdc-fixture-inputs Invoke-NativeCommandWithInput {
+            [pscustomobject]@{ FailureKind = 'None'; ExitCode = 1; StandardOutput = '' }
+        }
+        { Invoke-OwnedSql -Database 'owned-target' -Sql 'SELECT 17;' } | Should -Throw
     }
 }

@@ -24,17 +24,15 @@ internal sealed class RelationalWriteExecutionStateResolver(
         logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
-    /// True when the request carries an HTTP conditional write precondition (If-Match or
-    /// If-None-Match) whose current existence/etag the write flow must resolve. If-None-Match is a
-    /// sibling of If-Match, so every structural "is a precondition present?" gate must admit both;
-    /// only the proceed-vs-412 outcome differs, centralized in <see cref="EtagPreconditionEvaluator"/>.
+    /// True when the request carries an HTTP conditional write precondition (If-Match) whose current
+    /// existence/etag the write flow must resolve. The proceed-vs-412 outcome is centralized in
+    /// <see cref="EtagPreconditionEvaluator"/>.
     /// </summary>
     internal static bool HasEtagPrecondition(WritePrecondition precondition) =>
         precondition switch
         {
             WritePrecondition.None => false,
             WritePrecondition.IfMatch => true,
-            WritePrecondition.IfNoneMatch => true,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(precondition),
                 precondition,
@@ -143,9 +141,6 @@ internal sealed class RelationalWriteExecutionStateResolver(
         RelationalWriteCurrentState? currentState
     )
     {
-        // FAIL-OPEN HAZARD: this early return must admit BOTH If-Match and If-None-Match. If it kept
-        // keying on If-Match only, an If-None-Match write against an existing, authorization-bounded
-        // target would take the deferred path, return null here, and proceed WITHOUT the required 412.
         if (!HasEtagPrecondition(request.WritePrecondition))
         {
             return null;
@@ -153,14 +148,11 @@ internal sealed class RelationalWriteExecutionStateResolver(
 
         if (request.TargetContext is RelationalWriteTargetContext.CreateNew)
         {
-            // If-Match on an insert fails (no current representation to match). If-None-Match on an
-            // insert is the create-only success case, so it proceeds.
-            return request.WritePrecondition is WritePrecondition.IfMatch
-                ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(
-                    request.OperationKind,
-                    ETagPreconditionFailureReason.TargetDoesNotExist
-                )
-                : null;
+            // If-Match on an insert fails (no current representation to match).
+            return RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                request.OperationKind,
+                ETagPreconditionFailureReason.TargetDoesNotExist
+            );
         }
 
         if (request.TargetContext is not RelationalWriteTargetContext.ExistingDocument)
@@ -193,9 +185,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
                     new UpsertResult.UpsertFailureWriteConflict()
                 ),
                 // RFC 9110 §13.1.1 If-Match: * requires the target to exist; a wildcard against a missing PUT
-                // target yields the precondition-failed (412) result rather than not-exists (404). An
-                // If-None-Match against a now-missing target is the success case, so it falls through to
-                // the normal not-exists (404) result.
+                // target yields the precondition-failed (412) result rather than not-exists (404).
                 RelationalWriteOperationKind.Put => request.WritePrecondition
                     is WritePrecondition.IfMatch { IsWildcard: true }
                     ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(

@@ -6,6 +6,7 @@
 using EdFi.Api.Plugins.Hosting;
 using EdFi.DataManagementService.CustomValidation;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
+using EdFi.DataManagementService.Identity;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -19,14 +20,16 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 public class Given_TheDataManagementServicePluginContractRegistry
 {
     [Test]
-    public void It_declares_the_custom_resource_validator_as_fan_in()
+    public void It_declares_the_custom_resource_validator_as_fan_in_and_the_identity_service_as_replace()
     {
         DmsPluginContracts
             .Registry.Entries.Should()
-            .ContainSingle()
-            .Which.Should()
             .BeEquivalentTo(
-                new { Contract = typeof(ICustomResourceValidator), Cardinality = Cardinality.FanIn }
+                [
+                    new { Contract = typeof(ICustomResourceValidator), Cardinality = Cardinality.FanIn },
+                    new { Contract = typeof(IIdentityService), Cardinality = Cardinality.Replace },
+                ],
+                options => options.WithStrictOrdering()
             );
     }
 
@@ -35,7 +38,11 @@ public class Given_TheDataManagementServicePluginContractRegistry
     {
         DmsPluginContracts
             .Registry.ContractAssemblyNames.Should()
-            .Equal("EdFi.Api.Plugins", "EdFi.DataManagementService.CustomValidation");
+            .Equal(
+                "EdFi.Api.Plugins",
+                "EdFi.DataManagementService.CustomValidation",
+                "EdFi.DataManagementService.Identity"
+            );
     }
 
     [Test]
@@ -48,5 +55,13 @@ public class Given_TheDataManagementServicePluginContractRegistry
         DmsPluginContracts
             .Registry.ContractAssemblyNames.Should()
             .NotContain("EdFi.Api.CustomValidation");
+    }
+
+    [Test]
+    public void It_does_not_name_the_package_the_identity_contract_ships_under()
+    {
+        // Same reason as above. The identity contract packs as EdFi.Api.Identity and is declared in the
+        // assembly EdFi.DataManagementService.Identity; only the second belongs here.
+        DmsPluginContracts.Registry.ContractAssemblyNames.Should().NotContain("EdFi.Api.Identity");
     }
 }

@@ -49,7 +49,7 @@ public sealed class Given_TheUniqueIdValidatorPluginHasABaseAddressWithAPathAndN
     public async Task StageThePluginAndStartTheStub()
     {
         _pluginRoot = PluginHostProbe.CreatePluginRootFromSource(
-            PluginHostProbe.CustomValidationFixtureRoot,
+            PluginHostProbe.PackedContractFixtureRoot,
             UniqueIdValidationPluginScenario.PluginName
         );
         _stub = await UniqueIdServiceStub.StartAsync("uid");

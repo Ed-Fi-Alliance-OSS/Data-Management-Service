@@ -25,8 +25,7 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql.CustomVa
 /// could reach a stub even if one were listening.
 /// </remarks>
 [Category("PluginIntegration")]
-public sealed class Given_TheUniqueIdValidatorPluginHasNoBaseAddress
-    : PostgresqlApiIntegrationTestBase
+public sealed class Given_TheUniqueIdValidatorPluginHasNoBaseAddress : PostgresqlApiIntegrationTestBase
 {
     private string _pluginRoot = string.Empty;
     private PluginLogCapture _logCapture = null!;
@@ -55,15 +54,13 @@ public sealed class Given_TheUniqueIdValidatorPluginHasNoBaseAddress
             .WriteTo.Sink(_logCapture)
             .CreateLogger();
 
-        services.AddSingleton<ILoggerProvider>(
-            new SerilogLoggerProvider(captureLogger, dispose: true)
-        );
+        services.AddSingleton<ILoggerProvider>(new SerilogLoggerProvider(captureLogger, dispose: true));
     }
 
     [OneTimeSetUp]
     public void StageThePlugin() =>
         _pluginRoot = PluginHostProbe.CreatePluginRootFromSource(
-            PluginHostProbe.CustomValidationFixtureRoot,
+            PluginHostProbe.PackedContractFixtureRoot,
             UniqueIdValidationPluginScenario.PluginName
         );
 

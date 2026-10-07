@@ -16,7 +16,10 @@ These approaches use the same underlying Configuration Service APIs and should r
 > `configure-local-data-store.ps1`, not `start-local-dms.ps1` (which is
 > infrastructure-only).
 > `-SchoolYearRange` is currently a convenience helper and is not idempotent.
-> If you also create instances manually (or re-run the script), you can end up with duplicate instances/route contexts (similar names, different IDs).
+> Re-running it for a year it already created fails: data store names are unique
+> within a tenant, so the repeated "School Year <year>" data store is rejected
+> with 400. If you also create instances manually under other names, you can
+> end up with duplicate route contexts (similar names, different IDs).
 > Prefer **one** workflow per environment: either scripted *or* manual.
 > `-SchoolYearRange` and `-NoDataStore` are mutually exclusive.
 > If `DMS_CONFIG_MULTI_TENANCY=true`, then `-SchoolYearRange` requires
@@ -144,7 +147,7 @@ This creates:
 
 If you need more complex routing or want to add route contexts manually, you can still use the Configuration Service API. See `test-schoolyear-route.http` in `src/dms/tests/RestClient/` for examples.
 
-If you are using the manual approach, skip `-SchoolYearRange` on the configure phase (running `configure-local-data-store.ps1 -NoDataStore` against an existing single data store may be appropriate) to avoid creating duplicate configuration data.
+If you are using the manual approach, skip `-SchoolYearRange` on the configure phase (running `configure-local-data-store.ps1 -NoDataStore` against an existing single data store may be appropriate) to avoid duplicate route contexts and data store names that are rejected with 400.
 
 ## Troubleshooting
 

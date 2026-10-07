@@ -210,13 +210,48 @@ public class DeployTests : DatabaseTestBase
     [Test]
     public async Task It_creates_the_DataStoreDerivative_unique_constraint_over_the_intended_key_columns()
     {
+        (string[] keyColumns, bool backingIndexIsUnique) = await UniqueConstraintShapeAsync(
+            "UX_DataStoreDerivative_DataStoreId_DerivativeType"
+        );
+
+        keyColumns.Should().Equal("DataStoreId", "DerivativeType");
+        backingIndexIsUnique.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_creates_the_DataStore_unique_constraint_over_the_intended_key_columns()
+    {
+        (string[] keyColumns, bool backingIndexIsUnique) = await UniqueConstraintShapeAsync(
+            "UX_DataStore_TenantId_Name"
+        );
+
+        keyColumns.Should().Equal("TenantId", "Name");
+        backingIndexIsUnique.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_creates_the_ApiClient_unique_constraint_over_the_intended_key_columns()
+    {
+        (string[] keyColumns, bool backingIndexIsUnique) = await UniqueConstraintShapeAsync(
+            "UX_ApiClient_ApplicationId_Name"
+        );
+
+        keyColumns.Should().Equal("ApplicationId", "Name");
+        backingIndexIsUnique.Should().BeTrue();
+    }
+
+    private async Task<(string[] KeyColumns, bool BackingIndexIsUnique)> UniqueConstraintShapeAsync(
+        string constraintName
+    )
+    {
         await using var connection = await OpenConnectionAsync();
 
         string[] keyColumns = (
-            await connection.QueryAsync<string>(DataStoreDerivativeUniqueConstraintColumnsSql)
+            await connection.QueryAsync<string>(
+                UniqueConstraintColumnsSql,
+                new { ConstraintName = constraintName }
+            )
         ).ToArray();
-
-        keyColumns.Should().Equal("DataStoreId", "DerivativeType");
 
         bool backingIndexIsUnique = await connection.ExecuteScalarAsync<bool>(
             """
@@ -225,12 +260,13 @@ public class DeployTests : DatabaseTestBase
             JOIN sys.indexes index_info
                 ON index_info.object_id = constraint_info.parent_object_id
                AND index_info.index_id = constraint_info.unique_index_id
-            WHERE constraint_info.name = 'UX_DataStoreDerivative_DataStoreId_DerivativeType'
+            WHERE constraint_info.name = @ConstraintName
               AND constraint_info.type = 'UQ';
-            """
+            """,
+            new { ConstraintName = constraintName }
         );
 
-        backingIndexIsUnique.Should().BeTrue();
+        return (keyColumns, backingIndexIsUnique);
     }
 
     [Test]
@@ -259,7 +295,7 @@ public class DeployTests : DatabaseTestBase
         return (await connection.QueryAsync<ColumnShape>(ColumnsSql)).ToArray();
     }
 
-    private const string DataStoreDerivativeUniqueConstraintColumnsSql = """
+    private const string UniqueConstraintColumnsSql = """
         SELECT column_info.name
         FROM sys.key_constraints constraint_info
         JOIN sys.indexes index_info
@@ -271,7 +307,7 @@ public class DeployTests : DatabaseTestBase
         JOIN sys.columns column_info
             ON column_info.object_id = index_column_info.object_id
            AND column_info.column_id = index_column_info.column_id
-        WHERE constraint_info.name = 'UX_DataStoreDerivative_DataStoreId_DerivativeType'
+        WHERE constraint_info.name = @ConstraintName
           AND index_column_info.is_included_column = 0
         ORDER BY index_column_info.key_ordinal;
         """;

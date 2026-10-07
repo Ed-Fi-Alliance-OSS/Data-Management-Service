@@ -37,7 +37,8 @@ smoke testing. This function:
 
 1. Creates system administrator credentials in the Configuration Service
 2. Obtains an authentication token
-3. Creates a vendor with the required namespace prefixes
+3. Creates a vendor with the required namespace prefixes, or reuses the vendor
+   that already has this company name in the tenant
 4. Creates an application with the appropriate claimset and education
    organization IDs
 5. Returns the key and secret for use in smoke tests

@@ -163,6 +163,28 @@ public static class Utility
         );
     }
 
+    /// <summary>
+    /// Logs at Debug when a write request (POST, PUT, DELETE) carries an If-None-Match header, since
+    /// <see cref="Backend.WritePreconditionFactory.Create" /> ignores it (DMS-1576: If-None-Match is a
+    /// conditional-read validator only; ODS/API parity). Shared by UpsertHandler, UpdateByIdHandler, and
+    /// DeleteByIdHandler so the check and message stay identical across all three. Logs the method and
+    /// TraceId only -- never the header's value.
+    /// </summary>
+    internal static void LogIfNoneMatchIgnoredOnWrite(ILogger logger, RequestInfo requestInfo)
+    {
+        if (
+            logger.IsEnabled(LogLevel.Debug)
+            && Backend.WritePreconditionFactory.IsIfNoneMatchIgnored(requestInfo.FrontendRequest.Headers)
+        )
+        {
+            logger.LogDebug(
+                "{Method} ignored the If-None-Match header (DMS honors it only on GET) and is processing the request as if it were absent - {TraceId}",
+                requestInfo.MethodName,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+        }
+    }
+
     internal static MappingSet RequireMappingSet(RequestInfo requestInfo, string operationName)
     {
         ArgumentNullException.ThrowIfNull(requestInfo);

@@ -386,7 +386,8 @@ are recorded for completeness. `DescriptorWriteHandler` is not modified by DMS-1
    order *is* precedence order; reordering silently changes which denial the client sees.
 4. Authorization versus precondition. `GetEtagPreconditionEvaluation` defers the etag precondition past
    proposed authorization whenever any authorization is configured, and
-   `TryBuildDeferredPreconditionFailureResult` must keep admitting both `If-Match` and `If-None-Match`.
+   `TryBuildDeferredPreconditionFailureResult` must keep admitting `If-Match`. It is the only write-side
+   precondition, because writes ignore `If-None-Match` (DMS-1576).
    Batching must never let a precondition be evaluated earlier than it is today.
 5. Create artifacts only after proposed authorization. The `dms.Document` insert stays textually after
    the proposed `AUTH1` statements in the same command.
@@ -474,8 +475,9 @@ requires, so no new error-framing protocol is introduced:
   the SQL Server conversion-error message, and `RelationalAuthorizationAuth1Dispatcher` routes on the
   discriminator. Every check merged into one command must be assigned a distinct emitted `AUTH1` index.
 - Constraint violations are resolved by the violated constraint name from provider metadata, not by
-  which call site issued the statement, so natural-key conflicts continue to map to 409 and the
-  `If-None-Match` create race continues to map to a write conflict.
+  which call site issued the statement, so natural-key conflicts continue to map to 409 and a
+  POST that loses a create race gets the ordinary identity-conflict result (the `If-None-Match`
+  guarded-create `WriteConflict` retry was removed, DMS-1576).
 - Everything else already falls through to an unknown-failure result, so no attribution is lost.
 
 For diagnostics and for reading successful results, merged commands use a deterministic result-stream

@@ -273,17 +273,22 @@ internal class Given_CdcNativeRecovery(Ddl.CdcProvider provider) : CdcReadinessT
     {
         await Observe();
         ReplaceWorker();
-        await Observe();
+        (await Observe())
+            .Recovery.Should()
+            .Be(new CdcRecoveryObservation(CdcRecoveryBoundary.NativeRecovery, true));
+        int failures = 0;
         _onCall = name =>
         {
             if (name == missing)
             {
+                failures++;
                 throw new IOException("private-secret");
             }
         };
         var unknown = await Observe();
         unknown.Status.Readiness.Should().Be(CdcReadiness.NotReady);
         JsonSerializer.Serialize(unknown).Should().NotContain("private-secret");
+        failures.Should().BeGreaterThan(0);
         _onCall = _ => { };
         (await Observe()).Status.Readiness.Should().Be(CdcReadiness.Ready);
     }
@@ -403,16 +408,37 @@ internal class Given_CdcNativeRecovery(Ddl.CdcProvider provider) : CdcReadinessT
     {
         await Observe();
         ReplaceWorker();
-        await Observe();
+        (await Observe())
+            .Recovery.Should()
+            .Be(new CdcRecoveryObservation(CdcRecoveryBoundary.NativeRecovery, true));
+        int failures = 0;
         _onCall = name =>
         {
             if (name == unavailable)
             {
+                failures++;
                 throw new IOException("private-source");
             }
         };
-        (await Execute(CdcManagedLifecycleOperation.Restart)).Succeeded.Should().BeFalse();
-        (await Execute(CdcManagedLifecycleOperation.Resume)).Succeeded.Should().BeFalse();
+        foreach (
+            var operation in new[]
+            {
+                CdcManagedLifecycleOperation.Start,
+                CdcManagedLifecycleOperation.Restart,
+                CdcManagedLifecycleOperation.Resume,
+            }
+        )
+        {
+            int failuresBefore = failures;
+            var result = await Execute(operation);
+            result.Succeeded.Should().BeFalse();
+            result.Ready.Should().BeFalse();
+            if (operation != CdcManagedLifecycleOperation.Start)
+            {
+                failures.Should().BeGreaterThan(failuresBefore);
+            }
+        }
+        Fake.GetCalls(_connect).Should().NotContain(c => c.Method.Name == "CreateAsync");
         A.CallTo(() => _connect.ResumeAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
             .MustNotHaveHappened();
         A.CallTo(() => _connect.RestartAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))

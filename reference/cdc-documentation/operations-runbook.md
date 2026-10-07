@@ -768,11 +768,18 @@ This is the DMS E2E suite, not Instance Management E2E.
 | --- | --- |
 | Target/generation | One fresh CMS-selected target for `E2E_DATABASE_NAME`; default `edfi_datamanagementservice_e2e`. Separate `E2E_SNAPSHOT_DATABASE_NAME` is not the CDC source. |
 | Authority/offline window | Same exclusive deployment and initial writer/seed exclusion as the selected provider setup; test processes start only after controller admission and DMS startup. |
-| Retained inputs | Full E2E DMS/CDC settings, original state root, base/effective environment and overlays, E2E core/extensions, emitted settings/receipts/inventory; `.cdc-diagnostics` on failure. |
+| Retained inputs | Full E2E DMS/CDC settings, original state root, base/effective environment and overlays, E2E core/extensions, emitted settings/receipts/inventory; temporary CDC diagnostics on failure. |
 | Invocation | PostgreSQL: `cdc-pg-e2e-setup` then optional `cdc-pg-e2e-test`, **or** `cdc-pg-e2e-build` on a separate fresh workspace. SQL Server: `cdc-sqlserver-e2e-setup` or `cdc-sqlserver-e2e-build` with the SQL Server variant below. |
-| JSON/exit status | Wrappers print progress, not a CLI JSON envelope. Internal admission requires the same matching `enable` publication result as local setup. On failure, the sanitized `e2e-setup` artifact includes `operation`, `succeeded`, `cancelled`, `cleanup`, `provider`, `failureCodes`. |
+| JSON/exit status | Wrappers print progress, not a CLI JSON envelope. Internal admission requires the same matching `enable` publication result as local setup. On failure, `cdc-runbook-e2e-setup-<id>.json` records `operation`, `succeeded`, `cancelled`, `cleanup`, `provider`, `failureCodes`. The qualification exporter validates and publishes only these permitted fields and values. |
 | Postcondition | Managed primary receipt retained, separate snapshot prepared with matching schema, CDC admitted before DMS/tests; selected setup-smoke tests pass without source-reset hooks. This does not qualify message scenarios. |
-| Rejection/timeout action | Do not launch tests. Retain `.cdc-diagnostics` and original settings/state. `cleanup: "Stopped"` means governed stop completed; `"RetainedForReconciliation"` means stop failed and infrastructure remains for reconciliation; `"NotStarted"` is not proof of shutdown. Use status/initial-retry handoffs above and governed teardown below. |
+| Rejection/timeout action | Do not launch tests. Retain the temporary CDC diagnostics path printed by setup and original settings/state. `cleanup: "Stopped"` means governed stop completed; `"RetainedForReconciliation"` means stop failed and infrastructure remains for reconciliation; `"NotStarted"` is not proof of shutdown. Use status/initial-retry handoffs above and governed teardown below. |
+
+The setup failure record lives in the temporary diagnostics path printed by the
+wrapper. During qualification this is private input to the exporter, alongside
+raw process logs; never upload that directory. Uploaded qualification artifacts
+contain the separately sanitized record, without exception prose, raw output,
+or unexpected fields. `RetainedForGovernedTeardown` means the HTTP rollout failed
+and left the worker unchanged for explicit governed teardown.
 
 ### Prepare the E2E variant
 
@@ -883,7 +890,7 @@ checks HTTP/database health without feature reset hooks. Do not broaden this exa
 to reset-based API tests and call it CDC message qualification. `E2ETest -LoadSeedData`
 is rejected. On success or failure, use the retained settings/state for the observation
 commands above. Retain sanitized failure artifacts under
-`eng/docker-compose/.cdc-diagnostics`; an attempted stop is not a verified stop.
+the printed system-temporary `dms-cdc-diagnostics-*` directory (the runner evidence directory during qualification); an attempted stop is not a verified stop.
 
 Finish with [governed stack/E2E teardown](#stack-teardown).
 Use the setup wrapper's printed teardown command with its exact resolved environment
@@ -982,7 +989,7 @@ if ($LASTEXITCODE -ne 0) { throw 'CDC E2E setup/test failed; preserve the retain
 <!-- /cdc-snippet: cdc-sqlserver-e2e-build -->
 
 Admission/output/failure rules are the common E2E record above: preserve
-`.cdc-diagnostics`, original state and retained settings; failed containment is not
+temporary CDC diagnostics, original state and retained settings; failed containment is not
 successful cleanup. Use SQL Server status/watch with emitted paths, and the wrapper's
 printed `mssql` teardown command for [governed teardown](#stack-teardown). Ordinary
 [managed stop/start](#managed-lifecycle) preserves the admitted source. DMS-1325
@@ -1166,6 +1173,24 @@ handoff below. A partial record-size rollout remains not ready and belongs to
 [its retained-operation procedure](#record-size-increase), not a fresh enable.
 The same `1`/`2`/`130` failure conventions described above apply. Native recovery can
 publish before revalidation; a later healthy result cannot certify the unsampled interval.
+
+For SQL Server, an offset below the retained minimum means `Lost`. An offset above the
+sampled maximum means `Unknown`: the range was sampled before the Connect offset and may
+have advanced. This result alone proves neither continuity nor terminal loss.
+
+The controller refreshes SQL Server range evidence only for `Unknown` with the
+`ProviderHistoryUnknown` diagnostic at `$.providerHistory.retainedRangeEnd`. Established
+validation requires an observed offset and samples at most three provider/offset pairs
+in total. Initial writer admission repeats its admission pass until evidence is conclusive
+or its existing deadline expires. Both paths wait the configured poll interval before
+refreshing, read the provider range before a fresh Connect offset, and retain the original
+operation deadline. Unrelated `Unknown` results do not trigger this range refresh.
+
+If evidence remains unknown, retain the diagnostics and keep admission/readiness withheld;
+do not reset offsets or recreate capture instances to force acceptance. A later complete
+affirmative observation is required. Above-range `Unknown` is not permission to resume CDC
+on a clone or restored database; follow the
+[physical-source replacement restriction](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral).
 
 <a id="unsupported-provenance"></a>
 

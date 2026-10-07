@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# DMS-1556 investigation control E5 (spec §3.4): bound CMS physical connections with
+# Max Pool Size=16. This changes TWO things at once: fewer physical connections (less
+# connection-creation pressure) and more waiting for a pooled connection, which Npgsql
+# bounds by the same Timeout (15 s). The base connection string from the env file
+# already ends with ';', so the pool key is appended. Apply IN ADDITION to the stack's
+# -f list and the diagnostics overlays, then recreate the config service.
+services:
+  config:
+    environment:
+      DatabaseSettings__DatabaseConnection: "${DMS_CONFIG_DATABASE_CONNECTION_STRING}Maximum Pool Size=16;"

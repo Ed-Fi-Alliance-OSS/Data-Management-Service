@@ -329,6 +329,11 @@ function E2ETests {
             $env:POSTGRES_DB_NAME = $envValues["POSTGRES_DB_NAME"]
             $env:MSSQL_SA_PASSWORD = $envValues["MSSQL_SA_PASSWORD"]
             $env:MSSQL_PORT = $envValues["MSSQL_PORT"]
+            # Opt-in isolation (see start-local-config.ps1): the Configuration Service container the
+            # role-claim read inspects, and the URL the suite calls. Unset, each keeps its default;
+            # assigned unconditionally so a value left by an earlier run cannot leak into this one.
+            $script:ConfigContainerName = if ($envValues["CMS_CONFIG_CONTAINER"]) { $envValues["CMS_CONFIG_CONTAINER"] } else { "ed-fi-api-config-service" }
+            $env:CMS_E2E_API_URL = $envValues["CMS_E2E_API_URL"]
         }
         finally {
             Pop-Location
@@ -357,7 +362,8 @@ function PublishEffectiveRoleClaimSettings {
         "Authentication__RoleClaimAttribute"
     )
 
-    $containerEnvironment = docker inspect ed-fi-api-config-service `
+    $configContainerName = if ($script:ConfigContainerName) { $script:ConfigContainerName } else { "ed-fi-api-config-service" }
+    $containerEnvironment = docker inspect $configContainerName `
         --format '{{range .Config.Env}}{{println .}}{{end}}'
     if ($LASTEXITCODE -ne 0) {
         throw "Could not read the Configuration Service container environment; the role-claim scenario would otherwise compare a token against values the running stack may not have."

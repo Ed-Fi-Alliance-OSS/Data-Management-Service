@@ -470,47 +470,6 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     [Test]
-    public async Task It_returns_namespace_403_and_does_not_insert_when_descriptor_post_create_under_wildcard_if_none_match_has_a_proposed_namespace_denial()
-    {
-        // If-None-Match on a CreateNew descriptor POST is the new "proceed to insert" branch, but the
-        // proposed-namespace check runs inside the locked resolve before the insert. A denial must
-        // therefore return the namespace 403, issue no INSERT, and never commit — mirroring the
-        // If-Match create case so a future switch-reordering that inserted before the auth check fails
-        // here rather than opening a namespace-authorization bypass.
-        var targetLookupService = new StubRelationalWriteTargetLookupService
-        {
-            PostResult = new RelationalWriteTargetLookupResult.CreateNew(_documentUuid),
-        };
-        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.Executor.NamespaceResults.Enqueue(
-            new NamespaceAuthorizationExecutionResult.NotAuthorized(ProposedMismatchFailure())
-        );
-        var sut = CreateSut(sessionFactory, targetLookupService);
-        var request = CreatePostRequest(
-            namespacePrefixes: ["uri://ed-fi.org/"],
-            authorizationStrategy: NamespaceStrategy(),
-            @namespace: "uri://other.org/SchoolTypeDescriptor"
-        ) with
-        {
-            WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
-        };
-
-        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
-
-        result.Should().BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>();
-        result
-            .As<UpsertResult.UpsertFailureNamespaceNotAuthorized>()
-            .NamespaceFailure.ValueSource.Should()
-            .Be(NamespaceAuthorizationFailureValueSource.Proposed);
-        sessionFactory
-            .Session.Executor.Commands.Should()
-            .NotContain(command =>
-                command.CommandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
-            );
-        sessionFactory.Session.CommitCallCount.Should().Be(0);
-    }
-
-    [Test]
     public async Task It_returns_namespace_403_and_does_not_update_when_descriptor_post_upsert_stored_namespace_is_not_authorized()
     {
         var documentId = 345L;
@@ -1202,7 +1161,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
     [Test]
     public async Task It_reports_a_self_basis_denial_through_the_precondition_helper_without_a_later_namespace_check()
     {
-        // Seam E: the If-None-Match create resolves through the shared locked-precondition helper rather than
+        // Seam E: the If-Match create resolves through the shared locked-precondition helper rather than
         // the plain create path. The exact defect this guards was the two paths disagreeing, so the same
         // configured-order rule has to hold here — the denial preempts both the namespace check and the
         // precondition outcome.
@@ -1222,7 +1181,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategies: [DeleteCustomViewStrategy(), NamespaceStrategy()],
-                writePrecondition: new WritePrecondition.IfNoneMatch(["\"some-etag\""])
+                writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
             )
         );
 
@@ -1262,7 +1221,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategies: [NamespaceStrategy(), DeleteCustomViewStrategy()],
-                writePrecondition: new WritePrecondition.IfNoneMatch(["\"some-etag\""])
+                writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
             )
         );
 
@@ -2061,30 +2020,6 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     [Test]
-    public async Task It_creates_under_if_none_match_without_running_an_update_only_namespace_check()
-    {
-        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
-        // The in-session lookup finds no row, then the insert reads back its content version.
-        sessionFactory.Session.Executor.ResultSets.Enqueue([]);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow()]);
-        sessionFactory.Session.Executor.NamespaceResults.Enqueue(
-            new NamespaceAuthorizationExecutionResult.NotAuthorized(ProposedMismatchFailure())
-        );
-        var sut = CreateSut(sessionFactory, new StubRelationalWriteTargetLookupService());
-
-        var result = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(
-                writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
-            ),
-            PolicyPair(create: [NoFurtherStrategy()], update: [NamespaceStrategy()])
-        );
-
-        result.Should().BeOfType<UpsertResult.InsertSuccess>();
-        sessionFactory.Session.Executor.NamespaceResults.Should().ContainSingle();
-        sessionFactory.Session.CommitCallCount.Should().Be(1);
-    }
-
-    [Test]
     public async Task It_applies_the_update_policy_namespace_denial_before_a_stale_if_match()
     {
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
@@ -2175,26 +2110,6 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         // Refused on the resolved target, before the row is locked or compared.
         sessionFactory.Session.ScalarCommands.Should().BeEmpty();
         sessionFactory.Session.Executor.Commands.Should().NotContain(command => IsDescriptorUpdate(command));
-        sessionFactory.Session.RollbackCallCount.Should().Be(1);
-        sessionFactory.Session.CommitCallCount.Should().Be(0);
-    }
-
-    [Test]
-    public async Task It_denies_a_create_the_policy_does_not_permit_under_if_none_match()
-    {
-        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([]);
-        var sut = CreateSut(sessionFactory, new StubRelationalWriteTargetLookupService());
-
-        var result = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(
-                writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
-            ),
-            UpdateOnly()
-        );
-
-        result.Should().Be(new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Create));
-        sessionFactory.Session.Executor.Commands.Should().NotContain(command => IsDocumentInsert(command));
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
     }
@@ -2340,31 +2255,6 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     [Test]
-    public async Task It_reselects_the_update_policy_after_an_if_none_match_create_loses_to_a_concurrent_create()
-    {
-        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([]);
-        sessionFactory.Session.Executor.CommandFailure = command =>
-            IsDocumentInsert(command) ? new StubDbException("duplicate descriptor identity") : null;
-        var sut = CreateSut(
-            sessionFactory,
-            new StubRelationalWriteTargetLookupService(),
-            writeExceptionClassifier: new UniqueViolationWriteExceptionClassifier()
-        );
-        var request = CreatePolicyPostRequest(
-            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
-        );
-
-        var staleAttempt = await sut.HandlePostAsync(request, CreateOnly());
-        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRowWithId(345L)]);
-        var retry = await sut.HandlePostAsync(request, CreateOnly());
-
-        staleAttempt.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
-        retry.Should().Be(new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Update));
-        sessionFactory.Session.CommitCallCount.Should().Be(0);
-    }
-
-    [Test]
     public async Task It_attributes_a_locked_update_security_configuration_failure_to_update()
     {
         var targetLookupService = new StubRelationalWriteTargetLookupService
@@ -2419,9 +2309,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sut = CreateSut(sessionFactory, new StubRelationalWriteTargetLookupService());
 
         var result = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(
-                writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
-            ),
+            CreatePolicyPostRequest(writePrecondition: new WritePrecondition.IfMatch("*", IsWildcard: true)),
             UpsertActionAuthorization.SamePolicyForCreateAndUpdate([UnsupportedStrategy(unknownStrategyName)])
         );
 
