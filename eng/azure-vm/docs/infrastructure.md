@@ -97,13 +97,18 @@ Multi-tenant requests (note the two systems identify the tenant differently):
 > that deployment's **private** credentials doc / vault — not here. Generated secrets are
 > Basic/form-safe by construction on current images (`DMS-1231`, fixed upstream).
 
-Scope: **single-tenant + two isolated tenants** = three apps.
+Scope: **single-tenant + two isolated tenants**, five apps each = 15 apps. Data DBs: single-tenant
+`edfi_st`, tenant1 `edfi_mt`, tenant2 `edfi_mt_t2`. Keys and secrets come from the
+`bootstrap.ps1` output; `bootstrap/add-review-variants.ps1` adds the four variants to an
+environment bootstrapped before they existed.
 
-| Environment | Claim set | Data DB | Key | Secret |
-|-------------|-----------|---------|-----|--------|
-| single-tenant | `EdFiSandbox` | `edfi_st` | _(from bootstrap.ps1 output)_ | _(from bootstrap.ps1 output)_ |
-| multi-tenant / tenant1 | `EdFiSandbox` | `edfi_mt` | _(from bootstrap.ps1 output)_ | _(from bootstrap.ps1 output)_ |
-| multi-tenant / tenant2 | `EdFiSandbox` | `edfi_mt_t2` | _(from bootstrap.ps1 output)_ | _(from bootstrap.ps1 output)_ |
+| Application (per deployment; code ST, T1 or T2) | Claim set | Education organizations | Vendor namespace |
+|-------------------------------------------------|-----------|-------------------------|------------------|
+| `Security Review (<environment>)` | `EdFiSandbox` | 255901, 255901001, 255901107 | `uri://ed-fi.org` |
+| `Security Review <code> SISVendor District` | `SISVendor` | 255901 | `uri://ed-fi.org/` |
+| `Security Review <code> SISVendor School` | `SISVendor` | 255901107 | `uri://ed-fi.org/` |
+| `Security Review <code> AssessmentVendor District` | `AssessmentVendor` | 255901 | `uri://one.example.com` |
+| `Security Review <code> EdFiSandbox District` | `EdFiSandbox` | 255901 | `uri://ed-fi.org/` |
 
 Token endpoint (HTTP Basic `key:secret`, `grant_type=client_credentials`): the shared Keycloak
 realm at `…/auth/realms/edfi/protocol/openid-connect/token`. Discovery advertises the DMS proxy
@@ -111,8 +116,9 @@ as `urls.oauth` (`…/st-dms/oauth/token`, and `…/mt-dms/{tenant}/{schoolYear}
 multi-tenant; the unqualified `…/mt-dms/oauth/token` also works), which forwards to the same
 endpoint (the containers trust either the mounted self-signed gateway certificate or the public
 CA chain). A
-ready sampler that tokens + reads a spread of resources for all three is
-[`http/sample-all.sh`](../http/sample-all.sh).
+ready sampler that tokens + reads a spread of resources for the three full-access apps is
+[`http/sample-all.sh`](../http/sample-all.sh); [`http/sample-variants.py`](../http/sample-variants.py)
+prints the access matrix for the variant keys.
 
 ## Network configuration
 
@@ -215,7 +221,8 @@ Order used to stand the environment up (and that a re-deploy should follow):
    container instead: `dotnet publish src/dms/clis/EdFi.DataManagementService.SchemaTools
    -r linux-x64 --self-contained` (see [`REDEPLOY.md`](../provision/REDEPLOY.md) Part C).
 6. **Populated template must be RELATIONAL.** `seed/grandbend.sh` restores
-   `EdFi.Api.Populated.Template.PostgreSql.5.2.0`; every build under that id postdates the
+   `EdFi.Api.Populated.Template.PostgreSql.5.2.0` (or `...6.1.0` for Data Standard 6.1, followed by
+   `seed/load-educator-prep.ps1`; see [`UPDATE.md`](../provision/UPDATE.md) Part C); every build under that id postdates the
    relational cutover (`DMS-1159`, 2026-06-09). The legacy document-store dumps shipped under
    the retired `EdFi.Dms.Populated.Template.*` ids and are rejected by the relational backend
    (the script guards against them regardless of the package id).
@@ -224,8 +231,12 @@ Order used to stand the environment up (and that a re-deploy should follow):
    `KC_HOSTNAME`, `KC_HOSTNAME_BACKCHANNEL_DYNAMIC`, and that the metadata `issuer` matches
    the public URL. (This environment is Keycloak-only — the DMS/CMS auth wiring in the
    compose file is Keycloak-specific.)
-8. **Claim sets.** Defaults use the embedded `EdFiSandbox`, bound to the Grand Bend EdOrgs
-   (relationship-based data is scoped to them). Confirm the live
+8. **Claim sets.** The full-access apps use the embedded `EdFiSandbox`, bound to the Grand Bend
+   EdOrgs (relationship-based data is scoped to them); the variants add `SISVendor` (district and
+   school), `AssessmentVendor` and a district-only `EdFiSandbox`. The embedded claims follow
+   `DMS_CONFIG_DATA_STANDARD_VERSION` (5.2 default, or 6.1), which must match the staged ApiSchema;
+   the CMS loads claims only into an empty config DB, so a switch on a running deployment needs the
+   one-time reload in [`UPDATE.md`](../provision/UPDATE.md) Part C. Confirm the live
    list with `GET /st-config/v3/claimSets`; add custom claim sets via the API or Hybrid mode
    (see [`compose/claims`](../compose/claims/)).
 9. **MFA is intentionally disabled** in Keycloak so credentials can be shared with the review

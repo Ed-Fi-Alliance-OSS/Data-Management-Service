@@ -24,8 +24,8 @@ security review; generic enough for any ST + MT-behind-a-gateway VM deployment.
 | Path | Purpose |
 |------|---------|
 | `provision/` | Azure VM lifecycle + host setup. **Windows + WSL2 is canonical** (`provision/windows/`); the Linux/cloud-init flow is an alternative. |
-| `compose/` | Two-stack `docker-compose.yml`, NGINX gateway, `keycloak.yml`, PostgreSQL init, seed (`grandbend.sh` relational template restore, `clone-data.sh` MT clone), and `bootstrap/bootstrap.ps1`. |
-| `http/` | REST Client walkthroughs + `sample-all.sh` smoke sampler (placeholders). |
+| `compose/` | Two-stack `docker-compose.yml`, NGINX gateway, `keycloak.yml`, PostgreSQL init, seed (`grandbend.sh` relational template restore, `load-educator-prep.ps1` DS 6.1 educator-prep load, `check-ods-parity.py`, `clone-data.sh` MT clone), and `bootstrap/` (`bootstrap.ps1`, `add-review-variants.ps1`). |
+| `http/` | REST Client walkthroughs, the `sample-all.sh` smoke sampler, and `sample-variants.py` for the review-variant keys (placeholders). |
 | `docs/infrastructure.md` | Architecture, endpoints, provisioning method, known issues. |
 
 ## Quick start
@@ -35,3 +35,6 @@ WSL2 + Docker → clone this repo onto the VM (`bootstrap.ps1` imports `eng/` mo
 this folder, so the folder alone is not enough) → `provision/setup-env.ps1` (secrets, cert,
 identity/CMS, bootstrap; the DMS services start after schema provisioning) → exercise the API
 with `http/`. Capture the generated credentials in your private deployment doc.
+
+To refresh a running deployment without re-issuing its API keys (newer build, Data Standard 6.1
+switch, review-variant keys), follow [`provision/UPDATE.md`](provision/UPDATE.md).

@@ -438,3 +438,263 @@ PY
         Get-Content -LiteralPath $script:dockerLog -Raw | Should -Not -Match "-f /tmp/grandbend.sql"
     }
 }
+
+Describe "Azure VM Data Standard selection" {
+    BeforeAll {
+        $script:composeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm/compose"))
+    }
+
+    It "passes DMS_CONFIG_DATA_STANDARD_VERSION to both config services, defaulting to 5.2" {
+        $compose = Get-Content -LiteralPath (Join-Path $script:composeRoot "docker-compose.yml") -Raw
+
+        $sharedEnvironment = [regex]::Match($compose, '(?ms)^x-cms-common-env: &cms-common-env\s*\n(.*?)(?=^\S)').Groups[1].Value
+        $sharedEnvironment | Should -Match 'ClaimsOptions__DataStandardVersion:\s*"\$\{DMS_CONFIG_DATA_STANDARD_VERSION:-5\.2\}"'
+        foreach ($service in @("st-config", "mt-config")) {
+            $serviceBlock = [regex]::Match($compose, "(?ms)^  ${service}:\s*\n(.*?)(?=^  \S)").Groups[1].Value
+            $serviceBlock | Should -Match '<<: \*cms-common-env' -Because "$service must inherit the shared claims settings"
+        }
+    }
+
+    It "declares the Data Standard 5.2 default in .env.example" {
+        Get-Content -LiteralPath (Join-Path $script:composeRoot ".env.example") -Raw |
+            Should -Match '(?m)^DMS_CONFIG_DATA_STANDARD_VERSION=5\.2\r?$'
+    }
+}
+
+Describe "Azure VM review variant applications" {
+    BeforeAll {
+        Import-Module ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm/compose/bootstrap/review-variants.psm1"))) -Force
+    }
+
+    AfterAll {
+        Remove-Module review-variants -ErrorAction SilentlyContinue
+    }
+
+    BeforeEach {
+        $script:existingApplications = @()
+        $script:existingVendors = @()
+        $script:dataStores = @(
+            [pscustomobject]@{ id = 3; name = "Some Other Store" },
+            [pscustomobject]@{ id = 7; name = "Single-Tenant Data Store" },
+            [pscustomobject]@{ id = 8; name = "MT Data Store (tenant1 2025)" },
+            [pscustomobject]@{ id = 9; name = "MT Data Store (tenant2 2025)" }
+        )
+        Mock Get-CmsToken -ModuleName review-variants { "token" }
+        # Invoke-RestMethod emits a JSON array as ONE object; the mocks reproduce that.
+        Mock Invoke-RestMethod -ModuleName review-variants -ParameterFilter { $Uri -like "*v3/dataStores*" } {
+            Write-Output -NoEnumerate -InputObject @($script:dataStores)
+        }
+        Mock Invoke-RestMethod -ModuleName review-variants -ParameterFilter { $Uri -like "*v3/applications*" } {
+            Write-Output -NoEnumerate -InputObject @($script:existingApplications)
+        }
+        Mock Invoke-RestMethod -ModuleName review-variants -ParameterFilter { $Uri -like "*v3/vendors*" } {
+            Write-Output -NoEnumerate -InputObject @($script:existingVendors)
+        }
+        Mock Add-Vendor -ModuleName review-variants { 100 }
+        Mock Add-Application -ModuleName review-variants { @{ Id = 1; Key = "key"; Secret = "secret" } }
+    }
+
+    It "defines the four requested claim-set, EdOrg and namespace variants" {
+        $variants = @(Get-ReviewVariant)
+
+        @($variants | ForEach-Object { "$($_.ClaimSet)|$($_.EducationOrganizationIds -join ',')|$($_.NamespacePrefixes)" }) | Should -Be @(
+            "SISVendor|255901|uri://ed-fi.org/",
+            "SISVendor|255901107|uri://ed-fi.org/",
+            "AssessmentVendor|255901|uri://one.example.com",
+            "EdFiSandbox|255901|uri://ed-fi.org/"
+        )
+    }
+
+    It "creates every variant in all three deployments, bound to each deployment's data store" {
+        $created = @(Add-ReviewVariantSet -Deployment (Get-ReviewDeployment -BaseUrl "https://host/") -AdminClientId "admin" -AdminClientSecret "secret")
+
+        $created.Count | Should -Be 12
+        foreach ($expected in @(@{ Tenant = ""; DataStoreId = 7 }, @{ Tenant = "tenant1"; DataStoreId = 8 }, @{ Tenant = "tenant2"; DataStoreId = 9 })) {
+            Should -Invoke Add-Application -ModuleName review-variants -Times 4 -Exactly -ParameterFilter {
+                $Tenant -eq $expected.Tenant -and $DataStoreIds.Count -eq 1 -and $DataStoreIds[0] -eq $expected.DataStoreId
+            }
+        }
+        Should -Invoke Add-Application -ModuleName review-variants -Times 1 -Exactly -ParameterFilter {
+            $Tenant -eq "tenant2" -and $ClaimSetName -eq "SISVendor" -and $EducationOrganizationIds -contains 255901107
+        }
+        Should -Invoke Add-Vendor -ModuleName review-variants -Times 3 -Exactly -ParameterFilter { $NamespacePrefixes -eq "uri://one.example.com" }
+    }
+
+    It "keeps every application name within the 50-character API client name limit" {
+        $created = @(Add-ReviewVariantSet -Deployment (Get-ReviewDeployment -BaseUrl "https://host") -AdminClientId "admin" -AdminClientSecret "secret")
+
+        foreach ($name in $created.Application) {
+            $name.Length | Should -BeLessOrEqual 50 -Because $name
+        }
+    }
+
+    It "reuses an existing vendor, because vendor creation is create-only" {
+        $script:existingVendors = @([pscustomobject]@{ id = 55; company = "Security Review Vendor (ST SISVendor School)" })
+
+        Add-ReviewVariantSet -Deployment (Get-ReviewDeployment -BaseUrl "https://host") -AdminClientId "admin" -AdminClientSecret "secret" | Out-Null
+
+        Should -Invoke Add-Vendor -ModuleName review-variants -Times 11 -Exactly
+        Should -Invoke Add-Application -ModuleName review-variants -Times 1 -Exactly -ParameterFilter { $VendorId -eq 55 }
+    }
+
+    It "skips a variant whose application already exists" {
+        $script:existingApplications = @([pscustomobject]@{ id = 4; applicationName = "Security Review ST EdFiSandbox District" })
+
+        $created = @(Add-ReviewVariantSet -Deployment (Get-ReviewDeployment -BaseUrl "https://host") -AdminClientId "admin" -AdminClientSecret "secret" 3>$null)
+
+        $created.Count | Should -Be 11
+        Should -Invoke Add-Application -ModuleName review-variants -Times 0 -Exactly -ParameterFilter { $ApplicationName -eq "Security Review ST EdFiSandbox District" }
+    }
+
+    It "fails before creating anything when a deployment's data store is missing" {
+        $script:dataStores = @([pscustomobject]@{ id = 7; name = "Single-Tenant Data Store" })
+
+        { Add-ReviewVariantSet -Deployment (Get-ReviewDeployment -BaseUrl "https://host") -AdminClientId "admin" -AdminClientSecret "secret" } |
+            Should -Throw "*MT Data Store (tenant1 2025)*"
+        Should -Invoke Add-Application -ModuleName review-variants -Times 0 -Exactly
+    }
+}
+
+Describe "Azure VM educator-prep load" {
+    BeforeAll {
+        Import-Module ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm/compose/seed/educator-prep.psm1"))) -Force
+    }
+
+    AfterAll {
+        Remove-Module educator-prep -ErrorAction SilentlyContinue
+    }
+
+    BeforeEach {
+        $script:work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-azure-vm-edprep-$([Guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $script:work -Force | Out-Null
+    }
+
+    AfterEach {
+        if (Test-Path -LiteralPath $script:work) {
+            Remove-Item -LiteralPath $script:work -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "selects exactly the educator-prep files the populated template excludes" {
+        foreach ($name in @(
+                "Candidate.xml", "Path.xml", "PerformanceEvaluation.xml", "ProfessionalDevelopment.xml", "RecruitmentAndStaffing.xml",
+                "EducationOrganization-EdPrep.xml", "Survey-EdPrep.xml", "AssessmentMetadata-EdPrep.xml", "Student.xml", "StudentAssessmentSample.xml")) {
+            Set-Content -LiteralPath (Join-Path $script:work $name) -Value "<x/>"
+        }
+
+        @(Get-EducatorPrepLoadFile -SampleDataDirectory $script:work) | Should -Be @(
+            "Candidate.xml", "EducationOrganization-EdPrep.xml", "Path.xml", "PerformanceEvaluation.xml",
+            "ProfessionalDevelopment.xml", "RecruitmentAndStaffing.xml", "Survey-EdPrep.xml"
+        )
+    }
+
+    It "re-posts only kept files that reference students defined in the educator-prep files" {
+        Set-Content -LiteralPath (Join-Path $script:work "Candidate.xml") -Value "<Student><StudentUniqueId>C1</StudentUniqueId></Student>"
+        Set-Content -LiteralPath (Join-Path $script:work "Student.xml") -Value "<Student><StudentUniqueId>S1</StudentUniqueId></Student>"
+        Set-Content -LiteralPath (Join-Path $script:work "StudentAssessmentSample.xml") -Value "<StudentReference><StudentIdentity><StudentUniqueId>C1</StudentUniqueId></StudentIdentity></StudentReference>"
+        Set-Content -LiteralPath (Join-Path $script:work "StudentAssessment-ACT.xml") -Value "<StudentReference><StudentIdentity><StudentUniqueId>S1</StudentUniqueId></StudentIdentity></StudentReference>"
+
+        @(Get-EducatorPrepRepostFile -SampleDataDirectory $script:work) | Should -Be @("StudentAssessmentSample.xml")
+    }
+
+    It "removes the loader application by the id it created, never from a listing" {
+        Mock Invoke-RestMethod -ModuleName educator-prep -ParameterFilter { $Method -ne "Delete" } {
+            [pscustomobject]@{ id = 42; applicationName = "EdPrep Loader (tenant1)" }
+        }
+        Mock Invoke-RestMethod -ModuleName educator-prep -ParameterFilter { $Method -eq "Delete" } { }
+
+        Remove-ReviewLoaderApplication -CmsUrl "https://host/mt-config/" -Headers @{} -ApplicationId 42 -ExpectedName "EdPrep Loader (tenant1)" -Confirm:$false
+
+        Should -Invoke Invoke-RestMethod -ModuleName educator-prep -Times 1 -Exactly -ParameterFilter {
+            $Method -eq "Delete" -and $Uri -eq "https://host/mt-config/v3/applications/42"
+        }
+        Should -Invoke Invoke-RestMethod -ModuleName educator-prep -Times 0 -Exactly -ParameterFilter { $Uri -match 'v3/applications\?' }
+    }
+
+    It "refuses to delete when the id no longer names the loader application" {
+        Mock Invoke-RestMethod -ModuleName educator-prep -ParameterFilter { $Method -ne "Delete" } {
+            [pscustomobject]@{ id = 42; applicationName = "Security Review (multi-tenant/tenant1)" }
+        }
+        Mock Invoke-RestMethod -ModuleName educator-prep -ParameterFilter { $Method -eq "Delete" } { }
+
+        { Remove-ReviewLoaderApplication -CmsUrl "https://host/mt-config/" -Headers @{} -ApplicationId 42 -ExpectedName "EdPrep Loader (tenant1)" -Confirm:$false } |
+            Should -Throw "*refusing to delete*"
+        Should -Invoke Invoke-RestMethod -ModuleName educator-prep -Times 0 -Exactly -ParameterFilter { $Method -eq "Delete" }
+    }
+
+    It "removes the loader application even when the bulk load fails" {
+        Mock Get-CmsToken -ModuleName educator-prep { "token" }
+        Mock Invoke-RestMethod -ModuleName educator-prep -ParameterFilter { $Uri -like "*v3/dataStores*" } {
+            Write-Output -NoEnumerate -InputObject @([pscustomobject]@{ id = 8; name = "MT Data Store (tenant1 2025)" })
+        }
+        Mock Invoke-RestMethod -ModuleName educator-prep -ParameterFilter { $Uri -like "*v3/vendors*" } { Write-Output -NoEnumerate -InputObject @() }
+        Mock Add-Vendor -ModuleName educator-prep { 100 }
+        Mock Add-Application -ModuleName educator-prep { @{ Id = 42; Key = "key"; Secret = "secret" } }
+        Mock Invoke-BulkLoadClientContainer -ModuleName educator-prep { 1 }
+        Mock Remove-ReviewLoaderApplication -ModuleName educator-prep { }
+        Set-Content -LiteralPath (Join-Path $script:work "Candidate.xml") -Value "<x/>"
+
+        $deployment = @{ Label = "multi-tenant/tenant1"; Code = "T1"; CmsUrl = "https://host/mt-config/"; Tenant = "tenant1"; DataStoreName = "MT Data Store (tenant1 2025)"; DmsUrl = "http://mt-dms:8080/mt-dms/tenant1/2025" }
+        $result = Invoke-EducatorPrepLoad -Deployment $deployment -DataDirectory $script:work -LogDirectory $script:work `
+            -AdminClientId "admin" -AdminClientSecret "secret" -BulkLoadClientDirectory $script:work
+
+        $result.ExitCode | Should -Be 1
+        Should -Invoke Remove-ReviewLoaderApplication -ModuleName educator-prep -Times 1 -Exactly -ParameterFilter { $ApplicationId -eq 42 }
+    }
+}
+
+Describe "Azure VM ODS parity check" {
+    BeforeAll {
+        $script:paritySource = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm/compose/seed/check-ods-parity.py"))
+    }
+
+    BeforeEach {
+        $script:work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-azure-vm-parity-$([Guid]::NewGuid().ToString('N'))"
+        $script:binRoot = Join-Path $script:work "bin"
+        New-Item -ItemType Directory -Path $script:binRoot -Force | Out-Null
+        $script:template = Join-Path $script:work "template.nupkg"
+        @'
+import sys, zipfile
+sql = (
+    "COPY edfi.school (schoolid) FROM stdin;\n1\n2\n\\.\n"
+    "COPY edfi.student (studentusi) FROM stdin;\n1\n2\n3\n\\.\n"
+    "COPY edfi.schoolyeartype (schoolyear) FROM stdin;\n2025\n2050\n\\.\n"
+    "COPY edfi.descriptor (descriptorid) FROM stdin;\n1\n\\.\n"
+)
+with zipfile.ZipFile(sys.argv[1], "w") as z:
+    z.writestr("EdFi.Ods.Populated.Template.sql", sql)
+'@ | & python3 - $script:template
+        $dockerStub = Join-Path $script:binRoot "docker"
+        Set-Content -LiteralPath $dockerStub -Value @'
+#!/usr/bin/env bash
+printf 'school|2\nstudent|%s\nschoolyeartype|1\n__descriptors__|1\n' "${DMS_STUDENTS:-3}"
+'@ -NoNewline
+        & chmod +x $dockerStub
+        $script:originalPath = $env:PATH
+        $env:PATH = "$script:binRoot$([IO.Path]::PathSeparator)$env:PATH"
+    }
+
+    AfterEach {
+        $env:PATH = $script:originalPath
+        Remove-Item Env:DMS_STUDENTS -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $script:work) {
+            Remove-Item -LiteralPath $script:work -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "passes when only allowed tables differ" {
+        $output = & python3 $script:paritySource --template $script:template --database edfi_st --allow-diff schoolyeartype 2>&1
+
+        $LASTEXITCODE | Should -Be 0 -Because ($output | Out-String)
+        $output | Out-String | Should -Match "schoolyeartype .*allowed"
+    }
+
+    It "fails when a table that must match differs" {
+        $env:DMS_STUDENTS = "2"
+
+        $output = & python3 $script:paritySource --template $script:template --database edfi_st --allow-diff schoolyeartype 2>&1
+
+        $LASTEXITCODE | Should -Be 1
+        $output | Out-String | Should -Match "student .*3.*2"
+    }
+}

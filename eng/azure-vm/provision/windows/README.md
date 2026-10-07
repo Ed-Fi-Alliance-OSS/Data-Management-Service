@@ -161,6 +161,8 @@ this works on your build**; if not, RDP in and run `wsl` once (and `portproxy.ps
 cd ~/dms-src/eng/azure-vm/compose
 ./update.sh              # fast-forward pull + image pull + ApiSchema-guarded recreation
 # SKIP_GIT=1 ./update.sh # image-only refresh against the current checkout
+# Both keep the API keys. Backup, migration pre-check, Data Standard switch and the review-variant
+# keys: ../UPDATE.md.
 ```
 
 Teardown: Portal → delete the resource group.

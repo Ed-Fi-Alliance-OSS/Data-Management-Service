@@ -7,6 +7,10 @@ Tear down an existing deployment and do a fresh install on a VM that already has
 [`windows/README.md`](windows/README.md), and for the full manual walkthrough see
 [`MANUAL.md`](MANUAL.md).
 
+> **A redeploy issues new API keys** (Part A drops the Keycloak realm and the config databases).
+> To refresh a running deployment while keeping the keys already shared with reviewers, follow
+> [`UPDATE.md`](UPDATE.md) instead.
+
 > **No host .NET SDK required.** The `api-schema-tools` tool is built in a **container** (Part C),
 > so the only host prerequisites are Docker, `pwsh`, and `git` — exactly what the fresh-VM
 > setup paths install. (It is also published as the `EdFi.Api.SchemaTools` .NET tool — DMS-1242 —
@@ -91,6 +95,9 @@ cp -r ./.bootstrap/ApiSchema ~/dms-src/eng/azure-vm/compose/.bootstrap/
 ls ~/dms-src/eng/azure-vm/compose/.bootstrap/ApiSchema/*.json   # sanity: should list schema files
 ```
 
+> **Data Standard 6.1:** stage with `-EnvironmentFile ./.env.template.ds61` instead (DS 6.1
+> folds TPDM into core, so there is no separate TPDM package).
+
 > The staged ApiSchema must match the populated template (Part E) at the ApiSchema **package
 > version** level, not just the Data Standard level: the template restore writes the
 > `dms.EffectiveSchema` fingerprint of the ApiSchema it was built from, and the DMS refuses the
@@ -106,9 +113,20 @@ pwsh ../provision/setup-env.ps1 -PublicHost <FQDN> -LetsEncryptEmail you@org.tld
 # omit -LetsEncryptEmail to use a self-signed cert instead
 ```
 
+> **Data Standard 6.1:** set it before this first run, because the Configuration Service loads
+> claims only into an empty database. `setup-env.ps1` generates the secrets into a `.env` that still
+> holds the `.env.example` placeholders and keeps every other value:
+>
+> ```bash
+> cp .env.example .env
+> sed -i -e 's/^DMS_CONFIG_DATA_STANDARD_VERSION=.*/DMS_CONFIG_DATA_STANDARD_VERSION=6.1/' \
+>   -e 's/^DATABASE_TEMPLATE_PACKAGE_ID=.*/DATABASE_TEMPLATE_PACKAGE_ID=EdFi.Api.Populated.Template.PostgreSql.6.1.0/' .env
+> ```
+
 Generates `.env` (secrets, locked to `0600`), obtains the TLS cert, starts PostgreSQL + Keycloak +
 both Config Services + gateway, and runs `bootstrap.ps1` (Keycloak realm/clients, tenants, CMS
-data stores, review apps). **Record the API key/secret pairs it prints** into your private vault.
+data stores, and 15 review apps: one full-access `EdFiSandbox` app plus the four claim-set
+variants per deployment). **Record the API key/secret pairs it prints** into your private vault.
 It deliberately does **not** start the DMS.
 
 > Don't use `localhost` as the FQDN — CMS calls the public host from inside its container. A
@@ -141,6 +159,9 @@ The re-run preserves all secrets and skips bootstrap; it starts `st-dms` / `mt-d
 confirming the staged ApiSchema is present. Each `/health` should go green within a couple of
 minutes.
 
+**Data Standard 6.1:** once the DMS is healthy, load the educator-preparation data and check parity
+with the ODS/API template, as in [`UPDATE.md`](UPDATE.md) Part C steps 6 and 7.
+
 ## Part G — Verify  [bash]
 
 ```bash
@@ -153,6 +174,11 @@ done
 cd ~/dms-src/eng/azure-vm/http
 FQDN=<FQDN> ST_CREDS='key:secret' T1_CREDS='key:secret' T2_CREDS='key:secret' ./sample-all.sh
 ```
+
+For the access matrix of all 15 keys, put the printed pairs into a JSON list of
+`{"Environment": ..., "Application": ..., "Key": ..., "Secret": ...}` objects (the shape
+`bootstrap/add-review-variants.ps1 -OutFile` writes) and run
+`FQDN=<FQDN> python3 ./sample-variants.py <file>`; delete the file afterwards.
 
 Use the key/secret pairs from Part D.
 

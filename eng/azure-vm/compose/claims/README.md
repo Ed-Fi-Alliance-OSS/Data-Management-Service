@@ -26,8 +26,12 @@ Use `EdFiSandbox` and bind the Application to specific
 `educationOrganizationIds` (e.g. district `255901` = Grand Bend ISD, or a school like
 `255901001`). The client then only sees relationship-based data (students, sections,
 enrollments, ...) for those EdOrgs and their descendants.
-Create such a client via the Configuration Service when you need to demonstrate it. The
-default `bootstrap.ps1` provisions only the single-tenant + two-tenant apps (the review scope).
+`bootstrap.ps1` provisions these per deployment through
+[`bootstrap/review-variants.psm1`](../bootstrap/review-variants.psm1): `SISVendor` at district
+`255901`, `SISVendor` at school `255901107`, `AssessmentVendor` at `255901` with namespace
+`uri://one.example.com` (outside the sample data, so it sees none of the `uri://ed-fi.org`
+assessments), and `EdFiSandbox` at `255901`. Add them to an older environment with
+`bootstrap/add-review-variants.ps1`.
 
 ## Creating custom claim sets
 

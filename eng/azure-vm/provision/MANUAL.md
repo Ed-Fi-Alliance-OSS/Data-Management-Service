@@ -243,6 +243,8 @@ and TLS cert all survive, and no re-bootstrap is needed.
 cd ~/dms-src/eng/azure-vm/compose
 ./update.sh              # fast-forward pull + image pull + ApiSchema-guarded recreation
 # SKIP_GIT=1 ./update.sh # image-only refresh against the current checkout
+# Both keep the API keys. Backup, migration pre-check, Data Standard switch and the review-variant
+# keys: UPDATE.md.
 
 # State reset (on the VM). reset.sh drops data plus Keycloak so stale review credentials are
 # revoked, then restarts infra/CMS only (NOT the DMS services -- they start after bootstrap +

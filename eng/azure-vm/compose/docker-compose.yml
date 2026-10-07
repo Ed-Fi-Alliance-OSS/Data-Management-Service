@@ -129,6 +129,10 @@ x-cms-common-env: &cms-common-env
   # POST/import /v3/claimSets.
   ClaimsOptions__ClaimsSource: "${DMS_CONFIG_CLAIMS_SOURCE:-Embedded}"
   ClaimsOptions__ClaimsDirectory: "/app/additional-claims"
+  # Embedded claims for the Data Standard the staged ApiSchema targets (5.2 or 6.1). The CMS loads
+  # claims only into an empty config DB, so switching a running deployment also needs a one-time
+  # POST /management/reload-claims (see provision/UPDATE.md).
+  ClaimsOptions__DataStandardVersion: "${DMS_CONFIG_DATA_STANDARD_VERSION:-5.2}"
   # Enables POST /management/reload-claims (re-seeds the claim-set catalog from the
   # configured source into an already-populated config DB). Keep "false" for the review;
   # flip to "true" only to refresh claims (e.g. after pulling a newer image), then back.
