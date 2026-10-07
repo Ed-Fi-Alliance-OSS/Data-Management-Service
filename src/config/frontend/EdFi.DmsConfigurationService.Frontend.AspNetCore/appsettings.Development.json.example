@@ -20,10 +20,12 @@
         // Protects the token signing key stored in the database. Required because signing keys come
         // from the database unless IdentitySettings:UseCertificates is set, which nothing sets.
         "EncryptionKey": "QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz",
-        // Disables the per-client active-token limit locally. DMS mints a fresh token for its own
-        // client on every start, so the shipped default of 5 locks DMS out after a few debug
-        // sessions until those tokens expire. See docs/CONFIGURATION.md for real deployments.
-        "BearerTokenPerClientLimit": -1
+        // Operators may set below 1 to disable token-limit enforcement globally.
+        // The shipped default is 15. Exemption requires no live ApiClient row and
+        // nonempty registered scopes consisting only of recognized CMS admin scopes
+        // (case-sensitive).
+        // See docs/CONFIGURATION.md.
+        "BearerTokenPerClientLimit": 15
     },
     "Serilog": {
         "MinimumLevel": {

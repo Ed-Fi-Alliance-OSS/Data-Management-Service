@@ -882,26 +882,32 @@ relevant environment variables or appsettings to set `IdentityProvider` to
 | `IdentitySettings.EncryptionKey`    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
 | `IdentitySettings.TokenCleanupEnabled` | Enables the background sweep that deletes expired OpenIddict access tokens (self-contained only) | _(not used)_                                         | `true`              |
 | `IdentitySettings.TokenCleanupIntervalMinutes` | Interval, in minutes, between expired-token cleanup sweeps (self-contained only)           | _(not used)_                                         | `30`              |
-| `IdentitySettings.BearerTokenPerClientLimit` | Maximum number of active (unexpired, unrevoked) access tokens a single client may hold (self-contained only). A grant beyond the limit is rejected with HTTP 429 and a `Too Many Tokens` problem response of type `urn:ed-fi:api:security:authentication:too-many-tokens`; the client should reuse its existing token until it expires. Any value below 1, conventionally `-1`, disables enforcement. | _(not used)_ | `5` |
+| `IdentitySettings.BearerTokenPerClientLimit` | Maximum number of active (unexpired, unrevoked) access tokens a limited client may hold (self-contained only; default `15`). Exemption requires no live `dmscs.ApiClient` row and a nonempty set of registered scopes consisting only of recognized CMS admin scopes. Ed-Fi API clients remain limited. A grant beyond the limit is rejected with HTTP 429 and a `Too Many Tokens` problem response of type `urn:ed-fi:api:security:authentication:too-many-tokens`; the client should reuse its existing token until it expires. Any value below 1, conventionally `-1`, disables enforcement globally. | _(not used)_ | `15` |
 | `IdentitySettings.ClientSecretHashingIterations` | Number of PBKDF2-SHA256 iterations used to hash and verify client secrets (self-contained only). Must be greater than zero; startup fails otherwise. Default: `210000`. Set in Docker Compose through `DMS_CONFIG_IDENTITY_HASHING_ITERATIONS`, which also sets the count `setup-openiddict.ps1` hashes bootstrap client secrets with. | _(not used)_ | `210000` |
 
-> **Before upgrading an existing deployment:** the limit takes effect immediately, so a client
+> **Before upgrading an existing deployment:** a positive limit takes effect immediately, so an Ed-Fi API client
 > already holding at least `BearerTokenPerClientLimit` active tokens starts receiving 429s on its
-> next grant. Deployments running two or more DMS replicas against a single Configuration
-> Service client id must raise this value before upgrading — see the sizing arithmetic below.
-> Leave `TokenCleanupEnabled` on as well: every grant counts the client's active tokens, and
+> next grant. Non-API clients, including DMS's Configuration Service credential and CMS
+> admin/bootstrap clients, are exempt when they have no live `dmscs.ApiClient` row and
+> their nonempty registered scopes consist only of recognized CMS admin scopes.
+> Leave `TokenCleanupEnabled` on as well: a limited client's grant counts its active tokens, and
 > expired tokens the sweep has not yet removed still sit in the table it counts over, so a
 > deployment that has run with cleanup disabled makes each grant read through that whole backlog.
 
-`BearerTokenPerClientLimit` counts active tokens per client id, not per process, so size it
-against the number of processes sharing a client id. DMS caches its own Configuration Service
-token for 1500 seconds against the default 1800-second token lifetime, so each DMS replica
-normally holds one active token, and two during the five-minute window in which a freshly
-fetched token overlaps the one it replaces. Three replicas sharing a single client id can
-therefore need six active tokens at once, which already exceeds the default of 5. Budget roughly
-two tokens per replica sharing a client id, plus headroom for restarts and rolling deployments,
-and size that budget against the effective 30-minute lifetime: a token held by a replica that is
-restarted or replaced continues to count until it expires.
+Exemption requires both absence of a live `dmscs.ApiClient` row and nonempty registered
+scopes consisting only of the recognized CMS admin scopes: `edfi_admin_api/full_access`,
+`edfi_admin_api/readonly_access`, and `edfi_admin_api/authMetadata_readonly_access`
+(case-sensitive). Request-supplied scopes cannot select the exemption. Clients with an
+`ApiClient` row, empty scopes, or any other scope remain limited. The default permits
+15 active tokens per limited client, so its 16th concurrent grant receives 429. Explicit
+operator values override the default; a value below 1 disables enforcement for every client.
+
+For self-contained deployments running the Ed-Fi Smoke Test Utility, temporarily set
+`DMS_CONFIG_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` in the stack's `.env` before
+starting or recreating it: the utility requests a new token for each resource GET and
+exceeds the default limit of 15. Restore the configured limit and recreate the stack
+after the smoke run. The tracked `.env.smoke` and `.env.smoke.ds61` profiles show 15;
+the smoke workflow supplies the `-1` override through the stack-start step's environment.
 
 Waiting for a token to expire is not the only remedy. A caller that still holds a token it no
 longer needs can revoke it at `POST /connect/revoke`, the `revocation_endpoint` advertised in the
@@ -911,16 +917,10 @@ tokens should revoke each one as it finishes with it rather than letting it sit 
 This only helps a caller that still has the token string — one that has lost track of its tokens,
 after a crash loop for instance, has to wait for them to expire.
 
-When DMS crosses the limit on its own Configuration Service client, it logs an error carrying the
-429 status and the `urn:ed-fi:api:security:authentication:too-many-tokens` response body, and the
-metadata lookup that triggered the fetch fails until the next successful one. During startup the
-rejected fetch is fatal instead: DMS cannot load its data stores and exits. Because DMS keeps its
-token only in process memory, every restart of a DMS that is crash-looping at startup spends one
-slot, so after `BearerTokenPerClientLimit` restarts within the token lifetime DMS cannot start at
-all until the oldest of those tokens expires, even once the fault behind the crash loop is fixed.
-A deployment that starts DMS before its data stores are registered hits this. Raising the limit,
-or giving DMS a client id it does not share, is the fix; the symptom is a sizing problem, not a
-Configuration Service outage.
+DMS `/oauth/token` retains the canonical HTTP 429 contract for limited clients: type
+`urn:ed-fi:api:security:authentication:too-many-tokens`, title `Too Many Tokens`, and message
+`Too many access tokens have been requested (limit is {n}). Access tokens should be reused until they expire.`
+DMS parses the Configuration Service response and rebuilds its external response as before.
 
 > **Changing `ClientSecretHashingIterations` invalidates existing client secrets.** The iteration
 > count is not stored with a hashed secret, so verification always derives at the currently

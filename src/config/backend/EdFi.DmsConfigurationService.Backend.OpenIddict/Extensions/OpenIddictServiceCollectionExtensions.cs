@@ -73,7 +73,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                 );
                 options.BearerTokenPerClientLimit = configuration.GetValue<int>(
                     "IdentitySettings:BearerTokenPerClientLimit",
-                    5
+                    15
                 );
                 options.SigningKeyRefreshIntervalSeconds = configuration.GetValue<int>(
                     "IdentitySettings:SigningKeyRefreshIntervalSeconds",

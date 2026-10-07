@@ -351,7 +351,14 @@ UPDATE dmscs.OpenIddictApplication
         {
             string applicationSql = $"""
                 SELECT a.Id, a.ClientId, a.ClientSecret, a.DisplayName, a.RedirectUris, a.PostLogoutRedirectUris,
-                       a.Permissions, a.Requirements, a.Type, a.CreatedAt, a.ProtocolMappers
+                       a.Permissions, a.Requirements, a.Type, a.CreatedAt, a.ProtocolMappers,
+                       CAST(COALESCE((SELECT MIN(CAST(ac.IsApproved AS INT))
+                                      FROM dmscs.ApiClient ac
+                                      WHERE ac.ClientId = a.ClientId), 1) AS BIT) AS IsApproved,
+                       CAST(CASE WHEN EXISTS (SELECT 1
+                                              FROM dmscs.ApiClient ac
+                                              WHERE ac.ClientId = a.ClientId)
+                                 THEN 0 ELSE 1 END AS BIT) AS HasNoApiClientRow
                 FROM dmscs.OpenIddictApplication a
                 WHERE {predicate}
                 """;
@@ -389,16 +396,6 @@ UPDATE dmscs.OpenIddictApplication
                 transaction
             );
 
-            bool isApproved = await connection.ExecuteScalarAsync<bool>(
-                """
-                SELECT CAST(COALESCE(MIN(CAST(ac.IsApproved AS INT)), 1) AS BIT)
-                FROM dmscs.ApiClient ac
-                WHERE ac.ClientId = @ClientId
-                """,
-                new { row.ClientId },
-                transaction
-            );
-
             return new ApplicationInfo
             {
                 Id = row.Id,
@@ -414,7 +411,8 @@ UPDATE dmscs.OpenIddictApplication
                 Scopes = scopes.Distinct().ToArray(),
                 DataStoreIds = dataStoreIds.ToArray(),
                 ProtocolMappers = row.ProtocolMappers ?? string.Empty,
-                IsApproved = isApproved,
+                IsApproved = row.IsApproved,
+                HasNoApiClientRow = row.HasNoApiClientRow,
             };
         }
 
@@ -643,7 +641,9 @@ UPDATE dmscs.OpenIddictApplication
             string? Requirements,
             string? Type,
             DateTime CreatedAt,
-            string? ProtocolMappers
+            string? ProtocolMappers,
+            bool IsApproved,
+            bool HasNoApiClientRow
         );
 
         private static string[] DeserializeStringArray(string? json) =>

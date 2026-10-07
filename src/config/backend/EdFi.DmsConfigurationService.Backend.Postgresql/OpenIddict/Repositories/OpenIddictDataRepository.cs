@@ -318,7 +318,8 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                          a.""Permissions"", a.""Requirements"", a.""Type"", a.""CreatedAt"", a.""ProtocolMappers""::jsonb::text AS ""ProtocolMappers"",
                          COALESCE(array_agg(DISTINCT s.""Name"") FILTER (WHERE s.""Name"" IS NOT NULL), ARRAY[]::text[]) AS ""Scopes"",
                          COALESCE(array_agg(DISTINCT acd.""DataStoreId"") FILTER (WHERE acd.""DataStoreId"" IS NOT NULL), ARRAY[]::int[]) AS ""DataStoreIds"",
-                         COALESCE(BOOL_AND(ac.""IsApproved""), true) AS ""IsApproved""
+                         COALESCE(BOOL_AND(ac.""IsApproved""), true) AS ""IsApproved"",
+                         COUNT(ac.""Id"") = 0 AS ""HasNoApiClientRow""
                   FROM ""dmscs"".""OpenIddictApplication"" a
                   LEFT JOIN ""dmscs"".""OpenIddictApplicationScope"" aps ON a.""Id"" = aps.""ApplicationId""
                   LEFT JOIN ""dmscs"".""OpenIddictScope"" s ON aps.""ScopeId"" = s.""Id""
@@ -345,7 +346,8 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                          a.""Permissions"", a.""Requirements"", a.""Type"", a.""CreatedAt"", a.""ProtocolMappers""::jsonb::text AS ""ProtocolMappers"",
                          COALESCE(array_agg(DISTINCT s.""Name"") FILTER (WHERE s.""Name"" IS NOT NULL), ARRAY[]::text[]) AS ""Scopes"",
                          COALESCE(array_agg(DISTINCT acd.""DataStoreId"") FILTER (WHERE acd.""DataStoreId"" IS NOT NULL), ARRAY[]::int[]) AS ""DataStoreIds"",
-                         COALESCE(BOOL_AND(ac.""IsApproved""), true) AS ""IsApproved""
+                         COALESCE(BOOL_AND(ac.""IsApproved""), true) AS ""IsApproved"",
+                         COUNT(ac.""Id"") = 0 AS ""HasNoApiClientRow""
                   FROM ""dmscs"".""OpenIddictApplication"" a
                   LEFT JOIN ""dmscs"".""OpenIddictApplicationScope"" aps ON a.""Id"" = aps.""ApplicationId""
                   LEFT JOIN ""dmscs"".""OpenIddictScope"" s ON aps.""ScopeId"" = s.""Id""
@@ -472,7 +474,7 @@ UPDATE ""dmscs"".""OpenIddictApplication""
 
                 // Zero rows can only mean the count predicate was false. A deadlock victim, or any
                 // other fault, throws from the statements above and is never reported here as a
-                // limit rejection; only the lock-wait timeout below is answered as an outcome.
+                // limit rejection; only the lock-wait timeout below is an outcome.
                 return rowsAffected > 0 ? TokenStoreOutcome.Stored : TokenStoreOutcome.LimitExceeded;
             }
             catch (PostgresException exception)

@@ -94,7 +94,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
         /// Applies to the self-contained identity provider only: the Keycloak provider persists
         /// no tokens, so the setting is inert there.
         /// </summary>
-        public int BearerTokenPerClientLimit { get; set; } = 5;
+        public int BearerTokenPerClientLimit { get; set; } = 15;
 
         /// <summary>
         /// Seconds between scheduled reloads of the signing-key snapshot. Bounds how long a

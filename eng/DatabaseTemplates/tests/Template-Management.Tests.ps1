@@ -377,10 +377,14 @@ Describe "Get-TemplateBulkLoadTuning" {
         }
     }
 
-    It "leaves postgresql on Invoke-BulkLoad's established defaults" {
+    It "uses conservative relational-backend limits for postgresql" {
         InModuleScope Template-Management {
             $tuning = Get-TemplateBulkLoadTuning -DatabaseEngine postgresql
-            $tuning.Count | Should -Be 0
+            $tuning.Count | Should -Be 4
+            $tuning.MaxConcurrentConnections | Should -Be 5
+            $tuning.MaxSimultaneousRequests | Should -Be 5
+            $tuning.MaxBufferedTasks | Should -Be 2
+            $tuning.RetryCount | Should -Be 5
         }
     }
 }

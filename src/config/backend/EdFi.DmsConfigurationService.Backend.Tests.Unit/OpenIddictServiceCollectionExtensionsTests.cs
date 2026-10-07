@@ -104,7 +104,7 @@ public class OpenIddictServiceCollectionExtensionsTests
         public void Setup() => _options = BindIdentityOptions([]);
 
         [Test]
-        public void It_defaults_to_five() => _options.BearerTokenPerClientLimit.Should().Be(5);
+        public void It_defaults_to_fifteen() => _options.BearerTokenPerClientLimit.Should().Be(15);
     }
 
     [TestFixture]
@@ -119,7 +119,7 @@ public class OpenIddictServiceCollectionExtensionsTests
             );
 
         // Binding the configured value is also what proves the key name: read under any other
-        // name, this would silently come back as the default 5.
+        // name, this would silently come back as the default 15.
         [Test]
         public void It_binds_the_configured_value() => _options.BearerTokenPerClientLimit.Should().Be(25);
     }

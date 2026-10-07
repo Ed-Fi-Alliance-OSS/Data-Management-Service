@@ -122,11 +122,13 @@ the in-network URL the Configuration Service calls. Self-contained mode uses one
 | `EncryptionKey`                    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
 | `TokenCleanupEnabled`              | Enables the expired-token cleanup sweep (self-contained only)    | _(not used)_                                         | `true`                                        |
 | `TokenCleanupIntervalMinutes`      | Minutes between expired-token cleanup sweeps (self-contained only) | _(not used)_                                       | `30`                                          |
-| `BearerTokenPerClientLimit`        | Maximum active access tokens one client may hold; further grants are rejected with HTTP 429 (self-contained only). Below 1 disables it. Compose variable: `DMS_CONFIG_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT` | _(not used)_ | `5` |
+| `BearerTokenPerClientLimit`        | Maximum active access tokens one limited client may hold (self-contained only; default `15`); further grants are rejected with HTTP 429. Exemption requires no live `dmscs.ApiClient` row and nonempty registered scopes consisting only of recognized CMS admin scopes. Ed-Fi API clients remain limited. Below 1 disables enforcement globally. Compose variable: `DMS_CONFIG_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT` | _(not used)_ | `15` |
 
-See [CONFIGURATION.md](./CONFIGURATION.md#identity-provider-configuration) for sizing guidance on
-`BearerTokenPerClientLimit`: replicas sharing one client id each hold an active token, and two
-while a refreshed token overlaps the one it replaces.
+See [CONFIGURATION.md](./CONFIGURATION.md#identity-provider-configuration) for the
+enforcement boundary and the canonical `Too Many Tokens` 429 response.
+Explicit operator values override the default; DMS's non-API Configuration Service credential
+and CMS admin/bootstrap clients are exempt when they have no live `ApiClient` row and
+their nonempty registered scopes consist only of recognized CMS admin scopes.
 
 **JwtAuthentication parameters in `appsettings.json` (dms):**
 
