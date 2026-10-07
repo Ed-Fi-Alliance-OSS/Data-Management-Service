@@ -19,19 +19,26 @@ window.EdFiReviewSwagger = (function () {
         return parsed.pathname + parsed.search;
     }
 
-    function dmsDefinitions(label, specifications) {
-        return (Array.isArray(specifications) ? specifications : [])
-            .filter(spec => spec && spec.name && spec.name !== "Discovery" && spec.endpointUri)
-            .map(spec => ({ name: `${label}: ${spec.name}`, url: toPath(spec.endpointUri) }));
+    // When a stack's specification list is unavailable (e.g. the DMS is still starting), fall back to
+    // its Resources and Descriptors specs so the stack stays listed; they load once it answers.
+    function dmsDefinitions(label, basePath, specifications) {
+        const advertised = (Array.isArray(specifications) ? specifications : [])
+            .filter(spec => spec && spec.name && spec.name !== "Discovery" && spec.endpointUri);
+        const listed = advertised.length > 0 ? advertised : [
+            { name: "Resources", endpointUri: `${basePath}/metadata/specifications/resources-spec.json` },
+            { name: "Descriptors", endpointUri: `${basePath}/metadata/specifications/descriptors-spec.json` }
+        ];
+        return listed.map(spec => ({ name: `${label}: ${spec.name}`, url: toPath(spec.endpointUri) }));
     }
 
     // The multi-tenant DMS specs describe tenant and school year as server variables, so one set of
     // definitions covers every tenant. The multi-tenant Configuration Service needs one per tenant,
     // because the tenant travels in a header the spec does not describe.
-    function buildDefinitions(singleTenantSpecifications, multiTenantSpecifications, tenants) {
+    function buildDefinitions(singleTenantSpecifications, multiTenantSpecifications, tenants, schoolYear) {
+        const multiTenantBase = `/mt-dms/${encodeURIComponent(tenants[0] || "tenant1")}/${encodeURIComponent(schoolYear)}`;
         return [
-            ...dmsDefinitions("Single-tenant DMS", singleTenantSpecifications),
-            ...dmsDefinitions("Multi-tenant DMS", multiTenantSpecifications),
+            ...dmsDefinitions("Single-tenant DMS", "/st-dms", singleTenantSpecifications),
+            ...dmsDefinitions("Multi-tenant DMS", multiTenantBase, multiTenantSpecifications),
             { name: "Single-tenant Configuration Service", url: "/st-config/openapi/v1.json" },
             ...tenants.map(tenant => ({
                 name: `Multi-tenant Configuration Service (${tenant})`,
@@ -138,7 +145,7 @@ window.onload = function () {
         specificationList(`/mt-dms/${firstTenant}/${encodeURIComponent(schoolYear)}/metadata/specifications`)
     ]).then(([singleTenant, multiTenant]) => {
         window.ui = SwaggerUIBundle({
-            urls: helpers.buildDefinitions(singleTenant, multiTenant, tenants),
+            urls: helpers.buildDefinitions(singleTenant, multiTenant, tenants, schoolYear),
             dom_id: "#swagger-ui",
             presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
             plugins: plugins,

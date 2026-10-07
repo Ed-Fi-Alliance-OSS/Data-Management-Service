@@ -755,7 +755,7 @@ Describe "Azure VM Swagger UI" {
         $stList = '[{"name":"Resources","endpointUri":"https://host.example/st-dms/metadata/specifications/resources-spec.json"},{"name":"Discovery","endpointUri":"https://host.example/st-dms/metadata/specifications/discovery-spec.json"},{"name":"Change-Queries","endpointUri":"https://host.example/st-dms/metadata/changequeries/v1/swagger.json"}]'
         $mtList = '[{"name":"Resources","endpointUri":"https://host.example/mt-dms/t1/2025/metadata/specifications/resources-spec.json"}]'
 
-        $definitions = & $script:runHelper "h.buildDefinitions($stList, $mtList, ['t1', 't2'])"
+        $definitions = & $script:runHelper "h.buildDefinitions($stList, $mtList, ['t1', 't2'], '2025')"
 
         @($definitions | ForEach-Object { "$($_.name)|$($_.url)" }) | Should -Be @(
             "Single-tenant DMS: Resources|/st-dms/metadata/specifications/resources-spec.json",
@@ -764,6 +764,17 @@ Describe "Azure VM Swagger UI" {
             "Single-tenant Configuration Service|/st-config/openapi/v1.json",
             "Multi-tenant Configuration Service (t1)|/mt-config/openapi/v1.json?tenant=t1",
             "Multi-tenant Configuration Service (t2)|/mt-config/openapi/v1.json?tenant=t2"
+        )
+    }
+
+    It "falls back to the default DMS definitions when a stack's specification list is unavailable" {
+        $definitions = & $script:runHelper "h.buildDefinitions([], null, ['t1', 't2'], '2025')"
+
+        @($definitions | Select-Object -First 4 | ForEach-Object { "$($_.name)|$($_.url)" }) | Should -Be @(
+            "Single-tenant DMS: Resources|/st-dms/metadata/specifications/resources-spec.json",
+            "Single-tenant DMS: Descriptors|/st-dms/metadata/specifications/descriptors-spec.json",
+            "Multi-tenant DMS: Resources|/mt-dms/t1/2025/metadata/specifications/resources-spec.json",
+            "Multi-tenant DMS: Descriptors|/mt-dms/t1/2025/metadata/specifications/descriptors-spec.json"
         )
     }
 
