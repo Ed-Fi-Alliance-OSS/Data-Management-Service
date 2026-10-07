@@ -262,7 +262,7 @@ try {
     # --no-deps so the gateway (which depends_on the DMS services) does not pull them up early;
     # the gateway resolves upstreams at request time, so it starts fine without the DMS backends.
     docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-deps `
-        postgres keycloak st-config mt-config pgadmin gateway
+        postgres keycloak st-config mt-config pgadmin swagger-ui gateway
     if ($LASTEXITCODE -ne 0) { throw "docker compose up (infrastructure) failed ($LASTEXITCODE)." }
 
     # Persist the image that ACTUALLY created/started the Keycloak H2 realm. A later plain

@@ -24,7 +24,7 @@ security review; generic enough for any ST + MT-behind-a-gateway VM deployment.
 | Path | Purpose |
 |------|---------|
 | `provision/` | Azure VM lifecycle + host setup. **Windows + WSL2 is canonical** (`provision/windows/`); the Linux/cloud-init flow is an alternative. |
-| `compose/` | Two-stack `docker-compose.yml`, NGINX gateway, `keycloak.yml`, PostgreSQL init, seed (`grandbend.sh` relational template restore, `load-educator-prep.ps1` DS 6.1 educator-prep load, `check-ods-parity.py`, `clone-data.sh` MT clone), and `bootstrap/` (`bootstrap.ps1`, `add-review-variants.ps1`). |
+| `compose/` | Two-stack `docker-compose.yml`, NGINX gateway, `keycloak.yml`, PostgreSQL init, seed (`grandbend.sh` relational template restore, `load-educator-prep.ps1` DS 6.1 educator-prep load, `check-ods-parity.py`, `clone-data.sh` MT clone), `bootstrap/` (`bootstrap.ps1`, `add-review-variants.ps1`), and `swagger-ui/` (the `/swagger/` page). |
 | `http/` | REST Client walkthroughs, the `sample-all.sh` smoke sampler, and `sample-variants.py` for the review-variant keys (placeholders). |
 | `docs/infrastructure.md` | Architecture, endpoints, provisioning method, known issues. |
 

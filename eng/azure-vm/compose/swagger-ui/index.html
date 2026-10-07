@@ -1,0 +1,41 @@
+<!--
+SPDX-License-Identifier: Apache-2.0
+Licensed to the Ed-Fi Alliance under one or more agreements.
+The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+See the LICENSE and NOTICES files in the project root for more information.
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Ed-Fi Security Review API Documentation</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.25.2/swagger-ui.css"
+        integrity="sha384-S+iZGxcLHU1ByODKehPIOcS0UkxgKTWKdT/VtKStv2S430eyGsmjt/NeSxrQq6Ke" crossorigin="anonymous" />
+</head>
+
+<body>
+    <div id="swagger-ui"></div>
+    <script>
+        window.EDFI_REVIEW_TENANT_1 = "${MT_TENANT_1}";
+        window.EDFI_REVIEW_TENANT_2 = "${MT_TENANT_2}";
+        window.EDFI_REVIEW_SCHOOL_YEAR = "${MT_SCHOOL_YEAR}";
+    </script>
+    <script src="https://unpkg.com/swagger-ui-dist@5.25.2/swagger-ui-bundle.js"
+        integrity="sha384-KEGL4N19rkwSP4jpdwT9SRy2bQXc+8sp22obIqN/I3lt9NP0ILVxPDacFjDnl0/F"
+        crossorigin="anonymous"></script>
+    <script>
+        window.React = SwaggerUIBundle.React;
+    </script>
+    <script src="https://unpkg.com/swagger-ui-dist@5.25.2/swagger-ui-standalone-preset.js"
+        integrity="sha384-Zc0myuwGRY+wF+Mppj70Hoq/w2OticNP92nkFTlghzBS/OxDNlYummEqqmcOCyAX"
+        crossorigin="anonymous"></script>
+    <script src="edfi-common-helper.js"></script>
+    <script src="edfi-custom-fields.js"></script>
+    <script src="edfi-custom-domains.js"></script>
+    <script src="swagger-initializer.js"></script>
+</body>
+
+</html>

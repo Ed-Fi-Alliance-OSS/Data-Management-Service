@@ -301,6 +301,28 @@ services:
       postgres: { condition: service_healthy }
 
   # =========================================================================
+  # Swagger UI at /swagger/: every DMS and Configuration Service spec, with "Try it out".
+  # Static files only. The specs load through the gateway on the same origin, so no CORS is
+  # needed; the Ed-Fi plugins are shared with the local stack (eng/docker-compose/custom-swagger-ui).
+  # =========================================================================
+  swagger-ui:
+    <<: *app-defaults
+    image: nginx:1.30-alpine
+    hostname: swagger-ui
+    container_name: dms-sec-swagger-ui
+    environment:
+      MT_TENANT_1: "${MT_TENANT_1:-tenant1}"
+      MT_TENANT_2: "${MT_TENANT_2:-tenant2}"
+      MT_SCHOOL_YEAR: "${MT_SCHOOL_YEAR:-2025}"
+    volumes:
+      - ../../docker-compose/custom-swagger-ui:/opt/swagger-ui/shared:ro
+      - ./swagger-ui:/opt/swagger-ui/review:ro
+    command: >
+      sh -c "envsubst '$$MT_TENANT_1 $$MT_TENANT_2 $$MT_SCHOOL_YEAR' < /opt/swagger-ui/review/index.html > /usr/share/nginx/html/index.html &&
+             cp /opt/swagger-ui/shared/edfi-common-helper.js /opt/swagger-ui/shared/edfi-custom-fields.js /opt/swagger-ui/shared/edfi-custom-domains.js /opt/swagger-ui/shared/favicon.ico /opt/swagger-ui/review/swagger-initializer.js /usr/share/nginx/html/ &&
+             exec nginx -g 'daemon off;'"
+
+  # =========================================================================
   # NGINX gateway — TLS termination + path routing (single public hostname).
   # =========================================================================
   gateway:

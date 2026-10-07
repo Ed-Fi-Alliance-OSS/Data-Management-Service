@@ -239,7 +239,7 @@ exit 17
         $LASTEXITCODE | Should -Be 0
         $output | Out-String | Should -Match "Keycloak \+ config services ready"
         $stop = Select-String -LiteralPath $script:dockerLog -Pattern "stop st-dms mt-dms"
-        $infra = Select-String -LiteralPath $script:dockerLog -Pattern "up -d --no-deps postgres keycloak st-config mt-config pgadmin gateway"
+        $infra = Select-String -LiteralPath $script:dockerLog -Pattern "up -d --no-deps postgres keycloak st-config mt-config pgadmin swagger-ui gateway"
         $dms = Select-String -LiteralPath $script:dockerLog -Pattern "up -d st-dms mt-dms"
         $stop.LineNumber | Should -BeLessThan $infra.LineNumber
         $infra.LineNumber | Should -BeLessThan $dms.LineNumber
@@ -275,6 +275,23 @@ exit 17
         $LASTEXITCODE | Should -Be 0
         $output | Out-String | Should -Match "Update complete"
         Get-Content -LiteralPath $script:dockerLog -Raw | Should -Match "compose .* pull"
+    }
+
+    It "restarts the gateway and Swagger UI after an update so pulled template changes apply" {
+        & bash (Join-Path $script:composeRoot "up.sh") 2>&1 | Out-Null
+        $LASTEXITCODE | Should -Be 0
+        $env:SKIP_GIT = "1"
+        Set-Content -LiteralPath $script:dockerLog -Value "" -NoNewline
+
+        $output = & bash (Join-Path $script:composeRoot "update.sh") 2>&1
+
+        $LASTEXITCODE | Should -Be 0 -Because ($output | Out-String)
+        # Both render bind-mounted files only at container start, and Compose does not recreate a
+        # container whose definition is unchanged, so only a restart picks up a pulled change.
+        $dms = Select-String -LiteralPath $script:dockerLog -Pattern "up -d st-dms mt-dms"
+        $restart = Select-String -LiteralPath $script:dockerLog -Pattern "compose .* restart gateway swagger-ui"
+        $restart | Should -Not -BeNullOrEmpty
+        $dms.LineNumber | Should -BeLessThan $restart.LineNumber
     }
 
     It "rejects a changed Keycloak pin after a plain down before pulling images" {
@@ -694,6 +711,77 @@ Describe "Azure VM entry scripts" {
 
         $LASTEXITCODE | Should -Not -Be 0
         $output | Out-String | Should -Match "No educator-prep files found"
+    }
+}
+
+Describe "Azure VM Swagger UI" {
+    BeforeAll {
+        $script:azureVmRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm"))
+        $script:initializer = Join-Path $script:azureVmRoot "compose/swagger-ui/swagger-initializer.js"
+        # Loads the initializer into a bare `window`, exposes its pure helpers, and prints the JSON
+        # result of the expression in $args[1]. The Pester DMS lane runs on ubuntu-latest, which ships Node.js.
+        $script:runHelper = {
+            param([string]$Expression)
+            $program = "const fs = require('fs'); const window = {}; eval(fs.readFileSync(process.argv[1], 'utf8')); " +
+                "const h = window.EdFiReviewSwagger; console.log(JSON.stringify($Expression));"
+            $output = & node -e $program $script:initializer 2>&1
+            $LASTEXITCODE | Should -Be 0 -Because ($output | Out-String)
+            return ($output | Out-String | ConvertFrom-Json)
+        }
+    }
+
+    It "serves Swagger UI behind the gateway at /swagger/" {
+        $compose = Get-Content -LiteralPath (Join-Path $script:azureVmRoot "compose/docker-compose.yml") -Raw
+        $service = [regex]::Match($compose, "(?ms)^  swagger-ui:\s*\n(.*?)(?=^  \S|^\S)").Groups[1].Value
+        $service | Should -Match '<<: \*app-defaults' -Because "the service needs the shared logging cap and network"
+        $service | Should -Match 'image: nginx:1\.30-alpine'
+        $service | Should -Match '\.\./\.\./docker-compose/custom-swagger-ui:[^\s]*:ro'
+        $service | Should -Match '\./swagger-ui:[^\s]*:ro'
+
+        $gateway = Get-Content -LiteralPath (Join-Path $script:azureVmRoot "compose/nginx/default.conf.template") -Raw
+        $gateway | Should -Match '(?ms)location /swagger/ \{.*?set \$u_swagger swagger-ui;.*?proxy_pass http://\$u_swagger:80'
+        $gateway | Should -Match 'location = /swagger \{\s*return 301 /swagger/;'
+        $gateway | Should -Match '<a href="/swagger/">'
+    }
+
+    It "starts Swagger UI with the infrastructure in every start path" {
+        foreach ($file in @("compose/up.sh", "compose/reset.sh", "provision/setup-env.ps1", "provision/MANUAL.md")) {
+            Get-Content -LiteralPath (Join-Path $script:azureVmRoot $file) -Raw |
+                Should -Match 'postgres keycloak st-config mt-config pgadmin swagger-ui gateway' -Because $file
+        }
+    }
+
+    It "lists every DMS and Configuration Service definition, without Discovery, as same-origin paths" {
+        $stList = '[{"name":"Resources","endpointUri":"https://host.example/st-dms/metadata/specifications/resources-spec.json"},{"name":"Discovery","endpointUri":"https://host.example/st-dms/metadata/specifications/discovery-spec.json"},{"name":"Change-Queries","endpointUri":"https://host.example/st-dms/metadata/changequeries/v1/swagger.json"}]'
+        $mtList = '[{"name":"Resources","endpointUri":"https://host.example/mt-dms/t1/2025/metadata/specifications/resources-spec.json"}]'
+
+        $definitions = & $script:runHelper "h.buildDefinitions($stList, $mtList, ['t1', 't2'])"
+
+        @($definitions | ForEach-Object { "$($_.name)|$($_.url)" }) | Should -Be @(
+            "Single-tenant DMS: Resources|/st-dms/metadata/specifications/resources-spec.json",
+            "Single-tenant DMS: Change-Queries|/st-dms/metadata/changequeries/v1/swagger.json",
+            "Multi-tenant DMS: Resources|/mt-dms/t1/2025/metadata/specifications/resources-spec.json",
+            "Single-tenant Configuration Service|/st-config/openapi/v1.json",
+            "Multi-tenant Configuration Service (t1)|/mt-config/openapi/v1.json?tenant=t1",
+            "Multi-tenant Configuration Service (t2)|/mt-config/openapi/v1.json?tenant=t2"
+        )
+    }
+
+    It "adds the missing OAuth2 client-credentials scheme to the Configuration Service specs only" {
+        $patched = & $script:runHelper "h.withConfigurationServiceSecurity({openapi:'3.1.1', paths:{}}, '/mt-config/openapi/v1.json?tenant=t1', 'https://host.example')"
+        $scheme = $patched.components.securitySchemes.oauth2_client_credentials
+        $scheme.flows.clientCredentials.tokenUrl | Should -Be "https://host.example/mt-config/connect/token"
+        @($scheme.flows.clientCredentials.scopes.PSObject.Properties.Name) | Should -Be @("edfi_admin_api/full_access", "edfi_admin_api/readonly_access")
+        $patched.security[0].PSObject.Properties.Name | Should -Be "oauth2_client_credentials"
+
+        $dms = & $script:runHelper "h.withConfigurationServiceSecurity({openapi:'3.0.0', paths:{}}, '/st-dms/metadata/specifications/resources-spec.json', 'https://host.example')"
+        $dms.PSObject.Properties.Name | Should -Not -Contain "components"
+    }
+
+    It "sends the Tenant header only to the multi-tenant Configuration Service, for the selected tenant" {
+        $results = & $script:runHelper "[h.tenantForRequest('https://host.example/mt-config/openapi/v1.json?tenant=t2', null), h.tenantForRequest('https://host.example/mt-config/v3/vendors', '/mt-config/openapi/v1.json?tenant=t1'), h.tenantForRequest('https://host.example/mt-config/connect/token', '/mt-config/openapi/v1.json?tenant=t2'), h.tenantForRequest('https://host.example/st-config/v3/vendors', '/st-config/openapi/v1.json'), h.tenantForRequest('https://host.example/mt-dms/t1/2025/data/ed-fi/schools', '/mt-config/openapi/v1.json?tenant=t1')]"
+
+        @($results) | Should -Be @("t2", "t1", "t2", $null, $null)
     }
 }
 

@@ -68,6 +68,15 @@ Base: `https://<PUBLIC_HOST>`
 | Multi-tenant Config Service | `/mt-config` (requires `Tenant` header) |
 | Keycloak | `/auth` (admin console `/auth/admin`) |
 | pgAdmin | `/pgadmin` |
+| Swagger UI (every DMS and Configuration Service spec) | `/swagger/` |
+
+Swagger UI lists the single-tenant and multi-tenant DMS specs (Resources, Descriptors,
+Change-Queries; pick the tenant in the multi-tenant spec's server variables) and the Configuration
+Service once for single-tenant and once per tenant. **Authorize** with a key/secret: for the DMS
+choose "Authorization header"; for the Configuration Service choose "Request body" and a scope
+(`edfi_admin_api/readonly_access` or `full_access`). The Configuration Service spec declares no
+security scheme of its own, so the Swagger UI adds its client-credentials flow, and it sends the
+`Tenant` header for the per-tenant definitions.
 
 Multi-tenant requests (note the two systems identify the tenant differently):
 - **DMS** takes the tenant as the **first path segment**, followed by the route

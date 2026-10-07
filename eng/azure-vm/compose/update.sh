@@ -60,4 +60,10 @@ echo "Recreating changed containers..."
 # up.sh records the image from the now-deployed Keycloak container (rather than trusting the
 # configured string) before it starts the DMS services. That reference survives a plain down.
 
+# The gateway renders its bind-mounted nginx template, and Swagger UI copies its files, only at
+# container start; Compose does not recreate a container whose definition is unchanged. Restart
+# both so a pulled change to either takes effect.
+echo "Restarting the gateway and Swagger UI to apply their mounted configuration..."
+docker compose -f docker-compose.yml -f keycloak.yml --env-file .env restart gateway swagger-ui
+
 echo "Update complete."

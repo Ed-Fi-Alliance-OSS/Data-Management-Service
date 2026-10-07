@@ -172,7 +172,7 @@ docker network create dms-sec
 # --no-deps so the gateway does not pull the DMS services up early (it resolves upstreams at
 # request time and starts fine without them).
 docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-deps \
-  postgres keycloak st-config mt-config pgadmin gateway
+  postgres keycloak st-config mt-config pgadmin swagger-ui gateway
 # Preserve the actual deployed Keycloak image reference for update.sh after a later plain down.
 ./record-keycloak-image.sh
 docker compose -f docker-compose.yml -f keycloak.yml --env-file .env ps

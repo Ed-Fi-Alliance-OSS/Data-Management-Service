@@ -76,6 +76,7 @@ The single `&&` chain matters: if the fetch or switch fails, `update.sh` must no
 `--force` lets the fetch move a tag that was re-pointed upstream; without it the fetch fails with `would clobber existing tag`.
 
 `update.sh` pulls the images for the current `DMS_IMAGE_TAG` (`pre` by default) and recreates the changed containers.
+It then restarts the gateway and Swagger UI, because both read their mounted files only at container start; that is how a pulled route such as `/swagger/` takes effect.
 The Configuration Service applies its database migrations at startup.
 If a config service stays unhealthy, `./logs.sh st-config` (or `mt-config`) names the migration that failed.
 

@@ -6,7 +6,7 @@
 # the relational schema already exist. For a FIRST-TIME stand-up the DMS services start AFTER bootstrap +
 # schema, so use provision/setup-env.ps1 (or pass an explicit subset -- note --no-deps, without
 # which `gateway` pulls the DMS services up via depends_on):
-#   ./up.sh --no-deps postgres keycloak st-config mt-config pgadmin gateway   # then bootstrap + schema
+#   ./up.sh --no-deps postgres keycloak st-config mt-config pgadmin swagger-ui gateway   # then bootstrap + schema
 #   ./up.sh st-dms mt-dms                                                      # finally the DMS services
 # Extra args are passed through to `docker compose up` (e.g. a single service name).
 set -euo pipefail
@@ -115,7 +115,7 @@ if [ "$#" -eq 0 ]; then
   echo "Stopping DMS services before dependency restart/update..."
   "${compose[@]}" stop st-dms mt-dms
   echo "Starting infrastructure before DMS..."
-  "${compose[@]}" up -d --no-deps postgres keycloak st-config mt-config pgadmin gateway
+  "${compose[@]}" up -d --no-deps postgres keycloak st-config mt-config pgadmin swagger-ui gateway
   ./record-keycloak-image.sh
   wait_for_infrastructure
   echo "Starting DMS services..."
