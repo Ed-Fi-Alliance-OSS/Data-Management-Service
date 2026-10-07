@@ -98,6 +98,77 @@ and initial client.
     }
     ```
 
+## Token revocation through the Configuration Service
+
+With `AppSettings:IdentityProvider = keycloak`, `POST /connect/revoke` on the Configuration
+Service revokes at Keycloak. Before delegating, CMS reads the caller's client definition
+through the Keycloak Admin REST API to confirm the caller is a confidential, non-bearer-only
+client (Keycloak itself accepts a public client without checking any secret). The behaviour
+and response contract are described in
+[CS-AUTH.md § Token revocation](../../reference/design/configuration-service/CS-AUTH.md#token-revocation).
+Keycloak needs the following for this to work:
+
+- **`view-clients` for the Configuration Service client.** The client-type read uses the
+  Configuration Service's own credentials (`IdentitySettings:ClientId` /
+  `IdentitySettings:ClientSecret`), so its service account needs the `realm-management`
+  client role `view-clients`. The `realm-admin` role that `setup-keycloak.ps1` assigns to
+  `DmsConfigurationService` (and that the manual setup above assigns) includes it. If you
+  grant the service account narrower roles, include `view-clients`. Without it, every
+  revocation is answered `503 temporarily_unavailable`, and the CMS log says the
+  Configuration Service client lacks permission to read clients in the realm.
+- **Confidential clients.** Only a confidential client (`Client authentication` on) can
+  revoke. Public and bearer-only clients are refused with `invalid_client`.
+- **TLS and `sslRequired`.** CMS sends the caller's client secret and the token to the base
+  URL derived from `IdentitySettings:Authority` (everything before `/realms/`). Outside
+  local development that must be an `https` URL. The local Docker stack uses
+  `http://dms-keycloak:8080` on the Docker network, which works because the realm's
+  `Require SSL` setting (`sslRequired`) is `external requests` (the default; private
+  addresses may use HTTP). With `all requests`, Keycloak answers every plain-HTTP revocation
+  `403` "HTTPS required", and CMS answers `503`. CMS does not follow redirects on the
+  revocation request, so the base URL must be one Keycloak answers on directly: a redirect,
+  an HTTP-to-HTTPS redirect included, is answered `503`.
+- **Timeouts.** The client-type read, the revocation request and the reading of an error
+  response each get their own `AppSettings:TokenRequestTimeoutSeconds` window, so a slow
+  Keycloak can hold a revocation for up to three times that setting before CMS answers `503`.
+- **Changing the Keycloak image.** CMS recognises Keycloak's answer for another client's token
+  by its exact text (`400 invalid_request` "Unmatching clients") and answers it `200`. After
+  changing the image, rerun `KeycloakRevocationCharacterizationTests` (CMS E2E, Keycloak
+  stack) and confirm that answer is unchanged; if the text changed, revoking another client's
+  token is answered `400` instead of `200`.
+
+### Confirming a revocation at Keycloak
+
+A `200 OK` from `/connect/revoke` does not prove the token was revoked (RFC 7009 answers
+`200` for unknown and foreign tokens too), and CMS `/connect/introspect` cannot observe
+Keycloak tokens. Confirm through Keycloak's introspection endpoint,
+`POST http://localhost:8045/realms/edfi/protocol/openid-connect/token/introspect`, with
+`token=<the token>` and the credentials of a **confidential** client:
+
+- Introspect access tokens with a client that is in the token's audience (`aud`). From
+  Keycloak 26.4.12 (per the Red Hat build of Keycloak 26.4 migration guide; observed on
+  26.7.5, not on the pinned 26.1.4), any other client is answered `active:false` for a live
+  token. The mapper goes on the clients whose tokens you observe, not on the introspecting
+  client:
+
+  1. Create a client scope (or use each observed client's `<client>-dedicated` scope) and
+     add an `Audience` mapper by configuration, with *Included Client Audience* set to the
+     introspecting client and *Add to access token* and *Add to token introspection* on.
+  2. Assign that client scope as a **Default** scope to every client whose tokens you need
+     to observe.
+  3. Request new tokens. Only tokens issued after the change carry the audience; a token
+     issued before it keeps its original `aud` and still answers `active:false`.
+
+  The CMS end-to-end tests set up their observer client the same way (a per-run client
+  scope with an audience mapper for the observer, assigned as a default scope to the
+  observed clients).
+- Introspect refresh tokens with the client they were issued to, passing
+  `token_type_hint=refresh_token`.
+- A public client cannot introspect (`403` "Client not allowed."); observe its tokens with a
+  confidential client.
+
+A revoked token reports `active:false`. CMS and DMS validate Keycloak tokens locally, so they
+keep accepting a revoked token until it expires (plus their clock skew).
+
 ## Shutting down the Keycloak container
 
 If you want to shut down the container you can use the -d parameter and if you

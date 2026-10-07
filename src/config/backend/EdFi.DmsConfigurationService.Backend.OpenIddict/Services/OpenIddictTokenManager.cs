@@ -25,6 +25,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
     /// Uses IOpenIddictTokenRepository for database operations to support multiple database providers.
     /// Verification keys come from the shared signing-key snapshot (DMS-1556 D-1), never from a per-call key read, and the
     /// development certificate is obtained from the shared <see cref="DevelopmentCertificateStore"/> (D-10).
+    /// Revocation is the one exception: it verifies against a per-call, read-only key load that fails closed on a
+    /// missing certificate or an unusable key row, where the snapshot would create the certificate or discard the row
+    /// (DMS-1327 D-07.4).
     /// </summary>
     public class OpenIddictTokenManager(
         IOptions<IdentityOptions> identityOptions,
@@ -182,7 +185,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
 
                 var (applicationInfo, credentialErrorCode) = await ValidateClientSecretAsync(
                     clientId,
-                    clientSecret
+                    clientSecret,
+                    preserveVerificationFailures: false
                 );
 
                 if (applicationInfo == null)
@@ -310,23 +314,329 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             }
         }
 
+        private const string ClientAuthenticationBoundary = "client-authentication";
+        private const string SigningKeyRetrievalBoundary = "signing-key-retrieval";
+        private const string SigningKeyImportBoundary = "signing-key-import";
+        private const string NoActiveSigningKeysBoundary = "no-active-signing-keys";
+        private const string SigningCertificateMissingBoundary = "signing-certificate-missing";
+        private const string SigningCertificateNoRsaKeyBoundary = "signing-certificate-no-rsa-key";
+        private const string TokenMutationBoundary = "token-mutation";
+
         /// <summary>
-        /// Authenticates a client_id/client_secret pair for RFC 7009 revocation requests, using
-        /// the same lookup and hash comparison as <see cref="GetAccessTokenAsync"/> so the two
-        /// call sites can never drift on what counts as a valid client secret. Returns the
-        /// stored canonical <c>client_id</c>, which is what tokens are minted from and therefore
-        /// what the ownership comparison must be given.
+        /// RFC 7009 revocation for the self-contained provider (DMS-1327 D-07). The order is
+        /// authenticate, load verification keys, verify, compare ownership, mutate. Authentication
+        /// runs before the token is looked at, so an invalid or unknown token can never hide an
+        /// authentication failure. Each dependency call is wrapped at its own boundary and a
+        /// failure there is classified as <see cref="TokenRevocationResult.TemporarilyUnavailable"/>,
+        /// never answered as a token outcome; the comparison and parsing logic between the
+        /// boundaries is deliberately not wrapped, so a fault there propagates as an exception
+        /// rather than being relabelled as an outage (D-13.1). Nothing from the caller or a
+        /// dependency exception reaches a log on this path except the sanitized canonical client
+        /// id and exception type names (D-15).
         /// </summary>
-        public async Task<string?> AuthenticateClientAsync(string clientId, string clientSecret)
+        public async Task<TokenRevocationResult> RevokeTokenAsync(
+            TokenRevocationRequest request,
+            CancellationToken cancellationToken
+        )
         {
-            if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret))
+            if (
+                string.IsNullOrWhiteSpace(request.ClientId) || string.IsNullOrWhiteSpace(request.ClientSecret)
+            )
             {
-                return null;
+                return new TokenRevocationResult.InvalidClient();
             }
 
-            var (applicationInfo, _) = await ValidateClientSecretAsync(clientId, clientSecret);
-            return applicationInfo is null ? null : CanonicalClientId(applicationInfo, clientId);
+            ApplicationInfo? applicationInfo;
+            try
+            {
+                (applicationInfo, _) = await ValidateClientSecretAsync(
+                    request.ClientId,
+                    request.ClientSecret,
+                    preserveVerificationFailures: true
+                );
+            }
+            catch (Exception ex) when (!IsCallerCancellation(ex, cancellationToken))
+            {
+                return Unavailable(ClientAuthenticationBoundary, ex);
+            }
+
+            if (applicationInfo is null)
+            {
+                return new TokenRevocationResult.InvalidClient();
+            }
+
+            // Tokens are minted from the stored canonical id, so that is what the ownership
+            // comparison must be given, not the caller's own spelling (DMS-1478).
+            string callerClientId = CanonicalClientId(applicationInfo, request.ClientId);
+
+            IDictionary<string, SecurityKey> verificationKeys;
+            try
+            {
+                VerificationKeys loaded = await LoadVerificationKeysAsync();
+                if (loaded.Keys is null)
+                {
+                    return new TokenRevocationResult.TemporarilyUnavailable(loaded.UnavailableReason);
+                }
+
+                verificationKeys = loaded.Keys;
+            }
+            catch (Exception ex) when (!IsCallerCancellation(ex, cancellationToken))
+            {
+                return Unavailable(SigningKeyRetrievalBoundary, ex);
+            }
+
+            // Verify before trusting any claim: an unverified client_id could be forged to name
+            // the caller while carrying a victim's jti. ValidateTokenAsync is not reused because
+            // its "valid" status gate would break RFC 7009 re-revocation idempotency.
+            TokenVerification verification = VerifyToken(request.Token, verificationKeys);
+            if (verification.Token is not { } jwtToken)
+            {
+                LogRevocationVerificationFailure(verification.Failure, callerClientId);
+                return new TokenRevocationResult.Completed();
+            }
+
+            string? tokenClientId = jwtToken
+                .Claims.FirstOrDefault(x => x.Type == SecurityConstants.ClientIdClaimType)
+                ?.Value;
+            if (!TokenBelongsToCaller(tokenClientId, callerClientId))
+            {
+                // Debug, not Warning: an expected no-op any authenticated caller can trigger at
+                // will, so a higher level would let them flood a severity operators alert on.
+                _logger.LogDebug(
+                    "Revocation ignored: the supplied token does not belong to the calling client {CallerClientId}",
+                    LoggingUtility.SanitizeForLog(callerClientId)
+                );
+                return new TokenRevocationResult.Completed();
+            }
+
+            string? jti = jwtToken.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
+            if (!Guid.TryParse(jti, out Guid tokenId))
+            {
+                _logger.LogDebug(
+                    "Revocation ignored: the supplied token carries no usable jti; calling client {CallerClientId}",
+                    LoggingUtility.SanitizeForLog(callerClientId)
+                );
+                return new TokenRevocationResult.Completed();
+            }
+
+            try
+            {
+                // The stored application Id, not the client id, is the token's foreign key; the
+                // UPDATE re-checks it so ownership holds even if the claim check were bypassed.
+                bool changed = await _tokenRepository.RevokeTokenAsync(tokenId, applicationInfo.Id);
+                _logger.LogDebug(
+                    "Revocation for client {CallerClientId} {Outcome}",
+                    LoggingUtility.SanitizeForLog(callerClientId),
+                    changed
+                        ? "revoked the token"
+                        : "changed no row (unknown, already revoked, or stored for another application)"
+                );
+                return new TokenRevocationResult.Completed();
+            }
+            catch (Exception ex) when (!IsCallerCancellation(ex, cancellationToken))
+            {
+                return Unavailable(TokenMutationBoundary, ex);
+            }
         }
+
+        /// <summary>
+        /// Ordinal (case-sensitive) on purpose: a case-insensitive comparison would make the
+        /// ownership boundary depend on the deployed engine's collation, since Postgres is
+        /// case-sensitive and SQL Server is not by default (DMS-1478). Virtual only so a test can
+        /// inject a fault here and prove that comparison logic is not wrapped as an outage.
+        /// </summary>
+        protected virtual bool TokenBelongsToCaller(string? tokenClientId, string callerClientId) =>
+            string.Equals(tokenClientId, callerClientId, StringComparison.Ordinal);
+
+        private static bool IsCallerCancellation(Exception exception, CancellationToken cancellationToken) =>
+            exception is OperationCanceledException && cancellationToken.IsCancellationRequested;
+
+        /// <summary>
+        /// Classifies a dependency failure at one boundary. The exception object is deliberately
+        /// not handed to the logger: its message may carry anything a dependency put there, so only
+        /// the chain of exception type names is recorded (D-15 rule 1).
+        /// </summary>
+        private TokenRevocationResult Unavailable(string boundary, Exception exception)
+        {
+            _logger.LogError(
+                "Revocation could not be completed: {Boundary} failed ({ExceptionTypes})",
+                boundary,
+                ExceptionTypeChain(exception)
+            );
+            return new TokenRevocationResult.TemporarilyUnavailable(boundary);
+        }
+
+        private static string ExceptionTypeChain(Exception exception)
+        {
+            var names = new List<string>();
+            for (Exception? current = exception; current is not null; current = current.InnerException)
+            {
+                names.Add(current.GetType().FullName ?? current.GetType().Name);
+            }
+
+            return string.Join(" -> ", names);
+        }
+
+        /// <summary>
+        /// Fixed-category logging for a revocation target that failed verification (D-07.5). The
+        /// validator's <c>Detail</c> is not written here because it incorporates library exception
+        /// messages and the token's unverified <c>kid</c>, neither of which is known to be free of
+        /// attacker-chosen content. Severities match <see cref="LogVerificationFailure"/>.
+        /// </summary>
+        private void LogRevocationVerificationFailure(TokenVerificationFailure failure, string callerClientId)
+        {
+            string sanitizedCaller = LoggingUtility.SanitizeForLog(callerClientId);
+            switch (failure)
+            {
+                case TokenVerificationFailure.Expired:
+                    _logger.LogDebug(
+                        "Revocation ignored: the supplied token failed the lifetime check (token expired); calling client {CallerClientId}",
+                        sanitizedCaller
+                    );
+                    break;
+
+                case TokenVerificationFailure.UntrustedIssuerOrAudience:
+                    _logger.LogWarning(
+                        "Revocation ignored: the supplied token failed the issuer or audience check; verify the configured Authority "
+                            + "and Audience if this affects every token; calling client {CallerClientId}",
+                        sanitizedCaller
+                    );
+                    break;
+
+                default:
+                    _logger.LogWarning(
+                        "Revocation ignored: the supplied token failed verification (signature or key id); calling client {CallerClientId}",
+                        sanitizedCaller
+                    );
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Verification keys for the revocation path, or the reason none can be offered. Unlike
+        /// the signing-key snapshot, which serves the JWKS endpoint and the bearer path and
+        /// discards individual bad keys, this loader swallows nothing: a
+        /// repository or certificate failure propagates to the caller's boundary catch, and an
+        /// empty key set or a key record that cannot be imported is reported as unavailable, so a
+        /// healthy-looking "unknown token" 200 can never mask a signing-key problem (D-07.4).
+        /// </summary>
+        private async Task<VerificationKeys> LoadVerificationKeysAsync()
+        {
+            if (_identityOptions.Value.UseCertificates)
+            {
+                return LoadCertificateVerificationKeys();
+            }
+
+            var keyRecords = (
+                await _tokenRepository.GetActivePublicKeysAsync(CancellationToken.None)
+            ).ToList();
+            if (keyRecords.Count == 0)
+            {
+                _logger.LogError(
+                    "Revocation could not be completed: the OpenIddictKey table holds no active public key"
+                );
+                return new VerificationKeys(null, NoActiveSigningKeysBoundary);
+            }
+
+            var keys = new Dictionary<string, SecurityKey>();
+            foreach (var record in keyRecords)
+            {
+                PublicKeyFormat keyFormat = PublicKeyMaterialParser.DetectFormat(record.PublicKey, _logger);
+                if (keyFormat == PublicKeyFormat.Unknown)
+                {
+                    _logger.LogError(
+                        "Revocation could not be completed: active public key {KeyId} is in no recognised format",
+                        LoggingUtility.SanitizeForLog(record.KeyId)
+                    );
+                    return new VerificationKeys(null, SigningKeyImportBoundary);
+                }
+
+                try
+                {
+                    keys[record.KeyId] = new RsaSecurityKey(
+                        PublicKeyMaterialParser.ImportPublicParameters(record.PublicKey, keyFormat)
+                    );
+                }
+                catch (Exception ex)
+                {
+                    return KeyImportUnavailable(record.KeyId, ex);
+                }
+            }
+
+            return new VerificationKeys(keys, string.Empty);
+        }
+
+        /// <summary>
+        /// The signing certificate's public key for the revocation path, read-only. Unlike
+        /// <see cref="DevelopmentCertificateStore"/>, which the snapshot and issuance use and which
+        /// creates the development certificate when the file is missing, this never creates or
+        /// replaces anything: a replacement would hold an unrelated key, every outstanding token
+        /// would then fail verification against it, and revocation would answer an empty 200 while
+        /// revoking nothing (D-07.4). A missing or unconfigured certificate is therefore
+        /// <see cref="TokenRevocationResult.TemporarilyUnavailable"/>; a certificate that exists but
+        /// cannot be read (wrong password, corrupt file) throws to the caller's boundary catch.
+        /// </summary>
+        private VerificationKeys LoadCertificateVerificationKeys()
+        {
+            IdentityOptions options = _identityOptions.Value;
+            bool development = options.UseDevelopmentCertificates;
+            string certificatePath = development ? options.DevCertificatePath : options.CertificatePath;
+            string certificatePassword = development
+                ? options.DevCertificatePassword
+                : options.CertificatePassword;
+
+            if (string.IsNullOrEmpty(certificatePath) || !System.IO.File.Exists(certificatePath))
+            {
+                _logger.LogError(
+                    "Revocation could not be completed: the configured {CertificateKind} signing certificate does not exist; "
+                        + "revocation never creates one",
+                    development ? "development" : "production"
+                );
+                return new VerificationKeys(null, SigningCertificateMissingBoundary);
+            }
+
+            // Same loading rules as CertificateSigningKeySource and the signing side.
+            using X509Certificate2 certificate =
+                development || !string.IsNullOrEmpty(certificatePassword)
+                    ? X509CertificateLoader.LoadPkcs12FromFile(certificatePath, certificatePassword)
+                    : X509CertificateLoader.LoadCertificateFromFile(certificatePath);
+            using RSA? publicKey = certificate.GetRSAPublicKey();
+            if (publicKey is null)
+            {
+                _logger.LogError(
+                    "Revocation could not be completed: the configured signing certificate carries no RSA public key"
+                );
+                return new VerificationKeys(null, SigningCertificateNoRsaKeyBoundary);
+            }
+
+            return new VerificationKeys(
+                new Dictionary<string, SecurityKey>
+                {
+                    [certificate.Thumbprint] = new RsaSecurityKey(publicKey.ExportParameters(false)),
+                },
+                string.Empty
+            );
+        }
+
+        /// <summary>
+        /// A stored key that could not be imported. As in <see cref="Unavailable"/>, the exception
+        /// object is not handed to the logger; only its type chain and the sanitized key id are.
+        /// </summary>
+        private VerificationKeys KeyImportUnavailable(string keyId, Exception exception)
+        {
+            _logger.LogError(
+                "Revocation could not be completed: active public key {KeyId} could not be imported ({ExceptionTypes})",
+                LoggingUtility.SanitizeForLog(keyId),
+                ExceptionTypeChain(exception)
+            );
+            return new VerificationKeys(null, SigningKeyImportBoundary);
+        }
+
+        /// <summary>Either a usable key set, or the boundary label explaining why there is none.</summary>
+        private sealed record VerificationKeys(
+            IDictionary<string, SecurityKey>? Keys,
+            string UnavailableReason
+        );
 
         /// <summary>
         /// The client's stored spelling of its own id, falling back to the requested spelling
@@ -347,9 +657,18 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// (potentially hashed) value. Returns a null application on failure along with the OAuth
         /// error code that describes why.
         /// </summary>
+        /// <param name="preserveVerificationFailures">
+        /// <c>false</c> for the token endpoint, which keeps the hasher's established behaviour of
+        /// answering a verification failure as a mismatch. <c>true</c> for revocation (DMS-1327
+        /// D-07 step 2): when the hasher offers <see cref="IFailurePreservingSecretVerifier"/>, a
+        /// failure that prevents the comparison propagates to the caller's boundary catch instead
+        /// of being reported as wrong credentials. Catching around a dependency is not enough when
+        /// the dependency suppresses its own failures.
+        /// </param>
         private async Task<(ApplicationInfo? Application, string ErrorCode)> ValidateClientSecretAsync(
             string clientId,
-            string clientSecret
+            string clientSecret,
+            bool preserveVerificationFailures
         )
         {
             var applicationInfo = await _tokenRepository.GetApplicationByClientIdAsync(clientId);
@@ -358,10 +677,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 return (null, "invalid_client");
             }
 
-            var isValidSecret = await _secretHasher.VerifySecretAsync(
-                clientSecret,
-                applicationInfo.ClientSecret ?? string.Empty
-            );
+            string storedSecret = applicationInfo.ClientSecret ?? string.Empty;
+            var isValidSecret =
+                preserveVerificationFailures && _secretHasher is IFailurePreservingSecretVerifier verifier
+                    ? await verifier.VerifySecretPreservingFailuresAsync(clientSecret, storedSecret)
+                    : await _secretHasher.VerifySecretAsync(clientSecret, storedSecret);
             if (!isValidSecret)
             {
                 return (null, "unauthorized_client");
@@ -436,8 +756,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// <c>kid</c> the snapshot lacks gets one gated unknown-key refresh first (spec §4.4);
         /// when that refresh is refused or finds nothing, verification fails as for any unknown key.
         ///
-        /// Shared by <see cref="ValidateTokenAsync"/> and <see cref="RevokeTokenAsync"/>, which
-        /// apply different database status gates afterwards — do not move a status check in here.
+        /// The bearer path's verification. <see cref="RevokeTokenAsync"/> shares
+        /// <see cref="VerifyToken"/> but not this key source: it verifies against
+        /// <see cref="LoadVerificationKeysAsync"/> (DMS-1327 D-07.4). The two apply different
+        /// database status gates afterwards — do not move a status check into either.
         /// </summary>
         /// <exception cref="SigningKeysUnavailableException">No usable snapshot exists.</exception>
         private async Task<TokenVerification> VerifyTokenAsync(string rawToken)
@@ -455,6 +777,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 entry => entry.CreateSecurityKey()
             );
 
+            return VerifyToken(rawToken, signingKeys);
+        }
+
+        private TokenVerification VerifyToken(string rawToken, IDictionary<string, SecurityKey> signingKeys)
+        {
             var verification = JwtTokenValidator.ValidateToken(
                 rawToken,
                 signingKeys,
@@ -621,71 +948,6 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             catch (Exception ex) when (ex is not AuthenticationDependencyUnavailableException)
             {
                 _logger.LogWarning(ex, "Token validation failed");
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Revokes a token by setting its status to 'revoked', but only when the token belongs to
-        /// the calling client. Anything else is a no-op returning false. See
-        /// reference/design/configuration-service/CS-AUTH.md for the rationale.
-        /// </summary>
-        public async Task<bool> RevokeTokenAsync(string token, string callerClientId)
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(callerClientId))
-                {
-                    _logger.LogWarning("Revocation ignored: the caller presented no client_id claim");
-                    return false;
-                }
-
-                // Verify before trusting any claim: an unverified client_id could be forged to
-                // name the caller while carrying a victim's jti. ValidateTokenAsync is not reused
-                // because its "valid" status gate would break RFC 7009 re-revocation idempotency.
-                var verification = await VerifyTokenAsync(token);
-                if (verification.Token is not { } jwtToken)
-                {
-                    LogVerificationFailure("Revocation ignored: the supplied token failed", verification);
-                    return false;
-                }
-
-                string? tokenClientId = jwtToken
-                    .Claims.FirstOrDefault(x => x.Type == SecurityConstants.ClientIdClaimType)
-                    ?.Value;
-
-                // Ordinal (case-sensitive) on purpose: a case-insensitive comparison would make
-                // the ownership boundary depend on the deployed engine's collation, since
-                // Postgres is case-sensitive and SQL Server is not by default.
-                if (!string.Equals(tokenClientId, callerClientId, StringComparison.Ordinal))
-                {
-                    // Debug, not Warning: an expected no-op any authenticated caller can trigger
-                    // at will, so a higher level would let them flood a severity operators alert on.
-                    _logger.LogDebug(
-                        "Revocation ignored: the supplied token does not belong to the calling client {CallerClientId}",
-                        LoggingUtility.SanitizeForLog(callerClientId)
-                    );
-                    return false;
-                }
-
-                var jti = jwtToken.Claims.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
-
-                if (!string.IsNullOrEmpty(jti))
-                {
-                    return await _tokenRepository.RevokeTokenAsync(Guid.Parse(jti));
-                }
-
-                return false;
-            }
-            catch (AuthenticationDependencyUnavailableException ex)
-            {
-                // RFC 7009 answers 200 whatever happens, so the category is logged here or it is lost.
-                _logger.LogError(ex, "Failed to revoke token: the {Category} is unavailable", ex.Category);
-                return false;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to revoke token");
                 return false;
             }
         }

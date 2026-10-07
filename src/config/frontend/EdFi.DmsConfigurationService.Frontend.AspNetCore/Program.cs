@@ -103,6 +103,13 @@ app.UseMiddleware<TenantResolutionMiddleware>();
 // make the behavior untestable under WebApplicationFactory.
 _ = app.Services.GetRequiredService<IOptions<DatabaseOptions>>().Value;
 
+// After the plugin audit, so a plugin registration the host refuses is reported as one first, and after
+// DatabaseOptions, because the self-contained manager's repository reads those options when it is
+// constructed: a rejected key must stop startup with the validator's text, not as a manager that could
+// not be constructed. Before ReportInvalidConfiguration and the database work, so a host that cannot
+// revoke tokens never starts serving (DMS-1327 D-12).
+EnsureTokenRevocationSupport(app);
+
 if (!ReportInvalidConfiguration(app))
 {
     InitializeDatabase(app);
@@ -110,6 +117,11 @@ if (!ReportInvalidConfiguration(app))
 }
 
 app.UseRouting();
+
+// Immediately after routing, the first point the route is known, and inside UseExceptionHandler: a route
+// whose exception content is not under CMS control has that content withheld before the framework's
+// exception middleware can log it, endpoint parameter binding included (DMS-1327 D-15, D-17).
+app.UseMiddleware<ExceptionContentBoundaryMiddleware>();
 
 // Shape framework-generated bodiless error responses into the Ed-Fi contract. Placed after routing
 // but before CORS/authentication/authorization so it wraps the auth short-circuits and the endpoint
@@ -207,6 +219,77 @@ async Task AbortOnPluginRegistrationProblems(IReadOnlyList<string> problems, Exc
         activationException
     );
 }
+
+/// <summary>
+/// Stops startup unless an ITokenRevocationManager can be constructed for the configured identity
+/// provider, so POST /connect/revoke can never be served by a host that cannot revoke (DMS-1327 D-12).
+/// Construction only: neither manager performs I/O in its constructor, so this adds no database or
+/// identity provider availability requirement; a provider outage is answered 503 per request instead.
+/// </summary>
+/// <remarks>
+/// A construction failure is reported by exception type names alone, and the caught exception is
+/// neither logged nor wrapped: a registration factory can come from a plugin, and its message can carry
+/// anything, a connection string or a secret included (D-15).
+/// </remarks>
+void EnsureTokenRevocationSupport(WebApplication app)
+{
+    string provider = TokenRevocationProviderName(app.Configuration["AppSettings:IdentityProvider"]);
+    Exception? constructionFailure = null;
+    ITokenRevocationManager? revocationManager = null;
+
+    try
+    {
+        // In a scope: the Keycloak manager depends on the scoped KeycloakContext, and the root provider
+        // rejects scoped services when scope validation is on. Releasing the scope is inside the try
+        // too, because it runs the disposal of whatever the registration constructed.
+        using IServiceScope scope = app.Services.CreateScope();
+        revocationManager = scope.ServiceProvider.GetService<ITokenRevocationManager>();
+    }
+    catch (Exception exception)
+    {
+        constructionFailure = exception;
+    }
+
+    if (constructionFailure is not null)
+    {
+        string exceptionTypes = ExceptionTypeNames.Chain(constructionFailure);
+        app.Logger.LogCritical(
+            "The token revocation manager for AppSettings:IdentityProvider '{Provider}' could not be "
+                + "constructed ({ExceptionTypes}). Correct the registration or its dependencies, then restart.",
+            provider,
+            exceptionTypes
+        );
+        throw new InvalidOperationException(
+            $"The token revocation manager for AppSettings:IdentityProvider '{provider}' could not be "
+                + $"constructed ({exceptionTypes}). Correct the registration or its dependencies, then restart."
+        );
+    }
+
+    if (revocationManager is null)
+    {
+        app.Logger.LogCritical(
+            "No token revocation manager is registered for AppSettings:IdentityProvider '{Provider}'. "
+                + "Register one for this provider or correct the setting, then restart.",
+            provider
+        );
+        throw new InvalidOperationException(
+            $"No token revocation manager is registered for AppSettings:IdentityProvider '{provider}'. "
+                + "Register one for this provider or correct the setting, then restart."
+        );
+    }
+}
+
+/// <summary>
+/// The configured identity provider as a fixed literal, so the startup check never logs configuration
+/// text. AddServices has already refused any other value by the time the check runs.
+/// </summary>
+static string TokenRevocationProviderName(string? configured) =>
+    configured?.ToLowerInvariant() switch
+    {
+        "keycloak" => "keycloak",
+        "self-contained" => "self-contained",
+        _ => "unrecognized",
+    };
 
 /// <summary>
 /// Triggers configuration validation. If configuration is invalid, injects a short-circuit middleware to report.

@@ -26,131 +26,397 @@ The CMS exposes standard OAuth 2.0 endpoints:
 |---|---|---|
 | `POST /connect/token` | Issue an access token (client credentials grant only) | Anonymous (client credentials in the request) |
 | `POST /connect/introspect` | Introspect a token (RFC 7662) | Anonymous |
-| `POST /connect/revoke` | Revoke a token (RFC 7009) | Client credentials (HTTP Basic or form body), same as `/connect/token` [^revoke] |
+| `POST /connect/revoke` | Revoke a token (RFC 7009) | Client credentials (HTTP Basic or form body, exactly one of them) [^revoke] |
 
 [^revoke]: RFC 7009 §2.1 requires the revocation caller to authenticate the same
-way it authenticates to the token endpoint (RFC 6749 §2.3) — client credentials,
-not a bearer access token. This is checked, and enforced, only in `self-contained`
-mode; revocation itself only happens there too. In `keycloak` mode `/connect/revoke`
-is an unauthenticated no-op that returns `200 OK` and revokes nothing. See
-[Which provider modes actually perform the check](#which-provider-modes-actually-perform-the-check).
+way it authenticates to the token endpoint (RFC 6749 §2.3), with client credentials
+and not a bearer access token. Both identity provider modes enforce it and both revoke:
+`self-contained` in the CMS token store, `keycloak` by delegating to Keycloak. See
+[Token revocation](#token-revocation).
 
 In `self-contained` mode, `/connect/token` also accepts credentials via HTTP
 Basic authentication in addition to the form body.
 
-### Revocation Is Authenticated and Ownership-Checked
+## Token revocation
 
-`POST /connect/revoke` requires the caller to authenticate with client
-credentials — `client_id`/`client_secret`, via HTTP Basic auth or form fields,
-exactly as `/connect/token` accepts them. This is not the ownership check below;
-it just establishes who is asking. It is deliberately **not** a bearer access
-token: the token named in the `token` field is the one being revoked, so it
-cannot double as proof of the caller's identity without letting a client revoke
-itself using the very credential that gets invalidated by the call, and RFC 7009
-does not permit it regardless. `AuthenticateClientAsync` on
-`ITokenRevocationManager` authenticates the pair by reusing the same
-application lookup and secret-hash comparison `/connect/token` uses, so the two
-call sites cannot drift on what counts as a valid secret. It returns the
-client's **stored** `client_id` rather than a bare success flag; see
-[Client id casing](#client-id-casing) for why that distinction is load-bearing.
-Missing or invalid client credentials return `401 Unauthorized` in the RFC 6749
-§5.2 **OAuth error format** — `application/json` with `error` and
-`error_description` as top-level members — plus a `WWW-Authenticate: Basic`
-challenge when the caller used the `Authorization` header:
+`POST /connect/revoke` authenticates the caller, then revokes the named token only if
+it belongs to that caller. The design, its evidence and the per-step verification are in
+[DMS-1327](./DMS-1327-cms-token-revocation.md); this section is the operator and client
+reference.
+
+### Two credentials per request
+
+Two distinct credentials are in play on every revocation request, and they are easy to
+conflate. The **caller's** `client_id`/`client_secret` (HTTP Basic or form fields)
+establishes *who is asking*. The **target** token, in the `token` form field, is *what
+gets revoked*. The caller is deliberately **not** authenticated by a bearer access token:
+the target token cannot double as proof of identity without letting anyone who holds a
+token revoke it, and RFC 7009 does not permit it regardless. A `Bearer` (or any other
+non-Basic) `Authorization` header grants nothing on this endpoint and is ignored.
+
+```http
+POST /connect/revoke HTTP/1.1
+# Authorization identifies the caller by client credentials, not the token being revoked.
+Authorization: Basic base64(form-encoded client_id ":" form-encoded client_secret)
+Content-Type: application/x-www-form-urlencoded
+
+# The token form field is what gets revoked; its owner is compared with the caller.
+token=eyJ...TARGET&token_type_hint=access_token
+```
+
+A client revoking one of its *other* outstanding tokens (rotating a leaked credential
+while keeping its current session alive, for example) names that token and succeeds. A
+client naming a token issued to a different client gets `200 OK` and nothing is revoked.
+
+### Request rules
+
+The endpoint checks the request in a fixed order and the first failure answers, so a
+request-shape problem is never hidden behind an authentication result, and an
+authentication failure is never hidden behind a token outcome:
+
+1. The body must be `application/x-www-form-urlencoded` and parse as a form. Its encoding must
+   be well formed: every `%` starts a two-hex-digit escape (a literal `%` is sent as `%25`), and
+   every name and value decodes to valid UTF-8. A `charset` parameter, if present, must name
+   UTF-8; any other charset is refused with `400 invalid_request`.
+2. `token`, `token_type_hint`, `client_id` and `client_secret` may each appear at most
+   once, and the `Authorization` header at most once.
+3. **Exactly one** client authentication mechanism. A request that attempts HTTP Basic
+   and also carries a `client_id` or `client_secret` form key (even an empty one) is
+   refused before the Basic value is parsed. Keycloak would let a form `client_id`
+   override the Basic header, so CMS never forwards a choice of identities.
+4. `token` must be present and non-empty.
+5. Client authentication: a malformed Basic value, or incomplete form credentials, fails
+   before any database or identity provider contact.
+
+**HTTP Basic decoding differs from `/connect/token`.** On `/connect/revoke` the Basic value
+is decoded per RFC 6749 §2.3.1, which has the client form-encode `client_id` and
+`client_secret`, join them with the first `:`, and base64-encode the result. CMS decodes
+each part as a form value:
+
+- `+` decodes to a space and `%XX` to the byte it names, so `%2B` is a literal `+` and `%25`
+  a literal `%`. Every other character, raw non-ASCII UTF-8 included, is taken as it is.
+- The attempt is **malformed** (`401 invalid_client`, never repaired and never a fallback to
+  form credentials) when the base64 is not the standard alphabet with correct padding and no
+  embedded whitespace, when the decoded bytes or the bytes after percent decoding are not
+  valid UTF-8, when a `%` is not followed by two hex digits, when there is no `:`, when the
+  id or the secret is empty, or when anything other than one or more spaces separates
+  `Basic` from the value.
+
+`/connect/token` keeps its lenient parser, which uses `Uri.UnescapeDataString` and falls back to
+form fields when the Basic value cannot be decoded. For a secret sent without encoding, the two
+parsers agree or differ as follows:
+
+- **A literal `+`.** `/connect/token` keeps it; revocation decodes it to a space, compares a
+  different secret and answers `401 invalid_client`.
+- **A valid `%XX` sequence.** Both decode it to the character it names, so both compare the decoded
+  secret. A secret that really contains such a sequence must send its `%` as `%25` at either
+  endpoint.
+- **A `%` not followed by two hex digits.** `/connect/token` keeps it as it is; revocation treats
+  the attempt as malformed (`401 invalid_client`).
+
+Percent-encoding both values (`%2B` for `+`, `%25` for `%`, `%20` for a space) gives a header
+that decodes to the same credentials at both endpoints; raw non-ASCII characters need no encoding
+at either.
+
+`token_type_hint` accepts `access_token` and `refresh_token`. Any other value, including an
+empty one, is treated as no hint. A hint never blocks lookup and never changes
+authorization: `self-contained` ignores it, and `keycloak` forwards only the two recognised
+values (Keycloak's endpoint does not read it either).
+
+### Responses
+
+`200 OK` with an empty body is the only success. Every other status is an RFC 6749 §5.2
+JSON object served as `application/json`, with a **fixed** CMS `error_description` that
+never echoes provider text:
 
 ```json
 { "error": "invalid_client", "error_description": "Invalid client or Invalid client credentials" }
 ```
 
-This is the one place CMS does not answer in its usual
-`application/problem+json` contract, and the departure is deliberate:
-`/connect/revoke` is an OAuth endpoint, and an OAuth client reads `error` off the
-root of the body. Flattening the code into a sentence inside a problem-details
-`errors` array would put it somewhere no conforming client looks.
+| Condition | Response |
+|---|---|
+| Authenticated owner, supported live token | `200`, empty; token revoked |
+| Authenticated caller; unknown, invalid, expired, already revoked, or another client's token | `200`, empty; nothing changes |
+| Not a form body, malformed form, duplicated parameter or `Authorization` header, mixed mechanisms, missing or empty `token` | `400 invalid_request` |
+| Missing, incomplete or invalid credentials **without** an HTTP Basic attempt | `400 invalid_client` |
+| Malformed or invalid HTTP Basic credentials | `401 invalid_client` with `WWW-Authenticate: Basic realm="EdFi.DmsConfigurationService"` |
+| A Keycloak public or bearer-only client | `invalid_client` by the same rule: `401` with the challenge when it attempted HTTP Basic, `400` otherwise |
+| A token type the identity provider does not revoke (Keycloak: an ID token) | `400 unsupported_token_type`; reveals nothing about the token's owner |
+| Keycloak rejected the request shape for a reason CMS could not anticipate | `400 invalid_request` ("The identity provider rejected the revocation request.") |
+| Database or identity provider failure, timeout, or an unusable provider answer | `503 temporarily_unavailable` |
+| An unexpected fault in CMS | `500 server_error` |
 
-The failure is reported rather than masked as `200 OK` because RFC 7009's
-"always 200" guarantee covers whether a *token* is valid or owned, not whether
-the *caller* authenticated.
+A request without credentials and without `token` gets `400 invalid_request`, not an
+authentication error, because request shape is checked first. A public client is answered
+with the same `invalid_client` description as a wrong secret, so the response does not
+reveal the client's type.
 
-Once authenticated, a caller may only revoke a token that belongs to it. The
-token named in the `token` form field is first verified for signature, issuer,
-audience and lifetime, and its `client_id` claim is then compared to the
-canonical `client_id` that authentication resolved for the caller. Verification
-comes first on purpose: trusting an unverified `client_id` would let a caller
-forge a token naming itself while embedding another client's `jti`.
+This is the one CMS endpoint that does not answer in the `application/problem+json`
+contract of [DMS-1218](./DMS-1218-cms-error-response-compliance.md), and the departure is
+deliberate: `/connect/revoke` is an OAuth endpoint, and an OAuth client reads `error` off the
+root of the body. It covers every error the endpoint produces, including the missing-token
+`400` (which DMS-1218 had converted to problem details) and the `500` for an unexpected
+fault. Responses produced before the endpoint is selected (Kestrel request-line and header
+limits, TLS failures) are transport failures and keep their framework form.
 
-Two distinct credentials are in play on every revocation request, which is easy
-to conflate. The **caller's** `client_id`/`client_secret` (Basic auth or form
-fields) establishes *who is asking*; the **target** token is the one in the
-`token` form field and is *what gets revoked*. A client typically revokes its
-own currently-held access token, but the target can be any token that client
-was issued:
+The failure to authenticate is reported rather than masked as `200 OK` because RFC 7009's
+"always 200" rule covers whether a *token* is valid or owned, not whether the *caller*
+authenticated.
 
-```http
-POST /connect/revoke HTTP/1.1
-# Authorization identifies the caller by client credentials, not the token being revoked.
-Authorization: Basic base64(client_id:client_secret)
-Content-Type: application/x-www-form-urlencoded
+### Ownership
 
-# The token form field is what gets revoked; its client_id is the one compared.
-token=eyJ...TARGET
+**`self-contained`.** The caller is authenticated with the same application lookup and
+secret-hash comparison `/connect/token` uses (through a path that reports a hashing or
+configuration failure as `503` instead of a wrong secret). The target token is then
+verified for signature, issuer, audience and lifetime, and only then is its `client_id`
+claim compared, ordinally, with the caller's **stored canonical** `client_id`. Verification
+comes first on purpose: trusting an unverified `client_id` would let a caller forge a token
+naming itself while embedding another client's `jti`. The mutation itself is constrained by
+ownership as well:
+
+```sql
+UPDATE ... SET Status = 'revoked', RedemptionDate = <now>
+ WHERE Id = @jti AND ApplicationId = @callerApplicationId AND Status <> 'revoked'
 ```
 
-A client revoking one of its *other* outstanding tokens (say, rotating a leaked
-credential while keeping its current session alive) authenticates with its
-client credentials and names a different target token minted for the same
-`client_id`, and the revocation succeeds. A client supplying a target token
-minted for a different `client_id` gets `200 OK` and no revocation.
+so a token stored for another application is never changed even if the claim comparison
+were bypassed, and a second revocation keeps the original `RedemptionDate`.
 
-When the caller has authenticated but the target token cannot be verified,
-carries no `client_id`, or belongs to a different client, nothing is revoked and
-the response is still `200 OK`. Per RFC 7009 this is indistinguishable from
-revoking an unknown token, so the response reveals nothing about whether the
-token exists or who owns it. Only a missing `token` form field returns
-`400 Bad Request`. This request-shape check runs before client authentication
-and before the provider-mode branch, so it applies even to an unauthenticated
-caller or in `keycloak` mode: a caller with no credentials and no `token` field
-gets `400`, not `401`.
+Because verification includes the lifetime check, a target token already past its `exp`
+(plus the validator's 5-minute clock skew) is a no-op. An expired token is already rejected
+everywhere else. A practical consequence for anyone reading the `dmscs.OpenIddictToken`
+table or an admin status view directly: an expired token keeps its stored status (typically
+`valid`), so "not `revoked`" in the table does not imply "still usable".
 
-Because verification includes the lifetime check, a target token already past its
-`exp` (plus the validator's clock-skew allowance) is also a no-op. This is a
-deliberate narrowing: revocation previously parsed the target token without
-verifying it and would revoke an expired token by `jti`. An expired token is
-already rejected everywhere else, so there is nothing left to revoke. A practical
-consequence for anyone reading the `dmscs.OpenIddictToken` table or an admin status
-view directly: an expired token keeps its stored status (typically `valid`) rather
-than being flipped to `revoked` by a revocation attempt, so "not `revoked`" in the
-table does not imply "still usable".
+**`keycloak`.** CMS first establishes, with its own service credentials, that the caller is
+exactly one **confidential**, non-bearer-only client in the realm (see
+[Keycloak client-type check](#keycloak-client-type-check)), then forwards the revocation to
+`{Keycloak base URL}/realms/{realm}/protocol/openid-connect/revoke` with the **caller's**
+`client_id` and `client_secret` as form fields, the token, and the recognised hint. The CMS
+service credentials are never sent with the revocation. Keycloak authenticates the caller
+and enforces ownership itself (the token's `azp` must be the caller). Its answer for another
+client's token, `400 invalid_request` "Unmatching clients", is the **only** provider error CMS
+normalizes to `200`; it is matched on both members exactly. Keycloak client ids are
+case-sensitive, so a case variant of a real client id is an unknown client. CMS does not follow
+a redirect from the revoke endpoint: any `3xx` is answered `503`, and the form carrying the
+caller's secret and the token is never resent to the redirect target.
+
+### Keycloak client-type check
+
+Keycloak authenticates a **public** client without a secret and ignores any secret such a
+client supplies, so delegation alone would let a public client holding a user-flow token
+revoke it, and an arbitrary secret would defeat the "no secret, no revocation" rule. Before
+any request that can change provider state, CMS reads the caller's client definition through
+the Keycloak Admin REST API (`GET /admin/realms/{realm}/clients?clientId=...`) and delegates
+only on affirmative evidence:
+
+| Admin read outcome | Result |
+|---|---|
+| Exactly one client whose `clientId` matches ordinally, `publicClient` explicitly `false`, `bearerOnly` absent or `false` | delegate |
+| No ordinal match | `invalid_client` |
+| The match is public, or bearer-only | `invalid_client` |
+| `publicClient` absent, an incomplete record, or more than one match | `503` |
+| Admin authentication fails, or the read is refused (401/403) | `503`, logged with "the Configuration Service client lacks permission to read clients in the realm" |
+| Any other failure, or the read times out | `503` |
+
+"No such client" is answered `invalid_client` only after a successful read; a failed,
+refused or ambiguous read is never taken as "not found". The CMS service account
+(`IdentitySettings:ClientId`) therefore needs the `realm-management` client role
+`view-clients`. The `realm-admin` role that `setup-keycloak.ps1` assigns to the
+Configuration Service client includes it. Without it every revocation is answered `503`.
+See [KEYCLOAK-SETUP.md](../../../eng/docker-compose/KEYCLOAK-SETUP.md#token-revocation-through-the-configuration-service).
+
+### Supported token types and their effects
+
+| Token | `self-contained` | `keycloak` |
+|---|---|---|
+| Access token (JWT) | Supported; the only type CMS issues. Located by its verified `jti` | Supported. Verified end to end on Keycloak 26.1.4 |
+| Refresh token | Not issued | Supported by Keycloak's endpoint. Issued for `client_credentials` only when the client attribute `client_credentials.use_refresh_token` is `true`. Characterized directly against Keycloak (26.1.4 and 26.7.5), not through a CMS end-to-end scenario |
+| Offline token | Not issued | Revocable at Keycloak per its source. **Untested**: needs `offline_access` and a user flow, outside this ticket's verification |
+| ID token | Not issued | `400 unsupported_token_type`. Keycloak's type check runs before its ownership check, so the answer reveals nothing about the owner |
+
+Related-token and session effects:
+
+- **`self-contained`**: only the named token changes. There are no sessions and no refresh
+  tokens.
+- **`keycloak`, access token**: Keycloak enters the token's `jti` in its revoked-token store
+  for the token's remaining lifetime. The session is untouched: a paired refresh token
+  still obtains a new access token (observed).
+- **`keycloak`, refresh token**: Keycloak detaches the client session, which also
+  invalidates the paired access token (observed).
+- **`keycloak`, offline token**: per Keycloak's source, the same session detachment for the
+  offline session. Not observed.
 
 ### Confirming that a revocation actually took effect
 
-Every outcome of `POST /connect/revoke` is an identical bodyless `200 OK` — success,
-wrong owner, unverifiable token, expired token, and (in `keycloak` mode) not
-attempted at all. That is required by RFC 7009 and is deliberate, but it means the
+Every token outcome of `POST /connect/revoke` is an identical bodyless `200 OK`: revoked,
+wrong owner, unverifiable, expired, unknown. RFC 7009 requires this, and it is what stops
+the endpoint from becoming an oracle for token existence and ownership, but it means the
 `200` alone is **not** evidence that anything was revoked. Anyone who must be certain
-— containing a leaked credential, for example — has to confirm out of band:
+(containing a leaked credential, for example) confirms through the provider's validation
+path:
 
-```http
-POST /connect/introspect
-Content-Type: application/x-www-form-urlencoded
+- **`self-contained`**: `POST /connect/introspect` with `token=<target>` reports
+  `{"active": false}` once the token is revoked. A protected CMS request with the token
+  answers `401`.
+- **`keycloak`**: CMS `/connect/introspect` cannot observe Keycloak tokens (it always
+  answers `{"active": false}` in this mode). Use Keycloak's own endpoint,
+  `POST {Keycloak base URL}/realms/{realm}/protocol/openid-connect/token/introspect`,
+  authenticated as a **confidential** client:
+  - Access tokens. From Keycloak 26.4.12 (Red Hat's statement; observed on 26.7.5, not on
+    26.1.4), the introspecting client must be in the token's `aud`, or the answer is
+    `active:false` for a live token, which proves nothing. Put the introspecting client into
+    the audience of the tokens you observe: an `Audience` mapper whose included client
+    audience is the introspecting client, added to the clients that **receive** those tokens
+    (in their dedicated scope, or in a client scope assigned to them as a default scope), not
+    to the introspecting client. Only tokens issued after the change carry the audience; a
+    token issued before it keeps its `aud` and still answers `active:false` to that client.
+    The CMS end-to-end observer is set up this way. See
+    [KEYCLOAK-SETUP.md](../../../eng/docker-compose/KEYCLOAK-SETUP.md#confirming-a-revocation-at-keycloak).
+  - Refresh tokens. Only the client the token was issued to can introspect it, with
+    `token_type_hint=refresh_token`.
+  - Public clients. Keycloak refuses them at introspection (`403`), so their tokens must
+    be observed by another, confidential client.
 
-token=eyJ...TARGET
-```
+If the token still reports active, the revocation did not take effect and the credential
+is still live. Treat containment as incomplete until the validation path confirms it.
 
-A revoked token reports `{"active": false}`. If it still reports `{"active": true}`,
-the revocation did not take effect and the credential is still live. Treat
-containment as incomplete until introspection confirms it.
+### Propagation and clock skew
+
+Revocation changes the provider's state immediately, but not every consumer consults that
+state:
+
+| Consumer | `self-contained` token | `keycloak` token |
+|---|---|---|
+| CMS protected endpoints | Rejected on the next request (per-request status check by `jti`) | **Accepted until `exp` + 5 minutes** (default JWT bearer clock skew): CMS validates Keycloak tokens locally and does not introspect |
+| DMS resource API | **Accepted until `exp` + `JwtAuthentication:ClockSkewSeconds`** (default 30 s): DMS self-inspects and does not consult token status | Same as the `self-contained` column |
+| Provider introspection | `active:false` immediately | `active:false` immediately (subject to the `aud` rule above) |
+
+Per-request introspection is deliberately not added (see
+[OWASP-AUTH-COVERAGE.md](../../../docs/OWASP-AUTH-COVERAGE.md)); short token lifetimes bound
+the window.
+
+### `503 temporarily_unavailable`: retry and confirm
+
+A `503` means CMS could not **confirm** the outcome. It does not mean the token was not
+revoked: the database `UPDATE` may have committed before the connection dropped, and
+Keycloak may have recorded the revocation before its response was lost. The description
+says exactly that ("Token revocation could not be confirmed. Retry the request and confirm
+the token's state through the provider's validation path.").
+
+- **Retrying is safe.** `self-contained` re-revocation is a no-op on an already revoked row,
+  and Keycloak answers `200` for an already revoked token.
+- **Confirm** through the validation path above when certainty matters.
+- **CMS keeps serving.** An outage is a per-request `503`, never a stopped host. CMS does not
+  check provider availability at startup. It refuses to start only when no token revocation
+  implementation can be constructed for the configured `AppSettings:IdentityProvider` (a
+  custom registration that removes or breaks the shipped one); that startup error names only
+  the exception types.
+
+Causes include: a database outage during application lookup, secret verification, signing
+key retrieval or the `UPDATE`; a missing or unreadable signing certificate, or no usable
+active signing key; Keycloak unreachable, timing out, or answering with a status or body CMS
+does not recognise (for example `403` "HTTPS required" or `404` for a wrong realm, which are
+operator misconfigurations); the client-type read failing as above. The log entry names the
+category, the HTTP status where there is one, and exception type names only.
+
+### Transport security
+
+The caller's client secret and the token travel to CMS in the request, and in `keycloak`
+mode CMS forwards both to Keycloak. Both hops must use TLS outside local development:
+
+- Clients must call `/connect/revoke` over HTTPS.
+- CMS sends the delegated revocation and the admin read to the base URL derived from
+  `IdentitySettings:Authority` (everything before `/realms/`). It must be an `https` URL in
+  any deployment that is not local development. The local Docker stack's
+  `http://dms-keycloak:8080` is the documented exception: it stays on the Docker network, and
+  the realm's `sslRequired=external` admits plain HTTP from private addresses. A realm set to
+  `sslRequired=all` answers every plain-HTTP delegated call `403` "HTTPS required", which CMS
+  answers `503`.
+
+### Logging
+
+Revocation logs the sanitized caller `client_id`, the outcome category, the provider's
+HTTP status code, the provider `error` through a fixed allowlist (anything else is logged as
+`unrecognized`), and exception **type names**. It never logs the token, a secret, the
+`Authorization` header, a provider body or `error_description`, token verification detail,
+or an exception object. A failure on the route (including one raised while the framework
+constructs the revocation implementation for the request) is logged as `HttpRequestFailed`
+with `ExceptionTypes` and no exception attached; the exception's message, inner exceptions
+and `Data` are withheld from every logger, the framework's own included.
+
+### Plugin compatibility requirement for replacement secret hashers
+
+A replacement `IClientSecretHasher` registered through the plugin contract is called by
+revocation through `VerifySecretAsync`. For revocation to keep operational failures apart
+from authentication failures, its `VerifySecretAsync` must:
+
+1. return `false` for a normal credential rejection;
+2. **throw** for an operational failure that prevents verification (configuration, a
+   dependency, an unreadable or incomplete stored value);
+3. log neither the secret nor dependency exception content.
+
+A conforming plugin's exception is answered `503`. A plugin that suppresses operational
+failures and returns `false` cannot satisfy the guarantee: such failures are answered
+`invalid_client`. Nothing is mutated, but the caller is told its credentials are wrong
+during an outage, so the plugin is non-conforming. The built-in hasher's own
+`VerifySecretAsync` predates this requirement and suppresses failures, which is why
+revocation calls its failure-preserving path instead. `/connect/token` is unchanged and keeps
+using `VerifySecretAsync`.
+
+### Known limitations
+
+- **Replacement hasher compatibility.** The guarantee above holds only for a conforming
+  replacement hasher; the plugin contract is not changed to enforce it.
+- **Shared token validator suppresses failures.** Revocation verifies the target token with the
+  same validator as bearer authentication, which reports every verification failure as a token
+  outcome. If a key that imports successfully cannot be used at the time of the request (the
+  stored key changed after the token was issued, or a cryptographic provider refuses the
+  key), the token is reported untrusted and revocation answers `200` without revoking.
+  Ordinary signature failures are token outcomes by design. Confirm through introspection.
+- **Synchronous Keycloak admin token.** The Keycloak admin client library fetches its admin
+  access token synchronously and without cancellation before each admin call. CMS runs the
+  read on the thread pool and stops waiting after the timeout, but timing out the wait does not
+  stop the fetch: an in-flight token fetch cannot be aborted, holds a pool thread until it ends
+  (bounded by the library's own 100-second default timeout) and its result is discarded.
+- **Admin requests before the caller is authenticated.** Each Keycloak revocation request that
+  supplies a client id and a secret costs an admin token request and a client read before
+  Keycloak authenticates the caller, so the credentials need not be valid to trigger them. A
+  request without credentials is refused before any admin call, and an unknown client id never
+  reaches the revoke request. The endpoint's request volume, not its authenticated volume,
+  therefore sets the admin load, and a slow Keycloak lets such requests hold pool threads as
+  described above. Bounding this (admin-token caching, rate limiting) is deferred availability
+  work; token caching would also have to handle concurrent cache misses and refresh failures.
+- **Separate timeout windows.** The admin read, the revoke request (until its response
+  headers) and the reading of an error body each get their own window of
+  `AppSettings:TokenRequestTimeoutSeconds`. A Keycloak revocation can therefore take up to
+  three times that setting (two when Keycloak answers `200`) before CMS answers `503`.
+- **Basic decoding differs from `/connect/token`.** See [Request rules](#request-rules).
+- **Propagation.** Revoked Keycloak tokens stay usable at CMS and DMS until they expire, and
+  revoked `self-contained` tokens stay usable at DMS until they expire (see
+  [Propagation and clock skew](#propagation-and-clock-skew)).
+- **Untested token types.** Offline tokens and Keycloak refresh-token revocation through CMS
+  end to end are not exercised by the CMS test suites (see
+  [Supported token types](#supported-token-types-and-their-effects)).
+- **Keycloak versions.** Verification runs against the pinned Keycloak 26.1 image of the E2E
+  stack (26.1.4). A direct characterization of Keycloak's revocation endpoint on 26.7.5 found
+  revocation behaviour identical to 26.1.4 (only introspection differs); CMS itself was not run
+  end to end against 26.7. This is a compatibility record, not a support policy. Changing the
+  Keycloak image requires rerunning `KeycloakRevocationCharacterizationTests` (CMS E2E) and
+  confirming that the ownership-mismatch answer CMS normalizes (`400 invalid_request`
+  "Unmatching clients", matched exactly) is unchanged. If Keycloak changes that text, revoking
+  another client's token is answered `400` instead of `200`.
 
 ### Client id casing
 
-Both sides of the ownership comparison are derived from the **stored canonical**
-`client_id`, never from the casing a caller happened to type:
+Both sides of the `self-contained` ownership comparison are derived from the **stored
+canonical** `client_id`, never from the casing a caller happened to type:
 
 - Tokens are minted with the stored value, not the casing supplied at
   `/connect/token`, so every token issued to one registered client carries one
   identity whatever casing that client used on a given call.
-- The caller's id is the stored value that `AuthenticateClientAsync` resolved, not the
-  one it sent in its credentials.
+- The caller's id is the stored value that client authentication resolved, not the one it
+  sent in its credentials.
 
 Either half alone leaves the defect open. Where an engine authenticates a mis-cased
 `client_id` — SQL Server's default collation does — passing the caller's own spelling
@@ -177,23 +443,8 @@ One residue remains: tokens minted **before** this change still carry the reques
 casing, so such a token may resist revocation by a canonically-cased caller until it
 expires. Token lifetimes are short and the population drains on its own.
 
-### Which provider modes actually perform the check
-
-The `client_id` claim name is identical for self-contained and Keycloak-issued
-tokens, so the comparison itself needs no per-provider branching. It does not
-follow that both modes perform ownership-checked revocation:
-
-- **`self-contained`** — the OpenIddict store registers an `ITokenRevocationManager`,
-  so the endpoint authenticates the caller's client credentials, verifies the
-  target token, compares `client_id`, and revokes by `jti` on a match.
-- **`keycloak`** — no `ITokenRevocationManager` is registered (`KeycloakTokenManager`
-  implements `ITokenManager` only), so there is no local way to authenticate the
-  caller's client credentials, and the handler's revocation branch is never
-  entered. The request returns `200 OK` and **nothing is revoked or checked** —
-  not client authentication, not ownership comparison. Token revocation remains
-  the IdP's responsibility in this mode. This is safe precisely because the mode
-  is a no-op end to end: there is no data to protect behind the missing
-  authentication check, since nothing is read, mutated, or revealed either way.
+Under `keycloak`, client ids are case-sensitive at Keycloak, and the client-type check matches
+ordinally, so a case variant is an unknown client (`invalid_client`).
 
 ## Signing keys in self-contained mode
 
@@ -214,9 +465,11 @@ in-memory **snapshot**. The snapshot comes from one of two sources:
 - **Certificates** (`IdentitySettings:UseCertificates`): the one key of the configured or
   development certificate, with the certificate thumbprint as the key id.
 
-The default `Bearer` scheme, `DmsJwtBearer`, the JWKS endpoint, introspection and
-revocation all use the same snapshot. In steady state, validating a token does not read
-the key table. The table is read only by a load, and a load starts in one of these ways:
+The default `Bearer` scheme, `DmsJwtBearer`, the JWKS endpoint and introspection all use
+the same snapshot. Revocation does not: it reads the keys itself on each request, never
+creates a development certificate, and answers `503 temporarily_unavailable` when a key
+cannot be used (see [Token revocation](#token-revocation)). In steady state, validating a
+token does not read the key table. The table is read only by a load, and a load starts in one of these ways:
 
 - the startup load;
 - a scheduled reload;
@@ -366,9 +619,9 @@ decision:
 | --- | --- | --- | --- | --- |
 | Usable snapshot, valid token, token status valid | Request proceeds | `200` with keys | `{"active": true}` | Revokes; `200` |
 | Token rejected: bad signature, wrong issuer or audience, expired, missing or unknown `kid`, revoked, malformed | **401**, `WWW-Authenticate: Bearer`, no `Retry-After` | unaffected | `{"active": false}` | No-op `200` |
-| No usable snapshot (never loaded, or past maximum staleness) | **503**, category `SigningKeyStore` | **503** | `{"active": false}` and an Error log | No-op `200` and an Error log |
+| No usable snapshot (never loaded, or past maximum staleness) | **503**, category `SigningKeyStore` | **503** | `{"active": false}` and an Error log | not affected (revocation reads its keys itself; a failed read is `503 temporarily_unavailable`) |
 | Token-status read fails (usable snapshot) | **503**, category `TokenStatusStore` | unaffected | `{"active": false}` and an Error log | not affected (revocation does not read the status) |
-| The instance's last successful load found no active key (empty snapshot) | **401** for every token | `200 {"keys":[]}` | `{"active": false}` | No-op `200` |
+| The instance's last successful load found no active key (empty snapshot) | **401** for every token | `200 {"keys":[]}` | `{"active": false}` | not affected (no active key at request time is `503 temporarily_unavailable`) |
 
 - **A dependency 503** carries `Retry-After: 30`, has no `WWW-Authenticate`, and has a
   generic `application/problem+json` body (`title` `Service Unavailable`, the request's
@@ -396,9 +649,10 @@ decision:
   - **Fresh keys still need verifying.** A successful `200` still shows only that
     instance's snapshot. Before relying on a key change, verify it on every instance; see
     [Verifying a key change on every instance](#verifying-a-key-change-on-every-instance).
-- **Introspection and revocation are unchanged on the wire.** They keep their protocol
-  answers (`{"active": false}`; RFC 7009's always-`200`) when a dependency fails, and log
-  an Error naming the category.
+- **Introspection is unchanged on the wire.** It keeps its protocol answer
+  (`{"active": false}`) when a dependency fails, and logs an Error naming the category.
+  Revocation answers `503 temporarily_unavailable` instead (see
+  [Token revocation](#token-revocation)).
 - Failures after authentication, in the endpoint's own data access, are not part of this
   classification and keep their existing responses (for example 500).
 
@@ -635,11 +889,11 @@ Clients holding tokens signed with the old certificate must obtain new ones.
 | Load failed | Error | `Signing-key load failed ({Trigger}): category SigningKeyStore, kind {Retrieval\|Processing}, consecutive failures {n}, next attempt in {s} s. …` |
 | Load finished after its deadline | Warning | `A signing-key load that outlived its deadline has finished …; its result was discarded` |
 | Unknown key id (bearer schemes) | Warning | `Bearer token key id {kid} was not in the signing-key snapshot; unknown-key refresh outcome: {Outcome}` |
-| Unknown key id (introspection, revocation) | Warning | `Token key id {KeyId} was not in the signing-key snapshot; unknown-key refresh outcome: {Outcome}` |
+| Unknown key id (introspection) | Warning | `Token key id {KeyId} was not in the signing-key snapshot; unknown-key refresh outcome: {Outcome}` |
 | Dependency 503 | Error | `Authentication could not reach a decision: the {Category} is unavailable (trace …)` |
 | JWKS 503 | Error | `The JWKS could not be served: the SigningKeyStore is unavailable (trace …)` |
 | Introspection could not decide (answers `{"active": false}`) | Error | `Token validation could not reach a decision: the {Category} is unavailable` |
-| Revocation could not decide (answers `200`) | Error | `Failed to revoke token: the {Category} is unavailable` |
+| Revocation could not decide (answers `503`) | Error | `Revocation could not be completed: …` |
 
 A snapshot publication labelled `Request` is a normal background reload started by a
 request that found the snapshot overdue. It is not a fault. The message
@@ -648,10 +902,11 @@ request that found the snapshot overdue. It is not a fault. The message
 **For alerting,** match on message text that covers every source of an event:
 
 - **Unknown key ids:** `was not in the signing-key snapshot` matches both unknown-key
-  lines. The bearer line alone misses introspection and revocation.
+  lines. The bearer line alone misses introspection.
 - **Undecided requests:** `is unavailable` matches the dependency 503, the JWKS 503, and
-  the introspection and revocation lines. Introspection and revocation keep their
-  protocol answers on the wire, so these logs are the only signal of their failures.
+  the introspection line. Introspection keeps its protocol answer on the wire, so that log
+  is the only signal of its failures. Revocation answers `503` and logs
+  `Revocation could not be completed`.
 
 ### Connection capacity
 

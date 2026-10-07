@@ -7,6 +7,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
@@ -18,15 +19,20 @@ using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Model.Register;
 using EdFi.DmsConfigurationService.DataModel.Model.Token;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 using EdFi.DmsConfigurationService.Secrets;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using Microsoft.IdentityModel.Tokens;
 using NUnit.Framework;
 using OpenIddictIdentityOptions = EdFi.DmsConfigurationService.Backend.OpenIddict.Models.IdentityOptions;
@@ -1140,7 +1146,9 @@ public class TokenEndpointTests
 /// <summary>
 /// End-to-end verification that CMS-generated OAuth/OIDC error branches return the Ed-Fi bad-request
 /// contract (400 preserved) in place of the OAuth <c>{ error, error_description }</c> shape, while the
-/// protocol success responses stay untouched. Non-fixture container; the
+/// protocol success responses stay untouched. <c>/connect/revoke</c> is the documented exception
+/// (DMS-1327 D-01): every revocation error is in the OAuth format, pinned here and in
+/// <c>RevocationRequestContractTests</c>. Non-fixture container; the
 /// runnable fixtures are the nested <c>Given_…</c> classes.
 /// </summary>
 public class OAuthEndpointErrorTests
@@ -1293,6 +1301,69 @@ public class OAuthEndpointErrorTests
             _content.Should().NotContain("boundary");
     }
 
+    /// <summary>
+    /// DMS-1327 D-17 keeps the OAuth exception format on <c>/connect/revoke</c> only: a fault
+    /// escaping the token endpoint is still the Ed-Fi internal-server-error contract.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_token_request_whose_token_manager_faults
+    {
+        private const string Sentinel = "SENTINEL_TOKEN_MANAGER_FAULT_must_not_leak";
+
+        private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private string _content = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(() => _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>._))
+                .Throws(new InvalidOperationException(Sentinel));
+            _factory = CreateFactory(collection =>
+            {
+                collection.AddTransient(_ => new TokenRequest.Validator());
+                collection.AddTransient(_ => _tokenManager);
+            });
+            _client = _factory.CreateClient();
+
+            _response = await _client.PostAsync(
+                "/connect/token",
+                new FormUrlEncodedContent(
+                    new[]
+                    {
+                        new KeyValuePair<string, string>("client_id", "CSClient1"),
+                        new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
+                        new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                        new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
+                    }
+                )
+            );
+            _content = await _response.Content.ReadAsStringAsync();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_the_ed_fi_internal_server_error_contract()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            JsonObject body = JsonNode.Parse(_content)!.AsObject();
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:internal-server-error");
+            body.ContainsKey("error").Should().BeFalse();
+        }
+
+        [Test]
+        public void It_does_not_leak_the_exception_text() => _content.Should().NotContain(Sentinel);
+    }
+
     [TestFixture]
     public class Given_an_introspection_request_without_a_token
     {
@@ -1393,36 +1464,50 @@ public class OAuthEndpointErrorTests
             _factory?.Dispose();
         }
 
+        /// <summary>
+        /// DMS-1218 had moved this response to the Ed-Fi contract; DMS-1327 D-01 makes every
+        /// revocation error an RFC 6749 §5.2 object, so a conforming OAuth client can read it.
+        /// </summary>
         [Test]
-        public void It_returns_the_ed_fi_bad_request_contract() =>
-            AssertBadRequestContract(_response, _content, "The token parameter is missing.");
+        public void It_returns_the_oauth_invalid_request_error()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+            JsonObject body = JsonNode.Parse(_content)!.AsObject();
+            body["error"]!.GetValue<string>().Should().Be("invalid_request");
+            body["error_description"]!.GetValue<string>().Should().Be("The token parameter is missing.");
+        }
     }
 
     /// <summary>
-    /// This <c>ITokenManager</c> fake implements no <c>ITokenRevocationManager</c>, the same as
-    /// <c>KeycloakTokenManager</c> in production — so there is no local way to check client
-    /// credentials, and the handler's no-op branch answers before authentication is even
-    /// considered. A bearer token presented here (there being no client credentials at all) is
-    /// simply irrelevant to the outcome; see RevocationOwnershipTests for the self-contained-mode
-    /// credential checks this fake cannot exercise.
+    /// A caller with no client credentials, which was answered 200 before DMS-1327. The endpoint's own
+    /// credential-presence check (D-03 row 7) rejects it before the revocation manager is consulted.
     /// </summary>
     [TestFixture]
     public class Given_a_revocation_request_with_a_token_from_an_unauthenticated_caller
     {
         private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>();
+        private readonly ITokenRevocationManager _revocationManager = A.Fake<ITokenRevocationManager>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
+        private string _content = null!;
 
         [SetUp]
         public async Task Setup()
         {
-            _factory = CreateFactory(collection => collection.AddTransient(_ => _tokenManager));
+            _factory = CreateFactory(collection =>
+            {
+                collection.AddTransient(_ => _tokenManager);
+                collection.RemoveAll<ITokenRevocationManager>();
+                collection.AddSingleton(_revocationManager);
+            });
             _client = _factory.CreateClient();
             _response = await _client.PostAsync(
                 "/connect/revoke",
                 new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("token", "opaque-token") })
             );
+            _content = await _response.Content.ReadAsStringAsync();
         }
 
         [TearDown]
@@ -1433,7 +1518,24 @@ public class OAuthEndpointErrorTests
         }
 
         [Test]
-        public void It_still_returns_200() => _response.StatusCode.Should().Be(HttpStatusCode.OK);
+        public void It_returns_400() => _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_reports_invalid_client_in_the_oauth_format()
+        {
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+            JsonObject body = JsonNode.Parse(_content)!.AsObject();
+            body["error"]!.GetValue<string>().Should().Be("invalid_client");
+            body["error_description"]!.GetValue<string>().Should().Be("Client authentication is required.");
+        }
+
+        [Test]
+        public void It_does_not_send_a_basic_challenge() =>
+            _response.Headers.WwwAuthenticate.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_consult_the_revocation_manager() =>
+            A.CallTo(_revocationManager).MustNotHaveHappened();
     }
 }
 
@@ -1501,7 +1603,8 @@ public class RevocationOwnershipTests
 
         public RealTokenManagerOwner(
             IOpenIddictTokenRepository tokenRepository,
-            IClientSecretHasher secretHasher
+            IClientSecretHasher secretHasher,
+            bool faultOwnershipComparison = false
         )
         {
             IOptions<OpenIddictIdentityOptions> options = Options.Create(
@@ -1517,14 +1620,22 @@ public class RevocationOwnershipTests
                 options,
                 NullLogger<DevelopmentCertificateStore>.Instance
             );
-            TokenManager = new OpenIddictTokenManager(
-                options,
-                NullLogger<OpenIddictTokenManager>.Instance,
-                secretHasher,
-                tokenRepository,
-                _signingKeyProvider,
-                _developmentCertificateStore
-            );
+            TokenManager = faultOwnershipComparison
+                ? new FaultingOwnershipTokenManager(
+                    options,
+                    secretHasher,
+                    tokenRepository,
+                    _signingKeyProvider,
+                    _developmentCertificateStore
+                )
+                : new OpenIddictTokenManager(
+                    options,
+                    NullLogger<OpenIddictTokenManager>.Instance,
+                    secretHasher,
+                    tokenRepository,
+                    _signingKeyProvider,
+                    _developmentCertificateStore
+                );
         }
 
         public OpenIddictTokenManager TokenManager { get; }
@@ -1546,12 +1657,14 @@ public class RevocationOwnershipTests
             .Returns(new ApplicationInfo { ClientId = clientId, IsApproved = true });
 
     /// <summary>
-    /// A host whose <see cref="ITokenManager"/> is the real manager over <paramref name="tokenRepository"/>. The owner
-    /// is registered through a factory, so the host's container owns it and disposes it with the host.
+    /// A host whose <see cref="ITokenManager"/> and <see cref="ITokenRevocationManager"/> are the real manager over
+    /// <paramref name="tokenRepository"/>. The owner is registered through a factory, so the host's container owns it
+    /// and disposes it with the host.
     /// </summary>
     private static WebApplicationFactory<Program> CreateFactory(
         IOpenIddictTokenRepository tokenRepository,
-        IClientSecretHasher secretHasher
+        IClientSecretHasher secretHasher,
+        bool faultOwnershipComparison = false
     ) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -1559,12 +1672,55 @@ public class RevocationOwnershipTests
             builder.ConfigureServices(collection =>
             {
                 collection.AddTestAuthentication();
-                collection.AddSingleton(_ => new RealTokenManagerOwner(tokenRepository, secretHasher));
+                collection.AddSingleton(_ => new RealTokenManagerOwner(
+                    tokenRepository,
+                    secretHasher,
+                    faultOwnershipComparison
+                ));
                 collection.AddTransient<ITokenManager>(services =>
+                    services.GetRequiredService<RealTokenManagerOwner>().TokenManager
+                );
+                collection.AddTransient<ITokenRevocationManager>(services =>
                     services.GetRequiredService<RealTokenManagerOwner>().TokenManager
                 );
             });
         });
+
+    /// <summary>
+    /// Injects a fault into the manager's ownership comparison, which sits between its dependency
+    /// boundaries and must not be relabelled as an outage.
+    /// </summary>
+    private sealed class FaultingOwnershipTokenManager(
+        IOptions<OpenIddictIdentityOptions> options,
+        IClientSecretHasher secretHasher,
+        IOpenIddictTokenRepository tokenRepository,
+        ISigningKeySnapshotProvider signingKeyProvider,
+        DevelopmentCertificateStore developmentCertificateStore
+    )
+        : OpenIddictTokenManager(
+            options,
+            NullLogger<OpenIddictTokenManager>.Instance,
+            secretHasher,
+            tokenRepository,
+            signingKeyProvider,
+            developmentCertificateStore
+        )
+    {
+        protected override bool TokenBelongsToCaller(string? tokenClientId, string callerClientId) =>
+            throw new InvalidOperationException("ownership comparison fault");
+    }
+
+    private const string UnavailableDescription =
+        "Token revocation could not be confirmed. Retry the request and confirm the token's state through the provider's validation path.";
+
+    private static void AssertTemporarilyUnavailable(HttpResponseMessage response, JsonObject body)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        response.Headers.WwwAuthenticate.Should().BeEmpty();
+        body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
+        body["error_description"]!.GetValue<string>().Should().Be(UnavailableDescription);
+    }
 
     /// <summary>
     /// Creates a client that authenticates to /connect/revoke with HTTP Basic client credentials
@@ -1642,12 +1798,20 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_returns_400_not_401() => _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        [Test]
+        public async Task It_reports_the_missing_token_rather_than_the_missing_credentials()
+        {
+            JsonObject body = await ReadOAuthError(_response);
+            body["error"]!.GetValue<string>().Should().Be("invalid_request");
+            body["error_description"]!.GetValue<string>().Should().Be("The token parameter is missing.");
+        }
     }
 
     /// <summary>
     /// RFC 6749 §2.3 permits credentials in the request body for clients that cannot use HTTP
-    /// Basic auth; RevokeToken mirrors GetClientAccessToken's fallback for this. No other fixture
-    /// in this class exercises that path — the rest all authenticate via Basic auth.
+    /// Basic auth. No other fixture in this class exercises that path — the rest all authenticate
+    /// via Basic auth.
     /// </summary>
     [TestFixture]
     public class Given_a_revocation_request_with_credentials_in_the_form_body
@@ -1661,8 +1825,7 @@ public class RevocationOwnershipTests
 
         /// <summary>
         /// Posts to /connect/revoke with client credentials in the form body instead of an
-        /// Authorization header, exercising the fallback RevokeToken shares with
-        /// GetClientAccessToken. Used only here, so it lives inside this fixture.
+        /// Authorization header. Used only here, so it lives inside this fixture.
         /// </summary>
         private static Task<HttpResponseMessage> PostRevocationWithFormCredentials(
             HttpClient client,
@@ -1697,7 +1860,7 @@ public class RevocationOwnershipTests
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
             _jti = Guid.NewGuid();
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).Returns(true);
 
             _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = _factory.CreateClient(); // No Authorization header — credentials go in the form body.
@@ -1721,7 +1884,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_revokes_the_token() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).MustHaveHappenedOnceExactly();
     }
 
     [TestFixture]
@@ -1749,7 +1912,7 @@ public class RevocationOwnershipTests
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
             _jti = Guid.NewGuid();
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).Returns(true);
 
             _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
@@ -1768,7 +1931,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_revokes_the_token() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).MustHaveHappenedOnceExactly();
     }
 
     /// <summary>
@@ -1812,7 +1975,7 @@ public class RevocationOwnershipTests
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
             _jti = Guid.NewGuid();
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).Returns(true);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).Returns(true);
 
             _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = CreateClientWithCredentials(_factory, NonCanonicalClientId, TestClientSecret);
@@ -1834,12 +1997,13 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_revokes_the_token() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).MustHaveHappenedOnceExactly();
     }
 
     /// <summary>
     /// Guards the RFC 7009 §2.1 requirement itself: with no client credentials presented at all,
-    /// the caller is rejected before the target token is even looked at.
+    /// the caller is rejected before the target token is even looked at. The caller did not
+    /// attempt Basic authentication, so the rejection is 400, not 401 (DMS-1327 D-03 row 7).
     /// </summary>
     [TestFixture]
     public class Given_a_revocation_request_with_no_client_credentials
@@ -1869,7 +2033,7 @@ public class RevocationOwnershipTests
         }
 
         [Test]
-        public void It_returns_401() => _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        public void It_returns_400() => _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         [Test]
         public void It_answers_in_the_oauth_error_format() =>
@@ -1894,7 +2058,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_attempt_revocation() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     /// <summary>
@@ -1972,7 +2136,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_attempt_revocation() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     /// <summary>
@@ -2015,7 +2179,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_attempt_revocation() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     /// <summary>
@@ -2057,7 +2221,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_attempt_revocation() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -2106,7 +2270,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_revoke_the_other_clients_token() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     /// <summary>
@@ -2163,7 +2327,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_revoke_the_embedded_jti() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -2178,6 +2342,16 @@ public class RevocationOwnershipTests
         [SetUp]
         public async Task Setup()
         {
+            // A healthy key set is registered so the malformed token is judged against it; with
+            // no active key at all the manager reports an outage (503) instead, by design.
+            var (keyId, publicKeySpki, _) = CreateSigningKey();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .Returns(
+                    new[]
+                    {
+                        new PublicKeyInfo { KeyId = keyId, PublicKey = publicKeySpki },
+                    }
+                );
             RegisterApprovedClient(_tokenRepository, OwnerClientId);
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
@@ -2198,7 +2372,475 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_revoke_anything() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// DMS-1327 D-13: a database failure during client authentication is an operational outcome,
+    /// answered 503 in the OAuth error format — not 200 (which would mask it) and not 401 (the
+    /// caller may well be valid). No challenge is sent: authentication did not fail.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_when_the_application_lookup_fails
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(OwnerClientId))
+                .Throws(new InvalidOperationException("database unavailable"));
+
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
+            _response = await PostRevocation(_client, "irrelevant-token");
+            _body = await ReadOAuthError(_response);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_answers_503_in_the_oauth_error_format() =>
+            AssertTemporarilyUnavailable(_response, _body);
+
+        [Test]
+        public void It_does_not_attempt_revocation() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_a_revocation_request_when_the_secret_hasher_fails
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            RegisterApprovedClient(_tokenRepository, OwnerClientId);
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._))
+                .Throws(new InvalidOperationException("hasher unavailable"));
+
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
+            _response = await PostRevocation(_client, "irrelevant-token");
+            _body = await ReadOAuthError(_response);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_answers_503_in_the_oauth_error_format() =>
+            AssertTemporarilyUnavailable(_response, _body);
+
+        [Test]
+        public void It_does_not_attempt_revocation() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_a_revocation_request_when_the_token_update_fails
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .Returns(
+                    new[]
+                    {
+                        new PublicKeyInfo { KeyId = keyId, PublicKey = publicKeySpki },
+                    }
+                );
+            RegisterApprovedClient(_tokenRepository, OwnerClientId);
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
+            var jti = Guid.NewGuid();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti, A<Guid>._))
+                .Throws(new InvalidOperationException("database unavailable"));
+
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
+            _response = await PostRevocation(_client, CreateSignedToken(signingKey, OwnerClientId, jti));
+            _body = await ReadOAuthError(_response);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_answers_503_in_the_oauth_error_format() =>
+            AssertTemporarilyUnavailable(_response, _body);
+    }
+
+    /// <summary>
+    /// The UPDATE reached the store and the connection then dropped before the result came back.
+    /// The caller gets 503 and a description that says "could not be confirmed"; deliberately, no
+    /// assertion here claims the token is revoked or still live (DMS-1327 D-13.3).
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_whose_update_commits_but_the_response_is_lost
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+        private bool _updateReachedTheStore;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .Returns(
+                    new[]
+                    {
+                        new PublicKeyInfo { KeyId = keyId, PublicKey = publicKeySpki },
+                    }
+                );
+            RegisterApprovedClient(_tokenRepository, OwnerClientId);
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
+            var jti = Guid.NewGuid();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti, A<Guid>._))
+                .Invokes(() => _updateReachedTheStore = true)
+                .Throws(new TimeoutException("the connection dropped while reading the result"));
+
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
+            _response = await PostRevocation(_client, CreateSignedToken(signingKey, OwnerClientId, jti));
+            _body = await ReadOAuthError(_response);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_had_issued_the_update() => _updateReachedTheStore.Should().BeTrue();
+
+        [Test]
+        public void It_answers_503_without_claiming_an_outcome() =>
+            AssertTemporarilyUnavailable(_response, _body);
+    }
+
+    /// <summary>
+    /// A programming fault inside the manager is not an outage: it reaches the global exception
+    /// handler as a 500 rather than being relabelled 503 or swallowed into 200 (DMS-1327 D-13.1,
+    /// Q-04), and the route's marker makes that 500 an OAuth <c>server_error</c> (D-17).
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_when_the_ownership_comparison_faults
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .Returns(
+                    new[]
+                    {
+                        new PublicKeyInfo { KeyId = keyId, PublicKey = publicKeySpki },
+                    }
+                );
+            RegisterApprovedClient(_tokenRepository, OwnerClientId);
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
+
+            _factory = CreateFactory(_tokenRepository, _secretHasher, faultOwnershipComparison: true);
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
+            _response = await PostRevocation(
+                _client,
+                CreateSignedToken(signingKey, OwnerClientId, Guid.NewGuid())
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_answers_500() => _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public async Task It_answers_server_error_in_the_oauth_format()
+        {
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+            JsonObject body = await ReadOAuthError(_response);
+            body["error"]!.GetValue<string>().Should().Be("server_error");
+            body["error_description"]!
+                .GetValue<string>()
+                .Should()
+                .Be("The revocation request could not be processed.");
+        }
+
+        [Test]
+        public void It_does_not_attempt_revocation() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
+    }
+
+    private const int RealHasherIterations = 1000;
+    private const string RealHasherSecret = "SECRET-CALLER-SENTINEL-http-real-hasher";
+
+    private static ClientSecretHasher CreateRealHasher(int iterations, ILogger<ClientSecretHasher> logger) =>
+        new(
+            logger,
+            Options.Create(new OpenIddictIdentityOptions { ClientSecretHashingIterations = iterations })
+        );
+
+    /// <summary>Registers an approved application whose stored secret is a real hash of <see cref="RealHasherSecret"/>.</summary>
+    private static async Task RegisterClientWithRealHash(
+        IOpenIddictTokenRepository tokenRepository,
+        string clientId
+    )
+    {
+        string storedHash = await CreateRealHasher(
+                RealHasherIterations,
+                NullLogger<ClientSecretHasher>.Instance
+            )
+            .HashSecretAsync(RealHasherSecret);
+        A.CallTo(() => tokenRepository.GetApplicationByClientIdAsync(clientId))
+            .Returns(
+                new ApplicationInfo
+                {
+                    ClientId = clientId,
+                    ClientSecret = storedHash,
+                    IsApproved = true,
+                }
+            );
+    }
+
+    /// <summary>
+    /// DMS-1327 P2.1 correction, through the HTTP pipeline with the real, registered hasher type.
+    /// Its lenient verification answers false for any failure, which made a verification that
+    /// could not run look like wrong credentials (401). Revocation now uses the hasher's
+    /// failure-preserving path, so the same failure is an operational 503, nothing is revoked, and
+    /// the hasher logs nothing about the failure. The zero iteration count is a deterministic
+    /// stand-in for a hashing failure; production startup validation rejects it.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_when_the_real_hasher_cannot_verify
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly ILogger<ClientSecretHasher> _hasherLogger = A.Fake<ILogger<ClientSecretHasher>>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        private static string AllHasherLogText(ILogger<ClientSecretHasher> logger) =>
+            string.Join(
+                "\n",
+                Fake.GetCalls(logger)
+                    .Where(call => call.Method.Name == nameof(ILogger.Log))
+                    .SelectMany(call =>
+                        new[] { call.Arguments[2]?.ToString(), (call.Arguments[3] as Exception)?.ToString() }
+                    )
+            );
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await RegisterClientWithRealHash(_tokenRepository, OwnerClientId);
+
+            _factory = CreateFactory(_tokenRepository, CreateRealHasher(0, _hasherLogger));
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, RealHasherSecret);
+            _response = await PostRevocation(_client, "irrelevant-token");
+            _body = await ReadOAuthError(_response);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_answers_503_in_the_oauth_error_format() =>
+            AssertTemporarilyUnavailable(_response, _body);
+
+        [Test]
+        public void It_does_not_attempt_revocation() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
+
+        [Test]
+        public void It_has_the_hasher_log_no_warning_and_no_exception() =>
+            Fake.GetCalls(_hasherLogger)
+                .Where(call => call.Method.Name == nameof(ILogger.Log))
+                .Should()
+                .NotContain(call =>
+                    call.GetArgument<LogLevel>(0) >= LogLevel.Warning || call.Arguments[3] != null
+                );
+
+        [Test]
+        public void It_keeps_the_presented_secret_out_of_the_hasher_log() =>
+            AllHasherLogText(_hasherLogger).Should().NotContain(RealHasherSecret);
+    }
+
+    /// <summary>
+    /// A real generated hash missing its last decoded byte. Through the HTTP pipeline this is an
+    /// operational 503: no key is loaded, nothing is revoked, and neither the secret nor the stored
+    /// value reaches the hasher's log.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_when_the_stored_hash_is_truncated
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly ILogger<ClientSecretHasher> _hasherLogger = A.Fake<ILogger<ClientSecretHasher>>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+        private string _truncatedHash = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string storedHash = await CreateRealHasher(
+                    RealHasherIterations,
+                    NullLogger<ClientSecretHasher>.Instance
+                )
+                .HashSecretAsync(RealHasherSecret);
+            _truncatedHash = Convert.ToBase64String(Convert.FromBase64String(storedHash)[..^1]);
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(OwnerClientId))
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        ClientId = OwnerClientId,
+                        ClientSecret = _truncatedHash,
+                        IsApproved = true,
+                    }
+                );
+
+            _factory = CreateFactory(_tokenRepository, CreateRealHasher(RealHasherIterations, _hasherLogger));
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, RealHasherSecret);
+            _response = await PostRevocation(_client, "irrelevant-token");
+            _body = await ReadOAuthError(_response);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_answers_503_in_the_oauth_error_format() =>
+            AssertTemporarilyUnavailable(_response, _body);
+
+        [Test]
+        public void It_does_not_load_verification_keys() =>
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_does_not_attempt_revocation() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
+
+        [Test]
+        public void It_keeps_the_hasher_log_free_of_warnings_exceptions_and_secrets()
+        {
+            var calls = Fake.GetCalls(_hasherLogger)
+                .Where(call => call.Method.Name == nameof(ILogger.Log))
+                .ToList();
+            calls
+                .Should()
+                .NotContain(call =>
+                    call.GetArgument<LogLevel>(0) >= LogLevel.Warning || call.Arguments[3] != null
+                );
+            string text = string.Join("\n", calls.Select(call => call.Arguments[2]?.ToString()));
+            text.Should().NotContain(RealHasherSecret).And.NotContain(_truncatedHash);
+        }
+    }
+
+    /// <summary>A genuine mismatch checked by the real hasher remains an authentication failure.</summary>
+    [TestFixture]
+    public class Given_a_revocation_request_with_a_wrong_secret_checked_by_the_real_hasher
+    {
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await RegisterClientWithRealHash(_tokenRepository, OwnerClientId);
+
+            _factory = CreateFactory(
+                _tokenRepository,
+                CreateRealHasher(RealHasherIterations, NullLogger<ClientSecretHasher>.Instance)
+            );
+            _client = CreateClientWithCredentials(_factory, OwnerClientId, "not-the-secret");
+            _response = await PostRevocation(_client, "irrelevant-token");
+            _body = await ReadOAuthError(_response);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_401() => _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        [Test]
+        public void It_reports_invalid_client() =>
+            _body["error"]!.GetValue<string>().Should().Be("invalid_client");
+
+        [Test]
+        public void It_sends_a_basic_challenge() =>
+            _response.Headers.WwwAuthenticate.Should().ContainSingle(header => header.Scheme == "Basic");
+
+        [Test]
+        public void It_does_not_attempt_revocation() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 }
 
@@ -2336,5 +2978,1332 @@ public class TokenEndpointAnonymityTests
         [Test]
         public void It_does_not_require_authentication_for_introspect() =>
             _introspectResponse.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+    }
+}
+
+/// <summary>
+/// DMS-1327 P2.3: the <c>/connect/revoke</c> request contract — the D-03 precedence, the strict
+/// D-04 Basic decoding, the D-01 OAuth error bodies and the D-17 exception format — through the
+/// real HTTP pipeline. The manager is a recorder: these fixtures are about what the endpoint
+/// decides before and after it, and every rejection asserts the manager was never called.
+/// <c>RevocationOwnershipTests</c> covers the real manager behind the same endpoint. Non-fixture
+/// container; the runnable fixtures are the nested <c>Given_…</c> classes.
+/// </summary>
+public class RevocationRequestContractTests
+{
+    private const string ClientId = "contract-client";
+    private const string ClientSecret = "contract-secret";
+    private const string Token = "SECRET-TOKEN-SENTINEL-contract";
+
+    /// <summary>Planted in caller input that is rejected, to prove it never reaches a log.</summary>
+    private const string Sentinel = "SECRET-REVOKE-SENTINEL";
+
+    private const string Challenge = "Basic realm=\"EdFi.DmsConfigurationService\"";
+    private const string DuplicateDescription = "A request parameter or header was included more than once.";
+    private const string MixedDescription = "Only one client authentication mechanism may be used.";
+    private const string MissingTokenDescription = "The token parameter is missing.";
+    private const string AuthenticationRequiredDescription = "Client authentication is required.";
+    private const string InvalidCredentialsDescription = "Invalid client or Invalid client credentials";
+
+    private static readonly string _validBasic = BasicHeader($"{ClientId}:{ClientSecret}");
+
+    private static string BasicHeader(string decoded) => BasicHeader(Encoding.UTF8.GetBytes(decoded));
+
+    private static string BasicHeader(byte[] decoded) => $"Basic {Convert.ToBase64String(decoded)}";
+
+    private static FormUrlEncodedContent Form(params (string Key, string Value)[] fields) =>
+        new(fields.Select(field => new KeyValuePair<string, string>(field.Key, field.Value)));
+
+    /// <summary>
+    /// The body exactly as written, for encodings <see cref="FormUrlEncodedContent"/> cannot produce:
+    /// it would escape every <c>%</c> and send a well-formed body.
+    /// </summary>
+    private static ByteArrayContent RawForm(
+        string encoded,
+        string contentType = "application/x-www-form-urlencoded"
+    )
+    {
+        ByteArrayContent content = new(Encoding.UTF8.GetBytes(encoded));
+        content.Headers.TryAddWithoutValidation("Content-Type", contentType).Should().BeTrue();
+        return content;
+    }
+
+    private static (string, string)[] WithFormCredentials(params (string, string)[] fields) =>
+        [("client_id", ClientId), ("client_secret", ClientSecret), .. fields];
+
+    /// <summary>Records every request the endpoint hands over and answers with a configured outcome.</summary>
+    internal sealed class RecordingRevocationManager(Func<TokenRevocationResult> respond)
+        : ITokenRevocationManager
+    {
+        public List<TokenRevocationRequest> Requests { get; } = [];
+
+        public Task<TokenRevocationResult> RevokeTokenAsync(
+            TokenRevocationRequest request,
+            CancellationToken cancellationToken
+        )
+        {
+            Requests.Add(request);
+            return Task.FromResult(respond());
+        }
+    }
+
+    /// <summary>
+    /// Arranges a host with a recording manager and a capturing log provider, sends the request
+    /// the fixture builds, and keeps the response. A fixture overrides <see cref="Respond"/> to
+    /// choose the manager's outcome.
+    /// </summary>
+    public abstract class RevocationRequestFixture
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+
+        private protected RecordingRevocationManager Manager { get; private set; } = null!;
+        private protected RevocationLogCapture Logs { get; private set; } = null!;
+        protected HttpResponseMessage Response { get; private set; } = null!;
+        protected string Content { get; private set; } = null!;
+
+        protected virtual TokenRevocationResult Respond() => new TokenRevocationResult.Completed();
+
+        protected abstract HttpContent? Body { get; }
+
+        protected virtual IEnumerable<string> AuthorizationValues => [];
+
+        /// <summary>
+        /// Sends the request through <c>TestServer.SendAsync</c> instead of <see cref="HttpClient"/>,
+        /// which can rewrite whitespace in the Authorization value; the handler then sees exactly
+        /// the bytes the fixture wrote.
+        /// </summary>
+        protected virtual bool SendRawRequest => false;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            Manager = new RecordingRevocationManager(Respond);
+            Logs = new RevocationLogCapture();
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    collection.AddSingleton<ILoggerProvider>(Logs);
+                    collection.RemoveAll<ITokenRevocationManager>();
+                    collection.AddSingleton<ITokenRevocationManager>(Manager);
+                });
+            });
+            _client = _factory.CreateClient();
+
+            string[] authorization = [.. AuthorizationValues];
+            if (SendRawRequest)
+            {
+                await SendRawAsync(authorization);
+                return;
+            }
+
+            using HttpRequestMessage request = new(HttpMethod.Post, "/connect/revoke") { Content = Body };
+            if (authorization.Length > 0)
+            {
+                request.Headers.TryAddWithoutValidation("Authorization", authorization).Should().BeTrue();
+            }
+
+            Response = await _client.SendAsync(request);
+            Content = await Response.Content.ReadAsStringAsync();
+        }
+
+        private async Task SendRawAsync(string[] authorization)
+        {
+            HttpContent? body = Body;
+            byte[] payload = body is null ? [] : await body.ReadAsByteArrayAsync();
+            string? contentType = body?.Headers.ContentType?.ToString();
+
+            HttpContext context = await _factory.Server.SendAsync(raw =>
+            {
+                raw.Request.Method = HttpMethods.Post;
+                raw.Request.Path = "/connect/revoke";
+                raw.Request.ContentType = contentType;
+                raw.Request.ContentLength = payload.Length;
+                raw.Request.Body = new MemoryStream(payload);
+                if (authorization.Length > 0)
+                {
+                    raw.Request.Headers.Authorization = new StringValues(authorization);
+                }
+            });
+
+            Content = await new StreamReader(context.Response.Body).ReadToEndAsync();
+            Response = new HttpResponseMessage((HttpStatusCode)context.Response.StatusCode)
+            {
+                Content = new StringContent(Content),
+            };
+            Response.Content.Headers.ContentType = context.Response.ContentType is { } responseType
+                ? System.Net.Http.Headers.MediaTypeHeaderValue.Parse(responseType)
+                : null;
+            foreach ((string name, StringValues values) in context.Response.Headers)
+            {
+                Response.Headers.TryAddWithoutValidation(name, (IEnumerable<string?>)values);
+            }
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            Response?.Dispose();
+            _client?.Dispose();
+            _factory?.Dispose();
+            Logs?.Dispose();
+        }
+
+        protected void AssertOAuthError(HttpStatusCode status, string error, string description)
+        {
+            Response.StatusCode.Should().Be(status, Content);
+            Response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+            JsonObject body = JsonNode.Parse(Content)!.AsObject();
+            body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+            body["error"]!.GetValue<string>().Should().Be(error);
+            body["error_description"]!.GetValue<string>().Should().Be(description);
+        }
+
+        protected void AssertChallenge() =>
+            Response
+                .Headers.GetValues("WWW-Authenticate")
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(Challenge);
+
+        protected void AssertNoChallenge() => Response.Headers.WwwAuthenticate.Should().BeEmpty();
+
+        protected void AssertManagerNotCalled() => Manager.Requests.Should().BeEmpty();
+
+        protected void AssertNotLogged(params string[] values)
+        {
+            string captured = Logs.AllCapturedText();
+            foreach (string value in values)
+            {
+                captured.Should().NotContain(value);
+            }
+        }
+    }
+
+    // ----- D-03 row 1: no form content type -----
+
+    public static IEnumerable<TestFixtureData> NonFormBodies()
+    {
+        yield return new TestFixtureData(
+            new Func<HttpContent?>(() =>
+                new StringContent($"{{\"token\":\"{Token}\"}}", Encoding.UTF8, "application/json")
+            )
+        ).SetArgDisplayNames("a JSON body");
+        yield return new TestFixtureData(new Func<HttpContent?>(() => null)).SetArgDisplayNames("no body");
+    }
+
+    [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(NonFormBodies))]
+    public class Given_a_revocation_request_without_a_form_body(Func<HttpContent?> body)
+        : RevocationRequestFixture
+    {
+        protected override HttpContent? Body => body();
+
+        protected override IEnumerable<string> AuthorizationValues => [_validBasic];
+
+        [Test]
+        public void It_answers_invalid_request() =>
+            AssertOAuthError(
+                HttpStatusCode.BadRequest,
+                "invalid_request",
+                "The request body must be application/x-www-form-urlencoded."
+            );
+
+        [Test]
+        public void It_does_not_call_the_manager() => AssertManagerNotCalled();
+    }
+
+    // ----- D-03 row 2 / D-17: malformed form, through the exception handler -----
+
+    /// <summary>
+    /// <c>multipart/form-data</c> without a boundary makes <c>ReadFormAsync</c> throw
+    /// <see cref="InvalidDataException"/>. The handler selects the OAuth writer from the route's
+    /// marker, read off <c>IExceptionHandlerFeature.Endpoint</c> (A-05).
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_with_a_malformed_form_payload : RevocationRequestFixture
+    {
+        protected override HttpContent? Body
+        {
+            get
+            {
+                StringContent content = new($"token={Sentinel}");
+                content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                    "multipart/form-data"
+                );
+                return content;
+            }
+        }
+
+        protected override IEnumerable<string> AuthorizationValues => [_validBasic];
+
+        [Test]
+        public void It_answers_invalid_request_in_the_oauth_format() =>
+            AssertOAuthError(
+                HttpStatusCode.BadRequest,
+                "invalid_request",
+                "The request form payload is malformed."
+            );
+
+        [Test]
+        public void It_does_not_leak_the_framework_parsing_message() =>
+            Content.Should().NotContain("boundary");
+
+        [Test]
+        public void It_does_not_call_the_manager() => AssertManagerNotCalled();
+
+        [Test]
+        public void It_is_not_logged_as_a_failed_request() =>
+            Logs
+                .Records.Should()
+                .NotContain(record => record.EventId.Id == RequestLoggingEventIds.HttpRequestFailed.Id);
+    }
+
+    // ----- D-03 row 2: malformed URL encoding, which ReadFormAsync accepts without throwing -----
+
+    private const string MalformedFormDescription = "The request form payload is malformed.";
+
+    /// <summary>
+    /// <c>ReadFormAsync</c> keeps a malformed escape as literal text and passes percent-encoded bytes
+    /// that are not UTF-8 through undecoded, so none of these bodies makes it throw.
+    /// </summary>
+    public static IEnumerable<TestFixtureData> MalformedEncodings()
+    {
+        yield return new TestFixtureData("%").SetArgDisplayNames("a bare percent sign");
+        yield return new TestFixtureData("%GG").SetArgDisplayNames("an escape with non-hex digits");
+        yield return new TestFixtureData("%FF").SetArgDisplayNames("an escape that is not UTF-8");
+    }
+
+    [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(MalformedEncodings))]
+    public class Given_a_revocation_request_with_a_malformed_url_encoded_token(string encodedToken)
+        : RevocationRequestFixture
+    {
+        protected override HttpContent? Body =>
+            RawForm($"token={encodedToken}&client_id={ClientId}&client_secret={Sentinel}");
+
+        [Test]
+        public void It_answers_invalid_request() =>
+            AssertOAuthError(HttpStatusCode.BadRequest, "invalid_request", MalformedFormDescription);
+
+        [Test]
+        public void It_does_not_call_the_manager() => AssertManagerNotCalled();
+
+        [Test]
+        public void It_does_not_log_the_credentials() => AssertNotLogged(Sentinel);
+
+        [Test]
+        public void It_is_not_logged_as_a_failed_request() =>
+            Logs
+                .Records.Should()
+                .NotContain(record => record.EventId.Id == RequestLoggingEventIds.HttpRequestFailed.Id);
+    }
+
+    /// <summary>
+    /// Controls for the fixture above: correctly encoded input, including an encoded literal
+    /// <c>%</c> followed by text that would itself be a malformed escape, reaches the manager
+    /// decoded exactly once.
+    /// </summary>
+    public static IEnumerable<TestFixtureData> WellFormedEncodings()
+    {
+        yield return new TestFixtureData("%25", "%").SetArgDisplayNames("an encoded percent sign");
+        yield return new TestFixtureData("%25GG", "%GG").SetArgDisplayNames(
+            "an encoded percent sign before non-hex text"
+        );
+        yield return new TestFixtureData("%2B", "+").SetArgDisplayNames("an encoded plus sign");
+        yield return new TestFixtureData("a+b", "a b").SetArgDisplayNames("a plus sign for a space");
+        yield return new TestFixtureData("%C3%A9", "é").SetArgDisplayNames("an encoded UTF-8 sequence");
+    }
+
+    [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(WellFormedEncodings))]
+    public class Given_a_revocation_request_with_a_well_formed_url_encoded_token(
+        string encodedToken,
+        string decodedToken
+    ) : RevocationRequestFixture
+    {
+        protected override HttpContent? Body =>
+            RawForm($"token={encodedToken}&client_id={ClientId}&client_secret={ClientSecret}");
+
+        [Test]
+        public void It_answers_an_empty_200()
+        {
+            Response.StatusCode.Should().Be(HttpStatusCode.OK, Content);
+            Content.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_hands_the_manager_the_token_decoded_once() =>
+            Manager.Requests.Should().ContainSingle().Which.Token.Should().Be(decodedToken);
+    }
+
+    /// <summary>
+    /// The form is rejected before any credential is processed: the malformed Basic value alone would
+    /// be answered 401 <c>invalid_client</c> with a challenge.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_with_a_malformed_url_encoded_form_and_malformed_basic_credentials
+        : RevocationRequestFixture
+    {
+        protected override HttpContent? Body => RawForm("token=%GG");
+
+        protected override IEnumerable<string> AuthorizationValues => [$"Basic {Sentinel}"];
+
+        [Test]
+        public void It_answers_invalid_request_rather_than_invalid_client() =>
+            AssertOAuthError(HttpStatusCode.BadRequest, "invalid_request", MalformedFormDescription);
+
+        [Test]
+        public void It_does_not_send_a_challenge() => AssertNoChallenge();
+
+        [Test]
+        public void It_does_not_call_the_manager() => AssertManagerNotCalled();
+
+        [Test]
+        public void It_does_not_log_the_header() => AssertNotLogged(Sentinel);
+    }
+
+    /// <summary>
+    /// <c>ReadFormAsync</c> decodes with the declared charset and the endpoint's encoding check is
+    /// UTF-8, so only no charset or UTF-8 is accepted; the token is then decoded as UTF-8.
+    /// </summary>
+    public static IEnumerable<TestFixtureData> AcceptedCharsets()
+    {
+        yield return new TestFixtureData("application/x-www-form-urlencoded").SetArgDisplayNames(
+            "no charset"
+        );
+        yield return new TestFixtureData(
+            "application/x-www-form-urlencoded; charset=utf-8"
+        ).SetArgDisplayNames("charset=utf-8");
+        yield return new TestFixtureData(
+            "Application/X-WWW-Form-UrlEncoded; Charset=\"UTF-8\""
+        ).SetArgDisplayNames("a quoted upper-case UTF-8 charset");
+    }
+
+    [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(AcceptedCharsets))]
+    public class Given_a_revocation_request_declaring_an_accepted_charset(string contentType)
+        : RevocationRequestFixture
+    {
+        protected override HttpContent? Body =>
+            RawForm($"token=%C3%A9&client_id={ClientId}&client_secret={ClientSecret}", contentType);
+
+        [Test]
+        public void It_answers_an_empty_200()
+        {
+            Response.StatusCode.Should().Be(HttpStatusCode.OK, Content);
+            Content.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_hands_the_manager_the_token_decoded_as_utf8() =>
+            Manager.Requests.Should().ContainSingle().Which.Token.Should().Be("é");
+    }
+
+    /// <summary>
+    /// Bodies the encoding check would accept as UTF-8 but <c>ReadFormAsync</c> would decode
+    /// differently under the declared charset (<c>%C3%A9</c> as <c>??</c> under US-ASCII, raw UTF-8
+    /// <c>é</c> as <c>Ã©</c> under ISO-8859-1), and a charset .NET does not know.
+    /// </summary>
+    public static IEnumerable<TestFixtureData> RejectedCharsets()
+    {
+        yield return new TestFixtureData(
+            "token=%C3%A9",
+            "application/x-www-form-urlencoded; charset=us-ascii"
+        ).SetArgDisplayNames("an escaped UTF-8 token declared US-ASCII");
+        yield return new TestFixtureData(
+            "token=é",
+            "application/x-www-form-urlencoded; charset=iso-8859-1"
+        ).SetArgDisplayNames("a raw UTF-8 token declared ISO-8859-1");
+        yield return new TestFixtureData(
+            "token=opaque",
+            "application/x-www-form-urlencoded; charset=x-unknown"
+        ).SetArgDisplayNames("an unknown charset");
+        yield return new TestFixtureData(
+            "token=opaque",
+            "application/x-www-form-urlencoded; charset=utf-7"
+        ).SetArgDisplayNames("UTF-7, which .NET refuses to load");
+    }
+
+    [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(RejectedCharsets))]
+    public class Given_a_revocation_request_declaring_an_unsupported_charset(
+        string fields,
+        string contentType
+    ) : RevocationRequestFixture
+    {
+        protected override HttpContent? Body =>
+            RawForm($"{fields}&client_id={ClientId}&client_secret={Sentinel}", contentType);
+
+        [Test]
+        public void It_answers_invalid_request() =>
+            AssertOAuthError(
+                HttpStatusCode.BadRequest,
+                "invalid_request",
+                "The request form payload must be encoded as UTF-8."
+            );
+
+        [Test]
+        public void It_does_not_call_the_manager() => AssertManagerNotCalled();
+
+        [Test]
+        public void It_does_not_log_the_credentials() => AssertNotLogged(Sentinel);
+    }
+
+    // ----- D-03 row 3: duplicated parameters or Authorization header -----
+
+    public static IEnumerable<TestFixtureData> DuplicatedInputs()
+    {
+        yield return new TestFixtureData(
+            WithFormCredentials(("token", Token), ("token", Sentinel)),
+            Array.Empty<string>()
+        ).SetArgDisplayNames("token");
+        yield return new TestFixtureData(
+            WithFormCredentials(
+                ("token", Token),
+                ("token_type_hint", "access_token"),
+                ("token_type_hint", Sentinel)
+            ),
+            Array.Empty<string>()
+        ).SetArgDisplayNames("token_type_hint");
+        // One copy is the valid client id: duplicates are rejected, never resolved by picking one.
+        yield return new TestFixtureData(
+            new[]
+            {
+                ("token", Token),
+                ("client_id", ClientId),
+                ("client_id", Sentinel),
+                ("client_secret", ClientSecret),
+            },
+            Array.Empty<string>()
+        ).SetArgDisplayNames("client_id");
+        yield return new TestFixtureData(
+            new[]
+            {
+                ("token", Token),
+                ("client_id", ClientId),
+                ("client_secret", ClientSecret),
+                ("client_secret", Sentinel),
+            },
+            Array.Empty<string>()
+        ).SetArgDisplayNames("client_secret");
+        yield return new TestFixtureData(
+            new[] { ("token", Token) },
+            new[] { _validBasic, BasicHeader($"{Sentinel}:{ClientSecret}") }
+        ).SetArgDisplayNames("Authorization (two valid Basic values)");
+    }
+
+    [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(DuplicatedInputs))]
+    public class Given_a_revocation_request_with_a_duplicated_input(
+        (string, string)[] fields,
+        string[] authorization
+    ) : RevocationRequestFixture
+    {
+        protected override HttpContent? Body => Form(fields);
+
+        protected override IEnumerable<string> AuthorizationValues => authorization;
+
+        [Test]
+        public void It_answers_invalid_request() =>
+            AssertOAuthError(HttpStatusCode.BadRequest, "invalid_request", DuplicateDescription);
+
+        [Test]
+        public void It_does_not_send_a_challenge() => AssertNoChallenge();
+
+        [Test]
+        public void It_does_not_call_the_manager() => AssertManagerNotCalled();
+
+        [Test]
+        public void It_does_not_log_the_duplicated_values() => AssertNotLogged(Sentinel, Token);
+    }
+
+    // ----- D-03 row 4: mixed mechanisms, decided on form key presence -----
+
+    public static IEnumerable<TestFixtureData> MixedMechanisms()
+    {
+        yield return new TestFixtureData(
+            _validBasic,
+            new[] { ("token", Token), ("client_id", "") }
+        ).SetArgDisplayNames("valid Basic and an empty form client_id");
+        yield return new TestFixtureData(
+            _validBasic,
+            new[] { ("token", Token), ("client_secret", "x") }
+        ).SetArgDisplayNames("valid Basic and a form client_secret only");
+        yield return new TestFixtureData(
+            $"Basic {Sentinel}",
+            new[] { ("token", Token), ("client_secret", "x") }
+        ).SetArgDisplayNames("malformed Basic and a form client_secret");
+        yield return new TestFixtureData(
+            _validBasic,
+            WithFormCredentials(("token", Token))
+        ).SetArgDisplayNames("valid Basic and valid form credentials");
+        yield return new TestFixtureData(_validBasic, new[] { ("client_id", ClientId) }).SetArgDisplayNames(
+            "valid Basic, form credentials and no token"
+        );
+    }
+
+    [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(MixedMechanisms))]
+    public class Given_a_revocation_request_mixing_authentication_mechanisms(
+        string authorization,
+        (string, string)[] fields
+    ) : RevocationRequestFixture
+    {
+        protected override HttpContent? Body => Form(fields);
+
+        protected override IEnumerable<string> AuthorizationValues => [authorization];
+
+        [Test]
+        public void It_answers_invalid_request() =>
+            AssertOAuthError(HttpStatusCode.BadRequest, "invalid_request", MixedDescription);
+
+        [Test]
+        public void It_does_not_send_a_challenge() => AssertNoChallenge();
+
+        [Test]
+        public void It_does_not_call_the_manager() => AssertManagerNotCalled();
+
+        [Test]
+        public void It_does_not_log_the_header() => AssertNotLogged(Sentinel);
+    }
+
+    // ----- D-03 row 5: missing or empty token, ahead of every credential check -----
+
+    public static IEnumerable<TestFixtureData> MissingTokens()
+    {
+        yield return new TestFixtureData(
+            new[] { _validBasic },
+            Array.Empty<(string, string)>()
+        ).SetArgDisplayNames("valid Basic and no token");
+        yield return new TestFixtureData(new[] { _validBasic }, new[] { ("token", "") }).SetArgDisplayNames(
+            "valid Basic and an empty token"
+        );
+        yield return new TestFixtureData(Array.Empty<string>(), WithFormCredentials()).SetArgDisplayNames(
+            "valid form credentials and no token"
+        );
+        yield return new TestFixtureData(
+            Array.Empty<string>(),
+            Array.Empty<(string, string)>()
+        ).SetArgDisplayNames("no credentials and no token");
+        yield return new TestFixtureData(
+            new[] { $"Basic {Sentinel}" },
+            Array.Empty<(string, string)>()
+        ).SetArgDisplayNames("malformed Basic and no token");
+        yield return new TestFixtureData(
+            Array.Empty<string>(),
+            new[] { ("client_id", ClientId) }
+        ).SetArgDisplayNames("a form client_id only and no token");
+    }
+
+    [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(MissingTokens))]
+    public class Given_a_revocation_request_without_a_token(string[] authorization, (string, string)[] fields)
+        : RevocationRequestFixture
+    {
+        protected override HttpContent? Body => Form(fields);
+
+        protected override IEnumerable<string> AuthorizationValues => authorization;
+
+        [Test]
+        public void It_answers_invalid_request() =>
+            AssertOAuthError(HttpStatusCode.BadRequest, "invalid_request", MissingTokenDescription);
+
+        [Test]
+        public void It_does_not_send_a_challenge() => AssertNoChallenge();
+
+        [Test]
+        public void It_does_not_call_the_manager() => AssertManagerNotCalled();
+    }
+
+    // ----- D-03 row 6 / D-04: malformed Basic credentials -----
+
+    public static IEnumerable<TestFixtureData> MalformedBasicValues()
+    {
+        string sentinelPair = $"{ClientId}:{Sentinel}";
+        string validBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(sentinelPair));
+        yield return new TestFixtureData("Basic", "base64").SetArgDisplayNames(
+            "a Basic scheme with no value"
+        );
+        yield return new TestFixtureData("Basic ", "base64").SetArgDisplayNames(
+            "a Basic scheme and an empty value"
+        );
+        yield return new TestFixtureData(
+            $"Basic {validBase64[..4]} {validBase64[4..]}",
+            "base64"
+        ).SetArgDisplayNames("embedded whitespace");
+        yield return new TestFixtureData("Basic YWJj-2Rl", "base64").SetArgDisplayNames(
+            "the URL-safe '-' character"
+        );
+        yield return new TestFixtureData("Basic YWJj_2Rl", "base64").SetArgDisplayNames(
+            "the URL-safe '_' character"
+        );
+        yield return new TestFixtureData("Basic YWJjZA", "base64").SetArgDisplayNames(
+            "a length that is not a multiple of four"
+        );
+        yield return new TestFixtureData("Basic YQ=a", "base64").SetArgDisplayNames("padding before the end");
+        yield return new TestFixtureData("Basic Y===", "base64").SetArgDisplayNames(
+            "three padding characters"
+        );
+        yield return new TestFixtureData(
+            BasicHeader([0xFF, (byte)':', (byte)'a']),
+            "utf8"
+        ).SetArgDisplayNames("bytes that are not UTF-8");
+        yield return new TestFixtureData(BasicHeader(Sentinel), "separator").SetArgDisplayNames("no colon");
+        yield return new TestFixtureData(BasicHeader($":{Sentinel}"), "empty").SetArgDisplayNames(
+            "an empty client id"
+        );
+        yield return new TestFixtureData(BasicHeader($"{Sentinel}:"), "empty").SetArgDisplayNames(
+            "an empty secret"
+        );
+        yield return new TestFixtureData(
+            BasicHeader($"{ClientId}:{Sentinel}%"),
+            "form-decoding"
+        ).SetArgDisplayNames("a lone '%'");
+        yield return new TestFixtureData(
+            BasicHeader($"{ClientId}:{Sentinel}%2"),
+            "form-decoding"
+        ).SetArgDisplayNames("'%' with one hex digit");
+        yield return new TestFixtureData(
+            BasicHeader($"{ClientId}:%GG{Sentinel}"),
+            "form-decoding"
+        ).SetArgDisplayNames("'%' with non-hex digits");
+        yield return new TestFixtureData(
+            BasicHeader($"cli%ent:{Sentinel}"),
+            "form-decoding"
+        ).SetArgDisplayNames("a '%' in the client id");
+        yield return new TestFixtureData(
+            BasicHeader($"{ClientId}:{Sentinel}%FF"),
+            "form-decoding"
+        ).SetArgDisplayNames("%FF after percent decoding");
+        yield return new TestFixtureData(
+            BasicHeader($"{ClientId}:{Sentinel}%C3"),
+            "form-decoding"
+        ).SetArgDisplayNames("a lone %C3 lead byte");
+    }
+
+    [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(MalformedBasicValues))]
+    public class Given_a_revocation_request_with_malformed_basic_credentials(
+        string authorization,
+        string stage
+    ) : RevocationRequestFixture
+    {
+        protected override HttpContent? Body => Form(("token", Token));
+
+        protected override IEnumerable<string> AuthorizationValues => [authorization];
+
+        [Test]
+        public void It_answers_401_invalid_client() =>
+            AssertOAuthError(HttpStatusCode.Unauthorized, "invalid_client", InvalidCredentialsDescription);
+
+        [Test]
+        public void It_sends_the_basic_challenge() => AssertChallenge();
+
+        [Test]
+        public void It_does_not_call_the_manager() => AssertManagerNotCalled();
+
+        [Test]
+        public void It_logs_only_the_fixed_stage_name() =>
+            Logs
+                .Records.Should()
+                .ContainSingle(record =>
+                    record.Message == $"Revocation Basic credentials were malformed at the {stage} stage"
+                );
+
+        [Test]
+        public void It_does_not_log_the_credentials() =>
+            AssertNotLogged(
+                Sentinel,
+                Token,
+                authorization.Length > "Basic ".Length ? authorization["Basic ".Length..] : Sentinel
+            );
+    }
+
+    // ----- D-03 "Basic attempted" / D-04 stage 0: an invalid separator after the scheme -----
+
+    /// <summary>
+    /// A tab (alone, or followed by a space) after <c>Basic</c> is not the RFC 7235 <c>1*SP</c>
+    /// separator, but the scheme token is still <c>Basic</c>: the request attempted Basic and is
+    /// malformed, so it must never fall back to the form rules.
+    /// </summary>
+    public static IEnumerable<TestFixtureData> InvalidBasicSeparators()
+    {
+        string sentinelBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{ClientId}:{Sentinel}"));
+        yield return new TestFixtureData($"Basic\t{sentinelBase64}", sentinelBase64).SetArgDisplayNames(
+            "a tab"
+        );
+        yield return new TestFixtureData($"Basic\t {sentinelBase64}", sentinelBase64).SetArgDisplayNames(
+            "a tab then a space"
+        );
+        yield return new TestFixtureData($"basic\t{sentinelBase64}", sentinelBase64).SetArgDisplayNames(
+            "a lower-case scheme and a tab"
+        );
+    }
+
+    [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(InvalidBasicSeparators))]
+    public class Given_a_raw_revocation_request_with_an_invalid_separator_after_basic(
+        string authorization,
+        string credentials
+    ) : RevocationRequestFixture
+    {
+        protected override bool SendRawRequest => true;
+
+        protected override HttpContent? Body => Form(("token", Token));
+
+        protected override IEnumerable<string> AuthorizationValues => [authorization];
+
+        [Test]
+        public void It_answers_401_invalid_client() =>
+            AssertOAuthError(HttpStatusCode.Unauthorized, "invalid_client", InvalidCredentialsDescription);
+
+        [Test]
+        public void It_sends_the_basic_challenge() => AssertChallenge();
+
+        [Test]
+        public void It_does_not_call_the_manager() => AssertManagerNotCalled();
+
+        [Test]
+        public void It_logs_only_the_fixed_stage_name() =>
+            Logs
+                .Records.Should()
+                .ContainSingle(record =>
+                    record.Message
+                    == "Revocation Basic credentials were malformed at the scheme-separator stage"
+                );
+
+        [Test]
+        public void It_does_not_log_the_credentials() => AssertNotLogged(Sentinel, Token, credentials);
+    }
+
+    public static IEnumerable<TestFixtureData> InvalidBasicSeparatorsWithFormCredentialKeys()
+    {
+        string sentinelBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{ClientId}:{Sentinel}"));
+        yield return new TestFixtureData(
+            $"Basic\t{sentinelBase64}",
+            sentinelBase64,
+            WithFormCredentials(("token", Token))
+        ).SetArgDisplayNames("a tab and valid form credentials");
+        yield return new TestFixtureData(
+            $"Basic\t {sentinelBase64}",
+            sentinelBase64,
+            WithFormCredentials(("token", Token))
+        ).SetArgDisplayNames("a tab then a space and valid form credentials");
+        yield return new TestFixtureData(
+            $"Basic\t{sentinelBase64}",
+            sentinelBase64,
+            new[] { ("token", Token), ("client_id", ClientId) }
+        ).SetArgDisplayNames("a tab and a form client_id only");
+        yield return new TestFixtureData(
+            $"Basic\t {sentinelBase64}",
+            sentinelBase64,
+            new[] { ("token", Token), ("client_secret", ClientSecret) }
+        ).SetArgDisplayNames("a tab then a space and a form client_secret only");
+    }
+
+    [TestFixtureSource(
+        typeof(RevocationRequestContractTests),
+        nameof(InvalidBasicSeparatorsWithFormCredentialKeys)
+    )]
+    public class Given_a_raw_revocation_request_with_an_invalid_separator_after_basic_and_form_credentials(
+        string authorization,
+        string credentials,
+        (string, string)[] fields
+    ) : RevocationRequestFixture
+    {
+        protected override bool SendRawRequest => true;
+
+        protected override HttpContent? Body => Form(fields);
+
+        protected override IEnumerable<string> AuthorizationValues => [authorization];
+
+        [Test]
+        public void It_answers_invalid_request_for_mixed_mechanisms() =>
+            AssertOAuthError(HttpStatusCode.BadRequest, "invalid_request", MixedDescription);
+
+        [Test]
+        public void It_does_not_send_a_challenge() => AssertNoChallenge();
+
+        [Test]
+        public void It_does_not_call_the_manager() => AssertManagerNotCalled();
+
+        [Test]
+        public void It_does_not_log_the_credentials() =>
+            AssertNotLogged(Sentinel, Token, ClientSecret, credentials);
+    }
+
+    /// <summary>
+    /// Several spaces after <c>Basic</c> are valid <c>1*SP</c> and still authenticate, sent raw so
+    /// the client cannot collapse them first.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_raw_revocation_request_with_several_spaces_after_basic : RevocationRequestFixture
+    {
+        protected override bool SendRawRequest => true;
+
+        protected override HttpContent? Body => Form(("token", Token));
+
+        protected override IEnumerable<string> AuthorizationValues =>
+            [$"Basic   {Convert.ToBase64String(Encoding.UTF8.GetBytes($"{ClientId}:{ClientSecret}"))}"];
+
+        [Test]
+        public void It_answers_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_passes_the_credentials_to_the_manager() =>
+            Manager
+                .Requests.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(new TokenRevocationRequest(ClientId, ClientSecret, Token, TokenTypeHint.None));
+    }
+
+    /// <summary>
+    /// A scheme token that merely starts with <c>Basic</c> is a different scheme, not a Basic
+    /// attempt: it is ignored like any non-Basic header and the form credentials authenticate.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_raw_revocation_request_with_a_longer_scheme_token_and_form_credentials
+        : RevocationRequestFixture
+    {
+        protected override bool SendRawRequest => true;
+
+        protected override HttpContent? Body => Form(WithFormCredentials(("token", Token)));
+
+        protected override IEnumerable<string> AuthorizationValues => [$"Basicx {Sentinel}"];
+
+        [Test]
+        public void It_answers_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_authenticates_with_the_form_credentials_only() =>
+            Manager
+                .Requests.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(new TokenRevocationRequest(ClientId, ClientSecret, Token, TokenTypeHint.None));
+    }
+
+    // ----- D-04: well-formed Basic credentials decode exactly -----
+
+    public static IEnumerable<TestFixtureData> WellFormedBasicValues()
+    {
+        yield return new TestFixtureData("Basic", "client:secret", "client", "secret").SetArgDisplayNames(
+            "plain values"
+        );
+        yield return new TestFixtureData("basic", "client:secret", "client", "secret").SetArgDisplayNames(
+            "a lower-case scheme"
+        );
+        yield return new TestFixtureData(
+            "Basic",
+            "my+client:se+cret",
+            "my client",
+            "se cret"
+        ).SetArgDisplayNames("a space encoded as '+'");
+        yield return new TestFixtureData(
+            "Basic",
+            "my%20client:se%20cret",
+            "my client",
+            "se cret"
+        ).SetArgDisplayNames("a space encoded as %20");
+        yield return new TestFixtureData("Basic", "client:a%2Bb", "client", "a+b").SetArgDisplayNames(
+            "a literal '+' encoded as %2B"
+        );
+        yield return new TestFixtureData("Basic", "client:a:b", "client", "a:b").SetArgDisplayNames(
+            "a colon inside the secret"
+        );
+        yield return new TestFixtureData("Basic", "cli%3Aent:secret", "cli:ent", "secret").SetArgDisplayNames(
+            "an encoded colon in the client id"
+        );
+        yield return new TestFixtureData("Basic", "client:sécret", "client", "sécret").SetArgDisplayNames(
+            "raw UTF-8"
+        );
+        yield return new TestFixtureData(
+            "Basic",
+            "client:s%C3%A9cret",
+            "client",
+            "sécret"
+        ).SetArgDisplayNames("percent-encoded UTF-8");
+    }
+
+    [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(WellFormedBasicValues))]
+    public class Given_a_revocation_request_with_well_formed_basic_credentials(
+        string scheme,
+        string decoded,
+        string expectedClientId,
+        string expectedSecret
+    ) : RevocationRequestFixture
+    {
+        protected override HttpContent? Body => Form(("token", Token));
+
+        protected override IEnumerable<string> AuthorizationValues =>
+            [$"{scheme} {Convert.ToBase64String(Encoding.UTF8.GetBytes(decoded))}"];
+
+        [Test]
+        public void It_answers_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_passes_the_form_decoded_credentials_to_the_manager() =>
+            Manager
+                .Requests.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(new TokenRevocationRequest(expectedClientId, expectedSecret, Token, TokenTypeHint.None));
+    }
+
+    // ----- D-03 row 7: Basic not attempted and form credentials incomplete -----
+
+    public static IEnumerable<TestFixtureData> IncompleteFormCredentials()
+    {
+        yield return new TestFixtureData(
+            Array.Empty<string>(),
+            new[] { ("token", Token) }
+        ).SetArgDisplayNames("no credentials");
+        yield return new TestFixtureData(
+            new[] { $"Bearer {Sentinel}" },
+            new[] { ("token", Token) }
+        ).SetArgDisplayNames("a Bearer header and no form credentials");
+        yield return new TestFixtureData(
+            Array.Empty<string>(),
+            new[] { ("token", Token), ("client_id", ClientId) }
+        ).SetArgDisplayNames("a form client_id only");
+        yield return new TestFixtureData(
+            Array.Empty<string>(),
+            new[] { ("token", Token), ("client_secret", Sentinel) }
+        ).SetArgDisplayNames("a form client_secret only");
+        yield return new TestFixtureData(
+            Array.Empty<string>(),
+            new[] { ("token", Token), ("client_id", ClientId), ("client_secret", "") }
+        ).SetArgDisplayNames("an empty form client_secret");
+        yield return new TestFixtureData(
+            Array.Empty<string>(),
+            new[] { ("token", Token), ("client_id", ""), ("client_secret", Sentinel) }
+        ).SetArgDisplayNames("an empty form client_id");
+    }
+
+    [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(IncompleteFormCredentials))]
+    public class Given_a_revocation_request_with_incomplete_form_credentials(
+        string[] authorization,
+        (string, string)[] fields
+    ) : RevocationRequestFixture
+    {
+        protected override HttpContent? Body => Form(fields);
+
+        protected override IEnumerable<string> AuthorizationValues => authorization;
+
+        [Test]
+        public void It_answers_400_invalid_client() =>
+            AssertOAuthError(HttpStatusCode.BadRequest, "invalid_client", AuthenticationRequiredDescription);
+
+        [Test]
+        public void It_does_not_send_a_challenge() => AssertNoChallenge();
+
+        [Test]
+        public void It_does_not_call_the_manager() => AssertManagerNotCalled();
+    }
+
+    /// <summary>
+    /// A Bearer header is not client authentication for this endpoint (Q-03): it is ignored, and
+    /// the form credentials authenticate on their own.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_with_a_bearer_header_and_form_credentials
+        : RevocationRequestFixture
+    {
+        protected override HttpContent? Body => Form(WithFormCredentials(("token", Token)));
+
+        protected override IEnumerable<string> AuthorizationValues => [$"Bearer {Sentinel}"];
+
+        [Test]
+        public void It_answers_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_authenticates_with_the_form_credentials_only() =>
+            Manager
+                .Requests.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(new TokenRevocationRequest(ClientId, ClientSecret, Token, TokenTypeHint.None));
+    }
+
+    // ----- D-03 row 8: the manager rejects the client -----
+
+    [TestFixture]
+    public class Given_a_basic_authenticated_revocation_the_manager_rejects : RevocationRequestFixture
+    {
+        protected override TokenRevocationResult Respond() => new TokenRevocationResult.InvalidClient();
+
+        protected override HttpContent? Body => Form(("token", Token));
+
+        protected override IEnumerable<string> AuthorizationValues => [_validBasic];
+
+        [Test]
+        public void It_answers_401_invalid_client() =>
+            AssertOAuthError(HttpStatusCode.Unauthorized, "invalid_client", InvalidCredentialsDescription);
+
+        [Test]
+        public void It_sends_the_basic_challenge() => AssertChallenge();
+    }
+
+    [TestFixture]
+    public class Given_a_form_authenticated_revocation_the_manager_rejects : RevocationRequestFixture
+    {
+        protected override TokenRevocationResult Respond() => new TokenRevocationResult.InvalidClient();
+
+        protected override HttpContent? Body => Form(WithFormCredentials(("token", Token)));
+
+        [Test]
+        public void It_answers_400_invalid_client() =>
+            AssertOAuthError(HttpStatusCode.BadRequest, "invalid_client", InvalidCredentialsDescription);
+
+        [Test]
+        public void It_does_not_send_a_challenge() => AssertNoChallenge();
+    }
+
+    // ----- D-03 rows 9–12: the remaining manager outcomes -----
+
+    public static IEnumerable<TestFixtureData> ManagerOutcomes()
+    {
+        yield return new TestFixtureData(
+            new TokenRevocationResult.UnsupportedTokenType(),
+            HttpStatusCode.BadRequest,
+            "unsupported_token_type",
+            "The token type is not supported by the identity provider."
+        );
+        yield return new TestFixtureData(
+            new TokenRevocationResult.InvalidRequest(),
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The identity provider rejected the revocation request."
+        );
+        yield return new TestFixtureData(
+            new TokenRevocationResult.TemporarilyUnavailable("contract-boundary"),
+            HttpStatusCode.ServiceUnavailable,
+            "temporarily_unavailable",
+            "Token revocation could not be confirmed. Retry the request and confirm the token's state through the provider's validation path."
+        );
+    }
+
+    [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(ManagerOutcomes))]
+    public class Given_a_revocation_the_manager_does_not_complete(
+        TokenRevocationResult outcome,
+        HttpStatusCode status,
+        string error,
+        string description
+    ) : RevocationRequestFixture
+    {
+        protected override TokenRevocationResult Respond() => outcome;
+
+        protected override HttpContent? Body => Form(("token", Token));
+
+        protected override IEnumerable<string> AuthorizationValues => [_validBasic];
+
+        [Test]
+        public void It_answers_the_mapped_oauth_error() => AssertOAuthError(status, error, description);
+
+        [Test]
+        public void It_does_not_send_a_challenge() => AssertNoChallenge();
+    }
+
+    [TestFixture]
+    public class Given_a_revocation_the_manager_completes : RevocationRequestFixture
+    {
+        protected override HttpContent? Body => Form(("token", Token), ("token_type_hint", "access_token"));
+
+        protected override IEnumerable<string> AuthorizationValues => [_validBasic];
+
+        [Test]
+        public void It_answers_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_answers_with_an_empty_body() => Content.Should().BeEmpty();
+
+        [Test]
+        public void It_passes_the_token_and_hint_to_the_manager() =>
+            Manager
+                .Requests.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(new TokenRevocationRequest(ClientId, ClientSecret, Token, TokenTypeHint.AccessToken));
+    }
+
+    // ----- D-06: token_type_hint -----
+
+    public static IEnumerable<TestFixtureData> TokenTypeHints()
+    {
+        yield return new TestFixtureData("access_token", TokenTypeHint.AccessToken);
+        yield return new TestFixtureData("refresh_token", TokenTypeHint.RefreshToken);
+        yield return new TestFixtureData("bogus", TokenTypeHint.None);
+        yield return new TestFixtureData("ACCESS_TOKEN", TokenTypeHint.None);
+        yield return new TestFixtureData("", TokenTypeHint.None);
+        yield return new TestFixtureData(null, TokenTypeHint.None);
+    }
+
+    [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(TokenTypeHints))]
+    public class Given_a_revocation_request_with_a_token_type_hint(string? hint, TokenTypeHint expected)
+        : RevocationRequestFixture
+    {
+        protected override HttpContent? Body =>
+            hint is null ? Form(("token", Token)) : Form(("token", Token), ("token_type_hint", hint));
+
+        protected override IEnumerable<string> AuthorizationValues => [_validBasic];
+
+        [Test]
+        public void It_answers_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_passes_the_parsed_hint() =>
+            Manager.Requests.Should().ContainSingle().Which.TokenTypeHint.Should().Be(expected);
+    }
+
+    // ----- D-03 row 13 / D-17: a programming fault escaping the handler -----
+
+    /// <summary>
+    /// A fault inside the endpoint after the manager was called is a 500 <c>server_error</c> in the
+    /// OAuth format, logged once as a failed request that names the exception types and carries no
+    /// exception object, and nothing the caller sent (token, secret, Authorization value) or the
+    /// exception's text reaches any log field (D-15, D-17).
+    /// </summary>
+    [TestFixture]
+    public class Given_a_revocation_request_whose_manager_faults : RevocationRequestFixture
+    {
+        private const string FaultText = "The revocation manager faulted.";
+
+        protected override TokenRevocationResult Respond() => throw new InvalidOperationException(FaultText);
+
+        protected override HttpContent? Body => Form(("token", Token));
+
+        protected override IEnumerable<string> AuthorizationValues => [_validBasic];
+
+        [Test]
+        public void It_answers_server_error_in_the_oauth_format() =>
+            AssertOAuthError(
+                HttpStatusCode.InternalServerError,
+                "server_error",
+                "The revocation request could not be processed."
+            );
+
+        [Test]
+        public void It_does_not_leak_the_exception_text() => Content.Should().NotContain(FaultText);
+
+        [Test]
+        public void It_sends_the_trace_id_header() =>
+            Response.Headers.GetValues("TraceId").Should().ContainSingle().Which.Should().NotBeEmpty();
+
+        [Test]
+        public void It_logs_one_failed_request_naming_the_exception_types_without_the_exception()
+        {
+            RevocationLogCapture.Record failed = Logs
+                .Records.Should()
+                .ContainSingle(record => record.EventId.Id == RequestLoggingEventIds.HttpRequestFailed.Id)
+                .Subject;
+            failed.Exception.Should().BeNull();
+            failed
+                .State.Should()
+                .Contain(
+                    new KeyValuePair<string, object?>(
+                        "ExceptionTypes",
+                        typeof(InvalidOperationException).FullName
+                    )
+                );
+        }
+
+        [Test]
+        public void It_does_not_log_the_exception_text() => AssertNotLogged(FaultText);
+
+        [Test]
+        public void It_does_not_log_the_caller_input() =>
+            AssertNotLogged(Token, ClientSecret, _validBasic["Basic ".Length..]);
+    }
+}
+
+/// <summary>
+/// Captures every log record the host writes: category, level, rendered message, every structured
+/// state pair, every active scope (through <see cref="ISupportExternalScope"/>), and the attached
+/// exception. <see cref="AllCapturedText"/> flattens all of it, including each exception's message,
+/// data and string form down the inner chain, so a disclosure assertion cannot miss a field.
+/// </summary>
+internal sealed class RevocationLogCapture : ILoggerProvider, ISupportExternalScope
+{
+    public sealed record Record(
+        string Category,
+        LogLevel Level,
+        EventId EventId,
+        string Message,
+        IReadOnlyList<KeyValuePair<string, object?>> State,
+        IReadOnlyList<object?> Scopes,
+        Exception? Exception
+    );
+
+    private readonly System.Collections.Concurrent.ConcurrentQueue<Record> _records = new();
+    private IExternalScopeProvider _scopeProvider = new LoggerExternalScopeProvider();
+
+    public IReadOnlyList<Record> Records => [.. _records];
+
+    public ILogger CreateLogger(string categoryName) => new CapturingLogger(categoryName, this);
+
+    public void SetScopeProvider(IExternalScopeProvider scopeProvider) => _scopeProvider = scopeProvider;
+
+    public void Dispose() { }
+
+    public string AllCapturedText()
+    {
+        StringBuilder text = new();
+        foreach (Record record in _records)
+        {
+            text.AppendLine($"{record.Category} {record.Level} {record.EventId} {record.Message}");
+            AppendPairs(text, record.State);
+            foreach (object? scope in record.Scopes)
+            {
+                text.AppendLine(scope?.ToString());
+                if (scope is IEnumerable<KeyValuePair<string, object?>> pairs)
+                {
+                    AppendPairs(text, pairs);
+                }
+            }
+            for (
+                Exception? exception = record.Exception;
+                exception is not null;
+                exception = exception.InnerException
+            )
+            {
+                text.AppendLine($"{exception.GetType().FullName} {exception.Message}");
+                foreach (System.Collections.DictionaryEntry entry in exception.Data)
+                {
+                    text.AppendLine($"{entry.Key}={entry.Value}");
+                }
+                text.AppendLine(exception.ToString());
+            }
+        }
+        return text.ToString();
+    }
+
+    private static void AppendPairs(StringBuilder text, IEnumerable<KeyValuePair<string, object?>> pairs)
+    {
+        foreach ((string key, object? value) in pairs)
+        {
+            text.AppendLine($"{key}={value}");
+        }
+    }
+
+    private sealed class CapturingLogger(string category, RevocationLogCapture capture) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => capture._scopeProvider.Push(state);
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            List<object?> scopes = [];
+            capture._scopeProvider.ForEachScope((scope, list) => list.Add(scope), scopes);
+            List<KeyValuePair<string, object?>> pairs = state
+                is IEnumerable<KeyValuePair<string, object?>> values
+                ? [.. values]
+                : [];
+            capture._records.Enqueue(
+                new Record(category, logLevel, eventId, formatter(state, exception), pairs, scopes, exception)
+            );
+        }
     }
 }

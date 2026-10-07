@@ -9,10 +9,13 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -851,13 +854,36 @@ public class BearerSchemePipelineTests
         public void It_still_validates_the_signing_key() =>
             _options.TokenValidationParameters.ValidateIssuerSigningKey.Should().BeTrue();
 
+        // The revocation route's bearer exemption (DMS-1327) is composed in front of the shared boundary, so the
+        // handler is no longer the boundary itself. On that route it stops with no result before the boundary reads
+        // the token; every other route reaches the boundary, which the dependency-503 fixtures above (3.1-f, 3.1-m)
+        // observe through this scheme.
         [Test]
-        public void It_runs_the_shared_boundary_on_message_received()
+        public async Task It_stops_before_the_shared_boundary_on_the_revocation_route()
         {
-            _options.Events.OnMessageReceived.Target.Should().BeSameAs(BearerEvents());
-            _options
-                .Events.OnMessageReceived.Method.Name.Should()
-                .Be(nameof(SigningKeyBearerEvents.MessageReceivedAsync));
+            DefaultHttpContext httpContext = new() { RequestServices = _factory.Services };
+            httpContext.SetEndpoint(
+                new Endpoint(
+                    _ => Task.CompletedTask,
+                    new EndpointMetadataCollection(BearerAuthenticationExemptMetadata.Instance),
+                    "revocation"
+                )
+            );
+            httpContext.Request.Headers.Authorization = "Bearer not-a-token";
+            MessageReceivedContext context = new(
+                httpContext,
+                new AuthenticationScheme(
+                    JwtBearerDefaults.AuthenticationScheme,
+                    null,
+                    typeof(JwtBearerHandler)
+                ),
+                _options
+            );
+
+            await _options.Events.OnMessageReceived(context);
+
+            context.Result.Should().NotBeNull();
+            context.Result!.None.Should().BeTrue();
         }
 
         [Test]

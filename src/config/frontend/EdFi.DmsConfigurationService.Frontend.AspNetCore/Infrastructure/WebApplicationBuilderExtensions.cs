@@ -128,6 +128,16 @@ public static class WebApplicationBuilderExtensions
             }
         );
 
+        webApplicationBuilder
+            .Services.AddHttpClient(
+                KeycloakTokenRevocationManager.HttpClientName,
+                client =>
+                {
+                    client.Timeout = TimeSpan.FromSeconds(appSettings.TokenRequestTimeoutSeconds);
+                }
+            )
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
         webApplicationBuilder.Services.AddTransient<IClaimsHierarchyManager, ClaimsHierarchyManager>();
         webApplicationBuilder.Services.AddTransient<
             IAuthorizationMetadataResponseFactory,
@@ -394,6 +404,7 @@ public static class WebApplicationBuilderExtensions
 
                         options.Events = new JwtBearerEvents
                         {
+                            OnMessageReceived = BearerAuthenticationExemptMetadata.SkipOnMarkedEndpoint,
                             OnAuthenticationFailed = context =>
                             {
                                 logger.Error("Authentication failed: {Message}", context.Exception.Message);
@@ -411,7 +422,24 @@ public static class WebApplicationBuilderExtensions
                 .Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
                 .Configure<SigningKeyConfigurationManager, SigningKeyBearerEvents>(
                     (options, configurationManager, bearerEvents) =>
-                        options.UseSigningKeySnapshot(configurationManager, bearerEvents)
+                    {
+                        options.UseSigningKeySnapshot(configurationManager, bearerEvents);
+
+                        // UseSigningKeySnapshot replaces the scheme's message-received handler, so the
+                        // revocation route's exemption is composed back in front of it: on that route the
+                        // handler stops before the snapshot boundary reads or validates the token (DMS-1327).
+                        Func<MessageReceivedContext, Task> snapshotMessageReceived = options
+                            .Events
+                            .OnMessageReceived;
+                        options.Events.OnMessageReceived = async context =>
+                        {
+                            await BearerAuthenticationExemptMetadata.SkipOnMarkedEndpoint(context);
+                            if (context.Result is null)
+                            {
+                                await snapshotMessageReceived(context);
+                            }
+                        };
+                    }
                 );
 
             // Add authorization services for OpenIddict (same as Keycloak)
@@ -480,6 +508,7 @@ public static class WebApplicationBuilderExtensions
 
                         options.Events = new JwtBearerEvents
                         {
+                            OnMessageReceived = BearerAuthenticationExemptMetadata.SkipOnMarkedEndpoint,
                             OnAuthenticationFailed = context =>
                             {
                                 Console.WriteLine($"Authentication failed: {context.Exception.Message}");
