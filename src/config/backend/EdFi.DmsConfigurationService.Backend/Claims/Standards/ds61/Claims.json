@@ -6230,6 +6230,17 @@
               "name": "Delete"
             }
           ]
+        },
+        {
+          "name": "SeedLoader",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Update"
+            }
+          ]
         }
       ],
       "claims": [
