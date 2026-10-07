@@ -114,10 +114,10 @@ environment bootstrapped before they existed.
 | Application (per deployment; code ST, T1 or T2) | Claim set | Education organizations | Vendor namespace |
 |-------------------------------------------------|-----------|-------------------------|------------------|
 | `Security Review (<environment>)` | `EdFiSandbox` | 255901, 255901001, 255901107 | `uri://ed-fi.org` |
-| `Security Review <code> SISVendor District` | `SISVendor` | 255901 | `uri://ed-fi.org/` |
-| `Security Review <code> SISVendor School` | `SISVendor` | 255901107 | `uri://ed-fi.org/` |
+| `Security Review <code> SISVendor District` | `SISVendor` | 255901 | `uri://ed-fi.org` |
+| `Security Review <code> SISVendor School` | `SISVendor` | 255901107 | `uri://ed-fi.org` |
 | `Security Review <code> AssessmentVendor District` | `AssessmentVendor` | 255901 | `uri://one.example.com` |
-| `Security Review <code> EdFiSandbox District` | `EdFiSandbox` | 255901 | `uri://ed-fi.org/` |
+| `Security Review <code> EdFiSandbox District` | `EdFiSandbox` | 255901 | `uri://ed-fi.org` |
 
 Token endpoint (HTTP Basic `key:secret`, `grant_type=client_credentials`): the shared Keycloak
 realm at `…/auth/realms/edfi/protocol/openid-connect/token`. Discovery advertises the DMS proxy

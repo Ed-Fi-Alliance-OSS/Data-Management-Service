@@ -515,11 +515,22 @@ Describe "Azure VM review variant applications" {
         $variants = @(Get-ReviewVariant)
 
         @($variants | ForEach-Object { "$($_.ClaimSet)|$($_.EducationOrganizationIds -join ',')|$($_.NamespacePrefixes)" }) | Should -Be @(
-            "SISVendor|255901|uri://ed-fi.org/",
-            "SISVendor|255901107|uri://ed-fi.org/",
+            "SISVendor|255901|uri://ed-fi.org",
+            "SISVendor|255901107|uri://ed-fi.org",
             "AssessmentVendor|255901|uri://one.example.com",
-            "EdFiSandbox|255901|uri://ed-fi.org/"
+            "EdFiSandbox|255901|uri://ed-fi.org"
         )
+    }
+
+    It "gives the Ed-Fi namespace variants the full-access applications' namespace prefix" {
+        # Namespace authorization is a starts-with match, and the sample data stores some records
+        # under exactly uri://ed-fi.org, so a trailing slash would hide them from these keys only.
+        $bootstrap = Get-Content -LiteralPath (Join-Path $PSScriptRoot "../../azure-vm/compose/bootstrap/bootstrap.ps1") -Raw
+        $fullAccess = [regex]::Match($bootstrap, '(?s)function New-ReviewApplication\b.*?-NamespacePrefixes "([^"]+)"').Groups[1].Value
+        $fullAccess | Should -Be "uri://ed-fi.org"
+
+        @(Get-ReviewVariant | Where-Object { $_.ClaimSet -ne "AssessmentVendor" } | ForEach-Object { $_.NamespacePrefixes } | Sort-Object -Unique) |
+            Should -Be @($fullAccess)
     }
 
     It "creates every variant in all three deployments, bound to each deployment's data store" {

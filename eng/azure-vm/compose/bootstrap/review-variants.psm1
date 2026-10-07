@@ -73,19 +73,21 @@ function Get-ReviewVariant {
     .SYNOPSIS
         Returns the claim-set / EdOrg / namespace variants every deployment receives.
     .DESCRIPTION
-        Grand Bend ISD is LEA 255901; 255901107 is one of its schools. The AssessmentVendor
-        variant uses a namespace outside the sample data on purpose, so namespace-based
-        authorization has nothing to grant it.
+        Grand Bend ISD is LEA 255901; 255901107 is one of its schools. The Ed-Fi variants use
+        the full-access applications' prefix, uri://ed-fi.org with no trailing slash: the match
+        is starts-with, and the sample data stores some records under exactly uri://ed-fi.org.
+        The AssessmentVendor variant uses a namespace outside the sample data on purpose, so
+        namespace-based authorization has nothing to grant it.
     #>
     [CmdletBinding()]
     [OutputType([object[]])]
     param()
 
     return @(
-        @{ Name = "SISVendor District"; ClaimSet = "SISVendor"; EducationOrganizationIds = @([long]255901); NamespacePrefixes = "uri://ed-fi.org/" },
-        @{ Name = "SISVendor School"; ClaimSet = "SISVendor"; EducationOrganizationIds = @([long]255901107); NamespacePrefixes = "uri://ed-fi.org/" },
+        @{ Name = "SISVendor District"; ClaimSet = "SISVendor"; EducationOrganizationIds = @([long]255901); NamespacePrefixes = "uri://ed-fi.org" },
+        @{ Name = "SISVendor School"; ClaimSet = "SISVendor"; EducationOrganizationIds = @([long]255901107); NamespacePrefixes = "uri://ed-fi.org" },
         @{ Name = "AssessmentVendor District"; ClaimSet = "AssessmentVendor"; EducationOrganizationIds = @([long]255901); NamespacePrefixes = "uri://one.example.com" },
-        @{ Name = "EdFiSandbox District"; ClaimSet = "EdFiSandbox"; EducationOrganizationIds = @([long]255901); NamespacePrefixes = "uri://ed-fi.org/" }
+        @{ Name = "EdFiSandbox District"; ClaimSet = "EdFiSandbox"; EducationOrganizationIds = @([long]255901); NamespacePrefixes = "uri://ed-fi.org" }
     )
 }
 

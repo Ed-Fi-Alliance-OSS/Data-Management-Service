@@ -204,10 +204,10 @@ Adds four applications to each deployment, 12 key/secret pairs in all:
 
 | Claim set | Education organization | Vendor namespace |
 |-----------|------------------------|------------------|
-| `SISVendor` | 255901 (district) | `uri://ed-fi.org/` |
-| `SISVendor` | 255901107 (school) | `uri://ed-fi.org/` |
+| `SISVendor` | 255901 (district) | `uri://ed-fi.org` |
+| `SISVendor` | 255901107 (school) | `uri://ed-fi.org` |
 | `AssessmentVendor` | 255901 (district) | `uri://one.example.com` |
-| `EdFiSandbox` | 255901 (district) | `uri://ed-fi.org/` |
+| `EdFiSandbox` | 255901 (district) | `uri://ed-fi.org` |
 
 ```bash
 cd ~/dms-src/eng/azure-vm/compose
