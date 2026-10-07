@@ -214,13 +214,61 @@ jobs:
         run: |
           throw 'DMS E2E failed.'
 
+      - name: Summarize DMS E2E Results
+        id: summary
+        if: always()
+        env:
+          E2E_JOB_STATUS: ${{ job.status }}
+          E2E_BUILD_OUTCOME: ${{ steps.build_step.outcome }}
+          E2E_TEST_OUTCOME: ${{ steps.e2e.outcome }}
+          E2E_CAPTURE_OUTCOME: ${{ steps.capture.outcome }}
+          E2E_TEARDOWN_OUTCOME: ${{ steps.teardown.outcome }}
+          E2E_SANITIZE_OUTCOME: ${{ steps.sanitize.outcome }}
+          E2E_EVIDENCE_OUTCOME: ${{ steps.evidence.outcome }}
+          E2E_LOG_UPLOAD_OUTCOME: ${{ steps.upload_logs.outcome }}
+          E2E_RESULT_UPLOAD_OUTCOME: ${{ steps.upload_results.outcome }}
+        run: |
+          $engineLabel = switch ($env:E2E_DATABASE_ENGINE) {
+            'postgresql' { 'PostgreSQL' }
+            'mssql' { 'SQL Server' }
+            default { 'Unknown database engine' }
+          }
+          $coverageLabel = if ($env:E2E_DATABASE_ENGINE -eq 'mssql') { 'Representative MSSQL published-image E2E' } else { 'Full PostgreSQL published-image E2E' }
+          $stages = [ordered]@{
+            Build = $env:E2E_BUILD_OUTCOME
+            Test = $env:E2E_TEST_OUTCOME
+            Capture = $env:E2E_CAPTURE_OUTCOME
+            Teardown = $env:E2E_TEARDOWN_OUTCOME
+            Sanitize = $env:E2E_SANITIZE_OUTCOME
+            Evidence = $env:E2E_EVIDENCE_OUTCOME
+            'Log upload' = $env:E2E_LOG_UPLOAD_OUTCOME
+            'Result upload' = $env:E2E_RESULT_UPLOAD_OUTCOME
+          }
+          $requiredOutcomes = @($stages.Values)
+          $legPassed = $env:E2E_JOB_STATUS -eq 'success' -and $requiredOutcomes.Count -eq 8 -and @($requiredOutcomes | Where-Object { $_ -ne 'success' }).Count -eq 0
+          $resultLabel = if ($legPassed) { 'passed' } else { 'failed' }
+          $stageRows = foreach ($stage in $stages.GetEnumerator()) { "| $($stage.Key) | $($stage.Value) |" }
+          $summaryText = @(
+            "# Scheduled pre-image: $engineLabel ($env:E2E_DATABASE_ENGINE) / $env:E2E_IDENTITY_PROVIDER"
+            ""
+            "- **Result:** $resultLabel"
+            "- **Coverage:** $coverageLabel"
+            "- **Job status:** $env:E2E_JOB_STATUS"
+            "- **Run:** $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            ""
+            '| Stage | Outcome |'
+            '| --- | --- |'
+            $stageRows
+          ) -join "`n"
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value $summaryText
+
       - name: Notify Slack on success
-        if: success() && github.event_name != 'workflow_dispatch'
+        if: success() && github.event_name != 'workflow_dispatch' && steps.e2e.outcome == 'success' && steps.evidence.outcome == 'success'
         uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
         with:
           payload: |
             {
-              "text": "✅ Scheduled pre image tests passed for identityprovider=${{ matrix.identityprovider }}."
+              "text": "✅ Scheduled published-image E2E leg passed.\nEngine: ${{ matrix.database_engine == 'mssql' && 'SQL Server' || 'PostgreSQL' }} (${{ matrix.database_engine }})\nIdentity: ${{ matrix.identityprovider }}\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             }
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
@@ -231,13 +279,13 @@ jobs:
         with:
           payload: |
             {
-              "text": "❌ Scheduled pre image tests result: ${{ job.status }}\nIdentityProvider: ${{ matrix.identityprovider }}\nDMS E2E: ${{ steps.e2e.outcome }}\n${{ github.event.pull_request.html_url || github.event.head_commit.url }}",
+              "text": "❌ Scheduled published-image E2E leg failed (${{ job.status }}).\nEngine: ${{ matrix.database_engine == 'mssql' && 'SQL Server' || 'PostgreSQL' }} (${{ matrix.database_engine }})\nIdentity: ${{ matrix.identityprovider }}\nBuild: ${{ steps.build_step.outcome }}; Test: ${{ steps.e2e.outcome }}; Evidence: ${{ steps.evidence.outcome }}; Capture: ${{ steps.capture.outcome }}; Teardown: ${{ steps.teardown.outcome }}; Sanitize: ${{ steps.sanitize.outcome }}\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
               "blocks": [
                 {
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "❌ Scheduled pre image tests result: ${{ job.status }}\n*Identity Provider:* ${{ matrix.identityprovider }}\n*DMS E2E:* ${{ steps.e2e.outcome }}\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Commit Message:* ${{ github.event.head_commit.message || 'No commit message available' }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "❌ Scheduled published-image E2E leg failed (${{ job.status }}).\n*Engine:* ${{ matrix.database_engine == 'mssql' && 'SQL Server' || 'PostgreSQL' }} (${{ matrix.database_engine }})\n*Identity:* ${{ matrix.identityprovider }}\n*Build:* ${{ steps.build_step.outcome }} | *Test:* ${{ steps.e2e.outcome }} | *Evidence:* ${{ steps.evidence.outcome }}\n*Capture:* ${{ steps.capture.outcome }} | *Teardown:* ${{ steps.teardown.outcome }} | *Sanitize:* ${{ steps.sanitize.outcome }}\n*Run:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]

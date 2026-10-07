@@ -46,6 +46,10 @@ Describe 'Scheduled pre-image workflow safeguards' {
             $script:job | Should -Match 'database_engine: \[postgresql, mssql\]'
             $script:job | Should -Match 'identityprovider: \[keycloak, self-contained\]'
             $script:job | Should -Match 'fail-fast: false'
+            $script:job | Should -Match 'matrix.database_engine.*matrix.identityprovider'
+            $script:job | Should -Match 'logs/scheduled-pre-image-.*matrix.database_engine.*matrix.identityprovider'
+            $script:job | Should -Match 'scheduled-pre-image-\$\{\{ matrix.database_engine \}\}-\$\{\{ matrix.identityprovider \}\}-logs'
+            $script:job | Should -Match 'scheduled-pre-image-\$\{\{ matrix.database_engine \}\}-\$\{\{ matrix.identityprovider \}\}-results'
         }
 
         It 'publishes only sanitized diagnostic and TRX content' {
@@ -304,6 +308,101 @@ exit 7
             $evidence | Should -Match 'always\(\)'
             $evidence | Should -Match "steps.e2e.outcome == 'success'"
             $evidence | Should -Match "steps.sanitize.outcome == 'success'"
+        }
+    }
+
+    Context 'leg summaries and scheduled notifications' {
+        It 'reports required stages for each engine and only calls a complete leg passed' -ForEach @(
+            @{ Case = 'all stages pass'; Job = 'success'; Build = 'success'; Test = 'success'; Capture = 'success'; Teardown = 'success'; Sanitize = 'success'; Evidence = 'success'; Logs = 'success'; Results = 'success'; Passed = $true }
+            @{ Case = 'build failure and test skipped'; Job = 'failure'; Build = 'failure'; Test = 'skipped'; Capture = 'success'; Teardown = 'success'; Sanitize = 'success'; Evidence = 'skipped'; Logs = 'success'; Results = 'success'; Passed = $false }
+            @{ Case = 'test failure and evidence skipped'; Job = 'failure'; Build = 'success'; Test = 'failure'; Capture = 'success'; Teardown = 'success'; Sanitize = 'success'; Evidence = 'skipped'; Logs = 'success'; Results = 'success'; Passed = $false }
+            @{ Case = 'teardown failure'; Job = 'failure'; Build = 'success'; Test = 'success'; Capture = 'success'; Teardown = 'failure'; Sanitize = 'success'; Evidence = 'success'; Logs = 'success'; Results = 'success'; Passed = $false }
+            @{ Case = 'sanitizer failure'; Job = 'failure'; Build = 'success'; Test = 'success'; Capture = 'success'; Teardown = 'success'; Sanitize = 'failure'; Evidence = 'skipped'; Logs = 'skipped'; Results = 'skipped'; Passed = $false }
+            @{ Case = 'evidence failure'; Job = 'failure'; Build = 'success'; Test = 'success'; Capture = 'success'; Teardown = 'success'; Sanitize = 'success'; Evidence = 'failure'; Logs = 'success'; Results = 'success'; Passed = $false }
+        ) {
+            $summaryPath = Join-Path $TestDrive "summary-$($Case -replace '\W', '-')"
+            $oldEnvironment = @{}
+            foreach ($name in @('E2E_JOB_STATUS', 'E2E_BUILD_OUTCOME', 'E2E_TEST_OUTCOME', 'E2E_CAPTURE_OUTCOME', 'E2E_TEARDOWN_OUTCOME', 'E2E_SANITIZE_OUTCOME', 'E2E_EVIDENCE_OUTCOME', 'E2E_LOG_UPLOAD_OUTCOME', 'E2E_RESULT_UPLOAD_OUTCOME', 'E2E_DATABASE_ENGINE', 'E2E_IDENTITY_PROVIDER', 'GITHUB_STEP_SUMMARY', 'GITHUB_SERVER_URL', 'GITHUB_REPOSITORY', 'GITHUB_RUN_ID')) {
+                $oldEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+            }
+            try {
+                $env:E2E_JOB_STATUS = $Job
+                $env:E2E_BUILD_OUTCOME = $Build
+                $env:E2E_TEST_OUTCOME = $Test
+                $env:E2E_CAPTURE_OUTCOME = $Capture
+                $env:E2E_TEARDOWN_OUTCOME = $Teardown
+                $env:E2E_SANITIZE_OUTCOME = $Sanitize
+                $env:E2E_EVIDENCE_OUTCOME = $Evidence
+                $env:E2E_LOG_UPLOAD_OUTCOME = $Logs
+                $env:E2E_RESULT_UPLOAD_OUTCOME = $Results
+                $env:E2E_DATABASE_ENGINE = 'mssql'
+                $env:E2E_IDENTITY_PROVIDER = 'self-contained'
+                $env:GITHUB_STEP_SUMMARY = $summaryPath
+                $env:GITHUB_SERVER_URL = 'https://github.com'
+                $env:GITHUB_REPOSITORY = 'Ed-Fi-Alliance-OSS/Data-Management-Service'
+                $env:GITHUB_RUN_ID = '12345'
+                $runBlock = Get-RunBlock -Name 'Summarize DMS E2E Results'
+                & ([scriptblock]::Create($runBlock))
+                $text = Get-Content -LiteralPath $summaryPath -Raw
+                $text | Should -Match 'SQL Server \(mssql\)'
+                $text | Should -Match 'self-contained'
+                $text | Should -Match 'https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/12345'
+                $text | Should -Match "Build.*$Build"
+                $text | Should -Match "Test.*$Test"
+                $text | Should -Match "Sanitize.*$Sanitize"
+                if ($Passed) { $text | Should -Match 'Result.*passed' }
+                else { $text | Should -Not -Match 'Result.*passed' }
+                $text | Should -Not -Match 'sentinel-secret|Password=|Authorization:'
+            }
+            finally {
+                foreach ($name in $oldEnvironment.Keys) {
+                    if ($null -eq $oldEnvironment[$name]) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
+                    else { Set-Item "Env:$name" $oldEnvironment[$name] }
+                }
+            }
+        }
+
+        It 'places an always-run metadata summary after uploads and the final gate' {
+            $summary = Get-StepChunk -Name 'Summarize DMS E2E Results'
+            $summary | Should -Match 'if: always\(\)'
+            $summary | Should -Not -Match 'steps.sanitize.outcome == .success.'
+            $summaryIndex = $script:job.IndexOf($summary)
+            $summaryIndex | Should -BeGreaterThan $script:job.IndexOf((Get-StepChunk -Name 'Upload DMS E2E Logs'))
+            $summaryIndex | Should -BeGreaterThan $script:job.IndexOf((Get-StepChunk -Name 'Upload DMS End to End Test Results'))
+            $summaryIndex | Should -BeGreaterThan $script:job.IndexOf((Get-StepChunk -Name 'Fail if DMS E2E failed'))
+        }
+
+        It 'keeps Slack results per leg, scheduled-only, and free of commit text' {
+            foreach ($name in @('Notify Slack on success', 'Notify Slack on failure')) {
+                $step = Get-StepChunk -Name $name
+                $step | Should -Match "github.event_name != 'workflow_dispatch'"
+                $step | Should -Match 'matrix.database_engine'
+                $step | Should -Match 'matrix.identityprovider'
+                $step | Should -Match 'github.server_url.*/actions/runs/.+github.run_id'
+                $step | Should -Not -Match 'head_commit.message|both engines|combined result'
+                $payloadMatch = [regex]::Match($step, '(?ms)^\s+payload:\s*\|\r?\n(?<body>.*?)(?=^\s+webhook:)')
+                $payloadMatch.Success | Should -BeTrue
+                $payload = ($payloadMatch.Groups['body'].Value -split "\r?\n" | ForEach-Object { $_ -replace '^ {12}', '' }) -join "`n"
+                $payload = [regex]::Replace($payload, '\$\{\{\s*(.*?)\s*\}\}', {
+                    param($match)
+                    switch -Regex ($match.Groups[1].Value.Trim()) {
+                        'matrix.database_engine' { 'mssql'; break }
+                        'matrix.identityprovider' { 'self-contained'; break }
+                        'github.server_url' { 'https://github.com'; break }
+                        'github.repository' { 'Ed-Fi-Alliance-OSS/Data-Management-Service'; break }
+                        'github.run_id' { '12345'; break }
+                        default { 'safe' }
+                    }
+                })
+                { $payload | ConvertFrom-Json -ErrorAction Stop } | Should -Not -Throw
+                $message = $payload | ConvertFrom-Json
+                $message.text | Should -Match 'mssql'
+                $message.text | Should -Match 'self-contained'
+                $message.text | Should -Match 'https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/12345'
+                $message.text | Should -Not -Match 'both engines'
+            }
+            (Get-StepChunk -Name 'Notify Slack on success') | Should -Match "steps.e2e.outcome == 'success'.*steps.evidence.outcome == 'success'"
+            (Get-StepChunk -Name 'Notify Slack on failure') | Should -Match 'failure\(\)'
         }
     }
 }
