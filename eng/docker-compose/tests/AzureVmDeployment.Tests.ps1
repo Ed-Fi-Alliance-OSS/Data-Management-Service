@@ -778,6 +778,27 @@ Describe "Azure VM Swagger UI" {
         )
     }
 
+    It "groups a lone untagged operation under its path in both Swagger UIs (shared plugin)" {
+        $plugin = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../custom-swagger-ui/edfi-single-operation-group.js"))
+        $program = "const fs = require('fs'); const window = {}; eval(fs.readFileSync(process.argv[1], 'utf8')); " +
+            "const wrap = window.EdFiSingleOperationGroup().statePlugins.spec.wrapActions.updateSpec; let seen; " +
+            "wrap(s => { seen = s; })(JSON.stringify({ paths: { '/availableChangeVersions': { get: { description: 'Versions' } } } })); const lone = JSON.parse(seen); " +
+            "wrap(s => { seen = s; })({ paths: { '/a': { get: { tags: ['a'] } } } }); " +
+            "console.log(JSON.stringify({ tags: lone.paths['/availableChangeVersions'].get.tags, groups: lone.tags, tagged: seen.paths['/a'].get.tags }));"
+        $output = & node -e $program $plugin 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($output | Out-String)
+        $result = $output | Out-String | ConvertFrom-Json
+
+        @($result.tags) | Should -Be @("availableChangeVersions")
+        $result.groups[0].name | Should -Be "availableChangeVersions"
+        $result.groups[0].description | Should -Be "Versions"
+        @($result.tagged) | Should -Be @("a")
+        foreach ($index in @("../custom-swagger-ui/index.html", "../../azure-vm/compose/swagger-ui/index.html")) {
+            Get-Content -LiteralPath ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $index))) -Raw |
+                Should -Match '<script src="edfi-single-operation-group\.js"></script>' -Because $index
+        }
+    }
+
     It "adds the missing OAuth2 client-credentials scheme to the Configuration Service specs only" {
         $patched = & $script:runHelper "h.withConfigurationServiceSecurity({openapi:'3.1.1', paths:{}}, '/mt-config/openapi/v1.json?tenant=t1', 'https://host.example')"
         $scheme = $patched.components.securitySchemes.oauth2_client_credentials

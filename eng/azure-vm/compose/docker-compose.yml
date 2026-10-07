@@ -319,7 +319,7 @@ services:
       - ./swagger-ui:/opt/swagger-ui/review:ro
     command: >
       sh -c "envsubst '$$MT_TENANT_1 $$MT_TENANT_2 $$MT_SCHOOL_YEAR' < /opt/swagger-ui/review/index.html > /usr/share/nginx/html/index.html &&
-             cp /opt/swagger-ui/shared/edfi-common-helper.js /opt/swagger-ui/shared/edfi-custom-fields.js /opt/swagger-ui/shared/edfi-custom-domains.js /opt/swagger-ui/shared/favicon.ico /opt/swagger-ui/review/swagger-initializer.js /usr/share/nginx/html/ &&
+             cp /opt/swagger-ui/shared/edfi-common-helper.js /opt/swagger-ui/shared/edfi-custom-fields.js /opt/swagger-ui/shared/edfi-custom-domains.js /opt/swagger-ui/shared/edfi-single-operation-group.js /opt/swagger-ui/shared/favicon.ico /opt/swagger-ui/review/swagger-initializer.js /usr/share/nginx/html/ &&
              exec nginx -g 'daemon off;'"
 
   # =========================================================================

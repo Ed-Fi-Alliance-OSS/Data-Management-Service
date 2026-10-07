@@ -134,7 +134,7 @@ window.onload = function () {
         };
     }
 
-    const plugins = [configurationServiceSecurityPlugin, window.EdFiCustomFields];
+    const plugins = [configurationServiceSecurityPlugin, window.EdFiSingleOperationGroup, window.EdFiCustomFields];
     if (window.EdFiCustomDomains) {
         plugins.push(window.EdFiCustomDomains);
     }
