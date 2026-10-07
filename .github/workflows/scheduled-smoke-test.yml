@@ -71,7 +71,9 @@ jobs:
   # downstream jobs below consume via ${{ needs.select-legs.outputs.include }}.
   select-legs:
     name: Select Smoke Legs
-    if: github.event.pull_request.draft != true
+    # Scheduled runs only in Ed-Fi-Alliance-OSS: a fork inherits the schedule but not the Slack
+    # webhook or the Ed-Fi resources the run acts on. workflow_dispatch still runs anywhere.
+    if: github.event.pull_request.draft != true && (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -129,7 +131,7 @@ jobs:
 
   build-ci-docker-images:
     name: Build CI Docker Images
-    if: github.event.pull_request.draft != true
+    if: github.event.pull_request.draft != true && (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -549,7 +551,7 @@ jobs:
     name: Notify Results
     runs-on: ubuntu-latest
     needs: [smoke-test]
-    if: always() && github.event_name != 'workflow_dispatch' && github.event_name != 'pull_request'
+    if: always() && github.event_name != 'workflow_dispatch' && github.event_name != 'pull_request' && github.repository_owner == 'Ed-Fi-Alliance-OSS'
     steps:
       - name: Notify Slack on success
         if: ${{ needs.smoke-test.result == 'success' }}

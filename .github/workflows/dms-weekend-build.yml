@@ -18,6 +18,9 @@ env:
 jobs:
   visual-studio-build:
     name: Build DMS with Visual Studio MSBuild
+    # Scheduled runs only in Ed-Fi-Alliance-OSS: a fork inherits the schedule but not the Slack
+    # webhook or the Ed-Fi resources the run acts on. workflow_dispatch still runs anywhere.
+    if: (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
     runs-on: windows-2025-vs2026
     defaults:
       run:
@@ -98,6 +101,7 @@ jobs:
 
   build-and-test:
     name: Build and Run Tests (${{ matrix.identityprovider }})
+    if: (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -250,6 +254,7 @@ jobs:
 
   build-and-start-dms:
     name: Build and Start DMS, Download OpenAPI Specs
+    if: (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -458,7 +463,7 @@ jobs:
         validate-descriptors-spec,
         validate-discovery-spec,
       ]
-    if: always()
+    if: always() && (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
     steps:
       - name: Notify Slack on success
         if: >-
