@@ -546,6 +546,25 @@ Describe "Needs-review wire differences at a version increment" {
         $result.Message | Should -BeLike "*Stale review record entries*changed /info/title*"
     }
 
+    It "walks into a schema's `$defs like its properties, so a description there needs only an entry" {
+        # Both documents carry the $defs, so the only difference is the description inside it.
+        $baseline = Get-ServedDocument -Edit @(@{ Path = @("components", "schemas", "IdentityResponse", '$defs'); Json = '{"Thing":{"type":"string"}}' })
+        $repository = Get-TestRepository -Baseline $baseline
+        $package = Get-TestPackage -Commit $repository.Commit -AssemblyPath (Join-Path $TestDrive "assemblies/base.dll")
+        $served = Get-ServedDocument -Base $baseline -Edit @(@{ Path = @("components", "schemas", "IdentityResponse", '$defs', "Thing", "description"); Json = '"A thing."' })
+        $pointer = '/components/schemas/IdentityResponse/$defs/Thing/description'
+
+        $without = Invoke-IncrementGate -ServedText $served -Repository $repository -PublishedPackage $package -PackedPackage $package
+        $without.Decision | Should -BeNullOrEmpty
+        $without.Message | Should -Match ([regex]::Escape("[documentation] added $pointer"))
+        $without.Message | Should -Not -BeLike "*Hard-fail*"
+
+        $entry = @{ pointer = $pointer; change = "added"; reason = "A description only." }
+        $exact = Invoke-IncrementGate -ServedText $served -Repository $repository -PublishedPackage $package -PackedPackage $package -Record @($entry)
+        $exact.Message | Should -BeExactly ""
+        $exact.Decision.Outcome | Should -BeExactly "increment-reviewed"
+    }
+
     It "treats a schema reachable only from a new operation as review, not hard-fail" {
         $served = Get-ServedDocument -Edit @(
             @{ Path = @("components", "schemas", "PingRequest"); Json = '{"type":"object","required":["Name"],"properties":{"Name":{"type":"string"}}}' }

@@ -230,7 +230,7 @@ function Assert-ServedEqualsBaseline {
 $script:HttpMethods = @("get", "put", "post", "delete", "options", "head", "patch", "trace")
 $script:DocumentationKeywords = @("description", "summary", "example", "examples")
 $script:ChildSchemaKeywords = @("items", "additionalProperties", "unevaluatedProperties", "not", "if", "then", "else", "contains", "propertyNames")
-$script:NamedSchemaKeywords = @("properties", "patternProperties", "$defs", "definitions", "dependentSchemas")
+$script:NamedSchemaKeywords = @("properties", "patternProperties", '$defs', "definitions", "dependentSchemas")
 $script:ListedSchemaKeywords = @("allOf", "anyOf", "oneOf", "prefixItems")
 $script:VersionStampKey = "x-edfi-identity-contract-version"
 

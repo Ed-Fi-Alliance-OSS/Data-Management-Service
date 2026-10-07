@@ -41,8 +41,9 @@ namespace EdFi.DataManagementService.Identity;
 /// </para>
 /// <para>
 /// <b>Keying.</b> Register the implementation unkeyed. DMS resolves this contract unkeyed from the
-/// request scope, so a keyed registration is accepted at startup but never reached by a request, and
-/// the host default keeps serving.
+/// request scope, so a registration under a concrete key is accepted at startup but never reached by a
+/// request, and the host default keeps serving. A registration under the wildcard key,
+/// <c>KeyedService.AnyKey</c>, is refused at startup.
 /// </para>
 /// <para>
 /// <b>Namespace authorization.</b> Every operation - create, get, find, search, and results - requires

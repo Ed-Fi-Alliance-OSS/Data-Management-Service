@@ -86,7 +86,8 @@ public sealed class AcmeIdentityPlugin : EdFiApiPlugin
         services.AddSingleton(new AcmeIdentityStore(authorizedClients));
 
         // A plain Add, unkeyed. The host registers its own default identity service, so a TryAdd would
-        // be declined and the default would keep serving; a keyed registration is never resolved.
+        // be declined and the default would keep serving. A registration under a concrete key is never
+        // used by a request, and one under the wildcard key stops the host at startup.
         // Scoped is one of the three supported lifetimes: this provider holds no state of its own.
         services.AddScoped<IIdentityService, AcmeIdentityService>();
     }
