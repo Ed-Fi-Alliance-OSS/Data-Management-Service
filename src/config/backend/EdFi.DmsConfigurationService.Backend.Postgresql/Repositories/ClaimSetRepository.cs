@@ -375,26 +375,33 @@ public class ClaimSetRepository(
                 transaction
             );
 
-            // Polly retry policy for handling multi-user conflicts
-            AsyncRetryPolicy<ClaimsHierarchySaveResult> retryPolicy = Policy
-                .HandleResult<ClaimsHierarchySaveResult>(result =>
-                    result is ClaimsHierarchySaveResult.FailureMultiUserConflict
-                )
-                .RetryAsync(
-                    3,
-                    onRetry: (result, retryCount) =>
-                    {
-                        logger.LogWarning(
-                            "Retrying ApplyNameChangeToClaimsHierarchy due to multi-user conflict. Attempt {RetryCount}.",
-                            retryCount
-                        );
-                    }
-                );
+            // Polly retry pipeline for handling multi-user conflicts
+            ResiliencePipeline<ClaimsHierarchySaveResult> retryPipeline =
+                new ResiliencePipelineBuilder<ClaimsHierarchySaveResult>()
+                    .AddRetry(
+                        new RetryStrategyOptions<ClaimsHierarchySaveResult>
+                        {
+                            MaxRetryAttempts = 3,
+                            Delay = TimeSpan.Zero,
+                            ShouldHandle = new PredicateBuilder<ClaimsHierarchySaveResult>().HandleResult(
+                                result => result is ClaimsHierarchySaveResult.FailureMultiUserConflict
+                            ),
+                            OnRetry = args =>
+                            {
+                                logger.LogWarning(
+                                    "Retrying ApplyNameChangeToClaimsHierarchy due to multi-user conflict. Attempt {RetryCount}.",
+                                    args.AttemptNumber + 1
+                                );
+                                return ValueTask.CompletedTask;
+                            },
+                        }
+                    )
+                    .Build();
 
             ClaimsHierarchySaveResult nameChangeResult =
                 (
-                    await retryPolicy.ExecuteAsync(() =>
-                        ApplyNameChangeToClaimsHierarchy(oldClaimSetName, newClaimSetName)
+                    await retryPipeline.ExecuteAsync(async _ =>
+                        await ApplyNameChangeToClaimsHierarchy(oldClaimSetName, newClaimSetName)
                     )
                 )
                 ?? new ClaimsHierarchySaveResult.FailureUnknown(
@@ -807,59 +814,71 @@ public class ClaimSetRepository(
             }
 
             // Save the JSON hierarchy with optimistic locking
-            var retryPolicy = Policy
-                .Handle<DBConcurrencyException>()
-                .RetryAsync(
-                    3,
-                    async (exception, retryCount) =>
+            ResiliencePipeline retryPipeline = new ResiliencePipelineBuilder()
+                .AddRetry(
+                    new RetryStrategyOptions
                     {
-                        logger.LogWarning("Retrying save due to conflict. Attempt {RetryCount}.", retryCount);
-
-                        // Reload hierarchy and reapply changes
-                        claimsHierarchyResult = (
-                            await claimsHierarchyRepository.GetClaimsHierarchy(transaction)
-                        );
-
-                        success = claimsHierarchyResult as ClaimsHierarchyGetResult.Success;
-
-                        if (success is null)
+                        MaxRetryAttempts = 3,
+                        Delay = TimeSpan.Zero,
+                        ShouldHandle = new PredicateBuilder().Handle<DBConcurrencyException>(),
+                        OnRetry = async args =>
                         {
-                            throw new Exception(
-                                "An unexpected error occurred while reloading the claims hierarchy due to a concurrency check failure."
-                            );
-                        }
-
-                        claimsHierarchy = success.Claims;
-                        lastModifiedDate = success.LastModifiedDate;
-
-                        // Apply the changes to the refreshed claims hierarchy
-                        claimsHierarchyManager.RemoveClaimSetFromHierarchy(command.Name, claimsHierarchy!);
-                        var retriedSkippedClaims = claimsHierarchyManager.ApplyImportedClaimSetToHierarchy(
-                            command,
-                            claimsHierarchy!
-                        );
-
-                        if (retriedSkippedClaims.Count > 0)
-                        {
-                            string sanitizedClaimSetName = LoggingUtility.SanitizeForLog(command.Name);
-                            string sanitizedRetriedSkippedClaims = string.Join(
-                                ", ",
-                                retriedSkippedClaims.Select(LoggingUtility.SanitizeForLog)
-                            );
-
                             logger.LogWarning(
-                                "Skipped {SkippedCount} claims while reapplying claim set {ClaimSetName}: {SkippedClaims}",
-                                retriedSkippedClaims.Count,
-                                sanitizedClaimSetName,
-                                sanitizedRetriedSkippedClaims
+                                "Retrying save due to conflict. Attempt {RetryCount}.",
+                                args.AttemptNumber + 1
                             );
-                        }
 
-                        skippedClaims = retriedSkippedClaims;
+                            // Reload hierarchy and reapply changes
+                            claimsHierarchyResult = (
+                                await claimsHierarchyRepository.GetClaimsHierarchy(transaction)
+                            );
+
+                            success = claimsHierarchyResult as ClaimsHierarchyGetResult.Success;
+
+                            if (success is null)
+                            {
+                                throw new Exception(
+                                    "An unexpected error occurred while reloading the claims hierarchy due to a concurrency check failure."
+                                );
+                            }
+
+                            claimsHierarchy = success.Claims;
+                            lastModifiedDate = success.LastModifiedDate;
+
+                            // Apply the changes to the refreshed claims hierarchy
+                            claimsHierarchyManager.RemoveClaimSetFromHierarchy(
+                                command.Name,
+                                claimsHierarchy!
+                            );
+                            var retriedSkippedClaims =
+                                claimsHierarchyManager.ApplyImportedClaimSetToHierarchy(
+                                    command,
+                                    claimsHierarchy!
+                                );
+
+                            if (retriedSkippedClaims.Count > 0)
+                            {
+                                string sanitizedClaimSetName = LoggingUtility.SanitizeForLog(command.Name);
+                                string sanitizedRetriedSkippedClaims = string.Join(
+                                    ", ",
+                                    retriedSkippedClaims.Select(LoggingUtility.SanitizeForLog)
+                                );
+
+                                logger.LogWarning(
+                                    "Skipped {SkippedCount} claims while reapplying claim set {ClaimSetName}: {SkippedClaims}",
+                                    retriedSkippedClaims.Count,
+                                    sanitizedClaimSetName,
+                                    sanitizedRetriedSkippedClaims
+                                );
+                            }
+
+                            skippedClaims = retriedSkippedClaims;
+                        },
                     }
-                );
+                )
+                .Build();
 
-            await retryPolicy.ExecuteAsync(async () =>
+            await retryPipeline.ExecuteAsync(async _ =>
             {
                 var saveResults = await claimsHierarchyRepository.SaveClaimsHierarchy(
                     claimsHierarchy,
