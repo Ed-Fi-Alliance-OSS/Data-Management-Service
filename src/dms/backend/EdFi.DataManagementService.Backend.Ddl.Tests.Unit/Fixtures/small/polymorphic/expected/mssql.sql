@@ -469,7 +469,7 @@ ALTER TABLE [dms].[Descriptor]
 ADD CONSTRAINT [FK_Descriptor_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
+ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -804,7 +804,7 @@ ALTER TABLE [edfi].[LocalEducationAgency]
 ADD CONSTRAINT [FK_LocalEducationAgency_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
+ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -815,7 +815,7 @@ ALTER TABLE [edfi].[School]
 ADD CONSTRAINT [FK_School_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
+ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (

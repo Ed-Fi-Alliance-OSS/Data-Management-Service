@@ -237,6 +237,17 @@ public sealed class MssqlDialect : SqlDialectBase
             """;
     }
 
+    /// <summary>
+    /// SQL Server has no <c>RESTRICT</c> keyword. Its <c>NO ACTION</c> is already an immediate
+    /// single-probe check compiled into the parent's DELETE/UPDATE plan (there is no deferred
+    /// end-of-statement re-check as on PostgreSQL), so the logical
+    /// <see cref="ReferentialAction.Restrict"/> renders as <c>NO ACTION</c>.
+    /// </summary>
+    public override string RenderReferentialAction(ReferentialAction action)
+    {
+        return action == ReferentialAction.Restrict ? "NO ACTION" : base.RenderReferentialAction(action);
+    }
+
     /// <inheritdoc />
     public override string AddUniqueConstraint(
         DbTableName table,

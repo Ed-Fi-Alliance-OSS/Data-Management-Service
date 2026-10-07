@@ -570,7 +570,7 @@ BEGIN
         ADD CONSTRAINT "FK_Descriptor_Document"
         FOREIGN KEY ("DocumentId")
         REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
+        ON DELETE RESTRICT
         ON UPDATE NO ACTION;
     END IF;
 END $$;
@@ -1120,7 +1120,7 @@ BEGIN
         ADD CONSTRAINT "FK_ParentResource_Document"
         FOREIGN KEY ("DocumentId")
         REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
+        ON DELETE RESTRICT
         ON UPDATE NO ACTION;
     END IF;
 END $$;
@@ -1188,7 +1188,7 @@ BEGIN
         ADD CONSTRAINT "FK_Sponsor_Document"
         FOREIGN KEY ("DocumentId")
         REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
+        ON DELETE RESTRICT
         ON UPDATE NO ACTION;
     END IF;
 END $$;

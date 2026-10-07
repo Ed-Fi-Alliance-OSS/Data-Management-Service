@@ -307,6 +307,7 @@ internal sealed class CdcPublicationHistoryFixture(bool mssql) : IAsyncDisposabl
             """
             DELETE FROM dms."DocumentProjectionWork";
             DELETE FROM dms."DocumentCache";
+            DELETE FROM dms."Descriptor";
             DELETE FROM dms."Document";
             """
         );
