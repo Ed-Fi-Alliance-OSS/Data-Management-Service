@@ -4,6 +4,12 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <!--
+        An executable rather than a library, so the lane can run the assertions in Program.cs
+        instead of only compiling the sample. Compiling proves the packed contract carries what the
+        sample's signatures need; it proves nothing about the payloads the sample returns.
+        -->
+        <OutputType>Exe</OutputType>
         <RootNamespace>Acme.Dms.Identity</RootNamespace>
     </PropertyGroup>
 

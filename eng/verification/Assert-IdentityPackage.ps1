@@ -40,6 +40,12 @@
     pass. This does not attempt to be exhaustive over the contract's documented behavior; it is a
     tripwire for the handful of rules that are easiest to silently soften in a rewrite.
 
+    The source commit the nuspec records is asserted, because the wire-contract gate reads the
+    baseline of every later release at the commit the published package records, and a published
+    version cannot be replaced. A package that recorded no commit, or another commit than the one it
+    was packed from, would leave every later release gated against nothing or against the wrong
+    baseline. The SDK records the commit on its own today; this is what notices if it ever stops.
+
     The dependency check is one-sided here rather than two-sided like the sibling plugin-contract
     script's: this contract's public surface names only framework types that resolve without any
     PackageReference, so the only thing that can go wrong is a dependency appearing at all.
@@ -90,7 +96,13 @@ param(
     # The committed implementer guide the packed readme must be a copy of. Passed in with a default
     # so the Pester cases can point it at a fixture without rewriting a tracked file.
     [string]
-    $GuidePath = (Join-Path $PSScriptRoot "../../src/dms/core/EdFi.DataManagementService.Identity/IDENTITY.md")
+    $GuidePath = (Join-Path $PSScriptRoot "../../src/dms/core/EdFi.DataManagementService.Identity/IDENTITY.md"),
+
+    # The commit the package must record in /package/metadata/repository/@commit. Omitted, it is the
+    # commit checked out in this repository, which is the commit both lanes pack from, since each
+    # runs this in the job that packed the artifact.
+    [string]
+    $ExpectedCommit = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -201,6 +213,25 @@ foreach ($required in "description", "title", "projectUrl") {
 }
 if (-not (Test-Path -LiteralPath (Join-Path $ExtractTo $expectedReadme))) {
     throw "Package does not carry the readme file itself"
+}
+
+$recordedCommit = $metadata.repository.commit
+if ([string]::IsNullOrWhiteSpace($recordedCommit)) {
+    throw "The package records no source commit in its nuspec repository element. The wire-contract gate reads every later release's baseline at that commit, so a published version without one could never be gated."
+}
+if ($recordedCommit -notmatch '^[0-9a-fA-F]{40}$') {
+    throw "The package records commit '$recordedCommit', which is not a 40-character hexadecimal commit id."
+}
+
+if ([string]::IsNullOrWhiteSpace($ExpectedCommit)) {
+    $ExpectedCommit = git -C (Join-Path $PSScriptRoot "../..") rev-parse HEAD
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($ExpectedCommit)) {
+        throw "The checked-out commit could not be read to compare with the commit the package records. Pass -ExpectedCommit."
+    }
+    $ExpectedCommit = $ExpectedCommit.Trim()
+}
+if (-not [string]::Equals($recordedCommit, $ExpectedCommit, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "The package records commit $recordedCommit, but it was expected to be packed at $ExpectedCommit. The wire-contract gate would read this version's baseline at the recorded commit."
 }
 
 # The readme is the implementer guide, compared whole. Line endings are normalized and trailing

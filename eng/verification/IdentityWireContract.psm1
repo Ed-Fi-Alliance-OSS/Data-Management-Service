@@ -974,8 +974,10 @@ function Get-PackageContractSurface {
 <#
 .DESCRIPTION
 Compares the published and packed provider surfaces ordinally. A removed or changed line fails, an
-added member on an interface that already existed fails, an added required property or field fails,
-an added abstract member fails, and any other added line needs a review record.
+added abstract member fails, an added required property or field fails, and any other added line
+needs a review record. On an interface that already existed, an abstract member is one every
+existing provider would have to implement, so it fails; a member with a default implementation is
+inherited by existing providers, so it is reviewed like any other addition.
 #>
 function Get-SurfaceCompatibilityFinding {
     [CmdletBinding()]
@@ -1002,25 +1004,38 @@ function Get-SurfaceCompatibilityFinding {
 
     foreach ($line in ($PackedSurface | Where-Object { -not $publishedSet.Contains($_) })) {
         $isMember = $line -cmatch '^(METHOD|PROPERTY|FIELD|EVENT) '
-        $category = $null
 
         $owner = $line.Substring($line.IndexOf(" ", [System.StringComparison]::Ordinal) + 1)
 
-        if ($isMember -and ($interfaces | Where-Object { $owner.StartsWith("$_.", [System.StringComparison]::Ordinal) })) {
+        # A method's own modifiers, or a property's or event's accessor modifiers, such as
+        # modifiers=abstract,virtual or get=public:abstract,virtual.
+        $isAbstract = $isMember -and $line -cmatch ' (modifiers|get|set|add|remove)=([a-z]+:)?[^ ]*\babstract\b'
+        $onInterface = $isMember -and ($interfaces | Where-Object { $owner.StartsWith("$_.", [System.StringComparison]::Ordinal) })
+        $class = "hard"
+
+        if ($onInterface -and $isAbstract) {
             $category = "surface-interface-member"
+        }
+        elseif ($onInterface) {
+            $category = "surface-interface-default-member"
+            $class = "review"
         }
         elseif ($line -cmatch '^(PROPERTY|FIELD) ' -and $line.EndsWith(" required=true", [System.StringComparison]::Ordinal)) {
             $category = "surface-required-member"
         }
-        elseif ($isMember -and $line -cmatch ' modifiers=[^ ]*abstract') {
+        elseif ($isAbstract) {
             $category = "surface-abstract-member"
+        }
+        else {
+            $category = "surface-addition"
+            $class = "review"
         }
 
         $findings.Add([pscustomobject]@{
                 Pointer  = "SURFACE:$line"
                 Change   = "added"
-                Class    = if ($null -ne $category) { "hard" } else { "review" }
-                Category = if ($null -ne $category) { $category } else { "surface-addition" }
+                Class    = $class
+                Category = $category
             })
     }
 

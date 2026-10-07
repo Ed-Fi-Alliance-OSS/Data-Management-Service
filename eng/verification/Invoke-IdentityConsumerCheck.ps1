@@ -13,7 +13,9 @@
     the way an implementer will. The consumer implements every member of IIdentityService and
     subclasses EdFiApiPlugin to register the implementation, so a contract that packed a signature
     without the dependency closure that signature needs, or an interface member the provider sample
-    does not implement, fails here (CS0535) rather than at an implementer's desk.
+    does not implement, fails here (CS0535) rather than at an implementer's desk. It then runs the
+    consumer, whose Program.cs asserts that the provider sample returns the payload shapes the guide
+    documents, so the sample an implementer copies is one that behaves, not only one that compiles.
 
     Both contracts are restored because the samples the identity guide publishes are a provider and
     the plugin that registers it. The consumer's two embed regions are what the guide mirrors, so the
@@ -23,8 +25,9 @@
     EdFi.Api.Identity, which compiles the same consumer against the package published on that feed
     once the declared version exists there, and says plainly when it does not yet. Before the first
     publication that is the expected state: the status reads "not yet on the feed" and the check
-    passes. EdFi.Api.Plugins for that restore comes from the same feed at its own declared version,
-    where it is already published.
+    passes. EdFi.Api.Plugins for that restore is the one this checkout packed, never the feed's: a
+    pull request that moves the Plugins version declares a version no prerelease has published yet,
+    and the published half verifies the published Identity, not Plugins.
 
     The per-PR lane calls this after packing both contracts, on a pull request that is not a draft
     and changed a DMS-relevant path, and unconditionally in the merge queue; the prerelease lane does
@@ -77,6 +80,12 @@ param(
     # reads it.
     [string]
     $PackageFile = "",
+
+    # The folder holding the EdFi.Api.Plugins nupkg this checkout packed, which the published half
+    # restores Plugins from. Defaults to the repository root, where build-dms.ps1 Package leaves it
+    # and the consumer's nuget.config reads it.
+    [string]
+    $LocalPackageSource = (Join-Path $PSScriptRoot "../.."),
 
     # Where every package that is not an Ed-Fi contract comes from in the published half. Tests
     # point it at a local folder.
@@ -134,6 +143,17 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Scratch consumer failed to compile against EdFi.Api.Identity $PackageVersion and EdFi.Api.Plugins $PluginsPackageVersion"
     }
+
+    # --no-build so this runs what was just compiled rather than recompiling with different
+    # properties. The same two properties are still required: without them the default 0.0.0-local
+    # values change the project's evaluated state and the run reports the build as out of date.
+    dotnet run --project $ConsumerProject --no-build `
+        -p:IdentityPackageVersion=$PackageVersion `
+        -p:PluginsPackageVersion=$PluginsPackageVersion
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "The scratch consumer compiled but the sample provider's assertions failed against EdFi.Api.Identity $PackageVersion and EdFi.Api.Plugins $PluginsPackageVersion"
+    }
 }
 finally {
     if ($nugetPackagesWasSet) {
@@ -160,7 +180,8 @@ if ($PublishedServiceIndexUrl) {
         AssemblyName             = "EdFi.DataManagementService.Identity"
         VersionPropertyName      = "IdentityPackageVersion"
         AdditionalProperties     = @{ PluginsPackageVersion = $PluginsPackageVersion }
-        AdditionalFeedPackageIds = @("EdFi.Api.Plugins")
+        LocalPackageIds          = @("EdFi.Api.Plugins")
+        LocalPackageSource       = $LocalPackageSource
         PublicSource             = $PublicSource
     }
     if ($PublishedRestoreSource) {

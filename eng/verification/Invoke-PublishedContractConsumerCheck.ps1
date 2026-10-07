@@ -91,16 +91,24 @@ param(
     [hashtable]
     $AdditionalProperties = @{},
 
-    # For a consumer that restores more than $PackageId from the Ed-Fi feed: the other package ids
-    # it takes from -RestoreSource. Giving any also requires -PublicSource, and the restore then
-    # runs from a generated nuget.config that maps $PackageId and these ids to -RestoreSource and
-    # everything else to -PublicSource. A consumer with its own source mapping cannot be restored
-    # with --source, because NuGet then considers no source for the mapped ids. Omitted, the restore
-    # is the plain --source one the Secrets consumer, which declares no source, has always used.
+    # For a consumer that also restores other Ed-Fi contracts: their package ids, taken from
+    # -LocalPackageSource, the folder holding what this checkout just packed, and never from the
+    # feed. A pull request that moves one of those versions declares a version no prerelease has
+    # published yet, so the feed cannot supply it; what this check verifies is $PackageId as
+    # published, which comes from -RestoreSource alone. Giving any also requires
+    # -LocalPackageSource and -PublicSource, and the restore then runs from a generated nuget.config
+    # that maps $PackageId to -RestoreSource, these ids to -LocalPackageSource and everything else to
+    # -PublicSource. A consumer with its own source mapping cannot be restored with --source, because
+    # NuGet then considers no source for the mapped ids. Omitted, the restore is the plain --source
+    # one the Secrets consumer, which declares no source, has always used.
     [string[]]
-    $AdditionalFeedPackageIds = @(),
+    $LocalPackageIds = @(),
 
-    # The source for every other package id, when -AdditionalFeedPackageIds is given.
+    # The folder holding the locally packed -LocalPackageIds packages.
+    [string]
+    $LocalPackageSource = "",
+
+    # The source for every other package id, when -LocalPackageIds is given.
     [string]
     $PublicSource = "",
 
@@ -121,8 +129,12 @@ $ErrorActionPreference = "Stop"
 $packageId = $PackageId
 $assemblyName = $AssemblyName
 
-if ($AdditionalFeedPackageIds.Count -gt 0 -and -not $PublicSource) {
-    throw "-AdditionalFeedPackageIds needs -PublicSource, the source for every other package the consumer restores."
+if ($LocalPackageIds.Count -gt 0 -and -not $LocalPackageSource) {
+    throw "-LocalPackageIds needs -LocalPackageSource, the folder holding the packages this checkout packed."
+}
+
+if ($LocalPackageIds.Count -gt 0 -and -not $PublicSource) {
+    throw "-LocalPackageIds needs -PublicSource, the source for every other package the consumer restores."
 }
 
 if ((Test-Path -LiteralPath $NuGetPackagesDirectory) -and @(Get-ChildItem -LiteralPath $NuGetPackagesDirectory -Force).Count -gt 0) {
@@ -178,13 +190,16 @@ try {
     }
 
     $restoreArguments = @("--source", $RestoreSource)
-    if ($AdditionalFeedPackageIds.Count -gt 0) {
+    if ($LocalPackageIds.Count -gt 0) {
         $configDirectory = Join-Path ([System.IO.Path]::GetTempPath()) "published-contract-restore-$([guid]::NewGuid().ToString('N'))"
         New-Item -ItemType Directory -Path $configDirectory -Force | Out-Null
         $configFile = Join-Path $configDirectory "nuget.config"
-        $mapped = @($packageId) + $AdditionalFeedPackageIds
-        $feedPatterns = ($mapped | ForEach-Object { "<package pattern=`"$([System.Security.SecurityElement]::Escape($_))`" />" }) -join ""
+        $localPatterns = ($LocalPackageIds | ForEach-Object { "<package pattern=`"$([System.Security.SecurityElement]::Escape($_))`" />" }) -join ""
+        $escapedId = [System.Security.SecurityElement]::Escape($packageId)
         $escapedFeed = [System.Security.SecurityElement]::Escape($RestoreSource)
+        # Absolute, because a relative source in a nuget.config resolves against the config's own
+        # folder, which is this temporary one.
+        $escapedLocal = [System.Security.SecurityElement]::Escape((Resolve-Path -LiteralPath $LocalPackageSource).ProviderPath)
         $escapedPublic = [System.Security.SecurityElement]::Escape($PublicSource)
         Set-Content -LiteralPath $configFile -Encoding utf8 -Value @"
 <?xml version="1.0" encoding="utf-8"?>
@@ -192,10 +207,12 @@ try {
   <packageSources>
     <clear />
     <add key="published-feed" value="$escapedFeed" />
+    <add key="local-packs" value="$escapedLocal" />
     <add key="public" value="$escapedPublic" />
   </packageSources>
   <packageSourceMapping>
-    <packageSource key="published-feed">$feedPatterns</packageSource>
+    <packageSource key="published-feed"><package pattern="$escapedId" /></packageSource>
+    <packageSource key="local-packs">$localPatterns</packageSource>
     <packageSource key="public"><package pattern="*" /></packageSource>
   </packageSourceMapping>
 </configuration>
@@ -205,7 +222,8 @@ try {
 
     dotnet restore $ConsumerProject @restoreArguments @properties | Out-Host
     if ($LASTEXITCODE -ne 0) {
-        throw "The scratch consumer failed to restore the published $packageId $PackageVersion from $RestoreSource."
+        $localClause = if ($LocalPackageIds.Count -gt 0) { ", or $($LocalPackageIds -join ', ') from the local packs in $LocalPackageSource" } else { "" }
+        throw "The scratch consumer failed to restore the published $packageId $PackageVersion from $RestoreSource$localClause."
     }
 
     dotnet build $ConsumerProject -c $Configuration --no-restore --nologo @properties | Out-Host

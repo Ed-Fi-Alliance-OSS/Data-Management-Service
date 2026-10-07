@@ -201,10 +201,12 @@ Describe "Invoke-PublishedContractConsumerCheck" {
 }
 
 # The same script, parameterized for EdFi.Api.Identity. That consumer restores two Ed-Fi contracts,
-# and carries its own package source mapping, so what is particular here is that Identity and
-# Plugins both come from the feed folder and everything else from elsewhere, and that Secrets'
-# plain --source restore is untouched. The packs are the ones build-dms.ps1 Package leaves at the
-# repository root, which the pull request lane has made by the time this suite runs.
+# and carries its own package source mapping, so what is particular here is that Identity comes from
+# the feed folder only, Plugins from the locally packed folder only, and everything else from
+# elsewhere, and that Secrets' plain --source restore is untouched. Plugins is the local pack because
+# a pull request that moves the Plugins version declares one no prerelease has published yet. The
+# packs are the ones build-dms.ps1 Package leaves at the repository root, which the pull request
+# lane has made by the time this suite runs.
 Describe "Invoke-PublishedContractConsumerCheck for EdFi.Api.Identity" {
     BeforeAll {
         $script:identityVersion = Get-IdentityContractVersion
@@ -220,16 +222,25 @@ Describe "Invoke-PublishedContractConsumerCheck for EdFi.Api.Identity" {
             }
         }
 
-        # What the feed serves: the unchanged identity pack and the plugins pack. The restore reads
-        # this folder, never the repository root.
+        # What the feed serves: the identity pack and nothing else, so a Plugins version the feed
+        # does not have is the case every restore below exercises. The local folder holds what this
+        # checkout packed: Plugins, and an Identity of the same version that the restore must not
+        # take in place of the published one.
         $script:identityFeed = Join-Path $script:fixtureRoot "identity-feed"
         $script:identityChangedFeed = Join-Path $script:fixtureRoot "identity-changed-feed"
         $script:pluginsOnlyFeed = Join-Path $script:fixtureRoot "plugins-only-feed"
-        foreach ($folder in @($script:identityFeed, $script:identityChangedFeed, $script:pluginsOnlyFeed)) {
+        $script:fullFeed = Join-Path $script:fixtureRoot "identity-and-plugins-feed"
+        $script:localPacks = Join-Path $script:fixtureRoot "local-packs"
+        $script:emptyLocalPacks = Join-Path $script:fixtureRoot "empty-local-packs"
+        foreach ($folder in @($script:identityFeed, $script:identityChangedFeed, $script:pluginsOnlyFeed, $script:fullFeed, $script:localPacks, $script:emptyLocalPacks)) {
             New-Item -ItemType Directory -Path $folder -Force | Out-Null
-            Copy-Item -LiteralPath $script:pluginsPacked -Destination $folder
         }
         Copy-Item -LiteralPath $script:identityPacked -Destination $script:identityFeed
+        Copy-Item -LiteralPath $script:identityPacked -Destination $script:fullFeed
+        Copy-Item -LiteralPath $script:pluginsPacked -Destination $script:fullFeed
+        Copy-Item -LiteralPath $script:pluginsPacked -Destination $script:pluginsOnlyFeed
+        Copy-Item -LiteralPath $script:pluginsPacked -Destination $script:localPacks
+        Copy-Item -LiteralPath $script:identityPacked -Destination $script:localPacks
         $script:identityChangedFile = Join-Path $script:identityChangedFeed $script:identityName
         Copy-Item -LiteralPath $script:identityPacked -Destination $script:identityChangedFile
 
@@ -261,6 +272,7 @@ Describe "Invoke-PublishedContractConsumerCheck for EdFi.Api.Identity" {
             param(
                 [Parameter(Mandatory)][hashtable] $Feed,
                 [string] $RestoreSource = $script:identityFeed,
+                [string] $LocalPackageSource = $script:localPacks,
                 [string] $PackageVersion = $script:identityVersion,
                 [string] $AssemblyName = "EdFi.DataManagementService.Identity"
             )
@@ -282,7 +294,8 @@ Describe "Invoke-PublishedContractConsumerCheck for EdFi.Api.Identity" {
                 AssemblyName              = $AssemblyName
                 VersionPropertyName       = "IdentityPackageVersion"
                 AdditionalProperties      = @{ PluginsPackageVersion = $script:pluginsVersion }
-                AdditionalFeedPackageIds  = @("EdFi.Api.Plugins")
+                LocalPackageIds           = @("EdFi.Api.Plugins")
+                LocalPackageSource        = $LocalPackageSource
                 PublicSource              = "https://api.nuget.org/v3/index.json"
                 ResolvePackageBaseAddress = {
                     param([string] $IndexUrl, [string] $ApiKey)
@@ -344,7 +357,7 @@ Describe "Invoke-PublishedContractConsumerCheck for EdFi.Api.Identity" {
             $script:identityUnchanged.Output[0] | Should -BeLike "Verified the published EdFi.Api.Identity $($script:identityVersion) from *"
         }
 
-        It "compiled the consumer against Identity and Plugins restored from the feed folder" {
+        It "compiled the consumer against Identity from the feed folder and Plugins from the local packs" {
             $assembly = Join-Path $script:identityUnchanged.Packages `
                 "edfi.api.identity/$($script:identityVersion)/lib/net10.0/EdFi.DataManagementService.Identity.dll"
             $declared = [version]$script:identityVersion
@@ -364,9 +377,21 @@ Describe "Invoke-PublishedContractConsumerCheck for EdFi.Api.Identity" {
     }
 
     Context "The restore source does not hold the published Identity package" {
-        It "fails at restore rather than compiling against anything else" {
+        It "fails at restore rather than taking the locally packed Identity" {
             {
                 Invoke-IdentityCheck -RestoreSource $script:pluginsOnlyFeed -Feed @{
+                    Found    = $true
+                    Versions = @($script:identityVersion)
+                    Source   = $script:identityPacked
+                }
+            } | Should -Throw -ExpectedMessage "The scratch consumer failed to restore the published EdFi.Api.Identity*"
+        }
+    }
+
+    Context "The local packs do not hold Plugins" {
+        It "fails at restore rather than taking Plugins from the feed, which holds it" {
+            {
+                Invoke-IdentityCheck -RestoreSource $script:fullFeed -LocalPackageSource $script:emptyLocalPacks -Feed @{
                     Found    = $true
                     Versions = @($script:identityVersion)
                     Source   = $script:identityPacked
@@ -387,17 +412,20 @@ Describe "Invoke-PublishedContractConsumerCheck for EdFi.Api.Identity" {
         }
     }
 
-    Context "Additional feed package ids are given without a public source" {
-        It "fails before reading the feed" {
+    Context "Local package ids are given without both sources" {
+        It "fails before reading the feed when <Missing> is missing" -ForEach @(
+            @{ Missing = "-LocalPackageSource"; Arguments = @{ PublicSource = "https://api.nuget.org/v3/index.json" } }
+            @{ Missing = "-PublicSource"; Arguments = @{ LocalPackageSource = "local-packs" } }
+        ) {
             $arguments = @{
-                PackageFile              = $script:identityPacked
-                PackageVersion           = $script:identityVersion
-                ServiceIndexUrl          = "https://feed.invalid/index.json"
-                NuGetPackagesDirectory   = Join-Path $script:fixtureRoot "never-used-$([guid]::NewGuid().ToString('N'))"
-                AdditionalFeedPackageIds = @("EdFi.Api.Plugins")
-            }
+                PackageFile            = $script:identityPacked
+                PackageVersion         = $script:identityVersion
+                ServiceIndexUrl        = "https://feed.invalid/index.json"
+                NuGetPackagesDirectory = Join-Path $script:fixtureRoot "never-used-$([guid]::NewGuid().ToString('N'))"
+                LocalPackageIds        = @("EdFi.Api.Plugins")
+            } + $Arguments
 
-            { & $script:checker @arguments } | Should -Throw -ExpectedMessage "*needs -PublicSource*"
+            { & $script:checker @arguments } | Should -Throw -ExpectedMessage "*needs $Missing*"
         }
     }
 }

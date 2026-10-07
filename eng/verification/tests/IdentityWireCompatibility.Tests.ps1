@@ -281,11 +281,16 @@ namespace Test.Identity {
 $variants = [ordered]@{
     base             = $base
     interfacemember  = $base.Replace('string Get(string id);', 'string Get(string id); string Extra();')
+    interfaceproperty = $base.Replace('string Get(string id);', 'string Get(string id); int Count { get; }')
+    interfaceevent   = $base.Replace('string Get(string id);', 'string Get(string id); event System.EventHandler Changed;')
+    defaultmember    = $base.Replace('string Get(string id);', 'string Get(string id); string Extra() => "";')
+    defaultproperty  = $base.Replace('string Get(string id);', 'string Get(string id); int Count => 0;')
     requiredproperty = $base.Replace('public string Name { get; set; } = "";', 'public string Name { get; set; } = ""; public required string Mandatory { get; set; }')
     requiredfield    = $base.Replace('public string Name { get; set; } = "";', 'public string Name { get; set; } = ""; public required string Mandatory;')
     removedtype      = $base.Replace('public class Result { public string Name { get; set; } = ""; }', '')
     changedsignature = $base.Replace('string Get(string id);', 'string Get(string id, int count);')
     abstractmember   = $base.Replace('public abstract void Run();', 'public abstract void Run(); public abstract void Stop();')
+    abstractproperty = $base.Replace('public abstract void Run();', 'public abstract void Run(); public abstract int Size { get; }')
     plainmember      = $base.Replace('public string Name { get; set; } = "";', 'public string Name { get; set; } = ""; public void Touch() { }')
 }
 
@@ -303,7 +308,7 @@ foreach ($name in $variants.Keys) {
 
     $script:packages = @{}
 
-    foreach ($name in @("base", "interfacemember", "requiredproperty", "requiredfield", "removedtype", "changedsignature", "abstractmember", "plainmember")) {
+    foreach ($name in @("base", "interfacemember", "interfaceproperty", "interfaceevent", "defaultmember", "defaultproperty", "requiredproperty", "requiredfield", "removedtype", "changedsignature", "abstractmember", "abstractproperty", "plainmember")) {
         $script:packages[$name] = Get-TestPackage -Commit $script:repo.Commit -AssemblyPath (Join-Path $assemblyDirectory "$name.dll")
     }
 
@@ -523,9 +528,12 @@ Describe "Needs-review wire differences at a version increment" {
 Describe "Provider surface at a version increment" {
     It "<Name> fails as <Category>, with and without a review record" -ForEach @(
         @{ Name = "a new interface member"; Package = "interfacemember"; Category = "surface-interface-member" }
+        @{ Name = "a new interface property"; Package = "interfaceproperty"; Category = "surface-interface-member" }
+        @{ Name = "a new interface event"; Package = "interfaceevent"; Category = "surface-interface-member" }
         @{ Name = "a new required property"; Package = "requiredproperty"; Category = "surface-required-member" }
         @{ Name = "a new required field"; Package = "requiredfield"; Category = "surface-required-member" }
         @{ Name = "a new abstract member on an existing class"; Package = "abstractmember"; Category = "surface-abstract-member" }
+        @{ Name = "a new abstract property on an existing class"; Package = "abstractproperty"; Category = "surface-abstract-member" }
         @{ Name = "a removed type"; Package = "removedtype"; Category = "surface-removed-or-changed" }
         @{ Name = "a changed signature"; Package = "changedsignature"; Category = "surface-removed-or-changed" }
     ) {
@@ -546,6 +554,20 @@ Describe "Provider surface at a version increment" {
 
         $message | Should -Match ([regex]::Escape('removed SURFACE:METHOD Test.Identity.IIdentityService.Get`0(System.String id nullable=[0]) : System.String'))
         $message | Should -Match ([regex]::Escape('added SURFACE:METHOD Test.Identity.IIdentityService.Get`0(System.String id nullable=[0], System.Int32 count nullable=[]) : System.String'))
+    }
+
+    It "needs a review record for <Name>, which an existing provider inherits" -ForEach @(
+        @{ Name = "an interface method with a default implementation"; Package = "defaultmember"; Line = 'METHOD Test.Identity.IIdentityService.Extra`0() : System.String nullable=[0] accessibility=public modifiers=virtual generics=none' }
+        @{ Name = "an interface property with a default implementation"; Package = "defaultproperty"; Line = 'PROPERTY Test.Identity.IIdentityService.Count : System.Int32 nullable=[] get=public:virtual set=none setkind=none' }
+    ) {
+        $without = Invoke-IncrementGate -PackedPackage $script:packages[$Package]
+        $without.Decision | Should -BeNullOrEmpty
+        $without.Message | Should -Match ([regex]::Escape("[surface-interface-default-member] added SURFACE:$Line"))
+        $without.Message | Should -Not -BeLike "*Hard-fail*"
+
+        $entry = @{ pointer = "SURFACE:$Line"; change = "added"; reason = "Existing providers inherit the default implementation." }
+
+        (Invoke-IncrementGate -PackedPackage $script:packages[$Package] -Record @($entry)).Decision.Outcome | Should -BeExactly "increment-reviewed"
     }
 
     It "needs a review record for an added member that is none of the hard-fail kinds" {

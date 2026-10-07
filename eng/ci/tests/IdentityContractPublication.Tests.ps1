@@ -163,10 +163,55 @@ Describe "EdFi.Api.Identity publication wiring" {
             $gate | Should -BeGreaterThan $tests
         }
 
+        It "accepts any number of wire baseline tests, provided none failed and every one passed" {
+            $check = $script:jobs["check-identity-contract"]
+
+            # A pinned count breaks the prerelease lane when a test is added to the class, although
+            # the pull request lane passed. The counts are compared with each other instead.
+            $check | Should -Not -Match '\[int\]\$(passed|total)\.Groups\[1\]\.Value -ne \d'
+            $check | Should -Match '\[int\]\$failed\.Groups\[1\]\.Value -ne 0'
+            $check | Should -Match '\[int\]\$passed\.Groups\[1\]\.Value -lt 1'
+            $check | Should -Match '\[int\]\$total\.Groups\[1\]\.Value -ne \[int\]\$passed\.Groups\[1\]\.Value'
+        }
+
+        It "uploads the served wire document from check-identity-contract for the publish job" {
+            $check = $script:jobs["check-identity-contract"]
+            $check | Should -Match '(?ms)uses: actions/upload-artifact@\S+.*?name: "\$\{\{ env\.IDENTITY_PACKAGE_NAME \}\}-WireDocument"\r?\n\s+path: \$\{\{ steps\.served-document\.outputs\.served-document-path \}\}'
+        }
+
         It "consults the feed by package id before pushing in publish-package-identity" {
             $publish = $script:jobs["publish-package-identity"]
             $publish | Should -Match 'Invoke-ContractPublishCheck\.ps1'
             $publish | Should -Match '-PackageId "\$\{\{ env\.IDENTITY_PACKAGE_NAME \}\}"'
+        }
+
+        It "reruns the wire gate inside publish-package-identity after the recheck and before the push" {
+            $publish = $script:jobs["publish-package-identity"]
+            $recheck = $publish.IndexOf("Invoke-ContractPublishCheck.ps1")
+            $gate = $publish.IndexOf("Invoke-IdentityWireContractGate.ps1")
+            $push = $publish.IndexOf("- name: Push Identity Package to Azure Artifacts")
+
+            $publish | Should -Match '(?ms)uses: actions/download-artifact@\S+.*?name: \$\{\{ env\.IDENTITY_PACKAGE_NAME \}\}-WireDocument'
+            $recheck | Should -BeGreaterThan -1
+            $gate | Should -BeGreaterThan $recheck
+            $push | Should -BeGreaterThan $gate
+        }
+
+        It "runs the publish job's wire gate whether or not the package is pushed" {
+            # A concurrent run that published the same version first turns this run's package
+            # decision into a skip; its served document must still match what that run published.
+            $step = Get-WorkflowStep -Workflow $script:jobs["publish-package-identity"] -Name "Recheck the Served Identity Wire Document Immediately Before Pushing"
+
+            $step | Should -Match 'Invoke-IdentityWireContractGate\.ps1'
+            $step | Should -Match '-PackedPackageFile'
+            $step | Should -Not -Match '(?m)^        if:'
+        }
+
+        It "checks out the full history in <job>, where the gate reads the baseline at the anchor commit" -ForEach @(
+            @{ Job = "check-identity-contract" }
+            @{ Job = "publish-package-identity" }
+        ) {
+            $script:jobs[$Job] | Should -Match '(?ms)uses: actions/checkout@\S+[^\r\n]*\r?\n\s+with:\r?\n\s+fetch-depth: 0'
         }
     }
 

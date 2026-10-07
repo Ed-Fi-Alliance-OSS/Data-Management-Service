@@ -178,22 +178,7 @@ internal sealed class AcmeIdentityService(AcmeIdentityStore store) : IIdentitySe
         }
 
         // Errors name the property, never its value: names and birth dates are person data.
-        List<IdentityError> errors =
-        [
-            .. RequiredProperties
-                .Where(name => !AcmeIdentityStore.HasText(request[name]))
-                .Select(name => new IdentityError { Message = $"{name} is required.", Path = $"$.{name}" }),
-        ];
-
-        if (
-            AcmeIdentityStore.HasText(request["BirthDate"])
-            && !DateTimeOffset.TryParse(request["BirthDate"]?.ToString(), CultureInfo.InvariantCulture, out _)
-        )
-        {
-            errors.Add(
-                new IdentityError { Message = "BirthDate must be a date-time.", Path = "$.BirthDate" }
-            );
-        }
+        List<IdentityError> errors = [.. CheckAttributes(request, "$", RequiredProperties)];
 
         if (errors.Count > 0)
         {
@@ -209,6 +194,68 @@ internal sealed class AcmeIdentityService(AcmeIdentityStore store) : IIdentitySe
             new IdentityResult { Status = IdentityResultStatus.Success, Payload = JsonValue.Create(uniqueId) }
         );
     }
+
+    // DMS checks no property values, so the provider does: each standard property must have the type
+    // the served schema gives it, or a later answer would return it in the wrong shape. A missing or
+    // null property is an unknown value, refused only when it is required. Search uses this too, with
+    // each item's own path.
+    private static IEnumerable<IdentityError> CheckAttributes(
+        JsonObject request,
+        string path,
+        string[] required
+    )
+    {
+        foreach (string name in AcmeIdentityStore.TextProperties)
+        {
+            if (request[name] is { } value && !AcmeIdentityStore.IsText(value))
+            {
+                yield return Error(path, name, $"{name} must be a string.");
+            }
+            else if (required.Contains(name) && !AcmeIdentityStore.HasText(request[name]))
+            {
+                yield return Error(path, name, $"{name} is required.");
+            }
+        }
+
+        if (request["BirthDate"] is { } birthDate && AcmeIdentityStore.NormalizeBirthDate(birthDate) is null)
+        {
+            yield return Error(path, "BirthDate", "BirthDate must be a date-time with a UTC offset.");
+        }
+        else if (required.Contains("BirthDate") && request["BirthDate"] is null)
+        {
+            yield return Error(path, "BirthDate", "BirthDate is required.");
+        }
+
+        if (
+            request["BirthOrder"] is { } birthOrder
+            && !(birthOrder is JsonValue order && order.TryGetValue(out int _))
+        )
+        {
+            yield return Error(path, "BirthOrder", "BirthOrder must be an integer.");
+        }
+
+        if (request["BirthLocation"] is JsonObject location)
+        {
+            foreach (string name in AcmeIdentityStore.LocationProperties)
+            {
+                if (location[name] is { } value && !AcmeIdentityStore.IsText(value))
+                {
+                    yield return Error(
+                        path,
+                        $"BirthLocation.{name}",
+                        $"BirthLocation.{name} must be a string."
+                    );
+                }
+            }
+        }
+        else if (request["BirthLocation"] is not null)
+        {
+            yield return Error(path, "BirthLocation", "BirthLocation must be an object.");
+        }
+    }
+
+    private static IdentityError Error(string path, string property, string message) =>
+        new() { Message = message, Path = $"{path}.{property}" };
 ```
 
 The create payload is the issued UniqueId as a bare JSON string.
@@ -286,19 +333,13 @@ The create payload is the issued UniqueId as a bare JSON string.
             return Task.FromResult(new IdentityAsyncResult { Status = IdentityResultStatus.NotFound });
         }
 
-        // The search needs a surname and a first name to match on. The error names only the group's
-        // position and the property, never the values supplied.
+        // The search needs a surname and a first name to match on, and every property it carries is
+        // checked as a create's is. The error names only the item's position and the property, never
+        // the values supplied.
         List<IdentityError> errors =
         [
             .. requests.SelectMany(
-                (request, index) =>
-                    new[] { "LastSurname", "FirstName" }
-                        .Where(name => !AcmeIdentityStore.HasText(request[name]))
-                        .Select(name => new IdentityError
-                        {
-                            Message = $"{name} is required.",
-                            Path = $"$[{index}].{name}",
-                        })
+                (request, index) => CheckAttributes(request, $"$[{index}]", ["LastSurname", "FirstName"])
             ),
         ];
 
@@ -382,6 +423,31 @@ internal sealed class AcmeIdentityStore(IReadOnlyCollection<string> authorizedCl
     private static readonly TimeSpan JobDelay = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan JobRetention = TimeSpan.FromHours(1);
 
+    // An RFC 3339 date-time with an offset, as the served schema's date-time format requires: a date
+    // alone, or a date-time with no offset, names no single instant.
+    private static readonly string[] BirthDateFormats =
+    [
+        "yyyy-MM-dd'T'HH:mm:ss.FFFFFFFzzz",
+        "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'",
+    ];
+
+    public static readonly string[] TextProperties =
+    [
+        "LastSurname",
+        "FirstName",
+        "MiddleName",
+        "GenerationCodeSuffix",
+        "SexType",
+    ];
+
+    public static readonly string[] LocationProperties =
+    [
+        "City",
+        "StateAbbreviation",
+        "InternationalProvince",
+        "Country",
+    ];
+
     private readonly HashSet<string> authorizedClients = new(authorizedClients, StringComparer.Ordinal);
 
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, JsonObject>> identities =
@@ -403,8 +469,25 @@ internal sealed class AcmeIdentityStore(IReadOnlyCollection<string> authorizedCl
             )
             : null;
 
+    public static bool IsText(JsonNode? node) => node is JsonValue value && value.TryGetValue(out string? _);
+
     public static bool HasText(JsonNode? node) =>
         node is JsonValue value && value.TryGetValue(out string? text) && !string.IsNullOrWhiteSpace(text);
+
+    // The birth date in one UTC form, so a stored date and a searched one compare as the same
+    // instant however each was written; null when the value is not a date-time with an offset.
+    public static string? NormalizeBirthDate(JsonNode? node) =>
+        node is JsonValue value
+        && value.TryGetValue(out string? text)
+        && DateTimeOffset.TryParseExact(
+            text,
+            BirthDateFormats,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal,
+            out DateTimeOffset parsed
+        )
+            ? parsed.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'", CultureInfo.InvariantCulture)
+            : null;
 
     // A GUID without hyphens: 32 characters from the guaranteed repertoire, one URL path segment.
     public string Issue(string identityNamespace, JsonObject request)
@@ -412,7 +495,8 @@ internal sealed class AcmeIdentityStore(IReadOnlyCollection<string> authorizedCl
         string uniqueId = Guid.NewGuid().ToString("N");
         JsonObject birthLocation = request["BirthLocation"] as JsonObject ?? [];
 
-        // Standard properties the request omits are stored as null, never left out.
+        // Standard properties the request omits are stored as null, never left out. The request was
+        // checked first, so each value already has its schema type; the birth date is normalized.
         JsonObject identity = new()
         {
             ["UniqueId"] = uniqueId,
@@ -421,7 +505,7 @@ internal sealed class AcmeIdentityStore(IReadOnlyCollection<string> authorizedCl
             ["MiddleName"] = request["MiddleName"]?.DeepClone(),
             ["GenerationCodeSuffix"] = request["GenerationCodeSuffix"]?.DeepClone(),
             ["SexType"] = request["SexType"]?.DeepClone(),
-            ["BirthDate"] = request["BirthDate"]?.DeepClone(),
+            ["BirthDate"] = NormalizeBirthDate(request["BirthDate"]),
             ["BirthOrder"] = request["BirthOrder"]?.DeepClone(),
             ["BirthLocation"] = new JsonObject
             {
@@ -454,7 +538,10 @@ internal sealed class AcmeIdentityStore(IReadOnlyCollection<string> authorizedCl
                 .Values.Where(identity =>
                     Same(identity["LastSurname"], criteria["LastSurname"])
                     && Same(identity["FirstName"], criteria["FirstName"])
-                    && (criteria["BirthDate"] is null || Same(identity["BirthDate"], criteria["BirthDate"]))
+                    && (
+                        criteria["BirthDate"] is null
+                        || Same(identity["BirthDate"], NormalizeBirthDate(criteria["BirthDate"]))
+                    )
                 )
                 .Select(identity => WithScore(identity, criteria["BirthDate"] is null ? 90 : 100))
             : [];
@@ -939,7 +1026,7 @@ DMS never retries a call on this interface and imposes no timeout of its own on 
 The Data Management Service serves the OpenAPI document for the identity API at `/metadata/identity/v2/swagger.json`, when `AppSettings:EnableIdentityManagement` is on.
 It is the artifact to validate your own request and response payloads against.
 It defines `IdentityCreateRequest`, `IdentitySearchRequest`, `IdentityResponse` and `IdentitySearchResponse`, with their complete and incomplete forms, and each problem type, and it states its contract version in `x-edfi-identity-contract-version`.
-It also pins example `400` bodies, for a create failure keyed by `$.firstName`, a search item failure keyed by `$[2].firstName`, a pathless error, and two messages under one key, and your `InvalidProperties` errors should project to bodies of those shapes.
+It also pins example `400` bodies, for a create failure keyed by `$.FirstName`, a search item failure keyed by `$[2].FirstName`, a pathless error, and two messages under one key, and your `InvalidProperties` errors should project to bodies of those shapes.
 The repository copy is
 [identity-v2-openapi.json](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/dms/core/EdFi.DataManagementService.Core/OpenApi/identity-v2-openapi.json).
 

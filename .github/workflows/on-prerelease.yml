@@ -1100,8 +1100,10 @@ jobs:
           # The fixture class writes the document the host serves to its test work directory. Run
           # only that class, with the output captured to a file and the exit code read from the
           # command itself. dotnet test exits 0 when the filter matches nothing, so the summary line
-          # is parsed as well: exactly the class's five tests must have passed and none may have
-          # failed, which also fails a rename that leaves the filter matching nothing.
+          # is parsed as well: at least one test must have passed, none may have failed, and every
+          # test run must have passed, which also fails a rename that leaves the filter matching
+          # nothing. The counts are compared with each other rather than with a number, so adding a
+          # test to the class does not break this lane after the pull request lane passed it.
           $project = "./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj"
           $testOutput = Join-Path $env:RUNNER_TEMP "identity-wire-baseline-tests.txt"
 
@@ -1119,8 +1121,8 @@ jobs:
           if (-not ($passed.Success -and $failed.Success -and $total.Success)) {
             throw "No test summary was found in the identity wire baseline test output; the filter may have matched nothing."
           }
-          if ([int]$failed.Groups[1].Value -ne 0 -or [int]$passed.Groups[1].Value -ne 5 -or [int]$total.Groups[1].Value -ne 5) {
-            throw "Expected exactly 5 passed identity wire baseline tests and none failed, found Passed: $($passed.Groups[1].Value), Failed: $($failed.Groups[1].Value), Total: $($total.Groups[1].Value)"
+          if ([int]$failed.Groups[1].Value -ne 0 -or [int]$passed.Groups[1].Value -lt 1 -or [int]$total.Groups[1].Value -ne [int]$passed.Groups[1].Value) {
+            throw "Expected every identity wire baseline test to pass, at least one, found Passed: $($passed.Groups[1].Value), Failed: $($failed.Groups[1].Value), Total: $($total.Groups[1].Value)"
           }
 
           $served = @(Get-ChildItem -Path ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/bin/Release -Recurse -Filter "identity-v2-wire-baseline.json" |
@@ -1130,6 +1132,16 @@ jobs:
           }
 
           "served-document-path=$($served[0].FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      # For publish-package-identity, which gates this same document again inside its serialized
+      # concurrency group; see the recheck there.
+      - name: Upload the Served Identity Wire Document
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: "${{ env.IDENTITY_PACKAGE_NAME }}-WireDocument"
+          path: ${{ steps.served-document.outputs.served-document-path }}
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Gate the Served Identity Wire Document
         run: |
@@ -1304,6 +1316,8 @@ jobs:
         shell: pwsh
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -1314,6 +1328,12 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ env.IDENTITY_PACKAGE_NAME }}-NuGet
+
+      - name: Get the Served Identity Wire Document
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.IDENTITY_PACKAGE_NAME }}-WireDocument
+          path: ${{ runner.temp }}/identity-wire-document
 
       - name: Recheck Immediately Before Pushing
         id: decide
@@ -1329,6 +1349,32 @@ jobs:
             -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
+
+      # The wire gate in check-identity-contract ran outside this concurrency group, against
+      # whatever the feed held then. Two runs that both found the contract version absent both
+      # passed it as the initial baseline, and once the first pushes, the second's package recheck
+      # above reads "unchanged" and lets its DMS packages through. So the gate runs again here, on
+      # this run's own served document against a fresh read of the feed, whether or not this run
+      # pushes: a version another run published first must have the baseline this run serves.
+      - name: Recheck the Served Identity Wire Document Immediately Before Pushing
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $served = @(Get-ChildItem -LiteralPath (Join-Path $env:RUNNER_TEMP "identity-wire-document") -File)
+          if ($served.Count -ne 1) {
+            throw "Expected exactly one served identity wire document from check-identity-contract, found $($served.Count)"
+          }
+
+          $decision = ./eng/verification/Invoke-IdentityWireContractGate.ps1 `
+            -ServedDocumentPath $served[0].FullName `
+            -ContractVersion "${{ needs.pack-identity.outputs.contract-version }}" `
+            -PackedPackageFile (Resolve-Path "${{ env.IDENTITY_PACKAGE_NAME }}.${{ needs.pack-identity.outputs.contract-version }}.nupkg").Path `
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
+            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}"
+
+          $line = "Identity wire gate before push: outcome=$($decision.Outcome) published=$($decision.PublishedVersion) anchor=$($decision.AnchorCommit) contract=${{ needs.pack-identity.outputs.contract-version }}"
+          Write-Host $line
+          $line | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
 
       - name: Install-credential-handler Identity
         if: steps.decide.outputs.should-push == 'true'
