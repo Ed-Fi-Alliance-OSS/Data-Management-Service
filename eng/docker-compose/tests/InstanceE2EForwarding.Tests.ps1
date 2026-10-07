@@ -913,6 +913,7 @@ Describe "Instance E2E runs the DMS projection reader project once per engine la
         # A TRX shaped as the reader project's: one definition per test, naming its class, and one result per test
         # with its outcome. Outcomes are "Passed", "Failed" or "NotExecuted" (a skipped test); the counters agree.
         function New-Trx {
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test helper that writes a fixture file under Pester TestDrive; no -WhatIf surface.')]
             param([string] $Path, [string[]] $LiveOutcomes = @(), [string[]] $HarnessOutcomes = @())
 
             $definitions = [System.Text.StringBuilder]::new()
@@ -1109,7 +1110,7 @@ Describe "RunInstanceE2E defaults to excluding the identity plugin slice (DMS-15
         # instead of starting a test run. The DMS projection reader run (DMS-1440) is covered by its own tests.
         function Invoke-Execute { param([scriptblock] $Command) & $Command }
         function dotnet { $script:dotnetArguments = @($args) }
-        function RunDmsProjectionReaderE2E { param([string] $DatabaseEngine) }
+        function RunDmsProjectionReaderE2E { }
     }
 
     BeforeEach {
