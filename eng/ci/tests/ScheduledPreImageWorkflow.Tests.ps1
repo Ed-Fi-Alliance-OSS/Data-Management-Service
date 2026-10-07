@@ -61,7 +61,26 @@ Describe 'Scheduled pre-image workflow safeguards' {
         It 'retains scheduled and manual triggers without reducing the matrix' {
             $script:workflow | Should -Match '(?m)^  workflow_dispatch:'
             $script:workflow | Should -Match '(?m)^  schedule:'
-            $script:job.Substring(0, $script:job.IndexOf('    steps:')) | Should -Not -Match 'github.event_name|exclude:|include:'
+            $header = $script:job.Substring(0, $script:job.IndexOf('    steps:'))
+            $matrix = $header.Substring($header.IndexOf('      matrix:'))
+            $matrix | Should -Not -Match 'github.event_name|exclude:|include:'
+        }
+
+        It 'permits <Event> for <Owner> only when appropriate' -ForEach @(
+            @{ Event = 'schedule'; Owner = 'Ed-Fi-Alliance-OSS'; Expected = $true }
+            @{ Event = 'workflow_dispatch'; Owner = 'Ed-Fi-Alliance-OSS'; Expected = $true }
+            @{ Event = 'schedule'; Owner = 'example-fork'; Expected = $false }
+            @{ Event = 'workflow_dispatch'; Owner = 'example-fork'; Expected = $true }
+        ) {
+            $header = $script:job.Substring(0, $script:job.IndexOf('    steps:'))
+            $condition = [regex]::Match($header, '(?m)^    if: (?<expression>[^\r\n]+)')
+            $condition.Success | Should -BeTrue
+            # Evaluate the workflow's comparison/OR expression for the four supported event/owner cases.
+            $expression = $condition.Groups['expression'].Value.
+                Replace('github.event_name', "'$Event'").
+                Replace('github.repository_owner', "'$Owner'").
+                Replace('!=', '-ne').Replace('==', '-eq').Replace('||', '-or')
+            (& ([scriptblock]::Create($expression))) | Should -Be $Expected
         }
 
         It 'bounds executable content before subsequent step properties' {
@@ -130,11 +149,12 @@ throw 'safe failure'
             $teardown | Should -Match '\.env\.e2e'
         }
 
-        It 'captures native failure without exposing child output and removes stale TRX before invoking the child' -ForEach @(
+        It 'captures native failure for <Engine>/<Identity> without exposing child output and removes stale TRX before invoking the child' -ForEach @(
             @{ Engine = 'mssql'; Filter = 'Category=@MssqlRepresentative'; Identity = 'keycloak' }
             @{ Engine = 'postgresql'; Filter = '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)'; Identity = 'self-contained' }
+            @{ Engine = 'postgresql'; Filter = '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)'; Identity = 'keycloak' }
         ) {
-            $workingDirectory = Join-Path $TestDrive "e2e-child-$Engine"
+            $workingDirectory = Join-Path $TestDrive "e2e-child-$Engine-$Identity"
             $diagnosticDirectory = Join-Path $workingDirectory 'diagnostics'
             $trxPath = Join-Path $workingDirectory 'TestResults/EdFi.DataManagementService.Tests.E2E.filtered.trx'
             New-Item -ItemType Directory -Path (Split-Path $trxPath) -Force | Out-Null
