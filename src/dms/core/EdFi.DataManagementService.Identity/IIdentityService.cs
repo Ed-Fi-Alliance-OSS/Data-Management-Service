@@ -85,11 +85,12 @@ namespace EdFi.DataManagementService.Identity;
 /// <c>CreateAsync</c> documents what this rule costs when an issuance response is lost.
 /// </para>
 /// <para>
-/// <b>Request and response payloads.</b> DMS treats these payloads as opaque JSON and validates
-/// nothing about their contents at runtime, but their shape is defined rather than provider-chosen:
-/// the deployment's OpenAPI document pins it, so a provider returning a different shape serves a
-/// response that does not conform to the API it is backing. DMS does reject duplicate property names
-/// and structurally malformed arrays before invoking a provider.
+/// <b>Request and response payloads.</b> DMS treats these payloads as opaque JSON and, beyond the
+/// presence and create checks <see cref="IdentityResult.Payload"/> names, validates nothing about
+/// their contents at runtime, but their shape is defined rather than provider-chosen: the
+/// deployment's OpenAPI document pins it, so a provider returning a different shape serves a
+/// response that does not conform to the API it is backing. DMS does reject duplicate property
+/// names and structurally malformed arrays before invoking a provider.
 /// </para>
 /// <para>
 /// Create and search request objects, and every returned identity, share one set of standard

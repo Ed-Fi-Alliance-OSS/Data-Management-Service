@@ -28,6 +28,22 @@ BeforeAll {
     $script:baselinePath = "baseline/identity-v2-wire-baseline.json"
     $script:utf8 = [System.Text.UTF8Encoding]::new($false)
 
+    # The XML documentation every test package ships beside its assembly unless a case says
+    # otherwise. $script:documentedGet adds a member, for the cases about documentation.
+    $script:documentation = @'
+<?xml version="1.0"?>
+<doc>
+    <assembly><name>EdFi.DataManagementService.Identity</name></assembly>
+    <members>
+        <member name="T:Test.Identity.IIdentityService"><summary>Resolves identities.</summary></member>
+    </members>
+</doc>
+'@
+    $script:documentedGet = $script:documentation.Replace(
+        '</members>',
+        '    <member name="M:Test.Identity.IIdentityService.Get(System.String)"><summary>Gets one identity.</summary></member>' + "`n    </members>"
+    )
+
     function Invoke-TestGit {
         [CmdletBinding()]
         param([string] $Repository, [string[]] $Arguments)
@@ -42,11 +58,12 @@ BeforeAll {
         return $output
     }
 
-    # A repository whose second commit carries the golden as the published baseline.
+    # A repository whose second commit carries the golden, or the given baseline, as the published
+    # baseline.
     function Get-TestRepository {
         [CmdletBinding()]
         [OutputType([pscustomobject])]
-        param()
+        param([string] $Baseline = $script:golden)
 
         $root = Join-Path $TestDrive "repo-$([guid]::NewGuid().ToString('N'))"
         New-Item -ItemType Directory -Path (Join-Path $root "baseline") -Force | Out-Null
@@ -56,7 +73,7 @@ BeforeAll {
         Invoke-TestGit -Repository $root -Arguments @("add", "README.md") | Out-Null
         Invoke-TestGit -Repository $root -Arguments @("commit", "--quiet", "-m", "first") | Out-Null
 
-        [System.IO.File]::WriteAllText((Join-Path $root $script:baselinePath), $script:golden, $script:utf8)
+        [System.IO.File]::WriteAllText((Join-Path $root $script:baselinePath), $Baseline, $script:utf8)
         Invoke-TestGit -Repository $root -Arguments @("add", $script:baselinePath) | Out-Null
         Invoke-TestGit -Repository $root -Arguments @("commit", "--quiet", "-m", "baseline") | Out-Null
 
@@ -64,17 +81,26 @@ BeforeAll {
     }
 
     # A nupkg with a nuspec recording a commit and, when given, the contract assembly at the path
-    # the packages ship it.
+    # the packages ship it, with XML documentation beside it unless omitted. $Dependencies is the
+    # inner XML of the nuspec's dependencies element, which is left out when empty.
     function Get-TestPackage {
         [CmdletBinding()]
         [OutputType([string])]
-        param([string] $Commit = "", [string] $AssemblyPath = "", [string] $Version = "1.0.0")
+        param(
+            [string] $Commit = "",
+            [string] $AssemblyPath = "",
+            [string] $Version = "1.0.0",
+            [string] $Documentation = $script:documentation,
+            [string] $Dependencies = "",
+            [switch] $OmitDocumentation
+        )
 
         $stage = Join-Path $TestDrive "stage-$([guid]::NewGuid().ToString('N'))"
         $package = Join-Path $TestDrive "EdFi.Api.Identity.$Version-$([guid]::NewGuid().ToString('N')).nupkg"
         New-Item -ItemType Directory -Path $stage -Force | Out-Null
 
         $repositoryXml = if ($Commit.Length -gt 0) { "<repository type=`"git`" url=`"https://example.invalid/repo.git`" commit=`"$Commit`" />" } else { "" }
+        $dependenciesXml = if ($Dependencies.Length -gt 0) { "<dependencies>$Dependencies</dependencies>" } else { "" }
 
         [System.IO.File]::WriteAllText(
             (Join-Path $stage "EdFi.Api.Identity.nuspec"),
@@ -87,6 +113,7 @@ BeforeAll {
         <authors>Ed-Fi Alliance, LLC and contributors</authors>
         <description>Synthetic.</description>
         $repositoryXml
+        $dependenciesXml
     </metadata>
 </package>
 "@
@@ -98,6 +125,11 @@ BeforeAll {
             $libDirectory = Join-Path $stage "lib/net10.0"
             New-Item -ItemType Directory -Path $libDirectory -Force | Out-Null
             Copy-Item -LiteralPath $AssemblyPath -Destination (Join-Path $libDirectory "EdFi.DataManagementService.Identity.dll")
+
+            if (-not $OmitDocumentation) {
+                [System.IO.File]::WriteAllText((Join-Path $libDirectory "EdFi.DataManagementService.Identity.xml"), $Documentation, $script:utf8)
+            }
+
             $items += (Join-Path $stage "lib")
         }
 
@@ -106,14 +138,15 @@ BeforeAll {
         return $package
     }
 
-    # Applies declarative edits to the golden and returns the served document text. An edit is
-    # @{ Path = @(...); Json = '<json>' } to set or add, or @{ Path = @(...); Remove = $true }.
+    # Applies declarative edits to the golden, or to the given base document, and returns the served
+    # document text. An edit is @{ Path = @(...); Json = '<json>' } to set or add, or
+    # @{ Path = @(...); Remove = $true }.
     function Get-ServedDocument {
         [CmdletBinding()]
         [OutputType([string])]
-        param([hashtable[]] $Edit = @())
+        param([hashtable[]] $Edit = @(), [string] $Base = $script:golden)
 
-        $document = [System.Text.Json.Nodes.JsonNode]::Parse($script:golden)
+        $document = [System.Text.Json.Nodes.JsonNode]::Parse($Base)
 
         foreach ($item in $Edit) {
             $parent = $document
@@ -193,6 +226,7 @@ BeforeAll {
             [string] $RawRecord = "",
             [string] $PublishedPackage = $script:basePackage,
             [string] $PackedPackage = $script:basePackage,
+            [pscustomobject] $Repository = $script:repo,
             [switch] $OmitPackedPackage
         )
 
@@ -217,7 +251,7 @@ BeforeAll {
         $arguments = @{
             ServedDocumentPath        = $served
             ContractVersion           = "1.1.0"
-            RepositoryRoot            = $script:repo.Root
+            RepositoryRoot            = $Repository.Root
             BaselinePath              = $script:baselinePath
             ResolvePackageBaseAddress = $feed.ResolvePackageBaseAddress
             GetPublishedVersions      = $feed.GetPublishedVersions
@@ -292,6 +326,11 @@ $variants = [ordered]@{
     abstractmember   = $base.Replace('public abstract void Run();', 'public abstract void Run(); public abstract void Stop();')
     abstractproperty = $base.Replace('public abstract void Run();', 'public abstract void Run(); public abstract int Size { get; }')
     plainmember      = $base.Replace('public string Name { get; set; } = "";', 'public string Name { get; set; } = ""; public void Touch() { }')
+    internalabstract = $base.Replace('public abstract void Run();', 'public abstract void Run(); protected internal abstract int Size { get; }')
+    closedbase       = $base.Replace('public abstract void Run();', 'public abstract void Run(); private protected abstract void Seal();')
+    newinterface     = $base + "`nnamespace Test.Identity { public interface INewService { string Do(string x); int Count { get; } } }"
+    newrecord        = $base + "`nnamespace Test.Identity { public record NewThing { public required string Key { get; init; } } }"
+    newclosedtype    = $base + "`nnamespace Test.Identity { public abstract class Closed { private protected abstract void Seal(); } }"
 }
 
 foreach ($name in $variants.Keys) {
@@ -308,11 +347,20 @@ foreach ($name in $variants.Keys) {
 
     $script:packages = @{}
 
-    foreach ($name in @("base", "interfacemember", "interfaceproperty", "interfaceevent", "defaultmember", "defaultproperty", "requiredproperty", "requiredfield", "removedtype", "changedsignature", "abstractmember", "abstractproperty", "plainmember")) {
+    foreach ($name in @("base", "interfacemember", "interfaceproperty", "interfaceevent", "defaultmember", "defaultproperty", "requiredproperty", "requiredfield", "removedtype", "changedsignature", "abstractmember", "abstractproperty", "plainmember", "internalabstract", "closedbase", "newinterface", "newrecord", "newclosedtype")) {
         $script:packages[$name] = Get-TestPackage -Commit $script:repo.Commit -AssemblyPath (Join-Path $assemblyDirectory "$name.dll")
     }
 
     $script:basePackage = $script:packages["base"]
+
+    # The base assembly, packed with different XML documentation or different dependencies.
+    $baseAssembly = Join-Path $assemblyDirectory "base.dll"
+    $dependency = '<group targetFramework="net10.0"><dependency id="Foo.Bar" version="1.0.0" /></group>'
+    $script:packages["documentedget"] = Get-TestPackage -Commit $script:repo.Commit -AssemblyPath $baseAssembly -Documentation $script:documentedGet
+    $script:packages["rewordeddocs"] = Get-TestPackage -Commit $script:repo.Commit -AssemblyPath $baseAssembly -Documentation $script:documentation.Replace("Resolves identities.", "Resolves and issues identities.")
+    $script:packages["undocumented"] = Get-TestPackage -Commit $script:repo.Commit -AssemblyPath $baseAssembly -OmitDocumentation
+    $script:packages["dependency"] = Get-TestPackage -Commit $script:repo.Commit -AssemblyPath $baseAssembly -Dependencies $dependency
+    $script:packages["dependencyrange"] = Get-TestPackage -Commit $script:repo.Commit -AssemblyPath $baseAssembly -Dependencies $dependency.Replace('version="1.0.0"', 'version="2.0.0"')
 }
 
 Describe "A version increment with nothing different" {
@@ -534,6 +582,8 @@ Describe "Provider surface at a version increment" {
         @{ Name = "a new required field"; Package = "requiredfield"; Category = "surface-required-member" }
         @{ Name = "a new abstract member on an existing class"; Package = "abstractmember"; Category = "surface-abstract-member" }
         @{ Name = "a new abstract property on an existing class"; Package = "abstractproperty"; Category = "surface-abstract-member" }
+        @{ Name = "a new protected internal abstract property on an existing class"; Package = "internalabstract"; Category = "surface-abstract-member" }
+        @{ Name = "a new private protected abstract member, which closes an existing class"; Package = "closedbase"; Category = "surface-closure" }
         @{ Name = "a removed type"; Package = "removedtype"; Category = "surface-removed-or-changed" }
         @{ Name = "a changed signature"; Package = "changedsignature"; Category = "surface-removed-or-changed" }
     ) {
@@ -587,6 +637,34 @@ Describe "Provider surface at a version increment" {
         $stale.Message | Should -BeLike "*Stale review record entries*SURFACE:METHOD Test.Identity.Result.Gone*"
     }
 
+    It "needs only review records for the members of <Name>, which no existing provider implements or constructs" -ForEach @(
+        @{ Name = "a new interface"; Package = "newinterface"; Line = 'METHOD Test.Identity.INewService.Do`0(System.String x nullable=[0]) : System.String nullable=[0] accessibility=public modifiers=abstract,virtual generics=none' }
+        @{ Name = "a new record with a required member"; Package = "newrecord"; Line = 'PROPERTY Test.Identity.NewThing.Key : System.String nullable=[0] get=public:none set=public:none setkind=init required=true' }
+        @{ Name = "a new class closed to external derivers"; Package = "newclosedtype"; Line = 'CLOSURE Test.Identity.Closed by=private protected abstract member' }
+    ) {
+        $without = Invoke-IncrementGate -PackedPackage $script:packages[$Package]
+        $without.Decision | Should -BeNullOrEmpty
+        $without.Message | Should -Match ([regex]::Escape("[surface-new-type-member] added SURFACE:$Line"))
+        $without.Message | Should -Not -BeLike "*Hard-fail*"
+
+        (Invoke-IncrementGate -PackedPackage $script:packages[$Package] -Record (Get-ListedEntry -Message $without.Message)).Decision.Outcome | Should -BeExactly "increment-reviewed"
+    }
+
+    It "fails <Name> as surface-unrecognized" -ForEach @(
+        @{ Name = "a line of a kind the surface reader does not emit"; Line = "WIDGET Test.Identity.Base.Spin" }
+        @{ Name = "a member whose type is not in the surface"; Line = 'METHOD Test.Elsewhere.Gone.Run`0() : System.Void nullable=[] accessibility=public modifiers=none generics=none' }
+    ) {
+        $published = @('TYPE Test.Identity.Base accessibility=public kind=class modifiers=abstract base=System.Object interfaces=none generics=none')
+        $module = Import-Module (Join-Path $PSScriptRoot "../IdentityWireContract.psm1") -PassThru -Force
+
+        $findings = @(& $module { param($Published, $Packed) Get-SurfaceCompatibilityFinding -PublishedSurface $Published -PackedSurface $Packed } $published ($published + $Line))
+
+        $findings.Count | Should -Be 1
+        $findings[0].Pointer | Should -BeExactly "SURFACE:$Line"
+        $findings[0].Class | Should -BeExactly "hard"
+        $findings[0].Category | Should -BeExactly "surface-unrecognized"
+    }
+
     It "compares the published surface, not the packed one, as the baseline" {
         # The published package carries the extra member, the packed one does not: a removal.
         $result = Invoke-IncrementGate -PublishedPackage $script:packages["interfacemember"] -PackedPackage $script:packages["base"]
@@ -604,6 +682,103 @@ Describe "Provider surface at a version increment" {
         $empty = Get-TestPackage -Commit $script:repo.Commit
 
         (Invoke-IncrementGate -PublishedPackage $empty).Message | Should -BeLike "*published EdFi.Api.Identity 1.0.0 package carries 0*"
+    }
+}
+
+# The contract's rules live in its XML documentation and its dependencies decide what an implementer
+# inherits, so a version increment needs a review entry for every change to either, as it does for
+# the surface.
+Describe "Package documentation and dependencies at a version increment" {
+    It "<Name> needs a review record" -ForEach @(
+        @{ Name = "reworded member documentation"; Published = "base"; Packed = "rewordeddocs"; Category = "package-documentation"; Change = "changed"; Pointer = "XMLDOC:T:Test.Identity.IIdentityService" }
+        @{ Name = "a newly documented member"; Published = "base"; Packed = "documentedget"; Category = "package-documentation"; Change = "added"; Pointer = "XMLDOC:M:Test.Identity.IIdentityService.Get(System.String)" }
+        @{ Name = "removed member documentation"; Published = "documentedget"; Packed = "base"; Category = "package-documentation"; Change = "removed"; Pointer = "XMLDOC:M:Test.Identity.IIdentityService.Get(System.String)" }
+        @{ Name = "a new dependency"; Published = "base"; Packed = "dependency"; Category = "package-dependency"; Change = "added"; Pointer = "DEPENDENCY:net10.0 | foo.bar" }
+        @{ Name = "a changed dependency range"; Published = "dependency"; Packed = "dependencyrange"; Category = "package-dependency"; Change = "changed"; Pointer = "DEPENDENCY:net10.0 | foo.bar" }
+        @{ Name = "a removed dependency"; Published = "dependency"; Packed = "base"; Category = "package-dependency"; Change = "removed"; Pointer = "DEPENDENCY:net10.0 | foo.bar" }
+    ) {
+        $without = Invoke-IncrementGate -PublishedPackage $script:packages[$Published] -PackedPackage $script:packages[$Packed]
+        $without.Decision | Should -BeNullOrEmpty
+        $without.Message | Should -Match ([regex]::Escape("[$Category] $Change $Pointer"))
+        $without.Message | Should -Not -BeLike "*Hard-fail*"
+
+        $entry = @{ pointer = $Pointer; change = $Change; reason = "Reviewed by the test." }
+
+        $exact = Invoke-IncrementGate -PublishedPackage $script:packages[$Published] -PackedPackage $script:packages[$Packed] -Record @($entry)
+        $exact.Message | Should -BeExactly ""
+        $exact.Decision.Outcome | Should -BeExactly "increment-reviewed"
+    }
+
+    It "fails when the <Side> package carries no XML documentation" -ForEach @(
+        @{ Side = "packed"; Published = "base"; Packed = "undocumented"; Message = "*packed EdFi.Api.Identity package carries 0 lib/net10.0/EdFi.DataManagementService.Identity.xml entries*" }
+        @{ Side = "published"; Published = "undocumented"; Packed = "base"; Message = "*published EdFi.Api.Identity 1.0.0 package carries 0 lib/net10.0/EdFi.DataManagementService.Identity.xml entries*" }
+    ) {
+        (Invoke-IncrementGate -PublishedPackage $script:packages[$Published] -PackedPackage $script:packages[$Packed]).Message | Should -BeLike $Message
+    }
+}
+
+# A $ref reaches a component through its first two pointer tokens, whatever follows them, and those
+# tokens are decoded before they are compared. A $ref of any other form cannot be followed, so it
+# fails rather than leaving what it points at classified as unreferenced.
+Describe "References at a version increment" {
+    It "classifies a change behind <Name> as hard" -ForEach @(
+        @{
+            Name    = "a reference into a component's inside"
+            Schema  = "Shared"
+            Body    = '{"type":"object","properties":{"cache":{"type":"string","enum":["no-store"]}}}'
+            Ref     = "#/components/schemas/Shared/properties/cache"
+            Enum    = @("components", "schemas", "Shared", "properties", "cache", "enum", "1")
+            Pointer = "/components/schemas/Shared/properties/cache/enum/1"
+        }
+        @{
+            Name    = "a reference to a component name escaped as a JSON pointer"
+            Schema  = "Cache/Control"
+            Body    = '{"type":"string","enum":["no-store"]}'
+            Ref     = "#/components/schemas/Cache~1Control"
+            Enum    = @("components", "schemas", "Cache/Control", "enum", "1")
+            Pointer = "/components/schemas/Cache~1Control/enum/1"
+        }
+        @{
+            Name    = "a reference to a component name escaped as a URI fragment"
+            Schema  = "Cache Control"
+            Body    = '{"type":"string","enum":["no-store"]}'
+            Ref     = "#/components/schemas/Cache%20Control"
+            Enum    = @("components", "schemas", "Cache Control", "enum", "1")
+            Pointer = "/components/schemas/Cache Control/enum/1"
+        }
+    ) {
+        # Both documents reach the schema only through the reference under test.
+        $baseline = Get-ServedDocument -Edit @(
+            @{ Path = @("components", "schemas", $Schema); Json = $Body }
+            @{ Path = @("components", "headers", "CacheControl", "schema"); Json = (@{ '$ref' = $Ref } | ConvertTo-Json -Compress) }
+        )
+        $repository = Get-TestRepository -Baseline $baseline
+        $package = Get-TestPackage -Commit $repository.Commit -AssemblyPath (Join-Path $TestDrive "assemblies/base.dll")
+        $served = Get-ServedDocument -Base $baseline -Edit @(@{ Path = $Enum; Json = '"no-cache"' })
+
+        $result = Invoke-IncrementGate -ServedText $served -Repository $repository -PublishedPackage $package -PackedPackage $package
+
+        $result.Decision | Should -BeNullOrEmpty
+        $result.Message | Should -Match ([regex]::Escape("Hard-fail differences"))
+        $result.Message | Should -Match ([regex]::Escape("[response-schema] added $Pointer"))
+    }
+
+    It "fails a served document carrying <Name>, even when nothing changed" -ForEach @(
+        @{ Name = "a reference to another document"; Ref = "other.json#/components/schemas/Shared" }
+        @{ Name = "an absolute reference"; Ref = "https://example.invalid/identity.json#/components/schemas/Shared" }
+        @{ Name = "a local reference outside the components"; Ref = "#/paths/~1identities/post/requestBody" }
+        @{ Name = "a reference to a whole component group"; Ref = "#/components/schemas" }
+        @{ Name = "a reference with an empty component name"; Ref = "#/components/schemas/" }
+    ) {
+        $document = Get-ServedDocument -Edit @(@{ Path = @("components", "schemas", "Unused"); Json = (@{ '$ref' = $Ref } | ConvertTo-Json -Compress) })
+        $repository = Get-TestRepository -Baseline $document
+        $package = Get-TestPackage -Commit $repository.Commit -AssemblyPath (Join-Path $TestDrive "assemblies/base.dll")
+
+        $result = Invoke-IncrementGate -ServedText $document -Repository $repository -PublishedPackage $package -PackedPackage $package
+
+        $result.Decision | Should -BeNullOrEmpty
+        $result.Message | Should -Match ([regex]::Escape("Hard-fail differences"))
+        $result.Message | Should -Match ([regex]::Escape('[unsupported-reference] present /components/schemas/Unused/$ref'))
     }
 }
 

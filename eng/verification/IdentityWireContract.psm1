@@ -25,10 +25,12 @@ Decision, by what the feed says about the package id:
       - Equal versions: the served document must equal the baseline at the anchor commit, byte for
         byte after LF normalization. Outcome: unchanged.
       - A greater contract version: the baseline at the anchor commit and the served document go to
-        the compatibility review, and the published and packed provider surfaces are compared. Hard
-        failures (see Get-WireDifferenceVerdict) can never be waived; every other difference needs an
-        exact entry in eng/verification/IdentityWireCompatibility/<published>-to-<current>.json, and an
-        entry matching nothing is stale and fails. Outcome: increment-reviewed.
+        the compatibility review, and the published and packed packages are compared by what the
+        same-version publish comparison covers: the provider surface, the XML documentation and the
+        declared dependencies. Hard failures (see Get-WireDifferenceVerdict and
+        Get-SurfaceAdditionVerdict) can never be waived; every other difference needs an exact entry
+        in eng/verification/IdentityWireCompatibility/<published>-to-<current>.json, and an entry
+        matching nothing is stale and fails. Outcome: increment-reviewed.
 
 Every unusable anchor fails with a message naming which part was unusable, and none falls back to
 the current golden.
@@ -342,6 +344,38 @@ function Find-JsonDifference {
     }
 }
 
+<#
+.DESCRIPTION
+The component a $ref reaches, as its decoded group and name, or $null when the reference is not a
+local pointer into #/components/<group>/<name>. Whatever follows those two tokens, the reference
+reaches the whole component, which is the conservative reading: everything the component holds
+counts as referenced.
+
+A $ref is a URI, so its fragment is percent-decoded before it is read as a JSON pointer, and each
+pointer token is then decoded ~1 first and ~0 second (RFC 6901, sections 4 and 6).
+#>
+function ConvertFrom-ComponentReference {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][AllowEmptyString()][string] $Reference)
+
+    if (-not $Reference.StartsWith("#", [System.StringComparison]::Ordinal)) {
+        return $null
+    }
+
+    $pointer = [System.Uri]::UnescapeDataString($Reference.Substring(1))
+    $match = [regex]::Match($pointer, '^/components/([^/]+)/([^/]+)(/.*)?$')
+
+    if (-not $match.Success) {
+        return $null
+    }
+
+    return [pscustomobject]@{
+        Group = $match.Groups[1].Value.Replace("~1", "/").Replace("~0", "~")
+        Name  = $match.Groups[2].Value.Replace("~1", "/").Replace("~0", "~")
+    }
+}
+
 function Find-ComponentReference {
     [CmdletBinding()]
     [OutputType([void])]
@@ -373,13 +407,14 @@ function Find-ComponentReference {
             continue
         }
 
-        $match = [regex]::Match($pair.Value.GetValue[string](), '^#/components/([^/]+)/([^/]+)$')
+        $component = ConvertFrom-ComponentReference -Reference ($pair.Value.GetValue[string]())
 
-        if (-not $match.Success) {
+        # Find-UnsupportedReference fails the gate on any other form.
+        if ($null -eq $component) {
             continue
         }
 
-        $key = "$($match.Groups[1].Value)/$($match.Groups[2].Value)"
+        $key = "$($component.Group)/$($component.Name)"
 
         if ($Seen.Add($key)) {
             # Explicit assignments: a JsonObject returned from an if expression would be enumerated.
@@ -387,14 +422,59 @@ function Find-ComponentReference {
             $components = $Document["components"]
 
             if ($components -is [System.Text.Json.Nodes.JsonObject]) {
-                $group = $components[$match.Groups[1].Value]
+                $group = $components[$component.Group]
 
                 if ($group -is [System.Text.Json.Nodes.JsonObject]) {
-                    $target = $group[$match.Groups[2].Value]
+                    $target = $group[$component.Name]
                 }
             }
 
             Find-ComponentReference -Node $target -Document $Document -Seen $Seen
+        }
+    }
+}
+
+<#
+.DESCRIPTION
+Collects the path of every $ref in the document that ConvertFrom-ComponentReference cannot read.
+The gate classifies a change by the components the operations reach, so a reference it cannot
+follow would leave what it points at read as unreferenced, and a breaking change there as one a
+review record could approve.
+#>
+function Find-UnsupportedReference {
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        $Node,
+        [Parameter(Mandatory)][AllowEmptyCollection()][string[]] $Path,
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[object]] $Sink
+    )
+
+    if ($Node -is [System.Text.Json.Nodes.JsonArray]) {
+        for ($index = 0; $index -lt $Node.Count; $index++) {
+            Find-UnsupportedReference -Node $Node[$index] -Path ([string[]] ($Path + [string] $index)) -Sink $Sink
+        }
+
+        return
+    }
+
+    if ($Node -isnot [System.Text.Json.Nodes.JsonObject]) {
+        return
+    }
+
+    foreach ($pair in $Node.GetEnumerator()) {
+        $childPath = [string[]] ($Path + $pair.Key)
+        $isReference = [string]::Equals($pair.Key, '$ref', [System.StringComparison]::Ordinal) -and
+            $pair.Value -is [System.Text.Json.Nodes.JsonValue] -and
+            $pair.Value.GetValueKind() -eq [System.Text.Json.JsonValueKind]::String
+
+        if (-not $isReference) {
+            Find-UnsupportedReference -Node $pair.Value -Path $childPath -Sink $Sink
+            continue
+        }
+
+        if ($null -eq (ConvertFrom-ComponentReference -Reference ($pair.Value.GetValue[string]()))) {
+            $Sink.Add($childPath)
         }
     }
 }
@@ -894,7 +974,9 @@ function Get-WireDifferenceVerdict {
 <#
 .DESCRIPTION
 Diffs the published baseline against the served document and classifies every difference. The
-version stamp the host adds to the served document is not a difference.
+version stamp the host adds to the served document is not a difference. A $ref in the served
+document that the gate cannot follow is a hard failure whether or not it changed, because nothing
+behind it can be classified.
 #>
 function Get-WireCompatibilityFinding {
     [CmdletBinding()]
@@ -932,12 +1014,60 @@ function Get-WireCompatibilityFinding {
             })
     }
 
+    $unsupported = [System.Collections.Generic.List[object]]::new()
+    Find-UnsupportedReference -Node $new -Path ([string[]] @()) -Sink $unsupported
+
+    foreach ($segments in $unsupported) {
+        $findings.Add([pscustomobject]@{
+                Pointer  = ConvertTo-JsonPointer -Segment $segments
+                Change   = "present"
+                Class    = "hard"
+                Category = "unsupported-reference"
+            })
+    }
+
     return $findings.ToArray()
 }
 
-function Get-PackageContractSurface {
+<#
+.DESCRIPTION
+Extracts the one entry of a package that $Match selects to the work directory and returns its path.
+Exactly one is required: a missing entry is not a contract state that could compare equal to
+another.
+#>
+function Save-PackageEntry {
     [CmdletBinding()]
-    [OutputType([object[]])]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][System.IO.Compression.ZipArchive] $Archive,
+        [Parameter(Mandatory)][scriptblock] $Match,
+        [Parameter(Mandatory)][string] $EntryDescription,
+        [Parameter(Mandatory)][string] $Extension,
+        [Parameter(Mandatory)][string] $Description,
+        [Parameter(Mandatory)][string] $WorkDirectory
+    )
+
+    $entry = @($Archive.Entries | Where-Object $Match)
+
+    if ($entry.Count -ne 1) {
+        throw "The $Description package carries $($entry.Count) $EntryDescription entries; exactly one is required to compare the package."
+    }
+
+    $path = Join-Path $WorkDirectory "$([guid]::NewGuid().ToString('N'))$Extension"
+    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry[0], $path)
+
+    return $path
+}
+
+<#
+.DESCRIPTION
+Reads what a version increment compares from one package, each in the canonical form the
+same-version publish comparison uses: the provider surface of the contract assembly, the XML
+documentation beside it, and the dependencies the nuspec declares.
+#>
+function Get-PackageContract {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
     param(
         [Parameter(Mandatory)][string] $PackagePath,
         [Parameter(Mandatory)][string] $Description,
@@ -946,38 +1076,120 @@ function Get-PackageContractSurface {
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem
 
-    $entryName = "lib/net10.0/EdFi.DataManagementService.Identity.dll"
+    $assemblyEntry = "lib/net10.0/EdFi.DataManagementService.Identity.dll"
+    $documentationEntry = "lib/net10.0/EdFi.DataManagementService.Identity.xml"
 
     if (-not (Test-Path -LiteralPath $PackagePath -PathType Leaf)) {
         throw "The $Description package was not found: $PackagePath"
     }
 
-    $assemblyPath = Join-Path $WorkDirectory "$([guid]::NewGuid().ToString('N')).dll"
     $archive = [System.IO.Compression.ZipFile]::OpenRead($PackagePath)
 
     try {
-        $entry = @($archive.Entries | Where-Object { $_.FullName -ceq $entryName })
-
-        if ($entry.Count -ne 1) {
-            throw "The $Description package carries $($entry.Count) $entryName entries; exactly one is required to compare the provider surface."
-        }
-
-        [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry[0], $assemblyPath)
+        $common = @{ Archive = $archive; Description = $Description; WorkDirectory = $WorkDirectory }
+        $assemblyPath = Save-PackageEntry @common -Match { $_.FullName -ceq $assemblyEntry } -EntryDescription $assemblyEntry -Extension ".dll"
+        $documentationPath = Save-PackageEntry @common -Match { $_.FullName -ceq $documentationEntry } -EntryDescription $documentationEntry -Extension ".xml"
+        $nuspecPath = Save-PackageEntry @common -Match { $_.FullName -notlike "*/*" -and $_.FullName -like "*.nuspec" } -EntryDescription "root .nuspec" -Extension ".nuspec"
     }
     finally {
         $archive.Dispose()
     }
 
-    return , [string[]] @(& (Join-Path $PSScriptRoot "Get-ContractPublicSurface.ps1") -AssemblyPath $assemblyPath)
+    # Not wrapped in @(): both canonicalizers return their array as one object, and wrapping it would
+    # make a list of one array, which [string[]] would then join into a single line.
+    return [pscustomobject]@{
+        Surface       = [string[]] @(& (Join-Path $PSScriptRoot "Get-ContractPublicSurface.ps1") -AssemblyPath $assemblyPath)
+        Documentation = ConvertTo-CanonicalXmlDocumentation -Path $documentationPath
+        Dependencies  = ConvertTo-CanonicalDependencySet -NuspecPath $nuspecPath
+    }
 }
 
 <#
 .DESCRIPTION
-Compares the published and packed provider surfaces ordinally. A removed or changed line fails, an
-added abstract member fails, an added required property or field fails, and any other added line
-needs a review record. On an interface that already existed, an abstract member is one every
-existing provider would have to implement, so it fails; a member with a default implementation is
-inherited by existing providers, so it is reviewed like any other addition.
+Classifies one line the packed provider surface adds. $PackedTypes is ordered longest first, so a
+member is matched to its own type and never to a shorter name that merely prefixes it.
+
+  - A member or CLOSURE line of a type the published surface does not have needs a review record.
+    No existing provider implements, derives from or constructs a type that did not exist, so
+    nothing on it is an obligation on one. An existing type that starts implementing a new interface
+    changes its own TYPE line, which fails as a changed line.
+  - On an interface that already existed, an abstract member is one every existing provider would
+    have to implement, so it fails; a member with a default implementation is inherited by existing
+    providers, so it needs a review record like any other addition.
+  - On any other existing type, a required property or field fails, an abstract member fails, and so
+    does a CLOSURE line, which means a private protected abstract member now shuts out every
+    external deriver.
+  - Any other added type or member needs a review record.
+  - A line of a kind the surface reader does not emit, or a member whose type is not in the packed
+    surface, fails: the gate cannot say what it is.
+#>
+function Get-SurfaceAdditionVerdict {
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][string] $Line,
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.HashSet[string]] $PublishedTypes,
+        [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.HashSet[string]] $PublishedInterfaces,
+        [Parameter(Mandatory)][AllowEmptyCollection()][string[]] $PackedTypes
+    )
+
+    $kind, $rest = $Line -split " ", 2
+
+    if ($kind -ceq "TYPE") {
+        return Get-Verdict -Class review -Category "surface-addition"
+    }
+
+    if ($kind -ceq "CLOSURE") {
+        $name = ([string] $rest -split " ", 2)[0]
+        $owner = $PackedTypes | Where-Object { $_ -ceq $name } | Select-Object -First 1
+    }
+    elseif (@("METHOD", "PROPERTY", "FIELD", "EVENT") -ccontains $kind) {
+        $owner = $PackedTypes | Where-Object { ([string] $rest).StartsWith("$_.", [System.StringComparison]::Ordinal) } | Select-Object -First 1
+    }
+    else {
+        return Get-Verdict -Class hard -Category "surface-unrecognized"
+    }
+
+    if ($null -eq $owner) {
+        return Get-Verdict -Class hard -Category "surface-unrecognized"
+    }
+
+    if (-not $PublishedTypes.Contains($owner)) {
+        return Get-Verdict -Class review -Category "surface-new-type-member"
+    }
+
+    if ($kind -ceq "CLOSURE") {
+        return Get-Verdict -Class hard -Category "surface-closure"
+    }
+
+    # A method's own modifiers, or a property's or event's accessor modifiers, such as
+    # modifiers=abstract,virtual or get=protected internal:abstract,virtual. An accessibility can be
+    # two words.
+    $isAbstract = $Line -cmatch ' (modifiers|get|set|add|remove)=([a-z]+( [a-z]+)?:)?[^ ]*\babstract\b'
+
+    if ($PublishedInterfaces.Contains($owner)) {
+        if ($isAbstract) {
+            return Get-Verdict -Class hard -Category "surface-interface-member"
+        }
+
+        return Get-Verdict -Class review -Category "surface-interface-default-member"
+    }
+
+    if (@("PROPERTY", "FIELD") -ccontains $kind -and $Line.EndsWith(" required=true", [System.StringComparison]::Ordinal)) {
+        return Get-Verdict -Class hard -Category "surface-required-member"
+    }
+
+    if ($isAbstract) {
+        return Get-Verdict -Class hard -Category "surface-abstract-member"
+    }
+
+    return Get-Verdict -Class review -Category "surface-addition"
+}
+
+<#
+.DESCRIPTION
+Compares the published and packed provider surfaces ordinally. A removed or changed line fails, and
+Get-SurfaceAdditionVerdict classifies each added line.
 #>
 function Get-SurfaceCompatibilityFinding {
     [CmdletBinding()]
@@ -990,10 +1202,23 @@ function Get-SurfaceCompatibilityFinding {
     $publishedSet = [System.Collections.Generic.HashSet[string]]::new([string[]] $PublishedSurface, [System.StringComparer]::Ordinal)
     $packedSet = [System.Collections.Generic.HashSet[string]]::new([string[]] $PackedSurface, [System.StringComparer]::Ordinal)
 
-    $interfaces = @(
-        $PublishedSurface |
-            Where-Object { $_.StartsWith("TYPE ", [System.StringComparison]::Ordinal) -and $_ -clike "* kind=interface *" } |
-            ForEach-Object { ($_ -split " ")[1] }
+    $publishedTypes = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    $publishedInterfaces = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+
+    foreach ($line in ($PublishedSurface | Where-Object { $_.StartsWith("TYPE ", [System.StringComparison]::Ordinal) })) {
+        $name = ($line -split " ")[1]
+        $null = $publishedTypes.Add($name)
+
+        if ($line -clike "* kind=interface *") {
+            $null = $publishedInterfaces.Add($name)
+        }
+    }
+
+    $packedTypes = [string[]] @(
+        $PackedSurface |
+            Where-Object { $_.StartsWith("TYPE ", [System.StringComparison]::Ordinal) } |
+            ForEach-Object { ($_ -split " ")[1] } |
+            Sort-Object -Property Length -Descending
     )
 
     $findings = [System.Collections.Generic.List[pscustomobject]]::new()
@@ -1003,40 +1228,83 @@ function Get-SurfaceCompatibilityFinding {
     }
 
     foreach ($line in ($PackedSurface | Where-Object { -not $publishedSet.Contains($_) })) {
-        $isMember = $line -cmatch '^(METHOD|PROPERTY|FIELD|EVENT) '
-
-        $owner = $line.Substring($line.IndexOf(" ", [System.StringComparison]::Ordinal) + 1)
-
-        # A method's own modifiers, or a property's or event's accessor modifiers, such as
-        # modifiers=abstract,virtual or get=public:abstract,virtual.
-        $isAbstract = $isMember -and $line -cmatch ' (modifiers|get|set|add|remove)=([a-z]+:)?[^ ]*\babstract\b'
-        $onInterface = $isMember -and ($interfaces | Where-Object { $owner.StartsWith("$_.", [System.StringComparison]::Ordinal) })
-        $class = "hard"
-
-        if ($onInterface -and $isAbstract) {
-            $category = "surface-interface-member"
-        }
-        elseif ($onInterface) {
-            $category = "surface-interface-default-member"
-            $class = "review"
-        }
-        elseif ($line -cmatch '^(PROPERTY|FIELD) ' -and $line.EndsWith(" required=true", [System.StringComparison]::Ordinal)) {
-            $category = "surface-required-member"
-        }
-        elseif ($isAbstract) {
-            $category = "surface-abstract-member"
-        }
-        else {
-            $category = "surface-addition"
-            $class = "review"
-        }
+        $verdict = Get-SurfaceAdditionVerdict -Line $line -PublishedTypes $publishedTypes -PublishedInterfaces $publishedInterfaces -PackedTypes $packedTypes
 
         $findings.Add([pscustomobject]@{
                 Pointer  = "SURFACE:$line"
                 Change   = "added"
-                Class    = $class
-                Category = $category
+                Class    = $verdict.Class
+                Category = $verdict.Category
             })
+    }
+
+    return $findings.ToArray()
+}
+
+<#
+.DESCRIPTION
+Compares the published and packed XML documentation member by member, and the declared dependencies
+by target framework and package id. Every difference needs a review record. The contract's rules
+live in that documentation, so a reworded rule can ask more of an existing provider than it did,
+and a dependency changes what every implementer inherits. Automation can classify neither, so
+neither ships unreviewed. A documentation pointer names the member's documentation id, and a
+dependency pointer names its target framework and package id.
+#>
+function Get-PackageMetadataCompatibilityFinding {
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
+    param(
+        [Parameter(Mandatory)][pscustomobject] $PublishedContract,
+        [Parameter(Mandatory)][pscustomobject] $PackedContract
+    )
+
+    $comparisons = @(
+        @{
+            Prefix    = "XMLDOC:"
+            Category  = "package-documentation"
+            Published = $PublishedContract.Documentation
+            Packed    = $PackedContract.Documentation
+            # The canonical line is "<escaped id> => <content>", and the escaping covers "=", so the
+            # first " => " ends the id. The pointer carries the id unescaped.
+            Key       = { param([string] $Line) [regex]::Replace(($Line -split " => ", 2)[0], '\\(.)', '$1') }
+        }
+        @{
+            Prefix    = "DEPENDENCY:"
+            Category  = "package-dependency"
+            Published = $PublishedContract.Dependencies
+            Packed    = $PackedContract.Dependencies
+            # The canonical line is "<framework> | <id> | <range> | include=... | exclude=...", or
+            # "<framework> | (empty group)".
+            Key       = { param([string] $Line) (($Line -split " \| ") | Select-Object -First 2) -join " | " }
+        }
+    )
+
+    $findings = [System.Collections.Generic.List[pscustomobject]]::new()
+
+    foreach ($comparison in $comparisons) {
+        $published = [System.Collections.Generic.SortedDictionary[string, string]]::new([System.StringComparer]::Ordinal)
+        $packed = [System.Collections.Generic.SortedDictionary[string, string]]::new([System.StringComparer]::Ordinal)
+
+        foreach ($line in $comparison.Published) { $published[(& $comparison.Key $line)] = $line }
+        foreach ($line in $comparison.Packed) { $packed[(& $comparison.Key $line)] = $line }
+
+        foreach ($key in $published.Keys) {
+            if (-not $packed.ContainsKey($key)) {
+                $change = "removed"
+            }
+            elseif (-not [string]::Equals($published[$key], $packed[$key], [System.StringComparison]::Ordinal)) {
+                $change = "changed"
+            }
+            else {
+                continue
+            }
+
+            $findings.Add([pscustomobject]@{ Pointer = "$($comparison.Prefix)$key"; Change = $change; Class = "review"; Category = $comparison.Category })
+        }
+
+        foreach ($key in ($packed.Keys | Where-Object { -not $published.ContainsKey($_) })) {
+            $findings.Add([pscustomobject]@{ Pointer = "$($comparison.Prefix)$key"; Change = "added"; Class = "review"; Category = $comparison.Category })
+        }
     }
 
     return $findings.ToArray()
@@ -1311,11 +1579,11 @@ function Invoke-IdentityWireContractGate {
 
         if ($anchorVersion -cne $normalizedContractVersion) {
             if ([string]::IsNullOrWhiteSpace($PackedPackageFile)) {
-                throw "The contract version $normalizedContractVersion is greater than the published $PackageId $anchorVersion, which requires -PackedPackageFile to compare the provider surface."
+                throw "The contract version $normalizedContractVersion is greater than the published $PackageId $anchorVersion, which requires -PackedPackageFile to compare the packages."
             }
 
-            $publishedSurface = Get-PackageContractSurface -PackagePath $downloadPath -Description "published $PackageId $anchorVersion" -WorkDirectory $scratch
-            $packedSurface = Get-PackageContractSurface -PackagePath $PackedPackageFile -Description "packed $PackageId" -WorkDirectory $scratch
+            $publishedContract = Get-PackageContract -PackagePath $downloadPath -Description "published $PackageId $anchorVersion" -WorkDirectory $scratch
+            $packedContract = Get-PackageContract -PackagePath $PackedPackageFile -Description "packed $PackageId" -WorkDirectory $scratch
         }
     }
     finally {
@@ -1346,7 +1614,8 @@ function Invoke-IdentityWireContractGate {
     }
 
     $findings = @(Get-WireCompatibilityFinding -BaselineText $anchorText -ServedText $servedText) +
-        @(Get-SurfaceCompatibilityFinding -PublishedSurface $publishedSurface -PackedSurface $packedSurface)
+        @(Get-SurfaceCompatibilityFinding -PublishedSurface $publishedContract.Surface -PackedSurface $packedContract.Surface) +
+        @(Get-PackageMetadataCompatibilityFinding -PublishedContract $publishedContract -PackedContract $packedContract)
 
     $entries = Get-ReviewRecordEntry -Directory $ReviewRecordDirectory -From $anchorVersion -To $normalizedContractVersion
     $result = Assert-CompatibilityReviewed -Finding $findings -Entry $entries -From $anchorVersion -To $normalizedContractVersion
