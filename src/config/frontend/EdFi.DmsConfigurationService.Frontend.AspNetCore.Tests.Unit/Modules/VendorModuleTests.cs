@@ -217,6 +217,161 @@ public class VendorModuleTests
         }
     }
 
+    [TestFixture("POST", "\"\"", "")]
+    [TestFixture("POST", "", "")]
+    [TestFixture("POST", "null", "")]
+    [TestFixture("POST", "\"   \"", "")]
+    [TestFixture("POST", "\" , prefix1, , prefix2 , \"", "prefix1,prefix2")]
+    [TestFixture("PUT", "\"\"", "")]
+    [TestFixture("PUT", "", "")]
+    [TestFixture("PUT", "null", "")]
+    [TestFixture("PUT", "\"   \"", "")]
+    [TestFixture("PUT", "\" , prefix1, , prefix2 , \"", "prefix1,prefix2")]
+    public class Given_namespace_prefixes_in_vendor_requests(
+        string method,
+        string namespacePrefixesJson,
+        string expectedPrefixes
+    ) : VendorModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+        private readonly List<string> _repositoryPrefixes = [];
+        private readonly List<string> _providerPrefixes = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repositoryPrefixes.Clear();
+            _providerPrefixes.Clear();
+
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+                .Invokes(call =>
+                    _repositoryPrefixes.Add(call.GetArgument<VendorInsertCommand>(0)!.NamespacePrefixes)
+                )
+                .Returns(new VendorInsertResult.Success(1));
+            Guid clientUuid = Guid.NewGuid();
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(1))
+                .Returns(
+                    new VendorUpdateStateResult.Success(
+                        new VendorUpdateState(
+                            "Test Company",
+                            "Test Contact",
+                            "test@example.com",
+                            "uri://old.org",
+                            [new VendorApiClient(51, "client-51", clientUuid, 10)]
+                        )
+                    )
+                );
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        clientUuid.ToString(),
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call => _providerPrefixes.Add(call.GetArgument<string>(1)!))
+                .Returns(new ClientUpdateResult.Success(clientUuid));
+            A.CallTo(() => _apiClientRepository.SyncApiClientUuid(51, clientUuid, clientUuid))
+                .Returns(new ApiClientUuidSyncResult.AlreadyApplied());
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Invokes(call =>
+                    _repositoryPrefixes.Add(call.GetArgument<VendorUpdateCommand>(0)!.NamespacePrefixes)
+                )
+                .Returns(new VendorUpdateResult.Success());
+
+            JsonObject body = new()
+            {
+                ["id"] = 1,
+                ["company"] = "Test Company",
+                ["contactName"] = "Test Contact",
+                ["contactEmailAddress"] = "test@example.com",
+            };
+            if (namespacePrefixesJson.Length > 0)
+            {
+                body["namespacePrefixes"] = JsonNode.Parse(namespacePrefixesJson);
+            }
+
+            using var client = SetUpClient();
+            using var request = new HttpRequestMessage(
+                new HttpMethod(method),
+                method is "POST" ? "/v3/vendors" : "/v3/vendors/1"
+            )
+            {
+                Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"),
+            };
+            _response = await client.SendAsync(request);
+        }
+
+        [Test]
+        public void It_returns_success() =>
+            _response
+                .StatusCode.Should()
+                .Be(method is "POST" ? HttpStatusCode.Created : HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_passes_canonical_prefixes_to_the_repository() =>
+            _repositoryPrefixes.Should().Equal(expectedPrefixes);
+
+        [Test]
+        public void It_updates_existing_client_claims_only_on_put()
+        {
+            string[] expectedProviderPrefixes = method is "PUT" ? [expectedPrefixes] : [];
+            _providerPrefixes.Should().Equal(expectedProviderPrefixes);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_repeat_vendor_post_without_namespace_prefixes : VendorModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+                .Returns(new VendorInsertResult.FailureDuplicateCompanyName());
+            using var client = SetUpClient();
+
+            _response = await client.PostAsync(
+                "/v3/vendors",
+                new StringContent(
+                    """
+                    {
+                      "company": "Existing Company",
+                      "contactName": "Replacement Contact",
+                      "contactEmailAddress": "replacement@example.com"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+        }
+
+        [Test]
+        public void It_returns_bad_request() => _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        [Test]
+        public async Task It_returns_the_company_validation_error() =>
+            await AssertDuplicateCompanyNameBodyAsync(_response);
+
+        [Test]
+        public void It_sets_no_location_header() => _response.Headers.Location.Should().BeNull();
+
+        [Test]
+        public void It_does_not_start_the_vendor_update_workflow()
+        {
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(A<int>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+    }
+
     /// <summary>
     /// The complete 400 body a duplicate company name answers, on both create and rename.
     /// </summary>

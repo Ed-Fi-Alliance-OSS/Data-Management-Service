@@ -121,6 +121,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
                 vendorFromDb.Company.Should().Be("Update Company");
                 vendorFromDb.ContactEmailAddress.Should().Be("update@update.com");
                 vendorFromDb.ContactName.Should().Be("Update Name");
+                vendorFromDb.NamespacePrefixes.Should().BeEmpty();
             }
 
             [Test]
@@ -133,6 +134,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
                 vendorFromDb.Company.Should().Be("Update Company");
                 vendorFromDb.ContactEmailAddress.Should().Be("update@update.com");
                 vendorFromDb.ContactName.Should().Be("Update Name");
+                vendorFromDb.NamespacePrefixes.Should().BeEmpty();
             }
         }
 

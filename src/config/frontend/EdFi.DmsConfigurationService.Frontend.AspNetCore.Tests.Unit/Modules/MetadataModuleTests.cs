@@ -1124,6 +1124,40 @@ public class MetadataModuleTests
             .BeFalse("201 response body should be empty per CMS-GAP-009");
     }
 
+    [Test]
+    public async Task OpenApi_Vendor_Request_Schemas_Describe_NamespacePrefixes_As_Optional_Nullable_String()
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        using var doc = await FetchOpenApiDocumentAsync(client);
+        var schemas = doc.RootElement.GetProperty("components").GetProperty("schemas");
+
+        foreach (var schemaName in new[] { "VendorInsertCommand", "VendorUpdateCommand" })
+        {
+            var schema = schemas.GetProperty(schemaName);
+            var namespacePrefixesType = schema
+                .GetProperty("properties")
+                .GetProperty("namespacePrefixes")
+                .GetProperty("type");
+            namespacePrefixesType.ValueKind.Should().Be(System.Text.Json.JsonValueKind.Array);
+            namespacePrefixesType
+                .EnumerateArray()
+                .Select(item => item.GetString())
+                .Should()
+                .BeEquivalentTo("string", "null");
+
+            if (schema.TryGetProperty("required", out var required))
+            {
+                required
+                    .EnumerateArray()
+                    .Select(property => property.GetString())
+                    .Should()
+                    .NotContain("namespacePrefixes", $"{schemaName}.namespacePrefixes is optional");
+            }
+        }
+    }
+
     private static bool TypeIncludes(System.Text.Json.JsonElement type, string expectedType)
     {
         return type.ValueKind switch
