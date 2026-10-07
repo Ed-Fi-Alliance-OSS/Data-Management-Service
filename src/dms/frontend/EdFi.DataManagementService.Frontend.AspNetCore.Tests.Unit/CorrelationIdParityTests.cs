@@ -72,7 +72,7 @@ public class CorrelationIdParityTests
         /// answer every request below with the generic short-circuit 500 instead of the response under test.
         /// </summary>
         private const int ConfiguredMaxLength = AppSettings.MinimumCorrelationIdMaxLength;
-        private const string ValidRequiredRole = "dms-document-cache-operator";
+        private const string ValidRequiredRole = "dms-client";
         private const string RoleClaimType = "operator_role";
         private const string ValidBearerToken = "valid-token";
 
@@ -81,7 +81,7 @@ public class CorrelationIdParityTests
         /// all unless a usable required role is configured, so this has to be set for the management
         /// request below to reach <c>AuthorizeAsync</c> rather than the <c>MapFallback</c> 404.
         /// </summary>
-        private const string ManagementRequiredRole = "dms-management-operator";
+        private const string ManagementRequiredRole = "cms-client";
 
         /// <summary>
         /// Single-tenant deployments (<c>AppSettings:MultiTenancy</c> defaults to false, which the Test
