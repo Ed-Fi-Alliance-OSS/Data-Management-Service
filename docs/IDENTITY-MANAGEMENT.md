@@ -38,7 +38,8 @@ Three things must all be true before an identity operation runs.
 
 The provider declares which of the five operations it supports.
 An operation the provider does not advertise answers `404` with `urn:ed-fi:api:identities:operation-not-supported`.
-This check runs before the content type, the body and duplicate properties are validated, so a request with a malformed body still gets this `404`.
+This check runs after authentication and the tenant and claim checks, and before the content type, the body and duplicate properties are validated.
+So an unauthenticated request still gets its `401`, and a request with a malformed body still gets this `404`.
 
 ## What a client sees
 

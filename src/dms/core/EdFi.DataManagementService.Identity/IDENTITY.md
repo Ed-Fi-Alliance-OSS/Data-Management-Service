@@ -630,9 +630,10 @@ A provider that returns `IdentityCapabilities.None` supports nothing, which is e
 - **`Results` is its own capability.**
   It is what the host checks before it will hand a token to `ResultsAsync`.
   A provider whose `FindAsync` or `SearchAsync` returns a request token while `Results` is absent has misused the contract, and the host answers a provider-contract-violation `502`.
-- **An unsupported operation is a `404` before anything else is validated.**
-  The gate runs before the content type, the body parse and the duplicate-property check, and no `IIdentityService` method is called.
-  A request for an unsupported operation therefore gets the operation-unsupported `404` even when its body is malformed or has a duplicate property.
+- **An unsupported operation is a `404` before the request itself is validated.**
+  The gate runs after authentication and the tenant and claim checks, and before the content type, the body parse and the duplicate-property check, and no `IIdentityService` method is called.
+  An unauthenticated request still gets the `401`, and one without the identity claim the `403`.
+  A request for an unsupported operation gets the operation-unsupported `404` even when its body is malformed or has a duplicate property.
   [The four 404 responses](#the-four-404-responses) show how a client tells that `404` apart from the others.
 
 ## Operations
@@ -1017,7 +1018,8 @@ DMS never retries a call on this interface and imposes no timeout of its own on 
   Request cancellation observed before or during activation, the capability read, or an invocation propagates as an `OperationCanceledException` with no replacement problem response.
   The host rethrows a fresh exception that carries only the request's token, so your own message and inner exception never reach the host's cancellation logging, and the original is logged at `Debug` only.
   Honor the `CancellationToken` you are given and pass it to your upstream calls.
-  A cancellation your own timeout raises while the request is still live is an ordinary failure, and it answers the `502`.
+  A cancellation your own timeout raises while the request is still live is an ordinary failure.
+  During activation or the capability read it answers the provider-configuration `500`, and during an operation call the upstream-failure `502`.
 - **The host's restriction binds only what the host writes.**
   A plugin runs fully trusted inside the host process, and this contract cannot constrain what a provider logs on its own account.
   Keeping provider detail out of operator-visible logs at the higher levels is your obligation, and the host cannot enforce it.
@@ -1379,17 +1381,20 @@ Once a contract has been published, a missing or unreadable published baseline f
   Every difference from the published baseline that is not a hard failure needs an exact entry in a record in
   [the compatibility records directory](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/eng/verification/IdentityWireCompatibility/README.md),
   naming the pointer, the kind of change and the reviewer's reason it is compatible.
+  The package is compared at an increment too: each change to its public surface, its XML documentation or its declared dependencies needs an entry, so a rule reworded in the documentation is reviewed like any other change.
   An entry that matches no difference is stale and fails.
   Example validation is never an approval path.
 - **An increment can never carry a breaking category.**
-  These cannot be waived by any entry: a change to the request body, parameters or media type of an existing operation, a change to the response schema, status code, media type, header or problem type of an existing operation, a change to security, a removed path or operation, and, for the package, a removed public member, a new interface member without a default implementation or a new required member.
+  These cannot be waived by any entry: a change to the request body, parameters or media type of an existing operation, a change to the response schema, status code, media type, header or problem type of an existing operation, a change to security, a removed path or operation, and a `$ref` that does not point into `#/components`.
+  For the package, they are a removed or changed public member and, on a type that was already published, a new interface member without a default implementation, a new abstract or required member, or a member that closes the type to outside derivers.
 
 ### Additive changes only
 
 **Existing providers must keep working on newer hosts, so a change to this contract is additive.**
 A member added to `IIdentityService` after publication must carry a default interface implementation.
 Adding a member without one is a breaking change to an interface that plugins implement, and it can never ship as a new version of this package.
-A new operation, a new optional member of a contract type, an interface member with a default implementation and similar additions go through the compatibility record above, and each is reviewed for whether it narrows what clients may send, widens what they may receive, adds a response alternative, or expects more of an existing provider than it already does.
+A new operation, a new type, a new optional member of a contract type, an interface member with a default implementation and similar additions go through the compatibility record above, and each is reviewed for whether it narrows what clients may send, widens what they may receive, adds a response alternative, or expects more of an existing provider than it already does.
+The members of a new type are reviewed rather than refused, because no existing provider implements, derives from or constructs a type that did not exist.
 A new standard property on the request or response of an existing operation changes that operation's schema, which is one of the categories above, so no version can carry it.
 A custom property needs no change at all, because DMS already passes custom properties through.
 A provider that conformed to the guide when it was written keeps its loadability, its callability, and the payloads and context behavior it relied on.
