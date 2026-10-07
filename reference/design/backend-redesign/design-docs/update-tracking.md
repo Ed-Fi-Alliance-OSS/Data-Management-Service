@@ -269,7 +269,7 @@ only database access the tag requires is obtaining the stored `ContentVersion` c
 over — already loaded with the row on the read path, a single lightweight scalar read in the
 persistence layer on the write path (see "Serving API metadata"), and the locked-row read for a
 write precondition — never a hydrate-materialize-hash readback of the document. Conditional-read
-`If-None-Match` compares the full served tag; write-side `If-Match` and `If-None-Match` compare only
+`If-None-Match` compares the full served tag; write-side `If-Match` compares only
 the **state-significant projection** (`ContentVersion` and `schemaEpoch`; `format`, `profileCode`,
 `linkFlag`, and `contentCoding` excluded) — see "ETag preconditions".
 
@@ -299,9 +299,8 @@ Comparison basis summary:
 | Served `_etag` / `ETag` emission | N/A; compose full strong validator | Included | Included | Included | Included | Included | Included | Distinct tag per served byte-representation |
 | Conditional GET `If-None-Match` | RFC weak comparison against full served tag | Significant | Significant | Significant | Significant | Significant | Significant | Any match returns `304` |
 | Write `If-Match` | RFC strong comparison over state-significant projection | Significant | Significant | Ignored | Ignored | Ignored | Ignored | Mismatch returns `412` |
-| Write `If-None-Match` | RFC weak comparison over state-significant projection | Significant | Significant | Ignored | Ignored | Ignored | Ignored | Any match returns `412` |
+| Write `If-None-Match` (any value, including `*`; POST, PUT, DELETE) | Header ignored (DMS-1576) | Not compared | Not compared | Not compared | Not compared | Not compared | Not compared | No effect; the request proceeds as if the header were absent (POST upserts) |
 | Bare `If-Match: *` | Existence precondition | Not compared | Not compared | Not compared | Not compared | Not compared | Not compared | Missing current representation returns `412` |
-| Bare `If-None-Match: *` | Non-existence precondition | Not compared | Not compared | Not compared | Not compared | Not compared | Not compared | Existing current representation returns `412` |
 
 - GET returns `_etag` as `"{ContentVersion}-{variantKey}"` for the representation actually served
   (see "Serving API metadata"). It is a strong validator under RFC 9110 §8.8.1.
@@ -323,24 +322,23 @@ Comparison basis summary:
   served `ETag` still carries the full `variantKey`; only the write-time comparison is projected, so
   conditional-GET / `If-None-Match` caching stays byte-correct.) A client presents the `_etag` it
   obtained for the representation it is acting on.
-- POST/PUT write-side `If-None-Match` uses RFC 9110 §8.8.3.2 weak comparison over the same
-  state-significant projection. Any matching supplied tag returns `412 Precondition Failed`; a
-  non-match proceeds through the normal write path. This deliberately differs from conditional GET,
-  where all representation components remain significant.
+- `If-None-Match` is a conditional-read (GET) validator only (DMS-1576). POST, PUT, and DELETE ignore
+  it, whatever its value, and proceed as if it were absent; the handlers log the ignored header at
+  `Debug` (method and trace id, not the value). This matches the legacy ODS/API, and it lets a client
+  that sends `If-None-Match: *` on every POST upsert existing records. There is no write create-guard.
 - A bare, unquoted `If-Match: *` is not an opaque tag but an RFC 9110 §13.1.1 wildcard existence
   precondition (amended 2026-07-05): it is satisfied whenever a current representation of the target
   exists (any `ContentVersion`, no projection comparison) and returns `412` when none exists. For
   PUT and DELETE this is the one case where a missing target returns `412` instead of `404`; a POST
   upsert that resolves to an insert (no current representation) likewise returns `412`. Only the
   bare, unquoted `*` is the wildcard — a quoted `"*"` is treated as an ordinary opaque tag.
-- A bare, unquoted `If-None-Match: *` is the inverse RFC 9110 §13.1.2 existence precondition: it
-  returns `412` for a POST/PUT target that exists and permits a create when the target is absent. A
-  quoted `"*"` is an ordinary opaque tag.
+- On GET, a bare, unquoted `If-None-Match: *` is the inverse RFC 9110 §13.1.2 existence precondition:
+  it returns `304` when the target exists. A quoted `"*"` is an ordinary opaque tag. It has no effect
+  on a write.
 - On input the server accepts an unquoted `If-Match` value as equivalent to the same value quoted
   (amended 2026-07-05, for legacy ODS/API compatibility). Emitted `ETag` headers remain quoted and
-  `W/` weak tags remain rejected by `If-Match`; `If-None-Match` accepts them for weak comparison.
-- When both headers are present, `If-Match` takes precedence and `If-None-Match` is ignored, following
-  RFC 9110 §13.2.2.
+  `W/` weak tags remain rejected by `If-Match`; conditional-GET `If-None-Match` accepts them for weak
+  comparison.
 - No dependency locking is required for correctness because indirect impacts are realized as local updates that bump the same representation stamp.
 
 ## Retention and `oldestChangeVersion`

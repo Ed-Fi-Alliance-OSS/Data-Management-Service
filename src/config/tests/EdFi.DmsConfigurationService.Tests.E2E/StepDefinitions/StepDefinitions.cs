@@ -768,6 +768,31 @@ public partial class StepDefinitions(
             .BeTrue($"the token should carry '{namespacePrefix}' in its namespacePrefixes claim");
     }
 
+    [Then("the token has an empty namespacePrefixes claim")]
+    public async Task ThenTheTokenHasAnEmptyNamespacePrefixesClaim()
+    {
+        JsonNode responseJson = JsonNode.Parse(await _apiResponse.TextAsync())!;
+        responseJson["access_token"].Should().NotBeNull("response should include an access_token");
+        string accessToken = responseJson["access_token"]!.GetValue<string>();
+
+        string payload = accessToken.Split('.')[1].Replace('-', '+').Replace('_', '/');
+        payload = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
+        using JsonDocument tokenPayload = JsonDocument.Parse(Convert.FromBase64String(payload));
+        JsonElement payloadRoot = tokenPayload.RootElement;
+
+        JsonProperty namespacePrefixes = payloadRoot
+            .EnumerateObject()
+            .Where(property => property.NameEquals("namespacePrefixes"))
+            .Should()
+            .ContainSingle(
+                $"the token should contain exactly one namespacePrefixes claim; payload: {payloadRoot}"
+            )
+            .Which;
+        JsonElement namespacePrefixValue = namespacePrefixes.Value;
+        namespacePrefixValue.ValueKind.Should().Be(JsonValueKind.String);
+        namespacePrefixValue.GetString().Should().BeEmpty();
+    }
+
     [Then("the response body credentials are captured as {string}")]
     [Given("the response body credentials are captured as {string}")]
     public async Task ThenTheResponseBodyCredentialsAreCapturedAs(string slot)

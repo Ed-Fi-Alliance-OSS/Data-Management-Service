@@ -60,9 +60,7 @@ public sealed class Given_TheUniqueIdValidatorPluginHasABaseAddressWithAQuery
             .WriteTo.Sink(_logCapture)
             .CreateLogger();
 
-        services.AddSingleton<ILoggerProvider>(
-            new SerilogLoggerProvider(captureLogger, dispose: true)
-        );
+        services.AddSingleton<ILoggerProvider>(new SerilogLoggerProvider(captureLogger, dispose: true));
     }
 
     /// <summary>
@@ -74,7 +72,7 @@ public sealed class Given_TheUniqueIdValidatorPluginHasABaseAddressWithAQuery
     public async Task StageThePluginAndStartTheStub()
     {
         _pluginRoot = PluginHostProbe.CreatePluginRootFromSource(
-            PluginHostProbe.CustomValidationFixtureRoot,
+            PluginHostProbe.PackedContractFixtureRoot,
             UniqueIdValidationPluginScenario.PluginName
         );
         _stub = await UniqueIdServiceStub.StartAsync();

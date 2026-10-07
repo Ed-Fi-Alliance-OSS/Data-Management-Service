@@ -12,8 +12,32 @@ Describe "Get-SmokeTestCredential" {
         Mock Add-CmsClient -ModuleName SmokeTest { }
         Mock Get-CmsToken -ModuleName SmokeTest { "test-token" }
         Mock Get-DataStore -ModuleName SmokeTest { @([pscustomobject]@{ id = 1 }) }
+        Mock Find-CmsVendorByCompany -ModuleName SmokeTest { $null }
         Mock Add-Vendor -ModuleName SmokeTest { 42 }
         Mock Add-Application -ModuleName SmokeTest { @{ Key = "test-key"; Secret = "test-secret" } }
+    }
+
+    It "creates the vendor when the tenant has none with this company" {
+        Get-SmokeTestCredential -ConfigServiceUrl "http://localhost:8081" -Tenant "tenant-a" | Out-Null
+
+        Should -Invoke Find-CmsVendorByCompany -ModuleName SmokeTest -Times 1 -Exactly -ParameterFilter {
+            $Company -eq "Smoke Test Vendor" -and $Tenant -eq "tenant-a"
+        }
+        Should -Invoke Add-Vendor -ModuleName SmokeTest -Times 1 -Exactly
+        Should -Invoke Add-Application -ModuleName SmokeTest -Times 1 -Exactly -ParameterFilter { $VendorId -eq 42 }
+    }
+
+    It "reuses an existing vendor instead of POSTing the company again" {
+        # POST /v3/vendors is create-only, so a second POST for the same company is rejected with 400.
+        Mock Find-CmsVendorByCompany -ModuleName SmokeTest { [pscustomobject]@{ id = 99; company = "Smoke Test Vendor" } }
+
+        $credentials = Get-SmokeTestCredential -ConfigServiceUrl "http://localhost:8081" -ApplicationName "Second Smoke Application"
+
+        $credentials.VendorId | Should -Be 99
+        Should -Invoke Add-Vendor -ModuleName SmokeTest -Times 0 -Exactly
+        Should -Invoke Add-Application -ModuleName SmokeTest -Times 1 -Exactly -ParameterFilter {
+            $VendorId -eq 99 -and $ApplicationName -eq "Second Smoke Application"
+        }
     }
 
     It "defaults -EducationOrganizationIds to the TPDM-inclusive envelope (5, 6, 7, 255901, 19255901, 100000, 200000, 300000)" {

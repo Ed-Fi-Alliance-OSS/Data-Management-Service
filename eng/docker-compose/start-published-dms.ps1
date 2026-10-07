@@ -533,8 +533,9 @@ if ($d) {
     }
 }
 else {
-    $existingNetwork = docker network ls --filter name="dms" -q
-    if (! $existingNetwork) {
+    # Matched by exact name: a name filter on network ls matches substrings, and network inspect also
+    # accepts an ID prefix.
+    if (@(docker network ls --format '{{.Name}}') -cnotcontains 'dms') {
         docker network create dms
     }
 
@@ -868,7 +869,9 @@ else {
             Write-Information "Claims gate: no bootstrap manifest present; skipping claims-ready check on no-bootstrap run." -InformationAction Continue
         }
 
-        Write-Output "Infrastructure phase complete. DMS service was not started."
+        if (-not $SuppressWriterGuidance) {
+            Write-Output "Infrastructure phase complete. DMS service was not started."
+        }
         return
     }
 

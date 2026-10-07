@@ -1097,34 +1097,64 @@ public class MetadataModuleTests
         var responses = postOp.GetProperty("responses");
 
         responses
-            .TryGetProperty("201", out _)
+            .TryGetProperty("201", out var createdResponse)
             .Should()
             .BeTrue("POST /v3/vendors should define a 201 response for new resources");
 
         responses
             .TryGetProperty("200", out _)
             .Should()
-            .BeTrue("POST /v3/vendors should define a 200 response for updated resources");
+            .BeFalse("POST /v3/vendors is create-only and never updates an existing vendor");
 
-        foreach (var code in new[] { "201", "200" })
+        createdResponse
+            .TryGetProperty("headers", out var headers)
+            .Should()
+            .BeTrue("201 response should define headers");
+        headers
+            .TryGetProperty("Location", out var locationHeader)
+            .Should()
+            .BeTrue("201 response headers should include Location");
+        locationHeader.GetProperty("required").GetBoolean().Should().BeTrue();
+        locationHeader.GetProperty("schema").GetProperty("type").GetString().Should().Be("string");
+        locationHeader.GetProperty("schema").GetProperty("format").GetString().Should().Be("uri");
+        locationHeader.GetProperty("description").GetString().Should().NotBeNullOrWhiteSpace();
+        createdResponse
+            .TryGetProperty("content", out _)
+            .Should()
+            .BeFalse("201 response body should be empty per CMS-GAP-009");
+    }
+
+    [Test]
+    public async Task OpenApi_Vendor_Request_Schemas_Describe_NamespacePrefixes_As_Optional_Nullable_String()
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        using var doc = await FetchOpenApiDocumentAsync(client);
+        var schemas = doc.RootElement.GetProperty("components").GetProperty("schemas");
+
+        foreach (var schemaName in new[] { "VendorInsertCommand", "VendorUpdateCommand" })
         {
-            responses.TryGetProperty(code, out var codeResponse).Should().BeTrue();
-            codeResponse
-                .TryGetProperty("headers", out var headers)
+            var schema = schemas.GetProperty(schemaName);
+            var namespacePrefixesType = schema
+                .GetProperty("properties")
+                .GetProperty("namespacePrefixes")
+                .GetProperty("type");
+            namespacePrefixesType.ValueKind.Should().Be(System.Text.Json.JsonValueKind.Array);
+            namespacePrefixesType
+                .EnumerateArray()
+                .Select(item => item.GetString())
                 .Should()
-                .BeTrue($"{code} response should define headers");
-            headers
-                .TryGetProperty("Location", out var locationHeader)
-                .Should()
-                .BeTrue($"{code} response headers should include Location");
-            locationHeader.GetProperty("required").GetBoolean().Should().BeTrue();
-            locationHeader.GetProperty("schema").GetProperty("type").GetString().Should().Be("string");
-            locationHeader.GetProperty("schema").GetProperty("format").GetString().Should().Be("uri");
-            locationHeader.GetProperty("description").GetString().Should().NotBeNullOrWhiteSpace();
-            codeResponse
-                .TryGetProperty("content", out _)
-                .Should()
-                .BeFalse($"{code} response body should be empty per CMS-GAP-009");
+                .BeEquivalentTo("string", "null");
+
+            if (schema.TryGetProperty("required", out var required))
+            {
+                required
+                    .EnumerateArray()
+                    .Select(property => property.GetString())
+                    .Should()
+                    .NotContain("namespacePrefixes", $"{schemaName}.namespacePrefixes is optional");
+            }
         }
     }
 

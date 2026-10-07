@@ -420,6 +420,7 @@ internal class ApiService : IApiService
                 _logger,
                 _appSettings.Value.MaximumPageSize,
                 _cursorParametersRecognized: true,
+                _resourceFiltersRecognized: true,
                 _serviceProvider.GetRequiredService<ICollectionPagingTelemetry>(),
                 _appSettings.Value.UseLegacyDocumentIdOrderingForChangeQueries
             ),
@@ -635,14 +636,18 @@ internal class ApiService : IApiService
             // inert for the same reason: a tracked-change request travels on its own contract, which
             // carries no anchor. The configured ordering value is still supplied rather than
             // hard-coded, so no composition can resolve the anchor by a different rule than the others.
+            //
+            // A Change Query neither pages by cursor nor filters on resource fields. The cursor
+            // parameters are rejected by name, so a client cannot believe it is walking a cursor. A
+            // resource filter is ignored and reported, as the ODS/API ignores it.
             new ValidateQueryMiddleware(
                 _logger,
                 _appSettings.Value.MaximumPageSize,
                 _cursorParametersRecognized: false,
+                _resourceFiltersRecognized: false,
                 NoOpCollectionPagingTelemetry.Instance,
                 _appSettings.Value.UseLegacyDocumentIdOrderingForChangeQueries
             ),
-            new ValidateTrackedChangeQueryMiddleware(_logger),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ApplicationContextRequirementMiddleware(_applicationContextRequirementLogger),
             new ProvideAuthorizationFiltersMiddleware(_logger),

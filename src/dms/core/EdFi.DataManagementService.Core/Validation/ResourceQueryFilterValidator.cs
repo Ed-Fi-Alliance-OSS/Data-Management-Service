@@ -13,30 +13,18 @@ namespace EdFi.DataManagementService.Core.Validation;
 /// <summary>
 /// The outcome of validating the resource-property filters of a request.
 /// </summary>
-/// <remarks>
-/// Three outcomes rather than an error list, because the two failures answer with different response
-/// shells: an unrecognized field is a bad-request fault naming one field, while faulty values are a
-/// data-validation fault keyed by document path. Collapsing them would leave the caller inferring
-/// which shell to use from the shape of an error collection.
-/// </remarks>
 internal abstract record ResourceQueryFilterResult
 {
     private ResourceQueryFilterResult() { }
 
     /// <summary>
-    /// Every supplied filter matched a query field and parsed as its type.
+    /// Every supplied filter parsed as the type of the query field it matched.
     /// </summary>
     /// <param name="QueryElements">
     /// One element per supplied filter, in request order, carrying the document paths and type of the
     /// matched query field.
     /// </param>
     public sealed record Valid(QueryElement[] QueryElements) : ResourceQueryFilterResult;
-
-    /// <summary>
-    /// A query parameter matched no query field of this resource. Evaluation stops at the first one.
-    /// </summary>
-    /// <param name="QueryFieldName">The field name exactly as the client supplied it.</param>
-    public sealed record UnknownQueryField(string QueryFieldName) : ResourceQueryFilterResult;
 
     /// <summary>
     /// One or more filter values did not parse as the type of the query field they matched.
@@ -60,8 +48,9 @@ internal abstract record ResourceQueryFilterResult
 /// drift between them. An operation whose boundaries were computed over a different candidate set than
 /// its pages would silently skip or duplicate documents, and nothing in the response would say so.
 /// Which parameter names are the caller's own is the caller's knowledge, so the excluded names are
-/// supplied rather than assumed here: excluding a name is not accepting it, and an operation that does
-/// not recognize a name rejects it in its own validation.
+/// supplied rather than assumed here. A name that matches no query field is not a filter and is skipped:
+/// the operation ignores it and reports it, which is the operation's concern rather than this
+/// validator's.
 /// </remarks>
 internal static class ResourceQueryFilterValidator
 {
@@ -104,7 +93,7 @@ internal static class ResourceQueryFilterValidator
 
             if (queryElementAndType is null)
             {
-                return new ResourceQueryFilterResult.UnknownQueryField(clientQueryTerm.Key);
+                continue;
             }
 
             string jsonPathString = queryElementAndType.DocumentPathsAndTypes[0].JsonPathString;
@@ -215,6 +204,22 @@ internal static class ResourceQueryFilterValidator
     }
 
     /// <summary>
+    /// Whether a query parameter name names one of the resource's query fields. Matched
+    /// case-insensitively, the same way filter matching matches it, so an operation deciding which
+    /// names it ignores and this validator deciding which names it filters on cannot disagree.
+    /// </summary>
+    internal static bool MatchesQueryField(string name, QueryField[] possibleQueryFields) =>
+        FindQueryField(name, possibleQueryFields) is not null;
+
+    private static QueryField? FindQueryField(string name, QueryField[] possibleQueryFields) =>
+        possibleQueryFields.FirstOrDefault(
+            queryField =>
+                queryField is not null
+                && string.Equals(queryField.QueryFieldName, name, StringComparison.OrdinalIgnoreCase),
+            null
+        );
+
+    /// <summary>
     /// Returns a QueryElement for the given client query term using the list of possible query fields,
     /// or null if there is not a match with a valid query field name.
     /// </summary>
@@ -223,16 +228,7 @@ internal static class ResourceQueryFilterValidator
         QueryField[] possibleQueryFields
     )
     {
-        QueryField? matchingQueryField = possibleQueryFields.FirstOrDefault(
-            queryField =>
-                queryField is not null
-                && string.Equals(
-                    queryField.QueryFieldName,
-                    clientQueryTerm.Key,
-                    StringComparison.OrdinalIgnoreCase
-                ),
-            null
-        );
+        QueryField? matchingQueryField = FindQueryField(clientQueryTerm.Key, possibleQueryFields);
 
         if (matchingQueryField is null)
         {

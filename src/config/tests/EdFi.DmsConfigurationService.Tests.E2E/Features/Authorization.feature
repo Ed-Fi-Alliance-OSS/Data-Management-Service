@@ -11,7 +11,7 @@ Feature: Authorization
               And a POST request is made to "/v3/vendors" with
                   """
                     {
-                        "company": "Test Vendor 0",
+                        "company": "Test Vendor 0 {scenarioRunId}",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
                         "namespacePrefixes": "uri://ed-fi-e2e.org,uri://ed-fi-e2e2.org"
@@ -21,7 +21,7 @@ Feature: Authorization
                   """
                     {
                         "dataStoreType": "Test",
-                        "name": "Test Data Store",
+                        "name": "Test Data Store {scenarioRunId}",
                         "connectionString": "Server=localhost;Database=TestDb;"
                     }
                   """
@@ -114,7 +114,7 @@ Feature: Authorization
               And a POST request is made to "/v3/vendors" with
                   """
                     {
-                        "company": "Test Vendor 0",
+                        "company": "Test Vendor 0 {scenarioRunId}",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
                         "namespacePrefixes": "uri://ed-fi-e2e.org,uri://ed-fi-e2e2.org"
@@ -124,7 +124,7 @@ Feature: Authorization
                   """
                     {
                         "dataStoreType": "Test",
-                        "name": "Test Data Store",
+                        "name": "Test Data Store {scenarioRunId}",
                         "connectionString": "Server=localhost;Database=TestDb;"
                     }
                   """

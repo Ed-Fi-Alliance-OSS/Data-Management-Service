@@ -96,6 +96,17 @@ default (PostgreSQL) compose file and will not remove the other engine's named d
 ./bootstrap-local-dms.ps1 -d -v
 ```
 
+Teardown does not remove locally built images, so the turnkey start reuses them by default. After
+updating the checkout, pass `-Rebuild` (alias `-r`) to rebuild the local images before the
+infrastructure starts:
+
+```pwsh
+./bootstrap-local-dms.ps1 -Rebuild
+```
+
+Because `-d -v` removes `.bootstrap/`, republish `api-schema-tools` as described under
+[Standard mode](#standard-mode-package-backed) before the next bootstrap.
+
 By default, authentication uses the Self-Contained (OpenIddict) identity provider. The environment and startup scripts are pre-configured for Self-Contained mode, and Keycloak is not required unless explicitly selected.
 
 When an E2E environment file defines `E2E_DATABASE_NAME`, that database must be
@@ -478,8 +489,9 @@ listed extension packages (the DS 5.2 default stages core + TPDM); custom or unp
 sets use Expert mode below.
 
 > **Requirement - `api-schema-tools` tool:** `prepare-dms-schema.ps1` needs the in-repo `api-schema-tools`
-> CLI published as a native executable. Build it once before running the prepare command (the
-> publish step is safe to re-run after branch switches).
+> CLI published as a native executable. Publish it before running the prepare command. The step is
+> safe to re-run and is required again after a branch switch changes the tool or after `-d -v`
+> removes the `.bootstrap/` workspace.
 
 ```pwsh
 # 1. Publish the api-schema-tools tool (required on a clean checkout)
@@ -760,13 +772,14 @@ wait passes.
 > [!IMPORTANT]
 > The two shapes are alternatives, not a sequence. If a previous wrapper run already created the
 > data store (for example a Shape 1 run on the same stack), add `-NoDataStore` to the follow-up run
-> so the configure phase reuses the existing data store instead of creating a duplicate:
+> so the configure phase reuses the existing data store; without it, the configure phase registers
+> the same name again and CMS rejects it with 400:
 > `./bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -NoDataStore -EnvironmentFile ./.env.ide [-LoadSeedData ...]`
 >
 > `-NoDataStore` supports exactly one existing route-unqualified data store. If the earlier run
 > used `-SchoolYearRange` (or otherwise created route-qualified data stores), do **not** re-run the
-> wrapper — re-supplying `-SchoolYearRange` creates a new set of data stores instead of selecting
-> the existing ones. Use the explicit phase commands against the data stores the earlier run
+> wrapper — re-supplying `-SchoolYearRange` tries to create these data stores again, and CMS rejects
+> the repeated names with 400. Use the explicit phase commands against the data stores the earlier run
 > created: `./start-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -EnvironmentFile ./.env.ide` for the health wait, then
 > `./load-dms-seed-data.ps1 -DmsBaseUrl <url> -SchoolYear <years...> -EnvironmentFile ./.env.ide` for seed loading.
 >

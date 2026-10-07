@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -11,13 +12,18 @@ using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.SigningKeys;
 using EdFi.DmsConfigurationService.Secrets;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using Microsoft.IdentityModel.Tokens;
+using TokenValidationResult = EdFi.DmsConfigurationService.Backend.OpenIddict.Validation.TokenValidationResult;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 
@@ -26,6 +32,8 @@ public class OpenIddictTokenManagerTests
 {
     private IClientSecretHasher _secretHasher = null!;
     private IOpenIddictTokenRepository _tokenRepository = null!;
+    private SigningKeySnapshotProvider _signingKeyProvider = null!;
+    private DevelopmentCertificateStore _developmentCertificateStore = null!;
     private OpenIddictTokenManager _tokenManager = null!;
 
     [SetUp]
@@ -34,29 +42,63 @@ public class OpenIddictTokenManagerTests
         _secretHasher = A.Fake<IClientSecretHasher>();
         _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
 
-        _tokenManager = new OpenIddictTokenManager(
+        // The real provider over the faked repository, so key reads go through the same snapshot, source and parser
+        // as in production. Created per test: NUnit reuses fixture instances.
+        _signingKeyProvider = new SigningKeySnapshotProvider(
+            new DatabaseSigningKeySource(_tokenRepository, NullLogger<DatabaseSigningKeySource>.Instance),
             Options.Create(new IdentityOptions()),
-            NullLogger<OpenIddictTokenManager>.Instance,
-            _secretHasher,
-            _tokenRepository
+            TimeProvider.System,
+            NullLogger<SigningKeySnapshotProvider>.Instance
         );
+        _developmentCertificateStore = new DevelopmentCertificateStore(
+            Options.Create(new IdentityOptions()),
+            NullLogger<DevelopmentCertificateStore>.Instance
+        );
+
+        _tokenManager = NewTokenManager(new IdentityOptions());
+    }
+
+    [TearDown]
+    public void DisposeSigningKeyServices()
+    {
+        _signingKeyProvider.Dispose();
+        _developmentCertificateStore.Dispose();
     }
 
     private const string TestIssuer = "https://cms.example.test";
     private const string TestAudience = "ed-fi-cms-tests";
 
     /// <summary>
+    /// A token manager over the fixture's faked repository and secret hasher. Keys come from
+    /// <paramref name="signingKeyProvider"/>, or from the fixture's real provider over the faked repository.
+    /// </summary>
+    private OpenIddictTokenManager NewTokenManager(
+        IdentityOptions options,
+        ILogger<OpenIddictTokenManager>? logger = null,
+        ISigningKeySnapshotProvider? signingKeyProvider = null,
+        DevelopmentCertificateStore? developmentCertificateStore = null
+    ) =>
+        new(
+            Options.Create(options),
+            logger ?? NullLogger<OpenIddictTokenManager>.Instance,
+            _secretHasher,
+            _tokenRepository,
+            signingKeyProvider ?? _signingKeyProvider,
+            developmentCertificateStore ?? _developmentCertificateStore
+        );
+
+    /// <summary>
     /// Builds a token manager configured with the test issuer/audience so that
     /// ValidateTokenAsync can verify tokens produced by the helpers below.
     /// </summary>
     private OpenIddictTokenManager CreateConfiguredTokenManager(
-        ILogger<OpenIddictTokenManager>? logger = null
+        ILogger<OpenIddictTokenManager>? logger = null,
+        ISigningKeySnapshotProvider? signingKeyProvider = null
     ) =>
-        new(
-            Options.Create(new IdentityOptions { Authority = TestIssuer, Audience = TestAudience }),
-            logger ?? NullLogger<OpenIddictTokenManager>.Instance,
-            _secretHasher,
-            _tokenRepository
+        NewTokenManager(
+            new IdentityOptions { Authority = TestIssuer, Audience = TestAudience },
+            logger,
+            signingKeyProvider
         );
 
     /// <summary>
@@ -84,7 +126,7 @@ public class OpenIddictTokenManagerTests
 
     /// <summary>
     /// Creates an RSA signing key plus the matching public key bytes (SubjectPublicKeyInfo)
-    /// that the faked repository returns from GetActivePublicKeysAsync.
+    /// that the faked repository returns from GetActivePublicKeysAsync(CancellationToken).
     /// </summary>
     private static (string KeyId, byte[] PublicKeySpki, RsaSecurityKey SigningKey) CreateSigningKey()
     {
@@ -273,7 +315,8 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_load_verification_keys() =>
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .MustNotHaveHappened();
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
@@ -317,7 +360,8 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_load_verification_keys() =>
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .MustNotHaveHappened();
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
@@ -516,7 +560,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {
@@ -562,7 +606,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {
@@ -599,7 +643,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {
@@ -642,7 +686,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {
@@ -677,7 +721,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {
@@ -712,7 +756,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {
@@ -771,7 +815,7 @@ public class OpenIddictTokenManagerTests
                 }
             );
 
-        A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+        A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
             .Returns(
                 new[]
                 {
@@ -784,18 +828,13 @@ public class OpenIddictTokenManagerTests
     /// A token manager that can actually mint, i.e. one that can reach a signing key.
     /// </summary>
     private OpenIddictTokenManager CreateMintingTokenManager() =>
-        new(
-            Options.Create(
-                new IdentityOptions
-                {
-                    Authority = TestIssuer,
-                    Audience = TestAudience,
-                    EncryptionKey = TestEncryptionKey,
-                }
-            ),
-            NullLogger<OpenIddictTokenManager>.Instance,
-            _secretHasher,
-            _tokenRepository
+        NewTokenManager(
+            new IdentityOptions
+            {
+                Authority = TestIssuer,
+                Audience = TestAudience,
+                EncryptionKey = TestEncryptionKey,
+            }
         );
 
     /// <summary>
@@ -840,7 +879,7 @@ public class OpenIddictTokenManagerTests
     }
 
     private void StubActivePublicKey(string keyId, byte[] publicKeySpki) =>
-        A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+        A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
             .Returns(
                 new[]
                 {
@@ -1766,7 +1805,8 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_load_verification_keys() =>
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .MustNotHaveHappened();
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
@@ -1833,7 +1873,8 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             _fakeLogger = A.Fake<ILogger<OpenIddictTokenManager>>();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).Throws(DependencyFailure());
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .Throws(DependencyFailure());
             var (_, _, signingKey) = CreateSigningKey();
             var (token, _) = CreateOwnedToken(signingKey);
 
@@ -1877,7 +1918,7 @@ public class OpenIddictTokenManagerTests
             _fakeLogger = A.Fake<ILogger<OpenIddictTokenManager>>();
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
             _corruptKeyId = Guid.NewGuid().ToString();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {
@@ -1922,7 +1963,8 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             _fakeLogger = A.Fake<ILogger<OpenIddictTokenManager>>();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).Returns(Array.Empty<PublicKeyInfo>());
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .Returns(Array.Empty<PublicKeyInfo>());
             var (_, _, signingKey) = CreateSigningKey();
             var (token, _) = CreateOwnedToken(signingKey);
 
@@ -1953,20 +1995,15 @@ public class OpenIddictTokenManagerTests
         [SetUp]
         public async Task Act()
         {
-            var manager = new OpenIddictTokenManager(
-                Options.Create(
-                    new IdentityOptions
-                    {
-                        Authority = TestIssuer,
-                        Audience = TestAudience,
-                        UseCertificates = true,
-                        UseDevelopmentCertificates = false,
-                        CertificatePath = string.Empty,
-                    }
-                ),
-                NullLogger<OpenIddictTokenManager>.Instance,
-                _secretHasher,
-                _tokenRepository
+            var manager = NewTokenManager(
+                new IdentityOptions
+                {
+                    Authority = TestIssuer,
+                    Audience = TestAudience,
+                    UseCertificates = true,
+                    UseDevelopmentCertificates = false,
+                    CertificatePath = string.Empty,
+                }
             );
             var (_, _, signingKey) = CreateSigningKey();
             var (token, _) = CreateOwnedToken(signingKey);
@@ -2125,7 +2162,8 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_load_verification_keys() =>
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .MustNotHaveHappened();
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
@@ -2165,13 +2203,17 @@ public class OpenIddictTokenManagerTests
     private sealed class FaultingOwnershipTokenManager(
         IOptions<IdentityOptions> identityOptions,
         IClientSecretHasher secretHasher,
-        IOpenIddictTokenRepository tokenRepository
+        IOpenIddictTokenRepository tokenRepository,
+        ISigningKeySnapshotProvider signingKeyProvider,
+        DevelopmentCertificateStore developmentCertificateStore
     )
         : OpenIddictTokenManager(
             identityOptions,
             NullLogger<OpenIddictTokenManager>.Instance,
             secretHasher,
-            tokenRepository
+            tokenRepository,
+            signingKeyProvider,
+            developmentCertificateStore
         )
     {
         protected override bool TokenBelongsToCaller(string? tokenClientId, string callerClientId) =>
@@ -2196,7 +2238,9 @@ public class OpenIddictTokenManagerTests
             var manager = new FaultingOwnershipTokenManager(
                 Options.Create(new IdentityOptions { Authority = TestIssuer, Audience = TestAudience }),
                 _secretHasher,
-                _tokenRepository
+                _tokenRepository,
+                _signingKeyProvider,
+                _developmentCertificateStore
             );
 
             _act = () =>
@@ -2262,7 +2306,9 @@ public class OpenIddictTokenManagerTests
             ),
             logger ?? NullLogger<OpenIddictTokenManager>.Instance,
             hasher,
-            _tokenRepository
+            _tokenRepository,
+            _signingKeyProvider,
+            _developmentCertificateStore
         );
 
     // A deterministic configuration failure inside the real hasher: verification cannot run at all.
@@ -2323,7 +2369,8 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_load_verification_keys() =>
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .MustNotHaveHappened();
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
@@ -2443,7 +2490,8 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_load_verification_keys() =>
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .MustNotHaveHappened();
 
         [Test]
         public void It_does_not_touch_the_token_store() =>
@@ -2501,7 +2549,8 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_load_verification_keys() =>
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -2753,59 +2802,21 @@ public class OpenIddictTokenManagerTests
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
-    // Other callers keep their provisioning behaviour: the JWKS path still creates a missing
-    // development certificate. Only revocation is read-only.
-    [TestFixture]
-    public class Given_GetPublicKeysAsync_WhenTheDevelopmentCertificateIsMissing : OpenIddictTokenManagerTests
-    {
-        private string _directory = null!;
-        private string _certificatePath = null!;
-        private List<(RSAParameters RsaParameters, string KeyId)> _keys = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            _directory = NewScratchDirectory();
-            _certificatePath = Path.Combine(_directory, "devcert.pfx");
-
-            var manager = CreateManagerWith(
-                _secretHasher,
-                options: DevelopmentCertificateOptions(_certificatePath)
-            );
-            _keys = (await manager.GetPublicKeysAsync()).ToList();
-        }
-
-        [TearDown]
-        public void RemoveScratchDirectory() => Directory.Delete(_directory, recursive: true);
-
-        [Test]
-        public void It_still_creates_the_development_certificate() =>
-            File.Exists(_certificatePath).Should().BeTrue();
-
-        [Test]
-        public void It_publishes_the_new_certificate_key() => _keys.Should().ContainSingle();
-    }
-
     /// <summary>
     /// A token manager whose only non-default setting is the per-client token limit, so a test
     /// asserting on that number is asserting on a configured value rather than on the default.
     /// </summary>
     private OpenIddictTokenManager CreateTokenManagerWithTokenLimit(int limit) =>
-        new(
+        NewTokenManager(
             // EncryptionKey has to be set for the database signing-key path to run at all; the
             // faked repository ignores its value.
-            Options.Create(
-                new IdentityOptions
-                {
-                    Authority = TestIssuer,
-                    Audience = TestAudience,
-                    EncryptionKey = "test-encryption-key",
-                    BearerTokenPerClientLimit = limit,
-                }
-            ),
-            NullLogger<OpenIddictTokenManager>.Instance,
-            _secretHasher,
-            _tokenRepository
+            new IdentityOptions
+            {
+                Authority = TestIssuer,
+                Audience = TestAudience,
+                EncryptionKey = "test-encryption-key",
+                BearerTokenPerClientLimit = limit,
+            }
         );
 
     /// <summary>
@@ -3054,5 +3065,784 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_returns_a_success_result() => _result.Should().BeOfType<TokenResult.Success>();
+    }
+
+    // DMS-1556 step 2.2: the manager reads keys from the shared snapshot, reports dependency failures as typed
+    // exceptions, and issues development-certificate tokens through the shared certificate store.
+
+    /// <summary>A concrete <see cref="DbException"/>, which is abstract, for a store that cannot be read.</summary>
+    private sealed class StoreUnavailableException(string message) : DbException(message);
+
+    /// <summary>What an action threw, or <c>null</c> when it completed.</summary>
+    private static async Task<Exception?> ExceptionFrom(Func<Task> action)
+    {
+        try
+        {
+            await action();
+            return null;
+        }
+        catch (Exception exception)
+        {
+            return exception;
+        }
+    }
+
+    /// <summary>
+    /// Registers one active public key and returns a token signed by its private half, with a fresh jti.
+    /// </summary>
+    private (string Token, Guid Jti) ArrangeTokenSignedByTheActiveKey()
+    {
+        var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+        StubActivePublicKey(keyId, publicKeySpki);
+        var jti = Guid.NewGuid();
+        return (CreateSignedToken(signingKey, [new Claim(JwtRegisteredClaimNames.Jti, jti.ToString())]), jti);
+    }
+
+    private static SigningKeySnapshot SnapshotOf(params (string KeyId, RSA Rsa)[] keys) =>
+        new(
+            keys.Select(key =>
+                SigningKeyEntry.FromRsaPublicParameters(key.KeyId, key.Rsa.ExportParameters(false))
+            ),
+            DateTimeOffset.UtcNow,
+            retrievedAtTimestamp: 0,
+            version: 1,
+            SigningKeySource.Database
+        );
+
+    private static string KeyIdOf(string token) =>
+        new JwtSecurityTokenHandler().ReadJwtToken(token).Header.Kid;
+
+    private static string AccessTokenOf(TokenResult result) =>
+        System
+            .Text.Json.JsonDocument.Parse(result.Should().BeOfType<TokenResult.Success>().Subject.Token)
+            .RootElement.GetProperty("access_token")
+            .GetString()!;
+
+    // 2.2-a: keys are projected from the snapshot, so a second read is served from memory. Before DMS-1556 every call
+    // read the key table.
+    [TestFixture]
+    public class Given_GetPublicKeysAsync_FromTheSnapshot : OpenIddictTokenManagerTests
+    {
+        private RSAParameters _expected;
+        private List<(RSAParameters RsaParameters, string KeyId)> _first = null!;
+        private List<(RSAParameters RsaParameters, string KeyId)> _second = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            using RSA rsa = RSA.Create(2048);
+            _expected = rsa.ExportParameters(false);
+            StubActivePublicKey("key-1", rsa.ExportSubjectPublicKeyInfo());
+
+            _first = [.. await _tokenManager.GetPublicKeysAsync()];
+            _second = [.. await _tokenManager.GetPublicKeysAsync()];
+        }
+
+        [Test]
+        public void It_returns_the_snapshot_key() => _first.Select(key => key.KeyId).Should().Equal("key-1");
+
+        [Test]
+        public void It_returns_the_public_modulus() =>
+            _first[0].RsaParameters.Modulus.Should().Equal(_expected.Modulus);
+
+        [Test]
+        public void It_returns_the_public_exponent() =>
+            _first[0].RsaParameters.Exponent.Should().Equal(_expected.Exponent);
+
+        [Test]
+        public void It_serves_the_second_read_from_the_snapshot() =>
+            _second.Select(key => key.KeyId).Should().Equal("key-1");
+
+        [Test]
+        public void It_reads_the_key_store_once() =>
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
+    }
+
+    // 2.2-a, AC 4: a failed retrieval is an exception, never the empty list JWKS used to publish as "200 []".
+    [TestFixture]
+    public class Given_GetPublicKeysAsync_WhenTheKeyStoreFails : OpenIddictTokenManagerTests
+    {
+        private readonly StoreUnavailableException _failure = new("key store down");
+        private Exception? _thrown;
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .ThrowsAsync(_failure);
+
+            _thrown = await ExceptionFrom(() => _tokenManager.GetPublicKeysAsync());
+        }
+
+        [Test]
+        public void It_throws_signing_keys_unavailable() =>
+            _thrown.Should().BeOfType<SigningKeysUnavailableException>();
+
+        [Test]
+        public void It_classifies_the_signing_key_store() =>
+            _thrown
+                .Should()
+                .BeAssignableTo<AuthenticationDependencyUnavailableException>()
+                .Which.Category.Should()
+                .Be(AuthenticationDependencyCategory.SigningKeyStore);
+
+        [Test]
+        public void It_carries_the_store_failure() => _thrown!.InnerException.Should().BeSameAs(_failure);
+    }
+
+    // 2.2-b: a key id the snapshot already holds needs no refresh.
+    [TestFixture]
+    public class Given_ValidateTokenAsync_WithAKeyIdTheSnapshotHolds : OpenIddictTokenManagerTests
+    {
+        private ISigningKeySnapshotProvider _provider = null!;
+        private bool _result;
+
+        [SetUp]
+        public async Task Act()
+        {
+            using RSA rsa = RSA.Create(2048);
+            _provider = A.Fake<ISigningKeySnapshotProvider>();
+            SigningKeySnapshot snapshot = SnapshotOf(("key-1", rsa));
+            A.CallTo(() => _provider.GetUsableAsync(A<CancellationToken>._)).Returns(snapshot);
+            A.CallTo(() => _provider.Current).Returns(snapshot);
+
+            var jti = Guid.NewGuid();
+            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(jti)).Returns("valid");
+            string token = CreateSignedToken(
+                new RsaSecurityKey(rsa) { KeyId = "key-1" },
+                [new Claim(JwtRegisteredClaimNames.Jti, jti.ToString())]
+            );
+
+            _result = await CreateConfiguredTokenManager(signingKeyProvider: _provider)
+                .ValidateTokenAsync(token);
+        }
+
+        [Test]
+        public void It_accepts_the_token() => _result.Should().BeTrue();
+
+        [Test]
+        public void It_requests_no_unknown_key_refresh() =>
+            A.CallTo(() => _provider.TryRefreshForUnknownKeyAsync(A<string>._, A<CancellationToken>._))
+                .MustNotHaveHappened();
+    }
+
+    // 2.2-b: an unknown key id gets exactly one gated refresh; still unknown after it, the token is rejected.
+    [TestFixture]
+    public class Given_ValidateTokenAsync_WithAKeyIdTheSnapshotLacks : OpenIddictTokenManagerTests
+    {
+        private ISigningKeySnapshotProvider _provider = null!;
+        private ILogger<OpenIddictTokenManager> _logger = null!;
+        private bool _result;
+
+        [SetUp]
+        public async Task Act()
+        {
+            using RSA known = RSA.Create(2048);
+            using RSA unknown = RSA.Create(2048);
+            _provider = A.Fake<ISigningKeySnapshotProvider>();
+            SigningKeySnapshot snapshot = SnapshotOf(("key-1", known));
+            A.CallTo(() => _provider.GetUsableAsync(A<CancellationToken>._)).Returns(snapshot);
+            A.CallTo(() => _provider.Current).Returns(snapshot);
+            A.CallTo(() => _provider.TryRefreshForUnknownKeyAsync(A<string>._, A<CancellationToken>._))
+                .Returns(SigningKeyUnknownKeyOutcome.RefreshedAbsent);
+
+            _logger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            A.CallTo(() => _logger.IsEnabled(A<LogLevel>._)).Returns(true);
+
+            string token = CreateSignedToken(
+                new RsaSecurityKey(unknown) { KeyId = "unknown-key" },
+                [new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())]
+            );
+
+            _result = await CreateConfiguredTokenManager(_logger, _provider).ValidateTokenAsync(token);
+        }
+
+        [Test]
+        public void It_rejects_the_token() => _result.Should().BeFalse();
+
+        [Test]
+        public void It_requests_one_refresh_for_the_key_id() =>
+            A.CallTo(() => _provider.TryRefreshForUnknownKeyAsync("unknown-key", A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_does_not_query_token_status() =>
+            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(A<Guid>._)).MustNotHaveHappened();
+
+        [Test]
+        public void It_warns_with_the_key_id_and_the_outcome() =>
+            LogMessagesAt(_logger, LogLevel.Warning)
+                .Should()
+                .Contain(
+                    "Token key id unknown-key was not in the signing-key snapshot; unknown-key refresh outcome: RefreshedAbsent"
+                );
+    }
+
+    /// <summary>
+    /// Validates a token signed by the old key, which loads the snapshot; inserts a newer active key; advances fake
+    /// time by <paramref name="advance"/>; then validates a token signed by the new key. Returns whether the new-key
+    /// token was accepted.
+    /// </summary>
+    private async Task<bool> RotateAKeyInAndValidateAsync(TimeSpan advance)
+    {
+        FakeTimeProvider time = SigningKeyTestSupport.NewTime();
+        using RSA oldKey = RSA.Create(2048);
+        using RSA newKey = RSA.Create(2048);
+        List<PublicKeyInfo> activeKeys =
+        [
+            new() { KeyId = "old-key", PublicKey = oldKey.ExportSubjectPublicKeyInfo() },
+        ];
+        A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+            .ReturnsLazily(() => Task.FromResult<IEnumerable<PublicKeyInfo>>([.. activeKeys]));
+        A.CallTo(() => _tokenRepository.GetTokenStatusAsync(A<Guid>._)).Returns("valid");
+
+        using SigningKeySnapshotProvider provider = new(
+            new DatabaseSigningKeySource(_tokenRepository, NullLogger<DatabaseSigningKeySource>.Instance),
+            Options.Create(new IdentityOptions()),
+            time,
+            NullLogger<SigningKeySnapshotProvider>.Instance
+        );
+        OpenIddictTokenManager manager = CreateConfiguredTokenManager(signingKeyProvider: provider);
+        Claim[] claims = [new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())];
+
+        (
+            await manager.ValidateTokenAsync(
+                CreateSignedToken(new RsaSecurityKey(oldKey) { KeyId = "old-key" }, claims)
+            )
+        )
+            .Should()
+            .BeTrue("the old key is in the first snapshot");
+
+        activeKeys.Add(new() { KeyId = "new-key", PublicKey = newKey.ExportSubjectPublicKeyInfo() });
+        time.Advance(advance);
+
+        return await manager.ValidateTokenAsync(
+            CreateSignedToken(new RsaSecurityKey(newKey) { KeyId = "new-key" }, claims)
+        );
+    }
+
+    // 2.2-b, rotation eligible: past the unknown-key cooldown (30 s by default), the first token carrying the new key id
+    // refreshes the snapshot and is accepted in the same call.
+    [TestFixture]
+    public class Given_ValidateTokenAsync_ForAKeyRotatedInAfterTheCooldown : OpenIddictTokenManagerTests
+    {
+        private bool _accepted;
+
+        [SetUp]
+        public async Task Act() => _accepted = await RotateAKeyInAndValidateAsync(TimeSpan.FromSeconds(31));
+
+        [Test]
+        public void It_accepts_the_new_key_on_first_sighting() => _accepted.Should().BeTrue();
+
+        [Test]
+        public void It_reads_the_key_store_for_the_refresh() =>
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .MustHaveHappenedTwiceExactly();
+    }
+
+    // 2.2-b, rotation suppressed: inside the cooldown the new key id gets no load and the token is rejected.
+    [TestFixture]
+    public class Given_ValidateTokenAsync_ForAKeyRotatedInDuringTheCooldown : OpenIddictTokenManagerTests
+    {
+        private bool _accepted;
+
+        [SetUp]
+        public async Task Act() => _accepted = await RotateAKeyInAndValidateAsync(TimeSpan.FromSeconds(10));
+
+        [Test]
+        public void It_rejects_the_new_key_token() => _accepted.Should().BeFalse();
+
+        [Test]
+        public void It_does_not_read_the_key_store_again() =>
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
+    }
+
+    // 2.2-c, D-7: a status store that cannot be read is a dependency failure, not a verdict. Reported as false it would
+    // be answered with 401 and indistinguishable from a revoked token.
+    [TestFixture("database")]
+    [TestFixture("timeout")]
+    [TestFixture("canceled")]
+    public class Given_ValidateTokenAsync_WhenTheTokenStatusStoreFails(string failure)
+        : OpenIddictTokenManagerTests
+    {
+        private Exception _failure = null!;
+        private Exception? _thrown;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _failure = failure switch
+            {
+                "database" => new StoreUnavailableException("status store down"),
+                "timeout" => new TimeoutException("status read timed out"),
+                _ => new OperationCanceledException("status read canceled"),
+            };
+            var (token, jti) = ArrangeTokenSignedByTheActiveKey();
+            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(jti)).ThrowsAsync(_failure);
+
+            _thrown = await ExceptionFrom(() => CreateConfiguredTokenManager().ValidateTokenAsync(token));
+        }
+
+        [Test]
+        public void It_throws_the_dependency_exception() =>
+            _thrown.Should().BeOfType<AuthenticationDependencyUnavailableException>();
+
+        [Test]
+        public void It_classifies_the_token_status_store() =>
+            ((AuthenticationDependencyUnavailableException)_thrown!)
+                .Category.Should()
+                .Be(AuthenticationDependencyCategory.TokenStatusStore);
+
+        [Test]
+        public void It_carries_the_store_failure() => _thrown!.InnerException.Should().BeSameAs(_failure);
+    }
+
+    // 2.2-c: a store that already reports itself unavailable (the SQL Server pool-exhaustion translation) passes through
+    // unchanged, neither re-wrapped nor turned into false.
+    [TestFixture]
+    public class Given_ValidateTokenAsync_WhenTheStatusStoreReportsItselfUnavailable
+        : OpenIddictTokenManagerTests
+    {
+        private readonly AuthenticationDependencyUnavailableException _failure = new(
+            AuthenticationDependencyCategory.TokenStatusStore,
+            "The token status store could not be read.",
+            new InvalidOperationException("pool timeout")
+        );
+        private Exception? _thrown;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (token, jti) = ArrangeTokenSignedByTheActiveKey();
+            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(jti)).ThrowsAsync(_failure);
+
+            _thrown = await ExceptionFrom(() => CreateConfiguredTokenManager().ValidateTokenAsync(token));
+        }
+
+        [Test]
+        public void It_rethrows_the_store_exception() => _thrown.Should().BeSameAs(_failure);
+    }
+
+    /// <summary>
+    /// Loads a snapshot holding one key at fake time zero and advances time by <paramref name="age"/>. Every later key
+    /// read advances time by <paramref name="readDuration"/> and then fails. Then it validates a token whose key id the
+    /// snapshot lacks, and returns what validation returned or threw and how often the key store was read.
+    /// </summary>
+    private async Task<(
+        bool? Result,
+        Exception? Thrown,
+        int Reads
+    )> ValidateAnUnknownKeyAcrossAFailedRefreshAsync(TimeSpan age, TimeSpan readDuration)
+    {
+        FakeTimeProvider time = SigningKeyTestSupport.NewTime();
+        using RSA known = RSA.Create(2048);
+        using RSA unknown = RSA.Create(2048);
+        int[] reads = [0];
+        A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+            .ReturnsLazily(() =>
+            {
+                if (Interlocked.Increment(ref reads[0]) == 1)
+                {
+                    return Task.FromResult<IEnumerable<PublicKeyInfo>>([
+                        new PublicKeyInfo
+                        {
+                            KeyId = "known-key",
+                            PublicKey = known.ExportSubjectPublicKeyInfo(),
+                        },
+                    ]);
+                }
+
+                time.Advance(readDuration);
+                return Task.FromException<IEnumerable<PublicKeyInfo>>(
+                    new StoreUnavailableException("key store down")
+                );
+            });
+
+        using SigningKeySnapshotProvider provider = new(
+            new DatabaseSigningKeySource(_tokenRepository, NullLogger<DatabaseSigningKeySource>.Instance),
+            Options.Create(new IdentityOptions()),
+            time,
+            NullLogger<SigningKeySnapshotProvider>.Instance
+        );
+        (await provider.GetUsableAsync(CancellationToken.None))
+            .ContainsKeyId("known-key")
+            .Should()
+            .BeTrue("the first read publishes the known key");
+        time.Advance(age);
+
+        string token = CreateSignedToken(
+            new RsaSecurityKey(unknown) { KeyId = "unknown-key" },
+            [new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())]
+        );
+        OpenIddictTokenManager manager = CreateConfiguredTokenManager(signingKeyProvider: provider);
+        try
+        {
+            return (await manager.ValidateTokenAsync(token), null, reads[0]);
+        }
+        catch (Exception exception)
+        {
+            return (null, exception, reads[0]);
+        }
+    }
+
+    // Past the cooldown the unknown key id gets its refresh, which fails. The snapshot is still fresh, so the token is
+    // rejected as an unknown key rather than reported as an outage.
+    [TestFixture]
+    public class Given_ValidateTokenAsync_WhenAnUnknownKeyRefreshFailsWithKeysStillUsable
+        : OpenIddictTokenManagerTests
+    {
+        private (bool? Result, Exception? Thrown, int Reads) _outcome;
+
+        [SetUp]
+        public async Task Act() =>
+            _outcome = await ValidateAnUnknownKeyAcrossAFailedRefreshAsync(
+                age: TimeSpan.FromSeconds(31),
+                readDuration: TimeSpan.Zero
+            );
+
+        [Test]
+        public void It_rejects_the_token() => _outcome.Result.Should().BeFalse();
+
+        [Test]
+        public void It_throws_nothing() => _outcome.Thrown.Should().BeNull();
+
+        [Test]
+        public void It_reads_the_key_store_for_the_refresh() => _outcome.Reads.Should().Be(2);
+
+        [Test]
+        public void It_does_not_query_token_status() =>
+            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
+    // One second short of the maximum staleness the snapshot is usable, and the refresh its unknown key id joins takes
+    // two seconds and fails. The snapshot is then expired, so verification reports the keys unavailable. Before this
+    // correction it verified against the expired snapshot and answered false, an invalid token.
+    [TestFixture]
+    public class Given_ValidateTokenAsync_WhenAFailedUnknownKeyRefreshCrossesTheMaximumStaleness
+        : OpenIddictTokenManagerTests
+    {
+        private (bool? Result, Exception? Thrown, int Reads) _outcome;
+
+        [SetUp]
+        public async Task Act() =>
+            _outcome = await ValidateAnUnknownKeyAcrossAFailedRefreshAsync(
+                age: TimeSpan.FromSeconds(3599),
+                readDuration: TimeSpan.FromSeconds(2)
+            );
+
+        [Test]
+        public void It_throws_signing_keys_unavailable() =>
+            _outcome.Thrown.Should().BeOfType<SigningKeysUnavailableException>();
+
+        [Test]
+        public void It_reports_the_snapshot_expired() =>
+            ((SigningKeysUnavailableException)_outcome.Thrown!)
+                .Reason.Should()
+                .Be(SigningKeysUnavailableReason.SnapshotExpired);
+
+        [Test]
+        public void It_makes_no_further_key_read() => _outcome.Reads.Should().Be(2);
+
+        [Test]
+        public void It_does_not_query_token_status() =>
+            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
+    // 2.2-c: only store failures are translated; any other exception keeps the existing invalid-token answer.
+    [TestFixture]
+    public class Given_ValidateTokenAsync_WhenTheStatusReadFailsForAnotherReason : OpenIddictTokenManagerTests
+    {
+        private bool _result;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (token, jti) = ArrangeTokenSignedByTheActiveKey();
+            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(jti))
+                .ThrowsAsync(new InvalidOperationException("unexpected"));
+
+            _result = await CreateConfiguredTokenManager().ValidateTokenAsync(token);
+        }
+
+        [Test]
+        public void It_rejects_the_token() => _result.Should().BeFalse();
+    }
+
+    // 2.2-c: no usable snapshot is the signing-key dependency failure, rethrown ahead of the general catch.
+    [TestFixture]
+    public class Given_ValidateTokenAsync_WhenNoSigningKeysCanBeLoaded : OpenIddictTokenManagerTests
+    {
+        private Exception? _thrown;
+
+        [SetUp]
+        public async Task Act()
+        {
+            var (token, _) = ArrangeTokenSignedByTheActiveKey();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .ThrowsAsync(new StoreUnavailableException("key store down"));
+
+            _thrown = await ExceptionFrom(() => CreateConfiguredTokenManager().ValidateTokenAsync(token));
+        }
+
+        [Test]
+        public void It_throws_signing_keys_unavailable() =>
+            _thrown.Should().BeOfType<SigningKeysUnavailableException>();
+
+        [Test]
+        public void It_does_not_query_token_status() =>
+            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(A<Guid>._)).MustNotHaveHappened();
+    }
+
+    // 2.2-d, §4.7: introspection keeps answering an undecided token as inactive, and says why at Error.
+    [TestFixture]
+    public class Given_EnhancedTokenValidator_WhenTheTokenStatusStoreFails : OpenIddictTokenManagerTests
+    {
+        private ILogger<EnhancedTokenValidator> _logger = null!;
+        private TokenValidationResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _logger = A.Fake<ILogger<EnhancedTokenValidator>>();
+            A.CallTo(() => _logger.IsEnabled(A<LogLevel>._)).Returns(true);
+            var (token, jti) = ArrangeTokenSignedByTheActiveKey();
+            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(jti))
+                .ThrowsAsync(new StoreUnavailableException("status store down"));
+
+            _result = await new EnhancedTokenValidator(
+                CreateConfiguredTokenManager(),
+                _logger
+            ).ValidateTokenAsync(token);
+        }
+
+        [Test]
+        public void It_reports_the_token_invalid() => _result.IsValid.Should().BeFalse();
+
+        [Test]
+        public void It_creates_no_principal() => _result.Principal.Should().BeNull();
+
+        [Test]
+        public void It_logs_the_category_at_error() =>
+            SigningKeyTestSupport
+                .MessagesAt(_logger, LogLevel.Error)
+                .Should()
+                .Equal("Token validation could not reach a decision: the TokenStatusStore is unavailable");
+    }
+
+    /// <summary>
+    /// Self-contained certificate mode with a development certificate that does not exist yet, in its own temporary
+    /// directory. The manager, the certificate source and the snapshot provider share one store, as the DI
+    /// registration wires them.
+    /// </summary>
+    private sealed class DevelopmentCertificateFirstStart : IDisposable
+    {
+        private readonly string _directory = Directory
+            .CreateTempSubdirectory("dms1556-manager-devcert-")
+            .FullName;
+
+        public DevelopmentCertificateFirstStart()
+        {
+            Path = System.IO.Path.Combine(_directory, "devcert.pfx");
+            Options = new IdentityOptions
+            {
+                Authority = TestIssuer,
+                Audience = TestAudience,
+                UseCertificates = true,
+                UseDevelopmentCertificates = true,
+                DevCertificatePath = Path,
+                DevCertificatePassword = "password",
+            };
+            StoreLogger = A.Fake<ILogger<DevelopmentCertificateStore>>();
+            A.CallTo(() => StoreLogger.IsEnabled(A<LogLevel>._)).Returns(true);
+            Store = new DevelopmentCertificateStore(
+                Microsoft.Extensions.Options.Options.Create(Options),
+                StoreLogger
+            );
+            Provider = new SigningKeySnapshotProvider(
+                new CertificateSigningKeySource(Microsoft.Extensions.Options.Options.Create(Options), Store),
+                Microsoft.Extensions.Options.Options.Create(Options),
+                TimeProvider.System,
+                NullLogger<SigningKeySnapshotProvider>.Instance
+            );
+        }
+
+        public string Path { get; }
+
+        public IdentityOptions Options { get; }
+
+        public ILogger<DevelopmentCertificateStore> StoreLogger { get; }
+
+        public DevelopmentCertificateStore Store { get; }
+
+        public SigningKeySnapshotProvider Provider { get; }
+
+        public IReadOnlyList<string> FilesInDirectory =>
+            [.. Directory.GetFiles(_directory).Select(file => System.IO.Path.GetFileName(file))];
+
+        public void Dispose()
+        {
+            Provider.Dispose();
+            Store.Dispose();
+            Directory.Delete(_directory, recursive: true);
+        }
+    }
+
+    /// <summary>A client that can mint, whose stored tokens all read back as "valid".</summary>
+    private void ArrangeMintingClientWithValidTokens()
+    {
+        ArrangeGrantableClient();
+        ArrangeStoreOutcome(TokenStoreOutcome.Stored, _ => { });
+        A.CallTo(() => _tokenRepository.GetTokenStatusAsync(A<Guid>._)).Returns("valid");
+    }
+
+    // 2.2-e, D-10: issuance creates the missing development certificate through the shared store, not on its own.
+    // Before DMS-1556 issuance wrote the file itself, so the store never logged a creation.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_FirstOnADevelopmentCertificateFirstStart
+        : OpenIddictTokenManagerTests
+    {
+        private DevelopmentCertificateFirstStart _start = null!;
+        private string _issuedKeyId = null!;
+        private string _publishedKeyId = null!;
+        private bool _validated;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _start = new DevelopmentCertificateFirstStart();
+            ArrangeMintingClientWithValidTokens();
+            OpenIddictTokenManager manager = NewTokenManager(
+                _start.Options,
+                signingKeyProvider: _start.Provider,
+                developmentCertificateStore: _start.Store
+            );
+
+            string token = AccessTokenOf(await manager.GetAccessTokenAsync(GrantCredentials()));
+            _issuedKeyId = KeyIdOf(token);
+            _publishedKeyId = (await manager.GetPublicKeysAsync()).Single().KeyId;
+            _validated = await manager.ValidateTokenAsync(token);
+        }
+
+        [TearDown]
+        public void TearDown() => _start.Dispose();
+
+        [Test]
+        public void It_creates_the_certificate_through_the_shared_store() =>
+            SigningKeyTestSupport
+                .MessagesAt(_start.StoreLogger, LogLevel.Information)
+                .Should()
+                .Equal($"Development certificate created at {_start.Path}");
+
+        [Test]
+        public void It_issues_with_the_published_key_id() => _issuedKeyId.Should().Be(_publishedKeyId);
+
+        [Test]
+        public void It_validates_the_issued_token() => _validated.Should().BeTrue();
+    }
+
+    // 2.2-e, I-10: on a first start the refresh service, token issuance and validation all race to the missing
+    // development certificate. One certificate is created, and every issued token verifies against it.
+    [TestFixture]
+    public class Given_a_development_certificate_first_start_with_concurrent_mint_validation_and_refresh
+        : OpenIddictTokenManagerTests
+    {
+        private const int Callers = 16;
+
+        private DevelopmentCertificateFirstStart _start = null!;
+        private List<string> _issuedKeyIds = null!;
+        private List<string> _publishedKeyIds = null!;
+        private List<bool> _validated = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _start = new DevelopmentCertificateFirstStart();
+            ArrangeMintingClientWithValidTokens();
+            OpenIddictTokenManager manager = NewTokenManager(
+                _start.Options,
+                signingKeyProvider: _start.Provider,
+                developmentCertificateStore: _start.Store
+            );
+            using SigningKeyRefreshService refreshService = new(
+                _start.Provider,
+                Options.Create(_start.Options),
+                TimeProvider.System,
+                NullLogger<SigningKeyRefreshService>.Instance
+            );
+
+            using Barrier start = new((2 * Callers) + 1);
+            Task refresh = Task.Run(() =>
+            {
+                start.SignalAndWait();
+                return refreshService.StartAsync(CancellationToken.None);
+            });
+            Task<TokenResult>[] mints =
+            [
+                .. Enumerable
+                    .Range(0, Callers)
+                    .Select(_ =>
+                        Task.Run(() =>
+                        {
+                            start.SignalAndWait();
+                            return manager.GetAccessTokenAsync(GrantCredentials());
+                        })
+                    ),
+            ];
+            Task<IEnumerable<(RSAParameters RsaParameters, string KeyId)>>[] validators =
+            [
+                .. Enumerable
+                    .Range(0, Callers)
+                    .Select(_ =>
+                        Task.Run(() =>
+                        {
+                            start.SignalAndWait();
+                            return manager.GetPublicKeysAsync();
+                        })
+                    ),
+            ];
+
+            TimeSpan guard = TimeSpan.FromSeconds(30);
+            await refresh.WaitAsync(guard);
+            List<string> tokens = [.. (await Task.WhenAll(mints).WaitAsync(guard)).Select(AccessTokenOf)];
+            _publishedKeyIds =
+            [
+                .. (await Task.WhenAll(validators).WaitAsync(guard)).Select(keys => keys.Single().KeyId),
+            ];
+            _issuedKeyIds = [.. tokens.Select(KeyIdOf)];
+            _validated = [];
+            foreach (string token in tokens)
+            {
+                _validated.Add(await manager.ValidateTokenAsync(token));
+            }
+
+            await refreshService.StopAsync(CancellationToken.None);
+        }
+
+        [TearDown]
+        public void TearDown() => _start.Dispose();
+
+        [Test]
+        public void It_creates_the_certificate_once() =>
+            SigningKeyTestSupport
+                .MessagesAt(_start.StoreLogger, LogLevel.Information)
+                .Should()
+                .Equal($"Development certificate created at {_start.Path}");
+
+        [Test]
+        public void It_leaves_only_the_certificate_file() =>
+            _start.FilesInDirectory.Should().Equal("devcert.pfx");
+
+        [Test]
+        public void It_publishes_one_key_id() => _publishedKeyIds.Distinct().Should().ContainSingle();
+
+        [Test]
+        public void It_issues_every_token_with_the_published_key_id() =>
+            _issuedKeyIds.Should().HaveCount(Callers).And.OnlyContain(keyId => keyId == _publishedKeyIds[0]);
+
+        [Test]
+        public void It_validates_every_issued_token() =>
+            _validated.Should().HaveCount(Callers).And.OnlyContain(valid => valid);
     }
 }

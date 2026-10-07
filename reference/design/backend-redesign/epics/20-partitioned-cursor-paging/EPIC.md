@@ -334,18 +334,18 @@ The approved intentional ODS differences are:
   request succeeds with the configured default partition count. The empty-value-binds-to-null step
   rests on ASP.NET Core's standard binding of an empty value to a nullable simple type, the same
   basis as the recorded blank-`pageSize` behavior above;
-- reject `pageToken` and `pageSize` on `/deletes` and `/keyChanges` under DMS's
-  unknown-query-field rule, where ODS binds the same request model on those endpoints, accepts a
+- reject `pageToken` and `pageSize` on `/deletes` and `/keyChanges` by name, where ODS binds the same request model on those endpoints, accepts a
   valid token, and answers a malformed one with `The page token provided was invalid.`;
 - reject all five of `limit`, `offset`, `pageToken`, `pageSize`, and `totalCount` on `/partitions`
   as unsupported, where ODS 7.3.2 binds those reserved names into the request model its partitions
   action declares, range-checks only `number`, and ignores `limit`, `offset`, `pageSize`, and
   `totalCount`: they never reach its partition query, which carries no paging clause. ODS decodes a
   supplied `pageToken`, answering a malformed one with `The page token provided was invalid.`, then
-  discards the decoded range, so a well-formed token does not move its partition boundaries;
-- reject ODS's undocumented `allowSmallPartitions` and `useJoinAuth` partition parameters under
-  DMS's unknown-query-field rule, where ODS reads them from the separate additional-parameters
-  dictionary that collects query parameters its request model does not define;
+  discards the decoded range, so a well-formed token does not move its partition boundaries.
+  DMS-1589 kept both rejections by name when it began ignoring unknown query parameters, and retired
+  the former difference that rejected ODS's undocumented `allowSmallPartitions` and `useJoinAuth`
+  partition parameters: DMS now ignores them and names them in `X-EdFi-Warning`, while ODS acts on
+  them (see `reference/adr-unknown-query-parameters-DMS-1589.md`);
 - return evenly sized partitions, and at most the requested count of them, by computing a true
   ceiling. ODS 7.3.2 spells the size as `CEILING(CountOfRows / @numberOfPartitions)` over two
   integer operands, so its `CEILING` receives an already-truncated integer quotient and is a no-op:

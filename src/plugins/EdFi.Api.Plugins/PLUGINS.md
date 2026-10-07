@@ -9,6 +9,10 @@ Ed-Fi API host without rebuilding it.
 > loads them with the same loader for the secrets contracts in `EdFi.Api.Secrets`, a secret resolver
 > and a client secret hasher; see
 > [Configuration Service plugins](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/CONFIGURATION.md#configuration-service-plugins).
+> How to implement those contracts, and how to serve either host's configuration secrets from a
+> vault, is in the
+> [`EdFi.Api.Secrets` implementer guide](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/config/contracts/EdFi.DmsConfigurationService.Secrets/README.md),
+> which links back here for packaging, delivery, the allowlist and the trust model.
 > Each host has its own plugin root and its own allowlist, so allowlisting a plugin for one host
 > does not run it in the other.
 
@@ -437,10 +441,12 @@ The host detects conflicting claims, and its detection depends on the form you u
 
 Ignoring that rule fails in two shapes, and the second is the reason it is a rule:
 
-1. A `TryAdd` that declines, when it was your plugin's only contribution, leaves you registering no
-   declared contract, and **startup fails naming you**. Annoying, but loud.
-2. A `TryAdd` that declines in a plugin that *also* registered something declared is **not detected
-   at all**. Your plugin loads, startup succeeds, and the replacement simply never happens.
+1. A `TryAdd` that declines, when your plugin is left with no declared contract registered and
+   added no configuration source, leaves you registering nothing the host will call, and **startup
+   fails naming you**, even if you also registered helper services of your own. Annoying, but loud.
+2. A `TryAdd` that declines in a plugin that *also* registered something declared, or added a
+   configuration source in `ContributeConfiguration`, is **not detected at all**. Your plugin loads,
+   startup succeeds, and the replacement simply never happens.
 
 There is no startup failure waiting to teach you the second case. Follow the rule instead.
 
@@ -495,7 +501,8 @@ class the host discovers alongside the old one for as long as both are supported
 
 ## Getting the package
 
-`EdFi.Api.Plugins` and `EdFi.Api.CustomValidation` are published to the Ed-Fi Azure Artifacts feed:
+`EdFi.Api.Plugins`, `EdFi.Api.CustomValidation` and `EdFi.Api.Secrets` are published to the Ed-Fi
+Azure Artifacts feed:
 
 ```text
 https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json
@@ -505,10 +512,10 @@ https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nug
 <PackageReference Include="EdFi.Api.Plugins" Version="[1.1.0]" />
 ```
 
-The second contract, `EdFi.Api.CustomValidation`, is on the same feed and carries its own version in
-the same way; add it only if your plugin registers a validator. Each contract declares its version in
-its own source - `src/plugins/Directory.Build.props` for this one, the project file for the other -
-so their numbers move independently of each other and of the Data Management Service release.
+`EdFi.Api.CustomValidation` carries its own version in the same way; add it only if your plugin
+registers a validator. Each contract declares its version in its own source -
+`src/plugins/Directory.Build.props` for this one, its project file for each of the others - so their
+numbers move independently of each other and of either host's release.
 
 Pin the version exactly, in brackets, as above. A bare version is a minimum rather than a pin, and
 the host assembly manifest attached to the Data Management Service release you are targeting states
@@ -517,6 +524,21 @@ which contract versions that release carries. Build against 1.1.0. It is the ver
 may already be pinned to `[1.0.0]`; that plugin runs unchanged on a host carrying 1.1.0, as
 [Older plugin, newer host](#older-plugin-newer-host) describes, but it cannot contribute
 configuration until it is rebuilt against 1.1.0.
+
+A Configuration Service plugin that resolves secrets or replaces the client secret hasher also
+references `EdFi.Api.Secrets`, on the same feed:
+
+```xml
+<PackageReference Include="EdFi.Api.Plugins" Version="[1.1.0]" />
+<PackageReference Include="EdFi.Api.Secrets" Version="[1.0.0]" />
+```
+
+Its version is declared in its own project file,
+`src/config/contracts/EdFi.DmsConfigurationService.Secrets/EdFi.DmsConfigurationService.Secrets.csproj`,
+and moves independently of the Configuration Service release. Its
+[implementer guide](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/config/contracts/EdFi.DmsConfigurationService.Secrets/README.md)
+is the package readme. Its worked examples need `EdFi.Api.Plugins` 1.1.0 or later, because the
+vault configuration sources they show are contributed through `ContributeConfiguration`.
 
 ## License
 

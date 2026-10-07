@@ -182,11 +182,13 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
     /// Builds the route qualifier prefix for URLs.
     /// When multi-tenancy is enabled, includes tenant as the first segment.
     /// If segments are present in the request, uses actual values.
-    /// If segments are not present in request, uses placeholders.
+    /// If segments are not present in a discovery request, uses placeholders.
+    /// Unqualified metadata requests omit missing route-context segments.
     /// </summary>
-    private static string BuildRouteQualifierPrefix(
+    internal static string BuildRouteQualifierPrefix(
         HttpContext httpContext,
-        IOptions<AppSettings> appSettings
+        IOptions<AppSettings> appSettings,
+        bool useMetadataRouteValues = false
     )
     {
         string[] routeQualifierSegments = appSettings.Value.GetRouteQualifierSegmentsArray();
@@ -205,17 +207,22 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
             {
                 prefixSegments.Add(tenant);
             }
-            else
+            else if (!useMetadataRouteValues)
             {
                 prefixSegments.Add("{tenant}");
             }
         }
 
         // Add route qualifier segments
-        foreach (string segmentName in routeQualifierSegments)
+        for (int index = 0; index < routeQualifierSegments.Length; index++)
         {
+            string segmentName = routeQualifierSegments[index];
+            // Metadata routes use positional aliases to avoid collisions with endpoint parameters.
+            // On mapped routes, absent aliases mean an unqualified request, not named qualifiers.
+            string metadataRouteValueName = MetadataRouteValidator.RouteQualifierValueName(index);
+            string routeValueName = useMetadataRouteValues ? metadataRouteValueName : segmentName;
             if (
-                httpContext.Request.RouteValues.TryGetValue(segmentName, out object? value)
+                httpContext.Request.RouteValues.TryGetValue(routeValueName, out object? value)
                 && value is string stringValue
                 && !string.IsNullOrWhiteSpace(stringValue)
             )
@@ -223,7 +230,7 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
                 // Use actual value from route
                 prefixSegments.Add(stringValue);
             }
-            else
+            else if (!useMetadataRouteValues)
             {
                 // Use placeholder
                 prefixSegments.Add($"{{{segmentName}}}");

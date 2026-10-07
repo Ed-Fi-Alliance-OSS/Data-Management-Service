@@ -69,7 +69,7 @@ public class ConfigurationServiceProfileProvider(
                 applicationId
             );
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"/v3/applications/{applicationId}");
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"v3/applications/{applicationId}");
             SetRequestHeaders(request, token, tenantId);
             request.Options.Set(ConfigurationServiceResponseHandler.AllowNotFoundResponse, true);
 
@@ -155,7 +155,7 @@ public class ConfigurationServiceProfileProvider(
 
             logger.LogDebug("Fetching profile for profileId: {ProfileId}", profileId);
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"/v3/profiles/{profileId}");
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"v3/profiles/{profileId}");
             SetRequestHeaders(request, token, tenantId);
             // A profile listed by GET /v3/profiles can still be deleted before its detail is fetched.
             // That 404 means the profile is gone, so the catalog skips it rather than failing the
@@ -238,7 +238,7 @@ public class ConfigurationServiceProfileProvider(
 
             // No AllowNotFoundResponse: the list endpoint always exists, so a 404 here is a failure,
             // never an empty catalog.
-            using var request = new HttpRequestMessage(HttpMethod.Get, "/v3/profiles");
+            using var request = new HttpRequestMessage(HttpMethod.Get, "v3/profiles");
             SetRequestHeaders(request, token, tenantId);
 
             HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(request);

@@ -56,9 +56,16 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
                 : null;
         }
 
-        public async Task<IEnumerable<PublicKeyInfo>> GetActivePublicKeysAsync()
+        public Task<IEnumerable<PublicKeyInfo>> GetActivePublicKeysAsync()
         {
-            var results = await dataRepository.GetActivePublicKeysInternalAsync();
+            return GetActivePublicKeysAsync(CancellationToken.None);
+        }
+
+        public async Task<IEnumerable<PublicKeyInfo>> GetActivePublicKeysAsync(
+            CancellationToken cancellationToken
+        )
+        {
+            var results = await dataRepository.GetActivePublicKeysInternalAsync(cancellationToken);
             return results.Select(r => new PublicKeyInfo { KeyId = r.KeyId, PublicKey = r.PublicKey });
         }
 

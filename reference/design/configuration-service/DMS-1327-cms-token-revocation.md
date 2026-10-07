@@ -497,6 +497,21 @@ resource request and out of scope.
 `UnsupportedTokenType` and `InvalidRequest` are never produced by this provider: the self-contained
 store issues one token type, and a JWT of another shape simply fails verification → `Completed`.
 
+**After merging DMS-1556 from `main`.** DMS-1556 moved bearer validation, introspection and the JWKS
+endpoint to an in-memory signing-key snapshot. Its sources discard unusable key rows, and its
+`DevelopmentCertificateStore` creates a missing development certificate; it also removed
+`GetPublicKeysFrom*`, `ResolveKeyFormat` and `_keyFormatCache` from the manager. Revocation keeps
+`LoadVerificationKeysAsync` and every D-07.4 classification above, because the snapshot would
+reintroduce both masking paths. Formats are now detected and imported through
+`PublicKeyMaterialParser`, on every call and without a cache, so a corrected key row is picked up
+without a restart and an unreadable one still answers 503. The loader calls
+`GetActivePublicKeysAsync(CancellationToken.None)`, which the parameterless overload already
+delegated to. The parser's outer catch again logs the exception attached, as before D-07.6's
+`DetectKeyFormat` change; it is reached only when `RSA.Create` fails, so it carries no caller input
+or secret.
+DMS-1556's `UseSigningKeySnapshot` replaces the bearer scheme's message-received handler, so the
+revocation route's bearer exemption is composed in front of it.
+
 ### D-08 Atomic ownership-constrained mutation on both engines (AC3, AC8)
 
 `IOpenIddictTokenRepository.RevokeTokenAsync(Guid tokenId)` and

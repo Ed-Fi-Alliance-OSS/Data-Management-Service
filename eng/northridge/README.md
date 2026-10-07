@@ -789,7 +789,7 @@ CMS_TOKEN() { # CMS_TOKEN <client-id> <scope>; the secret is read from CMS_SECRE
   '
 }
 #    The bearer tokens those requests mint are under the same rule. Every call that carries one -- the
-#    data store re-save below, and the vendor creation, application creation and smoke read in step 12
+#    data store re-save below, and the vendor creation and lookup, application creation and smoke read in step 12
 #    -- goes through AUTH_HTTP, which reads the token from TOKEN and the JSON body, if any, from BODY
 #    in its own environment, so neither is ever an argument. It prints the status on its first line
 #    and the body after it, and writes the response headers to the file named, so every caller keeps
@@ -954,13 +954,14 @@ echo "DMS healthy at $DMS"
 #     `EdFiAPIPublisherWriter` is the claim set to ask for: API Publisher loaded this dataset
 #     originally, so that claim set already covers every resource present.
 #     POST /v3/vendors answers 201 with an EMPTY body, so read the new id from the Location header,
-#     which AUTH_HTTP writes to the headers file named. Both calls carry the admin token as TOKEN.
+#     which AUTH_HTTP writes to the headers file named. Every CMS call carries the admin token as TOKEN.
 #     Each status is asserted before the response is trusted, as the data store PUT's is: a 4xx or
 #     5xx comes with no Location and no credentials, and unasserted it would surface one line later
-#     as "no Location" or "no credentials" with the cause gone. CMS creates vendors by company name
-#     (VendorModule.InsertVendor): a new company answers 201; one it already holds answers 200 with
-#     Location set and the row updated, which is what a re-run of this step meets. Nothing else may
-#     continue.
+#     as "no Location" or "no credentials" with the cause gone. POST /v3/vendors is create-only: a
+#     new company answers 201, and a company CMS already holds answers 400 with "A vendor with this
+#     company name already exists." and changes nothing, which is what a re-run of this step meets.
+#     That 400, and no other, continues: the existing vendor's id is looked up by company name, and
+#     the lookup must answer 200 with an id. Nothing else may continue.
 TOKEN="$T"
 BODY='{"company":"Local Consumer","contactName":"Consumer","contactEmailAddress":"consumer@example.com","namespacePrefixes":"uri://ed-fi.org"}'
 VENDOR_RESPONSE=$(AUTH_HTTP POST "$CMS/v3/vendors" "$ART/vendor-post.headers") || \
@@ -968,12 +969,27 @@ VENDOR_RESPONSE=$(AUTH_HTTP POST "$CMS/v3/vendors" "$ART/vendor-post.headers") |
 VS=$(printf '%s\n' "$VENDOR_RESPONSE" | sed -n 1p)
 case "$VS" in
   201) echo "vendor created -> HTTP 201" ;;
-  200) echo "vendor 'Local Consumer' already existed; CMS updated it and answered HTTP 200, so its id is reused" ;;
+  400) echo "vendor not created -> HTTP 400; a re-run meets this when 'Local Consumer' already exists" ;;
   *) echo "the vendor was not created: HTTP ${VS:-none}, expected 201"; printf '%s\n' "$VENDOR_RESPONSE" | sed 1d; exit 1 ;;
 esac
-VID=$(sed -n 's|^[Ll]ocation:.*/v3/vendors/\([0-9]*\).*|\1|p' "$ART/vendor-post.headers" | tr -d '\r')
+if [ "$VS" = "201" ]; then
+  VID=$(sed -n 's|^[Ll]ocation:.*/v3/vendors/\([0-9]*\).*|\1|p' "$ART/vendor-post.headers" | tr -d '\r')
+else
+  printf '%s\n' "$VENDOR_RESPONSE" | sed 1d | grep -q 'A vendor with this company name already exists' || \
+    { echo "the vendor was not created: HTTP 400, and not because 'Local Consumer' already exists"; printf '%s\n' "$VENDOR_RESPONSE" | sed 1d; exit 1; }
+  BODY=
+  LOOKUP_RESPONSE=$(AUTH_HTTP GET "$CMS/v3/vendors?company=Local%20Consumer" "$ART/vendor-get.headers") || \
+    { echo "the vendor lookup could not be made"; exit 1; }
+  LS=$(printf '%s\n' "$LOOKUP_RESPONSE" | sed -n 1p)
+  if [ "$LS" != "200" ]; then
+    echo "the vendor lookup failed: HTTP ${LS:-none}, expected 200"
+    printf '%s\n' "$LOOKUP_RESPONSE" | sed 1d
+    exit 1
+  fi
+  VID=$(printf '%s\n' "$LOOKUP_RESPONSE" | sed 1d | sed -n 's/^\[{"id"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\)[,}].*/\1/p')
+fi
 test -n "$VID" || \
-  { echo "HTTP $VS, but no Location header names the vendor id"; cat "$ART/vendor-post.headers"; exit 1; }
+  { echo "HTTP $VS, but neither the Location header nor the lookup names the vendor id"; cat "$ART/vendor-post.headers"; exit 1; }
 
 BODY="{\"applicationName\":\"Local Consumer Read\",\"vendorId\":${VID},\"claimSetName\":\"EdFiAPIPublisherWriter\",\"educationOrganizationIds\":[255901],\"dataStoreIds\":[1]}"
 APP_RESPONSE=$(AUTH_HTTP POST "$CMS/v3/applications" "$ART/application-post.headers") || \

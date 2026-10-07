@@ -66,6 +66,270 @@ public class MetadataModuleTests
     }
 
     [TestFixture]
+    public class Given_OpenApi_documents_with_internal_authentication_urls
+    {
+        [TestCase("section", false, "http://localhost/dms-api/oauth/token")]
+        [TestCase("profileName", false, "http://localhost/dms-api/oauth/token")]
+        [TestCase("section", true, "http://localhost/dms-api/255901/oauth/token")]
+        [TestCase("profileName", true, "http://localhost/dms-api/255901/oauth/token")]
+        public async Task It_distinguishes_mapped_endpoint_parameters_from_route_qualifiers(
+            string qualifierName,
+            bool qualified,
+            string expectedTokenUrl
+        )
+        {
+            bool discovery = qualifierName is "section";
+            string endpointPattern = discovery
+                ? "/metadata/specifications/{section}-spec.json"
+                : "/metadata/specifications/profiles/{profileName}/resources-spec.json";
+            if (qualified)
+            {
+                endpointPattern = "/{__metadataRouteQualifier0}" + endpointPattern;
+            }
+            var context = CreateHttpContext("/metadata/specifications", "/dms-api");
+            context.SetEndpoint(
+                new RouteEndpoint(
+                    _ => Task.CompletedTask,
+                    RoutePatternFactory.Parse(endpointPattern),
+                    0,
+                    EndpointMetadataCollection.Empty,
+                    "Metadata"
+                )
+            );
+            context.Request.RouteValues[qualifierName] = discovery ? "discovery" : "StudentProfile";
+            if (qualified)
+            {
+                context.Request.RouteValues["__metadataRouteQualifier0"] = "255901";
+            }
+
+            var options = FrontendOptions(settings => settings.RouteQualifierSegments = qualifierName);
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            JsonNode document = JsonNode.Parse(
+                """
+                {
+                  "openapi": "3.0.0",
+                  "components": {
+                    "securitySchemes": {
+                      "oauth2_client_credentials": {
+                        "type": "oauth2",
+                        "flows": {
+                          "clientCredentials": {
+                            "tokenUrl": "https://internal-auth.example/oauth/token",
+                            "scopes": {}
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                """
+            )!;
+            if (discovery)
+            {
+                var contentProvider = A.Fake<IContentProvider>();
+                A.CallTo(() => contentProvider.LoadJsonContent("discovery", A<string>._, A<string>._))
+                    .Returns(document);
+                await MetadataEndpointModule.GetSectionMetadata(
+                    context,
+                    contentProvider,
+                    options,
+                    dataStoreProvider
+                );
+            }
+            else
+            {
+                var apiService = A.Fake<IApiService>();
+                A.CallTo(() =>
+                        apiService.GetProfileOpenApiSpecificationAsync(
+                            "StudentProfile",
+                            A<string?>._,
+                            A<JsonArray>._
+                        )
+                    )
+                    .Returns(Task.FromResult<JsonNode?>(document));
+                await MetadataEndpointModule.GetProfileResourceOpenApiSpec(
+                    context,
+                    "StudentProfile",
+                    dataStoreProvider,
+                    apiService,
+                    options
+                );
+            }
+
+            JsonNode response = (await ReadJsonResponseAsync(context))!;
+            response["components"]!["securitySchemes"]!["oauth2_client_credentials"]!["flows"]![
+                "clientCredentials"
+            ]!["tokenUrl"]!
+                .GetValue<string>()
+                .Should()
+                .Be(expectedTokenUrl);
+        }
+
+        [TestCase("resources")]
+        [TestCase("descriptors")]
+        [TestCase("changeQueries")]
+        [TestCase("profiles")]
+        [TestCase("discovery")]
+        public async Task It_advertises_the_request_proxy_for_each_openapi_document(string section)
+        {
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.GetResourceOpenApiSpecification(A<JsonArray>._))
+                .ReturnsLazily(CreateOpenApiDocument);
+            A.CallTo(() => apiService.GetDescriptorOpenApiSpecification(A<JsonArray>._))
+                .ReturnsLazily(CreateOpenApiDocument);
+            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
+                .ReturnsLazily(CreateOpenApiDocument);
+            A.CallTo(() =>
+                    apiService.GetProfileOpenApiSpecificationAsync(A<string>._, A<string?>._, A<JsonArray>._)
+                )
+                .ReturnsLazily(() => Task.FromResult<JsonNode?>(CreateOpenApiDocument()));
+            var contentProvider = A.Fake<IContentProvider>();
+            A.CallTo(() => contentProvider.LoadJsonContent("discovery", A<string>._, A<string>._))
+                .ReturnsLazily(CreateOpenApiDocument);
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+
+            foreach (
+                (bool routeContextsConfigured, bool qualified) in new[]
+                {
+                    (false, false),
+                    (true, true),
+                    (true, false),
+                }
+            )
+            {
+                var context = CreateHttpContext("/metadata/specifications", qualified ? "/dms-api" : "");
+                context.Request.Scheme = "https";
+                context.Request.Host = new HostString("api.example.org", 8443);
+                context.Request.RouteValues["section"] = "discovery";
+                var options = FrontendOptions(settings =>
+                {
+                    settings.MultiTenancy = routeContextsConfigured;
+                    settings.RouteQualifierSegments = routeContextsConfigured ? "districtId,schoolYear" : "";
+                });
+                if (qualified)
+                {
+                    context.Request.RouteValues["tenant"] = "tenant-a";
+                    context.Request.RouteValues["__metadataRouteQualifier0"] = "255901";
+                    context.Request.RouteValues["__metadataRouteQualifier1"] = "2026";
+                }
+
+                await (
+                    section switch
+                    {
+                        "resources" => MetadataEndpointModule.GetResourceOpenApiSpec(
+                            context,
+                            apiService,
+                            dataStoreProvider,
+                            options
+                        ),
+                        "descriptors" => MetadataEndpointModule.GetDescriptorOpenApiSpec(
+                            context,
+                            apiService,
+                            dataStoreProvider,
+                            options
+                        ),
+                        "changeQueries" => MetadataEndpointModule.GetChangeQueriesOpenApiSpec(
+                            context,
+                            apiService,
+                            dataStoreProvider,
+                            options
+                        ),
+                        "profiles" => MetadataEndpointModule.GetProfileResourceOpenApiSpec(
+                            context,
+                            "StudentProfile",
+                            dataStoreProvider,
+                            apiService,
+                            options
+                        ),
+                        _ => MetadataEndpointModule.GetSectionMetadata(
+                            context,
+                            contentProvider,
+                            options,
+                            dataStoreProvider
+                        ),
+                    }
+                );
+                JsonNode response = (await ReadJsonResponseAsync(context))!;
+                response["components"]!["securitySchemes"]!["oauth2_client_credentials"]!["flows"]![
+                    "clientCredentials"
+                ]!["tokenUrl"]!
+                    .GetValue<string>()
+                    .Should()
+                    .Be(
+                        qualified
+                            ? "https://api.example.org:8443/dms-api/tenant-a/255901/2026/oauth/token"
+                            : "https://api.example.org:8443/oauth/token"
+                    );
+                response["security"]!.AsArray().Should().ContainSingle();
+            }
+
+            static JsonNode CreateOpenApiDocument() =>
+                JsonNode.Parse(
+                    """
+                    {
+                      "openapi": "3.0.0",
+                      "components": {
+                        "securitySchemes": {
+                          "oauth2_client_credentials": {
+                            "type": "oauth2",
+                            "flows": {
+                              "clientCredentials": {
+                                "tokenUrl": "https://internal-auth.example/oauth/token",
+                                "scopes": {}
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "security": [{ "oauth2_client_credentials": [] }]
+                    }
+                    """
+                )!;
+        }
+
+        [TestCase(false, "http://localhost/oauth/token")]
+        [TestCase(true, "http://localhost/dms-api/tenant-a/255901/2026/oauth/token")]
+        public async Task It_supplies_the_public_proxy_url_to_file_backed_discovery(
+            bool qualified,
+            string expectedTokenUrl
+        )
+        {
+            string workspaceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            try
+            {
+                FileModeWorkspaceBuilder.BuildWorkspace(workspaceRoot);
+                var (provider, _) = FileModeWorkspaceBuilder.BuildProvider(workspaceRoot);
+                var context = CreateHttpContext(
+                    "/metadata/specifications/discovery-spec.json",
+                    qualified ? "/dms-api" : ""
+                );
+                context.Request.RouteValues["section"] = "discovery";
+                context.Request.RouteValues["tenant"] = "tenant-a";
+                context.Request.RouteValues["__metadataRouteQualifier0"] = "255901";
+                context.Request.RouteValues["__metadataRouteQualifier1"] = "2026";
+
+                await MetadataEndpointModule.GetSectionMetadata(
+                    context,
+                    provider,
+                    FrontendOptions(settings =>
+                    {
+                        settings.MultiTenancy = qualified;
+                        settings.RouteQualifierSegments = qualified ? "districtId,schoolYear" : "";
+                    }),
+                    A.Fake<IDataStoreProvider>()
+                );
+
+                JsonNode response = (await ReadJsonResponseAsync(context))!;
+                response["token"]!.GetValue<string>().Should().Be(expectedTokenUrl);
+            }
+            finally
+            {
+                Directory.Delete(workspaceRoot, recursive: true);
+            }
+        }
+    }
+
+    [TestFixture]
     public class When_Requesting_Tenant_Only_Metadata_With_Required_Route_Qualifiers
     {
         [TestCase("/tenant1/metadata")]

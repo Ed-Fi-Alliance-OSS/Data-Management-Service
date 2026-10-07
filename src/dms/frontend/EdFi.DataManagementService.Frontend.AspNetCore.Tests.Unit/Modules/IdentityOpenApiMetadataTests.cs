@@ -81,14 +81,14 @@ public class IdentityOpenApiMetadataTests
         }
 
         [Test]
-        public void It_declares_the_configured_token_url()
+        public void It_declares_the_request_visible_token_proxy_url()
         {
             _document["components"]!["securitySchemes"]!["oauth2_client_credentials"]!["flows"]![
                 "clientCredentials"
             ]!["tokenUrl"]!
                 .GetValue<string>()
                 .Should()
-                .Be(AuthenticationService);
+                .Be("http://localhost/oauth/token");
         }
 
         [Test]
@@ -221,6 +221,17 @@ public class IdentityOpenApiMetadataTests
                 .GetValue<string>()
                 .Should()
                 .Be("http://localhost/{tenant}/{districtId}/{schoolYear}/identity/v2");
+        }
+
+        [Test]
+        public void It_declares_the_route_qualified_token_proxy_url()
+        {
+            _document["components"]!["securitySchemes"]!["oauth2_client_credentials"]!["flows"]![
+                "clientCredentials"
+            ]!["tokenUrl"]!
+                .GetValue<string>()
+                .Should()
+                .Be("http://localhost/tenant-a/255901/2026/oauth/token");
         }
 
         private static DataStore DataStoreWithRouteContext(

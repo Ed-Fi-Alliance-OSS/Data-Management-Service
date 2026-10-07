@@ -461,6 +461,7 @@ An `Order` in the 200s runs inside the `[0, 299]` window that `Program.cs:163-16
 A deployment whose schemas are fine but whose validator registration is wrong therefore gets a fatal message about schemas.
 The failing task is still named in `DmsStartupOrchestrator`'s own `Critical` record (`Startup/DmsStartupOrchestrator.cs:93-97`), so the real cause is recoverable from the log, and this design accepts the mislabel rather than adding a startup phase for one guard.
 The implementer guide and the guard's own log record carry the accurate wording.
+This mislabel was later removed by a dedicated `ValidatePluginRegistrations` phase once the plugin registration guard shared the window.
 
 **One guard, running after the container is built.** It is an `IDmsStartupTask`, so it runs through the frontend's existing fatal-startup path: `DmsStartupOrchestrator` catches any non-cancellation exception, logs it at `Critical`, and rethrows it wrapped (`Startup/DmsStartupOrchestrator.cs:93-97`), and `StartupPhaseExecutor.RunFatalAsync` (`Infrastructure/StartupPhaseExecutor.cs:88-116`) logs a fatal failure and calls `IStartupProcessExit.Exit`, implemented in production as `Environment.Exit` (`:13-19`).
 The guard does four things: audits the captured descriptor set for lifetime and shape; resolves the full `IEnumerable<ICustomResourceValidator>` once from a throwaway scope; checks every validator type the registrations show against what that resolution returned; and logs each validator's `AppliesTo`, warning on entries matching no resource in the effective ApiSchema, before discarding the instances.
@@ -484,6 +485,7 @@ The guard's `Order` must therefore sit inside an executed window and above `Load
 Any value in 101-299 satisfies both; the 200s is this design's preference, keeping the guard visibly after schema loading.
 DMS's existing registration-validation guards sit lower (`Order => 50` and `Order => 55`, `Startup/ValidateDatabaseFingerprintReaderRegistrationTask.cs:19`, `Startup/ValidateResourceKeyRowReaderRegistrationTask.cs:19`), and this guard deliberately does not join them: both run before `LoadAndBuildEffectiveSchemaTask` (`Order => 100`), whose effective ApiSchema the `AppliesTo` warning reads.
 That preference conflicts with the doc comment labelling 200-299 "Schema processing" (`Startup/IDmsStartupTask.cs:27`), which is introduced as a recommendation (`:25`) and enforced by nothing; the implementation records the mismatch at the `Order` declaration and proves the guard actually executed rather than merely being registered.
+The windows were later split: `[0, 249]` runs as `InitializeApiSchemas` and `[250, 299]` as its own `ValidatePluginRegistrations` phase, which holds this guard at `Order => 250`, and `IDmsStartupTask.cs` now labels 250-299 as registration validation.
 
 **What the guard guarantees** is constructibility: a dependency the container cannot supply, or a constructor that throws when resolved outside a request.
 That is narrower than "no validator depends on per-request state", and the implementer guide inherits the distinction rather than overclaiming.

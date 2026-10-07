@@ -506,7 +506,6 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
     public void It_disposes_started_resources_when_kafka_connect_wait_is_canceled()
     {
         using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
         var docker = new RecordingDockerCli(arguments => null);
 
         Exception exception = Assert.CatchAsync(async () =>
@@ -515,7 +514,12 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
                 BuildSettings(),
                 docker,
                 ResourcePrefix,
-                cancellation.Token
+                cancellation.Token,
+                waitForConnect: (fixture, token) =>
+                {
+                    cancellation.Cancel();
+                    return fixture.WaitForKafkaConnectAsync(token);
+                }
             )
         )!;
 

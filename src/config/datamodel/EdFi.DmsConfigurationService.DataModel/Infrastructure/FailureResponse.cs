@@ -227,20 +227,6 @@ public static class FailureResponse
             errors: errors
         );
 
-    public static JsonNode ForNonUniqueIdentity(
-        string detail,
-        string correlationId,
-        string[]? errors = null
-    ) =>
-        CreateBaseJsonObject(
-            detail: detail,
-            type: $"{_conflictTypePrefix}:non-unique-identity",
-            title: "Identifying Values Are Not Unique",
-            status: 409,
-            correlationId: correlationId,
-            errors: errors
-        );
-
     public static JsonNode ForBadGateway(string detail, string correlationId, string[]? errors = null) =>
         CreateBaseJsonObject(
             detail: detail,

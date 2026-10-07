@@ -12,18 +12,17 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
 using FluentValidation;
+using FluentValidation.Results;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
 public class ClaimSetModule : IEndpointModule
 {
-    private static IResult DuplicateClaimSetName(HttpContext httpContext)
-    {
-        return FailureResults.NonUniqueIdentity(
-            "A claim set with this name already exists.",
+    private static IResult DuplicateClaimSetName(HttpContext httpContext) =>
+        FailureResults.DataValidation(
+            [new ValidationFailure("Name", "A claim set with this name already exists.")],
             httpContext.TraceIdentifier
         );
-    }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {

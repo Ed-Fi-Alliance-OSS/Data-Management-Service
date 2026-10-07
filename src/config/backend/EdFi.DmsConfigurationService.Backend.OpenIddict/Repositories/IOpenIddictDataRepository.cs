@@ -156,6 +156,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
 
         Task<IEnumerable<(string KeyId, byte[] PublicKey)>> GetActivePublicKeysInternalAsync();
 
+        // Cancellable overload: the token reaches the connection open and the query.
+        Task<IEnumerable<(string KeyId, byte[] PublicKey)>> GetActivePublicKeysInternalAsync(
+            CancellationToken cancellationToken
+        );
+
         // Application info operations
         Task<ApplicationInfo?> GetApplicationByClientIdAsync(string clientId);
 

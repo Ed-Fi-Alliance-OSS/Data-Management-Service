@@ -65,7 +65,6 @@ artifacts/
 eng/docker-compose/.bootstrap/
 eng/docker-compose/.e2e-claims/
 eng/docker-compose/.cdc-deployments/
-eng/docker-compose/.cdc-diagnostics/
 eng/docker-compose/.cdc-api-e2e.lock
 eng/docker-compose/.cdc-state
 eng/docker-compose/.derived/
@@ -465,6 +464,9 @@ CLAUDE.local.md
 .plans/
 .claude/
 
+# Local implementation plan
+/PLAN.md
+
 # SDK generation artifacts
 /eng/sdkGen/csharp/*
 openApi-codegen-cli*.jar
@@ -486,8 +488,8 @@ tmpclaude*
 
 docs/superpowers/
 
-# Local folder feed the custom validation fixture plugins restore their two contract
-# packages from. Written by the integration test project's CustomValidationFixturePlugin.targets.
+# Local folder feed the packed contract fixture plugins restore their contract
+# packages from. Written by the integration test project's PackedContractFixturePlugins.targets.
 /eng/fixtures/plugins/.local-feed/
 
 # CDC execution reports are retained outside source control.

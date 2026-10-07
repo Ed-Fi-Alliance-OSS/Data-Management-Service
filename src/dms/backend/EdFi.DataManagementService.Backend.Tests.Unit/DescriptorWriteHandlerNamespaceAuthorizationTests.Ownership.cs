@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
@@ -79,7 +80,8 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
     /// <summary>
     /// With the proposed namespace check configured ahead of it, every create verdict is returned in the
     /// ownership slot once that check authorizes — on the plain create path and on the locked-resolve path an
-    /// If-None-Match create takes — with no data-modifying statement and the opened session rolled back.
+    /// If-Match create takes, ahead of its 412 — with no data-modifying statement and the opened session rolled
+    /// back.
     /// </summary>
     [TestCase(CreateDenialKind.NoCreatorToken, false)]
     [TestCase(CreateDenialKind.CreatorTokenNotHeld, false)]
@@ -111,7 +113,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
                     namespacePrefixes: ["uri://ed-fi.org/"],
                     authorizationStrategies: [NamespaceStrategy(), OwnershipStrategy()],
                     writePrecondition: withPrecondition
-                        ? new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
+                        ? new WritePrecondition.IfMatch("\"stale-etag\"")
                         : null
                 ),
                 denialKind
@@ -157,12 +159,10 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     /// <summary>
-    /// An If-Match create owes a 412, but the ownership verdict is an authorization answer and precedes it; an
-    /// If-None-Match create would insert, and the verdict stops it first.
+    /// An If-Match create owes a 412, but the ownership verdict is an authorization answer and precedes it.
     /// </summary>
-    [TestCase(true)]
-    [TestCase(false)]
-    public async Task It_reports_the_create_ownership_denial_ahead_of_the_precondition_outcome(bool ifMatch)
+    [Test]
+    public async Task It_reports_the_create_ownership_denial_ahead_of_the_precondition_outcome()
     {
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var sut = CreateSut(sessionFactory, CreateNewTargetLookup());
@@ -172,9 +172,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
                 CreatePostRequest(
                     namespacePrefixes: [],
                     authorizationStrategies: [OwnershipStrategy()],
-                    writePrecondition: ifMatch
-                        ? new WritePrecondition.IfMatch("\"stale-etag\"")
-                        : new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
+                    writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
                 ),
                 creatorOwnershipTokenId: null,
                 ownershipTokenIds: [OwnedToken]
@@ -1027,15 +1025,14 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
 
     /// <summary>
     /// One below the cap, both branches behave normally in every shape: a create inserts and stamps, and an
-    /// update runs the stored-stamp check once and applies.
+    /// update runs the stored-stamp check once and applies. A create under an If-Match is not covered here: with
+    /// no verdict ahead of it, it owes the 412.
     /// </summary>
     [TestCase(PostTarget.Create, false, OwnershipPolicyShape.Shared)]
-    [TestCase(PostTarget.Create, true, OwnershipPolicyShape.Shared)]
     [TestCase(PostTarget.Create, false, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
-    [TestCase(PostTarget.Create, true, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
     [TestCase(PostTarget.Update, false, OwnershipPolicyShape.Shared)]
-    [TestCase(PostTarget.Update, true, OwnershipPolicyShape.Shared)]
     [TestCase(PostTarget.Update, false, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
+    [TestCase(PostTarget.Update, true, OwnershipPolicyShape.Shared)]
     [TestCase(PostTarget.Update, true, OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
     public async Task It_applies_a_descriptor_post_one_below_the_ownership_token_cap(
         PostTarget target,
@@ -1064,6 +1061,34 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         }
 
         sessionFactory.Session.CommitCallCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// One below the cap there is no verdict to precede it, so a create under a stale If-Match owes the 412 and
+    /// rolls back without inserting.
+    /// </summary>
+    [TestCase(OwnershipPolicyShape.Shared)]
+    [TestCase(OwnershipPolicyShape.SplitWithOwnershipOnTheSelectedBranch)]
+    public async Task It_fails_a_descriptor_post_create_one_below_the_ownership_token_cap_under_a_stale_if_match(
+        OwnershipPolicyShape policyShape
+    )
+    {
+        var (sut, sessionFactory, request) = ArrangeCapPost(
+            PostTarget.Create,
+            withPrecondition: true,
+            OwnershipTokenLimitExceededException.OwnershipTokenLimit - 1
+        );
+
+        var result = await sut.HandlePostAsync(request, CapPolicy(PostTarget.Create, policyShape));
+
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
+        AssertNoDataModification(sessionFactory);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
     /// <summary>
@@ -1130,15 +1155,15 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
 
             if (withPrecondition)
             {
-                // The in-session lookup finds no row.
+                // The in-session lookup finds no row. The stale tag owes a 412 if no verdict precedes it.
                 sessionFactory.Session.Executor.ResultSets.Enqueue([InMemoryRelationalResultSet.Create()]);
-                precondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true);
+                precondition = new WritePrecondition.IfMatch("\"stale-etag\"");
             }
         }
         else if (withPrecondition)
         {
             sessionFactory = PreconditionLockedTargetSessionFactory(CreatePersistedDescriptorRow());
-            precondition = new WritePrecondition.IfNoneMatch(["\"not-the-current-etag\""]);
+            precondition = new WritePrecondition.IfMatch(ExpectedComposedDescriptorEtag(44L));
         }
         else
         {
@@ -1285,13 +1310,22 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant
     );
 
+    /// <summary>The etag a write precondition must carry to match the stubbed locked row's content version.</summary>
+    private static string ExpectedComposedDescriptorEtag(long contentVersion) =>
+        EtagComposer.Compose(
+            contentVersion,
+            DescriptorEtagTestSupport.NoProfileNoLinksJsonVariantKey(
+                CreateMappingSet(SqlDialect.Pgsql).Key.EffectiveSchemaHash
+            )
+        );
+
     private static void AssertNoDataModification(RecordingNamespaceWriteSessionFactory sessionFactory) =>
         AllSessionCommands(sessionFactory).Should().NotContain(command => IsDataModifying(command));
 
     /// <summary>
     /// Arranges a POST over the given token list, with its creator token in the list, for either target. With
-    /// a precondition the request takes the locked-resolve path under an If-None-Match the target satisfies, so
-    /// only ownership can stop it.
+    /// a precondition the request takes the locked-resolve path: an update under an If-Match the target
+    /// satisfies, a create under a stale one it would fail with a 412, so only ownership can stop either.
     /// </summary>
     private static (
         DescriptorWriteHandler Sut,
@@ -1310,9 +1344,9 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
 
             if (withPrecondition)
             {
-                // The in-session lookup finds no row.
+                // The in-session lookup finds no row. The stale tag owes a 412 if no verdict precedes it.
                 sessionFactory.Session.Executor.ResultSets.Enqueue([InMemoryRelationalResultSet.Create()]);
-                precondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true);
+                precondition = new WritePrecondition.IfMatch("\"stale-etag\"");
             }
         }
         else if (withPrecondition)
@@ -1321,7 +1355,7 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
                 CreatePersistedDescriptorRowWithEdFiNamespace()
             );
             targetLookup = ExistingPostTargetLookup();
-            precondition = new WritePrecondition.IfNoneMatch(["\"not-the-current-etag\""]);
+            precondition = new WritePrecondition.IfMatch(ExpectedComposedDescriptorEtag(44L));
         }
         else
         {

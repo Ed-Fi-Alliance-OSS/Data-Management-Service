@@ -13,6 +13,7 @@ using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Model.Register;
@@ -1590,16 +1591,61 @@ public class RevocationOwnershipTests
         return new JwtSecurityTokenHandler().WriteToken(jwt);
     }
 
-    private static OpenIddictTokenManager CreateTokenManager(
-        IOpenIddictTokenRepository tokenRepository,
-        IClientSecretHasher secretHasher
-    ) =>
-        new(
-            Options.Create(new OpenIddictIdentityOptions { Authority = TestIssuer, Audience = TestAudience }),
-            NullLogger<OpenIddictTokenManager>.Instance,
-            secretHasher,
-            tokenRepository
-        );
+    /// <summary>
+    /// The real manager over the faked repository and secret hasher, with a real snapshot provider and certificate
+    /// store of its own. The factory's container creates this owner and disposes it, and with it the provider and the
+    /// store, when the factory is disposed.
+    /// </summary>
+    private sealed class RealTokenManagerOwner : IDisposable
+    {
+        private readonly SigningKeySnapshotProvider _signingKeyProvider;
+        private readonly DevelopmentCertificateStore _developmentCertificateStore;
+
+        public RealTokenManagerOwner(
+            IOpenIddictTokenRepository tokenRepository,
+            IClientSecretHasher secretHasher,
+            bool faultOwnershipComparison = false
+        )
+        {
+            IOptions<OpenIddictIdentityOptions> options = Options.Create(
+                new OpenIddictIdentityOptions { Authority = TestIssuer, Audience = TestAudience }
+            );
+            _signingKeyProvider = new SigningKeySnapshotProvider(
+                new DatabaseSigningKeySource(tokenRepository, NullLogger<DatabaseSigningKeySource>.Instance),
+                options,
+                TimeProvider.System,
+                NullLogger<SigningKeySnapshotProvider>.Instance
+            );
+            _developmentCertificateStore = new DevelopmentCertificateStore(
+                options,
+                NullLogger<DevelopmentCertificateStore>.Instance
+            );
+            TokenManager = faultOwnershipComparison
+                ? new FaultingOwnershipTokenManager(
+                    options,
+                    secretHasher,
+                    tokenRepository,
+                    _signingKeyProvider,
+                    _developmentCertificateStore
+                )
+                : new OpenIddictTokenManager(
+                    options,
+                    NullLogger<OpenIddictTokenManager>.Instance,
+                    secretHasher,
+                    tokenRepository,
+                    _signingKeyProvider,
+                    _developmentCertificateStore
+                );
+        }
+
+        public OpenIddictTokenManager TokenManager { get; }
+
+        public void Dispose()
+        {
+            _signingKeyProvider.Dispose();
+            _developmentCertificateStore.Dispose();
+        }
+    }
 
     /// <summary>
     /// Registers <paramref name="clientId"/> as a real, approved application so
@@ -1610,15 +1656,33 @@ public class RevocationOwnershipTests
         A.CallTo(() => tokenRepository.GetApplicationByClientIdAsync(clientId))
             .Returns(new ApplicationInfo { ClientId = clientId, IsApproved = true });
 
-    private static WebApplicationFactory<Program> CreateFactory(OpenIddictTokenManager tokenManager) =>
+    /// <summary>
+    /// A host whose <see cref="ITokenManager"/> and <see cref="ITokenRevocationManager"/> are the real manager over
+    /// <paramref name="tokenRepository"/>. The owner is registered through a factory, so the host's container owns it
+    /// and disposes it with the host.
+    /// </summary>
+    private static WebApplicationFactory<Program> CreateFactory(
+        IOpenIddictTokenRepository tokenRepository,
+        IClientSecretHasher secretHasher,
+        bool faultOwnershipComparison = false
+    ) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
             builder.ConfigureServices(collection =>
             {
                 collection.AddTestAuthentication();
-                collection.AddTransient<ITokenManager>(_ => tokenManager);
-                collection.AddTransient<ITokenRevocationManager>(_ => tokenManager);
+                collection.AddSingleton(_ => new RealTokenManagerOwner(
+                    tokenRepository,
+                    secretHasher,
+                    faultOwnershipComparison
+                ));
+                collection.AddTransient<ITokenManager>(services =>
+                    services.GetRequiredService<RealTokenManagerOwner>().TokenManager
+                );
+                collection.AddTransient<ITokenRevocationManager>(services =>
+                    services.GetRequiredService<RealTokenManagerOwner>().TokenManager
+                );
             });
         });
 
@@ -1627,14 +1691,19 @@ public class RevocationOwnershipTests
     /// boundaries and must not be relabelled as an outage.
     /// </summary>
     private sealed class FaultingOwnershipTokenManager(
+        IOptions<OpenIddictIdentityOptions> options,
+        IClientSecretHasher secretHasher,
         IOpenIddictTokenRepository tokenRepository,
-        IClientSecretHasher secretHasher
+        ISigningKeySnapshotProvider signingKeyProvider,
+        DevelopmentCertificateStore developmentCertificateStore
     )
         : OpenIddictTokenManager(
-            Options.Create(new OpenIddictIdentityOptions { Authority = TestIssuer, Audience = TestAudience }),
+            options,
             NullLogger<OpenIddictTokenManager>.Instance,
             secretHasher,
-            tokenRepository
+            tokenRepository,
+            signingKeyProvider,
+            developmentCertificateStore
         )
     {
         protected override bool TokenBelongsToCaller(string? tokenClientId, string callerClientId) =>
@@ -1711,7 +1780,7 @@ public class RevocationOwnershipTests
         [SetUp]
         public async Task Setup()
         {
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = _factory.CreateClient(); // No Authorization header, no form fields at all.
 
             _response = await _client.PostAsync(
@@ -1780,7 +1849,7 @@ public class RevocationOwnershipTests
         public async Task Setup()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {
@@ -1793,7 +1862,7 @@ public class RevocationOwnershipTests
             _jti = Guid.NewGuid();
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).Returns(true);
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = _factory.CreateClient(); // No Authorization header — credentials go in the form body.
             _response = await PostRevocationWithFormCredentials(
                 _client,
@@ -1832,7 +1901,7 @@ public class RevocationOwnershipTests
         public async Task Setup()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {
@@ -1845,7 +1914,7 @@ public class RevocationOwnershipTests
             _jti = Guid.NewGuid();
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).Returns(true);
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
             _response = await PostRevocation(_client, CreateSignedToken(signingKey, OwnerClientId, _jti));
         }
@@ -1891,7 +1960,7 @@ public class RevocationOwnershipTests
         public async Task Setup()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {
@@ -1908,7 +1977,7 @@ public class RevocationOwnershipTests
             _jti = Guid.NewGuid();
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, A<Guid>._)).Returns(true);
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = CreateClientWithCredentials(_factory, NonCanonicalClientId, TestClientSecret);
 
             // The token carries the canonical client_id, because that is what minting stamps on
@@ -1949,7 +2018,7 @@ public class RevocationOwnershipTests
         [SetUp]
         public async Task Setup()
         {
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = _factory.CreateClient(); // No Authorization header and no client_id/secret form fields.
 
             _response = await PostRevocation(_client, "irrelevant-token");
@@ -2019,7 +2088,7 @@ public class RevocationOwnershipTests
                 .Returns((ApplicationInfo?)null);
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = CreateClientWithCredentials(_factory, "unregistered-client", TestClientSecret);
 
             _response = await PostRevocation(_client, "irrelevant-token");
@@ -2092,7 +2161,7 @@ public class RevocationOwnershipTests
             // bool-returning call to false anyway.
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(false);
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = CreateClientWithCredentials(_factory, OwnerClientId, "wrong-secret");
 
             _response = await PostRevocation(_client, "irrelevant-token");
@@ -2134,7 +2203,7 @@ public class RevocationOwnershipTests
                 .Returns(new ApplicationInfo { ClientId = OwnerClientId, IsApproved = false });
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
 
             _response = await PostRevocation(_client, "irrelevant-token");
@@ -2168,7 +2237,7 @@ public class RevocationOwnershipTests
         public async Task Setup()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {
@@ -2178,7 +2247,7 @@ public class RevocationOwnershipTests
             RegisterApprovedClient(_tokenRepository, OtherClientId);
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
 
             // The target token belongs to OwnerClientId; the caller authenticates as OtherClientId.
             _client = CreateClientWithCredentials(_factory, OtherClientId, TestClientSecret);
@@ -2222,7 +2291,7 @@ public class RevocationOwnershipTests
         public async Task Setup()
         {
             var (keyId, publicKeySpki, _) = CreateSigningKey();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {
@@ -2238,7 +2307,7 @@ public class RevocationOwnershipTests
             RegisterApprovedClient(_tokenRepository, OwnerClientId);
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
             _response = await PostRevocation(
                 _client,
@@ -2276,7 +2345,7 @@ public class RevocationOwnershipTests
             // A healthy key set is registered so the malformed token is judged against it; with
             // no active key at all the manager reports an outage (503) instead, by design.
             var (keyId, publicKeySpki, _) = CreateSigningKey();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {
@@ -2286,7 +2355,7 @@ public class RevocationOwnershipTests
             RegisterApprovedClient(_tokenRepository, OwnerClientId);
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
             _response = await PostRevocation(_client, "not-even-a-jwt");
         }
@@ -2327,7 +2396,7 @@ public class RevocationOwnershipTests
             A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(OwnerClientId))
                 .Throws(new InvalidOperationException("database unavailable"));
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
             _response = await PostRevocation(_client, "irrelevant-token");
             _body = await ReadOAuthError(_response);
@@ -2366,7 +2435,7 @@ public class RevocationOwnershipTests
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._))
                 .Throws(new InvalidOperationException("hasher unavailable"));
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
             _response = await PostRevocation(_client, "irrelevant-token");
             _body = await ReadOAuthError(_response);
@@ -2402,7 +2471,7 @@ public class RevocationOwnershipTests
         public async Task Setup()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {
@@ -2415,7 +2484,7 @@ public class RevocationOwnershipTests
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti, A<Guid>._))
                 .Throws(new InvalidOperationException("database unavailable"));
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
             _response = await PostRevocation(_client, CreateSignedToken(signingKey, OwnerClientId, jti));
             _body = await ReadOAuthError(_response);
@@ -2453,7 +2522,7 @@ public class RevocationOwnershipTests
         public async Task Setup()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {
@@ -2467,7 +2536,7 @@ public class RevocationOwnershipTests
                 .Invokes(() => _updateReachedTheStore = true)
                 .Throws(new TimeoutException("the connection dropped while reading the result"));
 
-            _factory = CreateFactory(CreateTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher);
             _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
             _response = await PostRevocation(_client, CreateSignedToken(signingKey, OwnerClientId, jti));
             _body = await ReadOAuthError(_response);
@@ -2506,7 +2575,7 @@ public class RevocationOwnershipTests
         public async Task Setup()
         {
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync())
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
                 .Returns(
                     new[]
                     {
@@ -2516,7 +2585,7 @@ public class RevocationOwnershipTests
             RegisterApprovedClient(_tokenRepository, OwnerClientId);
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
-            _factory = CreateFactory(new FaultingOwnershipTokenManager(_tokenRepository, _secretHasher));
+            _factory = CreateFactory(_tokenRepository, _secretHasher, faultOwnershipComparison: true);
             _client = CreateClientWithCredentials(_factory, OwnerClientId, TestClientSecret);
             _response = await PostRevocation(
                 _client,
@@ -2615,9 +2684,7 @@ public class RevocationOwnershipTests
         {
             await RegisterClientWithRealHash(_tokenRepository, OwnerClientId);
 
-            _factory = CreateFactory(
-                CreateTokenManager(_tokenRepository, CreateRealHasher(0, _hasherLogger))
-            );
+            _factory = CreateFactory(_tokenRepository, CreateRealHasher(0, _hasherLogger));
             _client = CreateClientWithCredentials(_factory, OwnerClientId, RealHasherSecret);
             _response = await PostRevocation(_client, "irrelevant-token");
             _body = await ReadOAuthError(_response);
@@ -2687,9 +2754,7 @@ public class RevocationOwnershipTests
                     }
                 );
 
-            _factory = CreateFactory(
-                CreateTokenManager(_tokenRepository, CreateRealHasher(RealHasherIterations, _hasherLogger))
-            );
+            _factory = CreateFactory(_tokenRepository, CreateRealHasher(RealHasherIterations, _hasherLogger));
             _client = CreateClientWithCredentials(_factory, OwnerClientId, RealHasherSecret);
             _response = await PostRevocation(_client, "irrelevant-token");
             _body = await ReadOAuthError(_response);
@@ -2708,7 +2773,8 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_does_not_load_verification_keys() =>
-            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .MustNotHaveHappened();
 
         [Test]
         public void It_does_not_attempt_revocation() =>
@@ -2746,10 +2812,8 @@ public class RevocationOwnershipTests
             await RegisterClientWithRealHash(_tokenRepository, OwnerClientId);
 
             _factory = CreateFactory(
-                CreateTokenManager(
-                    _tokenRepository,
-                    CreateRealHasher(RealHasherIterations, NullLogger<ClientSecretHasher>.Instance)
-                )
+                _tokenRepository,
+                CreateRealHasher(RealHasherIterations, NullLogger<ClientSecretHasher>.Instance)
             );
             _client = CreateClientWithCredentials(_factory, OwnerClientId, "not-the-secret");
             _response = await PostRevocation(_client, "irrelevant-token");

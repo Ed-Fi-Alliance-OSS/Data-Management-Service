@@ -10,6 +10,7 @@ using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration;
 
@@ -1456,5 +1457,94 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             outcome.Should().Be(TokenStoreOutcome.LockTimeout);
             (await TokenRowCountAsync(applicationId)).Should().Be(1);
         }
+    }
+
+    // DMS-1556 2.2: SqlClient reports an exhausted pool as InvalidOperationException, not SqlException, so the status
+    // read translates it into the typed dependency failure itself. The repository runs over its own one-connection pool
+    // (a unique application name keys a separate pool); a held lease exhausts it and releasing the lease recovers it.
+    [TestFixture]
+    [NonParallelizable]
+    public class Given_The_Token_Status_Connection_Pool_Is_Exhausted : OpenIddictDataRepositoryTests
+    {
+        private string _isolatedConnectionString = null!;
+        private Exception? _whileExhausted;
+        private string? _afterRelease;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var seeding = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            Guid applicationId = await RegisterApplicationAsync(
+                seeding,
+                $"pool-exhaustion-client-{Guid.NewGuid():N}"
+            );
+            Guid tokenId = Guid.NewGuid();
+            (
+                await seeding.StoreTokenAsync(
+                    tokenId,
+                    applicationId,
+                    "subject-pool",
+                    FarFuture,
+                    EnforcementDisabled
+                )
+            )
+                .Should()
+                .Be(TokenStoreOutcome.Stored);
+
+            _isolatedConnectionString = new SqlConnectionStringBuilder(
+                MssqlTestConfiguration.DatabaseConnectionString
+            )
+            {
+                MaxPoolSize = 1,
+                ConnectTimeout = 3,
+                ApplicationName = $"dms1556-pool-{Guid.NewGuid():N}",
+            }.ConnectionString;
+            var repository = new OpenIddictDataRepository(
+                Options.Create(
+                    new DatabaseOptions
+                    {
+                        DatabaseConnection = _isolatedConnectionString,
+                        EncryptionKey = "IntegrationTestEncryptionKey32Chars",
+                    }
+                )
+            );
+
+            await using (var lease = new SqlConnection(_isolatedConnectionString))
+            {
+                await lease.OpenAsync();
+                try
+                {
+                    await repository.GetTokenStatusAsync(tokenId);
+                }
+                catch (Exception exception)
+                {
+                    _whileExhausted = exception;
+                }
+            }
+
+            _afterRelease = await repository.GetTokenStatusAsync(tokenId);
+        }
+
+        [TearDown]
+        public void ClearIsolatedPool()
+        {
+            using var connection = new SqlConnection(_isolatedConnectionString);
+            SqlConnection.ClearPool(connection);
+        }
+
+        [Test]
+        public void It_reports_the_token_status_store_unavailable() =>
+            _whileExhausted
+                .Should()
+                .BeOfType<AuthenticationDependencyUnavailableException>()
+                .Which.Category.Should()
+                .Be(AuthenticationDependencyCategory.TokenStatusStore);
+
+        [Test]
+        public void It_carries_the_pool_timeout() =>
+            _whileExhausted!.InnerException.Should().BeOfType<InvalidOperationException>();
+
+        [Test]
+        public void It_recovers_once_the_lease_is_released() => _afterRelease.Should().Be("valid");
     }
 }

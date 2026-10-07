@@ -264,4 +264,9 @@ Describe "on-dms-pullrequest.yml bootstrap Pester registry" {
         $script:pesterPaths | Should -Contain "eng/docker-compose/tests/ConfigMssqlComposeStartup.Tests.ps1" `
             -Because "the config MSSQL E2E hardening contract must run on every DMS-relevant pull request"
     }
+
+    It "runs the Keycloak nightly notification guard in the pull request Pester lane" {
+        $script:pesterPaths | Should -Contain "eng/ci/tests/KeycloakNightlyNotifications.Tests.ps1" `
+            -Because "a Pester file that no lane names never runs, so its regressions would go unnoticed"
+    }
 }

@@ -7,7 +7,7 @@ Feature: Data Store Context
                   """
                   {
                     "dataStoreType": "Production",
-                    "name": "Test Instance",
+                    "name": "Test Instance {scenarioRunId}",
                     "connectionString": "Server=localhost;Database=TestDb;"
                   }
                   """
@@ -237,7 +237,7 @@ Feature: Data Store Context
                   {
                        "id": {id},
                        "dataStoreType": "Production",
-                       "name": "Test Instance",
+                       "name": "Test Instance {scenarioRunId}",
                        "connectionString": "{ignore}",
                        "dataStoreContexts": [
                            {

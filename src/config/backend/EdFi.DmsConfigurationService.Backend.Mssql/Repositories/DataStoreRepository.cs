@@ -21,6 +21,7 @@ public class DataStoreRepository(
     IOptions<DatabaseOptions> databaseOptions,
     ILogger<DataStoreRepository> logger,
     IConnectionStringEncryptionService encryptionService,
+    IConnectionStringReader connectionStringReader,
     IDataStoreContextRepository contextRepository,
     IDataStoreDerivativeRepository derivativeRepository,
     IAuditContext auditContext,
@@ -30,6 +31,8 @@ public class DataStoreRepository(
     private TenantContext TenantContext => tenantContextProvider.Context;
 
     private long? TenantId => TenantContext is TenantContext.Multitenant mt ? mt.TenantId : null;
+
+    private const string DuplicateNameConstraint = "UX_DataStore_TenantId_Name";
 
     public async Task<DataStoreInsertResult> InsertDataStore(DataStoreInsertCommand command)
     {
@@ -54,6 +57,11 @@ public class DataStoreRepository(
 
             var id = await connection.ExecuteScalarAsync<int>(sql, parameters);
             return new DataStoreInsertResult.Success(id);
+        }
+        catch (SqlException ex) when (ex.IsUniqueViolation(DuplicateNameConstraint))
+        {
+            logger.LogWarning(ex, "Data store name must be unique within the tenant");
+            return new DataStoreInsertResult.FailureDuplicateName();
         }
         catch (Exception ex)
         {
@@ -182,19 +190,28 @@ public class DataStoreRepository(
                 _ => new Dictionary<int, List<DataStoreDerivativeItem>>(),
             };
 
-            var dataStores = dataStoreList.Select(row => new DataStoreResponse
+            // Awaited row by row here, inside the try, so a read failure reaches the failure arm
+            // rather than escaping while the response is serialized.
+            List<DataStoreResponse> dataStores = [];
+            foreach (var row in dataStoreList)
             {
-                Id = row.Id,
-                DataStoreType = row.DataStoreType,
-                Name = row.Name,
-                Provider = row.Provider,
-                ConnectionString = row.ConnectionString is null
-                    ? null
-                    : Convert.ToBase64String(row.ConnectionString),
-                DataStoreContexts = contextsByDataStoreId.GetValueOrDefault(row.Id, []),
-                DataStoreDerivatives = derivativesByDataStoreId.GetValueOrDefault(row.Id, []),
-                TenantId = row.TenantId,
-            });
+                dataStores.Add(
+                    new DataStoreResponse
+                    {
+                        Id = row.Id,
+                        DataStoreType = row.DataStoreType,
+                        Name = row.Name,
+                        Provider = row.Provider,
+                        ConnectionString = await connectionStringReader.ReadAsync(
+                            row.ConnectionString,
+                            new ConnectionStringRow.DataStore(row.Id)
+                        ),
+                        DataStoreContexts = contextsByDataStoreId.GetValueOrDefault(row.Id, []),
+                        DataStoreDerivatives = derivativesByDataStoreId.GetValueOrDefault(row.Id, []),
+                        TenantId = row.TenantId,
+                    }
+                );
+            }
             return new DataStoreQueryResult.Success(dataStores);
         }
         catch (Exception ex)
@@ -260,9 +277,10 @@ public class DataStoreRepository(
                 DataStoreType = result.Value.DataStoreType,
                 Name = result.Value.Name,
                 Provider = result.Value.Provider,
-                ConnectionString = result.Value.ConnectionString is null
-                    ? null
-                    : Convert.ToBase64String(result.Value.ConnectionString),
+                ConnectionString = await connectionStringReader.ReadAsync(
+                    result.Value.ConnectionString,
+                    new ConnectionStringRow.DataStore(result.Value.Id)
+                ),
                 DataStoreContexts = contexts,
                 DataStoreDerivatives = derivatives,
                 TenantId = result.Value.TenantId,
@@ -328,6 +346,11 @@ public class DataStoreRepository(
                 return new DataStoreUpdateResult.FailureNotExists();
             }
             return new DataStoreUpdateResult.Success();
+        }
+        catch (SqlException ex) when (ex.IsUniqueViolation(DuplicateNameConstraint))
+        {
+            logger.LogWarning(ex, "Data store name must be unique within the tenant");
+            return new DataStoreUpdateResult.FailureDuplicateName();
         }
         catch (Exception ex)
         {

@@ -128,6 +128,110 @@ Describe "EdFi.Api.Secrets contract versioning (DMS-1552)" {
         }
     }
 
+    # DMS-1555: the lanes that publish and promote the package. Read as text, the way
+    # DmsPrereleaseImageTags.Tests.ps1 reads on-prerelease.yml, because what matters is which id,
+    # which version source and which gate each job names, and those are literal in the file.
+    Context "The prerelease and release lanes" {
+        BeforeAll {
+            $workflows = Join-Path $script:repoRoot ".github/workflows"
+            $prerelease = Get-Content -LiteralPath (Join-Path $workflows "on-prerelease.yml") -Raw
+            $release = Get-Content -LiteralPath (Join-Path $workflows "on-release.yml") -Raw
+
+            function Get-WorkflowJob {
+                param([Parameter(Mandatory)][string] $Workflow, [Parameter(Mandatory)][string] $Name)
+
+                $job = [regex]::Match($Workflow, "(?ms)^  $([regex]::Escape($Name)):\r?\n.*?(?=^  \S|\z)").Value
+                if ([string]::IsNullOrEmpty($job)) {
+                    throw "Job $Name was not found."
+                }
+                return $job
+            }
+
+            $script:packSecrets = Get-WorkflowJob -Workflow $prerelease -Name "pack-secrets"
+            $script:checkSecrets = Get-WorkflowJob -Workflow $prerelease -Name "check-secrets-contract"
+            $script:publishSecrets = Get-WorkflowJob -Workflow $prerelease -Name "publish-package-secrets"
+            $script:packCs = Get-WorkflowJob -Workflow $prerelease -Name "pack-cs"
+            $script:publishCs = Get-WorkflowJob -Workflow $prerelease -Name "publish-package-cs"
+            $script:sbomSecrets = Get-WorkflowJob -Workflow $prerelease -Name "sbom-create-secrets"
+            $script:provenanceSecrets = Get-WorkflowJob -Workflow $prerelease -Name "provenance-create-secrets"
+            $script:prereleaseWorkflow = $prerelease
+            $script:promoteSecrets = [regex]::Match(
+                $release,
+                "(?ms)^      - name: Promote EdFi\.Api\.Secrets Package\r?\n.*?(?=^      - name: |^  \S|\z)"
+            ).Value
+        }
+
+        It "names the package EdFi.Api.Secrets" {
+            $script:prereleaseWorkflow | Should -Match '(?m)^  SECRETS_PACKAGE_NAME: "EdFi\.Api\.Secrets"$'
+        }
+
+        It "reads the package version from the contract's own declaration, not from the release tag" {
+            $script:packSecrets | Should -Match '\$contractVersion = Get-SecretsContractVersion'
+            $script:checkSecrets | Should -Match '-PackageVersion "\$\{\{ needs\.pack-secrets\.outputs\.contract-version \}\}"'
+            $script:publishSecrets | Should -Match '-PackageVersion "\$\{\{ needs\.pack-secrets\.outputs\.contract-version \}\}"'
+            $script:promoteSecrets | Should -Match '-Version \(Get-SecretsContractVersion\)'
+        }
+
+        It "packs what a release build with explicit versions produced, without rebuilding it" {
+            $build = $script:packSecrets.IndexOf("build-config.ps1 -Command BuildAndPublish")
+            $pack = $script:packSecrets.IndexOf("Invoke-SecretsConsumerCheck.ps1")
+
+            $build | Should -BeGreaterThan -1
+            $pack | Should -BeGreaterThan $build
+            $script:packSecrets | Should -Match '-DmsCSVersion \$packageVersion'
+            $script:packSecrets | Should -Match '(?m)^\s+-NoBuild `$'
+        }
+
+        # The publish check pushes a version the feed does not hold without opening it, so this step
+        # is the only thing that reads what the first publication of each version contains.
+        It "asserts the package contents before the artifact is uploaded for publication" {
+            $pack = $script:packSecrets.IndexOf("Invoke-SecretsConsumerCheck.ps1")
+            $assert = $script:packSecrets.IndexOf("./eng/verification/Assert-SecretsPackage.ps1")
+            $upload = $script:packSecrets.IndexOf("- name: Upload Secrets Package as Artifact")
+
+            $assert | Should -BeGreaterThan $pack
+            $upload | Should -BeGreaterThan $assert
+            $script:packSecrets | Should -Match '-ExpectedPackageVersion "\$\{\{ steps\.contract-version\.outputs\.contract-version \}\}"'
+        }
+
+        It "produces an SBOM and SLSA provenance for the packed artifact" {
+            $script:packSecrets | Should -Match '(?m)^      hash-code: \$\{\{ steps\.hash-code\.outputs\.hash-code \}\}$'
+            $script:sbomSecrets | Should -Match '(?m)^    needs: pack-secrets$'
+            $script:provenanceSecrets | Should -Match '(?m)^    needs: pack-secrets$'
+            $script:provenanceSecrets | Should -Match 'base64-subjects: \$\{\{ needs\.pack-secrets\.outputs\.hash-code \}\}'
+        }
+
+        It "decides against the feed by package id before anything is pushed" {
+            $script:checkSecrets | Should -Match '-PackageId "\$\{\{ env\.SECRETS_PACKAGE_NAME \}\}"'
+            $script:publishSecrets | Should -Match 'Invoke-ContractPublishCheck\.ps1'
+            $script:publishSecrets | Should -Match "if: steps\.decide\.outputs\.should-push == 'true'"
+        }
+
+        # A Configuration Service release is a cs- tag. A dms- gate here would skip the contract on
+        # every Configuration Service prerelease and run it on every DMS one instead.
+        It "runs the pack and the decision on a cs- prerelease, and only on a dispatch otherwise" {
+            $gate = '(?m)^    if: \$\{\{ github\.event_name == ''workflow_dispatch'' \|\| startsWith\(github\.event\.release\.tag_name, ''cs-''\) \}\}$'
+            $script:packSecrets | Should -Match $gate
+            $script:checkSecrets | Should -Match $gate
+        }
+
+        It "runs the pack and the decision on a dispatch and keeps the push off it" {
+            $script:packSecrets | Should -Match "github\.event_name == 'workflow_dispatch'"
+            $script:checkSecrets | Should -Match "github\.event_name == 'workflow_dispatch'"
+            $script:publishSecrets | Should -Match "(?m)^    if: \$\{\{ github\.event_name != 'workflow_dispatch' \}\}$"
+        }
+
+        It "builds the Configuration Service package only after the contract check, and publishes it only after the contract" {
+            $script:packCs | Should -Match '(?ms)^    needs:\r?\n      - check-secrets-contract$'
+            $script:publishCs | Should -Match '(?m)^      - publish-package-secrets$'
+        }
+
+        It "promotes only on a final release tag" {
+            $script:promoteSecrets | Should -Match '-PackageName "EdFi\.Api\.Secrets"'
+            $script:promoteSecrets | Should -Match "if: \$\{\{ github\.ref_type == 'tag' && startsWith\(github\.ref_name, 'v'\) \}\}"
+        }
+    }
+
     Context "build-config.ps1 BuildAndPublish with explicit versions" -Tag "Build" {
         BeforeAll {
             $script:originalProps = [System.IO.File]::ReadAllBytes($script:propsPath)
@@ -161,6 +265,22 @@ Describe "EdFi.Api.Secrets contract versioning (DMS-1552)" {
                     -DmsCSVersion $script:stampVersion `
                     -DmsCSAssemblyVersion $script:stampAssemblyVersion.ToString() | Out-Host
                 $script:buildExitCode = $LASTEXITCODE
+
+                # Then pack what that build produced, without building again and while the props
+                # file still carries the release stamp: the prerelease lane's order, so the package
+                # it publishes is the one this proves.
+                $releasePackOutput = Join-Path $TestDrive "pack-after-release-build"
+                $releaseExtracted = Join-Path $TestDrive "extracted-after-release-build"
+                dotnet pack $script:contractProject -c Release --no-build --nologo -o $releasePackOutput | Out-Host
+                $script:releasePackExitCode = $LASTEXITCODE
+
+                $releasePackages = @(Get-ChildItem -LiteralPath $releasePackOutput -Filter "*.nupkg" -ErrorAction SilentlyContinue)
+                if ($releasePackages.Count -eq 1) {
+                    [System.IO.Compression.ZipFile]::ExtractToDirectory($releasePackages[0].FullName, $releaseExtracted)
+                    $script:releasePackNuspec = ([xml](Get-Content -LiteralPath (@(Get-ChildItem -LiteralPath $releaseExtracted -Filter "*.nuspec")[0].FullName) -Raw)).package.metadata
+                    $script:releasePackAssembly = Join-Path $releaseExtracted "lib/net10.0/$($script:assemblyName).dll"
+                }
+                $script:releasePackCount = $releasePackages.Count
             }
             finally {
                 Pop-Location
@@ -195,6 +315,16 @@ Describe "EdFi.Api.Secrets contract versioning (DMS-1552)" {
 
         It "leaves the contract in the PublishApi output at its declared version" {
             Get-AssemblyVersion -Path $script:publishContract | Should -Be $script:expectedContractAssemblyVersion
+        }
+
+        It "packs the contract that build produced at its declared package version" {
+            $script:releasePackExitCode | Should -Be 0
+            $script:releasePackCount | Should -Be 1
+            $script:releasePackNuspec.version | Should -BeExactly $script:declaredVersion
+        }
+
+        It "packs the contract that build produced with its declared AssemblyVersion" {
+            Get-AssemblyVersion -Path $script:releasePackAssembly | Should -Be $script:expectedContractAssemblyVersion
         }
 
         # The frontend references the plugin contract tree, so the same global properties reach it.
