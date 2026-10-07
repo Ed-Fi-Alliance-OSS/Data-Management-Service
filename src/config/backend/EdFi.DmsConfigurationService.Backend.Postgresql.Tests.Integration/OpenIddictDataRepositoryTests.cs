@@ -72,7 +72,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         return applicationId;
     }
 
-    protected static Task<int> AddApiClientRowAsync(
+    protected static Task AddApiClientRowAsync(
         OpenIddictDataRepository repository,
         string clientId,
         bool isApproved = true
@@ -107,7 +107,6 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     },
                     transaction
                 );
-                return vendorId;
             }
         );
 
@@ -160,8 +159,16 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             OpenIddictDataRepository repository = new(Configuration.DatabaseOptions);
             string apiClientId = Guid.NewGuid().ToString();
             string noRowClientId = Guid.NewGuid().ToString();
-            Guid apiApplicationId = await RegisterApplicationAsync(repository, apiClientId);
-            Guid noRowApplicationId = await RegisterApplicationAsync(repository, noRowClientId);
+            Guid apiApplicationId = await RegisterApplicationAsync(
+                repository,
+                apiClientId,
+                "edfi_admin_api/readonly_access"
+            );
+            Guid noRowApplicationId = await RegisterApplicationAsync(
+                repository,
+                noRowClientId,
+                "edfi_admin_api/readonly_access"
+            );
             await AddApiClientRowAsync(repository, apiClientId, isApproved);
             _apiClientByClientId =
                 await repository.GetApplicationByClientIdAsync(apiClientId)
@@ -187,12 +194,26 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             _apiClientById.IsTokenLimitExempt.Should().BeFalse();
 
         [Test]
-        public void It_exempts_no_row_clients_looked_up_by_client_id() =>
+        public void It_exempts_admin_only_no_row_clients_looked_up_by_client_id() =>
             _noRowByClientId.IsTokenLimitExempt.Should().BeTrue();
 
         [Test]
-        public void It_exempts_no_row_clients_looked_up_by_application_id() =>
+        public void It_exempts_admin_only_no_row_clients_looked_up_by_application_id() =>
             _noRowById.IsTokenLimitExempt.Should().BeTrue();
+
+        [Test]
+        public void It_reports_api_client_row_presence_in_both_lookups()
+        {
+            _apiClientByClientId.HasNoApiClientRow.Should().BeFalse();
+            _apiClientById.HasNoApiClientRow.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_reports_api_client_row_absence_in_both_lookups()
+        {
+            _noRowByClientId.HasNoApiClientRow.Should().BeTrue();
+            _noRowById.HasNoApiClientRow.Should().BeTrue();
+        }
 
         [Test]
         public void It_preserves_api_client_approval_in_both_lookups()
@@ -290,11 +311,13 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             (await TokenRowCountAsync(_applicationId)).Should().Be(3);
     }
 
-    [TestFixture]
-    public class Given_Vendor_Deletion_With_Api_Client_Credentials : OpenIddictDataRepositoryTests
+    [TestFixture("EdFiSandbox")]
+    [TestFixture("edfi_admin_api/sis")]
+    public class Given_No_Api_Client_Row_With_Non_Admin_Scopes(string registeredScope)
+        : OpenIddictDataRepositoryTests
     {
         private Guid _applicationId;
-        private ApplicationInfo _applicationAfterDeletion = null!;
+        private ApplicationInfo _application = null!;
         private TokenResult _firstGrant = null!;
         private TokenResult _secondGrant = null!;
 
@@ -303,24 +326,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         {
             OpenIddictDataRepository repository = new(Configuration.DatabaseOptions);
             string clientId = Guid.NewGuid().ToString();
-            _applicationId = await RegisterApplicationAsync(repository, clientId, "EdFiSandbox");
-            int vendorId = await AddApiClientRowAsync(repository, clientId);
-            await repository.ExecuteInTransactionAsync(
-                async (connection, transaction) =>
-                {
-                    // Exercise the same vendor-row cascade used by the vendor delete endpoint.
-                    await connection.ExecuteAsync(
-                        """DELETE FROM "dmscs"."Vendor" WHERE "Id" = @VendorId""",
-                        new { VendorId = vendorId },
-                        transaction
-                    );
-                }
-            );
-            _applicationAfterDeletion =
+            _applicationId = await RegisterApplicationAsync(repository, clientId, registeredScope);
+            _application =
                 await repository.GetApplicationByClientIdAsync(clientId)
-                ?? throw new InvalidOperationException(
-                    "The provider credential should survive vendor deletion."
-                );
+                ?? throw new InvalidOperationException("Seeded no-row application was not found.");
             OpenIddictTokenManager manager = CreateTokenManager(
                 repository,
                 new IdentityOptions { BearerTokenPerClientLimit = 1 }
@@ -330,12 +339,15 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         }
 
         [Test]
-        public void It_cascades_away_the_api_client_row() =>
-            _applicationAfterDeletion.IsTokenLimitExempt.Should().BeTrue();
+        public void It_reports_no_api_client_row() => _application.HasNoApiClientRow.Should().BeTrue();
 
         [Test]
-        public void It_retains_the_registered_api_scope() =>
-            _applicationAfterDeletion.Scopes.Should().BeEquivalentTo("EdFiSandbox");
+        public void It_does_not_exempt_the_application() =>
+            _application.IsTokenLimitExempt.Should().BeFalse();
+
+        [Test]
+        public void It_retains_the_registered_scope() =>
+            _application.Scopes.Should().BeEquivalentTo(registeredScope);
 
         [Test]
         public void It_admits_the_first_grant() => _firstGrant.Should().BeOfType<TokenResult.Success>();

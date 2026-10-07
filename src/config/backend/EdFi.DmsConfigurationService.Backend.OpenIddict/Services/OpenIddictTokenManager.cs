@@ -417,16 +417,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 dataStoreIds: applicationInfo.DataStoreIds
             );
 
-            // Row absence alone can result from vendor deletion, which leaves provider credentials.
-            // Require registered admin-only scopes so orphaned API credentials remain limited.
-            bool isExempt =
-                applicationInfo.IsTokenLimitExempt
-                && applicationInfo.Scopes.Length > 0
-                && Array.TrueForAll(
-                    applicationInfo.Scopes,
-                    scope => scope.StartsWith("edfi_admin_api/", StringComparison.Ordinal)
-                );
-            int maxActiveTokens = isExempt ? -1 : _identityOptions.Value.BearerTokenPerClientLimit;
+            int maxActiveTokens = applicationInfo.IsTokenLimitExempt
+                ? -1
+                : _identityOptions.Value.BearerTokenPerClientLimit;
             TokenStoreOutcome outcome = await _tokenRepository.StoreTokenAsync(
                 tokenId,
                 applicationInfo.Id,

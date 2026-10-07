@@ -22,7 +22,8 @@
         "EncryptionKey": "QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz",
         // Operators may set below 1 to disable token-limit enforcement globally.
         // The shipped default is 15. Exemption requires no live ApiClient row and
-        // nonempty registered scopes consisting only of edfi_admin_api/*.
+        // nonempty registered scopes consisting only of recognized CMS admin scopes
+        // (case-sensitive).
         // See docs/CONFIGURATION.md.
         "BearerTokenPerClientLimit": 15
     },

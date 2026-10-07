@@ -1504,7 +1504,7 @@ public class OpenIddictTokenManagerTests
     /// Arranges an approved client with a matching secret and a usable signing key, which is what
     /// GetAccessTokenAsync needs before it reaches StoreTokenAsync.
     /// </summary>
-    private Guid ArrangeGrantableClient(bool isTokenLimitExempt = false, params string[] scopes)
+    private Guid ArrangeGrantableClient(bool hasNoApiClientRow = false, params string[] scopes)
     {
         Guid applicationId = Guid.NewGuid();
         ApplicationInfo application = new()
@@ -1517,9 +1517,9 @@ public class OpenIddictTokenManagerTests
             Scopes = scopes,
             Permissions = scopes,
         };
-        if (isTokenLimitExempt)
+        if (hasNoApiClientRow)
         {
-            application.IsTokenLimitExempt = true;
+            application.HasNoApiClientRow = true;
         }
 
         A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(GrantClientId)).Returns(application);
@@ -1675,8 +1675,14 @@ public class OpenIddictTokenManagerTests
         public void It_does_not_return_a_token() => _result.Should().NotBeOfType<TokenResult.Success>();
     }
 
-    [TestFixture]
-    public class Given_GetAccessTokenAsync_WhenTheApplicationIsTokenLimitExempt : OpenIddictTokenManagerTests
+    [TestFixture("edfi_admin_api/full_access")]
+    [TestFixture("edfi_admin_api/readonly_access")]
+    [TestFixture("edfi_admin_api/authMetadata_readonly_access")]
+    [TestFixture(
+        "edfi_admin_api/readonly_access,edfi_admin_api/full_access,edfi_admin_api/authMetadata_readonly_access"
+    )]
+    public class Given_GetAccessTokenAsync_WhenTheApplicationIsTokenLimitExempt(string registeredScopes)
+        : OpenIddictTokenManagerTests
     {
         private StoredTokenCall _call = null!;
         private TokenResult _result = null!;
@@ -1684,7 +1690,7 @@ public class OpenIddictTokenManagerTests
         [SetUp]
         public async Task Act()
         {
-            ArrangeGrantableClient(true, "edfi_admin_api/readonly_access", "edfi_admin_api/full_access");
+            ArrangeGrantableClient(true, registeredScopes.Split(','));
             ArrangeStoreOutcome(TokenStoreOutcome.Stored, call => _call = call);
 
             _result = await CreateTokenManagerWithTokenLimit(3).GetAccessTokenAsync(GrantCredentials());
@@ -1702,6 +1708,9 @@ public class OpenIddictTokenManagerTests
     [TestFixture(true, "edfi_admin_api/full_access,EdFiSandbox")]
     [TestFixture(true, "EDFI_ADMIN_API/full_access")]
     [TestFixture(true, "edfi_admin_api")]
+    [TestFixture(true, "edfi_admin_api/sis")]
+    [TestFixture(true, "edfi_admin_api/")]
+    [TestFixture(true, "edfi_admin_api/full_access,edfi_admin_api/sis")]
     [TestFixture(false, "edfi_admin_api/full_access")]
     public class Given_GetAccessTokenAsync_WhenTheApplicationDoesNotQualifyForExemption(
         bool hasNoApiClientRow,
@@ -1715,7 +1724,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act()
         {
             ArrangeGrantableClient(
-                isTokenLimitExempt: hasNoApiClientRow,
+                hasNoApiClientRow: hasNoApiClientRow,
                 scopes: registeredScopes.Split(',', StringSplitOptions.RemoveEmptyEntries)
             );
             ArrangeStoreOutcome(TokenStoreOutcome.Stored, call => _call = call);

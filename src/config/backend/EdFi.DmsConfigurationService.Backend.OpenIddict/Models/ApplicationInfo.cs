@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
+
 namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 
 /// <summary>
@@ -89,8 +91,22 @@ public class ApplicationInfo
 
     /// <summary>
     /// Indicates whether the store proves that no API clients reference the application.
-    /// Defaults to false. Token issuance also requires nonempty admin-only registered scopes
-    /// before bypassing the per-client bearer token limit.
+    /// Defaults to false so an unpopulated application remains limited.
     /// </summary>
-    public bool IsTokenLimitExempt { get; set; }
+    public bool HasNoApiClientRow { get; set; }
+
+    /// <summary>
+    /// Exempts only applications with no API client row and a nonempty set of registered
+    /// scopes consisting entirely of the Configuration Service's recognized admin scopes.
+    /// </summary>
+    public bool IsTokenLimitExempt =>
+        HasNoApiClientRow
+        && Scopes.Length > 0
+        && Array.TrueForAll(
+            Scopes,
+            scope =>
+                AuthorizationScopes.AllScopes.Any(adminScope =>
+                    string.Equals(scope, adminScope.Name, StringComparison.Ordinal)
+                )
+        );
 }

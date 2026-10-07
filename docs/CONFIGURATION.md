@@ -882,25 +882,25 @@ relevant environment variables or appsettings to set `IdentityProvider` to
 | `IdentitySettings.EncryptionKey`    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
 | `IdentitySettings.TokenCleanupEnabled` | Enables the background sweep that deletes expired OpenIddict access tokens (self-contained only) | _(not used)_                                         | `true`              |
 | `IdentitySettings.TokenCleanupIntervalMinutes` | Interval, in minutes, between expired-token cleanup sweeps (self-contained only)           | _(not used)_                                         | `30`              |
-| `IdentitySettings.BearerTokenPerClientLimit` | Maximum number of active (unexpired, unrevoked) access tokens a limited client may hold (self-contained only; default `15`). Exemption requires no live `dmscs.ApiClient` row and a nonempty set of registered scopes consisting only of `edfi_admin_api/*`. Ed-Fi API clients remain limited. A grant beyond the limit is rejected with HTTP 429 and a `Too Many Tokens` problem response of type `urn:ed-fi:api:security:authentication:too-many-tokens`; the client should reuse its existing token until it expires. Any value below 1, conventionally `-1`, disables enforcement globally. | _(not used)_ | `15` |
+| `IdentitySettings.BearerTokenPerClientLimit` | Maximum number of active (unexpired, unrevoked) access tokens a limited client may hold (self-contained only; default `15`). Exemption requires no live `dmscs.ApiClient` row and a nonempty set of registered scopes consisting only of recognized CMS admin scopes. Ed-Fi API clients remain limited. A grant beyond the limit is rejected with HTTP 429 and a `Too Many Tokens` problem response of type `urn:ed-fi:api:security:authentication:too-many-tokens`; the client should reuse its existing token until it expires. Any value below 1, conventionally `-1`, disables enforcement globally. | _(not used)_ | `15` |
 | `IdentitySettings.ClientSecretHashingIterations` | Number of PBKDF2-SHA256 iterations used to hash and verify client secrets (self-contained only). Must be greater than zero; startup fails otherwise. Default: `210000`. Set in Docker Compose through `DMS_CONFIG_IDENTITY_HASHING_ITERATIONS`, which also sets the count `setup-openiddict.ps1` hashes bootstrap client secrets with. | _(not used)_ | `210000` |
 
 > **Before upgrading an existing deployment:** a positive limit takes effect immediately, so an Ed-Fi API client
 > already holding at least `BearerTokenPerClientLimit` active tokens starts receiving 429s on its
 > next grant. Non-API clients, including DMS's Configuration Service credential and CMS
 > admin/bootstrap clients, are exempt when they have no live `dmscs.ApiClient` row and
-> their nonempty registered scopes consist only of `edfi_admin_api/*`.
+> their nonempty registered scopes consist only of recognized CMS admin scopes.
 > Leave `TokenCleanupEnabled` on as well: a limited client's grant counts its active tokens, and
 > expired tokens the sweep has not yet removed still sit in the table it counts over, so a
 > deployment that has run with cleanup disabled makes each grant read through that whole backlog.
 
 Exemption requires both absence of a live `dmscs.ApiClient` row and nonempty registered
-scopes consisting only of `edfi_admin_api/*` (case-sensitive). Request-supplied scopes
-cannot select the exemption. Clients with an `ApiClient` row, empty scopes, or any
-non-admin scope remain limited. In particular, vendor deletion that leaves API credentials
-behind does not make those credentials unlimited. The default permits 15 active tokens
-per limited client, so its 16th concurrent grant receives 429. Explicit operator values
-override the default; a value below 1 disables enforcement for every client.
+scopes consisting only of the recognized CMS admin scopes: `edfi_admin_api/full_access`,
+`edfi_admin_api/readonly_access`, and `edfi_admin_api/authMetadata_readonly_access`
+(case-sensitive). Request-supplied scopes cannot select the exemption. Clients with an
+`ApiClient` row, empty scopes, or any other scope remain limited. The default permits
+15 active tokens per limited client, so its 16th concurrent grant receives 429. Explicit
+operator values override the default; a value below 1 disables enforcement for every client.
 
 For self-contained deployments running the Ed-Fi Smoke Test Utility, temporarily set
 `DMS_CONFIG_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` in the stack's `.env` before

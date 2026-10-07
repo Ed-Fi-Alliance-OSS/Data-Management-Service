@@ -358,7 +358,7 @@ UPDATE dmscs.OpenIddictApplication
                        CAST(CASE WHEN EXISTS (SELECT 1
                                               FROM dmscs.ApiClient ac
                                               WHERE ac.ClientId = a.ClientId)
-                                 THEN 0 ELSE 1 END AS BIT) AS IsTokenLimitExempt
+                                 THEN 0 ELSE 1 END AS BIT) AS HasNoApiClientRow
                 FROM dmscs.OpenIddictApplication a
                 WHERE {predicate}
                 """;
@@ -412,7 +412,7 @@ UPDATE dmscs.OpenIddictApplication
                 DataStoreIds = dataStoreIds.ToArray(),
                 ProtocolMappers = row.ProtocolMappers ?? string.Empty,
                 IsApproved = row.IsApproved,
-                IsTokenLimitExempt = row.IsTokenLimitExempt,
+                HasNoApiClientRow = row.HasNoApiClientRow,
             };
         }
 
@@ -640,7 +640,7 @@ UPDATE dmscs.OpenIddictApplication
             DateTime CreatedAt,
             string? ProtocolMappers,
             bool IsApproved,
-            bool IsTokenLimitExempt
+            bool HasNoApiClientRow
         );
 
         private static string[] DeserializeStringArray(string? json) =>
