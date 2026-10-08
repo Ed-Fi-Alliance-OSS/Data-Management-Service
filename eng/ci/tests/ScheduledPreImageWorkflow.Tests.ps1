@@ -376,16 +376,24 @@ exit $exitCode
             }
         }
 
-        It 'sanitizes XML-escaped connection-string credentials before accepting E2E evidence' {
+        It 'sanitizes <Case> credentials before accepting E2E evidence' -ForEach @(
+            @{ Case = 'XML-escaped'; Content = 'Server=dms;Password=PREFIX&amp;SECRET_SUFFIX;Database=d' }
+            @{ Case = 'CDATA followed by text'; Content = '<![CDATA[Server=dms;Password=PREFIX]]>SECRET_SUFFIX;Database=d' }
+            @{ Case = 'adjacent CDATA'; Content = '<![CDATA[Server=dms;Password=PREFIX]]><![CDATA[SECRET_SUFFIX;Database=d]]>' }
+            @{ Case = 'a key split between CDATA and text'; Content = '<![CDATA[Server=dms;Pass]]>word=PREFIXSECRET_SUFFIX;Database=d' }
+            @{ Case = 'a key split between CDATA sections'; Content = '<![CDATA[Server=dms;Pass]]><![CDATA[word=PREFIXSECRET_SUFFIX;Database=d]]>' }
+        ) {
             $path = Join-Path $TestDrive 'escaped-password.trx'
-            Set-Content -LiteralPath $path -Value @'
-<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Results><UnitTestResult testName="passed" outcome="Passed"><Output><StdOut>Server=dms;Password=prefix&amp;SECRET_SUFFIX;Database=d</StdOut></Output></UnitTestResult></Results><ResultSummary><Counters executed="1"/></ResultSummary></TestRun>
-'@
+            Set-Content -LiteralPath $path -Value "<TestRun xmlns=`"http://microsoft.com/schemas/VisualStudio/TeamTest/2010`"><Results><UnitTestResult testName=`"passed`" outcome=`"Passed`"><Output><StdOut>$Content</StdOut></Output></UnitTestResult></Results><ResultSummary><Counters executed=`"1`"/></ResultSummary></TestRun>"
             $oldPath = $env:E2E_TRX_PATH
             try {
                 & (Join-Path $PSScriptRoot '../sanitize-e2e-artifacts.ps1') -Path $path
-                $sanitized = [xml](Get-Content -LiteralPath $path -Raw)
+                $result = Get-Content -LiteralPath $path -Raw
+                $result | Should -Not -Match 'PREFIX|SECRET_SUFFIX'
+                $sanitized = [xml]$result
                 $sanitized.TestRun.Results.UnitTestResult.Output.StdOut | Should -Be 'Server=dms;Password=***REDACTED***;Database=d'
+                $sanitized.TestRun.Results.UnitTestResult.outcome | Should -Be 'Passed'
+                $sanitized.TestRun.ResultSummary.Counters.executed | Should -Be '1'
                 $env:E2E_TRX_PATH = $path
                 $runBlock = Get-RunBlock -Name 'Verify DMS E2E Execution'
                 { & ([scriptblock]::Create($runBlock)) } | Should -Not -Throw

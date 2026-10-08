@@ -172,13 +172,33 @@ function Get-SanitizedText {
             $inputReader.Dispose()
         }
 
-        # XML decodes entities before applying the same rules as plain-text logs. Neither an XML
-        # attribute delimiter nor a literal quote in element text can truncate the secret match.
+        # XPath navigator values combine contiguous text/CDATA/whitespace nodes and decode entities.
+        # Snapshot the selected nodes before replacing a whole text sequence so later values are visited.
+        $textNodeTypes = @(
+            [System.Xml.XmlNodeType]::Text,
+            [System.Xml.XmlNodeType]::CDATA,
+            [System.Xml.XmlNodeType]::Whitespace,
+            [System.Xml.XmlNodeType]::SignificantWhitespace
+        )
         $changed = $false
-        foreach ($node in $document.SelectNodes('//text() | //@* | //comment() | //processing-instruction()')) {
-            $value = Get-SanitizedText -Text $node.Value
-            if ($value -cne $node.Value) {
-                $node.Value = $value
+        foreach ($node in @($document.SelectNodes('//text() | //@* | //comment() | //processing-instruction()'))) {
+            $original = $node.CreateNavigator().Value
+            $value = Get-SanitizedText -Text $original
+            if ($value -cne $original) {
+                if ($node.NodeType -in $textNodeTypes) {
+                    $parent = $node.ParentNode
+                    # A text node safely serializes even a CDATA terminator joined across fragments.
+                    $null = $parent.InsertBefore($document.CreateTextNode($value), $node)
+                    $fragment = $node
+                    do {
+                        $next = $fragment.NextSibling
+                        $null = $parent.RemoveChild($fragment)
+                        $fragment = $next
+                    } while ($null -ne $fragment -and $fragment.NodeType -in $textNodeTypes)
+                }
+                else {
+                    $node.Value = $value
+                }
                 $changed = $true
             }
         }

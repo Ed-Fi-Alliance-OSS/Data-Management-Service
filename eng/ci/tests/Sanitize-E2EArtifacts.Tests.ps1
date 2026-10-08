@@ -138,6 +138,46 @@ Describe "sanitize-e2e-artifacts Get-SanitizedText (DMS-1284)" {
         $value | Should -Be 'Server=s;Password=***REDACTED***;Database=d'
     }
 
+    It "redacts the complete XML value across <Case>" -ForEach @(
+        @{ Case = 'CDATA followed by text'; Content = '<![CDATA[host=h;password=PREFIX]]>SECRET_SUFFIX;database=d' }
+        @{ Case = 'adjacent CDATA sections'; Content = '<![CDATA[host=h;password=PREFIX]]><![CDATA[SECRET_SUFFIX;database=d]]>' }
+        @{ Case = 'text followed by CDATA'; Content = 'host=h;password=PREFIX<![CDATA[SECRET_SUFFIX;database=d]]>' }
+        @{ Case = 'a key split between CDATA and text'; Content = '<![CDATA[host=h;pass]]>word=PREFIXSECRET_SUFFIX;database=d' }
+        @{ Case = 'a key split between CDATA sections'; Content = '<![CDATA[host=h;pass]]><![CDATA[word=PREFIXSECRET_SUFFIX;database=d]]>' }
+        @{ Case = 'a key split between text and CDATA'; Content = 'host=h;pass<![CDATA[word=PREFIXSECRET_SUFFIX;database=d]]>' }
+        @{ Case = 'leading whitespace followed by CDATA'; Content = ' <![CDATA[host=h;password=PREFIX]]>SECRET_SUFFIX;database=d' }
+    ) {
+        $result = Get-SanitizedText -PreserveMarkup -Text "<Output><StdOut>$Content</StdOut><StdErr>$Content</StdErr><Status>ready</Status></Output>"
+
+        $result | Should -Not -Match 'PREFIX|SECRET_SUFFIX'
+        $document = [xml]$result
+        $expected = 'host=h;password=***REDACTED***;database=d'
+        if ($Case -eq 'leading whitespace followed by CDATA') { $expected = ' ' + $expected }
+        $document.Output.StdOut | Should -Be $expected
+        $document.Output.StdErr | Should -Be $expected
+        $document.Output.Status | Should -Be 'ready'
+    }
+
+    It "preserves element boundaries while redacting multiple contiguous XML values" {
+        $result = Get-SanitizedText -PreserveMarkup -Text '<Output><StdOut><![CDATA[password=PREFIX]]>SECRET_SUFFIX<Status>ready</Status><![CDATA[host=h;password=PREFIX]]>SECRET_SUFFIX;database=d</StdOut></Output>'
+
+        $result | Should -Not -Match 'PREFIX|SECRET_SUFFIX'
+        ([xml]$result).Output.StdOut.InnerXml | Should -Be 'password=***REDACTED***<Status>ready</Status>host=h;password=***REDACTED***;database=d'
+    }
+
+    It "serializes a joined CDATA terminator as valid text after redaction" {
+        $result = Get-SanitizedText -PreserveMarkup -Text '<Output><![CDATA[diagnostic ]]]]><![CDATA[> host=h;password=PREFIX]]>SECRET_SUFFIX;database=d</Output>'
+
+        $result | Should -Not -Match 'PREFIX|SECRET_SUFFIX'
+        ([xml]$result).DocumentElement.InnerText | Should -Be 'diagnostic ]]> host=h;password=***REDACTED***;database=d'
+    }
+
+    It "leaves benign adjacent XML text and CDATA unchanged" {
+        $text = '<Output><![CDATA[host=h;]]>database=d<Status>ready</Status><![CDATA[port=]]><![CDATA[5432]]></Output>'
+
+        Get-SanitizedText -PreserveMarkup -Text $text | Should -Be $text
+    }
+
     It "rejects malformed XML and DTDs before artifact publication" -ForEach @(
         @{ Xml = '<Output>Password=PREFIX"SECRET_SUFFIX</Invalid>' }
         @{ Xml = '<!DOCTYPE Output [<!ENTITY secret "SECRET_SUFFIX">]><Output>Password=PREFIX&secret;</Output>' }
