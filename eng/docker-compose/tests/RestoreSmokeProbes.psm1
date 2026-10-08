@@ -260,11 +260,11 @@ function Get-RestoreSmokeSourceRevision {
     $statusExit = $LASTEXITCODE
 
     $observed = ($revisionExit -eq 0 -and $statusExit -eq 0)
-    $porcelain = if ($statusExit -eq 0) {
-        @($statusOutput | ForEach-Object { ConvertTo-RestoreSmokeLogSafeText ([string]$_) } | Where-Object { $_ -ne "" })
-    }
-    else {
-        @()
+    # Assigned directly, never through an if expression: an if expression unrolls an empty array
+    # to $null and a one-element array to a scalar, and .Count then throws under strict mode.
+    $porcelain = @()
+    if ($statusExit -eq 0) {
+        $porcelain = @($statusOutput | ForEach-Object { ConvertTo-RestoreSmokeLogSafeText ([string]$_) } | Where-Object { $_ -ne "" })
     }
 
     return [pscustomobject]@{

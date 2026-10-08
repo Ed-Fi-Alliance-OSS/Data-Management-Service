@@ -25,6 +25,28 @@ BeforeAll {
         Set-Item -Path function:global:docker -Value { throw "the docker fallback must always be mocked" }
         $script:createdDockerFallback = $true
     }
+
+    function script:Invoke-TestGit {
+        # A fixed identity and no signing, so commits work on any runner.
+        param([string]$Directory, [string[]]$Arguments)
+
+        $output = & git -C $Directory -c user.name=restore-smoke-test -c user.email=restore-smoke-test@example.invalid -c commit.gpgsign=false @Arguments 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "git $($Arguments -join ' ') failed in '$Directory': $($output | Out-String)"
+        }
+        return $output
+    }
+
+    function script:New-CleanTestRepository {
+        param([string]$Directory)
+
+        New-Item -ItemType Directory -Path $Directory -Force | Out-Null
+        $null = Invoke-TestGit -Directory $Directory -Arguments @("init", "-q")
+        $null = Invoke-TestGit -Directory $Directory -Arguments @("config", "core.autocrlf", "false")
+        $null = Invoke-TestGit -Directory $Directory -Arguments @("add", "-A")
+        $null = Invoke-TestGit -Directory $Directory -Arguments @("commit", "-q", "--allow-empty", "-m", "sandbox")
+        return ([string](Invoke-TestGit -Directory $Directory -Arguments @("rev-parse", "HEAD"))).Trim()
+    }
 }
 
 AfterAll {
@@ -385,6 +407,81 @@ Describe "Get-RestoreSmokePackageProvenance" {
     }
 }
 
+Describe "Get-RestoreSmokeSourceRevision" {
+    BeforeAll {
+        function script:New-RevisionTestRepository {
+            $directory = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N"))
+            New-Item -ItemType Directory -Path $directory -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $directory "tracked.txt") -Value "original"
+            $head = New-CleanTestRepository -Directory $directory
+            return [pscustomobject]@{ Directory = $directory; Head = $head }
+        }
+    }
+
+    It "reports a clean checkout as observed and clean, with an empty porcelain array" {
+        $repository = New-RevisionTestRepository
+
+        $revision = Get-RestoreSmokeSourceRevision -RepoRoot $repository.Directory
+
+        $revision.Observed | Should -BeTrue
+        $revision.Clean | Should -BeTrue
+        $revision.Revision | Should -Be $repository.Head
+        $revision.Reason | Should -BeNullOrEmpty
+        ($revision.Porcelain -is [array]) | Should -BeTrue
+        $revision.Porcelain.Count | Should -Be 0
+    }
+
+    It "reports one porcelain entry as a one-element array" {
+        $repository = New-RevisionTestRepository
+        Set-Content -LiteralPath (Join-Path $repository.Directory "tracked.txt") -Value "changed"
+
+        $revision = Get-RestoreSmokeSourceRevision -RepoRoot $repository.Directory
+
+        $revision.Observed | Should -BeTrue
+        $revision.Clean | Should -BeFalse
+        ($revision.Porcelain -is [array]) | Should -BeTrue
+        $revision.Porcelain.Count | Should -Be 1
+        $revision.Porcelain[0] | Should -Be "M tracked.txt"
+    }
+
+    It "reports every porcelain entry when several files changed" {
+        $repository = New-RevisionTestRepository
+        Set-Content -LiteralPath (Join-Path $repository.Directory "tracked.txt") -Value "changed"
+        Set-Content -LiteralPath (Join-Path $repository.Directory "untracked.txt") -Value "new"
+
+        $revision = Get-RestoreSmokeSourceRevision -RepoRoot $repository.Directory
+
+        $revision.Clean | Should -BeFalse
+        $revision.Porcelain.Count | Should -Be 2
+        $revision.Porcelain | Should -Contain "M tracked.txt"
+        $revision.Porcelain | Should -Contain "?? untracked.txt"
+    }
+
+    It "reports a git failure as unobserved, not clean, with the exit codes and an empty porcelain array" {
+        $outside = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N"))
+        $notARepository = Join-Path $outside "not-a-repository"
+        New-Item -ItemType Directory -Path $notARepository -Force | Out-Null
+        $savedCeiling = $env:GIT_CEILING_DIRECTORIES
+        try {
+            # Keeps git from discovering any repository above the directory.
+            $env:GIT_CEILING_DIRECTORIES = $outside
+
+            $revision = Get-RestoreSmokeSourceRevision -RepoRoot $notARepository
+        }
+        finally {
+            $env:GIT_CEILING_DIRECTORIES = $savedCeiling
+        }
+
+        $revision.Observed | Should -BeFalse
+        $revision.Clean | Should -BeFalse
+        $revision.Revision | Should -BeNullOrEmpty
+        $revision.Reason | Should -BeLike "git rev-parse exit *, git status exit *"
+        $revision.Reason | Should -Not -BeLike "git rev-parse exit 0, git status exit 0"
+        ($revision.Porcelain -is [array]) | Should -BeTrue
+        $revision.Porcelain.Count | Should -Be 0
+    }
+}
+
 Describe "Get-RestoreSmokeResultClassification" {
     BeforeAll {
         function script:New-CompleteProvenance {
@@ -453,8 +550,13 @@ Describe "Invoke-BootstrapRestoreSmoke complete preflight path (sandboxed, no Do
         $script:pwshPath = (Get-Process -Id $PID).Path
 
         function script:New-SmokeSandbox {
+            param([switch]$GitRepository)
+
+            # The smoke's checkout is a subdirectory; the driver, call log, and results live
+            # beside it, so a git-repository sandbox stays clean while the smoke runs.
             $root = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N"))
-            $composeRoot = Join-Path $root "eng/docker-compose"
+            $checkout = Join-Path $root "checkout"
+            $composeRoot = Join-Path $checkout "eng/docker-compose"
             $testsRoot = Join-Path $composeRoot "tests"
             New-Item -ItemType Directory -Path $testsRoot -Force | Out-Null
             Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Invoke-BootstrapRestoreSmoke.ps1") -Destination $testsRoot
@@ -503,11 +605,14 @@ $smokeArguments = if ([string]::IsNullOrWhiteSpace($ArgumentsJson)) { @{} } else
 exit $LASTEXITCODE
 '@
 
+            $head = if ($GitRepository) { New-CleanTestRepository -Directory $checkout } else { $null }
+
             return [pscustomobject]@{
                 Smoke   = Join-Path $testsRoot "Invoke-BootstrapRestoreSmoke.ps1"
                 Driver  = $driverPath
                 Log     = Join-Path $root "calls.log"
                 Results = Join-Path $root "results.json"
+                Head    = $head
             }
         }
 
@@ -516,10 +621,12 @@ exit $LASTEXITCODE
                 [Parameter(Mandatory)]
                 [hashtable]$DockerState,
 
-                [hashtable]$Arguments = @{}
+                [hashtable]$Arguments = @{},
+
+                [switch]$GitRepository
             )
 
-            $sandbox = New-SmokeSandbox
+            $sandbox = New-SmokeSandbox -GitRepository:$GitRepository
             $smokeArguments = @{ ResultsPath = $sandbox.Results } + $Arguments
             $saved = @{ Log = $env:SMOKE_SANDBOX_LOG; State = $env:SMOKE_SANDBOX_DOCKER_STATE }
             try {
@@ -538,6 +645,7 @@ exit $LASTEXITCODE
                 Output   = ($output | Out-String)
                 Calls    = if (Test-Path -LiteralPath $sandbox.Log) { @(Get-Content -LiteralPath $sandbox.Log) } else { @() }
                 Results  = if (Test-Path -LiteralPath $sandbox.Results) { Get-Content -LiteralPath $sandbox.Results -Raw | ConvertFrom-Json } else { $null }
+                Head     = $sandbox.Head
             }
         }
 
@@ -683,6 +791,37 @@ exit $LASTEXITCODE
             @($run.Calls | Where-Object { $_ -like "dotnet: *" }) | Should -BeNullOrEmpty
             @($run.Results.Steps.Name) | Should -Be @("preflight")
             $run.Results.Steps[0].Status | Should -Be "failed"
+        }
+    }
+
+    Context "the smoke's checkout is a clean git repository" {
+        It "passes the preflight, reaches the SchemaTools build, and records the clean revision at start and end" {
+            $run = Invoke-SandboxedSmoke -DockerState @{} -GitRepository
+
+            $run.Head | Should -Match '^[0-9a-f]{40}$'
+            $run.Results | Should -Not -BeNullOrEmpty
+            @($run.Results.Steps.Name) | Should -Be @("preflight", "build-schema-tools")
+            $run.Results.Steps[0].Status | Should -Be "ok"
+            @($run.Calls | Where-Object { $_ -like "dotnet: build *" }).Count | Should -Be 1
+            foreach ($point in @("SourceAtStart", "SourceAtEnd")) {
+                $source = $run.Results.Provenance.$point
+                $source.Observed | Should -BeTrue
+                $source.Clean | Should -BeTrue
+                $source.Revision | Should -Be $run.Head
+                @($source.Porcelain).Count | Should -Be 0
+            }
+            @($run.Results.Classification.Reasons | Where-Object { $_ -like "SourceAt*" }) | Should -BeNullOrEmpty
+        }
+
+        It "still writes results, with the clean start revision, when the preflight refuses a foreign stack" {
+            $run = Invoke-SandboxedSmoke -DockerState $script:dms1440Shape -GitRepository
+
+            $run.ExitCode | Should -Be 1
+            $run.Output | Should -BeLike "*Refusing to run: Docker already holds a stack this smoke did not create*"
+            @($run.Calls | Where-Object { $_ -like "script: *" -or $_ -like "dotnet: *" }) | Should -BeNullOrEmpty
+            $run.Results.Provenance.SourceAtStart.Clean | Should -BeTrue
+            $run.Results.Provenance.SourceAtStart.Revision | Should -Be $run.Head
+            @($run.Results.Steps.Name) | Should -Be @("preflight")
         }
     }
 }
