@@ -900,7 +900,7 @@ file static class CompiledReconstitutionPlanTestData
                 new DbColumnModel(
                     ColumnName: new DbColumnName("AcademicSubjectDescriptorId"),
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: new JsonPathExpression(
                         "$.academicSubjectDescriptor",
@@ -911,7 +911,7 @@ file static class CompiledReconstitutionPlanTestData
                 new DbColumnModel(
                     ColumnName: new DbColumnName("GradeLevelDescriptorId"),
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: new JsonPathExpression(
                         "$.gradeLevelDescriptor",

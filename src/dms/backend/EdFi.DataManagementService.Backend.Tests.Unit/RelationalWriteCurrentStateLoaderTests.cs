@@ -87,7 +87,7 @@ public class Given_Relational_Write_Current_State_Loader
         result.DocumentMetadata.DocumentId.Should().Be(345L);
         result.TableRowsInDependencyOrder.Should().ContainSingle();
         result.TableRowsInDependencyOrder[0].Rows.Should().ContainSingle();
-        ((long)result.TableRowsInDependencyOrder[0].Rows[0][1]!).Should().Be(601);
+        result.TableRowsInDependencyOrder[0].Rows[0][1].Should().BeOfType<int>().Which.Should().Be(601);
         command.CommandText.Should().NotContain("select \"DescriptorId\", \"Uri\" from dms.\"Descriptor\"");
         connection.CreateCommandCallCount.Should().Be(1);
         command.ExecuteReaderCallCount.Should().Be(1);

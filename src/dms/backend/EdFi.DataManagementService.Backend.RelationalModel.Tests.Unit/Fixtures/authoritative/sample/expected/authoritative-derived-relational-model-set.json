@@ -2335,7 +2335,7 @@
             "name": "Program_ProgramTypeDescriptor_DescriptorId",
             "kind": "DescriptorFk",
             "type": {
-              "kind": "Int64"
+              "kind": "Int32"
             },
             "is_nullable": false,
             "source_path": "$.programReference.programTypeDescriptor",
@@ -2734,7 +2734,7 @@
         {
           "column_name": "Program_ProgramTypeDescriptor_DescriptorId",
           "type": {
-            "kind": "Int64"
+            "kind": "Int32"
           },
           "source_path": "$.programReference.programTypeDescriptor",
           "target_resource": {
@@ -3264,19 +3264,6 @@
       ],
       "include_columns": [
         "SourceEducationOrganizationId"
-      ]
-    },
-    {
-      "name": "IX_Descriptor_Discriminator_ContentVersion",
-      "table": {
-        "schema": "dms",
-        "name": "Descriptor"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "Discriminator",
-        "ContentVersion"
       ]
     },
     {
@@ -39039,6 +39026,19 @@
         "StudentSectionAssociation_DocumentId",
         "Ordinal"
       ]
+    },
+    {
+      "name": "IX_Descriptor_ResourceKeyId_ChangeVersion",
+      "table": {
+        "schema": "tracked_changes_edfi",
+        "name": "Descriptor"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "ResourceKeyId",
+        "ChangeVersion"
+      ]
     }
   ],
   "triggers": [
@@ -58188,12 +58188,9 @@
       ],
       "system_columns": [
         {
-          "role": "Discriminator",
-          "column": "Discriminator",
-          "scalar_type": {
-            "kind": "String",
-            "max_length": 128
-          },
+          "role": "ResourceKeyId",
+          "column": "ResourceKeyId",
+          "scalar_type": null,
           "is_nullable": false,
           "is_primary_key": false
         },
@@ -75133,7 +75130,7 @@
               "name": "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": false,
               "source_path": null,
@@ -75158,7 +75155,7 @@
               "name": "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": false,
               "source_path": null,
@@ -75183,7 +75180,7 @@
               "name": "ProgramTypeDescriptor_Unified_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": false,
               "source_path": null,
@@ -75234,7 +75231,7 @@
               "name": "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": true,
               "source_path": "$.programEvaluationObjectiveReference.programEvaluationPeriodDescriptor",
@@ -75263,7 +75260,7 @@
               "name": "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": true,
               "source_path": "$.programEvaluationObjectiveReference.programEvaluationTypeDescriptor",
@@ -75292,7 +75289,7 @@
               "name": "ProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": true,
               "source_path": "$.programEvaluationObjectiveReference.programTypeDescriptor",
@@ -75318,7 +75315,7 @@
               "name": "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": false,
               "source_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor",
@@ -75347,7 +75344,7 @@
               "name": "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": false,
               "source_path": "$.programEvaluationReference.programEvaluationTypeDescriptor",
@@ -75390,7 +75387,7 @@
               "name": "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": false,
               "source_path": "$.programEvaluationReference.programTypeDescriptor",
@@ -75529,7 +75526,7 @@
                 "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc",
                 "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
               ],
-              "constraint_name": "FK_ProgramEvaluationElement_ProgramEvaluationPeriodD_4122be3539"
+              "constraint_name": "FK_ProgramEvaluationElement_ProgramEvaluationPeriodD_79672756c3"
             },
             {
               "storage_column": "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
@@ -75537,7 +75534,7 @@
                 "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb",
                 "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
               ],
-              "constraint_name": "FK_ProgramEvaluationElement_ProgramEvaluationTypeDes_9ed95edefc"
+              "constraint_name": "FK_ProgramEvaluationElement_ProgramEvaluationTypeDes_acaae689aa"
             },
             {
               "storage_column": "ProgramTypeDescriptor_Unified_DescriptorId",
@@ -75619,7 +75616,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_ProgramEvaluationElement_ProgramEvaluationPeriodD_4122be3539",
+              "name": "FK_ProgramEvaluationElement_ProgramEvaluationPeriodD_79672756c3",
               "columns": [
                 "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId"
               ],
@@ -75628,14 +75625,14 @@
                 "name": "Descriptor"
               },
               "target_columns": [
-                "DocumentId"
+                "DescriptorId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_ProgramEvaluationElement_ProgramEvaluationTypeDes_9ed95edefc",
+              "name": "FK_ProgramEvaluationElement_ProgramEvaluationTypeDes_acaae689aa",
               "columns": [
                 "ProgramEvaluationTypeDescriptor_Unified_DescriptorId"
               ],
@@ -75644,7 +75641,7 @@
                 "name": "Descriptor"
               },
               "target_columns": [
-                "DocumentId"
+                "DescriptorId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
@@ -75688,7 +75685,7 @@
                 "name": "Descriptor"
               },
               "target_columns": [
-                "DocumentId"
+                "DescriptorId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
@@ -75773,7 +75770,7 @@
               "name": "RatingLevelDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": false,
               "source_path": "$.programEvaluationLevels[*].ratingLevelDescriptor",
@@ -75865,7 +75862,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_ProgramEvaluationElementProgramEvaluationLevel_Ra_e42bd3a7df",
+              "name": "FK_ProgramEvaluationElementProgramEvaluationLevel_Ra_7efec4c471",
               "columns": [
                 "RatingLevelDescriptor_DescriptorId"
               ],
@@ -75874,7 +75871,7 @@
                 "name": "Descriptor"
               },
               "target_columns": [
-                "DocumentId"
+                "DescriptorId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
@@ -76476,7 +76473,7 @@
               "name": "AssessmentGradeLevelDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": true,
               "source_path": "$.assessmentGradeLevelDescriptor",
@@ -76488,7 +76485,7 @@
               "name": "PlatformTypeDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": true,
               "source_path": "$.platformTypeDescriptor",
@@ -76575,7 +76572,7 @@
                 "name": "Descriptor"
               },
               "target_columns": [
-                "DocumentId"
+                "DescriptorId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
@@ -76607,7 +76604,7 @@
                 "name": "Descriptor"
               },
               "target_columns": [
-                "DocumentId"
+                "DescriptorId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
@@ -76818,7 +76815,7 @@
               "name": "AccommodationDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": false,
               "source_path": "$.assessmentAccommodations[*].accommodationDescriptor",
@@ -76882,7 +76879,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentAssessmentRegistrationAssessmentAccommodat_d1ac0c0fc8",
+              "name": "FK_StudentAssessmentRegistrationAssessmentAccommodat_a265284489",
               "columns": [
                 "AccommodationDescriptor_DescriptorId"
               ],
@@ -76891,7 +76888,7 @@
                 "name": "Descriptor"
               },
               "target_columns": [
-                "DocumentId"
+                "DescriptorId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
@@ -77449,7 +77446,7 @@
               "name": "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": true,
               "source_path": "$.graduationPlanReference.graduationPlanTypeDescriptor",
@@ -77574,7 +77571,7 @@
               "name": "EnrollmentTypeDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": true,
               "source_path": "$.enrollmentTypeDescriptor",
@@ -77586,7 +77583,7 @@
               "name": "EntryGradeLevelDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": false,
               "source_path": "$.entryGradeLevelDescriptor",
@@ -77598,7 +77595,7 @@
               "name": "EntryGradeLevelReasonDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": true,
               "source_path": "$.entryGradeLevelReasonDescriptor",
@@ -77610,7 +77607,7 @@
               "name": "EntryTypeDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": true,
               "source_path": "$.entryTypeDescriptor",
@@ -77622,7 +77619,7 @@
               "name": "ExitWithdrawTypeDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": true,
               "source_path": "$.exitWithdrawTypeDescriptor",
@@ -77634,7 +77631,7 @@
               "name": "NextYearGradeLevelDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": true,
               "source_path": "$.nextYearGradeLevelDescriptor",
@@ -77646,7 +77643,7 @@
               "name": "ResidencyStatusDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": true,
               "source_path": "$.residencyStatusDescriptor",
@@ -77658,7 +77655,7 @@
               "name": "SchoolChoiceBasisDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": true,
               "source_path": "$.schoolChoiceBasisDescriptor",
@@ -77892,7 +77889,7 @@
                 "name": "Descriptor"
               },
               "target_columns": [
-                "DocumentId"
+                "DescriptorId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
@@ -77908,7 +77905,7 @@
                 "name": "Descriptor"
               },
               "target_columns": [
-                "DocumentId"
+                "DescriptorId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
@@ -77924,7 +77921,7 @@
                 "name": "Descriptor"
               },
               "target_columns": [
-                "DocumentId"
+                "DescriptorId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
@@ -77940,7 +77937,7 @@
                 "name": "Descriptor"
               },
               "target_columns": [
-                "DocumentId"
+                "DescriptorId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
@@ -77956,14 +77953,14 @@
                 "name": "Descriptor"
               },
               "target_columns": [
-                "DocumentId"
+                "DescriptorId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_GraduationPlan_Graduatio_1caf199d51",
+              "name": "FK_StudentSchoolAssociation_GraduationPlan_Graduatio_d4aa4812f5",
               "columns": [
                 "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId"
               ],
@@ -77972,7 +77969,7 @@
                 "name": "Descriptor"
               },
               "target_columns": [
-                "DocumentId"
+                "DescriptorId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
@@ -78010,7 +78007,7 @@
                 "name": "Descriptor"
               },
               "target_columns": [
-                "DocumentId"
+                "DescriptorId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
@@ -78044,7 +78041,7 @@
                 "name": "Descriptor"
               },
               "target_columns": [
-                "DocumentId"
+                "DescriptorId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
@@ -78060,7 +78057,7 @@
                 "name": "Descriptor"
               },
               "target_columns": [
-                "DocumentId"
+                "DescriptorId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
@@ -78208,7 +78205,7 @@
               "name": "MembershipTypeDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": true,
               "source_path": "$._ext.sample.membershipTypeDescriptor",
@@ -78244,7 +78241,7 @@
                 "name": "Descriptor"
               },
               "target_columns": [
-                "DocumentId"
+                "DescriptorId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
@@ -78342,7 +78339,7 @@
               "name": "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": false,
               "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
@@ -78410,7 +78407,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_5d3e0a6492",
+              "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_9457aa098f",
               "columns": [
                 "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181"
               ],
@@ -78419,7 +78416,7 @@
                 "name": "Descriptor"
               },
               "target_columns": [
-                "DocumentId"
+                "DescriptorId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
@@ -78525,7 +78522,7 @@
               "name": "EducationPlanDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
-                "kind": "Int64"
+                "kind": "Int32"
               },
               "is_nullable": false,
               "source_path": "$.educationPlans[*].educationPlanDescriptor",
@@ -78573,7 +78570,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociationEducationPlan_EducationPl_2e5ab20cb7",
+              "name": "FK_StudentSchoolAssociationEducationPlan_EducationPl_bedfafa4c1",
               "columns": [
                 "EducationPlanDescriptor_DescriptorId"
               ],
@@ -78582,7 +78579,7 @@
                 "name": "Descriptor"
               },
               "target_columns": [
-                "DocumentId"
+                "DescriptorId"
               ],
               "on_delete": "NoAction",
               "on_update": "NoAction"
