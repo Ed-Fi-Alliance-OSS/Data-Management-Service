@@ -719,7 +719,9 @@ function Get-RestoreSmokeStackObservation {
     <#
     .SYNOPSIS
     What the started stack actually runs: for the dms, config, and db services of the project, the
-    container name, the image reference it was created from, and its image ID (db adds repo digests).
+    container name, the image reference it was created from, and its image ID. The db service adds
+    its image's repository digests, or the reason none were observed (a locally built or untagged
+    image has none; the image ID alone does not identify the published engine image).
     #>
     param(
         [Parameter(Mandatory)]
@@ -753,12 +755,19 @@ function Get-RestoreSmokeStackObservation {
             ImageId    = ConvertTo-RestoreSmokeLogSafeText $imageFields[0]
             ImageRef   = if ($imageFields.Count -gt 1) { ConvertTo-RestoreSmokeLogSafeText $imageFields[1] } else { $null }
             RepoDigests = @()
+            RepoDigestsReason = $null
         }
         if ($fields[2] -eq "db") {
             $global:LASTEXITCODE = 0
             $digests = @(docker image inspect $observation.ImageId --format '{{join .RepoDigests ","}}' 2>&1)
-            if ($LASTEXITCODE -eq 0 -and $digests.Count -gt 0) {
-                $observation.RepoDigests = @(([string]$digests[0]).Split(",") | Where-Object { $_ } | ForEach-Object { ConvertTo-RestoreSmokeLogSafeText $_ })
+            if ($LASTEXITCODE -ne 0) {
+                $observation.RepoDigestsReason = "docker image inspect $($observation.ImageId) exited ${LASTEXITCODE}: $(ConvertTo-RestoreSmokeLogSafeText (($digests | ForEach-Object { [string]$_ }) -join ' '))"
+            }
+            else {
+                $observation.RepoDigests = @(([string]@($digests)[0]).Split(",") | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { ConvertTo-RestoreSmokeLogSafeText $_ })
+                if ($observation.RepoDigests.Count -eq 0) {
+                    $observation.RepoDigestsReason = "the image has no repository digest (locally built or untagged)"
+                }
             }
         }
         $services[$fields[2]] = [pscustomobject]$observation
@@ -780,9 +789,19 @@ function Get-RestoreSmokeEffectiveSchemaPackageList {
     if (-not (Test-Path -LiteralPath $DerivedEnvironmentFile -PathType Leaf)) {
         return [pscustomobject]@{ Source = $DerivedEnvironmentFile; Value = $null; Reason = "derived env file not present" }
     }
-    foreach ($line in Get-Content -LiteralPath $DerivedEnvironmentFile) {
+    try {
+        $lines = @(Get-Content -LiteralPath $DerivedEnvironmentFile -ErrorAction Stop)
+    }
+    catch {
+        return [pscustomobject]@{ Source = $DerivedEnvironmentFile; Value = $null; Reason = "derived env file could not be read: $(ConvertTo-RestoreSmokeLogSafeText $_.Exception.Message)" }
+    }
+    foreach ($line in $lines) {
         if ($line -match '^\s*SCHEMA_PACKAGES\s*=\s*(.*)$') {
-            return [pscustomobject]@{ Source = $DerivedEnvironmentFile; Value = $matches[1].Trim(); Reason = $null }
+            $value = $matches[1].Trim()
+            if ([string]::IsNullOrWhiteSpace($value)) {
+                return [pscustomobject]@{ Source = $DerivedEnvironmentFile; Value = $null; Reason = "SCHEMA_PACKAGES is blank in the derived env file" }
+            }
+            return [pscustomobject]@{ Source = $DerivedEnvironmentFile; Value = $value; Reason = $null }
         }
     }
     return [pscustomobject]@{ Source = $DerivedEnvironmentFile; Value = $null; Reason = "SCHEMA_PACKAGES not set in the derived env file" }
@@ -875,11 +894,50 @@ function Get-RestoreSmokePackageProvenance {
     return [pscustomobject]$record
 }
 
+function Get-RestoreSmokeEvidenceValue {
+    <#
+    .SYNOPSIS
+    Reads one field of an evidence record (a dictionary or an object) and returns null when the
+    record or the field is missing, so an incomplete run is classified rather than thrown on.
+    Collections are returned as one object (not enumerated); callers normalize them with @().
+    #>
+    param(
+        [AllowNull()]
+        [object]$Source,
+
+        [Parameter(Mandatory)]
+        [string]$Name
+    )
+
+    if ($null -eq $Source) {
+        return $null
+    }
+    if ($Source -is [System.Collections.IDictionary]) {
+        if ($Source.Contains($Name)) {
+            return , $Source[$Name]
+        }
+        return $null
+    }
+    $property = $Source.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        return $null
+    }
+    return , $property.Value
+}
+
 function Get-RestoreSmokeResultClassification {
     <#
     .SYNOPSIS
     Decides whether a run's evidence is final. Every unmet condition is a reason; any reason makes
-    the result non-final. A missing observation is never treated as verified.
+    the result non-final. A missing observation is never treated as verified, and missing or
+    malformed evidence produces a reason instead of an exception.
+
+    .DESCRIPTION
+    Final requires, besides the build, package, and SourceIdentity evidence: observed, non-empty,
+    equal start and end revisions with a clean tree at both points; and for EVERY stack observation
+    the dms/config containers running the verified in-run image IDs, a db container whose image has
+    an observed repository digest (an image ID alone is not a digest), and an observed, non-blank
+    effective SCHEMA_PACKAGES value.
     #>
     param(
         [Parameter(Mandatory)]
@@ -888,82 +946,159 @@ function Get-RestoreSmokeResultClassification {
 
     $reasons = [System.Collections.Generic.List[string]]::new()
 
-    if ($Provenance.ExploratoryPackage) {
+    if (Get-RestoreSmokeEvidenceValue $Provenance "ExploratoryPackage") {
         $reasons.Add("-ExploratoryPackage marks this run exploratory")
     }
 
+    $revisions = [ordered]@{}
     foreach ($point in @("SourceAtStart", "SourceAtEnd")) {
-        $source = $Provenance[$point]
+        $source = Get-RestoreSmokeEvidenceValue $Provenance $point
         if ($null -eq $source) {
             $reasons.Add("$point not captured")
+            continue
         }
-        elseif (-not $source.Observed) {
-            $reasons.Add("$point not observed: $($source.Reason)")
+        if ((Get-RestoreSmokeEvidenceValue $source "Observed") -ne $true) {
+            $reasons.Add("$point not observed: $(Get-RestoreSmokeEvidenceValue $source 'Reason')")
+            continue
         }
-        elseif (-not $source.Clean) {
-            $reasons.Add("$point worktree is dirty ($($source.Porcelain.Count) porcelain entries)")
+        $revision = [string](Get-RestoreSmokeEvidenceValue $source "Revision")
+        if ([string]::IsNullOrWhiteSpace($revision)) {
+            $reasons.Add("$point revision is empty")
+        }
+        else {
+            $revisions[$point] = $revision
+        }
+        $porcelain = Get-RestoreSmokeEvidenceValue $source "Porcelain"
+        # Assigned directly, never through an if expression: an if expression unrolls arrays.
+        $porcelainEntries = @()
+        if ($null -ne $porcelain) {
+            $porcelainEntries = @(@($porcelain) | Where-Object { $null -ne $_ })
+        }
+        $porcelainCount = $porcelainEntries.Count
+        if ((Get-RestoreSmokeEvidenceValue $source "Clean") -ne $true -or $porcelainCount -gt 0) {
+            $reasons.Add("$point worktree is dirty ($porcelainCount porcelain entries)")
         }
     }
+    if ($revisions.Count -eq 2 -and $revisions["SourceAtStart"] -cne $revisions["SourceAtEnd"]) {
+        $reasons.Add("the revision changed during the run (start $($revisions['SourceAtStart']), end $($revisions['SourceAtEnd']))")
+    }
 
-    $schemaTools = $Provenance.SchemaTools
+    $schemaTools = Get-RestoreSmokeEvidenceValue $Provenance "SchemaTools"
     if ($null -eq $schemaTools) {
         $reasons.Add("SchemaTools was not built in this run")
     }
-    elseif (-not $schemaTools.Verified) {
-        $reasons.Add("SchemaTools not verified: $($schemaTools.Reason)")
+    elseif ((Get-RestoreSmokeEvidenceValue $schemaTools "Verified") -ne $true) {
+        $reasons.Add("SchemaTools not verified: $(Get-RestoreSmokeEvidenceValue $schemaTools 'Reason')")
     }
-    elseif ($schemaTools.Sha256AtEnd -cne $schemaTools.Sha256AtBuild) {
+    elseif ([string]::IsNullOrWhiteSpace([string](Get-RestoreSmokeEvidenceValue $schemaTools "Sha256AtBuild")) -or
+        (Get-RestoreSmokeEvidenceValue $schemaTools "Sha256AtEnd") -cne (Get-RestoreSmokeEvidenceValue $schemaTools "Sha256AtBuild")) {
         $reasons.Add("the SchemaTools executable changed during the run (or was not re-hashed at the end)")
     }
 
-    $images = $Provenance.Images
+    $images = Get-RestoreSmokeEvidenceValue $Provenance "Images"
+    $verifiedImageIds = @{}
     if ($null -eq $images) {
         $reasons.Add("images were not built in this run")
     }
     else {
         foreach ($key in @("Dms", "Config")) {
-            if ($null -eq $images.$key -or -not $images.$key.Verified -or [string]::IsNullOrWhiteSpace($images.$key.ImageId)) {
-                $reason = if ($null -ne $images.$key) { $images.$key.Reason } else { "missing" }
+            $built = Get-RestoreSmokeEvidenceValue $images $key
+            $builtId = [string](Get-RestoreSmokeEvidenceValue $built "ImageId")
+            if ($null -eq $built -or (Get-RestoreSmokeEvidenceValue $built "Verified") -ne $true -or [string]::IsNullOrWhiteSpace($builtId)) {
+                $reason = if ($null -ne $built) { Get-RestoreSmokeEvidenceValue $built "Reason" } else { "missing" }
                 $reasons.Add("$key image not verified as built in this run: $reason")
+            }
+            else {
+                $verifiedImageIds[$key] = $builtId
             }
         }
     }
 
-    $observations = @($Provenance.StackObservations)
+    $observationList = Get-RestoreSmokeEvidenceValue $Provenance "StackObservations"
+    $observations = @()
+    if ($null -ne $observationList) {
+        $observations = @($observationList)
+    }
     if ($observations.Count -eq 0) {
         $reasons.Add("no started stack was observed, so the images actually used are unknown")
     }
-    elseif ($null -ne $images) {
-        foreach ($observation in $observations) {
+    for ($index = 0; $index -lt $observations.Count; $index++) {
+        $observation = $observations[$index]
+        $label = [string](Get-RestoreSmokeEvidenceValue $observation "Label")
+        if ([string]::IsNullOrWhiteSpace($label)) {
+            $label = "stack observation $($index + 1)"
+        }
+        if ($null -eq $observation) {
+            $reasons.Add("${label}: the observation record is missing")
+            continue
+        }
+
+        $observationReason = [string](Get-RestoreSmokeEvidenceValue $observation "Reason")
+        if (-not [string]::IsNullOrWhiteSpace($observationReason)) {
+            $reasons.Add("${label}: the stack could not be observed: $observationReason")
+        }
+
+        $services = Get-RestoreSmokeEvidenceValue $observation "Services"
+        if ($null -ne $images) {
             foreach ($pair in @(@{ Service = "dms"; Key = "Dms" }, @{ Service = "config"; Key = "Config" })) {
-                $observed = if ($observation.Services.Contains($pair.Service)) { $observation.Services[$pair.Service] } else { $null }
-                $built = $images.($pair.Key)
+                $observed = Get-RestoreSmokeEvidenceValue $services $pair.Service
+                $observedId = [string](Get-RestoreSmokeEvidenceValue $observed "ImageId")
+                $builtId = if ($verifiedImageIds.ContainsKey($pair.Key)) { $verifiedImageIds[$pair.Key] } else { "none verified" }
                 if ($null -eq $observed) {
-                    $reasons.Add("$($observation.Label): no $($pair.Service) container observed")
+                    $reasons.Add("${label}: no $($pair.Service) container observed")
                 }
-                elseif ($null -eq $built -or -not $built.Verified -or $observed.ImageId -cne $built.ImageId) {
-                    $builtId = if ($null -ne $built -and $built.Verified) { $built.ImageId } else { "none verified" }
-                    $reasons.Add("$($observation.Label): $($pair.Service) runs image $($observed.ImageId), not the in-run build ($builtId)")
+                elseif (-not $verifiedImageIds.ContainsKey($pair.Key) -or $observedId -cne $builtId) {
+                    $reasons.Add("${label}: $($pair.Service) runs image $observedId, not the in-run build ($builtId)")
                 }
             }
-            if (-not $observation.Services.Contains("db")) {
-                $reasons.Add("$($observation.Label): no db container observed")
+        }
+
+        $database = Get-RestoreSmokeEvidenceValue $services "db"
+        if ($null -eq $database) {
+            $reasons.Add("${label}: no db container observed")
+        }
+        else {
+            $digestList = Get-RestoreSmokeEvidenceValue $database "RepoDigests"
+            $digests = @()
+            if ($null -ne $digestList) {
+                $digests = @(@($digestList) | Where-Object { [string]$_ -cmatch '^[^@\s]+@sha256:[0-9a-f]{64}$' })
             }
+            if ($digests.Count -eq 0) {
+                $digestReason = [string](Get-RestoreSmokeEvidenceValue $database "RepoDigestsReason")
+                $suffix = if ([string]::IsNullOrWhiteSpace($digestReason)) { "" } else { ": $digestReason" }
+                $reasons.Add("${label}: the db image $(Get-RestoreSmokeEvidenceValue $database 'ImageId') has no observed repository digest$suffix")
+            }
+        }
+
+        $schemaPackages = Get-RestoreSmokeEvidenceValue $observation "EffectiveSchemaPackages"
+        if ($null -eq $schemaPackages) {
+            $reasons.Add("${label}: effective SCHEMA_PACKAGES was not observed")
+        }
+        elseif ([string]::IsNullOrWhiteSpace([string](Get-RestoreSmokeEvidenceValue $schemaPackages "Value"))) {
+            $packageReason = [string](Get-RestoreSmokeEvidenceValue $schemaPackages "Reason")
+            if ([string]::IsNullOrWhiteSpace($packageReason)) {
+                $packageReason = "the value is blank"
+            }
+            $reasons.Add("${label}: effective SCHEMA_PACKAGES not observed: $packageReason")
         }
     }
 
-    $packages = @($Provenance.Packages)
+    $packageList = Get-RestoreSmokeEvidenceValue $Provenance "Packages"
+    $packages = @()
+    if ($null -ne $packageList) {
+        $packages = @($packageList)
+    }
     if ($packages.Count -eq 0) {
         $reasons.Add("no package was built in this run")
     }
     foreach ($package in $packages) {
-        if (-not $package.Verified) {
-            $reasons.Add("package ($($package.TemplateKind)) not verified: $($package.Reason)")
+        if ((Get-RestoreSmokeEvidenceValue $package "Verified") -ne $true) {
+            $reasons.Add("package ($(Get-RestoreSmokeEvidenceValue $package 'TemplateKind')) not verified: $(Get-RestoreSmokeEvidenceValue $package 'Reason')")
         }
     }
 
-    if ([string]::IsNullOrWhiteSpace([string]$Provenance.SourceIdentity)) {
-        $reasons.Add("pre-backup SourceIdentity not captured: $($Provenance.SourceIdentityReason)")
+    if ([string]::IsNullOrWhiteSpace([string](Get-RestoreSmokeEvidenceValue $Provenance "SourceIdentity"))) {
+        $reasons.Add("pre-backup SourceIdentity not captured: $(Get-RestoreSmokeEvidenceValue $Provenance 'SourceIdentityReason')")
     }
 
     return [pscustomobject]@{

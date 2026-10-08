@@ -726,7 +726,31 @@ Describe "Get-RestoreSmokeStackObservation" {
         $observation.Services["dms"].ImageId | Should -Be "sha256:dms"
         $observation.Services["config"].ImageRef | Should -Be "local/ed-fi-api-configuration-service"
         $observation.Services["db"].RepoDigests | Should -Be @("postgres@sha256:abc")
+        $observation.Services["db"].RepoDigestsReason | Should -BeNullOrEmpty
         Should -Invoke docker -ModuleName RestoreSmokeProbes -Times 1 -Exactly -ParameterFilter { $args[0] -eq "ps" -and $args -contains "label=com.docker.compose.project=dms-local" }
+    }
+
+    It "records why the engine image has no repository digest when <case>" -ForEach @(
+        @{ Case = "the image inspect fails"; ExitCode = 1; Output = "Error response from daemon: No such image: sha256:pg"; Expected = "docker image inspect sha256:pg exited 1: Error response from daemon: No such image: sha256:pg" }
+        @{ Case = "the image has no digest (locally built)"; ExitCode = 0; Output = ""; Expected = "the image has no repository digest (locally built or untagged)" }
+    ) {
+        $global:RestoreSmokeTestDocker = @{ ExitCode = $ExitCode; Output = $Output }
+        Mock docker -ModuleName RestoreSmokeProbes {
+            $global:LASTEXITCODE = 0
+            switch ($args[0]) {
+                "ps" { return @("c3|dms-postgresql|db") }
+                "inspect" { return "sha256:pg|postgres:16" }
+                "image" {
+                    $global:LASTEXITCODE = $global:RestoreSmokeTestDocker.ExitCode
+                    return $global:RestoreSmokeTestDocker.Output
+                }
+            }
+        }
+
+        $observation = Get-RestoreSmokeStackObservation -ComposeProject "dms-local" -Label "leg-package-directory"
+
+        @($observation.Services["db"].RepoDigests) | Should -BeNullOrEmpty
+        $observation.Services["db"].RepoDigestsReason | Should -Be $Expected
     }
 }
 
@@ -743,6 +767,30 @@ Describe "Get-RestoreSmokeEffectiveSchemaPackageList" {
 
         $result.Value | Should -BeNullOrEmpty
         $result.Reason | Should -Be "derived env file not present"
+    }
+
+    It "reports <case> as a reason, not as a value" -ForEach @(
+        @{ Case = "a blank SCHEMA_PACKAGES"; Lines = @("A=1", "SCHEMA_PACKAGES=   "); Expected = "SCHEMA_PACKAGES is blank in the derived env file" }
+        @{ Case = "an absent SCHEMA_PACKAGES"; Lines = @("A=1"); Expected = "SCHEMA_PACKAGES not set in the derived env file" }
+    ) {
+        $file = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N") + ".env")
+        Set-Content -LiteralPath $file -Value $Lines
+
+        $result = Get-RestoreSmokeEffectiveSchemaPackageList -DerivedEnvironmentFile $file
+
+        $result.Value | Should -BeNullOrEmpty
+        $result.Reason | Should -Be $Expected
+    }
+
+    It "reports an unreadable derived file as a reason instead of throwing" {
+        $file = Join-Path $TestDrive "unreadable.env"
+        Set-Content -LiteralPath $file -Value "SCHEMA_PACKAGES=x"
+        Mock Get-Content -ModuleName RestoreSmokeProbes { throw "access denied" }
+
+        $result = Get-RestoreSmokeEffectiveSchemaPackageList -DerivedEnvironmentFile $file
+
+        $result.Value | Should -BeNullOrEmpty
+        $result.Reason | Should -Be "derived env file could not be read: access denied"
     }
 }
 
@@ -874,27 +922,41 @@ Describe "Get-RestoreSmokeSourceRevision" {
 
 Describe "Get-RestoreSmokeResultClassification" {
     BeforeAll {
+        $script:startRevision = "1111111111111111111111111111111111111111"
+        $script:otherRevision = "2222222222222222222222222222222222222222"
+        $script:engineDigest = "postgres@sha256:" + ("a" * 64)
+
+        function script:New-CompleteObservation {
+            param([string]$Label)
+
+            return [pscustomobject]@{
+                Label                   = $Label
+                Reason                  = $null
+                Services                = [ordered]@{
+                    dms    = [pscustomobject]@{ Container = "ed-fi-api"; ImageId = "sha256:dms"; ImageRef = "local/ed-fi-api:dms-restore-smoke-0123456789ab"; RepoDigests = @(); RepoDigestsReason = $null }
+                    config = [pscustomobject]@{ Container = "dms-config-service"; ImageId = "sha256:config"; ImageRef = "local/ed-fi-api-configuration-service:dms-restore-smoke-0123456789ab"; RepoDigests = @(); RepoDigestsReason = $null }
+                    db     = [pscustomobject]@{ Container = "dms-postgresql"; ImageId = "sha256:pg"; ImageRef = "postgres:16"; RepoDigests = @($script:engineDigest); RepoDigestsReason = $null }
+                }
+                EffectiveSchemaPackages = [pscustomobject]@{ Source = ".bootstrap/.env.derived"; Value = '[{"name":"EdFi.DataStandard52.ApiSchema"}]'; Reason = $null }
+            }
+        }
+
+        # A complete run: every final-evidence field present, SourceIdentity supplied (so its
+        # pending Step 2.3 implementation cannot mask a check), and two stack observations.
         function script:New-CompleteProvenance {
-            $clean = [pscustomobject]@{ Observed = $true; Clean = $true; Porcelain = @(); Reason = $null }
+            $observations = [System.Collections.Generic.List[object]]::new()
+            $observations.Add((New-CompleteObservation -Label "leg-package-directory"))
+            $observations.Add((New-CompleteObservation -Label "leg-separate-config"))
             return [ordered]@{
                 ExploratoryPackage   = $false
-                SourceAtStart        = $clean
-                SourceAtEnd          = $clean
+                SourceAtStart        = [pscustomobject]@{ Revision = $script:startRevision; Observed = $true; Clean = $true; Porcelain = @(); Reason = $null }
+                SourceAtEnd          = [pscustomobject]@{ Revision = $script:startRevision; Observed = $true; Clean = $true; Porcelain = @(); Reason = $null }
                 SchemaTools          = [pscustomobject]@{ Verified = $true; Reason = $null; Sha256AtBuild = "aa"; Sha256AtEnd = "aa" }
-                Images               = [pscustomobject]@{
-                    Dms    = [pscustomobject]@{ ImageId = "sha256:dms"; Verified = $true; Reason = $null }
-                    Config = [pscustomobject]@{ ImageId = "sha256:config"; Verified = $true; Reason = $null }
+                Images               = [ordered]@{
+                    Dms    = [ordered]@{ ImageId = "sha256:dms"; Verified = $true; Reason = $null }
+                    Config = [ordered]@{ ImageId = "sha256:config"; Verified = $true; Reason = $null }
                 }
-                StackObservations    = @(
-                    [pscustomobject]@{
-                        Label    = "leg-package-directory"
-                        Services = [ordered]@{
-                            dms    = [pscustomobject]@{ ImageId = "sha256:dms" }
-                            config = [pscustomobject]@{ ImageId = "sha256:config" }
-                            db     = [pscustomobject]@{ ImageId = "sha256:pg" }
-                        }
-                    }
-                )
+                StackObservations    = $observations
                 Packages             = @([pscustomobject]@{ TemplateKind = "Minimal"; Verified = $true; Reason = $null })
                 SourceIdentity       = "6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11"
                 SourceIdentityReason = $null
@@ -902,32 +964,54 @@ Describe "Get-RestoreSmokeResultClassification" {
         }
     }
 
-    It "classifies a run as final only when every provenance condition holds" {
+    It "classifies a complete run with two stack observations as final" {
         $classification = Get-RestoreSmokeResultClassification -Provenance (New-CompleteProvenance)
 
         $classification.Final | Should -BeTrue
         $classification.Reasons | Should -BeNullOrEmpty
     }
 
-    It "is non-final when <case>" -ForEach @(
-        @{ Case = "the run is exploratory"; Mutate = { param($p) $p.ExploratoryPackage = $true }; Expected = "*-ExploratoryPackage marks this run exploratory*" }
-        @{ Case = "the worktree was dirty at start"; Mutate = { param($p) $p.SourceAtStart = [pscustomobject]@{ Observed = $true; Clean = $false; Porcelain = @(" M file"); Reason = $null } }; Expected = "*SourceAtStart worktree is dirty*" }
-        @{ Case = "the worktree became dirty by the end"; Mutate = { param($p) $p.SourceAtEnd = [pscustomobject]@{ Observed = $true; Clean = $false; Porcelain = @(" M packages.lock.json"); Reason = $null } }; Expected = "*SourceAtEnd worktree is dirty*" }
-        @{ Case = "the revision could not be observed"; Mutate = { param($p) $p.SourceAtStart = [pscustomobject]@{ Observed = $false; Clean = $false; Porcelain = @(); Reason = "git rev-parse exit 128" } }; Expected = "*SourceAtStart not observed: git rev-parse exit 128*" }
-        @{ Case = "SchemaTools was never built"; Mutate = { param($p) $p.SchemaTools = $null }; Expected = "*SchemaTools was not built in this run*" }
-        @{ Case = "the SchemaTools resolution did not match"; Mutate = { param($p) $p.SchemaTools = [pscustomobject]@{ Verified = $false; Reason = "the bootstrap resolver selects 'x'"; Sha256AtBuild = "aa"; Sha256AtEnd = "aa" } }; Expected = "*SchemaTools not verified: the bootstrap resolver selects 'x'*" }
-        @{ Case = "the SchemaTools executable changed during the run"; Mutate = { param($p) $p.SchemaTools.Sha256AtEnd = "bb" }; Expected = "*SchemaTools executable changed during the run*" }
-        @{ Case = "images were never built"; Mutate = { param($p) $p.Images = $null }; Expected = "*images were not built in this run*" }
-        @{ Case = "no started stack was observed"; Mutate = { param($p) $p.StackObservations = @() }; Expected = "*no started stack was observed*" }
-        @{ Case = "the stack ran a different DMS image (for example the stale shared tag's)"; Mutate = { param($p) $p.StackObservations[0].Services["dms"] = [pscustomobject]@{ ImageId = "sha256:stale" } }; Expected = "*leg-package-directory: dms runs image sha256:stale, not the in-run build (sha256:dms)*" }
-        @{ Case = "the stack ran a different config image"; Mutate = { param($p) $p.StackObservations[0].Services["config"] = [pscustomobject]@{ ImageId = "sha256:stale" } }; Expected = "*leg-package-directory: config runs image sha256:stale, not the in-run build (sha256:config)*" }
-        @{ Case = "the DMS build recorded an ID but was not verified"; Mutate = { param($p) $p.Images.Dms = [pscustomobject]@{ ImageId = "sha256:dms"; Verified = $false; Reason = "the run tag resolves elsewhere" } }; Expected = "*Dms image not verified as built in this run: the run tag resolves elsewhere*" }
-        @{ Case = "the stack matches an unverified DMS build's ID"; Mutate = { param($p) $p.Images.Dms = [pscustomobject]@{ ImageId = "sha256:dms"; Verified = $false; Reason = "x" } }; Expected = "*leg-package-directory: dms runs image sha256:dms, not the in-run build (none verified)*" }
-        @{ Case = "the CMS build never ran"; Mutate = { param($p) $p.Images.Config = $null }; Expected = "*Config image not verified as built in this run: missing*" }
-        @{ Case = "no config container was observed"; Mutate = { param($p) $p.StackObservations[0].Services.Remove("config") }; Expected = "*leg-package-directory: no config container observed*" }
-        @{ Case = "no package was built"; Mutate = { param($p) $p.Packages = @() }; Expected = "*no package was built in this run*" }
-        @{ Case = "the package was not verified"; Mutate = { param($p) $p.Packages = @([pscustomobject]@{ TemplateKind = "Minimal"; Verified = $false; Reason = "sha mismatch" }) }; Expected = "*package (Minimal) not verified: sha mismatch*" }
-        @{ Case = "the pre-backup SourceIdentity was not captured"; Mutate = { param($p) $p.SourceIdentity = $null; $p.SourceIdentityReason = "not implemented yet (Step 2.3)" }; Expected = "*pre-backup SourceIdentity not captured: not implemented yet (Step 2.3)*" }
+    It "is non-final with exactly the expected reason when <case>" -ForEach @(
+        # Pre-existing conditions (2.1 and 2.1b).
+        @{ Case = "the run is exploratory"; Mutate = { param($p) $p.ExploratoryPackage = $true }; Expected = "-ExploratoryPackage marks this run exploratory" }
+        @{ Case = "the worktree was dirty at start"; Mutate = { param($p) $p.SourceAtStart.Clean = $false; $p.SourceAtStart.Porcelain = @(" M file") }; Expected = "SourceAtStart worktree is dirty (1 porcelain entries)" }
+        @{ Case = "the worktree became dirty by the end"; Mutate = { param($p) $p.SourceAtEnd.Clean = $false; $p.SourceAtEnd.Porcelain = @(" M packages.lock.json") }; Expected = "SourceAtEnd worktree is dirty (1 porcelain entries)" }
+        @{ Case = "the start revision could not be observed"; Mutate = { param($p) $p.SourceAtStart = [pscustomobject]@{ Revision = $null; Observed = $false; Clean = $false; Porcelain = @(); Reason = "git rev-parse exit 128" } }; Expected = "SourceAtStart not observed: git rev-parse exit 128" }
+        @{ Case = "SchemaTools was never built"; Mutate = { param($p) $p.SchemaTools = $null }; Expected = "SchemaTools was not built in this run" }
+        @{ Case = "the SchemaTools resolution did not match"; Mutate = { param($p) $p.SchemaTools.Verified = $false; $p.SchemaTools.Reason = "the bootstrap resolver selects 'x'" }; Expected = "SchemaTools not verified: the bootstrap resolver selects 'x'" }
+        @{ Case = "the SchemaTools executable changed during the run"; Mutate = { param($p) $p.SchemaTools.Sha256AtEnd = "bb" }; Expected = "the SchemaTools executable changed during the run (or was not re-hashed at the end)" }
+        @{ Case = "images were never built"; Mutate = { param($p) $p.Images = $null }; Expected = "images were not built in this run" }
+        @{ Case = "no started stack was observed"; Mutate = { param($p) $p.StackObservations.Clear() }; Expected = "no started stack was observed, so the images actually used are unknown" }
+        @{ Case = "the second observation ran a different DMS image (for example the stale shared tag's)"; Mutate = { param($p) $p.StackObservations[1].Services["dms"] = [pscustomobject]@{ ImageId = "sha256:stale" } }; Expected = "leg-separate-config: dms runs image sha256:stale, not the in-run build (sha256:dms)" }
+        @{ Case = "the second observation ran a different config image"; Mutate = { param($p) $p.StackObservations[1].Services["config"] = [pscustomobject]@{ ImageId = "sha256:stale" } }; Expected = "leg-separate-config: config runs image sha256:stale, not the in-run build (sha256:config)" }
+        @{ Case = "the second observation has no config container"; Mutate = { param($p) $p.StackObservations[1].Services.Remove("config") }; Expected = "leg-separate-config: no config container observed" }
+        @{ Case = "no package was built"; Mutate = { param($p) $p.Packages = @() }; Expected = "no package was built in this run" }
+        @{ Case = "the package was not verified"; Mutate = { param($p) $p.Packages[0].Verified = $false; $p.Packages[0].Reason = "sha mismatch" }; Expected = "package (Minimal) not verified: sha mismatch" }
+        @{ Case = "the pre-backup SourceIdentity was not captured"; Mutate = { param($p) $p.SourceIdentity = $null; $p.SourceIdentityReason = "not implemented yet (Step 2.3)" }; Expected = "pre-backup SourceIdentity not captured: not implemented yet (Step 2.3)" }
+
+        # Revisions (2.1c).
+        @{ Case = "clean start and end trees are at different revisions"; Mutate = { param($p) $p.SourceAtEnd.Revision = $script:otherRevision }; Expected = "the revision changed during the run (start 1111111111111111111111111111111111111111, end 2222222222222222222222222222222222222222)" }
+        @{ Case = "the start revision is empty"; Mutate = { param($p) $p.SourceAtStart.Revision = "" }; Expected = "SourceAtStart revision is empty" }
+        @{ Case = "the end revision is null"; Mutate = { param($p) $p.SourceAtEnd.Revision = $null }; Expected = "SourceAtEnd revision is empty" }
+        @{ Case = "the end record has no Revision field"; Mutate = { param($p) $p.SourceAtEnd.PSObject.Properties.Remove("Revision") }; Expected = "SourceAtEnd revision is empty" }
+        @{ Case = "the start record has no Observed field"; Mutate = { param($p) $p.SourceAtStart.PSObject.Properties.Remove("Observed") }; Expected = "SourceAtStart not observed: " }
+        @{ Case = "the end record claims clean but lists porcelain entries"; Mutate = { param($p) $p.SourceAtEnd.Porcelain = @("?? stray.txt") }; Expected = "SourceAtEnd worktree is dirty (1 porcelain entries)" }
+        @{ Case = "the end record has no Clean field"; Mutate = { param($p) $p.SourceAtEnd.PSObject.Properties.Remove("Clean") }; Expected = "SourceAtEnd worktree is dirty (0 porcelain entries)" }
+        @{ Case = "the start revision was never captured"; Mutate = { param($p) $p.Remove("SourceAtStart") }; Expected = "SourceAtStart not captured" }
+
+        # Effective SCHEMA_PACKAGES, only the second observation lacking it (2.1c).
+        @{ Case = "the second observation has no SCHEMA_PACKAGES field"; Mutate = { param($p) $p.StackObservations[1].PSObject.Properties.Remove("EffectiveSchemaPackages") }; Expected = "leg-separate-config: effective SCHEMA_PACKAGES was not observed" }
+        @{ Case = "the second observation's SCHEMA_PACKAGES record is null"; Mutate = { param($p) $p.StackObservations[1].EffectiveSchemaPackages = $null }; Expected = "leg-separate-config: effective SCHEMA_PACKAGES was not observed" }
+        @{ Case = "the second observation's SCHEMA_PACKAGES value is blank"; Mutate = { param($p) $p.StackObservations[1].EffectiveSchemaPackages.Value = "   " }; Expected = "leg-separate-config: effective SCHEMA_PACKAGES not observed: the value is blank" }
+        @{ Case = "the second observation's SCHEMA_PACKAGES read failed"; Mutate = { param($p) $p.StackObservations[1].EffectiveSchemaPackages = [pscustomobject]@{ Source = "x"; Value = $null; Reason = "derived env file not present" } }; Expected = "leg-separate-config: effective SCHEMA_PACKAGES not observed: derived env file not present" }
+        @{ Case = "the second observation's SCHEMA_PACKAGES record has no Value field"; Mutate = { param($p) $p.StackObservations[1].EffectiveSchemaPackages = [pscustomobject]@{ Source = "x" } }; Expected = "leg-separate-config: effective SCHEMA_PACKAGES not observed: the value is blank" }
+
+        # Engine repository digest, only the second observation lacking it (2.1c).
+        @{ Case = "the second observation's engine image has no digest, with the observed reason"; Mutate = { param($p) $p.StackObservations[1].Services["db"].RepoDigests = @(); $p.StackObservations[1].Services["db"].RepoDigestsReason = "the image has no repository digest (locally built or untagged)" }; Expected = "leg-separate-config: the db image sha256:pg has no observed repository digest: the image has no repository digest (locally built or untagged)" }
+        @{ Case = "the second observation's engine record has no RepoDigests field"; Mutate = { param($p) $p.StackObservations[1].Services["db"].PSObject.Properties.Remove("RepoDigests") }; Expected = "leg-separate-config: the db image sha256:pg has no observed repository digest" }
+        @{ Case = "the second observation's engine digest is only an image ID"; Mutate = { param($p) $p.StackObservations[1].Services["db"].RepoDigests = @("sha256:" + ("a" * 64)) }; Expected = "leg-separate-config: the db image sha256:pg has no observed repository digest" }
+        @{ Case = "the second observation's engine digest is malformed"; Mutate = { param($p) $p.StackObservations[1].Services["db"].RepoDigests = @("postgres@sha256:abc") }; Expected = "leg-separate-config: the db image sha256:pg has no observed repository digest" }
+        @{ Case = "the second observation has no db container"; Mutate = { param($p) $p.StackObservations[1].Services.Remove("db") }; Expected = "leg-separate-config: no db container observed" }
     ) {
         $provenance = New-CompleteProvenance
         & $Mutate $provenance
@@ -935,7 +1019,98 @@ Describe "Get-RestoreSmokeResultClassification" {
         $classification = Get-RestoreSmokeResultClassification -Provenance $provenance
 
         $classification.Final | Should -BeFalse
-        @($classification.Reasons | Where-Object { $_ -like $Expected }).Count | Should -Be 1
+        @($classification.Reasons) | Should -Be @($Expected)
+    }
+
+    It "is non-final, naming the build and every observation, when <case>" -ForEach @(
+        @{ Case = "the DMS build recorded an ID but was not verified"; Mutate = { param($p) $p.Images.Dms.Verified = $false; $p.Images.Dms.Reason = "the run tag resolves elsewhere" }; Expected = @("Dms image not verified as built in this run: the run tag resolves elsewhere", "leg-package-directory: dms runs image sha256:dms, not the in-run build (none verified)", "leg-separate-config: dms runs image sha256:dms, not the in-run build (none verified)") }
+        @{ Case = "the CMS build never ran"; Mutate = { param($p) $p.Images.Config = $null }; Expected = @("Config image not verified as built in this run: missing", "leg-package-directory: config runs image sha256:config, not the in-run build (none verified)", "leg-separate-config: config runs image sha256:config, not the in-run build (none verified)") }
+    ) {
+        $provenance = New-CompleteProvenance
+        & $Mutate $provenance
+
+        $classification = Get-RestoreSmokeResultClassification -Provenance $provenance
+
+        $classification.Final | Should -BeFalse
+        @($classification.Reasons) | Should -Be $Expected
+    }
+
+    It "reports a second observation that could not be taken at all, without throwing" {
+        $provenance = New-CompleteProvenance
+        $provenance.StackObservations[1] = [pscustomobject]@{ Label = "leg-separate-config"; Services = [ordered]@{}; Reason = "docker ps failed (exit 1)" }
+
+        $classification = Get-RestoreSmokeResultClassification -Provenance $provenance
+
+        $classification.Final | Should -BeFalse
+        @($classification.Reasons) | Should -Be @(
+            "leg-separate-config: the stack could not be observed: docker ps failed (exit 1)"
+            "leg-separate-config: no dms container observed"
+            "leg-separate-config: no config container observed"
+            "leg-separate-config: no db container observed"
+            "leg-separate-config: effective SCHEMA_PACKAGES was not observed"
+        )
+    }
+
+    It "labels a missing or unlabelled observation by its position, without throwing" {
+        $provenance = New-CompleteProvenance
+        $provenance.StackObservations.Add($null)
+        $provenance.StackObservations[1].Label = ""
+        $provenance.StackObservations[1].PSObject.Properties.Remove("EffectiveSchemaPackages")
+
+        $classification = Get-RestoreSmokeResultClassification -Provenance $provenance
+
+        @($classification.Reasons) | Should -Be @(
+            "stack observation 2: effective SCHEMA_PACKAGES was not observed"
+            "stack observation 3: the observation record is missing"
+        )
+    }
+
+    It "classifies an observation whose Services field is missing, without throwing" {
+        $provenance = New-CompleteProvenance
+        $provenance.StackObservations[1].PSObject.Properties.Remove("Services")
+
+        $classification = Get-RestoreSmokeResultClassification -Provenance $provenance
+
+        @($classification.Reasons) | Should -Be @(
+            "leg-separate-config: no dms container observed"
+            "leg-separate-config: no config container observed"
+            "leg-separate-config: no db container observed"
+        )
+    }
+
+    It "classifies an empty provenance with a reason for every missing item, without throwing" {
+        $classification = Get-RestoreSmokeResultClassification -Provenance ([ordered]@{})
+
+        $classification.Final | Should -BeFalse
+        @($classification.Reasons) | Should -Be @(
+            "SourceAtStart not captured"
+            "SourceAtEnd not captured"
+            "SchemaTools was not built in this run"
+            "images were not built in this run"
+            "no started stack was observed, so the images actually used are unknown"
+            "no package was built in this run"
+            "pre-backup SourceIdentity not captured: "
+        )
+    }
+
+    It "classifies the smoke's initial provenance shape (fresh ledger, empty lists) without throwing" {
+        $provenance = [ordered]@{
+            ExploratoryPackage = $false
+            SourceAtStart      = $null
+            SourceAtEnd        = $null
+            SchemaTools        = $null
+            Images             = (New-RestoreSmokeImageLedger)
+            StackObservations  = [System.Collections.Generic.List[object]]::new()
+            Packages           = [System.Collections.Generic.List[object]]::new()
+            SourceIdentity     = $null
+        }
+
+        $classification = Get-RestoreSmokeResultClassification -Provenance $provenance
+
+        $classification.Final | Should -BeFalse
+        $classification.Reasons | Should -Contain "Dms image not verified as built in this run: missing"
+        $classification.Reasons | Should -Contain "no started stack was observed, so the images actually used are unknown"
+        $classification.Reasons | Should -Contain "no package was built in this run"
     }
 }
 
