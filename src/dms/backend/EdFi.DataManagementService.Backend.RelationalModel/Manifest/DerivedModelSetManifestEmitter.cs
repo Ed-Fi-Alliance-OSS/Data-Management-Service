@@ -501,6 +501,10 @@ public static class DerivedModelSetManifestEmitter
                 {
                     writer.WriteString("person_join_name", personJoinName);
                 }
+                if (column.UsesSqlServerIdentityCollation)
+                {
+                    writer.WriteBoolean("uses_sql_server_identity_collation", true);
+                }
                 writer.WriteEndObject();
             }
             writer.WriteEndArray();
