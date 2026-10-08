@@ -20,6 +20,14 @@ CMS limits assignments to 1,999 ownership tokens; DMS defensively fails at 2,000
 not evaluate `OwnershipTokenIds`, because no stored ownership token exists yet; it stamps
 `CreatorOwnershipTokenId` and proceeds.
 
+> **Superseded by [DMS-1431](https://edfi.atlassian.net/browse/DMS-1431) (2026-09-28).** The DMS-1060
+> text on this page is kept as written. Since DMS-1431, a POST that resolves to create is authorized from
+> the application context when its Create action is configured with `OwnershipBased`: a null
+> `CreatorOwnershipTokenId` is denied with `auth.md` 2.14 and a creator token not among
+> `OwnershipTokenIds` with 2.13, before any row is written, and 2,000 or more tokens fail the create with
+> the defensive 500. Descriptors are enforced exactly as relationally stored resources. The notes below mark
+> each statement this changed.
+
 ## Acceptance Criteria
 
 - POST stamps every newly created document from `CreatorOwnershipTokenId`, including resources not configured with `OwnershipBased`; a missing creator token stamps null.
@@ -29,12 +37,17 @@ not evaluate `OwnershipTokenIds`, because no stored ownership token exists yet; 
   DELETE whose action is configured with `OwnershipBased` stays fail-closed at `501`, so that configuration
   is refused rather than honoured. The operations named in this story's title are those of relationally
   stored resources.
+  *Superseded by DMS-1431: descriptor GET-by-id, POST, PUT, and DELETE enforce `OwnershipBased` with the
+  same 403 bodies and precedence, and no descriptor operation returns 501 for it.*
 - GET-by-id checks the stored token before hydration and reconstitution and returns 403 on null or mismatch.
 - PUT checks the stored token before mutation and never changes it.
 - DELETE checks the stored token before deletion.
 - A POST that resolves to create does not evaluate `OwnershipTokenIds`, so the 2,000-token defensive
   cap does not deny a true create. A POST that resolves to update applies the cap after target
   resolution and fails closed before DML.
+  *Superseded by DMS-1431: with `OwnershipBased` on the Create action, a create evaluates the creator
+  token against `OwnershipTokenIds`, and the cap fails a create too, in the create branch's ownership slot
+  and before DML.*
 - `OwnershipTokenIds` authorizes reads and mutations, while the single `CreatorOwnershipTokenId` is only for creation stamping.
 - Failures use `AUTH1` with the configured strategy index and map to `auth.md` sections 2.13 and 2.14.
 - POST and PUT run the ownership check as a statement in the write's first-phase command, after the
@@ -68,10 +81,13 @@ NOTE: GET-many ownership filtering is implemented by [DMS-1410](https://edfi.atl
 
 - Descriptor ownership: stamping is in scope, enforcement is not. Descriptor creates stamp
   `CreatedByOwnershipTokenId`, but descriptor GET-by-id, POST, PUT, and DELETE configured with
-  `OwnershipBased` stay fail-closed at `501` in DMS-1060.
+  `OwnershipBased` stay fail-closed at `501` in DMS-1060. *Superseded by DMS-1431: descriptors are
+  enforced.*
 - POST create token cap: a POST that resolves to create does not evaluate `OwnershipTokenIds`, because
   there is no stored ownership token to authorize. The 2,000-token defensive cap applies after target
-  resolution only when POST resolves to update, and then fails closed before DML.
+  resolution only when POST resolves to update, and then fails closed before DML. *Superseded by
+  DMS-1431: with `OwnershipBased` on the Create action, the create is judged from the application context
+  and the cap applies to it as well.*
 - GET-by-id batching: GET-by-id runs ownership as one added command ahead of hydration and
   reconstitution. This is an accepted deviation from sharing the operation's database roundtrip and is
   recorded in `reference/design/backend-redesign/epics/07-relational-write-path/08-write-roundtrip-batching.md`.

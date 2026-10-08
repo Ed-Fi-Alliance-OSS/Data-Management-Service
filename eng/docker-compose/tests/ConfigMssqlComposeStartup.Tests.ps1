@@ -50,10 +50,14 @@ Describe "Config MSSQL Compose startup hardening" {
     It "starts SQL Server and waits for sqlcmd readiness before starting the config services" {
         $scriptContent = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot "start-local-config.ps1") -Raw
 
-        $dbStartIndex = $scriptContent.IndexOf('docker compose $files --env-file $EnvironmentFile -p cs-local up $upArgs db')
-        $waitIndex = $scriptContent.IndexOf('Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword')
+        # The project and container names are opt-in overridable; unset, they keep the stock names.
+        $scriptContent | Should -Match '\$composeProject\s*=\s*Get-ComposeResolvedEnvValue\s+-EnvironmentValues\s+\$envValues\s+-Name\s+"CMS_COMPOSE_PROJECT"\s+-DefaultValue\s+"cs-local"'
+        $scriptContent | Should -Match '\$mssqlContainerName\s*=\s*Get-ComposeResolvedEnvValue\s+-EnvironmentValues\s+\$envValues\s+-Name\s+"CMS_MSSQL_CONTAINER"\s+-DefaultValue\s+"dms-mssql"'
+
+        $dbStartIndex = $scriptContent.IndexOf('docker compose $files --env-file $EnvironmentFile -p $composeProject up $upArgs db')
+        $waitIndex = $scriptContent.IndexOf('Wait-MssqlReady -ContainerName $mssqlContainerName -Password $mssqlSaPassword')
         $serviceSelectionIndex = $scriptContent.IndexOf('$configServices = if ($datastore -eq "mssql") { @("keycloak", "config") } else { @() }')
-        $configStartIndex = $scriptContent.IndexOf('docker compose $files --env-file $EnvironmentFile -p cs-local up $upArgs $configServices')
+        $configStartIndex = $scriptContent.IndexOf('docker compose $files --env-file $EnvironmentFile -p $composeProject up $upArgs $configServices')
 
         $dbStartIndex | Should -BeGreaterOrEqual 0
         $waitIndex | Should -BeGreaterThan $dbStartIndex

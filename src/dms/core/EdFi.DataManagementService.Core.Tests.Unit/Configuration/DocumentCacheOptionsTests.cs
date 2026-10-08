@@ -93,7 +93,7 @@ public class DocumentCacheOptionsTests
                     ["DataManagement:DocumentCache:Administration:WorkflowTimeout"] = "12:00:00",
                     ["DataManagement:DocumentCache:Status:StatusObservationTimeout"] = "00:00:08",
                     ["DataManagement:DocumentCache:Status:EndpointTimeout"] = "00:00:45",
-                    ["DataManagement:DocumentCache:Status:RequiredRole"] = "dms-document-cache-operator",
+                    ["DataManagement:DocumentCache:Status:RequiredRole"] = "dms-client",
                 }
             );
             _validationResult = Validate(_options);
@@ -115,7 +115,7 @@ public class DocumentCacheOptionsTests
             _options.Administration.WorkflowTimeout.Should().Be(TimeSpan.FromHours(12));
             _options.Status.StatusObservationTimeout.Should().Be(TimeSpan.FromSeconds(8));
             _options.Status.EndpointTimeout.Should().Be(TimeSpan.FromSeconds(45));
-            _options.Status.RequiredRole.Should().Be("dms-document-cache-operator");
+            _options.Status.RequiredRole.Should().Be("dms-client");
         }
 
         [Test]
@@ -497,7 +497,7 @@ public class DocumentCacheOptionsTests
             {
                 StatusObservationTimeout = TimeSpan.FromSeconds(5),
                 EndpointTimeout = TimeSpan.FromSeconds(30),
-                RequiredRole = "dms-document-cache-operator",
+                RequiredRole = "dms-client",
             };
 
             string json = JsonSerializer.Serialize(status);

@@ -1617,7 +1617,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         IReadOnlyList<long> claimEducationOrganizationIds,
         IReadOnlyList<string> strategyNames,
         string? ifMatch = null,
-        string? traceId = null
+        string? traceId = null,
+        IReadOnlyList<short>? ownershipTokenIds = null
     )
     {
         ResetRecorder();
@@ -1634,7 +1635,12 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             MappingSet: MappingSet
         )
         {
-            AuthorizationContext = new RelationalAuthorizationContext(claimEducationOrganizationIds),
+            AuthorizationContext = new RelationalAuthorizationContext(
+                claimEducationOrganizationIds,
+                [],
+                creatorOwnershipTokenId: null,
+                ownershipTokenIds ?? []
+            ),
             AuthorizationStrategyEvaluators =
             [
                 .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
@@ -1829,6 +1835,63 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             """,
             new NpgsqlParameter("resourceKeyId", GetCompiledResourceKeyId(projectEndpointName, resourceName))
         );
+
+    /// <summary>
+    /// Issues a PUT under the given strategies with the caller's full ownership context, which the
+    /// resource-specific update helpers do not carry.
+    /// </summary>
+    public async Task<UpdateResult> UpdateWithAuthorizationAsync(
+        string projectEndpointName,
+        string resourceName,
+        JsonNode requestBody,
+        DocumentUuid documentUuid,
+        IReadOnlyList<string> strategyNames,
+        IReadOnlyList<string>? namespacePrefixes = null,
+        short? creatorOwnershipTokenId = null,
+        IReadOnlyList<short>? ownershipTokenIds = null,
+        string? ifMatch = null
+    )
+    {
+        var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
+
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider);
+
+        var request = new UpdateRequest(
+            ResourceInfo: resourceHandle.ResourceInfo,
+            DocumentInfo: RelationalDocumentInfoTestHelper.CreateDocumentInfo(
+                requestBody,
+                resourceHandle.ResourceInfo,
+                resourceHandle.ResourceSchema,
+                MappingSet
+            ),
+            MappingSet: MappingSet,
+            EdfiDoc: requestBody,
+            Headers: CreateHeaders(ifMatch),
+            TraceId: new TraceId($"put-with-authorization-{resourceName}"),
+            DocumentUuid: documentUuid
+        )
+        {
+            AuthorizationContext = new RelationalAuthorizationContext(
+                [],
+                namespacePrefixes ?? [],
+                creatorOwnershipTokenId,
+                ownershipTokenIds ?? []
+            ),
+            AuthorizationStrategyEvaluators =
+            [
+                .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
+                    strategyName,
+                    [],
+                    FilterOperator.And
+                )),
+            ],
+        };
+
+        return await scope
+            .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+            .UpdateDocumentById(request);
+    }
 
     /// <summary>
     /// Returns once a backend in this database waits on a lock another backend holds, which is how a test knows a write it started is waiting on the

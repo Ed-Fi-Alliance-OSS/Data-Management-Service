@@ -13,6 +13,10 @@ param(
 Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provider; Procedure = $Procedure }) {
     BeforeAll {
         . (Join-Path $PSScriptRoot 'cdc-runbook-snippets.ps1')
+        $script:runbookProgress = @{}
+        $script:runbookCase = 'suite'
+        Set-CdcRunbookOperation -Operation ownership-check -Phase Setup
+        Import-Module (Join-Path $PSScriptRoot 'cdc-fixture-inputs.psm1') -Force
         $script:repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
         Import-Module (Join-Path $script:repo 'eng/docker-compose/env-utility.psm1') -DisableNameChecking
         if ($env:CDC_RUNBOOK_OWNED_STACK -ne '1') { throw 'EnvironmentUnavailable: CDC_RUNBOOK_OWNED_STACK=1 requires an exclusively owned disposable local stack.' }
@@ -27,22 +31,11 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
         if ($LASTEXITCODE -ne 0 -or $published.Count -or $publishedVolumes.Count) { throw 'EnvironmentUnavailable: published fixture requires no existing dms-published resources.' }
         $script:originalLocation = Get-Location
         Set-Location $script:repo
-        $script:results = [Collections.Generic.List[object]]::new()
-        function Invoke-PrivateScript {
-            param([string] $Id, [string] $Code, [int] $TimeoutSeconds = 600)
-            $path = Join-Path $script:fixture ($Id + '.ps1')
-            $Code | Set-Content -LiteralPath $path
-            & chmod 600 $path
-            $result = Invoke-NativeCommandWithInput -FilePath 'pwsh' -ArgumentList @('-NoProfile', '-NonInteractive', '-File', $path) -InputText '' -TimeoutSeconds $TimeoutSeconds
-            $result.StandardOutput | Set-Content (Join-Path $script:fixture "$Id.stdout")
-            $result.StandardError | Set-Content (Join-Path $script:fixture "$Id.stderr")
-            & chmod 600 (Join-Path $script:fixture "$Id.stdout") (Join-Path $script:fixture "$Id.stderr")
-            $result.FailureKind | Should -Be 'None' -Because "the private $Id process must complete"
-            return $result
-        }
     }
 
     BeforeEach {
+        $script:runbookCase = $Id
+        Set-CdcRunbookOperation -Operation ownership-check -Phase Setup
         foreach ($ownedProject in @('dms-local', 'dms-published')) {
             $remaining = @(& docker ps -aq --filter "label=com.docker.compose.project=$ownedProject")
             if ($LASTEXITCODE -ne 0 -or $remaining.Count) { throw 'A preceding live case retained its deployment; preserve it for diagnosis instead of preparing another environment.' }
@@ -63,6 +56,7 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
             @{ Id = 'cdc-sqlserver-e2e-setup'; E2e = $true; Published = $false; SqlServer = $true }
         }
     ) {
+        Set-CdcRunbookOperation -Operation fixture-inputs -Phase Setup
         $prefix = if ($SqlServer) { 'cdc-sqlserver' } else { 'cdc-pg' }
         $providerName = if ($SqlServer) { 'sqlserver' } else { 'postgresql' }
         $stateName = if ($SqlServer) { 'state-sqlserver' } else { 'state-pg' }
@@ -71,29 +65,11 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
         $local = Join-Path $script:fixture '.local/cdc'
         $null = New-Item -ItemType Directory -Path $local -Force
         & chmod 700 $script:fixture (Split-Path $local) $local
-        $source = if ($E2e) { '.env.e2e' } else { '.env.example' }
-        $environmentName = if ($E2e) { '.env.e2e' } else { '.env' }
-        $environmentFile = Join-Path $script:fixture $environmentName
-        Copy-Item (Join-Path $script:repo "eng/docker-compose/$source") $environmentFile
-        $password = [guid]::NewGuid().ToString('N') + 'Ab1!'
-        $connectorPassword = [guid]::NewGuid().ToString('N') + 'Ab1!'
-        $environmentText = Get-Content $environmentFile -Raw
-        $fixtureValues = @{ POSTGRES_USER = 'postgres'; POSTGRES_PASSWORD = $password; POSTGRES_PORT = '5435'; CDC_DATABASE_PASSWORD = $connectorPassword }
         $providerImage = if ($SqlServer) { $env:CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE } else { $env:CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE }
-        $providerImage | Should -Not -BeNullOrEmpty
-        $imageVariable = if ($SqlServer) { 'MSSQL_IMAGE' } else { 'POSTGRES_IMAGE' }
-        $fixtureValues[$imageVariable] = $providerImage
-        $databaseContainer = if ($SqlServer) { 'dms-mssql' } else { 'dms-postgresql' }
         $providerImageId = & docker image inspect $providerImage --format '{{.Id}}'
         $LASTEXITCODE | Should -Be 0
         $providerImageId | Should -Match '^sha256:[a-f0-9]{64}$'
-        # Cold plugin scans need headroom on high-core qualification hosts. Keep the
-        # declared worker policy and Compose heap identical from initial creation.
-        if ($Procedure -eq 'Lifecycle') { $fixtureValues.CDC_WORKER_HEAP_MIB = '1024' }
-        if ($SqlServer) {
-            $fixtureValues.MSSQL_SA_PASSWORD = $password; $fixtureValues.MSSQL_PORT = '1435'
-            $fixtureValues.DMS_DATASTORE = 'mssql'; $fixtureValues.DMS_CONFIG_DATASTORE = 'mssql'
-        }
+        $fixtureValues = @{}
         $publishedImageTags = @()
         if ($Published) {
             # Fixture-packaged branch images exercise the published wrapper with matching code/schema.
@@ -105,67 +81,44 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
                 $publishedImageTags += $publishedImageTag
             }
         }
-        foreach ($pair in $fixtureValues.GetEnumerator()) {
-            $pattern = '(?m)^' + [regex]::Escape($pair.Key) + '=.*$'
-            $assignment = "$($pair.Key)=$($pair.Value)"
-            if ([regex]::IsMatch($environmentText, $pattern)) { $environmentText = [regex]::Replace($environmentText, $pattern, $assignment) }
-            else { $environmentText += "`n$assignment`n" }
-        }
-        $environmentText | Set-Content $environmentFile
-        & chmod 600 $environmentFile
-        $values = ReadValuesFromEnvFile $environmentFile
-        $database = if ($E2e) { $values.E2E_DATABASE_NAME } else { 'edfi_cdc' }
+        $inputs = New-CdcFixtureInput -Repo $script:repo -FixtureRoot $script:fixture -SqlServer $SqlServer -E2e $E2e `
+            -ProviderImage $providerImage -LargeWorker ($Procedure -eq 'Lifecycle') -AdditionalValues $fixtureValues
+        $environmentFile = $inputs.EnvironmentFile; $settingsPath = $inputs.SettingsPath; $statePath = $inputs.StatePath
+        $values = $inputs.Values; $inputPath = $inputs.InputPath; $database = $inputs.Database; $imageVariable = $inputs.ImageVariable
         $suffix = if ($E2e) { '-e2e' } else { '' }
-        $settingsPath = Join-Path $local "$providerName$suffix.json"
-        $statePath = Join-Path $local "$stateName$suffix"
-        # Exact infrastructure snippet, with its declared environment-path substitution.
+        $databaseContainer = if ($SqlServer) { 'dms-mssql' } else { 'dms-postgresql' }
+        # Infrastructure snippet with the documented E2E environment/claims substitutions.
         $infra = (Get-CdcRunbookCode "$prefix-infrastructure").Replace('./eng/docker-compose/.env', $environmentFile)
+        if ($E2e) { $infra = $infra.Replace('-InfraOnly', '-InfraOnly -AddExtensionSecurityMetadata') }
         if ($Published) { $infra = $infra.Replace('start-local-dms.ps1', 'start-published-dms.ps1') }
-        (Invoke-PrivateScript "$prefix-infrastructure" $infra).ExitCode | Should -Be 0
+        (Invoke-CdcRunbookScript -Id "$prefix-infrastructure" -Code $infra -FixtureRoot $script:fixture).ExitCode | Should -Be 0
         (& docker inspect $databaseContainer --format '{{.Config.Image}}') | Should -Be $providerImage
         $LASTEXITCODE | Should -Be 0
         (& docker inspect $databaseContainer --format '{{.Image}}') | Should -Be $providerImageId
         $LASTEXITCODE | Should -Be 0
-        # Deployment-owned role preparation only. No target database, capture artifact or grant repair.
-        function Invoke-FixtureSql {
-            param([string] $Sql, [string] $Database = 'master')
-            # Container-owned secret, never a password argument or output artifact.
-            return Invoke-NativeCommandWithInput -FilePath 'docker' -ArgumentList @('exec', '-i', 'dms-mssql', 'sh', '-c',
-                'SQLCMDPASSWORD="$MSSQL_SA_PASSWORD" /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -h -1 -W -d "$1"', 'sqlcmd', $Database) -InputText ("SET NOCOUNT ON;`n" + $Sql)
+        if ($E2e) {
+            # Assert first-start initialization before the E2E wrapper stages its bootstrap claims.
+            # Restarting CMS later cannot add missing claim sets to already-populated tables.
+            Set-CdcRunbookOperation -Operation verify-claims -Phase Setup
+            $claims = if ($SqlServer) {
+                Invoke-CdcFixtureSql -Database 'edfi_configurationservice' -Sql "SELECT ClaimSetName FROM dmscs.ClaimSet WHERE ClaimSetName LIKE 'E2E-%';"
+            } else {
+                $claimsSql = 'SELECT "ClaimSetName" FROM "dmscs"."ClaimSet" WHERE "ClaimSetName" LIKE ''E2E-%'';'
+                Invoke-NativeCommandWithInput -FilePath 'docker' -ArgumentList @('exec', '-i', 'dms-postgresql', 'psql', '-U', 'postgres', '-d', 'edfi_configurationservice', '-At', '-v', 'ON_ERROR_STOP=1') -InputText $claimsSql
+            }
+            $claims.FailureKind | Should -Be 'None'
+            $claims.ExitCode | Should -Be 0
+            @($claims.StandardOutput.Trim() -split '\r?\n' | ForEach-Object { $_.Trim() } | Sort-Object) | Should -Be @(
+                'E2E-NameSpaceBasedClaimSet'
+                'E2E-NoFurtherAuthRequiredClaimSet'
+                'E2E-RelationshipsWithEdOrgsOnlyClaimSet'
+                'E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet'
+                'E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet'
+                'E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet'
+            ) -Because 'E2E claims must be loaded on the first CMS startup'
         }
-        if ($SqlServer) {
-            $server = (& docker inspect dms-mssql | ConvertFrom-Json)[0]
-            ($server.Config.Env -ccontains "MSSQL_SA_PASSWORD=$password") | Should -BeTrue -Because 'the effective engine overlay must preserve the declared fixture credential'
-            $server = $null
-            $sql = "IF DB_ID(N'$database') IS NOT NULL THROW 51000, 'Target must be absent', 1; CREATE LOGIN cdc_reader WITH PASSWORD = '$connectorPassword';"
-            $role = Invoke-FixtureSql $sql
-        } else {
-            $sql = "CREATE ROLE cdc_reader WITH LOGIN REPLICATION NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '$connectorPassword';"
-            $role = Invoke-NativeCommandWithInput -FilePath 'docker' -ArgumentList @('exec', '-i', 'dms-postgresql', 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1') -InputText $sql
-        }
-        $role.FailureKind | Should -Be 'None'
-        $role.ExitCode | Should -Be 0
-        $base = Get-Content (Join-Path $script:repo 'src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.json') -Raw | ConvertFrom-Json -AsHashtable
-        $base.ConfigurationServiceSettings.BaseUrl = 'http://127.0.0.1:8081'
-        $base.ConfigurationServiceSettings.ClientId = $values.CONFIG_SERVICE_CLIENT_ID
-        $base.ConfigurationServiceSettings.ClientSecret = $values.CONFIG_SERVICE_CLIENT_SECRET
-        $base.ConfigurationServiceSettings.Scope = $values.CONFIG_SERVICE_CLIENT_SCOPE
-        $base.ConfigurationServiceSettings.EncryptionKey = $values.DMS_CONFIG_DATABASE_ENCRYPTION_KEY
-        $base.AppSettings.AuthenticationService = 'http://127.0.0.1:8081/connect/token'
-        $base.JwtAuthentication.Authority = 'http://127.0.0.1:8081'
-        $base.JwtAuthentication.MetadataAddress = 'http://127.0.0.1:8081/.well-known/openid-configuration'
-        $base | ConvertTo-Json -Depth 64 | Set-Content (Join-Path $local 'dms-base.json')
-        $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
-        $builder['Database'] = $database; $builder['Password'] = $password
-        if ($SqlServer) {
-            $builder['Server'] = '127.0.0.1,1435'; $builder['User Id'] = 'sa'
-            $builder['Encrypt'] = 'true'; $builder['TrustServerCertificate'] = 'true'; $builder['Command Timeout'] = '180'
-        } else {
-            $builder['Host'] = '127.0.0.1'; $builder['Port'] = '5435'; $builder['Username'] = 'postgres'
-        }
-        $inputPath = Join-Path $script:fixture 'setup-connection.txt'
-        $builder.ConnectionString | Set-Content $inputPath
-        & chmod 600 $inputPath (Join-Path $local 'dms-base.json')
+        Set-CdcRunbookOperation -Operation provider-principal -Phase Setup
+        Initialize-CdcFixturePrincipal -SqlServer $SqlServer -Inputs $inputs
         $settings = Get-CdcRunbookCode "$prefix-settings"
         $settings = $settings.Replace("'.local/cdc/", "'$local/").Replace("'./.local/cdc/", "'$local/")
         $settings = $settings.Replace("Join-Path `$repoRoot '$local/", "'$local/")
@@ -175,7 +128,7 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
         $settings = $settings.Replace('CallMilliseconds = 30000', 'CallMilliseconds = 120000').Replace('WaitMilliseconds = 300000', 'WaitMilliseconds = 600000')
         if ($Procedure -eq 'Lifecycle') { $settings = $settings.Replace('HeapBytes = 536870912', 'HeapBytes = 1073741824') }
         $settings = "function Read-Host { param([string]`$Prompt, [switch]`$MaskInput) return (Get-Content -LiteralPath '$inputPath' -Raw).Trim() }`n" + $settings
-        (Invoke-PrivateScript "$prefix-settings" $settings).ExitCode | Should -Be 0
+        (Invoke-CdcRunbookScript -Id "$prefix-settings" -Code $settings -FixtureRoot $script:fixture).ExitCode | Should -Be 0
         Test-Path $settingsPath | Should -BeTrue
         # Cold infrastructure may return an unavailable observation. Retry only the
         # intact initial workflow, never a generation that authorized writers.
@@ -191,6 +144,7 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
         }
         $result.FailureKind | Should -Be 'None'
         $result.ExitCode | Should -Be 0 -Because 'only the shipped wrapper may authorize and launch writers'
+        Set-CdcRunbookOperation -Operation verify-deployment
         $inventoryPath = Join-Path $script:repo "eng/docker-compose/.cdc-deployments/$project.json"
         $inventory = Get-Content $inventoryPath -Raw | ConvertFrom-Json
         $inventory.Entries.Count | Should -Be 1
@@ -214,8 +168,9 @@ Describe '<Provider> live runbook <Procedure>' -ForEach @(@{ Provider = $Provide
         (Invoke-WebRequest 'http://127.0.0.1:8080/health').StatusCode | Should -Be 200
         $qualified = Get-Content (Join-Path $script:repo 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json') -Raw | ConvertFrom-Json
         (& docker inspect "$project-kafka-cdc-worker-1" --format '{{.Config.Image}}') | Should -Be $qualified.image
+        Set-CdcRunbookOperation -Operation verify-capture
         if ($SqlServer) {
-            $capture = Invoke-FixtureSql -Database $database -Sql @'
+            $capture = Invoke-CdcFixtureSql -Database $database -Sql @'
 SELECT STRING_AGG(OBJECT_NAME(source_object_id), ',') WITHIN GROUP (ORDER BY OBJECT_NAME(source_object_id)) FROM cdc.change_tables;
 SELECT COUNT(*) FROM cdc.change_tables WHERE source_object_id = OBJECT_ID(N'dms.DocumentProjectionWork');
 SELECT COUNT(*) FROM sys.database_principals WHERE name = N'cdc_reader' AND type = 'S' AND sid = SUSER_SID(N'cdc_reader');
@@ -238,7 +193,7 @@ REVERT;
             $configuration = if ($env:CDC_RUNBOOK_CONFIGURATION) { $env:CDC_RUNBOOK_CONFIGURATION } else { 'Release' }
             $tool = Join-Path $script:repo "src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/$configuration/net10.0/api-schema-tools"
             $code = (Get-CdcRunbookCode $observation).Replace('api-schema-tools', "& '$tool'").Replace('<retained-settings-path>', $entry.SettingsPath).Replace('<original-state-root>', $statePath).Replace('--maximum-passes 20', '--maximum-passes 2')
-            $observed = Invoke-PrivateScript $observation ($code + "`nexit `$LASTEXITCODE")
+            $observed = Invoke-CdcRunbookScript -Id $observation -Code $code -FixtureRoot $script:fixture
             $output = $observed.StandardOutput | ConvertFrom-Json
             $observed.ExitCode | Should -Be 1
             $output.exitCode | Should -Be $observed.ExitCode
@@ -262,17 +217,19 @@ REVERT;
             $LASTEXITCODE | Should -Be 0
         }
         if ($E2e -and $SqlServer) {
-            $snapshot = Invoke-FixtureSql -Database $values.E2E_SNAPSHOT_DATABASE_NAME -Sql 'SELECT COUNT(*) FROM dms.EffectiveSchema; SELECT COUNT(*) FROM sys.database_principals WHERE name = N''cdc_reader'';'
+            Set-CdcRunbookOperation -Operation verify-snapshot
+            $snapshot = Invoke-CdcFixtureSql -Database $values.E2E_SNAPSHOT_DATABASE_NAME -Sql 'SELECT COUNT(*) FROM dms.EffectiveSchema; SELECT COUNT(*) FROM sys.database_principals WHERE name = N''cdc_reader'';'
             $snapshot.ExitCode | Should -Be 0
             ($snapshot.StandardOutput.Trim() -split '\r?\n') | Should -Be @('1', '0')
         }
         if ($E2e) {
             $smokeCode = (Get-CdcRunbookCode 'cdc-pg-e2e-test').Replace('edfi_datamanagementservice_e2e', $database)
-            $smoke = Invoke-PrivateScript 'cdc-pg-e2e-test' $smokeCode
+            $smoke = Invoke-CdcRunbookScript -Id 'cdc-pg-e2e-test' -Code $smokeCode -FixtureRoot $script:fixture
             $smoke.ExitCode | Should -Be 0
             $smoke.StandardOutput | Should -Match 'Passed:\s+2'
             $smoke.StandardOutput | Should -Match 'Skipped:\s+0'
         }
+        Set-CdcRunbookOperation -Operation image-evidence
         $applicationContainers = @(& docker ps -q --filter "label=com.docker.compose.project=$project" --filter 'label=com.docker.compose.service=dms')
         $LASTEXITCODE | Should -Be 0
         $applicationContainers.Count | Should -Be 1
@@ -282,7 +239,6 @@ REVERT;
         $configurationImage = & docker inspect ed-fi-api-config-service --format '{{.Image}}'
         $LASTEXITCODE | Should -Be 0
         $configurationImage | Should -Match '^sha256:[a-f0-9]{64}$'
-        $script:results.Add(@{ TestId = "CDC-DOC $Id"; SnippetId = $Id; Outcome = 'Passed' })
         # Fixed assertions and image IDs only; no settings, SIDs, credentials or raw output.
         @{
             SnippetId = $Id; WrapperAttempts = $attempt; Provider = $providerName
@@ -305,8 +261,9 @@ REVERT;
         # Complete governed retirement while services remain reachable; never erase provenance to retry.
         $teardown = Get-CdcRunbookCode 'cdc-stack-teardown'
         if ($Published) { $teardown = $teardown.Replace('bootstrap-local-dms.ps1', 'bootstrap-published-dms.ps1') }
-        (Invoke-PrivateScript 'cdc-stack-teardown' $teardown).ExitCode | Should -Be 0
+        (Invoke-CdcRunbookScript -Id 'cdc-stack-teardown' -Code $teardown -FixtureRoot $script:fixture).ExitCode | Should -Be 0
         Test-Path $inventoryPath | Should -BeFalse
+        Set-CdcRunbookOperation -Operation retire-workspace -Phase Teardown
         $workspace = Join-Path $script:repo 'eng/docker-compose/.bootstrap'
         if (Test-Path $workspace) { Move-Item $workspace (Join-Path $script:fixture 'retired-bootstrap') }
         # Remove only this case's temporary tags after successful teardown; failed cases retain them.
@@ -314,12 +271,11 @@ REVERT;
             & docker image rm $publishedImageTag
             $LASTEXITCODE | Should -Be 0
         }
+        Complete-CdcRunbookOperation
     }
 
     AfterAll {
-        if ($script:results -and $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY) {
-            @{ Cases = @($script:results) } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY "cdc-runbook-live-$($Procedure.ToLowerInvariant()).json")
-        }
+        Save-CdcRunbookProgress
         if ($script:originalLocation) { Set-Location $script:originalLocation }
     }
 }

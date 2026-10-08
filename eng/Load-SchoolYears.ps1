@@ -117,7 +117,7 @@ try {
     Write-Host "Step 2: Getting DMS authentication credentials..." -ForegroundColor Yellow
 
     # Create vendor and application to get key/secret
-    $vendorId = Add-Vendor -CmsUrl $CmsUrl -AccessToken $cmsToken
+    $vendorId = Add-Vendor -CmsUrl $CmsUrl -Company "School Year Loader Vendor" -AccessToken $cmsToken
     $credentials = Add-Application -CmsUrl $CmsUrl -VendorId $vendorId -AccessToken $cmsToken -ClaimSetName $ClaimSetName
 
     $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $credentials.Key -Secret $credentials.Secret

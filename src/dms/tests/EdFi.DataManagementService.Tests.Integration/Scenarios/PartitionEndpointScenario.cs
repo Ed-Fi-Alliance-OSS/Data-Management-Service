@@ -251,7 +251,7 @@ internal static class PartitionEndpointScenario
 
     /// <summary>
     /// The paging parameters belong to the collection read, so a client that confused the two endpoints
-    /// is told which parameter does not apply rather than being told it is an unknown query field.
+    /// is told which parameter does not apply rather than having it ignored as if it were a typo.
     /// </summary>
     public static async Task It_refuses_a_reserved_paging_parameter(ApiIntegrationHarness harness)
     {
@@ -268,6 +268,7 @@ internal static class PartitionEndpointScenario
             .Select(static error => error!.GetValue<string>())
             .Should()
             .Equal("The 'limit' parameter is not supported by the partitions endpoint.");
+        IgnoredParameterWarningAssertions.AssertNoWarning(response);
     }
 
     public static async Task It_refuses_a_partition_count_outside_the_supported_range(

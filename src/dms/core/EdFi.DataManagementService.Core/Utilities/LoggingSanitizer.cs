@@ -74,6 +74,56 @@ public static class LoggingSanitizer
         LogSanitizer.SanitizeFreeTextForLog(input);
 
     /// <summary>
+    /// Appended by <see cref="SanitizeFreeTextForLogging(string?, int)"/> when it cuts a value, so
+    /// an operator can tell a short value from a truncated one.
+    /// </summary>
+    public const string TruncationSuffix = "...[truncated]";
+
+    /// <summary>
+    /// <see cref="SanitizeFreeTextForLogging(string?)"/> followed by a cap of
+    /// <paramref name="maxLength"/> UTF-16 code units, with <see cref="TruncationSuffix"/> appended
+    /// when the cap applies. For attacker-influenceable text whose size must be bounded too.
+    /// </summary>
+    /// <param name="input">The free-form text to sanitize</param>
+    /// <param name="maxLength">The most code units of sanitized text to keep; at least 2</param>
+    /// <returns>A sanitized, bounded string safe for a structured log event</returns>
+    public static string SanitizeFreeTextForLogging(string? input, int maxLength)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxLength, 2);
+
+        // Sanitize first and truncate second. The order is observable: a value padded with
+        // control characters would, under truncate-then-sanitize, spend the whole budget on
+        // characters the sanitizer then removes, so the content that follows the padding would
+        // never reach the log even though the logged value came in far under the cap.
+        string sanitized = LogSanitizer.SanitizeFreeTextForLog(input);
+
+        if (sanitized.Length <= maxLength)
+        {
+            return sanitized;
+        }
+
+        // The cap counts UTF-16 code units, so the cut can land between the halves of a surrogate
+        // pair and manufacture a lone high surrogate the input never contained. An unpaired
+        // surrogate reaches a JSON-formatted log sink as U+FFFD and a plain-text one as the raw
+        // code unit, so two sinks reading the same event would disagree. The astral character is
+        // dropped whole instead.
+        //
+        // One test, deliberately not the two-part test in CorrelationIdNormalizer.Normalize - do
+        // not "restore" the missing half. That method cuts *unsanitized* input, where a lone high
+        // surrogate can sit at the boundary. Here the cut happens after sanitization, which drops
+        // every unpaired surrogate, so a high surrogate still present is necessarily paired.
+        int retained = maxLength;
+        if (char.IsHighSurrogate(sanitized[retained - 1]))
+        {
+            retained--;
+        }
+
+        // The suffix is appended whichever way the boundary moved. It is the operator's only
+        // signal that anything was cut at all, and backing off must not cost it.
+        return string.Concat(sanitized.AsSpan(0, retained), TruncationSuffix);
+    }
+
+    /// <summary>
     /// Sanitizes input for console/stderr output by stripping control characters,
     /// except newline (\n) and carriage return (\r) which are preserved for
     /// multi-line output readability (e.g., diff reports from SeedValidator).

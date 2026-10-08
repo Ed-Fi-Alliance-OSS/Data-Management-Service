@@ -160,12 +160,6 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     private const int MaxLoggedUpstreamContentLength = 2048;
 
     /// <summary>
-    /// Appended when <see cref="MaxLoggedUpstreamContentLength"/> is applied, so an operator can
-    /// tell a short upstream body from a truncated one.
-    /// </summary>
-    private const string LoggedContentTruncationSuffix = "...[truncated]";
-
-    /// <summary>
     /// The <c>type</c> a CMS token-limit rejection carries. Matched exactly, and it must stay in
     /// step with what <see cref="Response.FailureResponse.ForTooManyTokens"/> emits.
     /// </summary>
@@ -255,7 +249,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                     logger.LogWarning(
                         "Error from upstream identity service - {TraceId} - {Content}",
                         traceId.Value,
-                        SanitizeAndBoundForLogging(content)
+                        LoggingSanitizer.SanitizeFreeTextForLogging(content, MaxLoggedUpstreamContentLength)
                     );
                     return GenerateProblemDetailResponse(
                         HttpStatusCode.BadGateway,
@@ -544,11 +538,13 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             // attacker-influenceable as a member value, and an upstream is free to return one
             // carrying newlines or a megabyte of padding.
             return (
-                SanitizeAndBoundForLogging(
-                    standard.Count == 0 ? NoUpstreamFieldsMarker : string.Join(", ", standard)
+                LoggingSanitizer.SanitizeFreeTextForLogging(
+                    standard.Count == 0 ? NoUpstreamFieldsMarker : string.Join(", ", standard),
+                    MaxLoggedUpstreamContentLength
                 ),
-                SanitizeAndBoundForLogging(
-                    otherNames.Count == 0 ? NoUpstreamFieldsMarker : string.Join(", ", otherNames)
+                LoggingSanitizer.SanitizeFreeTextForLogging(
+                    otherNames.Count == 0 ? NoUpstreamFieldsMarker : string.Join(", ", otherNames),
+                    MaxLoggedUpstreamContentLength
                 )
             );
         }
@@ -586,48 +582,6 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         // the null into whatever their own safe default is.
         static string? ScalarValueOrNull(JsonNode? value) =>
             value is JsonValue scalar ? scalar.ToString() : null;
-
-        // Sanitize first and truncate second. The order is observable: an upstream body padded
-        // with control characters would, under truncate-then-sanitize, spend the whole budget on
-        // characters the sanitizer then removes, so the diagnostic content that follows the
-        // padding would never reach the log even though the logged value came in far under the
-        // cap.
-        static string SanitizeAndBoundForLogging(string? content)
-        {
-            string sanitized = LoggingSanitizer.SanitizeFreeTextForLogging(content);
-
-            if (sanitized.Length <= MaxLoggedUpstreamContentLength)
-            {
-                return sanitized;
-            }
-
-            // The cap counts UTF-16 code units, so the cut can land between the halves of a
-            // surrogate pair and manufacture a lone high surrogate that the upstream body never
-            // contained - 2047 ASCII characters followed by an emoji is the whole of it. That is
-            // the same defect this branch exists to prevent elsewhere, so it is backed off here
-            // rather than tolerated: an unpaired surrogate reaches a JSON-formatted log sink as
-            // U+FFFD and a plain-text one as the raw code unit, so two sinks reading the same
-            // event disagree about what the upstream service said. The astral character is
-            // dropped whole rather than half-kept, costing one code unit of a 2048-unit budget.
-            //
-            // One test, deliberately not the two-part test in CorrelationIdNormalizer.Normalize
-            // - do not "restore" the missing half. That method cuts *unsanitized* input, where a
-            // lone high surrogate can sit at the boundary. Here the cut happens after
-            // sanitization, which drops every unpaired surrogate, so a high surrogate still
-            // present is necessarily paired.
-            //
-            // The index is in bounds because the branch runs only when sanitized.Length exceeds
-            // the cap, and `retained` is never driven below cap - 1.
-            int retained = MaxLoggedUpstreamContentLength;
-            if (char.IsHighSurrogate(sanitized[retained - 1]))
-            {
-                retained--;
-            }
-
-            // The suffix is appended whichever way the boundary moved. It is the operator's only
-            // signal that anything was cut at all, and backing off must not cost it.
-            return string.Concat(sanitized.AsSpan(0, retained), LoggedContentTruncationSuffix);
-        }
 
         static HttpResponseMessage GenerateProblemDetailResponse(
             HttpStatusCode statusCode,

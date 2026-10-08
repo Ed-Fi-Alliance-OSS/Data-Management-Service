@@ -103,6 +103,17 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Validation
                 // Fall back to manual principal creation
                 return await CreatePrincipalFromTokenAsync(token);
             }
+            catch (AuthenticationDependencyUnavailableException ex)
+            {
+                // Introspection keeps answering an undecided token as inactive (DMS-1556 §4.7), so the category is
+                // logged here or an unavailable store is indistinguishable from an invalid token.
+                _logger.LogError(
+                    ex,
+                    "Token validation could not reach a decision: the {Category} is unavailable",
+                    ex.Category
+                );
+                return null;
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to validate and create principal from token");

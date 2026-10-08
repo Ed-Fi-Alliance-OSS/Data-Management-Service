@@ -131,6 +131,7 @@ public sealed class Given_CdcPublicationHistory_packaged_administration(bool mss
                 """
                 DELETE FROM dms."DocumentProjectionWork";
                 DELETE FROM dms."DocumentCache";
+                DELETE FROM dms."Descriptor";
                 DELETE FROM dms."Document";
                 """
             );

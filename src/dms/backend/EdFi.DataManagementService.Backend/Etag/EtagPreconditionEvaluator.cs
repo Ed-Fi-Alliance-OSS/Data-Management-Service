@@ -3,21 +3,19 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Linq;
 using EdFi.DataManagementService.Core.External.Backend;
 
 namespace EdFi.DataManagementService.Backend.Etag;
 
 /// <summary>
-/// Decides whether a write may proceed under an HTTP conditional precondition, given whether the
-/// target currently exists and (when it does) its state-significant ETag projection. If-Match and
-/// If-None-Match compare the same projection (ContentVersion, schemaEpoch); only the polarity differs.
-/// Reads use full-tag comparison and are handled in the read handler, not here.
+/// Decides whether a write may proceed under an HTTP conditional precondition, given the target's
+/// current state-significant ETag projection. If-Match compares the projection (ContentVersion,
+/// schemaEpoch). Reads use full-tag comparison and are handled in the read handler, not here.
 /// </summary>
 internal static class EtagPreconditionEvaluator
 {
-    public static bool IsSatisfied(WritePrecondition precondition, bool targetExists, string? currentEtag) =>
-        IsSatisfiedAgainstProjection(precondition, targetExists, EtagMatchProjection.Of(currentEtag));
+    public static bool IsSatisfied(WritePrecondition precondition, string currentEtag) =>
+        IsSatisfiedAgainstProjection(precondition, EtagMatchProjection.Of(currentEtag));
 
     public static bool IsSatisfiedByCurrentState(
         WritePrecondition precondition,
@@ -26,22 +24,17 @@ internal static class EtagPreconditionEvaluator
     ) =>
         IsSatisfiedAgainstProjection(
             precondition,
-            targetExists: true,
             EtagMatchProjection.OfCurrentState(contentVersion, effectiveSchemaHash)
         );
 
     private static bool IsSatisfiedAgainstProjection(
         WritePrecondition precondition,
-        bool targetExists,
         string currentProjection
     ) =>
         precondition switch
         {
             WritePrecondition.None => true,
-            WritePrecondition.IfMatch m => targetExists
-                && (m.IsWildcard || ProjectionEquals(m.Value, currentProjection)),
-            WritePrecondition.IfNoneMatch n => !targetExists
-                || (!n.IsWildcard && !n.Values.Any(v => ProjectionEquals(v, currentProjection))),
+            WritePrecondition.IfMatch m => m.IsWildcard || ProjectionEquals(m.Value, currentProjection),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(precondition),
                 precondition,
@@ -53,10 +46,8 @@ internal static class EtagPreconditionEvaluator
         precondition switch
         {
             WritePrecondition.IfMatch => ETagPreconditionFailureReason.Concurrency,
-            WritePrecondition.IfNoneMatch =>
-                ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch,
             _ => throw new ArgumentException(
-                "An ETag precondition failure reason requires If-Match or If-None-Match.",
+                "An ETag precondition failure reason requires If-Match.",
                 nameof(precondition)
             ),
         };

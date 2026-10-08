@@ -27,7 +27,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.DocumentCache;
 [Parallelizable]
 public class DocumentCacheStatusAuthorizationTests
 {
-    private const string RequiredRole = "dms-document-cache-operator";
+    private const string RequiredRole = "dms-client";
     private const string RoleClaimType = "operator_role";
     private const string Token = "valid-token";
     private const string TestAudience = "ed-fi-ods-api";
@@ -102,6 +102,7 @@ public class DocumentCacheStatusAuthorizationTests
 
         JwtAuthenticationOptions jwtAuthenticationOptions = new()
         {
+            Authority = TestIssuer,
             Audience = TestAudience,
             RoleClaimType = roleClaimType,
             ClientRole = clientRole,
@@ -345,12 +346,12 @@ public class DocumentCacheStatusAuthorizationTests
         result.Outcome.Should().Be(DocumentCacheStatusAuthorizationOutcome.Forbidden);
     }
 
-    [TestCase("DMS-DOCUMENT-CACHE-OPERATOR")]
-    [TestCase(" dms-document-cache-operator")]
-    [TestCase("dms-document-cache-operator ")]
-    [TestCase("dms-document-cache-operator other")]
-    [TestCase("dms-document-cache-operator,other")]
-    [TestCase("[\"dms-document-cache-operator\"]")]
+    [TestCase("DMS-CLIENT")]
+    [TestCase(" dms-client")]
+    [TestCase("dms-client ")]
+    [TestCase("dms-client other")]
+    [TestCase("dms-client,other")]
+    [TestCase("[\"dms-client\"]")]
     public async Task It_does_not_normalize_split_or_parse_role_claim_values(string claimValue)
     {
         ClaimsPrincipal principal = Principal(new Claim(RoleClaimType, claimValue));

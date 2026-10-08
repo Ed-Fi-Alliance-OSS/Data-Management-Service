@@ -49,7 +49,7 @@ public class Given_GetTokenInfoHandler
         _tokenInfoRelationalMappingSetResolver = A.Fake<ITokenInfoRelationalMappingSetResolver>();
         _mappingSet = CreateMappingSet();
 
-        A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._))
+        A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
             .Returns([new ClaimSet(ClaimSetName, [])]);
 
         A.CallTo(() => _profileService.GetOrFetchApplicationProfilesAsync(A<long>._, A<string?>._))
@@ -63,6 +63,66 @@ public class Given_GetTokenInfoHandler
 
         A.CallTo(() => _tokenInfoRelationalMappingSetResolver.ResolveAsync(A<RequestInfo>._))
             .Returns(new TokenInfoRelationalMappingSetResolutionResult(true, _mappingSet));
+    }
+
+    [Test]
+    public async Task It_passes_the_requests_cancellation_token_to_the_claim_set_and_application_context_providers()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        CancellationToken capturedClaimSetToken = default;
+        CancellationToken capturedApplicationContextToken = default;
+
+        A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
+            .Invokes((string? _, CancellationToken token) => capturedClaimSetToken = token)
+            .Returns([new ClaimSet(ClaimSetName, [])]);
+
+        var applicationContextProvider = A.Fake<IApplicationContextProvider>();
+        A.CallTo(() =>
+                applicationContextProvider.GetApplicationByClientIdAsync(
+                    ClientId,
+                    tenant: null,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(
+                (string _, string? _, CancellationToken token) => capturedApplicationContextToken = token
+            )
+            .Returns(
+                Task.FromResult<ApplicationContextResult>(
+                    new ApplicationContextResult.Success(
+                        new ApplicationContext(
+                            Id: 1,
+                            ApplicationId: 7,
+                            ClientId: ClientId,
+                            ClientUuid: Guid.Parse("a650c029-1fc0-4d9a-8844-f9386e35103f"),
+                            DataStoreIds: [1],
+                            CreatorOwnershipTokenId: null,
+                            OwnershipTokenIds: []
+                        )
+                    )
+                )
+            );
+
+        var services = new ServiceCollection();
+        services.AddSingleton(applicationContextProvider);
+        using var scopedServiceProvider = services.BuildServiceProvider();
+
+        // No education organization ids, so the handler never needs the relational lookup that
+        // GetAuthorizedEducationOrganizations resolves from request scope.
+        var clientAuthorizations = CreateClientAuthorizations([]);
+        ConfigureJwtValidation(clientAuthorizations);
+
+        RequestInfo requestInfo = CreateRequestInfo(
+            clientAuthorizations,
+            scopedServiceProvider,
+            cancellationSource.Token
+        );
+
+        await Execute(requestInfo);
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+        capturedClaimSetToken.Should().Be(cancellationSource.Token);
+        capturedApplicationContextToken.Should().Be(cancellationSource.Token);
     }
 
     [Test]
@@ -162,7 +222,7 @@ public class Given_GetTokenInfoHandler
             )
             .Returns(Task.FromResult(educationOrganizationRows));
 
-        A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._))
+        A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
             .Returns([
                 new ClaimSet(
                     ClaimSetName,
@@ -514,20 +574,23 @@ public class Given_GetTokenInfoHandler
 
     private static RequestInfo CreateRequestInfo(
         ClientAuthorizations clientAuthorizations,
-        IServiceProvider scopedServiceProvider
+        IServiceProvider scopedServiceProvider,
+        CancellationToken cancellationToken = default
     )
     {
         return CreateRequestInfo(
             clientAuthorizations,
             scopedServiceProvider,
-            CreateDefaultApiSchemaDocuments()
+            CreateDefaultApiSchemaDocuments(),
+            cancellationToken
         );
     }
 
     private static RequestInfo CreateRequestInfo(
         ClientAuthorizations clientAuthorizations,
         IServiceProvider scopedServiceProvider,
-        ApiSchemaDocuments apiSchemaDocuments
+        ApiSchemaDocuments apiSchemaDocuments,
+        CancellationToken cancellationToken = default
     )
     {
         return new RequestInfo(
@@ -541,7 +604,8 @@ public class Given_GetTokenInfoHandler
                 RouteQualifiers: []
             ),
             RequestMethod.POST,
-            scopedServiceProvider
+            scopedServiceProvider,
+            cancellationToken
         )
         {
             ApiSchemaDocuments = apiSchemaDocuments,
@@ -592,7 +656,13 @@ public class Given_GetTokenInfoHandler
     {
         var services = new ServiceCollection();
         var applicationContextProvider = A.Fake<IApplicationContextProvider>();
-        A.CallTo(() => applicationContextProvider.GetApplicationByClientIdAsync(ClientId, tenant: null))
+        A.CallTo(() =>
+                applicationContextProvider.GetApplicationByClientIdAsync(
+                    ClientId,
+                    tenant: null,
+                    A<CancellationToken>._
+                )
+            )
             .Returns(
                 Task.FromResult(
                     applicationContextResult

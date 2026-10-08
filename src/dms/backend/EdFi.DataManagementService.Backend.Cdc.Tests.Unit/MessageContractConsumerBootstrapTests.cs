@@ -55,6 +55,7 @@ internal static class MessageContractConsumerBootstrapData
 [TestFixture]
 [Category("CdcMessageContract")]
 [Property("ScenarioId", "MC-CONSUMER-BOOTSTRAP-DURABILITY")]
+[Property("CdcInvariant", "CDC-INV-13")]
 public class Given_MessageContractConsumerBootstrap_durability
 {
     private MessageContractConsumerBootstrap _consumer = null!;
@@ -165,6 +166,7 @@ public class Given_MessageContractConsumerBootstrap_durability
 [TestFixture]
 [Category("CdcMessageContract")]
 [Property("ScenarioId", "MC-CONSUMER-BOOTSTRAP-OFFSETS")]
+[Property("CdcInvariant", "CDC-INV-13")]
 public class Given_MessageContractConsumerBootstrap_offset_boundaries
 {
     private MessageContractConsumerBootstrap _consumer = null!;
@@ -289,6 +291,7 @@ public class Given_MessageContractConsumerBootstrap_offset_boundaries
 [TestFixture]
 [Category("CdcMessageContract")]
 [Property("ScenarioId", "MC-CONSUMER-BOOTSTRAP-DEADLINE")]
+[Property("CdcInvariant", "CDC-INV-13")]
 public class Given_MessageContractConsumerBootstrap_deadline
 {
     private MessageContractConsumerBootstrap _consumer = null!;
@@ -373,6 +376,7 @@ public class Given_MessageContractConsumerBootstrap_deadline
 [TestFixture]
 [Category("CdcMessageContract")]
 [Property("ScenarioId", "MC-CONSUMER-BOOTSTRAP-RECOVERY")]
+[Property("CdcInvariant", "CDC-INV-13")]
 public class Given_MessageContractConsumerBootstrap_recovery
 {
     private MessageContractConsumerBootstrap _consumer = null!;

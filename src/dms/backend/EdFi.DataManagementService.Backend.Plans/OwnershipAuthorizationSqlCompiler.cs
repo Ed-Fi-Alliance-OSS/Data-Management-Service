@@ -19,7 +19,8 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// Optional raw predicate appended as a <c>WHERE</c> clause to the emitted check select. When it is false the
 /// check's result set is empty and none of its branches — the abort device included — evaluates, which is how
 /// a check co-batched behind a captured target stays vacuous for a write that resolved to a create. That is
-/// what makes a POST-create immune to ownership denial without needing a second command shape.
+/// what keeps a POST-create out of this stored-token check without needing a second command shape; a create
+/// is judged instead from the application context, in C#, by the caller's create-side ownership verdict.
 /// </param>
 public sealed record OwnershipAuthorizationSqlSpec(
     OwnershipAuthorizationCheckSpec Check,

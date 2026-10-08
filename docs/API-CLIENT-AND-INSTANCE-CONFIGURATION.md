@@ -152,12 +152,10 @@ initial client's. To act on that client, read it with
    both `GET /v3/apiClients/{numeric id}` and `GET /v3/apiClients/{key}` report
    `404`.
 
-What the resulting token can *do* with a DMS identity API is out of scope here:
-**the DMS identity routes do not exist yet.** This section documents only how to
-provision such a client in the Configuration Service and confirm its credentials
-work. The end-to-end proof from these credentials through to identity operations,
-and the guarantee that they grant no resource access, belong to the story that
-introduces the identity API surface.
+What the resulting token can *do* is governed by the DMS identity surface under `/identity/v2/identities`, which DMS maps only when `AppSettings:EnableIdentityManagement` is `true` (see [Configuration](./CONFIGURATION.md)).
+With the surface enabled, the token reaches the identity operations its claim set grants, and it grants no resource access.
+Those operations run only when an identity provider plugin is registered; without one, an otherwise authorized request answers `404` with `urn:ed-fi:api:identities:operation-not-supported`.
+This section documents only how to provision such a client in the Configuration Service and confirm its credentials work.
 
 ### Context-Based Routing
 
@@ -237,6 +235,12 @@ Stores data store definitions and encrypted connection strings.
 | DataStoreType | VARCHAR(50) | Data store classification |
 | Name | VARCHAR(256) | Human-readable data store name |
 | ConnectionString | BYTEA | Encrypted database connection string |
+| TenantId | BIGINT | Owning tenant; null in a single-tenant deployment |
+
+**Constraint:** `UNIQUE (TenantId, Name)` ensures data store names are unique
+within a tenant; in a single-tenant deployment, where `TenantId` is null, they
+are unique across the deployment. A duplicate name is rejected with `400`, on
+`POST` and on a `PUT` that renames a data store.
 
 #### DataStoreContext
 
@@ -285,6 +289,12 @@ Stores OAuth client credentials for applications.
 | ApplicationId | INT | Foreign key to Application |
 | ClientId | VARCHAR(36) | OAuth client identifier |
 | ClientUuid | UUID | Globally unique client identifier |
+| Name | VARCHAR(50) | Human-readable client name |
+
+**Constraint:** `UNIQUE (ApplicationId, Name)` ensures API client names are
+unique within an application; clients of different applications may share a
+name. A duplicate name is rejected with `400`, on `POST` and on a `PUT` that
+renames a client or moves it to another application.
 
 #### ApiClientDataStore
 

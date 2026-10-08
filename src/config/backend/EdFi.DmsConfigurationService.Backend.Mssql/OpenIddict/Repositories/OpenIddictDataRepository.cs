@@ -351,7 +351,14 @@ UPDATE dmscs.OpenIddictApplication
         {
             string applicationSql = $"""
                 SELECT a.Id, a.ClientId, a.ClientSecret, a.DisplayName, a.RedirectUris, a.PostLogoutRedirectUris,
-                       a.Permissions, a.Requirements, a.Type, a.CreatedAt, a.ProtocolMappers
+                       a.Permissions, a.Requirements, a.Type, a.CreatedAt, a.ProtocolMappers,
+                       CAST(COALESCE((SELECT MIN(CAST(ac.IsApproved AS INT))
+                                      FROM dmscs.ApiClient ac
+                                      WHERE ac.ClientId = a.ClientId), 1) AS BIT) AS IsApproved,
+                       CAST(CASE WHEN EXISTS (SELECT 1
+                                              FROM dmscs.ApiClient ac
+                                              WHERE ac.ClientId = a.ClientId)
+                                 THEN 0 ELSE 1 END AS BIT) AS HasNoApiClientRow
                 FROM dmscs.OpenIddictApplication a
                 WHERE {predicate}
                 """;
@@ -389,16 +396,6 @@ UPDATE dmscs.OpenIddictApplication
                 transaction
             );
 
-            bool isApproved = await connection.ExecuteScalarAsync<bool>(
-                """
-                SELECT CAST(COALESCE(MIN(CAST(ac.IsApproved AS INT)), 1) AS BIT)
-                FROM dmscs.ApiClient ac
-                WHERE ac.ClientId = @ClientId
-                """,
-                new { row.ClientId },
-                transaction
-            );
-
             return new ApplicationInfo
             {
                 Id = row.Id,
@@ -414,7 +411,8 @@ UPDATE dmscs.OpenIddictApplication
                 Scopes = scopes.Distinct().ToArray(),
                 DataStoreIds = dataStoreIds.ToArray(),
                 ProtocolMappers = row.ProtocolMappers ?? string.Empty,
-                IsApproved = isApproved,
+                IsApproved = row.IsApproved,
+                HasNoApiClientRow = row.HasNoApiClientRow,
             };
         }
 
@@ -533,20 +531,47 @@ UPDATE dmscs.OpenIddictApplication
         public async Task<string?> GetTokenStatusAsync(Guid tokenId)
         {
             await using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync();
+            await OpenForTokenStatusAsync(connection);
             return await connection.QuerySingleOrDefaultAsync<string>(
                 "SELECT Status FROM dmscs.OpenIddictToken WHERE Id = @Id",
                 new { Id = tokenId }
             );
         }
 
-        public async Task<bool> RevokeTokenAsync(Guid tokenId)
+        /// <summary>
+        /// Opens the connection for the per-request token-status read. SqlClient reports a pooled-open timeout (every
+        /// pooled connection stayed leased for the whole connect timeout) as an <see cref="InvalidOperationException"/>,
+        /// not a <see cref="SqlException"/>, so the token manager's store-failure filter would miss it and answer the
+        /// request as an invalid token. Only this open is translated: on a new connection it is the pool, or an unusable
+        /// connection string, that fails, and either way the status was not read (DMS-1556 D-7). Exceptions from the
+        /// query itself are left to the manager.
+        /// </summary>
+        private static async Task OpenForTokenStatusAsync(SqlConnection connection)
+        {
+            try
+            {
+                await connection.OpenAsync();
+            }
+            catch (InvalidOperationException exception)
+            {
+                throw new AuthenticationDependencyUnavailableException(
+                    AuthenticationDependencyCategory.TokenStatusStore,
+                    "The token status store could not be read.",
+                    exception
+                );
+            }
+        }
+
+        public async Task<bool> RevokeTokenAsync(Guid tokenId, Guid applicationId)
         {
             await using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync();
+            // Ownership and status are predicates of the single statement rather than a prior read,
+            // so no interleaving can revoke another application's token, and a repeat changes no
+            // row and keeps the original RedemptionDate.
             var result = await connection.ExecuteAsync(
-                "UPDATE dmscs.OpenIddictToken SET Status = 'revoked', RedemptionDate = SYSUTCDATETIME() WHERE Id = @Id",
-                new { Id = tokenId }
+                "UPDATE dmscs.OpenIddictToken SET Status = 'revoked', RedemptionDate = SYSUTCDATETIME() WHERE Id = @Id AND ApplicationId = @ApplicationId AND Status <> 'revoked'",
+                new { Id = tokenId, ApplicationId = applicationId }
             );
             return result > 0;
         }
@@ -586,12 +611,22 @@ UPDATE dmscs.OpenIddictApplication
             return keyRecord;
         }
 
-        public async Task<IEnumerable<(string KeyId, byte[] PublicKey)>> GetActivePublicKeysInternalAsync()
+        public Task<IEnumerable<(string KeyId, byte[] PublicKey)>> GetActivePublicKeysInternalAsync()
+        {
+            return GetActivePublicKeysInternalAsync(CancellationToken.None);
+        }
+
+        public async Task<IEnumerable<(string KeyId, byte[] PublicKey)>> GetActivePublicKeysInternalAsync(
+            CancellationToken cancellationToken
+        )
         {
             await using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
             return await connection.QueryAsync<(string KeyId, byte[] PublicKey)>(
-                "SELECT KeyId, PublicKey FROM dmscs.OpenIddictKey WHERE IsActive = 1"
+                new CommandDefinition(
+                    "SELECT KeyId, PublicKey FROM dmscs.OpenIddictKey WHERE IsActive = 1",
+                    cancellationToken: cancellationToken
+                )
             );
         }
 
@@ -606,7 +641,9 @@ UPDATE dmscs.OpenIddictApplication
             string? Requirements,
             string? Type,
             DateTime CreatedAt,
-            string? ProtocolMappers
+            string? ProtocolMappers,
+            bool IsApproved,
+            bool HasNoApiClientRow
         );
 
         private static string[] DeserializeStringArray(string? json) =>

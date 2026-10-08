@@ -7,9 +7,10 @@ namespace EdFi.DmsConfigurationService.Backend.Services;
 
 /// <summary>
 /// Recognizes the Base64 text of a connection string that <see cref="ConnectionStringEncryptionService"/>
-/// already encrypted. A get returns the stored cipher text as Base64 without decrypting it, so a
-/// client that reads a data store, edits an unrelated field and writes the object back resubmits
-/// this shape; encrypting it again would leave a value no reader can decrypt to a connection string.
+/// already encrypted. A get returns cipher text as Base64 (the stored bytes, or for a value carrying a
+/// secret reference, its resolved value encrypted again), so a client that reads a data store, edits
+/// an unrelated field and writes the object back resubmits this shape; encrypting it again would leave
+/// a value no reader can decrypt to a connection string.
 ///
 /// It lives beside the encryption service because it describes that service's output format: the
 /// two must change together.

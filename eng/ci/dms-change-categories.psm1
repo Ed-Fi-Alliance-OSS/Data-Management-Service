@@ -77,6 +77,16 @@ $script:DocumentEmbedPathPrefix = @(
     # not on dms_relevant, so without this entry a pull request editing that readme would reach no
     # rule here and skip the guard entirely.
     'src/dms/core/EdFi.DataManagementService.CustomValidation/'
+    # The reference plugin whose regions docs/UNIQUEID-VALIDATION.md embeds lives here rather than
+    # under eng/verification/, because it is also loaded and run by the integration suite, not just
+    # read by this check. Without this entry a pull request editing the plugin's source would leave
+    # the guide's embedded sample unverified against it and reach no rule here at all.
+    'eng/fixtures/plugins/'
+    # The secrets contract's packed readme is the fifth checked document, and it lives under
+    # src/config/ rather than under any prefix above. Its worked examples sit under
+    # eng/verification/, which is already here; the readme itself would otherwise reach no rule,
+    # and a pull request editing only that readme would skip the guard entirely.
+    'src/config/contracts/EdFi.DmsConfigurationService.Secrets/'
 )
 
 # Operator documents checked by CdcRunbookLinkTests.Documents and their linked design targets.

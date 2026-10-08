@@ -27,6 +27,10 @@
         <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     </ItemGroup>
     <ItemGroup>
+        <!-- The secret resolution proofs decrypt what the Configuration Service returns with its own encryption service. -->
+        <ProjectReference Include="..\..\backend\EdFi.DmsConfigurationService.Backend\EdFi.DmsConfigurationService.Backend.csproj" />
+    </ItemGroup>
+    <ItemGroup>
         <Using Include="NUnit.Framework" />
     </ItemGroup>
     <ItemGroup>

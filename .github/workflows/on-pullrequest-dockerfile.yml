@@ -40,7 +40,9 @@ permissions: read-all
 
 jobs:
   docker-analysis:
-    if: github.event.pull_request.draft != true
+    # Push runs only in Ed-Fi-Alliance-OSS: a fork syncing main has no Docker Hub credentials.
+    # pull_request and workflow_dispatch still run anywhere.
+    if: github.event.pull_request.draft != true && (github.event_name != 'push' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
     runs-on: ubuntu-24.04
     permissions:
       contents: read

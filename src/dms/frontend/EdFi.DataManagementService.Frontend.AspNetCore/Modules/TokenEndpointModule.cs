@@ -23,12 +23,12 @@ public class TokenEndpointModule : IEndpointModule
             multiTenancy
         );
 
-        if (multiTenancy)
-        {
-            MapTokenEndpoints(endpoints, string.Empty);
-        }
+        MapTokenEndpoints(endpoints, string.Empty);
 
-        MapTokenEndpoints(endpoints, routePattern);
+        if (!string.IsNullOrEmpty(routePattern))
+        {
+            MapTokenEndpoints(endpoints, routePattern);
+        }
     }
 
     private static void MapTokenEndpoints(IEndpointRouteBuilder endpoints, string routePattern)

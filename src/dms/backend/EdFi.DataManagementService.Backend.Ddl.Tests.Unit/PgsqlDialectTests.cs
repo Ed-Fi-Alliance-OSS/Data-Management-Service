@@ -871,6 +871,53 @@ public class Given_PgsqlDialect_Render_Referential_Actions
     {
         _dialect.RenderReferentialAction(ReferentialAction.Cascade).Should().Be("CASCADE");
     }
+
+    /// <summary>
+    /// PostgreSQL has a native RESTRICT: an immediate single-probe check per foreign key, without the
+    /// end-of-statement parent re-check that NO ACTION performs.
+    /// </summary>
+    [Test]
+    public void It_should_render_restrict()
+    {
+        _dialect.RenderReferentialAction(ReferentialAction.Restrict).Should().Be("RESTRICT");
+    }
+}
+
+[TestFixture]
+public class Given_PgsqlDialect_Add_Foreign_Key_Constraint_With_Restrict_Delete_Action
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new PgsqlDialect(new PgsqlDialectRules());
+        var table = new DbTableName(new DbSchemaName("edfi"), "School");
+        var targetTable = new DbTableName(new DbSchemaName("dms"), "Document");
+        var columns = new[] { new DbColumnName("DocumentId") };
+        var targetColumns = new[] { new DbColumnName("DocumentId") };
+        _ddl = dialect.AddForeignKeyConstraint(
+            table,
+            "FK_School_Document",
+            columns,
+            targetTable,
+            targetColumns,
+            ReferentialAction.Restrict,
+            ReferentialAction.NoAction
+        );
+    }
+
+    [Test]
+    public void It_should_emit_on_delete_restrict()
+    {
+        _ddl.Should().Contain("ON DELETE RESTRICT");
+    }
+
+    [Test]
+    public void It_should_keep_on_update_no_action()
+    {
+        _ddl.Should().Contain("ON UPDATE NO ACTION");
+    }
 }
 
 [TestFixture]

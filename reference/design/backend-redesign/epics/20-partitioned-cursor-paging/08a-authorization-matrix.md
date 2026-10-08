@@ -39,6 +39,9 @@ cannot widen it.
   are supported: `DescriptorReadHandler` plans descriptor custom-view checks and compiles them into
   the candidate relation, which DMS-1385 certifies for candidate uniqueness on both providers.
   Relationship and ownership strategies remain unsupported for descriptors.
+  *Superseded for ownership by [DMS-1431](https://edfi.atlassian.net/browse/DMS-1431) (2026-09-28):
+  descriptor cursor pages and `/partitions` apply the `OwnershipBased` page filter to the candidate
+  relation. Relationship strategies remain unsupported for descriptors.*
 - Prove that for the same principal, filters, and fixture, a full cursor walk and the union of the
   partition ranges cover exactly the accessible candidate set.
 - Add negative cases in which a forged or widened `pageToken` range, an inverted range, and an

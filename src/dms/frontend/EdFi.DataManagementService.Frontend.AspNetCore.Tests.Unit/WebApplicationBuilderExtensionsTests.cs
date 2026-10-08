@@ -186,7 +186,7 @@ public class WebApplicationBuilderExtensionsTests
                     ["DataManagement:DocumentCache:Administration:WorkflowTimeout"] = "12:00:00",
                     ["DataManagement:DocumentCache:Status:StatusObservationTimeout"] = "00:00:08",
                     ["DataManagement:DocumentCache:Status:EndpointTimeout"] = "00:00:45",
-                    ["DataManagement:DocumentCache:Status:RequiredRole"] = "dms-document-cache-operator",
+                    ["DataManagement:DocumentCache:Status:RequiredRole"] = "dms-client",
                 }
             );
 
@@ -209,7 +209,7 @@ public class WebApplicationBuilderExtensionsTests
             options.Administration.WorkflowTimeout.Should().Be(TimeSpan.FromHours(12));
             options.Status.StatusObservationTimeout.Should().Be(TimeSpan.FromSeconds(8));
             options.Status.EndpointTimeout.Should().Be(TimeSpan.FromSeconds(45));
-            options.Status.RequiredRole.Should().Be("dms-document-cache-operator");
+            options.Status.RequiredRole.Should().Be("dms-client");
         }
 
         [Test]
@@ -322,7 +322,7 @@ public class WebApplicationBuilderExtensionsTests
                 "postgresql",
                 new Dictionary<string, string?>
                 {
-                    ["DataManagement:DocumentCache:Status:RequiredRole"] = "dms document cache operator",
+                    ["DataManagement:DocumentCache:Status:RequiredRole"] = "dms client",
                 }
             );
 

@@ -8,22 +8,60 @@ using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
+using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
-public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSettings) : IEndpointModule
+public partial class MetadataEndpointModule(
+    IOptions<FrontendAppSettings> appSettings,
+    IOptions<CoreAppSettings> coreOptions
+) : IEndpointModule
 {
     private const string DataOpenApiRouteBase = "data";
     private const string ChangeQueriesOpenApiRouteBase = "changeQueries/v1";
+    private const string IdentityOpenApiRouteBase = "identity/v2";
+
+    private static string GetPublicOAuthTokenUrl(
+        HttpContext httpContext,
+        IOptions<FrontendAppSettings> appSettings
+    )
+    {
+        string prefix = DiscoveryEndpointModule.BuildRouteQualifierPrefix(
+            httpContext,
+            appSettings,
+            useMetadataRouteValues: true
+        );
+        return $"{httpContext.Request.RootUrl()}{prefix}/oauth/token";
+    }
+
+    private static JsonNode WithPublicOAuthTokenUrl(JsonNode content, string tokenUrl)
+    {
+        if (
+            content["components"]
+                ?["securitySchemes"]
+                ?["oauth2_client_credentials"]
+                ?["flows"]
+                ?["clientCredentials"]
+            is JsonObject clientCredentials
+        )
+        {
+            clientCredentials["tokenUrl"] = tokenUrl;
+        }
+
+        return content;
+    }
 
     /// <summary>
     /// Builds servers array for the OpenAPI spec using the configured multi-tenancy and route qualifier settings.
@@ -241,7 +279,9 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        MapMetadataEndpoints(endpoints, string.Empty, validateRoute: false);
+        bool identityManagementEnabled = coreOptions.Value.EnableIdentityManagement;
+
+        MapMetadataEndpoints(endpoints, string.Empty, validateRoute: false, identityManagementEnabled);
 
         MapTenantOnlyMetadataRejections(endpoints);
 
@@ -252,7 +292,7 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
 
         if (!string.IsNullOrEmpty(routePattern))
         {
-            MapMetadataEndpoints(endpoints, routePattern, validateRoute: true);
+            MapMetadataEndpoints(endpoints, routePattern, validateRoute: true, identityManagementEnabled);
         }
     }
 
@@ -274,7 +314,8 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
     private static void MapMetadataEndpoints(
         IEndpointRouteBuilder endpoints,
         string routePattern,
-        bool validateRoute
+        bool validateRoute,
+        bool identityManagementEnabled
     )
     {
         endpoints.MapGet(
@@ -319,7 +360,8 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
             async (
                 HttpContext httpContext,
                 IMetadataRouteValidator metadataRouteValidator,
-                IApiService apiService
+                IApiService apiService,
+                IOptions<FrontendAppSettings> options
             ) =>
             {
                 if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
@@ -327,7 +369,7 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
                     return;
                 }
 
-                await GetSections(httpContext, apiService);
+                await GetSections(httpContext, apiService, options, identityManagementEnabled);
             }
         );
         endpoints.MapGet(
@@ -384,6 +426,27 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
                 await GetChangeQueriesOpenApiSpec(httpContext, apiService, dataStoreProvider, options);
             }
         );
+        if (identityManagementEnabled)
+        {
+            endpoints.MapGet(
+                $"{routePattern}/metadata/identity/v2/swagger.json",
+                async (
+                    HttpContext httpContext,
+                    IMetadataRouteValidator metadataRouteValidator,
+                    IApiService apiService,
+                    IDataStoreProvider dataStoreProvider,
+                    IOptions<FrontendAppSettings> options
+                ) =>
+                {
+                    if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                    {
+                        return;
+                    }
+
+                    await GetIdentityOpenApiSpec(httpContext, apiService, dataStoreProvider, options);
+                }
+            );
+        }
         endpoints.MapGet(
             $"{routePattern}/metadata/specifications/{{section}}-spec.json",
             async (
@@ -505,7 +568,9 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
     {
         JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, DataOpenApiRouteBase);
         JsonNode content = apiService.GetResourceOpenApiSpecification(servers);
-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
+        );
     }
 
     internal static async Task GetDescriptorOpenApiSpec(
@@ -517,7 +582,9 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
     {
         JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, DataOpenApiRouteBase);
         JsonNode content = apiService.GetDescriptorOpenApiSpecification(servers);
-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
+        );
     }
 
     internal static async Task GetChangeQueriesOpenApiSpec(
@@ -541,7 +608,28 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
             return;
         }
 
-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
+        );
+    }
+
+    /// <summary>
+    /// Serves the fixed identity OpenAPI document. Unlike Change-Queries, the identity
+    /// document is always present once mapped - the route itself is mapped only when
+    /// AppSettings:EnableIdentityManagement is true - so there is no missing-document 404 branch here.
+    /// </summary>
+    internal static async Task GetIdentityOpenApiSpec(
+        HttpContext httpContext,
+        IApiService apiService,
+        IDataStoreProvider dataStoreProvider,
+        IOptions<FrontendAppSettings> appSettings
+    )
+    {
+        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, IdentityOpenApiRouteBase);
+        JsonNode content = apiService.GetIdentityOpenApiSpecification(servers);
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
+        );
     }
 
     /// <summary>
@@ -558,11 +646,21 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
         string? tenant = ExtractTenantFromRoute(httpContext);
         JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, DataOpenApiRouteBase);
 
-        JsonNode? content = await apiService.GetProfileOpenApiSpecificationAsync(
-            profileName,
-            tenant,
-            servers
-        );
+        JsonNode? content;
+        try
+        {
+            content = await apiService.GetProfileOpenApiSpecificationAsync(profileName, tenant, servers);
+        }
+        catch (ProfileDataUnavailableException)
+        {
+            // The profile provider already logged the cause. An unavailable catalog is not a missing
+            // profile, so this is a retriable 503 rather than the 404 below.
+            await WriteProfileDataUnavailableAsync(
+                httpContext,
+                AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings)
+            );
+            return;
+        }
 
         if (content is null)
         {
@@ -570,10 +668,17 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
             return;
         }
 
-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
+        );
     }
 
-    internal static async Task GetSections(HttpContext httpContext, IApiService apiService)
+    internal static async Task GetSections(
+        HttpContext httpContext,
+        IApiService apiService,
+        IOptions<FrontendAppSettings> appSettings,
+        bool identityManagementEnabled = false
+    )
     {
         var baseUrl = httpContext.Request.UrlWithPathSegment();
         List<RouteInformation> sections = [];
@@ -588,16 +693,17 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
             );
         }
 
+        const string SpecificationsSuffix = "/specifications";
+        string requestPath = httpContext.Request.Path.ToString().TrimEnd('/');
+        string metadataPrefix = requestPath.EndsWith(
+            "/metadata/specifications",
+            StringComparison.OrdinalIgnoreCase
+        )
+            ? baseUrl[..^SpecificationsSuffix.Length]
+            : $"{httpContext.Request.RootUrl()}/metadata";
+
         if (apiService.HasChangeQueriesOpenApiSpecification())
         {
-            const string SpecificationsSuffix = "/specifications";
-            string requestPath = httpContext.Request.Path.ToString().TrimEnd('/');
-            string metadataPrefix = requestPath.EndsWith(
-                "/metadata/specifications",
-                StringComparison.OrdinalIgnoreCase
-            )
-                ? baseUrl[..^SpecificationsSuffix.Length]
-                : $"{httpContext.Request.RootUrl()}/metadata";
             sections.Add(
                 new RouteInformation(
                     "Change-Queries",
@@ -607,8 +713,29 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
             );
         }
 
+        if (identityManagementEnabled)
+        {
+            sections.Add(
+                new RouteInformation("Identity", $"{metadataPrefix}/identity/v2/swagger.json", "Other")
+            );
+        }
+
         string? tenant = ExtractTenantFromRoute(httpContext);
-        IReadOnlyList<string> profileNames = await apiService.GetProfileNamesAsync(tenant);
+        IReadOnlyList<string> profileNames;
+        try
+        {
+            profileNames = await apiService.GetProfileNamesAsync(tenant);
+        }
+        catch (ProfileDataUnavailableException)
+        {
+            // The profile provider already logged the cause. The whole listing is refused: one
+            // without the profile sections would publish a partial catalog.
+            await WriteProfileDataUnavailableAsync(
+                httpContext,
+                AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings)
+            );
+            return;
+        }
         foreach (string profileName in profileNames)
         {
             sections.Add(
@@ -621,6 +748,18 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
         }
 
         await httpContext.Response.WriteAsSerializedJsonAsync(sections);
+    }
+
+    private static Task WriteProfileDataUnavailableAsync(HttpContext httpContext, TraceId traceId)
+    {
+        httpContext.Response.StatusCode = (int)HttpStatusCode.ServiceUnavailable;
+        httpContext.Response.ContentType = "application/problem+json";
+        return httpContext.Response.WriteAsync(
+            JsonSerializer.Serialize(
+                FailureResponse.ForServiceUnavailable(traceId),
+                AspNetCoreFrontend.SharedSerializerOptions
+            )
+        );
     }
 
     internal static async Task GetSectionMetadata(
@@ -642,8 +781,8 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
         }
 
         string section = sectionValueString.ToLowerInvariant();
-        string? rootUrl = httpContext.Request.RootUrl();
-        string oAuthUrl = options.Value.AuthenticationService;
+        string rootUrl = httpContext.Request.RootUrl();
+        string oAuthUrl = GetPublicOAuthTokenUrl(httpContext, options);
         if (
             Array.Exists(
                 _sections,
@@ -651,7 +790,10 @@ public partial class MetadataEndpointModule(IOptions<FrontendAppSettings> appSet
             )
         )
         {
-            var content = contentProvider.LoadJsonContent(section, rootUrl, oAuthUrl);
+            JsonNode content = WithPublicOAuthTokenUrl(
+                contentProvider.LoadJsonContent(section, rootUrl, oAuthUrl),
+                oAuthUrl
+            );
             content["servers"] = GetServers(httpContext, dataStoreProvider, options, DataOpenApiRouteBase);
             await httpContext.Response.WriteAsSerializedJsonAsync(content);
         }

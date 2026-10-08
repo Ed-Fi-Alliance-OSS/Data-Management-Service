@@ -100,7 +100,11 @@ public class Given_a_host_with_the_plugin_startup_check
             .Subject;
 
         task.Order.Should().Be(260);
-        task.Order.Should().BeInRange(200, DmsStartupTaskOrderRanges.ApiSchemaInitializationMaximum);
+        task.Order.Should()
+            .BeInRange(
+                DmsStartupTaskOrderRanges.PluginRegistrationValidationMinimum,
+                DmsStartupTaskOrderRanges.PluginRegistrationValidationMaximum
+            );
         task.Order.Should().BeGreaterThan(250);
     }
 
@@ -140,11 +144,12 @@ public class Given_a_host_with_the_plugin_startup_check
 
     /// <summary>
     /// The value the loader's version-skew preflight consumes, read off the registry production
-    /// actually registered rather than off one the test built. Two names, and the assembly name rather
+    /// actually registered rather than off one the test built. Three names, and the assembly name rather
     /// than the package id: the custom validator contract is declared in the assembly
     /// EdFi.DataManagementService.CustomValidation and packed under the id EdFi.Api.CustomValidation,
-    /// and an assembly reference carries an assembly name, so the package id in this set would match
-    /// nothing and would silently check nothing.
+    /// and the identity contract is declared in EdFi.DataManagementService.Identity and packed under
+    /// EdFi.Api.Identity. An assembly reference carries an assembly name, so a package id in this set
+    /// would match nothing and would silently check nothing.
     /// </summary>
     [Test]
     public void It_derives_the_contract_assembly_names_the_skew_preflight_needs()
@@ -153,8 +158,13 @@ public class Given_a_host_with_the_plugin_startup_check
 
         registry
             .ContractAssemblyNames.Should()
-            .Equal("EdFi.Api.Plugins", "EdFi.DataManagementService.CustomValidation");
+            .Equal(
+                "EdFi.Api.Plugins",
+                "EdFi.DataManagementService.CustomValidation",
+                "EdFi.DataManagementService.Identity"
+            );
         registry.ContractAssemblyNames.Should().NotContain("EdFi.Api.CustomValidation");
+        registry.ContractAssemblyNames.Should().NotContain("EdFi.Api.Identity");
     }
 
     /// <summary>

@@ -150,6 +150,21 @@ function Format-LogSafeText {
     return $builder.ToString()
 }
 
+function Format-LogSafePath {
+    param($Value)
+
+    if ($null -eq $Value) { return "" }
+    $text = [string]$Value
+    $builder = [System.Text.StringBuilder]::new()
+    foreach ($character in $text.ToCharArray()) {
+        if (-not [char]::IsControl($character)) {
+            $null = $builder.Append($character)
+        }
+    }
+
+    return $builder.ToString()
+}
+
 function Write-SmokeStep {
     param([string]$Label)
 
@@ -269,15 +284,15 @@ Invoke-SmokeStep -Name "preflight" -Body {
     }
 
     if (-not (Test-Path -LiteralPath $resolvedEnvFile)) {
-        throw "Environment file not found: $(Format-LogSafeText $resolvedEnvFile)"
+        throw "Environment file not found: $(Format-LogSafePath $resolvedEnvFile)"
     }
 
-    Write-Host "[smoke] EnvironmentFile : $(Format-LogSafeText $resolvedEnvFile)"
+    Write-Host "[smoke] EnvironmentFile : $(Format-LogSafePath $resolvedEnvFile)"
     if ([string]::IsNullOrWhiteSpace($ApiSchemaPath)) {
         Write-Host "[smoke] ApiSchemaPath   : (not set — will download package $(Format-LogSafeText $SchemaPackageId) $(Format-LogSafeText $SchemaPackageVersion))"
     }
     else {
-        Write-Host "[smoke] ApiSchemaPath   : $(Format-LogSafeText $ApiSchemaPath)"
+        Write-Host "[smoke] ApiSchemaPath   : $(Format-LogSafePath $ApiSchemaPath)"
     }
 }
 
@@ -333,16 +348,16 @@ try {
 
             $apiSchemaDir = Join-Path $extractDir "contentFiles/any/any/ApiSchema"
             if (-not (Test-Path -LiteralPath $apiSchemaDir)) {
-                throw "contentFiles/any/any/ApiSchema not found in downloaded package at $(Format-LogSafeText $apiSchemaDir). Package layout may have changed."
+                throw "contentFiles/any/any/ApiSchema not found in downloaded package at $(Format-LogSafePath $apiSchemaDir). Package layout may have changed."
             }
 
             $apiSchemaJson = Join-Path $apiSchemaDir "ApiSchema.json"
             if (-not (Test-Path -LiteralPath $apiSchemaJson)) {
-                throw "ApiSchema.json not found inside $(Format-LogSafeText $apiSchemaDir). Package may be incomplete."
+                throw "ApiSchema.json not found inside $(Format-LogSafePath $apiSchemaDir). Package may be incomplete."
             }
 
             $xsdFiles = @(Get-ChildItem -LiteralPath $apiSchemaDir -Recurse -Filter "*.xsd" -ErrorAction SilentlyContinue)
-            Write-Host "[smoke] Package extracted to $(Format-LogSafeText $apiSchemaDir) — ApiSchema.json present, $($xsdFiles.Count) xsd file(s) found."
+            Write-Host "[smoke] Package extracted to $(Format-LogSafePath $apiSchemaDir) - ApiSchema.json present, $($xsdFiles.Count) xsd file(s) found."
 
             # Use the extracted directory as the effective ApiSchemaPath for subsequent steps.
             $script:EffectiveApiSchemaPath = $apiSchemaDir
@@ -623,7 +638,7 @@ finally {
             Write-Host "[smoke] Package download temp directory removed."
         }
         catch {
-            Write-Host "[smoke] Warning: could not remove temp directory $(Format-LogSafeText $script:PackageDownloadTempDir): $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "[smoke] Warning: could not remove temp directory $(Format-LogSafePath $script:PackageDownloadTempDir): $(Format-LogSafeText $_.Exception.Message)" -ForegroundColor Yellow
         }
     }
 
@@ -631,7 +646,7 @@ finally {
         $script:StepResults |
             ConvertTo-Json -Depth 5 |
             Set-Content -LiteralPath $ResultsPath -Encoding utf8
-        Write-Host "[smoke] Results written to $(Format-LogSafeText $ResultsPath)"
+        Write-Host "[smoke] Results written to $(Format-LogSafePath $ResultsPath)"
     }
 
     $script:StepResults |

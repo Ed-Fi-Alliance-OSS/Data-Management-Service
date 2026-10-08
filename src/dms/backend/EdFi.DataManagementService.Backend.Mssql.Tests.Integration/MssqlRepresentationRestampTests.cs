@@ -453,8 +453,13 @@ public class Given_A_Mssql_RepresentationRestampStore
             await session.CommitAsync();
         }
 
+        // The document "disappears" the way the write path removes it: root row first (its FK to
+        // dms.Document is ON DELETE NO ACTION), then the dms.Document row.
         await _database.ExecuteNonQueryAsync(
-            "DELETE FROM [dms].[Document] WHERE [DocumentId] = @id;",
+            """
+            DELETE FROM [edfi].[Student] WHERE [DocumentId] = @id;
+            DELETE FROM [dms].[Document] WHERE [DocumentId] = @id;
+            """,
             new SqlParameter("@id", SqlDbType.BigInt) { Value = second.DocumentId }
         );
         await using IDocumentCacheAdministrativeMutexLease checkLease = await LeaseAsync();

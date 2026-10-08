@@ -70,6 +70,11 @@ public class ApiClientModuleTests
 
         A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
             .Returns(new ApiClientUuidReferenceResult.None());
+
+        // By default no other client of the application holds the requested name, so the insert
+        // and update name checks pass; fixtures that test a taken name override this.
+        A.CallTo(() => _apiClientRepository.QueryApiClient(A<ApiClientQuery>.Ignored))
+            .ReturnsLazily(() => new ApiClientQueryResult.Success([]));
     }
 
     [TearDown]
@@ -218,7 +223,11 @@ public class ApiClientModuleTests
                 )
                 .Returns(new ApiClientInsertResult.Success(1));
 
-            A.CallTo(() => _apiClientRepository.QueryApiClient(A<ApiClientQuery>.Ignored))
+            // Scoped to the paged list request, so the insert and update name checks keep the
+            // constructor default.
+            A.CallTo(() =>
+                    _apiClientRepository.QueryApiClient(A<ApiClientQuery>.That.Matches(q => q.Limit != null))
+                )
                 .Returns(
                     new ApiClientQueryResult.Success([
                         new ApiClientResponse
@@ -1075,7 +1084,11 @@ public class ApiClientModuleTests
                 )
                 .Returns(new ApiClientInsertResult.FailureUnknown("Database error"));
 
-            A.CallTo(() => _apiClientRepository.QueryApiClient(A<ApiClientQuery>.Ignored))
+            // Scoped to the paged list request, so the insert and update name checks keep the
+            // constructor default and reach the repository failures under test.
+            A.CallTo(() =>
+                    _apiClientRepository.QueryApiClient(A<ApiClientQuery>.That.Matches(q => q.Limit != null))
+                )
                 .Returns(new ApiClientQueryResult.FailureUnknown("Database error"));
 
             A.CallTo(() => _apiClientRepository.GetApiClientByClientId(A<string>.Ignored))
@@ -5792,5 +5805,423 @@ public class ApiClientModuleTests
 
         [Test]
         public void It_performs_no_cleanup() => AssertNoProviderCleanup();
+    }
+
+    /// <summary>
+    /// The complete 400 body a duplicate API client name answers, on both create and update.
+    /// </summary>
+    protected static async Task AssertDuplicateApiClientNameContract(HttpResponseMessage response)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        JsonNode actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        JsonNode expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "Data validation failed. See 'validationErrors' for details.",
+              "type": "urn:ed-fi:api:bad-request:data",
+              "title": "Data Validation Failed",
+              "status": 400,
+              "correlationId": "{correlationId}",
+              "validationErrors": {
+                "Name": [
+                  "An API client with this name already exists for the application."
+                ]
+              },
+              "errors": []
+            }
+            """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
+        )!;
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// The name check finds another client of the application with the requested name, so the
+    /// request is rejected before any identity provider client is provisioned.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_name_is_already_taken : ApiClientModuleTests
+    {
+        private HttpResponseMessage _insertResponse = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse
+                        {
+                            Id = 1,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "TestClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1],
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
+                        {
+                            Company = "Test Company",
+                            ContactName = "Test Contact",
+                            ContactEmailAddress = "test@test.com",
+                            NamespacePrefixes = "uri://ed-fi.org",
+                        }
+                    )
+                );
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<int[]>.Ignored))
+                .Returns(new DataStoreIdsExistResult.Success([1]));
+            A.CallTo(() => _apiClientRepository.QueryApiClient(A<ApiClientQuery>.Ignored))
+                .ReturnsLazily(() =>
+                    new ApiClientQueryResult.Success([
+                        new ApiClientResponse
+                        {
+                            Id = 7,
+                            ApplicationId = 1,
+                            ClientId = "other-client",
+                            ClientUuid = Guid.NewGuid(),
+                            Name = "Test Client",
+                            IsApproved = true,
+                        },
+                    ])
+                );
+
+            using var client = SetUpClient();
+            _insertResponse = await client.PostAsync(
+                "/v3/apiClients",
+                new StringContent(
+                    """
+                    {
+                      "applicationId": 1,
+                      "name": "Test Client",
+                      "isApproved": true,
+                      "dataStoreIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+        }
+
+        [TearDown]
+        public void TearDownInsertResponse() => _insertResponse?.Dispose();
+
+        [Test]
+        public async Task It_returns_the_data_validation_contract() =>
+            await AssertDuplicateApiClientNameContract(_insertResponse);
+
+        [Test]
+        public void It_checks_the_names_of_the_target_application() =>
+            A.CallTo(() =>
+                    _apiClientRepository.QueryApiClient(
+                        A<ApiClientQuery>.That.Matches(q => q.ApplicationId == 1)
+                    )
+                )
+                .MustHaveHappened();
+
+        [Test]
+        public void It_provisions_no_provider_client() =>
+            A.CallTo(() =>
+                    _identityProviderRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_does_not_insert_the_row() =>
+            A.CallTo(() =>
+                    _apiClientRepository.InsertApiClient(
+                        A<ApiClientInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The name check passed, then a concurrent insert took the name before this row was written:
+    /// the unique constraint rejects it and the provisioned client is cleaned up.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_insert_with_a_duplicate_name : InsertWorkflowTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureDuplicateName());
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_data_validation_contract() =>
+            await AssertDuplicateApiClientNameContract(_insertResponse);
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_deletes_the_provisioned_client_exactly_once() =>
+            _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+    }
+
+    /// <summary>
+    /// The name check finds another client of the target application with the requested name, so
+    /// the update is rejected before the identity provider is changed.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_update_onto_a_name_taken_in_the_target_application
+        : UpdateUnderLockTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _apiClientRepository.QueryApiClient(A<ApiClientQuery>.Ignored))
+                .ReturnsLazily(() =>
+                    new ApiClientQueryResult.Success([
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 1,
+                            ClientId = "test-client",
+                            ClientUuid = _existingUuid,
+                            Name = "Test",
+                            IsApproved = true,
+                        },
+                        new ApiClientResponse
+                        {
+                            Id = 2,
+                            ApplicationId = 1,
+                            ClientId = "other-client",
+                            ClientUuid = Guid.NewGuid(),
+                            Name = "Updated",
+                            IsApproved = true,
+                        },
+                    ])
+                );
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_data_validation_contract() =>
+            await AssertDuplicateApiClientNameContract(_updateResponse);
+
+        [Test]
+        public void It_leaves_the_provider_client_untouched() =>
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_does_not_update_the_row() =>
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The client being updated already has the requested name; the name check must exclude the
+    /// client itself, or every update that keeps its name would be rejected.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_update_that_keeps_its_own_name : UpdateUnderLockTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<int>.Ignored))
+                .Returns(
+                    new ApiClientGetResult.Success(
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 1,
+                            ClientId = "test-client",
+                            ClientUuid = _existingUuid,
+                            Name = "Updated",
+                            IsApproved = true,
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+            A.CallTo(() => _apiClientRepository.QueryApiClient(A<ApiClientQuery>.Ignored))
+                .ReturnsLazily(() =>
+                    new ApiClientQueryResult.Success([
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 1,
+                            ClientId = "test-client",
+                            ClientUuid = _existingUuid,
+                            Name = "Updated",
+                            IsApproved = true,
+                        },
+                    ])
+                );
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_no_content() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_updates_the_row() =>
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .MustHaveHappened();
+    }
+
+    /// <summary>
+    /// The name check passed, then a concurrent insert took the name (inserts do not take the
+    /// aggregate lock). The unique violation proves the database update did not commit, so the
+    /// provider change is rolled back to the client's original values and the rejection is
+    /// returned without outcome resolution.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_update_with_a_duplicate_name : CompensationSyncTestBase
+    {
+        private List<(
+            string ClientUuid,
+            string DisplayName,
+            int[]? DataStoreIds,
+            bool IsApproved
+        )> _providerUpdates = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            // The fixture instance, and so its fakes, outlives each test, so the recorded calls
+            // below must cover only this test's request.
+            Fake.ClearRecordedCalls(_apiClientRepository);
+            _providerUpdates = [];
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call =>
+                    _providerUpdates.Add(
+                        (
+                            call.GetArgument<string>(0)!,
+                            call.GetArgument<string>(1)!,
+                            call.GetArgument<int[]?>(4),
+                            call.GetArgument<bool>(5)
+                        )
+                    )
+                )
+                .ReturnsNextFromSequence(
+                    new ClientUpdateResult.Success(_updatedUuid),
+                    new ClientUpdateResult.Success(_rollbackUuid)
+                );
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.FailureDuplicateName());
+            ArrangeSyncResult(new ApiClientUuidSyncResult.Success());
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_data_validation_contract() =>
+            await AssertDuplicateApiClientNameContract(_updateResponse);
+
+        [Test]
+        public void It_applies_the_requested_name_to_the_provider_first()
+        {
+            _providerUpdates.Should().HaveCount(2);
+            _providerUpdates[0].ClientUuid.Should().Be(_existingUuid.ToString());
+            _providerUpdates[0].DisplayName.Should().Be("Updated");
+        }
+
+        [Test]
+        public void It_rolls_the_provider_back_to_the_original_client()
+        {
+            _providerUpdates.Should().HaveCount(2);
+            _providerUpdates[1].ClientUuid.Should().Be(_updatedUuid.ToString());
+            _providerUpdates[1].DisplayName.Should().Be("Test");
+            _providerUpdates[1].DataStoreIds.Should().Equal(1);
+            _providerUpdates[1].IsApproved.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_persists_the_rolled_back_client_uuid() =>
+            A.CallTo(() => _apiClientRepository.SyncApiClientUuid(1, _existingUuid, _rollbackUuid))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_does_not_resolve_the_outcome() =>
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<int>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_deletes_no_provider_client() => _deletedClientIds.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The name check passed and a concurrent insert then took the name; the provider rollback
+    /// fails, so the request ends in a sanitized server error.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_update_with_a_duplicate_name_whose_rollback_fails
+        : CompensationSyncTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_DUPLICATE_ROLLBACK_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .ReturnsNextFromSequence(
+                    new ClientUpdateResult.Success(_updatedUuid),
+                    new ClientUpdateResult.FailureUnknown(Sentinel)
+                );
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.FailureDuplicateName());
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
     }
 }

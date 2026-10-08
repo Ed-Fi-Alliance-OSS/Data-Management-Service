@@ -63,5 +63,14 @@ public record FrontendRequest(
     /// <summary>
     /// The content coding negotiated by the frontend for a successful resource response.
     /// </summary>
-    ResponseContentCoding ResponseContentCoding = ResponseContentCoding.Identity
+    ResponseContentCoding ResponseContentCoding = ResponseContentCoding.Identity,
+    /// <summary>
+    /// The request-line budget left for a path Core composes: the running server's configured
+    /// maximum request-line size (for example Kestrel's <c>KestrelServerLimits.MaxRequestLineSize</c>)
+    /// minus the length of any prefix the frontend places ahead of that path, such as an ASP.NET Core
+    /// <c>PathBase</c>. Carried per request so Core can bound a composed poll path against the real
+    /// deployment budget without knowing about such prefixes. Null when the frontend did not supply
+    /// one, in which case a Core-side default applies.
+    /// </summary>
+    int? MaxRequestLineSize = null
 );

@@ -23,11 +23,11 @@ CMS already stores `Snapshot` and `ReadReplica` rows in `dmscs.DataStoreDerivati
 - Upgrade guidance explains how to correct an invalid type with `PUT /v3/dataStoreDerivatives/{id}` or remove an unwanted row with `DELETE /v3/dataStoreDerivatives/{id}` before retrying.
 - The migration never deletes derivative rows, rewrites type values, or arbitrarily chooses among duplicates.
 - Insert and update repository result types in both backends include an explicit duplicate/conflict result identified by the named unique constraint.
-- The CMS frontend maps insert and update duplicates to the established conflict response — `FailureResponse.ForConflict` with HTTP `409` — instead of the unknown-error response.
+- The CMS frontend maps insert and update duplicates to the data-validation response the Management API specification documents — `FailureResults.DataValidation` with HTTP `400`, type `urn:ed-fi:api:bad-request:data`, and the message under `DerivativeType` — instead of the unknown-error response.
 - Updating either `DataStoreId` or `DerivativeType` exercises the same conflict behavior as inserting a duplicate.
 - The existing foreign key, cascade-delete behavior, nullable connection-string contract, encryption, tenant scoping, and auditing remain unchanged.
 - PostgreSQL and SQL Server integration tests cover clean upgrades, duplicate-row preflight failures, invalid-type preflight failures, case-variant rejection, trailing-whitespace rejection, insert conflicts, update conflicts, tenant isolation, and derivative inclusion in data-store responses.
-- Frontend coverage proves the HTTP mapping that repository-level integration tests cannot: `DataStoreDerivativeModule` unit tests assert `409` for both the insert duplicate result and the update duplicate result, or `DataStoreDerivatives.feature` E2E scenarios assert `409` for both. A repository conflict result on its own does not satisfy this criterion, because the module's fall-through arm would still return the unknown-error response.
+- Frontend coverage proves the HTTP mapping that repository-level integration tests cannot: `DataStoreDerivativeModule` unit tests assert `400` for both the insert duplicate result and the update duplicate result, or `DataStoreDerivatives.feature` E2E scenarios assert `400` for both. A repository conflict result on its own does not satisfy this criterion, because the module's fall-through arm would still return the unknown-error response.
 
 ## Out of Scope
 

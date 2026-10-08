@@ -45,6 +45,10 @@ public static class KeycloakServiceExtensions
         services.AddTransient<IIdentityProviderRepository, KeycloakClientRepository>();
         services.AddTransient<ITokenManager, KeycloakTokenManager>();
 
+        // Transient, not singleton: the manager depends on the scoped KeycloakContext and
+        // IKeycloakClientFacade (DMS-1327 D-12).
+        services.AddTransient<ITokenRevocationManager, KeycloakTokenRevocationManager>();
+
         return services;
     }
 }
