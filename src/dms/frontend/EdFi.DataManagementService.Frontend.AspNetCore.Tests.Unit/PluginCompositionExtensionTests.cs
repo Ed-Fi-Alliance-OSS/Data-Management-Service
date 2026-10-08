@@ -7,9 +7,11 @@ using System.Text;
 using System.Text.Json;
 using EdFi.Api.Plugins.Hosting;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.Identity;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.CustomValidation;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
+using EdFi.DataManagementService.Identity;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
@@ -73,15 +75,7 @@ internal static class PluginCompositionProbe
     /// </summary>
     internal static LoadedPlugins Load(string pluginRoot, string fixtureName = DmsContributor)
     {
-        string source = Path.Combine(AppContext.BaseDirectory, "PluginFixtures", fixtureName);
-        string destination = Path.Combine(pluginRoot, fixtureName);
-
-        Directory.CreateDirectory(destination);
-
-        foreach (string file in Directory.EnumerateFiles(source))
-        {
-            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), overwrite: true);
-        }
+        Stage(pluginRoot, fixtureName);
 
         IConfiguration configuration = new ConfigurationBuilder()
             .AddJsonStream(
@@ -97,10 +91,21 @@ internal static class PluginCompositionProbe
             )
             .Build();
 
-        return PluginLoader.Load(
-            configuration,
-            ["EdFi.Api.Plugins", "EdFi.DataManagementService.CustomValidation"]
-        );
+        return PluginLoader.Load(configuration, DmsPluginContracts.Registry.ContractAssemblyNames);
+    }
+
+    /// <summary>Copies a staged fixture plugin into a plugin root of the test's own.</summary>
+    internal static void Stage(string pluginRoot, string fixtureName)
+    {
+        string source = Path.Combine(AppContext.BaseDirectory, "PluginFixtures", fixtureName);
+        string destination = Path.Combine(pluginRoot, fixtureName);
+
+        Directory.CreateDirectory(destination);
+
+        foreach (string file in Directory.EnumerateFiles(source))
+        {
+            File.Copy(file, Path.Combine(destination, Path.GetFileName(file)), overwrite: true);
+        }
     }
 
     internal static string CreatePluginRoot() =>
@@ -210,13 +215,18 @@ public class Given_the_startup_check_the_seam_registered
     public void TearDown() => _provider.Dispose();
 
     /// <summary>
-    /// Inside the 200-299 window Program.cs executes, and above the custom validator guard at 250, so
-    /// these checks read a collection that audit has already accepted.
+    /// Inside the 250-299 window the ValidatePluginRegistrations phase executes, and above the custom
+    /// validator guard at 250, so these checks read a collection that audit has already accepted.
     /// </summary>
     [Test]
     public void It_runs_inside_the_executed_window_and_above_the_custom_validator_guard()
     {
-        _task.Order.Should().BeInRange(200, DmsStartupTaskOrderRanges.ApiSchemaInitializationMaximum);
+        _task
+            .Order.Should()
+            .BeInRange(
+                DmsStartupTaskOrderRanges.PluginRegistrationValidationMinimum,
+                DmsStartupTaskOrderRanges.PluginRegistrationValidationMaximum
+            );
         _task.Order.Should().BeGreaterThan(250);
         _task.Order.Should().Be(260);
     }
@@ -330,17 +340,16 @@ public class Given_a_plugin_registering_its_own_audit_input
     /// <summary>
     /// The host's wins, because the host registers after every hook has run and a single-service
     /// resolve takes the last registration. The plugin's carries no records and an empty registry; the
-    /// host's carries this plugin's record and the contract the host declares.
+    /// host's carries this plugin's record and the two contracts the host declares.
     /// </summary>
     [Test]
     public void It_loses_to_the_input_the_host_registered()
     {
         _resolved.Records.Should().ContainSingle().Which.PluginName.Should().Be("Acme.DmsContributor");
         _resolved
-            .Registry.Entries.Should()
-            .ContainSingle()
-            .Which.Contract.Should()
-            .Be(typeof(ICustomResourceValidator));
+            .Registry.Entries.Select(entry => entry.Contract)
+            .Should()
+            .Equal(typeof(ICustomResourceValidator), typeof(IIdentityService));
     }
 }
 
@@ -406,5 +415,84 @@ public class Given_a_plugin_registering_the_real_custom_resource_validator
         result
             .Findings.Should()
             .Contain(finding => finding.Message.Contains(nameof(ICustomResourceValidator)));
+    }
+}
+
+[TestFixture]
+[NonParallelizable]
+public class Given_a_plugin_registering_the_real_identity_service
+{
+    private const string IdentityAdd = "identityAdd";
+
+    private string _pluginRoot = null!;
+
+    [SetUp]
+    public void Setup() => _pluginRoot = PluginCompositionProbe.CreatePluginRoot();
+
+    [TearDown]
+    public void TearDown() => PluginCompositionProbe.DeletePluginRoot(_pluginRoot);
+
+    /// <summary>
+    /// The host's default is on the collection first, exactly as the host registers it, so the audit
+    /// sees one plugin claim over a host default. The service type is declared in the assembly
+    /// EdFi.DataManagementService.Identity, so it is admitted only because the declared-contract
+    /// exemption is evaluated first.
+    /// </summary>
+    [Test]
+    public async Task It_is_admitted_under_the_hosts_own_registry()
+    {
+        LoadedPlugins plugins = PluginCompositionProbe.Load(_pluginRoot);
+        ServiceCollection services = new();
+        services.AddLogging();
+        services.AddSingleton<IIdentityService, NoIdentityService>();
+        services.AddPluginServiceContributions(
+            PluginCompositionProbe.HookConfiguration(IdentityAdd),
+            plugins
+        );
+
+        await using ServiceProvider provider = services.BuildServiceProvider();
+        PluginAuditInput input = provider.GetRequiredService<PluginAuditInput>();
+
+        PluginAuditResult result = await PluginRegistrationAudit.AuditAsync(input, provider);
+
+        result.Findings.Should().BeEmpty();
+        using IServiceScope scope = provider.CreateScope();
+        scope
+            .ServiceProvider.GetRequiredService<IIdentityService>()
+            .GetType()
+            .Name.Should()
+            .Be("FixtureIdentityService");
+    }
+
+    /// <summary>
+    /// The identical registration, audited against a registry holding only the fan-in validator entry.
+    /// That it becomes fatal is what shows the exemption is what admitted it above, rather than some
+    /// property of the type.
+    /// </summary>
+    [Test]
+    public async Task It_is_refused_once_the_registry_does_not_declare_it()
+    {
+        LoadedPlugins plugins = PluginCompositionProbe.Load(_pluginRoot);
+        ServiceCollection services = new();
+        services.AddLogging();
+        services.AddSingleton<IIdentityService, NoIdentityService>();
+
+        PluginContractRegistry registryWithOnlyTheValidator = new([
+            new PluginContractEntry(typeof(ICustomResourceValidator), Cardinality.FanIn),
+        ]);
+        PluginAuditInput input = plugins.ContributeServices(
+            services,
+            PluginCompositionProbe.HookConfiguration(IdentityAdd),
+            registryWithOnlyTheValidator
+        );
+
+        await using ServiceProvider provider = services.BuildServiceProvider();
+        PluginAuditResult result = await PluginRegistrationAudit.AuditAsync(input, provider);
+
+        result
+            .Findings.Should()
+            .ContainSingle(finding => finding.Reason == PluginAuditFailure.HostOwnedServiceTypeClaimed)
+            .Which.Message.Should()
+            .Contain("EdFi.DataManagementService.Identity.IIdentityService");
     }
 }

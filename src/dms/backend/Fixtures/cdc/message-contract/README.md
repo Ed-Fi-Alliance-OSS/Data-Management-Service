@@ -172,7 +172,7 @@ Stable fixture scenario properties use `MC-CONSUMER-ORDERING-<shared-case>`,
 `MC-CONSUMER-ORDERING-INT64`, `MC-CONSUMER-ORDERING-DURABILITY`, and
 `MC-CONSUMER-ORDERING-WIRE-BOUNDARY`. Test method names identify the individual
 assertions. Correction scenarios provide ordering evidence for `CDC-INV-14`;
-MC-18 will include these IDs in the story traceability manifest.
+Fixture and method `CdcInvariant` properties declare these invariant assignments beside the tests.
 
 ```sh
 dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/EdFi.DataManagementService.Backend.Cdc.Tests.Unit.csproj --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractConsumerOrdering'
@@ -205,7 +205,7 @@ its first partition starts scanning.
 
 Stable scenario properties are `MC-CONSUMER-BOOTSTRAP-DURABILITY`,
 `MC-CONSUMER-BOOTSTRAP-OFFSETS`, `MC-CONSUMER-BOOTSTRAP-DEADLINE`, and
-`MC-CONSUMER-BOOTSTRAP-RECOVERY` (`CDC-INV-14`; manifest mapping belongs to MC-18).
+`MC-CONSUMER-BOOTSTRAP-RECOVERY` (`CDC-INV-14`; invariant annotations belong to MC-18).
 These deterministic timelines use shared serialized envelopes and no wall-clock
 sleeping. They establish bootstrap behavior, not production retained-log capacity.
 Recurring validity renewal and checkpoint/assignment invalidation are covered by
@@ -249,7 +249,7 @@ or a supported runtime consumer.
 Stable scenario properties are `MC-CONSUMER-CONTINUITY-DURABILITY`,
 `MC-CONSUMER-CONTINUITY-IDLE`, `MC-CONSUMER-CONTINUITY-DEADLINE`,
 `MC-CONSUMER-CONTINUITY-RECOVERY`, and `MC-CONSUMER-CONTINUITY-OBSERVATIONS`
-(`CDC-INV-14`; manifest mapping remains MC-18). These tests use deterministic clocks
+(`CDC-INV-14`; invariant annotations remain MC-18). These tests use deterministic clocks
 and serialized shared envelopes without sleeps or broker capacity claims.
 
 ```sh
@@ -731,27 +731,55 @@ work directory is attached to each provider's baseline test and copied into the 
 These attachments retain the
 image digest, stable scenario IDs, failed statuses/reasons, redacted bounded metadata, and
 in-container diagnostic audit results. Successful values and input bodies are excluded.
-This is serialized artifact evidence; MC-18 owns the final invariant manifest and CI wiring.
+This is serialized artifact evidence; MC-18 owns the invariant annotations and CI wiring.
 
 ## Traceability and qualification (MC-18)
 
-`traceability.json` maps every discovered message-contract test case in both CDC
-assemblies to the eight invariants assigned to DMS-1324. Design links and explicit
-exclusions describe the evidence boundary. Each entry stores the NUnit fixture and
-case name (including provider and parameter arguments) and a stable `MC-TEST-` ID:
-20 uppercase SHA-256 hex digits of its UTF-8 fully qualified NUnit name. Existing
-`MC-UPSERT-*`, `MC-FAILURE-*`, consumer and broker scenario IDs remain in their
-runner/fixture evidence. The manifest's IDs distinguish individual assertions and
-parameter variants within those scenarios; they contain no record values.
+Invariant mappings live beside the tests as NUnit properties, for example:
+
+```csharp
+[Property("CdcInvariant", "CDC-INV-07")]
+[Property("CdcInvariant", "CDC-INV-08")]
+public sealed class Given_MessageContractRouting
+```
+
+A fixture supplies defaults for its scenarios and parameter variants. A method or
+case can declare a narrower mapping: the closest `CdcInvariant` properties replace
+ancestor defaults. Renaming a test or adding a parameter variant needs no separate
+inventory entry or name hash. Review the annotations when changing what a scenario
+proves; discovery cannot verify the meaning of its assertions.
 
 `Given_MessageContractTraceability` is compiled into both assemblies and invokes
-NUnit discovery without fixture setup. It rejects missing/stale case references,
-duplicate test IDs or JSON properties, invalid IDs, empty mappings, unassigned or
-uncovered invariants and missing execution categories. A deleted test cannot leave
-passing manifest-only evidence. The infrastructure tests themselves are the sole
-message-contract exclusion. When adding/renaming cases, review their fully qualified
-NUnit names and update the mapping and digest explicitly; tests never rewrite the
-manifest. Run **both** assemblies' traceability checks to validate the entire set.
+NUnit discovery without fixture setup. It rejects missing or unassigned invariants,
+non-runnable cases and missing execution categories. The integration assembly must
+cover all eight assigned invariants; unit helpers cover a subset. Infrastructure
+tests are excluded from this evidence set. Run both assemblies' checks.
+
+Discovery generates a `cdc-message-contract-<assembly>.json` attachment with each
+case's method name, effective invariants, categories and scenario IDs. Parameter
+values are omitted. Existing `MC-UPSERT-*`, `MC-FAILURE-*`, consumer and broker
+scenario IDs remain in their runner/fixture evidence. No generated case inventory
+is checked into source control.
+
+The eight assigned design invariants are:
+
+- CDC-INV-02: [cached-document-contract](../../../../../../reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract), [upsert-value](../../../../../../reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#upsert-value).
+- CDC-INV-06: [connector-topology-and-provider-setup](../../../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#connector-topology-and-provider-setup), [schema-and-query-integration](../../../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#schema-and-query-integration).
+- CDC-INV-07: [topic](../../../../../../reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#topic), [record-size](../../../../../../reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#record-size), [key](../../../../../../reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#key), [upsert-value](../../../../../../reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#upsert-value), [delete](../../../../../../reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#delete).
+- CDC-INV-08: [connector-transformation](../../../../../../reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#connector-transformation).
+- CDC-INV-09: [pinned-connector-runtime](../../../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#pinned-connector-runtime), [connector-topology-and-provider-setup](../../../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#connector-topology-and-provider-setup).
+- CDC-INV-10: [projection-health-and-deployment-owned-cdc-readiness](../../../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness), [provider-source-position-barrier](../../../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#provider-source-position-barrier), [internal-progress-key](../../../../../../reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#internal-progress-key).
+- CDC-INV-13: [public-consumer-bootstrap](../../../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#public-consumer-bootstrap), [topic](../../../../../../reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#topic).
+- CDC-INV-14: [v1-compatibility-and-corrective-republishes](../../../../../../reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#v1-compatibility-and-corrective-republishes).
+
+Evidence boundaries:
+
+- DMS-1325 owns API-driven writes and end-to-end lifecycle evidence; these tests insert minimal provider rows directly.
+- E18 owns materializer correctness, projection completeness, restamp, rebuild and cache-ahead recovery. CDC fixtures reference E18 goldens without claiming those workflows.
+- DMS-1323 owns topic/ACL provisioning, bootstrap orchestration and enable/disable operations. Admission here uses focused observations.
+- Consumer fixtures prove ordering, durability and continuity contracts, not production capacity or a supported runtime consumer.
+- Existing connector-template and control suites retain their owning stories; these annotations cover discovered MessageContract fixtures in both CDC test assemblies.
+- Focused admission combines current production offset/status/provider adapters with explicit synthetic ownership, projection, history and lag. It is evaluator evidence, not production writer admission. Current telemetry age/identity/expiry coverage remains in DMS-1323 telemetry suites.
 
 The existing PR Contract gate uses `eng/ci/Invoke-CdcQualification.ps1`. It runs
 all CDC unit tests and the integration assembly's Docker-free tests, including both

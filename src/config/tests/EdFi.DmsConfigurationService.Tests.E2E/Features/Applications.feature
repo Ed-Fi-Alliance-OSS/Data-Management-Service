@@ -6,7 +6,7 @@ Feature: Applications endpoints
               And a POST request is made to "/v3/vendors" with
                   """
                     {
-                        "company": "Test Vendor 0",
+                        "company": "Test Vendor 0 {scenarioRunId}",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
                         "namespacePrefixes": "uri://ed-fi-e2e.org,uri://ed-fi-e2e2.org"
@@ -16,7 +16,7 @@ Feature: Applications endpoints
                   """
                     {
                         "dataStoreType": "Test",
-                        "name": "Test Data Store",
+                        "name": "Test Data Store {scenarioRunId}",
                         "connectionString": "Server=test;Database=TestDb;"
                     }
                   """
@@ -547,7 +547,7 @@ Feature: Applications endpoints
                   """
                     {
                         "id": {vendorId},
-                        "company": "Test Vendor 0",
+                        "company": "Test Vendor 0 {scenarioRunId}",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
                         "namespacePrefixes": "uri://ed-fi-e2e.org, uri://ed-fi-e2e2.org,uri://new-namespace.org"

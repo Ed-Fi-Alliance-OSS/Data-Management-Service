@@ -1,9 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <!--
-        Compiled against the real production contract at 1.0.0, by project reference, which is what
-        makes this the plugin half of the 1.0-on-1.1 proof rather than a plugin built against a fixture.
-        Its published bytes reference EdFi.Api.Plugins 1.0.0.0 and its manifest declares that version;
-        the host it is loaded into carries 1.1.0.0, and nothing about this project knows that.
+        Compiled against the real production contract at 1.1.0, by project reference, which is what
+        makes this the plugin half of the 1.1-on-1.2 proof rather than a plugin built against a fixture.
+        Its published bytes reference EdFi.Api.Plugins 1.1.0.0 and its manifest declares that version;
+        the host it is loaded into carries 1.2.0.0, and nothing about this project knows that.
     -->
     <PropertyGroup>
         <AssemblyName>Acme.OldContract</AssemblyName>

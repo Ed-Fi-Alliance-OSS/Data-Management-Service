@@ -31,5 +31,8 @@ internal sealed class AllowAllClaimSetProvider(FixtureContext fixture, bool gran
         grantReadChanges
     );
 
-    public Task<IList<ClaimSet>> GetAllClaimSets(string? tenant = null) => _inner.GetAllClaimSets(tenant);
+    public Task<IList<ClaimSet>> GetAllClaimSets(
+        string? tenant = null,
+        CancellationToken cancellationToken = default
+    ) => _inner.GetAllClaimSets(tenant, cancellationToken);
 }

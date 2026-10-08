@@ -7,7 +7,7 @@ Feature: Vendors endpoints
                   """
                     {
                         "dataStoreType": "Test",
-                        "name": "Test Data Store",
+                        "name": "Test Data Store {scenarioRunId}",
                         "connectionString": "Server=localhost;Database=TestDb;"
                     }
                   """
@@ -386,11 +386,14 @@ Feature: Vendors endpoints
                   """
 
 
-        Scenario: 18 POST with an existing company name returns 200 and updates the vendor
+        # POST /v3/vendors is create-only: a company the tenant already holds is rejected and the
+        # existing vendor is left exactly as it was.
+        @DMS-1341 @MssqlRepresentative
+        Scenario: 18 POST with an existing company name returns 400 and leaves the vendor unchanged
              When a POST request is made to "/v3/vendors" with
                   """
                    {
-                       "company": "Upsert Co",
+                       "company": "Repeat Co {scenarioRunId}",
                        "contactName": "Initial Contact",
                        "contactEmailAddress": "initial@example.com",
                        "namespacePrefixes": "Test"
@@ -407,27 +410,38 @@ Feature: Vendors endpoints
              When a POST request is made to "/v3/vendors" with
                   """
                    {
-                       "company": "Upsert Co",
+                       "company": "Repeat Co {scenarioRunId}",
                        "contactName": "Updated Contact",
                        "contactEmailAddress": "updated@example.com",
-                       "namespacePrefixes": "Test"
+                       "namespacePrefixes": "Updated"
                    }
                   """
-             Then it should respond with 200
-              And the response headers include
-                  """
-                   {
-                       "location": "/v3/vendors/{vendorId}"
-                   }
-                  """
-              And the response body is empty
-              And the record can be retrieved with a GET request
+             Then it should respond with 400
+              And the response header "location" is not present
+              And the response body is
                   """
                   {
-                      "id": {id},
-                      "company": "Upsert Co",
-                      "contactName": "Updated Contact",
-                      "contactEmailAddress": "updated@example.com",
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "validationErrors": {
+                          "Company": [
+                              "A vendor with this company name already exists."
+                          ]
+                      },
+                      "errors": []
+                  }
+                  """
+             When a GET request is made to "/v3/vendors/{vendorId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                      "id": {vendorId},
+                      "company": "Repeat Co {scenarioRunId}",
+                      "contactName": "Initial Contact",
+                      "contactEmailAddress": "initial@example.com",
                       "namespacePrefixes": "Test"
                   }
                   """
@@ -639,3 +653,153 @@ Feature: Vendors endpoints
              Then it should respond with 204
              When a GET request is made to "/v3/apiClients/{a1Key}"
              Then it should respond with 404
+
+        @MssqlRepresentative
+        Scenario: 20 Application for a no-prefix vendor receives a present empty namespace claim
+             When a POST request is made to "/v3/vendors" with
+                  """
+                    {
+                        "company": "Scenario 20 {scenarioRunId}",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": ""
+                    }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "s20VendorId"
+             When a GET request is made to "/v3/vendors/{s20VendorId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "id": {s20VendorId},
+                    "company": "Scenario 20 {scenarioRunId}",
+                    "contactName": "Test",
+                    "contactEmailAddress": "test@gmail.com",
+                    "namespacePrefixes": ""
+                  }
+                  """
+             When a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {s20VendorId},
+                   "applicationName": "Scenario 20 Application",
+                   "claimSetName": "Claim06",
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response body credentials are captured as "s20"
+             When a token is requested with the credentials captured as "s20" and scope "Claim06"
+             Then it should respond with 200
+              And the token has an empty namespacePrefixes claim
+
+        @MssqlRepresentative
+        Scenario: 21 Clearing vendor prefixes updates existing clients to a present empty namespace claim
+             When a POST request is made to "/v3/vendors" with
+                  """
+                    {
+                        "company": "Scenario 21 {scenarioRunId}",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "uri://dms-1532.org"
+                    }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "s21VendorId"
+             When a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {s21VendorId},
+                   "applicationName": "Scenario 21 Application",
+                   "claimSetName": "Claim06",
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response body credentials are captured as "s21"
+             When a token is requested with the credentials captured as "s21" and scope "Claim06"
+             Then it should respond with 200
+              And the token carries "uri://dms-1532.org" in the namespacePrefixes claim
+             When a PUT request is made to "/v3/vendors/{s21VendorId}" with
+                  """
+                    {
+                        "id": {s21VendorId},
+                        "company": "Scenario 21 {scenarioRunId}",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": ""
+                    }
+                  """
+             Then it should respond with 204
+             When a token is requested with the credentials captured as "s21" and scope "Claim06"
+             Then it should respond with 200
+              And the token has an empty namespacePrefixes claim
+
+        @DMS-1341 @MssqlRepresentative
+        Scenario: 22 Repeated POST without prefixes preserves the vendor and its client claim
+             When a POST request is made to "/v3/vendors" with
+                  """
+                    {
+                        "company": "Scenario 22 {scenarioRunId}",
+                        "contactName": "Original Contact",
+                        "contactEmailAddress": "original@example.com",
+                        "namespacePrefixes": "uri://dms-1532.org"
+                    }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "s22VendorId"
+             When a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {s22VendorId},
+                   "applicationName": "Scenario 22 Application",
+                   "claimSetName": "Claim06",
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response body credentials are captured as "s22"
+             When a token is requested with the credentials captured as "s22" and scope "Claim06"
+             Then it should respond with 200
+              And the token carries "uri://dms-1532.org" in the namespacePrefixes claim
+             When a POST request is made to "/v3/vendors" with
+                  """
+                    {
+                        "company": "Scenario 22 {scenarioRunId}",
+                        "contactName": "Replacement Contact",
+                        "contactEmailAddress": "replacement@example.com"
+                    }
+                  """
+             Then it should respond with 400
+              And the response header "location" is not present
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "validationErrors": {
+                          "Company": [
+                              "A vendor with this company name already exists."
+                          ]
+                      },
+                      "errors": []
+                  }
+                  """
+             When a GET request is made to "/v3/vendors/{s22VendorId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "id": {s22VendorId},
+                    "company": "Scenario 22 {scenarioRunId}",
+                    "contactName": "Original Contact",
+                    "contactEmailAddress": "original@example.com",
+                    "namespacePrefixes": "uri://dms-1532.org"
+                  }
+                  """
+             When a token is requested with the credentials captured as "s22" and scope "Claim06"
+             Then it should respond with 200
+              And the token carries "uri://dms-1532.org" in the namespacePrefixes claim

@@ -21,11 +21,26 @@ public class CachedClaimSetProvider(
     IConfigurationServiceClaimSetProvider claimSetProvider,
     IMemoryCache memoryCache,
     CacheSettings cacheSettings,
+    TimeProvider timeProvider,
     ILogger<CachedClaimSetProvider> logger
 ) : IClaimSetProvider
 {
     private const string CacheKeyPrefix = "ClaimSets";
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _cacheKeyLocks = new();
+
+    /// <summary>Maximum duration a shared fill may run before it fails.</summary>
+    private static readonly TimeSpan FillTimeout = TimeSpan.FromSeconds(30);
+
+    // One shared fill per cache key. A fill runs on no caller's token, so one caller leaving never
+    // aborts a fetch another caller still needs; each caller cancels only its own wait.
+    private readonly ConcurrentDictionary<string, Lazy<Task<IList<ClaimSet>>>> _inFlightFills = new();
+
+    // Invalidation generation per cache key. A fill records the generation it started under and
+    // writes the cache only if no invalidation has happened since, so a fetch that began before a
+    // reload can never put pre-reload claim sets back after it.
+    private readonly ConcurrentDictionary<string, long> _generations = new();
+
+    // Serializes each fill's generation check and cache write against invalidation.
+    private readonly object _writeGate = new();
 
     /// <summary>
     /// Gets the cache key for a tenant, supporting both single and multi-tenant modes.
@@ -34,12 +49,21 @@ public class CachedClaimSetProvider(
         string.IsNullOrEmpty(tenant) ? CacheKeyPrefix : $"{CacheKeyPrefix}:{tenant}";
 
     /// <summary>
-    /// Retrieves claim sets from cache if available, otherwise fetches from the provider
-    /// and caches the result for future requests. Uses tenant-specific cache keys in multi-tenant mode.
+    /// Retrieves claim sets from cache if available, otherwise joins or starts the one shared fetch
+    /// from the provider and caches the result for future requests. Uses tenant-specific cache keys
+    /// in multi-tenant mode.
     /// </summary>
     /// <param name="tenant">Optional tenant identifier for multi-tenant scenarios.</param>
-    public async Task<IList<ClaimSet>> GetAllClaimSets(string? tenant = null)
+    /// <param name="cancellationToken">Cancels this caller's wait, never the shared fetch.</param>
+    public async Task<IList<ClaimSet>> GetAllClaimSets(
+        string? tenant = null,
+        CancellationToken cancellationToken = default
+    )
     {
+        // A caller that is already cancelled gets no answer, even a cached one, and never starts a
+        // fetch it can never observe.
+        cancellationToken.ThrowIfCancellationRequested();
+
         var cacheKey = GetCacheKey(tenant);
 
         if (memoryCache.TryGetValue(cacheKey, out IList<ClaimSet>? cachedClaimSets))
@@ -47,11 +71,34 @@ public class CachedClaimSetProvider(
             return cachedClaimSets ?? [];
         }
 
-        var cacheKeyLock = _cacheKeyLocks.GetOrAdd(cacheKey, _ => new SemaphoreSlim(1, 1));
-        await cacheKeyLock.WaitAsync();
+        Lazy<Task<IList<ClaimSet>>> fill = _inFlightFills.GetOrAdd(cacheKey, key => CreateFill(key, tenant));
+
+        return await fill.Value.WaitAsync(cancellationToken);
+    }
+
+    private Lazy<Task<IList<ClaimSet>>> CreateFill(string cacheKey, string? tenant)
+    {
+        long generation = _generations.GetValueOrDefault(cacheKey);
+        Lazy<Task<IList<ClaimSet>>>? fill = null;
+        fill = new Lazy<Task<IList<ClaimSet>>>(() => FillAsync(cacheKey, tenant, generation, fill!));
+        return fill;
+    }
+
+    /// <summary>
+    /// Fetches and caches one tenant's claim sets on a token bounded only by a 30-second budget, never
+    /// any caller's token. Host shutdown does not cancel it, so a request still draining when shutdown
+    /// begins gets its claim sets instead of a failure.
+    /// </summary>
+    private async Task<IList<ClaimSet>> FillAsync(
+        string cacheKey,
+        string? tenant,
+        long generation,
+        Lazy<Task<IList<ClaimSet>>> fill
+    )
+    {
         try
         {
-            if (memoryCache.TryGetValue(cacheKey, out cachedClaimSets))
+            if (memoryCache.TryGetValue(cacheKey, out IList<ClaimSet>? cachedClaimSets))
             {
                 return cachedClaimSets ?? [];
             }
@@ -61,40 +108,35 @@ public class CachedClaimSetProvider(
                 LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
             );
 
-            var claimSets = await claimSetProvider.GetAllClaimSets(tenant);
+            using var fillCts = new CancellationTokenSource(FillTimeout, timeProvider);
+
+            // WaitAsync bounds the fill even against a provider that does not observe cancellation.
+            var claimSets = await claimSetProvider
+                .GetAllClaimSets(tenant, fillCts.Token)
+                .WaitAsync(fillCts.Token);
             if (claimSets is null)
             {
                 return [];
             }
 
-            memoryCache.Set(
-                cacheKey,
-                claimSets,
-                new MemoryCacheEntryOptions
+            lock (_writeGate)
+            {
+                if (_generations.GetValueOrDefault(cacheKey) == generation)
                 {
-                    AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(
-                        cacheSettings.ClaimSetsCacheExpirationSeconds
-                    ),
-                }.RegisterPostEvictionCallback(
-                    static (key, _, _, state) =>
-                    {
-                        var callbackState = (CacheKeyLockState)state!;
-                        if (key is string cacheKey)
-                        {
-                            (
-                                (ICollection<KeyValuePair<string, SemaphoreSlim>>)callbackState.CacheKeyLocks
-                            ).Remove(new KeyValuePair<string, SemaphoreSlim>(cacheKey, callbackState.Lock));
-                        }
-                    },
-                    new CacheKeyLockState(_cacheKeyLocks, cacheKeyLock)
-                )
-            );
+                    memoryCache.Set(
+                        cacheKey,
+                        claimSets,
+                        TimeSpan.FromSeconds(cacheSettings.ClaimSetsCacheExpirationSeconds)
+                    );
+                }
+            }
 
             return claimSets;
         }
         finally
         {
-            cacheKeyLock.Release();
+            // Removes only this fill, never a newer one started after an invalidation.
+            _inFlightFills.TryRemove(new KeyValuePair<string, Lazy<Task<IList<ClaimSet>>>>(cacheKey, fill));
         }
     }
 
@@ -106,17 +148,16 @@ public class CachedClaimSetProvider(
     public Task InvalidateCacheAsync(string? tenant = null)
     {
         var cacheKey = GetCacheKey(tenant);
-        memoryCache.Remove(cacheKey);
-        _cacheKeyLocks.TryRemove(cacheKey, out _);
+        lock (_writeGate)
+        {
+            _generations.AddOrUpdate(cacheKey, 1, static (_, current) => current + 1);
+            memoryCache.Remove(cacheKey);
+            _inFlightFills.TryRemove(cacheKey, out _);
+        }
         logger.LogInformation(
             "Invalidated claim sets cache for tenant: {Tenant}",
             LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
         );
         return Task.CompletedTask;
     }
-
-    private sealed record CacheKeyLockState(
-        ConcurrentDictionary<string, SemaphoreSlim> CacheKeyLocks,
-        SemaphoreSlim Lock
-    );
 }

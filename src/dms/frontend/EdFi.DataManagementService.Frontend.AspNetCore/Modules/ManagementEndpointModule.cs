@@ -101,7 +101,7 @@ public class ManagementEndpointModule(
         }
 
         logger.LogWarning(
-            "Claimset management endpoints were not mapped because AppSettings:ManagementEndpoints:RequiredRole is missing or invalid, or JwtAuthentication:RoleClaimType is missing or blank. Configure a single role token such as dms-management-operator."
+            "Claimset management endpoints were not mapped because AppSettings:ManagementEndpoints:RequiredRole is missing or invalid, or JwtAuthentication:RoleClaimType is missing or blank. Configure a single role token such as cms-client."
         );
 
         return false;

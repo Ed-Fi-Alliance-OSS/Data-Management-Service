@@ -18,6 +18,7 @@
         <EmbeddedResource Include="CdcQualifiedWorkerImage.json" />
     </ItemGroup>
     <ItemGroup>
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Tests.E2E" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc.Tests.Unit" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.SchemaTools.Tests.Unit" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc.Tests.Integration" />

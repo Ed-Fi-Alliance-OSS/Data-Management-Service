@@ -16,7 +16,8 @@
 # No YAML parser is available in this lane, so (following DmsPullRequestMssqlWorkflow.Tests.ps1)
 # named blocks are extracted by their two-space job key and invariants are asserted inside them.
 
-# The ten jobs that each ran their own solution build before the shared build artifact landed.
+# The jobs that consume the shared build artifact: ten that each ran their own solution build before
+# it landed, plus the identity plugin lane, which consumed it from the start.
 # Declared at file scope rather than in BeforeAll because Pester binds -ForEach during discovery,
 # which happens before any BeforeAll body has run.
 $buildOutputConsumer = @(
@@ -28,6 +29,7 @@ $buildOutputConsumer = @(
     @{ JobName = 'run-e2e-tests-mssql-ds61' }
     @{ JobName = 'run-instance-management-e2e-tests' }
     @{ JobName = 'run-instance-management-e2e-tests-mssql' }
+    @{ JobName = 'run-instance-management-identity-plugin-e2e-tests' }
     @{ JobName = 'build-and-start-dms' }
     # Also a producer: it stages the much smaller dms-integration-test-assemblies for the eight
     # integration lanes. It is a consumer all the same - the five projects it used to compile are in
@@ -775,7 +777,7 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
                 $script:lines | Where-Object { $_ -match '\./build-dms\.ps1 (E2ETest|InstanceE2ETest)\b' }
             )
 
-            $e2eInvocation.Count | Should -Be 7
+            $e2eInvocation.Count | Should -Be 8
 
             foreach ($invocation in $e2eInvocation) {
                 $invocation | Should -Match '-UsePrebuiltOutput'

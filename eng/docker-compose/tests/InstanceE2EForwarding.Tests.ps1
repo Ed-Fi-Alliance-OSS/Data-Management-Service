@@ -843,3 +843,68 @@ Describe "InstanceE2ETest environment-file wiring (DMS-1284)" {
         $dispatchText | Should -Not -Match 'EnvironmentFile\s*=\s*"[^"]*\.e2e"'
     }
 }
+
+Describe "RunInstanceE2E defaults to excluding the identity plugin slice (DMS-1516)" {
+    BeforeAll {
+        function Get-BuildScriptFunctionText {
+            param([Parameter(Mandatory)] [string] $ScriptPath, [Parameter(Mandatory)] [string] $FunctionName)
+            $parseErrors = $null
+            $tokens = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
+            $functionAst = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName }, $true) | Select-Object -First 1
+            if ($null -eq $functionAst) { throw "Function '$FunctionName' was not found in '$ScriptPath'." }
+            return $functionAst.Extent.Text
+        }
+
+        $script:buildScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../build-dms.ps1"))
+        $script:buildSource = Get-Content -LiteralPath $script:buildScript -Raw
+        . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName "ConvertTo-NormalizedTestFilter")))
+        . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName "RunInstanceE2E")))
+
+        # The named constant is read from the script's own assignment so the test follows its value.
+        $constantMatch = [regex]::Match($script:buildSource, '(?m)^\$instanceIdentityPluginExcludedFilter\s*=\s*"([^"]+)"')
+        $script:solutionRoot = "/solution"
+        $script:testResults = "/results"
+        $script:Configuration = "Release"
+        $script:UsePrebuiltOutput = $false
+        $script:instanceIdentityPluginExcludedFilter = $constantMatch.Groups[1].Value
+
+        # Leaf boundaries: Invoke-Execute runs its block, and dotnet records the arguments it was given
+        # instead of starting a test run.
+        function Invoke-Execute { param([scriptblock] $Command) & $Command }
+        function dotnet { $script:dotnetArguments = @($args) }
+    }
+
+    BeforeEach {
+        $script:dotnetArguments = $null
+        Mock Write-Output { }
+    }
+
+    It "pins the default to exclude the identity plugin category" {
+        $script:instanceIdentityPluginExcludedFilter | Should -Be "Category!=instance-management-identity-plugin"
+    }
+
+    It "passes the exclusion filter to dotnet test when no -TestFilter is supplied" {
+        RunInstanceE2E -TestFilter ""
+
+        $filterIndex = $script:dotnetArguments.IndexOf("--filter")
+        $filterIndex | Should -BeGreaterThan -1
+        $script:dotnetArguments[$filterIndex + 1] | Should -Be "Category!=instance-management-identity-plugin"
+    }
+
+    It "treats a whitespace-only -TestFilter as unsupplied" {
+        RunInstanceE2E -TestFilter "  "
+
+        $script:dotnetArguments[$script:dotnetArguments.IndexOf("--filter") + 1] |
+            Should -Be "Category!=instance-management-identity-plugin"
+    }
+
+    It "passes an explicit -TestFilter through unchanged, so the slice can still be selected" {
+        RunInstanceE2E -TestFilter "Category=instance-management-identity-plugin"
+
+        $script:dotnetArguments.IndexOf("--filter") | Should -BeGreaterThan -1
+        $script:dotnetArguments[$script:dotnetArguments.IndexOf("--filter") + 1] |
+            Should -Be "Category=instance-management-identity-plugin"
+        ($script:dotnetArguments | Where-Object { $_ -eq "--filter" }).Count | Should -Be 1
+    }
+}

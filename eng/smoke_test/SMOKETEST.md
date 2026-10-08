@@ -37,12 +37,19 @@ smoke testing. This function:
 
 1. Creates system administrator credentials in the Configuration Service
 2. Obtains an authentication token
-3. Creates a vendor with the required namespace prefixes
+3. Creates a vendor with the required namespace prefixes, or reuses the vendor
+   that already has this company name in the tenant
 4. Creates an application with the appropriate claimset and education
    organization IDs
 5. Returns the key and secret for use in smoke tests
 
 ### Usage
+
+For the self-contained identity provider, set
+`DMS_CONFIG_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` in the stack's `.env`
+before starting or recreating it. The Smoke Test Utility requests a new token
+for each resource GET and otherwise exceeds the default limit of 15. Restore
+the configured limit and recreate the stack after the smoke run.
 
 ```powershell
 Import-Module ./modules/SmokeTest.psm1 -Force

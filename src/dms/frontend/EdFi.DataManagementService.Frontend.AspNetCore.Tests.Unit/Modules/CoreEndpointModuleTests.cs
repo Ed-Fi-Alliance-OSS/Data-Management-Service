@@ -223,9 +223,9 @@ public class CoreEndpointModuleTests
             .Returns(Task.FromResult(FakeCoreOkResponse()));
         A.CallTo(() => apiService.UpdateById(A<FrontendRequest>._, A<CancellationToken>._))
             .Returns(Task.FromResult(FakeCoreOkResponse()));
-        A.CallTo(() => apiService.DeleteById(A<FrontendRequest>._))
+        A.CallTo(() => apiService.DeleteById(A<FrontendRequest>._, A<CancellationToken>._))
             .Returns(Task.FromResult(FakeCoreOkResponse()));
-        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._))
+        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._, A<CancellationToken>._))
             .Returns(Task.FromResult(FakeCoreOkResponse()));
         A.CallTo(() => apiService.MethodNotAllowed(A<FrontendRequest>._, A<string>._))
             .Returns(Task.FromResult(FakeCoreMethodNotAllowedResponse()));
@@ -398,13 +398,14 @@ public class CoreEndpointModuleTests
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             if (verb == "GET")
             {
-                A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._))
+                A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._, A<CancellationToken>._))
                     .MustHaveHappenedOnceExactly();
             }
             else
             {
                 AssertVerbReachedItsHandler(apiService, verb);
-                A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._)).MustNotHaveHappened();
+                A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._, A<CancellationToken>._))
+                    .MustNotHaveHappened();
             }
 
             A.CallTo(() => apiService.MethodNotAllowedForTrackedChange(A<FrontendRequest>._, A<string>._))
@@ -615,7 +616,8 @@ public class CoreEndpointModuleTests
             terminalMethodNames.Should().Equal("HEAD");
             A.CallTo(() => apiService.Get(A<FrontendRequest>._, A<CancellationToken>._))
                 .MustNotHaveHappened();
-            A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._)).MustNotHaveHappened();
+            A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._, A<CancellationToken>._))
+                .MustNotHaveHappened();
         }
 
         [Test]
@@ -671,7 +673,8 @@ public class CoreEndpointModuleTests
                     .MustHaveHappenedOnceExactly();
                 break;
             case "DELETE":
-                A.CallTo(() => apiService.DeleteById(A<FrontendRequest>._)).MustHaveHappenedOnceExactly();
+                A.CallTo(() => apiService.DeleteById(A<FrontendRequest>._, A<CancellationToken>._))
+                    .MustHaveHappenedOnceExactly();
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(verb), verb, "Unhandled verb");

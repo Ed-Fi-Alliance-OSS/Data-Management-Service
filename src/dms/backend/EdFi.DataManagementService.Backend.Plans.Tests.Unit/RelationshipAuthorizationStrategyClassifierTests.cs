@@ -476,9 +476,10 @@ public class Given_RelationshipAuthorizationStrategyClassifier
             }
         );
 
-        // The classifier has no ownership-promotion mode at all: DMS-1410 owns promotion for GET-many, so the
-        // resolved custom view is still reported (the caller validates it) while OwnershipBased keeps
-        // the known-but-not-enabled classification that produces the fail-closed 501.
+        // The classifier has no ownership-promotion mode at all: the relational planner splits OwnershipBased
+        // out before classifying for every operation it enforces, so the resolved custom view is still
+        // reported (the caller validates it) while OwnershipBased keeps the known-but-not-enabled
+        // classification that would fail an unenforced operation closed with 501.
         classification
             .Outcome.Should()
             .Be(RelationshipAuthorizationClassificationOutcome.KnownButNotEnabled);

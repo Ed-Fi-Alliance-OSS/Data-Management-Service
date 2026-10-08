@@ -183,6 +183,7 @@ Feature: Connect endpoints
                   | scope         | edfi_admin_api/full_access                     |
              Then it should respond with 200
               And the token response body is valid
+              And the token has an empty namespacePrefixes claim
 
         Scenario: 05 Verify token creation with invalid client_secret value
              When a Form URL Encoded POST request is made to "/connect/register" with

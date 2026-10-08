@@ -318,7 +318,8 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                          a.""Permissions"", a.""Requirements"", a.""Type"", a.""CreatedAt"", a.""ProtocolMappers""::jsonb::text AS ""ProtocolMappers"",
                          COALESCE(array_agg(DISTINCT s.""Name"") FILTER (WHERE s.""Name"" IS NOT NULL), ARRAY[]::text[]) AS ""Scopes"",
                          COALESCE(array_agg(DISTINCT acd.""DataStoreId"") FILTER (WHERE acd.""DataStoreId"" IS NOT NULL), ARRAY[]::int[]) AS ""DataStoreIds"",
-                         COALESCE(BOOL_AND(ac.""IsApproved""), true) AS ""IsApproved""
+                         COALESCE(BOOL_AND(ac.""IsApproved""), true) AS ""IsApproved"",
+                         COUNT(ac.""Id"") = 0 AS ""HasNoApiClientRow""
                   FROM ""dmscs"".""OpenIddictApplication"" a
                   LEFT JOIN ""dmscs"".""OpenIddictApplicationScope"" aps ON a.""Id"" = aps.""ApplicationId""
                   LEFT JOIN ""dmscs"".""OpenIddictScope"" s ON aps.""ScopeId"" = s.""Id""
@@ -345,7 +346,8 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                          a.""Permissions"", a.""Requirements"", a.""Type"", a.""CreatedAt"", a.""ProtocolMappers""::jsonb::text AS ""ProtocolMappers"",
                          COALESCE(array_agg(DISTINCT s.""Name"") FILTER (WHERE s.""Name"" IS NOT NULL), ARRAY[]::text[]) AS ""Scopes"",
                          COALESCE(array_agg(DISTINCT acd.""DataStoreId"") FILTER (WHERE acd.""DataStoreId"" IS NOT NULL), ARRAY[]::int[]) AS ""DataStoreIds"",
-                         COALESCE(BOOL_AND(ac.""IsApproved""), true) AS ""IsApproved""
+                         COALESCE(BOOL_AND(ac.""IsApproved""), true) AS ""IsApproved"",
+                         COUNT(ac.""Id"") = 0 AS ""HasNoApiClientRow""
                   FROM ""dmscs"".""OpenIddictApplication"" a
                   LEFT JOIN ""dmscs"".""OpenIddictApplicationScope"" aps ON a.""Id"" = aps.""ApplicationId""
                   LEFT JOIN ""dmscs"".""OpenIddictScope"" s ON aps.""ScopeId"" = s.""Id""
@@ -472,7 +474,7 @@ UPDATE ""dmscs"".""OpenIddictApplication""
 
                 // Zero rows can only mean the count predicate was false. A deadlock victim, or any
                 // other fault, throws from the statements above and is never reported here as a
-                // limit rejection; only the lock-wait timeout below is answered as an outcome.
+                // limit rejection; only the lock-wait timeout below is an outcome.
                 return rowsAffected > 0 ? TokenStoreOutcome.Stored : TokenStoreOutcome.LimitExceeded;
             }
             catch (PostgresException exception)
@@ -496,13 +498,16 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             );
         }
 
-        public async Task<bool> RevokeTokenAsync(Guid tokenId)
+        public async Task<bool> RevokeTokenAsync(Guid tokenId, Guid applicationId)
         {
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
+            // Ownership and status are predicates of the single statement rather than a prior read,
+            // so no interleaving can revoke another application's token, and a repeat changes no
+            // row and keeps the original RedemptionDate.
             var result = await connection.ExecuteAsync(
-                "UPDATE \"dmscs\".\"OpenIddictToken\" SET \"Status\" = 'revoked', \"RedemptionDate\" = CURRENT_TIMESTAMP WHERE \"Id\" = @Id",
-                new { Id = tokenId }
+                "UPDATE \"dmscs\".\"OpenIddictToken\" SET \"Status\" = 'revoked', \"RedemptionDate\" = CURRENT_TIMESTAMP WHERE \"Id\" = @Id AND \"ApplicationId\" = @ApplicationId AND \"Status\" <> 'revoked'",
+                new { Id = tokenId, ApplicationId = applicationId }
             );
             return result > 0;
         }
@@ -541,12 +546,22 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             return keyRecord;
         }
 
-        public async Task<IEnumerable<(string KeyId, byte[] PublicKey)>> GetActivePublicKeysInternalAsync()
+        public Task<IEnumerable<(string KeyId, byte[] PublicKey)>> GetActivePublicKeysInternalAsync()
+        {
+            return GetActivePublicKeysInternalAsync(CancellationToken.None);
+        }
+
+        public async Task<IEnumerable<(string KeyId, byte[] PublicKey)>> GetActivePublicKeysInternalAsync(
+            CancellationToken cancellationToken
+        )
         {
             await using var connection = new NpgsqlConnection(_connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
             return await connection.QueryAsync<(string KeyId, byte[] PublicKey)>(
-                "SELECT \"KeyId\", \"PublicKey\" FROM \"dmscs\".\"OpenIddictKey\" WHERE \"IsActive\" = TRUE"
+                new CommandDefinition(
+                    "SELECT \"KeyId\", \"PublicKey\" FROM \"dmscs\".\"OpenIddictKey\" WHERE \"IsActive\" = TRUE",
+                    cancellationToken: cancellationToken
+                )
             );
         }
     }

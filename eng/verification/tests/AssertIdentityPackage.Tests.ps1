@@ -6,7 +6,7 @@
 #Requires -Version 7
 
 # Assert-IdentityPackage.ps1 asserts on the id, the version, the license, the readme, the assembly,
-# its AssemblyVersion, the exported type surface, five load-bearing documentation landmarks, and the
+# its AssemblyVersion, the exported type surface, the load-bearing documentation landmarks, and the
 # dependency set of a packed EdFi.Api.Identity nupkg. The admission case below runs the whole script
 # against the real packed artifact, and each negative control repacks that same artifact with exactly
 # one thing changed, so a failure is attributable to the one property the case mutated rather than to
@@ -34,9 +34,7 @@ BeforeAll {
     $script:targetFramework = "net10.0"
 
     Import-Module (Join-Path $script:repositoryRoot "package-helpers.psm1") -Force
-    $script:contractVersion = Get-PluginsContractVersion -PropsPath (
-        Join-Path $script:repositoryRoot "src/dms/core/$($script:assemblyName)/$($script:assemblyName).csproj"
-    )
+    $script:contractVersion = Get-IdentityContractVersion
 
     # The real packed artifact, when the lane has already produced it. Admission and every negative
     # control below use it, because "the verifier refuses X" is only meaningful when every property
@@ -225,7 +223,7 @@ Describe "Assert-IdentityPackage negative controls" {
     It "refuses a package whose shipped XML documentation has lost a load-bearing landmark" {
         Test-PackedPackageAvailable
 
-        # One of the five phrases Assert-IdentityPackage.ps1 requires, replaced with prose that keeps
+        # One of the phrases Assert-IdentityPackage.ps1 requires, replaced with prose that keeps
         # the surrounding sentence readable but drops the specific rule. The member this text lives
         # on is untouched, so this is purely the landmark check and not the type-surface check.
         #

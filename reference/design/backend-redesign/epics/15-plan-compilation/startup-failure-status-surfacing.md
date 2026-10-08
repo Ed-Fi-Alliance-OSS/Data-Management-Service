@@ -14,7 +14,7 @@ Use a file-backed startup status signal that is written before HTTP route bindin
 Contract:
 
 - `State`: `Starting`, `Completed`, `Failed`, or `Ready`
-- `Phase`: one of `ConfigureServices`, `BuildApplication`, `LoadDataStores`, `InitializeApiSchemas`, `InitializeBackendMappings`, `InitializeAuthMetadata`, `ConfigureEndpoints`, or `Ready`
+- `Phase`: one of `LoadPlugins`, `ConfigureServices`, `BuildApplication`, `LoadDataStores`, `InitializeApiSchemas`, `ValidatePluginRegistrations`, `InitializeBackendMappings`, `InitializeAuthMetadata`, `ConfigureEndpoints`, or `Ready`
 - `Summary`: short human-readable phase summary
 - `ErrorType` / `ErrorMessage`: populated only for failures
 - `UpdatedAtUtc`: last write timestamp
@@ -36,7 +36,7 @@ This keeps fatal startup semantics unchanged: fatal phases still terminate the p
 3. On success, overwrite the file with `Completed`.
 4. On failure, overwrite the file with `Failed`, then invoke the existing process-exit behavior.
 
-The current startup sequence writes these phase names in order: `ConfigureServices`, `BuildApplication`, `LoadDataStores`, `InitializeApiSchemas`, `InitializeBackendMappings`, `InitializeAuthMetadata`, `ConfigureEndpoints`, and `Ready`.
+The current startup sequence writes these phase names in order: `LoadPlugins`, `ConfigureServices`, `BuildApplication`, `LoadDataStores`, `InitializeApiSchemas`, `ValidatePluginRegistrations`, `InitializeBackendMappings`, `InitializeAuthMetadata`, `ConfigureEndpoints`, and `Ready`.
 
 There is no database-provisioning phase in this list. Schema provisioning is owned by the bootstrap provisioning phase (`provision-dms-schema.ps1`) and never runs inside DMS startup — see `reference/design/backend-redesign/design-docs/bootstrap/command-boundaries.md`, which lists running inside DMS startup under that phase's "Must NOT do" and states that "Schema provisioning is entirely owned by this phase; DMS startup never performs it."
 

@@ -235,6 +235,8 @@ function Invoke-E2EEngineAwareTeardown {
     # it here rather than through a primitive's -RemoveBootstrap is what keeps one project's down from
     # deleting the workspace another still-running project depends on, and the throw above preserves it
     # whenever any down failed.
+    Import-Module (Join-Path $PSScriptRoot 'e2e-cdc.psm1')
+    Remove-E2ECdcApiFile -ComposeRoot $plan.ComposeRoot
     Remove-E2EBootstrapWorkspace -BootstrapWorkspacePath $plan.BootstrapWorkspacePath
 
     if (-not $SkipLocalImageRemoval) {

@@ -127,7 +127,10 @@ internal partial class GetTokenInfoHandler(
         }
 
         // Get authorization metadata
-        var claimSets = await claimSetProvider.GetAllClaimSets(requestInfo.FrontendRequest.Tenant);
+        var claimSets = await claimSetProvider.GetAllClaimSets(
+            requestInfo.FrontendRequest.Tenant,
+            requestInfo.RequestCancellationToken
+        );
         var clientClaimSet = claimSets.FindClaimSetByName(requestInfo.ClientAuthorizations.ClaimSetName);
 
         if (clientClaimSet == null)
@@ -148,7 +151,8 @@ internal partial class GetTokenInfoHandler(
         ApplicationContextResult applicationContextResult =
             await applicationContextProvider.GetApplicationByClientIdAsync(
                 requestInfo.ClientAuthorizations.ClientId,
-                requestInfo.FrontendRequest.Tenant
+                requestInfo.FrontendRequest.Tenant,
+                requestInfo.RequestCancellationToken
             );
 
         if (applicationContextResult is ApplicationContextResult.NotFound)

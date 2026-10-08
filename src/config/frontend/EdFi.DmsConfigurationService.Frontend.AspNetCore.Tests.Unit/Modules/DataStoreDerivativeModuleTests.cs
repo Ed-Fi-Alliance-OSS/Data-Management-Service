@@ -315,38 +315,34 @@ public class DataStoreDerivativeModuleTests
         }
 
         [Test]
-        public void It_returns_409() => _response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        public void It_returns_400() => _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         [Test]
-        public void It_uses_the_application_json_content_type() =>
-            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        public void It_uses_the_problem_json_content_type() =>
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
 
         [Test]
-        public void It_uses_the_conflict_type() =>
-            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:conflict");
-
-        [Test]
-        public void It_has_the_conflict_title() => _body["title"]!.GetValue<string>().Should().Be("Conflict");
-
-        [Test]
-        public void It_has_the_expected_detail() =>
-            _body["detail"]!
-                .GetValue<string>()
-                .Should()
-                .Be("A DataStoreDerivative of type ReadReplica already exists for DataStore 1.");
-
-        [Test]
-        public void It_has_a_body_status_of_409() => _body["status"]!.GetValue<int>().Should().Be(409);
-
-        [Test]
-        public void It_includes_a_non_empty_correlation_id() =>
-            _body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
-
-        [Test]
-        public void It_includes_empty_extension_members()
+        public void It_returns_the_data_validation_body()
         {
-            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
-            _body["errors"]!.AsArray().Count.Should().Be(0);
+            JsonNode expected = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "DerivativeType": [
+                      "A DataStoreDerivative of type ReadReplica already exists for DataStore 1."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", _body["correlationId"]!.GetValue<string>())
+            )!;
+
+            JsonNode.DeepEquals(_body, expected).Should().BeTrue();
         }
     }
 
@@ -375,38 +371,34 @@ public class DataStoreDerivativeModuleTests
         }
 
         [Test]
-        public void It_returns_409() => _response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        public void It_returns_400() => _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         [Test]
-        public void It_uses_the_application_json_content_type() =>
-            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        public void It_uses_the_problem_json_content_type() =>
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
 
         [Test]
-        public void It_uses_the_conflict_type() =>
-            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:conflict");
-
-        [Test]
-        public void It_has_the_conflict_title() => _body["title"]!.GetValue<string>().Should().Be("Conflict");
-
-        [Test]
-        public void It_has_the_expected_detail() =>
-            _body["detail"]!
-                .GetValue<string>()
-                .Should()
-                .Be("A DataStoreDerivative of type Snapshot already exists for DataStore 2.");
-
-        [Test]
-        public void It_has_a_body_status_of_409() => _body["status"]!.GetValue<int>().Should().Be(409);
-
-        [Test]
-        public void It_includes_a_non_empty_correlation_id() =>
-            _body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
-
-        [Test]
-        public void It_includes_empty_extension_members()
+        public void It_returns_the_data_validation_body()
         {
-            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
-            _body["errors"]!.AsArray().Count.Should().Be(0);
+            JsonNode expected = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "DerivativeType": [
+                      "A DataStoreDerivative of type Snapshot already exists for DataStore 2."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", _body["correlationId"]!.GetValue<string>())
+            )!;
+
+            JsonNode.DeepEquals(_body, expected).Should().BeTrue();
         }
     }
 

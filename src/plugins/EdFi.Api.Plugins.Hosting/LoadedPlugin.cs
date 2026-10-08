@@ -179,7 +179,15 @@ public sealed record LoadedPlugin
             return PluginFileLoadState.NotLoaded;
         }
 
-        return loadedLocations.Contains(Path.GetFullPath(Path.Combine(Directory, file.ResolvedRelativePath!)))
+        // The file's own path under either spelling of the plugin directory: the one the loader
+        // composed, which is where the entry assembly was loaded from, and the one the dependency
+        // resolver canonicalized, which is where a private dependency is loaded from. Both name this
+        // plugin's own copy, so an assembly the host served instead still matches neither.
+        return
+            loadedLocations.Contains(Path.GetFullPath(Path.Combine(Directory, file.ResolvedRelativePath!)))
+            || loadedLocations.Contains(
+                Path.GetFullPath(Path.Combine(_loadContext.ResolverDirectory, file.ResolvedRelativePath!))
+            )
             ? PluginFileLoadState.Loaded
             : PluginFileLoadState.NotLoaded;
     }

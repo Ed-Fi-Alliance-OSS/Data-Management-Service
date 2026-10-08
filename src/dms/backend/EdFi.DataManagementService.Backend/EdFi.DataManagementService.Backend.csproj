@@ -20,6 +20,8 @@
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Plans\EdFi.DataManagementService.Backend.Plans.csproj" />
     </ItemGroup>
     <ItemGroup>
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Tests.E2E" />
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Tests.Unit" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Tests.Unit" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Plans.Tests.Unit" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Postgresql.Tests.Integration" />

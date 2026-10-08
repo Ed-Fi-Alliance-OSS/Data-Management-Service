@@ -142,6 +142,47 @@ internal static class DescriptorRuntimeScenario
             );
     }
 
+    public static async Task It_ignores_a_wildcard_if_none_match_on_a_descriptor_put(
+        ApiIntegrationHarness harness
+    )
+    {
+        DescriptorValues initial = CreateDescriptorValues("put-ifnonematch");
+        (string locationPath, _) = await CreateDescriptorAsync(harness, initial);
+
+        JsonObject created = await GetJsonObjectAsync(harness, locationPath);
+        string resourceId = created["id"]!.GetValue<string>();
+
+        DescriptorValues updated = initial with
+        {
+            ShortDescription = $"{initial.ShortDescription}-updated",
+            Description = $"{initial.Description}-updated",
+        };
+
+        // DMS-1576: If-None-Match is a conditional-read (GET-only) validator, so it is ignored on a write.
+        JsonObject payload = CreateDescriptorPayload(updated);
+        payload["id"] = resourceId;
+        using var putContent = new StringContent(
+            payload.ToJsonString(),
+            Encoding.UTF8,
+            StandardJsonContentType
+        );
+        using var request = new HttpRequestMessage(HttpMethod.Put, locationPath) { Content = putContent };
+        request.Headers.TryAddWithoutValidation("If-None-Match", "*");
+
+        using HttpResponseMessage putResponse = await harness.HttpClient.SendAsync(request);
+        string putBody = await putResponse.Content.ReadAsStringAsync();
+
+        putResponse
+            .StatusCode.Should()
+            .Be(
+                HttpStatusCode.NoContent,
+                $"If-None-Match: * is ignored on a descriptor PUT, so the update still succeeds. Body: {putBody}"
+            );
+
+        JsonObject returned = await GetJsonObjectAsync(harness, locationPath);
+        AssertDescriptorFields(returned, updated);
+    }
+
     public static async Task It_preserves_metadata_for_unchanged_descriptor_put(ApiIntegrationHarness harness)
     {
         DescriptorValues descriptor = CreateDescriptorValues("unchanged-put");

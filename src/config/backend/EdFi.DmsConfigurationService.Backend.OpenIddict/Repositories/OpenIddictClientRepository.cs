@@ -4,9 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
-using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
+using EdFi.DmsConfigurationService.Secrets;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 

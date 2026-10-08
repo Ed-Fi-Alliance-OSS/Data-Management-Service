@@ -52,6 +52,11 @@ CMS/target/provider/schema settings intact. The root must contain the original m
 CREATE receipt, workflow and source history; creating an empty directory or choosing a
 new key does not establish ownership or internal-only history.
 
+Locate the original provisioning `--managed-state-path` and `--deployment-key` using
+the [recovery procedure](../../../../reference/document-cache-documentation/operations-runbook.md#recovery-procedure).
+Map those values to `StatePath` and `DeploymentKey` below. Ordinary managed creation
+with `source-history-only` can supply these records without enabling Kafka CDC.
+
 ```json
 {
   "Cdc": {
@@ -199,9 +204,13 @@ Activate a new empty target:
 dms-document-cache activate-new-empty --data-store-id 1 --confirm newEmptyActivation --settings ./appsettings.Production.json --environment Production --json
 ```
 
-Activate while writers are closed and drained. In the default packaged production state,
-this command rejects with `downstreamHistoryPresentOrUnknown` because internal-only proof
-is unavailable:
+Activate an existing `Disabled` target after following the runbook's
+[activation procedure](../../../../reference/document-cache-documentation/operations-runbook.md#activation)
+and [history decisions](../../../../reference/document-cache-documentation/operations-runbook.md#history-decisions-for-offline-administration).
+With the [history reader configured](#configuration), matching internal-only history can
+admit this command once writers are closed and drained and the remaining guards pass.
+Without that configuration, history is `unknown` and the command rejects with
+`downstreamHistoryPresentOrUnknown`:
 
 ```bash
 dms-document-cache activate-offline --data-store-id 1 --confirm offlineActivation --offline-writer-admission closedAndDrained --settings ./appsettings.Production.json --environment Production --json
@@ -219,20 +228,29 @@ Run an explicit integrity scrub:
 dms-document-cache scrub --data-store-id 1 --confirm integrityScrub --settings ./appsettings.Production.json --environment Production --json
 ```
 
-Deactivate while writers are closed and drained. In the default packaged production
-state, this command rejects with `downstreamHistoryPresentOrUnknown` because
-internal-only proof is unavailable:
+Deactivate after following the runbook's
+[deactivation procedure](../../../../reference/document-cache-documentation/operations-runbook.md#deactivation)
+and [history decisions](../../../../reference/document-cache-documentation/operations-runbook.md#history-decisions-for-offline-administration).
+With the [history reader configured](#configuration), matching internal-only history can
+admit this command once writers are closed and drained and the remaining guards pass.
+Without that configuration, history is `unknown` and the command rejects with
+`downstreamHistoryPresentOrUnknown`:
 
 ```bash
 dms-document-cache deactivate-offline --data-store-id 1 --confirm offlineDeactivation --offline-writer-admission closedAndDrained --settings ./appsettings.Production.json --environment Production --json
 ```
 
-Recover cache-ahead state only after trusted internal-only evidence exists. In the
-default packaged production state, this command rejects with
-`downstreamHistoryPresentOrUnknown` because internal-only proof is unavailable:
+Recover cache-ahead state after following the runbook's
+[recovery procedure](../../../../reference/document-cache-documentation/operations-runbook.md#recovery-procedure)
+and [history decisions](../../../../reference/document-cache-documentation/operations-runbook.md#history-decisions-for-offline-administration).
+With the [history reader configured](#configuration), matching internal-only history can
+admit recovery once writers are closed and drained and the remaining guards pass.
+Without that configuration, history is `unknown` and the command rejects with
+`downstreamHistoryPresentOrUnknown`. Replace the illustrative fingerprint with the
+current value for the selected target, as described in the procedure:
 
 ```bash
-dms-document-cache recover-cache-ahead --data-store-id 1 --confirm internalCacheAheadRecovery --offline-writer-admission closedAndDrained --settings ./appsettings.Production.json --environment Production --json
+dms-document-cache recover-cache-ahead --data-store-id 1 --confirm internalCacheAheadRecovery --offline-writer-admission closedAndDrained --expected-physical-source-fingerprint sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --settings ./appsettings.Production.json --environment Production --json
 ```
 
 Mutating request JSON uses the shared administrative DTO shape:

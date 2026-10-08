@@ -142,6 +142,13 @@ public abstract class ApiIntegrationTestBase
     protected virtual IConfigurationServiceApplicationProvider? ApplicationContextConfigurationProviderOverride =>
         null;
 
+    /// <summary>
+    /// When supplied, replaces the host's <c>TimeProvider</c> singleton, so a scenario can advance a
+    /// controlled clock past a cache or snapshot freshness window mid-test. Null keeps the production
+    /// <c>TimeProvider.System</c> registration every other scenario relies on.
+    /// </summary>
+    protected virtual TimeProvider? TimeProviderOverride => null;
+
     /// <summary>Enables the DMS DocumentCache read-acceleration path for cache-backed read scenarios.</summary>
     protected virtual bool EnableDocumentCacheReadAcceleration => false;
 
@@ -332,6 +339,7 @@ public abstract class ApiIntegrationTestBase
         var multiTenancy = MultiTenancy;
         var additionalHostSettings = AdditionalHostSettings;
         var applicationContextConfigurationProviderOverride = ApplicationContextConfigurationProviderOverride;
+        var timeProviderOverride = TimeProviderOverride;
         MutableNamespacePrefixJwtValidationService? jwtValidationServiceOverride =
             CreateJwtValidationService();
         IDataStoreProvider? dataStoreProviderOverride = CreateDataStoreProvider(
@@ -353,6 +361,8 @@ public abstract class ApiIntegrationTestBase
             builder.UseSetting("AppSettings:AllowIdentityUpdateOverrides", AllowIdentityUpdateOverrides);
             builder.UseSetting("AppSettings:RouteQualifierSegments", RouteQualifierSegments);
             builder.UseSetting("AppSettings:BypassAuthorization", BypassAuthorization ? "true" : "false");
+            // The OIDC warm-up task pins the fake's issuer to the configured authority.
+            builder.UseSetting("JwtAuthentication:Authority", FakeOidcConfigurationManager.Issuer);
             builder.UseSetting("AppSettings:MultiTenancy", multiTenancy ? "true" : "false");
             builder.UseSetting(
                 "AppSettings:EnableAspNetCompression",
@@ -437,7 +447,8 @@ public abstract class ApiIntegrationTestBase
                     assignedProfileNames,
                     applicationContextConfigurationProviderOverride,
                     dataStoreProviderOverride,
-                    jwtValidationServiceOverride
+                    jwtValidationServiceOverride,
+                    timeProviderOverride
                 );
 
                 if (queryRecorder is not null)

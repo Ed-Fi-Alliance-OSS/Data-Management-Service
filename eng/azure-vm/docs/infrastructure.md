@@ -60,7 +60,7 @@ Base: `https://<PUBLIC_HOST>`
 |-----------|-----|
 | Landing page | `/` |
 | Single-tenant DMS — Discovery | `/st-dms` |
-| OAuth token (both stacks) | `/auth/realms/edfi/protocol/openid-connect/token` (`/st-dms` Discovery advertises this as `urls.oauth`; **`/mt-dms` Discovery advertises a broken value** — see issue 11. The `/{st,mt}-dms/oauth/token` proxy also forwards here, with a trusted cert) |
+| OAuth token (both stacks) | `/{st,mt}-dms/oauth/token` (the DMS proxy; Discovery advertises it as `urls.oauth`, qualified for `/mt-dms` as `/mt-dms/{tenant}/{schoolYear}/oauth/token` - both forms work), or the Keycloak realm directly at `/auth/realms/edfi/protocol/openid-connect/token` |
 | Single-tenant DMS — data | `/st-dms/data/ed-fi/{resource}` |
 | Single-tenant Config Service | `/st-config` (Swagger at `/st-config/swagger` if enabled) |
 | Multi-tenant DMS — Discovery | `/mt-dms` |
@@ -106,12 +106,11 @@ Scope: **single-tenant + two isolated tenants** = three apps.
 | multi-tenant / tenant2 | `EdFiSandbox` | `edfi_mt_t2` | _(from bootstrap.ps1 output)_ | _(from bootstrap.ps1 output)_ |
 
 Token endpoint (HTTP Basic `key:secret`, `grant_type=client_credentials`): the shared Keycloak
-realm at `…/auth/realms/edfi/protocol/openid-connect/token`. `/st-dms` Discovery advertises this
-correctly as `urls.oauth`; **`/mt-dms` Discovery advertises a broken value** (it appends
-`/{tenant}/{schoolYear}` — upstream `DMS-1262`, see issue 11 below), so authenticate against the
-realm URL above directly, not the advertised MT value. The DMS `…/st-dms/oauth/token` /
-`…/mt-dms/oauth/token` proxy forwards to the same endpoint (the containers trust either the
-mounted self-signed gateway certificate or the public CA chain). A
+realm at `…/auth/realms/edfi/protocol/openid-connect/token`. Discovery advertises the DMS proxy
+as `urls.oauth` (`…/st-dms/oauth/token`, and `…/mt-dms/{tenant}/{schoolYear}/oauth/token` for
+multi-tenant; the unqualified `…/mt-dms/oauth/token` also works), which forwards to the same
+endpoint (the containers trust either the mounted self-signed gateway certificate or the public
+CA chain). A
 ready sampler that tokens + reads a spread of resources for all three is
 [`http/sample-all.sh`](../http/sample-all.sh).
 
@@ -221,7 +220,7 @@ Order used to stand the environment up (and that a re-deploy should follow):
    the retired `EdFi.Dms.Populated.Template.*` ids and are rejected by the relational backend
    (the script guards against them regardless of the package id).
 7. **Keycloak issuer behind the proxy.** Tokens are issued with `iss =
-   https://<PUBLIC_HOST>/auth/realms/edfi`; if DMS rejects valid tokens, re-check
+   https://<PUBLIC_HOST>/auth/realms/edfi`; if DMS fails to start or rejects valid tokens, re-check
    `KC_HOSTNAME`, `KC_HOSTNAME_BACKCHANNEL_DYNAMIC`, and that the metadata `issuer` matches
    the public URL. (This environment is Keycloak-only — the DMS/CMS auth wiring in the
    compose file is Keycloak-specific.)
@@ -232,13 +231,8 @@ Order used to stand the environment up (and that a re-deploy should follow):
 9. **MFA is intentionally disabled** in Keycloak so credentials can be shared with the review
    team. Enforce MFA for any real deployment.
 10. **Secrets.** Replace every `CHANGEME` value in `.env` before deployment.
-11. **`/mt-dms` Discovery advertises a broken OAuth URL (upstream bug, `DMS-1262`).** The DMS
-    appends the tenant/route-qualifier segments to `urls.oauth`, so `/mt-dms` discovery returns
-    `…/protocol/openid-connect/token/{tenant}/{schoolYear}` — a route that exists neither on
-    Keycloak nor on the DMS itself (its `/oauth/token` proxy is mapped only at the service
-    root). No compose setting avoids it: any multi-tenant service gets at least `/{tenant}`
-    appended. Ignore the advertised value and authenticate against the real token endpoint,
-    `https://<PUBLIC_HOST>/auth/realms/edfi/protocol/openid-connect/token` (what
-    `bootstrap.ps1` prints and the `http/` walkthroughs use). `/st-dms` discovery is
-    unaffected (its qualifier prefix is empty). Tracked upstream as `DMS-1262` (origin
-    `DMS-866`); the fix belongs in the Discovery URL construction, not in this deployment.
+11. **Multi-tenant Discovery OAuth URL - `DMS-1262`, fixed upstream (#1104).** `/mt-dms` Discovery
+    used to advertise the realm URL with `/{tenant}/{schoolYear}` appended, a route that existed
+    nowhere. It now advertises the DMS token proxy with the route qualifiers
+    (`…/mt-dms/{tenant}/{schoolYear}/oauth/token`), which the DMS maps; the fix ships in the `:pre`
+    images built ≥ 2026-07-13. On an older image, authenticate against the realm URL directly.

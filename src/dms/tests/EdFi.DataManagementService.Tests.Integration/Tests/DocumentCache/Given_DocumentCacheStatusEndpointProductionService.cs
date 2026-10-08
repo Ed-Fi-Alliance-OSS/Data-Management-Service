@@ -36,7 +36,7 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.DocumentCache;
 [Category("PostgresqlIntegration")]
 public class Given_DocumentCacheStatusEndpointProductionService
 {
-    private const string RequiredRole = "dms-document-cache-operator";
+    private const string RequiredRole = "dms-client";
     private const string RoleClaimType = "role";
     private const string ValidBearerToken = "valid-status-token";
     private const string StudentsEndpoint = "/data/ed-fi/students";

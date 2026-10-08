@@ -159,6 +159,8 @@ public class Given_a_reference_asking_for_the_version_the_host_carries
     [Test]
     public void It_records_the_version_the_host_actually_served()
     {
-        _substitution.HostVersion.Should().Be(new Version(1, 0, 0, 0));
+        // Read from the contract this host carries rather than written down, so the assertion follows
+        // the contract's own version instead of going stale when it moves.
+        _substitution.HostVersion.Should().Be(typeof(EdFiApiPlugin).Assembly.GetName().Version);
     }
 }

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Reflection;
+using System.Runtime.Loader;
 using System.Security.Cryptography;
 using FluentAssertions;
 using NUnit.Framework;
@@ -132,6 +133,84 @@ public class Given_a_plugin_that_ships_a_private_dependency_inventory
         _plugin
             .MaterializeInventory()
             .Single(row => row.FileName == "Acme.Private.dll")
+            .LoadState.Should()
+            .Be(PluginFileLoadState.Loaded);
+    }
+}
+
+/// <summary>
+/// The same private dependency, loaded from a plugin root reached through a symbolic link one level
+/// above it.
+/// </summary>
+/// <remarks>
+/// The loader resolves the root's own final component and nothing above it, so the plugin directory it
+/// composes still runs through the link. The dependency resolver canonicalizes the directory it serves
+/// a private assembly from, so that assembly reports a location through the link's target instead.
+/// Both are this plugin's own file, and the inventory has to say so. On macOS every temporary directory
+/// is this case, because /var is a link to /private/var; the link here makes it one on every platform.
+/// </remarks>
+[TestFixture]
+public class Given_a_private_dependency_loaded_through_a_linked_parent_of_the_root
+{
+    private TemporaryPluginRoot _root = null!;
+    private LoadedPlugin _plugin = null!;
+    private string _privateLocation = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _root = TemporaryPluginRoot.Create(rootName: Path.Combine("real", "plugins"));
+        _root.Add(PluginFixtures.PrivateDependency);
+
+        string realParent = Path.GetDirectoryName(_root.RootPath)!;
+        string linkedParent = TemporaryPluginRoot.CreateDirectoryLink(
+            Path.Combine(Path.GetDirectoryName(realParent)!, "alias"),
+            realParent
+        );
+
+        PluginLoaderRun run = PluginLoaderProbe.Run(
+            Path.Combine(linkedParent, "plugins"),
+            PluginFixtures.PrivateDependency
+        );
+        run.Failure.Should().BeNull();
+        _plugin = run.Result!.Plugins[0];
+
+        Type pluginType = _plugin.Instance.GetType();
+        pluginType.GetMethod("DescribePrivateDependency")!.Invoke(null, null);
+
+        _privateLocation = AssemblyLoadContext
+            .GetLoadContext(pluginType.Assembly)!
+            .Assemblies.Single(assembly => assembly.GetName().Name == "Acme.Private")
+            .Location;
+    }
+
+    [TearDown]
+    public void TearDown() => _root.Dispose();
+
+    [Test]
+    public void It_is_a_case_where_the_two_spellings_differ()
+    {
+        // The premise. Were the dependency's location under the composed directory, the case below
+        // would pass without the resolver's spelling ever being consulted.
+        _privateLocation.Should().NotStartWith(_plugin.Directory);
+    }
+
+    [Test]
+    public void It_reports_the_private_dependency_as_loaded()
+    {
+        _plugin
+            .MaterializeInventory()
+            .Single(row => row.FileName == "Acme.Private.dll")
+            .LoadState.Should()
+            .Be(PluginFileLoadState.Loaded);
+    }
+
+    [Test]
+    public void It_still_reports_the_entry_assembly_as_loaded()
+    {
+        _plugin
+            .MaterializeInventory()
+            .Single(row => row.FileName == $"{PluginFixtures.PrivateDependency}.dll")
             .LoadState.Should()
             .Be(PluginFileLoadState.Loaded);
     }

@@ -43,3 +43,46 @@ public class Given_ClaimSetCommands
         result.IsValid.Should().BeTrue();
     }
 }
+
+[TestFixture]
+public class Given_ClaimSetCopyCommand_names_containing_whitespace
+{
+    private static readonly string[] _namesWithWhitespace =
+    [
+        "DistrictHostedSISVendor (copy)",
+        " LeadingSpace",
+        "TrailingSpace ",
+        "Tab\tSeparated",
+        "Line\nBreak",
+    ];
+
+    [TestCaseSource(nameof(_namesWithWhitespace))]
+    public void It_rejects_the_name_with_the_insert_whitespace_message(string name)
+    {
+        var validator = new ClaimSetCopyCommand.Validator();
+
+        var result = validator.Validate(new ClaimSetCopyCommand { OriginalId = 1, Name = name });
+
+        result
+            .Errors.Select(error => error.ErrorMessage)
+            .Should()
+            .Equal("Claim set name must not contain white spaces.");
+    }
+
+    [TestCaseSource(nameof(_namesWithWhitespace))]
+    public void It_matches_the_insert_validation_errors(string name)
+    {
+        var insertResult = new ClaimSetInsertCommand.Validator().Validate(
+            new ClaimSetInsertCommand { Name = name, IsSystemReserved = false }
+        );
+
+        var copyResult = new ClaimSetCopyCommand.Validator().Validate(
+            new ClaimSetCopyCommand { OriginalId = 1, Name = name }
+        );
+
+        copyResult
+            .Errors.Select(error => error.ErrorMessage)
+            .Should()
+            .Equal(insertResult.Errors.Select(error => error.ErrorMessage));
+    }
+}

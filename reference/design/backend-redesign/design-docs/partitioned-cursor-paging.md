@@ -299,7 +299,9 @@ or `/keyChanges` returns the existing HTTP 400 bad-request shell with
 
 These names MUST NOT become globally reserved parameters that unsupported endpoint families
 silently ignore. Silently accepting and discarding a `pageToken` on a change-query endpoint would
-let a client believe it was walking a cursor when it was re-reading page one.
+let a client believe it was walking a cursor when it was re-reading page one. DMS-1589 kept this
+rejection when it began ignoring unknown query parameters: the cursor names are rejected by name, not
+ignored and listed in `X-EdFi-Warning` (see `reference/adr-unknown-query-parameters-DMS-1589.md`).
 
 ### `/partitions`
 
@@ -334,17 +336,19 @@ accepts the same resource-property filters and `minChangeVersion`/`maxChangeVers
 change-version filters that GET-many accepts, because boundaries are calculated over the filtered,
 authorized candidate set. The five reserved paging parameters — `pageToken`, `pageSize`, `limit`,
 `offset`, and `totalCount` — are instead reported with the specific unsupported message below, so a
-client that confused the two endpoints gets a useful answer. Every other query field is rejected by
-the existing unknown-query-field rule.
+client that confused the two endpoints gets a useful answer. Any other name that matches no query
+field is ignored and named in the `X-EdFi-Warning` response header (DMS-1589; see
+`reference/adr-unknown-query-parameters-DMS-1589.md`).
 
 Partition validation uses its own ordered phases, and unlike cursor validation the last of them may
 report several errors. The four phases run in this order, and the first one to find a fault answers:
 
 1. **Change-version window.** The same `minChangeVersion`/`maxChangeVersion` parsing GET-many
    applies, in the same position relative to filters that GET-many puts it in.
-2. **Resource filters.** The same unknown-query-field and filter-value-type rules GET-many applies,
-   over the same candidate set. The five reserved paging names and `number` are excluded from filter
-   matching before this phase runs, so a supplied `limit` is not reported as an unknown query field.
+2. **Resource filters.** The same filter-value-type rules GET-many applies, over the same candidate
+   set. A name that matches no query field is ignored, not rejected. The five reserved paging names
+   and `number` are excluded from filter matching before this phase runs, so a supplied `limit` is
+   never matched as a filter.
    Excluding `number` is also what makes a resource property of that name unfilterable here while it
    stays filterable on the collection GET, which is the approved intentional ODS difference the epic
    records.
@@ -366,18 +370,18 @@ which is the order GET-many uses: a query string that faults in both ways must b
 same problem type by both operations, because a client that discriminates on `type` should not have
 to know which of the two sibling endpoints it called. Filters must in turn run ahead of phase 4,
 because excluding the reserved names from filter matching is what lets phase 4 report `?limit=5` as a
-parameter that does not apply here rather than as an unknown query field, and that exclusion is only
+parameter that does not apply here rather than matching it as a filter, and that exclusion is only
 meaningful if filter matching happens before the reserved-parameter phase reports.
 
 Four consequences of the ordering, each a fixed part of the contract:
 
-- `?number=abc&notAField=1` answers with the unknown-query-field error alone. Both are client
-  mistakes, and answering the field first keeps this operation's unknown-field behavior identical to
-  GET-many's.
+- `?number=abc&notAField=1` answers with the count error, and names `notAField` in the warning.
 - `?number=abc&minChangeVersion=bogus` answers with the change-version error alone.
-- `?notAField=1&limit=5` answers with the unknown-query-field error alone.
+- `?notAField=1&limit=5` answers with the unsupported-parameter error for `limit`, and names
+  `notAField` in the warning. A rejected name is never also listed as ignored.
 - `?minChangeVersion=bogus&notAField=1` answers with the change-version error alone, in the
-  parameter-validation shell — the same problem type GET-many answers that query string with.
+  parameter-validation shell — the same problem type GET-many answers that query string with — and
+  names `notAField` in the warning.
 
 The asymmetry with cursor validation is deliberate. Cursor parameters are interdependent — the
 meaning of `limit`, `pageSize`, and `totalCount` all depend on whether a valid `pageToken` is

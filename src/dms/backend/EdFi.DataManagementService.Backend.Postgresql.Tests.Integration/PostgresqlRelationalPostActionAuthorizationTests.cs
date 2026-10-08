@@ -282,6 +282,21 @@ public class Given_A_Postgresql_Post_With_Distinct_Create_And_Update_Authorizati
         );
 
         owner.Should().BeOfType<UpsertResult.UpdateSuccess>();
+
+        // A read/modify-only client holds the row's token but no creator token. An update is decided by the
+        // stored token alone, so the missing creator token does not stand in its way.
+        var readModifyOnly = await PostAsync(
+            NullableProject,
+            NullableResource,
+            Body(NullableResource, "Changed again"),
+            _secondUuid,
+            updateChecksOwnership,
+            creatorOwnershipTokenId: null,
+            ownershipTokenIds: [CreatorToken]
+        );
+
+        readModifyOnly.Should().BeOfType<UpsertResult.UpdateSuccess>();
+        (await _context.CountDocumentsAsync(NullableProject, NullableResource)).Should().Be(1);
     }
 
     // ── Strategy difference: relationship ────────────────────────────────
@@ -508,7 +523,7 @@ public class Given_A_Postgresql_Post_With_Distinct_Create_And_Update_Authorizati
 
         blockerResult.Should().BeOfType<UpsertResult.InsertSuccess>();
         // The capture could not see the uncommitted row, so the insert waited on its identity and then lost. A
-        // POST without If-None-Match reports that as an identity conflict, which is not retried.
+        // POST reports that as an identity conflict, which is not retried.
         postResult.Should().BeOfType<UpsertResult.UpsertFailureIdentityConflict>();
         var afterRace = await AssertOnlyTheBlockerPersistedAsync(
             NullableProject,
@@ -527,50 +542,6 @@ public class Given_A_Postgresql_Post_With_Distinct_Create_And_Update_Authorizati
         nextAttempt
             .Should()
             .Be(new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Update));
-        (await _context.ReadSideEffectStateAsync(NullableProject, NullableResource, _firstUuid))
-            .Should()
-            .BeEquivalentTo(afterRace);
-    }
-
-    [Test]
-    public async Task It_reselects_the_update_policy_after_an_if_none_match_create_loses_to_a_concurrent_create()
-    {
-        var createOnly = Pair(_noFurther, _notPermitted);
-        var ifNoneMatch = new Dictionary<string, string> { ["If-None-Match"] = "*" };
-
-        var (blockerResult, postResult) = await RaceAgainstHeldWriteAsync(
-            () => SeedAsync(NullableProject, NullableResource, Body(NullableResource, "Blocker"), _firstUuid),
-            () =>
-                PostAsync(
-                    NullableProject,
-                    NullableResource,
-                    Body(NullableResource, "Loser"),
-                    _secondUuid,
-                    createOnly,
-                    headers: ifNoneMatch
-                )
-        );
-
-        blockerResult.Should().BeOfType<UpsertResult.InsertSuccess>();
-        var afterRace = await AssertOnlyTheBlockerPersistedAsync(
-            NullableProject,
-            NullableResource,
-            "Blocker"
-        );
-        postResult.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
-
-        // The retry the conflict earns captures the committed row and so applies Update, ahead of the 412
-        // If-None-Match would otherwise answer.
-        var retry = await PostAsync(
-            NullableProject,
-            NullableResource,
-            Body(NullableResource, "Loser"),
-            NewUuid(),
-            createOnly,
-            headers: ifNoneMatch
-        );
-
-        retry.Should().Be(new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Update));
         (await _context.ReadSideEffectStateAsync(NullableProject, NullableResource, _firstUuid))
             .Should()
             .BeEquivalentTo(afterRace);
@@ -715,8 +686,7 @@ public class Given_A_Postgresql_Post_With_Distinct_Create_And_Update_Authorizati
         DocumentUuid documentUuid,
         UpsertActionAuthorization actionAuthorization,
         short? creatorOwnershipTokenId = null,
-        IReadOnlyList<short>? ownershipTokenIds = null,
-        Dictionary<string, string>? headers = null
+        IReadOnlyList<short>? ownershipTokenIds = null
     ) =>
         _context.UpsertWithActionAuthorizationAsync(
             project,
@@ -726,8 +696,7 @@ public class Given_A_Postgresql_Post_With_Distinct_Create_And_Update_Authorizati
             actionAuthorization,
             _prefixes,
             creatorOwnershipTokenId,
-            ownershipTokenIds,
-            headers
+            ownershipTokenIds
         );
 
     /// <summary>

@@ -19,8 +19,14 @@ AfterAll {
     } | Remove-Module -Force
 }
 
-Describe 'Shared CDC E2E setup handoff' {
+Describe 'CDC E2E setup failure export' {
+    BeforeAll {
+        Import-Module (Join-Path $script:composeRoot '../ci/cdc-qualification.psm1') -Force
+    }
     BeforeEach {
+        $script:savedDiagnosticDirectory = $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY
+        $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+
         $script:arguments = @{
             EnvironmentFile = (Join-Path $TestDrive '.env.e2e')
             OriginalEnvironmentFile = (Join-Path $TestDrive '.env.original')
@@ -35,12 +41,124 @@ Describe 'Shared CDC E2E setup handoff' {
         Mock Read-BootstrapCdcSettings -ModuleName e2e-cdc { return @{ ConfigurationServiceSettings = @{ BaseUrl = 'http://localhost:8081' } } }
         Mock Assert-BootstrapCdcOfflineOwnership -ModuleName e2e-cdc {}
         Mock Invoke-E2ECdcSnapshotPreparation -ModuleName e2e-cdc {}
+        Mock Invoke-E2ECdcApiRollout -ModuleName e2e-cdc {}
+        Mock Test-CdcDeployment -ModuleName e2e-cdc { return $false }
+        Mock Invoke-CdcDeploymentLifecycle -ModuleName e2e-cdc {}
+        Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc {
+            & $BeforeCdcAdmission '/effective/.env'
+        }
+    }
+
+    AfterEach { $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = $script:savedDiagnosticDirectory }
+
+
+    It 'publishes the real <Cleanup> failure record for <Provider> with cancellation <Cancelled>' -ForEach @(
+        @{ Cleanup = 'NotStarted'; Provider = 'postgresql'; Cancelled = $false },
+        @{ Cleanup = 'Stopped'; Provider = 'mssql'; Cancelled = $true },
+        @{ Cleanup = 'RetainedForReconciliation'; Provider = 'mssql'; Cancelled = $false },
+        @{ Cleanup = 'RetainedForGovernedTeardown'; Provider = 'postgresql'; Cancelled = $false }
+    ) {
+        $script:cancelSetup = $Cancelled
+        if ($Cleanup -eq 'RetainedForGovernedTeardown') {
+            Mock Invoke-E2ECdcApiRollout -ModuleName e2e-cdc { throw 'private-rollout-prose' }
+            $script:arguments.CdcApiE2E = $true
+        } else {
+            Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc {
+                $exception = if ($script:cancelSetup) { [OperationCanceledException]::new('private-cancellation-prose') }
+                    else { [InvalidOperationException]::new('private-setup-prose') }
+                $exception.Data['CdcFailureCodes'] = @('ProviderSetup/ValidationFailed', 'Connect/Timeout', 'private-secret/Timeout')
+                throw $exception
+            }
+        }
+        if ($Cleanup -in @('Stopped', 'RetainedForReconciliation')) {
+            Mock Test-CdcDeployment -ModuleName e2e-cdc { return $true }
+        }
+        if ($Cleanup -eq 'RetainedForReconciliation') {
+            Mock Invoke-CdcDeploymentLifecycle -ModuleName e2e-cdc { throw 'private-cleanup-prose' }
+        }
+        { Invoke-E2ECdcSetup @script:arguments -DatabaseEngine $Provider } | Should -Throw '*tests were not launched*'
+        $files = @(Get-ChildItem (Join-Path $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY 'e2e-setup') -Filter '*.json')
+        $files.Count | Should -Be 1
+        $record = Get-Content $files[0].FullName -Raw | ConvertFrom-Json -AsHashtable
+        $record.cleanup | Should -Be $Cleanup
+        # Exercise the final export boundary as well as the real writer.
+        $record.privateText = 'private-unexpected-field'
+        $record.failureCodes += @('private-unrecognized-code', @{ secret = 'private-object' })
+        $record | ConvertTo-Json -Depth 10 | Set-Content $files[0].FullName
+        '{"private":"private-guid-file"}' | Set-Content (Join-Path $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY 'aabbccddeeff00112233445566778899.json')
+        $published = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        Export-CdcQualificationEvidence $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY $published
+        @(Get-ChildItem $published).Count | Should -Be 1
+        $json = Get-Content (Join-Path $published $files[0].Name) -Raw
+        $safe = $json | ConvertFrom-Json -AsHashtable
+        @($safe.Keys | Sort-Object) | Should -Be @('cancelled', 'cleanup', 'failureCodes', 'operation', 'provider', 'succeeded')
+        $safe.operation | Should -BeExactly 'e2e-setup'
+        $safe.succeeded | Should -BeFalse
+        $safe.cancelled | Should -Be $Cancelled
+        $safe.cleanup | Should -BeExactly $Cleanup
+        $safe.provider | Should -BeExactly $Provider
+        if ($Cleanup -eq 'RetainedForGovernedTeardown') { $safe.failureCodes.Count | Should -Be 0 }
+        else { $safe.failureCodes | Should -Be @('ProviderSetup/ValidationFailed', 'Connect/Timeout') }
+        $json | Should -Not -Match 'private-|secret|Exception|Output'
+    }
+}
+
+Describe 'Shared CDC E2E setup handoff' {
+    BeforeEach {
+        $script:savedDiagnosticDirectory = $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY
+        $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = Join-Path $TestDrive 'evidence'
+
+        $script:arguments = @{
+            EnvironmentFile = (Join-Path $TestDrive '.env.e2e')
+            OriginalEnvironmentFile = (Join-Path $TestDrive '.env.original')
+            DatabaseName = 'primary_e2e'; SnapshotDatabaseName = 'snapshot_e2e'
+            CdcSettingsPath = (Join-Path $TestDrive 'settings.json')
+            CdcBindingStatePath = (Join-Path $TestDrive 'custom-state')
+            SkipDockerBuild = $true; UsePrebuiltTools = $true; Configuration = 'Release'
+        }
+        Mock ReadValuesFromEnvFile -ModuleName e2e-cdc { return @{ E2E_DATABASE_NAME = 'primary_e2e'; E2E_SNAPSHOT_DATABASE_NAME = 'snapshot_e2e' } }
+        Mock Assert-E2EDatabaseIsDedicated -ModuleName e2e-cdc {}
+        Mock Assert-E2ECdcWorkspaceAvailable -ModuleName e2e-cdc {}
+        Mock Read-BootstrapCdcSettings -ModuleName e2e-cdc { return @{ ConfigurationServiceSettings = @{ BaseUrl = 'http://localhost:8081' } } }
+        Mock Assert-BootstrapCdcOfflineOwnership -ModuleName e2e-cdc {}
+        Mock Invoke-E2ECdcSnapshotPreparation -ModuleName e2e-cdc {}
+        Mock Invoke-E2ECdcApiRollout -ModuleName e2e-cdc {}
         Mock Test-CdcDeployment -ModuleName e2e-cdc { return $false }
         Mock Invoke-CdcDeploymentLifecycle -ModuleName e2e-cdc {}
         Mock Set-Content -ModuleName e2e-cdc {}
         Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc {
             & $BeforeCdcAdmission '/effective/.env'
         }
+    }
+
+    AfterEach { $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = $script:savedDiagnosticDirectory }
+
+    It 'writes setup failure diagnostics outside the checkout' {
+        Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc { throw 'private-setup-failure' }
+        { Invoke-E2ECdcSetup @script:arguments } | Should -Throw '*CDC E2E setup failed*'
+        Should -Invoke Set-Content -ModuleName e2e-cdc -Times 1 -Exactly -ParameterFilter {
+            $LiteralPath.StartsWith($env:CDC_RUNBOOK_EVIDENCE_DIRECTORY + [IO.Path]::DirectorySeparatorChar) -and
+            $Value -notmatch 'private-setup-failure'
+        }
+    }
+
+    It 'rejects a checkout diagnostic destination without replacing the setup failure' {
+        $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = Join-Path $script:composeRoot 'must-not-be-created'
+        Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc { throw [OperationCanceledException]::new('private-cancellation') }
+        $failure = $null
+        try { Invoke-E2ECdcSetup @script:arguments } catch { $failure = $_ }
+        $failure.Exception | Should -BeOfType ([OperationCanceledException])
+        Test-Path -LiteralPath $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY | Should -BeFalse
+        Should -Invoke Set-Content -ModuleName e2e-cdc -Times 0 -Exactly
+    }
+
+    It 'preserves cancellation when writing failure diagnostics also fails' {
+        Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc { throw [OperationCanceledException]::new('private-cancellation') }
+        Mock Set-Content -ModuleName e2e-cdc { throw 'private-diagnostic-error' }
+        $failure = $null
+        try { Invoke-E2ECdcSetup @script:arguments } catch { $failure = $_ }
+        $failure.Exception | Should -BeOfType ([OperationCanceledException])
+        $failure.Exception.Message | Should -Not -Match 'private-'
     }
 
     It 'CDC-DOC <Id>' -ForEach @(
@@ -80,6 +198,7 @@ Describe 'Shared CDC E2E setup handoff' {
         @{ Provider = 'postgresql'; Published = $true }, @{ Provider = 'mssql'; Published = $true }
     ) {
         Invoke-E2ECdcSetup @script:arguments -DatabaseEngine $Provider -UsePublishedImage:$Published
+        Should -Invoke Invoke-E2ECdcApiRollout -ModuleName e2e-cdc -Times 0 -Exactly
         $expectedScript = if ($Published) { 'start-published-dms.ps1' } else { 'start-local-dms.ps1' }
         Should -Invoke Invoke-BootstrapWrapper -ModuleName e2e-cdc -Times 1 -Exactly -ParameterFilter {
             $StartScriptName -eq $expectedScript -and $DatabaseEngine -eq $Provider -and
@@ -93,6 +212,59 @@ Describe 'Shared CDC E2E setup handoff' {
             $EnvironmentFile -eq '/effective/.env' -and $DatabaseName -eq 'snapshot_e2e' -and
             $DatabaseEngine -eq $Provider -and $Configuration -eq 'Release' -and $UsePrebuiltTools
         }
+    }
+
+    It 'runs API rollout only after admission for <Provider>' -ForEach @(
+        @{ Provider = 'postgresql' }, @{ Provider = 'mssql' }
+    ) {
+        $script:admitted = $false
+        Mock Invoke-BootstrapWrapper -ModuleName e2e-cdc { $script:admitted = $true }
+        Mock Invoke-E2ECdcApiRollout -ModuleName e2e-cdc {
+            $script:admitted | Should -BeTrue
+            return '/private/api-e2e.handoff.json'
+        }
+        Invoke-E2ECdcSetup @script:arguments -DatabaseEngine $Provider -CdcApiE2E | Should -BeExactly '/private/api-e2e.handoff.json'
+        Should -Invoke Invoke-E2ECdcApiRollout -ModuleName e2e-cdc -Times 1 -Exactly -ParameterFilter {
+            $Project -eq 'dms-local' -and $StartScript.EndsWith('/start-local-dms.ps1') -and $StatePath -eq $script:arguments.CdcBindingStatePath
+        }
+    }
+
+    It 'returns the API attachment path through the opted-in direct setup wrapper' {
+        Mock Invoke-E2ECdcApiRollout -ModuleName e2e-cdc { return '/private/api-e2e.handoff.json' }
+        $source = [Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $script:composeRoot '../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1'), [ref]$null, [ref]$null)
+        $branch = $source.Find({ param($n) $n -is [Management.Automation.Language.IfStatementAst] -and
+            $n.Extent.Text.StartsWith('if ($EnableKafkaCdc)') }, $true)
+        $resolvedEnvironmentFile = $script:arguments.EnvironmentFile
+        $baseEnvironmentFile = $script:arguments.OriginalEnvironmentFile
+        $e2eDatabaseName = 'primary_e2e'
+        $e2eSnapshotDatabaseName = 'snapshot_e2e'
+        function Get-DirectSetupTeardownCommand { 'fixture teardown' }
+        $dispatch = [scriptblock]::Create($source.ParamBlock.Extent.Text + "`n" + $branch.Extent.Text)
+        & $dispatch -EnableKafkaCdc -CdcApiE2E -CdcSettingsPath $script:arguments.CdcSettingsPath `
+            -CdcBindingStatePath $script:arguments.CdcBindingStatePath -SkipDockerBuild | Should -BeExactly '/private/api-e2e.handoff.json'
+        Should -Invoke Invoke-E2ECdcApiRollout -ModuleName e2e-cdc -Times 1 -Exactly
+    }
+
+    It 'retains infrastructure and withholds handoff when API rollout fails' {
+        Mock Invoke-E2ECdcApiRollout -ModuleName e2e-cdc { throw 'private-rollout-failure' }
+        Mock Test-CdcDeployment -ModuleName e2e-cdc { return $true }
+        { Invoke-E2ECdcSetup @script:arguments -CdcApiE2E } | Should -Throw '*CDC E2E setup failed*'
+        Should -Invoke Invoke-CdcDeploymentLifecycle -ModuleName e2e-cdc -Times 0 -Exactly
+        Should -Invoke Set-Content -ModuleName e2e-cdc -Times 1 -Exactly -ParameterFilter {
+            $Value -match 'RetainedForGovernedTeardown' -and $Value -notmatch 'private-rollout-failure'
+        }
+    }
+
+    It 'rejects API opt-in without CDC before any wrapper effects' {
+        $source = [Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $script:composeRoot '../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1'), [ref]$null, [ref]$null)
+        $guard = $source.Find({ param($n) $n -is [Management.Automation.Language.IfStatementAst] -and
+            $n.Extent.Text.StartsWith('if ($CdcApiE2E -and -not $EnableKafkaCdc)') }, $true)
+        $guard | Should -Not -BeNullOrEmpty
+        $dispatch = [scriptblock]::Create($source.ParamBlock.Extent.Text + "`n" + $guard.Extent.Text)
+        { & $dispatch -CdcApiE2E } | Should -Throw '*requires -EnableKafkaCdc*'
+        { & $dispatch -CdcApiE2E -EnableKafkaCdc } | Should -Not -Throw
     }
 
     It 'rejects incorrect <Property> before bootstrap' -ForEach @(
@@ -351,4 +523,470 @@ Describe 'Ordinary E2E workspace guard after CDC runtime cleanup' {
         { Assert-E2ECdcWorkspaceAvailable } | Should -Throw '*surviving protected source-state root*'
         Get-Content (Join-Path $state 'history.json') | Should -Be 'historical'
     }
+}
+
+Describe 'Private API CDC attachment contract' {
+    BeforeAll {
+        # Prior sandbox fixtures import private copies under the same module names.
+        Get-Module -All | Where-Object { $_.Name -in @('e2e-cdc', 'bootstrap-cdc', 'cdc-lifecycle') } | Remove-Module -Force
+        $script:attachmentRoot = Join-Path $TestDrive 'attachment-compose'
+        $null = [IO.Directory]::CreateDirectory($script:attachmentRoot, [IO.UnixFileMode]448)
+        Copy-Item (Join-Path $script:composeRoot '*.psm1') $script:attachmentRoot
+        Copy-Item (Join-Path $script:composeRoot '*.yml') $script:attachmentRoot
+        Copy-Item (Join-Path $script:composeRoot 'start-*-dms.ps1') $script:attachmentRoot
+        Copy-Item (Join-Path $script:composeRoot '.env.mssql') $script:attachmentRoot
+        Copy-Item (Join-Path $script:composeRoot '../schema-package-utility.psm1') $TestDrive
+        Import-Module (Join-Path $script:attachmentRoot 'e2e-cdc.psm1') -Force
+        Import-Module (Join-Path $script:attachmentRoot 'cdc-lifecycle.psm1')
+        function Initialize-AttachmentFixture {
+            param([string]$Provider, [string]$Project = 'dms-local', [string]$IdentityProvider = 'self-contained', [switch]$FullLauncher)
+            $script:rolloutProject = $Project
+            $script:rolloutIdentityProvider = $IdentityProvider
+            $script:state = Join-Path $script:attachmentRoot 'state'
+            $null = [IO.Directory]::CreateDirectory($script:state, [IO.UnixFileMode]448)
+            $script:settingsPath = Join-Path $script:attachmentRoot 'retained.settings.json'
+            $script:admittedPath = Join-Path $script:attachmentRoot 'retained.dms.json'
+            $schema = Join-Path $script:attachmentRoot 'schema.json'
+            if (Test-Path $schema) { Remove-Item $schema -Recurse -Force }
+            '{}' | Set-Content $schema
+            $environmentFile = Join-Path $script:attachmentRoot '.env.selected'
+            'DMS_HTTP_PORTS=18080' | Set-Content $environmentFile
+            if ($FullLauncher) {
+                Copy-Item (Join-Path $script:composeRoot '.env.example') $environmentFile -Force
+                Add-Content $environmentFile @('DMS_HTTP_PORTS=18080', 'PATH_BASE=api', "DMS_DATASTORE=$Provider")
+                if ($Provider -eq 'mssql') {
+                    Get-Content (Join-Path $script:composeRoot '.env.mssql') | Add-Content $environmentFile
+                }
+                $bootstrap = Join-Path $script:attachmentRoot '.bootstrap'
+                $null = New-Item -ItemType Directory -Force (Join-Path $bootstrap 'ApiSchema'), (Join-Path $bootstrap 'claims')
+                '{}' | Set-Content (Join-Path $bootstrap 'ApiSchema/manifest.json')
+                @{
+                    version = 1
+                    schema = @{ selectionMode = 'ApiSchemaPath'; apiSchemaManifestPath = 'ApiSchema/manifest.json' }
+                    claims = @{ mode = 'Hybrid'; directory = 'claims' }
+                    seed = @{ extensionNamespacePrefixes = @() }
+                } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $bootstrap 'bootstrap-manifest.json')
+            }
+            $script:settings = @{
+                AppSettings = @{ Datastore = $Provider; ApiSchemaPath = $script:attachmentRoot }
+                ConfigurationServiceSettings = @{ BaseUrl = 'http://localhost:18081'; ClientSecret = 'private-sentinel' }
+                DataManagement = @{ DocumentCache = @{
+                    Targets = @(@{ Tenant = ''; DataStoreId = 42 }, @{ Tenant = ''; DataStoreId = 43 })
+                    ReadAcceleration = @{ Enabled = $true }
+                } }
+                Cdc = @{
+                    Provider = $Provider; DeploymentKey = 'deployment'; DataStoreId = '42'; InstanceKey = 'custom'; Generation = 9
+                    Schemas = @($schema); SetupConnectionString = 'host-side-private-connection'
+                    KafkaBootstrapServers = '127.0.0.1:19092'; ConnectEndpoint = 'http://localhost:18083'
+                    WorkerMetricsEndpoint = 'http://localhost:19404/metrics'
+                    ProviderConnectionProperties = @{ 'database.hostname' = 'container-database'; 'database.port' = '5432' }
+                    Worker = @{ Key = 'custom-worker'; OffsetStorageTopic = 'custom-offsets' }
+                    Compose = @{
+                        Project = $Project; EnvironmentFile = $environmentFile
+                        File = Join-Path $script:attachmentRoot 'kafka-cdc.yml'
+                        BrokerSizeOverrideFile = Join-Path $script:state 'broker-size.json'; DatabaseHostPort = 15432
+                    }
+                }
+            }
+            if ($Provider -eq 'mssql') {
+                $script:settings.Cdc.ProviderConnectionProperties['database.port'] = '1433'
+                $script:settings.Cdc.Compose.DatabaseHostPort = 11433
+            }
+            if (Test-Path $script:settingsPath) { Remove-Item $script:settingsPath -Force }
+            $script:settings | ConvertTo-Json -Depth 30 | Set-Content $script:settingsPath
+            $script:admitted = @{ services = @{ dms = @{ environment = @{
+                DataManagement__DocumentCache__Targets__0__DataStoreId = '42'
+                DataManagement__DocumentCache__Targets__0__Tenant = ''
+                DataManagement__DocumentCache__Targets__12__DataStoreId = '43'
+                DataManagement__DocumentCache__ReadAcceleration__Enabled = 'true'
+                DataManagement__DocumentCache__Projector__PageSize = '7'
+                ConfigurationServiceSettings__BaseUrl = 'http://ed-fi-api-config-service:18081'
+                ConfigurationServiceSettings__ClientSecret = 'private-$$sentinel'
+                AppSettings__Datastore = $Provider
+            } } } }
+            $script:admitted | ConvertTo-Json -Depth 20 | Set-Content $script:admittedPath
+            foreach ($path in @($script:settingsPath, $script:admittedPath)) { [IO.File]::SetUnixFileMode($path, [IO.UnixFileMode]384) }
+            $inventory = Join-Path $script:attachmentRoot ".cdc-deployments/$Project.json"
+            if (Test-Path $inventory) { Remove-Item $inventory }
+            Register-CdcDeploymentHandoff -StatePath $script:state -Handoff @{
+                IdentityProvider = $IdentityProvider; Settings = $script:settings
+                SettingsPath = $script:settingsPath; DmsComposePath = $script:admittedPath
+            }
+            $script:originalHashes = @{}
+            foreach ($path in @($script:settingsPath, $script:admittedPath, $environmentFile, $inventory)) {
+                $script:originalHashes[$path] = (Get-FileHash $path).Hash
+            }
+            $script:httpPath = New-E2ECdcHttpOverride -AdmittedComposePath $script:admittedPath
+            $script:effective = Get-Content $script:httpPath -Raw | ConvertFrom-Json -AsHashtable
+            $script:effective.services.dms.ports = @(@{ host_ip = '127.0.0.1'; published = '18080'; target = 8080; protocol = 'tcp' })
+            $script:effective.services.dms.environment.AppSettings__PathBase = '/api'
+        }
+        function Initialize-RolloutMock {
+            $script:rolloutEvents = [Collections.Generic.List[string]]::new()
+            $script:rolloutFault = ''
+            Mock docker -ModuleName e2e-cdc {
+                $arguments = @($args)
+                if ($arguments -contains 'config') {
+                    $script:rolloutEvents.Add('config')
+                    $global:LASTEXITCODE = 0
+                    if ($script:rolloutFault -eq 'config') { $global:LASTEXITCODE = 1; return }
+                    $script:effective | ConvertTo-Json -Depth 30
+                }
+                elseif ($arguments -contains 'stop') {
+                    $script:rolloutEvents.Add('stop-dms')
+                    $arguments[-1] | Should -BeExactly 'dms'
+                    $global:LASTEXITCODE = if ($script:rolloutFault -eq 'shutdown') { 1 } else { 0 }
+                }
+                elseif ($arguments -contains 'ps') {
+                    $script:rolloutEvents.Add('verify-stopped')
+                    $global:LASTEXITCODE = 0
+                    if ($script:rolloutFault -eq 'running') { 'old-host' }
+                }
+                else { throw 'Unexpected Docker operation' }
+            }
+            Mock Invoke-CdcInfrastructure -ModuleName cdc-lifecycle {
+                param($StartScript, $Parameters)
+                $script:rolloutEvents.Add('admitted-host')
+                $Parameters.DmsOnly | Should -BeTrue
+                $Parameters.CdcApiE2E | Should -BeTrue
+                $Parameters.IdentityProvider | Should -BeExactly $script:rolloutIdentityProvider
+                $Parameters.EnvironmentFile | Should -BeExactly $script:settings.Cdc.Compose.EnvironmentFile
+                $Parameters.CdcDmsComposeFile | Should -Not -Be $script:admittedPath
+                $Parameters.ContainsKey('CdcKafkaInfrastructure') | Should -BeFalse
+                # Execute the real launcher's DmsOnly branch with infrastructure effects mocked.
+                $source = [Management.Automation.Language.Parser]::ParseFile($StartScript, [ref]$null, [ref]$null)
+                $branch = $source.Find({ param($n) $n -is [Management.Automation.Language.IfStatementAst] -and
+                    $n.Extent.Text.StartsWith('if ($DmsOnly)') -and $n.Extent.Text.Contains('Invoke-E2ECdcHttpPreparation') }, $true)
+                $branch | Should -Not -BeNullOrEmpty
+                $scriptText = $source.ParamBlock.Extent.Text + "`n" + $branch.Extent.Text.Replace("Import-Module (Join-Path `$PSScriptRoot 'e2e-cdc.psm1')", '')
+                $files = @('-f', $Parameters.CdcDmsComposeFile)
+                $upArgs = @('-d', '--no-deps')
+                $dmsUrl = 'http://unused-default:8080'
+                function docker {
+                    $script:rolloutEvents.Add('up-dms')
+                    @($args | ForEach-Object { $_ }) | Should -Contain '--no-deps'
+                    $args[-1] | Should -BeExactly 'dms'
+                    $global:LASTEXITCODE = if ($script:rolloutFault -eq 'startup') { 1 } else { 0 }
+                }
+                function Wait-HttpEndpointHealthy {
+                    param($Url, $Name)
+                    $script:rolloutEvents.Add('health')
+                    $Url | Should -BeExactly 'http://127.0.0.1:18080/api/health'
+                    $Name | Should -BeExactly 'DMS'
+                    if ($script:rolloutFault -eq 'health') { throw 'Unhealthy HTTP host' }
+                }
+                & ([scriptblock]::Create($scriptText)) @Parameters
+            }
+            Mock Invoke-CdcLifecycleCommand -ModuleName cdc-lifecycle { $script:rolloutEvents.Add($Operation) }
+            Mock Assert-CdcWorkerInventory -ModuleName cdc-lifecycle {}
+        }
+        function Assert-AttachmentOriginal {
+            foreach ($path in $script:originalHashes.Keys) { (Get-FileHash $path).Hash | Should -BeExactly $script:originalHashes[$path] }
+            $deployment = & (Get-Module cdc-lifecycle) { param($project) Read-CdcDeployment $project } $script:rolloutProject
+            $deployment.Entries[0].SettingsPath | Should -BeExactly $script:settingsPath
+            $deployment.Phase | Should -BeExactly 'Active'
+        }
+    }
+    AfterAll {
+        Get-Module -All | Where-Object { $_.Path -and $_.Path.StartsWith($script:attachmentRoot) } | Remove-Module -Force
+    }
+
+    It 'runs the complete <Project> launcher and real Compose resolution for <Provider>, <IdentityProvider>, rejection <Reject>' -Tag 'CompleteLauncher' -ForEach @(
+        foreach ($provider in @('postgresql', 'mssql')) {
+            foreach ($project in @('dms-local', 'dms-published')) {
+                foreach ($identity in @('self-contained', 'keycloak')) {
+                    foreach ($reject in @($false, $true)) {
+                        @{ Provider = $provider; Project = $project; IdentityProvider = $identity; Reject = $reject }
+                    }
+                }
+            }
+        }
+    ) {
+        Initialize-AttachmentFixture -Provider $Provider -Project $Project -IdentityProvider $IdentityProvider -FullLauncher
+        $resultPath = Join-Path $TestDrive 'launcher-result.json'
+        $probe = Join-Path $PSScriptRoot 'cdc-e2e-launcher-probe.ps1'
+        $output = & (Join-Path $PSHOME 'pwsh') -NoProfile -File $probe -ComposeRoot $script:attachmentRoot `
+            -Project $Project -Provider $Provider -IdentityProvider $IdentityProvider -StatePath $script:state `
+            -ResultPath $resultPath -RejectConfiguration:$Reject 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($output -join "`n")
+        $result = Get-Content $resultPath -Raw | ConvertFrom-Json -AsHashtable
+        $result.Succeeded | Should -Be (-not $Reject) -Because $result.Failure
+        Assert-AttachmentOriginal
+        if ($Reject) {
+            $result.Events | Should -Be @('config')
+            $result.Failure | Should -Be 'CDC HTTP configuration must have no projection targets and disabled read acceleration.'
+            $result.Handoff | Should -BeNullOrEmpty
+            @(Get-ChildItem (Join-Path $script:attachmentRoot '.cdc-deployments') -Filter '*.handoff.json').Count | Should -Be 0
+        }
+        else {
+            $result.Events | Should -Be @('config', 'stop-dms', 'verify-stopped', 'up-dms', 'health')
+            $handoff = Get-Content $result.Handoff -Raw | ConvertFrom-Json -AsHashtable
+            $handoff.dmsBaseUrl | Should -BeExactly 'http://127.0.0.1:18080/api'
+            $handoff.settingsPath | Should -BeExactly $script:settingsPath
+        }
+        # Isolate subsequent cases without invoking any infrastructure mutation.
+        Get-ChildItem (Join-Path $script:attachmentRoot '.cdc-deployments') -Filter 'api-e2e-*' | Remove-Item
+        Remove-Item (Join-Path $script:attachmentRoot ".cdc-deployments/$Project.json")
+        Remove-Item (Join-Path $script:attachmentRoot '.bootstrap') -Recurse -Force
+    }
+
+    It 'normalizes HTTP path base <PathBase> like the DMS host' -ForEach @(
+        @{ PathBase = ''; Suffix = '' }
+        @{ PathBase = '/'; Suffix = '' }
+        @{ PathBase = 'api'; Suffix = '/api' }
+        @{ PathBase = '/api'; Suffix = '/api' }
+        @{ PathBase = 'api/'; Suffix = '/api' }
+        @{ PathBase = '/api/'; Suffix = '/api' }
+        @{ PathBase = 'custom/api'; Suffix = '/custom/api' }
+    ) {
+        $configuration = @{ services = @{ dms = @{
+            environment = @{ AppSettings__PathBase = $PathBase }
+            ports = @(@{ host_ip = '127.0.0.1'; published = '18080'; protocol = 'tcp' })
+        } } }
+        Resolve-E2ECdcHttpBaseUrl $configuration | Should -BeExactly "http://127.0.0.1:18080$Suffix"
+    }
+
+    It 'rejects path base containing URL authority, query, fragment or backslash syntax: <PathBase>' -ForEach @(
+        @{ PathBase = '//unrelated-host' }
+        @{ PathBase = 'https://unrelated-host' }
+        @{ PathBase = 'api?query=value' }
+        @{ PathBase = '/api#fragment' }
+        @{ PathBase = 'api\path' }
+    ) {
+        $configuration = @{ services = @{ dms = @{
+            environment = @{ AppSettings__PathBase = $PathBase }
+            ports = @(@{ host_ip = '127.0.0.1'; published = '18080'; protocol = 'tcp' })
+        } } }
+        { Resolve-E2ECdcHttpBaseUrl $configuration } | Should -Throw 'CDC API E2E HTTP path base is invalid.'
+    }
+
+    It 'rolls out HTTP then publishes attachment with original teardown authority for <Provider>, <Project>, <IdentityProvider>' -ForEach @(
+        foreach ($provider in @('postgresql', 'mssql')) {
+            foreach ($project in @('dms-local', 'dms-published')) {
+                foreach ($identity in @('self-contained', 'keycloak')) {
+                    @{ Provider = $provider; Project = $project; IdentityProvider = $identity }
+                }
+            }
+        }
+    ) {
+        Initialize-AttachmentFixture -Provider $Provider -Project $Project -IdentityProvider $IdentityProvider
+        Initialize-RolloutMock
+        $handoffPath = & (Get-Module e2e-cdc) { param($state, $start, $project)
+            # The real admission wrapper reloads this dependency in its own scope,
+            # invalidating the E2E module's initial reference before HTTP rollout.
+            $dependency = (Get-Module bootstrap-cdc).Path
+            & (Get-Module bootstrap-wrapper) {
+                param($path)
+                Import-Module $path -Force -ErrorAction Stop
+            } $dependency
+            @(Get-Module bootstrap-cdc).Count | Should -Be 0
+            Invoke-E2ECdcApiRollout -Project $project -StatePath $state -StartScript $start
+        } $script:state (Join-Path $script:composeRoot "start-$($Project.Replace('dms-', ''))-dms.ps1") $Project
+        $script:rolloutEvents.ToArray() | Should -Be @('admitted-host', 'config', 'stop-dms', 'verify-stopped', 'up-dms', 'health')
+        $handoff = Get-Content $handoffPath -Raw | ConvertFrom-Json -AsHashtable
+        $handoff.settingsPath | Should -BeExactly $script:settingsPath
+        $handoff.dmsBaseUrl | Should -BeExactly 'http://127.0.0.1:18080/api'
+        Assert-AttachmentOriginal
+        Should -Invoke Invoke-CdcLifecycleCommand -ModuleName cdc-lifecycle -Times 0 -Exactly
+        Mock Invoke-CdcInfrastructure -ModuleName cdc-lifecycle {}
+        Invoke-CdcDeploymentLifecycle -Project $project -StartScript 'unused' -Parameters @{ d = $true; v = $true; DatabaseEngine = $Provider }
+        Should -Invoke Invoke-CdcLifecycleCommand -ModuleName cdc-lifecycle -Times 1 -Exactly -ParameterFilter { $Operation -eq 'retire' }
+        Remove-E2ECdcApiFile -ComposeRoot $script:attachmentRoot
+        Test-Path $handoffPath | Should -BeFalse
+        Test-Path $handoff.httpComposePath | Should -BeFalse
+        Test-Path $script:state | Should -BeTrue
+    }
+
+    It 'retains original cleanup authority and publishes nothing after <Provider> <Fault> failure' -ForEach @(
+        foreach ($provider in @('postgresql', 'mssql')) {
+            foreach ($fault in @('config', 'targets', 'shutdown', 'running', 'startup', 'health')) {
+                @{ Provider = $provider; Fault = $fault }
+            }
+        }
+    ) {
+        Initialize-AttachmentFixture $Provider
+        Initialize-RolloutMock
+        $script:rolloutFault = $Fault
+        if ($Fault -eq 'targets') { $script:effective.services.dms.environment.DataManagement__DocumentCache__Targets__0__DataStoreId = '42' }
+        { & (Get-Module e2e-cdc) { param($state, $start)
+            Invoke-E2ECdcApiRollout -Project dms-local -StatePath $state -StartScript $start
+        } $script:state (Join-Path $script:composeRoot 'start-local-dms.ps1') } | Should -Throw
+        $expectedEvents = @('admitted-host', 'config')
+        if ($Fault -notin @('config', 'targets')) { $expectedEvents += 'stop-dms' }
+        if ($Fault -in @('running', 'startup', 'health')) { $expectedEvents += 'verify-stopped' }
+        if ($Fault -in @('startup', 'health')) { $expectedEvents += 'up-dms' }
+        if ($Fault -eq 'health') { $expectedEvents += 'health' }
+        $script:rolloutEvents.ToArray() | Should -Be $expectedEvents
+        $root = Join-Path $script:attachmentRoot '.cdc-deployments'
+        @(Get-ChildItem $root -Filter '*.handoff.json').Count | Should -Be 0
+        @(Get-ChildItem $root -Filter '*.http.json').Count | Should -BeGreaterThan 0
+        Assert-AttachmentOriginal
+        Should -Invoke Invoke-CdcLifecycleCommand -ModuleName cdc-lifecycle -Times 0 -Exactly
+        { Remove-E2ECdcApiFile -ComposeRoot $script:attachmentRoot } | Should -Throw '*completed governed teardown*'
+        Mock Invoke-CdcInfrastructure -ModuleName cdc-lifecycle {}
+        Invoke-CdcDeploymentLifecycle -Project dms-local -StartScript 'unused' -Parameters @{ d = $true; v = $true; DatabaseEngine = $Provider }
+        Should -Invoke Invoke-CdcLifecycleCommand -ModuleName cdc-lifecycle -Times 1 -Exactly -ParameterFilter { $Operation -eq 'retire' }
+        Remove-E2ECdcApiFile -ComposeRoot $script:attachmentRoot
+        @(Get-ChildItem $root -Filter '*.http.json').Count | Should -Be 0
+        Test-Path $script:state | Should -BeTrue
+    }
+
+    It 'preserves authoritative references and host/container separation for <Provider>' -ForEach @(
+        @{ Provider = 'postgresql' }, @{ Provider = 'mssql' }
+    ) {
+        Initialize-AttachmentFixture $Provider
+        $handoffPath = Write-E2ECdcApiHandoff -Project dms-local -StatePath $script:state -HttpComposePath $script:httpPath -EffectiveConfiguration $script:effective
+        $handoff = Get-Content $handoffPath -Raw | ConvertFrom-Json -AsHashtable
+        @($handoff.Keys | Sort-Object) | Should -Be @('deploymentPath', 'dmsBaseUrl', 'httpComposePath', 'settingsPath', 'statePath', 'version')
+        $handoff.version | Should -Be 1
+        $handoff.settingsPath | Should -BeExactly $script:settingsPath
+        $handoff.statePath | Should -BeExactly $script:state
+        $handoff.httpComposePath | Should -BeExactly $script:httpPath
+        $handoff.deploymentPath | Should -BeExactly (Join-Path $script:attachmentRoot '.cdc-deployments/dms-local.json')
+        $handoff.dmsBaseUrl | Should -BeExactly 'http://127.0.0.1:18080/api'
+        $retained = Get-Content $handoff.settingsPath -Raw | ConvertFrom-Json -AsHashtable
+        $retained.AppSettings.Datastore | Should -BeExactly $Provider
+        $retained.Cdc.Generation | Should -Be 9
+        $retained.Cdc.InstanceKey | Should -BeExactly 'custom'
+        $retained.Cdc.Schemas | Should -Be $script:settings.Cdc.Schemas
+        $retained.Cdc.Worker.Key | Should -BeExactly 'custom-worker'
+        $retained.Cdc.KafkaBootstrapServers | Should -BeExactly '127.0.0.1:19092'
+        $retained.Cdc.ConnectEndpoint | Should -BeExactly 'http://localhost:18083'
+        $retained.Cdc.WorkerMetricsEndpoint | Should -BeExactly 'http://localhost:19404/metrics'
+        $retained.Cdc.SetupConnectionString | Should -BeExactly 'host-side-private-connection'
+        $retained.Cdc.Compose.DatabaseHostPort | Should -Be $script:settings.Cdc.Compose.DatabaseHostPort
+        $retained.Cdc.ProviderConnectionProperties['database.hostname'] | Should -BeExactly 'container-database'
+        $retained.ConfigurationServiceSettings.BaseUrl | Should -BeExactly 'http://localhost:18081'
+        $retained.DataManagement.DocumentCache.Targets.DataStoreId | Should -Be @(42, 43)
+        $environment = $script:effective.services.dms.environment
+        @($environment.Keys | Where-Object { $_ -like '*Targets*' }).Count | Should -Be 0
+        $environment.DataManagement__DocumentCache__ReadAcceleration__Enabled | Should -BeExactly 'false'
+        $environment.DataManagement__DocumentCache__Projector__PageSize | Should -BeExactly '7'
+        $environment.ConfigurationServiceSettings__BaseUrl | Should -BeExactly 'http://ed-fi-api-config-service:18081'
+        $environment.ConfigurationServiceSettings__ClientSecret | Should -BeExactly 'private-$$sentinel'
+        foreach ($path in @($handoffPath, $script:httpPath)) {
+            ([int][IO.File]::GetUnixFileMode($path) -band 511) | Should -Be 384
+        }
+        (Get-Content $handoffPath -Raw) | Should -Not -Match 'private-sentinel|container-database|custom-worker|19092'
+        Assert-AttachmentOriginal
+    }
+
+    It 'rejects an incomplete handoff for <Fault> without publishing it' -ForEach @(
+        @{ Fault = 'missing-settings' }, @{ Fault = 'unreadable-settings' }, @{ Fault = 'changed-settings' }, @{ Fault = 'missing-schema' },
+        @{ Fault = 'unreadable-schema' }, @{ Fault = 'missing-state' }, @{ Fault = 'unknown-state' },
+        @{ Fault = 'missing-override' }, @{ Fault = 'public-override' }, @{ Fault = 'missing-inventory' },
+        @{ Fault = 'inherited-target' }, @{ Fault = 'read-acceleration' }, @{ Fault = 'missing-port' }
+    ) {
+        Initialize-AttachmentFixture postgresql
+        $selectedState = $script:state
+        switch ($Fault) {
+            'missing-settings' { Remove-Item $script:settingsPath }
+            'unreadable-settings' { [IO.File]::SetUnixFileMode($script:settingsPath, [IO.UnixFileMode]0) }
+            'changed-settings' {
+                $script:settings.Cdc.Generation = 10
+                $script:settings | ConvertTo-Json -Depth 30 | Set-Content $script:settingsPath
+            }
+            'missing-schema' { Remove-Item $script:settings.Cdc.Schemas[0] }
+            'unreadable-schema' { Remove-Item $script:settings.Cdc.Schemas[0]; $null = New-Item -ItemType Directory $script:settings.Cdc.Schemas[0] }
+            'missing-state' { Remove-Item $script:state -Recurse }
+            'unknown-state' { $selectedState = Join-Path $script:attachmentRoot 'other-state' }
+            'missing-override' { Remove-Item $script:httpPath }
+            'public-override' { [IO.File]::SetUnixFileMode($script:httpPath, [IO.UnixFileMode]420) }
+            'missing-inventory' { Remove-Item (Join-Path $script:attachmentRoot '.cdc-deployments/dms-local.json') }
+            'inherited-target' { $script:effective.services.dms.environment.DataManagement__DocumentCache__Targets__5__DataStoreId = '99' }
+            'read-acceleration' { $script:effective.services.dms.environment.DataManagement__DocumentCache__ReadAcceleration__Enabled = 'true' }
+            'missing-port' { $script:effective.services.dms.ports = @() }
+        }
+        { Write-E2ECdcApiHandoff -Project dms-local -StatePath $selectedState -HttpComposePath $script:httpPath -EffectiveConfiguration $script:effective } | Should -Throw
+        Test-Path ($script:httpPath.Replace('.http.json', '.handoff.json')) | Should -BeFalse
+        @(Get-ChildItem $script:attachmentRoot -Filter '*.tmp').Count | Should -Be 0
+        if ($Fault -in @('inherited-target', 'read-acceleration', 'missing-port', 'missing-override', 'public-override', 'unknown-state')) {
+            Assert-AttachmentOriginal
+        }
+    }
+
+    It 'removes alternate configuration key spellings and rejects surviving aliases' {
+        Initialize-AttachmentFixture postgresql
+        $script:admitted.services.dms.environment['DataManagement:DocumentCache:Targets:23:DataStoreId'] = '44'
+        $script:admitted.services.dms.environment['DataManagement:DocumentCache:ReadAcceleration:Enabled'] = 'true'
+        $script:admitted | ConvertTo-Json -Depth 20 | Set-Content $script:admittedPath
+        $path = New-E2ECdcHttpOverride -AdmittedComposePath $script:admittedPath
+        $configuration = Get-Content $path -Raw | ConvertFrom-Json -AsHashtable
+        { Assert-E2ECdcHttpConfiguration $configuration } | Should -Not -Throw
+        $configuration.services.dms.environment['DataManagement:DocumentCache:ReadAcceleration:Enabled'] = 'true'
+        { Assert-E2ECdcHttpConfiguration $configuration } | Should -Throw '*disabled read acceleration*'
+    }
+
+    It 'removes a partial temporary write without publishing or changing retained inputs' {
+        Initialize-AttachmentFixture postgresql
+        Mock Write-BootstrapCdcPrivateJson -ModuleName bootstrap-cdc {
+            [IO.File]::WriteAllText($Path, '{')
+            throw 'Simulated interrupted private write'
+        }
+        { Write-E2ECdcApiHandoff -Project dms-local -StatePath $script:state -HttpComposePath $script:httpPath -EffectiveConfiguration $script:effective } | Should -Throw '*interrupted*'
+        Test-Path ($script:httpPath.Replace('.http.json', '.handoff.json')) | Should -BeFalse
+        @(Get-ChildItem $script:attachmentRoot -Filter '*.tmp').Count | Should -Be 0
+        Assert-AttachmentOriginal
+    }
+
+    It 'rejects layering the replacement over target-bearing inputs with real Compose merging for <Provider>' -ForEach @(
+        @{ Provider = 'postgresql' }, @{ Provider = 'mssql' }
+    ) {
+        Initialize-AttachmentFixture $Provider
+        $base = Join-Path $script:attachmentRoot 'base.json'
+        @{ services = @{ dms = @{ image = 'fixture'; ports = @('127.0.0.1:18080:8080') } } } | ConvertTo-Json -Depth 8 | Set-Content $base
+        $composeArguments = @('compose', '-p', 'cdc-attachment-test', '-f', $base, '-f', $script:httpPath, 'config', '--format', 'json')
+        $merged = & docker @composeArguments 2>$null
+        $LASTEXITCODE | Should -Be 0
+        $configuration = ($merged -join "`n") | ConvertFrom-Json -AsHashtable
+        { Assert-E2ECdcHttpConfiguration $configuration } | Should -Not -Throw
+        $composeArguments = @('compose', '-p', 'cdc-attachment-test', '-f', $base, '-f', $script:admittedPath, '-f', $script:httpPath, 'config', '--format', 'json')
+        $merged = & docker @composeArguments 2>$null
+        $LASTEXITCODE | Should -Be 0
+        $configuration = ($merged -join "`n") | ConvertFrom-Json -AsHashtable
+        { Assert-E2ECdcHttpConfiguration $configuration } | Should -Throw '*no projection targets*'
+        Assert-AttachmentOriginal
+    }
+    It 'attaches read-only to the actual HTTP host for <Provider> and rejects <Fault>' -ForEach @(
+        foreach ($provider in @('postgresql', 'mssql')) {
+            foreach ($fault in @('none', 'targets', 'acceleration', 'endpoint', 'stopped', 'settings', 'state')) {
+                @{ Provider = $provider; Fault = $fault }
+            }
+        }
+    ) {
+        Initialize-AttachmentFixture $Provider
+        $handoffPath = Write-E2ECdcApiHandoff -Project dms-local -StatePath $script:state -HttpComposePath $script:httpPath -EffectiveConfiguration $script:effective
+        Mock Invoke-CdcLifecycleCommand -ModuleName cdc-lifecycle { throw "Attachment attempted lifecycle mutation" }
+        $script:runningHost = @{
+            State = @{ Running = $true }
+            Config = @{ Env = @('DataManagement__DocumentCache__ReadAcceleration__Enabled=false', 'AppSettings__PathBase=/api') }
+            NetworkSettings = @{ Ports = @{ '8080/tcp' = @(@{ HostIp = '127.0.0.1'; HostPort = '18080' }) } }
+        }
+        Mock docker -ModuleName e2e-cdc {
+            $global:LASTEXITCODE = 0
+            if ($args[0] -eq 'ps') { return 'selected-http-host' }
+            if ($args[0] -eq 'inspect') { return ConvertTo-Json -InputObject @($script:runningHost) -Depth 10 }
+            throw 'Attachment attempted an infrastructure mutation'
+        }
+        switch ($Fault) {
+            'targets' { $script:runningHost.Config.Env += 'DataManagement__DocumentCache__Targets__0__DataStoreId=42' }
+            'acceleration' { $script:runningHost.Config.Env = @('DataManagement__DocumentCache__ReadAcceleration__Enabled=true', 'AppSettings__PathBase=/api') }
+            'endpoint' { $script:runningHost.NetworkSettings.Ports['8080/tcp'][0].HostPort = '18089' }
+            'stopped' { $script:runningHost.State.Running = $false }
+            'settings' { Add-Content $script:settingsPath 'corruption' }
+            'state' {
+                $handoff = Get-Content $handoffPath -Raw | ConvertFrom-Json -AsHashtable
+                $handoff.statePath = Join-Path $script:attachmentRoot 'unrelated-state'
+                $handoff | ConvertTo-Json | Set-Content $handoffPath
+            }
+        }
+        if ($Fault -eq 'none') {
+            { Assert-E2ECdcApiAttachment $handoffPath } | Should -Not -Throw
+            Assert-AttachmentOriginal
+            Should -Invoke docker -ModuleName e2e-cdc -Times 2 -Exactly
+        }
+        else { { Assert-E2ECdcApiAttachment $handoffPath } | Should -Throw }
+        Should -Invoke Invoke-CdcLifecycleCommand -ModuleName cdc-lifecycle -Times 0 -Exactly
+    }
+
 }

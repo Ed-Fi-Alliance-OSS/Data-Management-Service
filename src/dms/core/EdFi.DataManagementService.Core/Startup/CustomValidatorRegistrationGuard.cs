@@ -42,12 +42,11 @@ internal sealed class CustomValidatorRegistrationGuard(
     ILogger<CustomValidatorRegistrationGuard> logger
 ) : IDmsStartupTask
 {
-    // IDmsStartupTask.cs recommends 200-299 for schema processing; nothing enforces that label and
-    // this guard is not schema processing. The binding constraint is that it run inside a window
-    // Program.cs executes and after LoadAndBuildEffectiveSchemaTask, whose effective ApiSchema the
-    // AppliesTo check reads. It runs before the backend-mapping and auth-metadata windows, so a
-    // validator constructor reading state those initialize would fail here despite being resolvable
-    // at request time.
+    // IDmsStartupTask.cs reserves 250-299 for registration validation, the window Program.cs runs as
+    // the ValidatePluginRegistrations phase once the InitializeApiSchemas phase completes, so this
+    // guard runs after LoadAndBuildEffectiveSchemaTask, whose effective ApiSchema the AppliesTo check
+    // reads. It runs before the backend-mapping and auth-metadata windows, so a validator constructor
+    // reading state those initialize would fail here despite being resolvable at request time.
     public int Order => 250;
 
     public string Name => "Validate Custom Validator Registration";

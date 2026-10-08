@@ -8,6 +8,8 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -106,6 +108,70 @@ public class CoreExceptionLoggingMiddlewareTests
             var response = await ExecuteWith(breakDuration: null);
 
             response.Headers.Should().NotContainKey("Retry-After");
+        }
+    }
+
+    /// <summary>
+    /// Profile data the Configuration Service could not supply must fail closed as a retriable 503,
+    /// never as unprofiled access or as a missing-profile 406/415.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Profile_Data_Is_Unavailable : CoreExceptionLoggingMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = No.RequestInfo("profile-trace-id");
+            var middleware = new CoreExceptionLoggingMiddleware(
+                NullLogger.Instance,
+                TimeSpan.FromSeconds(30)
+            );
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                    throw new ProfileDataUnavailableException(
+                        "Profile catalog fetch failed",
+                        new HttpRequestException("Response status code does not indicate success: 500")
+                    )
+            );
+        }
+
+        [Test]
+        public void It_returns_503_problem_details()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(503);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+
+            JsonObject body = _requestInfo.FrontendResponse.Body!.AsObject();
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:service-unavailable");
+            body["status"]!.GetValue<int>().Should().Be(503);
+            body["correlationId"]!.GetValue<string>().Should().Be("profile-trace-id");
+        }
+
+        [Test]
+        public void It_does_not_serve_retry_after()
+        {
+            // The configured circuit break duration says nothing about when the Configuration
+            // Service recovers, so it must not leak into this 503.
+            _requestInfo.FrontendResponse.Headers.Should().NotContainKey("Retry-After");
+        }
+
+        [Test]
+        public void It_does_not_record_a_caught_exception()
+        {
+            _requestInfo.CaughtException.Should().BeNull();
+        }
+
+        [Test]
+        public void It_does_not_disclose_the_internal_message()
+        {
+            string body = _requestInfo.FrontendResponse.Body!.ToJsonString();
+            body.Should().NotContain("status code");
+            body.Should().NotContain("Profile catalog fetch failed");
         }
     }
 

@@ -56,7 +56,8 @@ $checkedDocument = @(
         Document = "docs/OPERATIONS.md"
         RequiredEmbed = @(
             "eng/docker-compose/plugins-dms.yml",
-            "eng/docker-compose/plugins-fetch-dms.yml"
+            "eng/docker-compose/plugins-fetch-dms.yml",
+            "eng/docker-compose/plugins-config.yml"
         )
     }
     [pscustomobject]@{
@@ -73,6 +74,34 @@ $checkedDocument = @(
             "eng/verification/CustomValidatorPluginConsumer/StudentIdentityOptions.cs#options",
             "eng/verification/CustomValidatorPluginConsumer/StudentIdentityValidator.cs#validator",
             "eng/verification/CustomValidatorPluginConsumer/StudentIdentityPlugin.cs#plugin"
+        )
+    }
+    [pscustomobject]@{
+        # Three regions rather than one, and all three are required, for the same reason as the
+        # custom-validation guide above: this how-to's worked example is an options type, a
+        # validator, and the plugin that registers it, and dropping any one of the three would
+        # publish a sample that does not compile where it is read. The reference plugin these
+        # regions come from is loaded by this repository's own integration suite over real HTTP, so
+        # the sample this page teaches from is one that has been proven rather than one that only
+        # looks right.
+        Document = "docs/UNIQUEID-VALIDATION.md"
+        RequiredEmbed = @(
+            "eng/fixtures/plugins/Acme.UniqueIdValidation/UniqueIdValidationOptions.cs#options",
+            "eng/fixtures/plugins/Acme.UniqueIdValidation/UniqueIdValidator.cs#validator",
+            "eng/fixtures/plugins/Acme.UniqueIdValidation/UniqueIdValidationPlugin.cs#plugin"
+        )
+    }
+    [pscustomobject]@{
+        # Three regions, all required, but for a different reason than the two guides above: these
+        # are three independent worked examples rather than three parts of one, and each is what an
+        # implementer of that vault copies. Requiring all three is what keeps the guide from quietly
+        # dropping one while the others still match. The project they come from is compiled against
+        # both packed contracts and pinned vendor SDKs by Invoke-SecretsConsumerCheck.ps1.
+        Document = "src/config/contracts/EdFi.DmsConfigurationService.Secrets/README.md"
+        RequiredEmbed = @(
+            "eng/verification/SecretsPluginExamples/KeyVaultConfigurationPlugin.cs#plugin",
+            "eng/verification/SecretsPluginExamples/ParameterStoreConfigurationPlugin.cs#plugin",
+            "eng/verification/SecretsPluginExamples/ParameterStoreSecretResolver.cs#resolver"
         )
     }
 )

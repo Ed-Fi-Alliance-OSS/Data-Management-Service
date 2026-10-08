@@ -1438,12 +1438,14 @@ Describe "Northridge PostgreSQL restore recipe identity handoff" {
         $helper | Should -Match 'Set-Content -Path \$env:HEADERS_FILE'
         $helper | Should -Not -Match 'curl'
 
-        $call = @([regex]::Matches($script:activeRecipe, '(?m)^\w+=\$\(AUTH_HTTP (?<method>[A-Z]+) "(?<url>[^"]+)" "\$ART/[^"]+"\) \|\| \\$'))
+        $call = @([regex]::Matches($script:activeRecipe, '(?m)^\s*\w+=\$\(AUTH_HTTP (?<method>[A-Z]+) "(?<url>[^"]+)" "\$ART/[^"]+"\) \|\| \\$'))
         @($call | ForEach-Object { $_.Groups["method"].Value + " " + $_.Groups["url"].Value }) |
-            Should -Be @('PUT $CMS/v3/dataStores/1', 'POST $CMS/v3/vendors', 'POST $CMS/v3/applications', 'GET $DMS/data/ed-fi/students?limit=1&totalCount=true')
-        # Each call is preceded by the token it needs; the GET is preceded by an emptied BODY.
+            Should -Be @('PUT $CMS/v3/dataStores/1', 'POST $CMS/v3/vendors', 'GET $CMS/v3/vendors?company=Local%20Consumer', 'POST $CMS/v3/applications', 'GET $DMS/data/ed-fi/students?limit=1&totalCount=true')
+        # Each call is preceded by the token it needs (the vendor lookup reuses the vendor POST's); each
+        # GET is preceded by an emptied BODY.
         @([regex]::Matches($script:activeRecipe, '(?m)^TOKEN="\$(T|DT)"$')).Count | Should -Be 3
         $script:activeRecipe | Should -Match '(?m)^TOKEN="\$DT"\nBODY=\nSMOKE_RESPONSE=\$\(AUTH_HTTP GET '
+        $script:activeRecipe | Should -Match '(?m)^  BODY=\n  LOOKUP_RESPONSE=\$\(AUTH_HTTP GET '
         # The statuses are still asserted against exact values and the bodies still shown on failure.
         $script:activeRecipe | Should -Match '(?m)^DS=\$\(printf ''%s\\n'' "\$DS_RESPONSE" \| sed -n 1p\)\nif \[ "\$DS" != "204" \]; then'
         $script:activeRecipe | Should -Match 'printf ''%s\\n'' "\$DS_RESPONSE" \| sed 1d'
@@ -1461,19 +1463,28 @@ Describe "Northridge PostgreSQL restore recipe identity handoff" {
         # AUTH_HTTP prints the status on its first line and never throws on a 4xx/5xx, so a caller that
         # reads Location or the body without reading the status first turns a 401, 403 or 500 into "no
         # Location" or "no credentials" with the cause gone. CMS answers the data store PUT with 204, a
-        # new vendor with 201 (200, Location set, for a company it already holds: VendorModule creates by
-        # company name), a new application with 201 and its credentials, and DMS the smoke read with 200.
+        # new vendor with 201 (400 for a company it already holds: POST /v3/vendors is create-only), the
+        # vendor lookup with 200, a new application with 201 and its credentials, and DMS the smoke read
+        # with 200.
         $active = $script:activeRecipe
 
         # Data store: the status is compared before anything else is done with the response.
         $active | Should -Match '(?m)^DS=\$\(printf ''%s\\n'' "\$DS_RESPONSE" \| sed -n 1p\)\nif \[ "\$DS" != "204" \]; then\n[^\n]*\n  printf ''%s\\n'' "\$DS_RESPONSE" \| sed 1d\n  exit 1\nfi$'
 
-        # Vendor: the status is matched, and only 201 or 200 continue, before the Location header is read.
-        $vendor = [regex]::Match($active, '(?ms)^VENDOR_RESPONSE=\$\(AUTH_HTTP POST "\$CMS/v3/vendors".*?^VID=').Value
+        # Vendor: the status is matched, and only 201 or 400 continue, before any vendor id is read. A 400
+        # continues only when its body names the duplicate company, and the lookup that resolves the
+        # existing id must answer exactly 200 before its body is parsed.
+        $vendor = [regex]::Match($active, '(?ms)^VENDOR_RESPONSE=\$\(AUTH_HTTP POST "\$CMS/v3/vendors".*?^test -n "\$VID"').Value
         $vendor | Should -Not -BeNullOrEmpty
-        $vendor | Should -Match '(?m)^VS=\$\(printf ''%s\\n'' "\$VENDOR_RESPONSE" \| sed -n 1p\)\ncase "\$VS" in\n  201\) [^\n]*;;\n  200\) [^\n]*;;\n  \*\) [^\n]*expected 201[^\n]*printf ''%s\\n'' "\$VENDOR_RESPONSE" \| sed 1d[^\n]*; exit 1 ;;\nesac$'
+        $vendor | Should -Match '(?m)^VS=\$\(printf ''%s\\n'' "\$VENDOR_RESPONSE" \| sed -n 1p\)\ncase "\$VS" in\n  201\) [^\n]*;;\n  400\) [^\n]*;;\n  \*\) [^\n]*expected 201[^\n]*printf ''%s\\n'' "\$VENDOR_RESPONSE" \| sed 1d[^\n]*; exit 1 ;;\nesac\nif \[ "\$VS" = "201" \]; then\n  VID=\$\(sed -n ''s\|\^\[Ll\]ocation:[^\n]*"\$ART/vendor-post\.headers"[^\n]*\)\nelse$'
+        $vendor | Should -Not -Match '(?m)^\s*200\)' -Because "POST /v3/vendors is create-only and never answers 200"
+        $vendor | Should -Match '(?m)^  printf ''%s\\n'' "\$VENDOR_RESPONSE" \| sed 1d \| grep -q ''A vendor with this company name already exists'' \|\| \\\n    \{ [^\n]*; exit 1; \}$' -Because "only the duplicate-company 400 may continue"
+        $vendor | Should -Match '(?m)^  BODY=\n  LOOKUP_RESPONSE=\$\(AUTH_HTTP GET "\$CMS/v3/vendors\?company=Local%20Consumer" "\$ART/vendor-get\.headers"\) \|\| \\$' -Because "the lookup is a GET with the vendor POST body emptied"
+        $vendor | Should -Match '(?m)^  LS=\$\(printf ''%s\\n'' "\$LOOKUP_RESPONSE" \| sed -n 1p\)\n  if \[ "\$LS" != "200" \]; then\n[^\n]*expected 200[^\n]*\n    printf ''%s\\n'' "\$LOOKUP_RESPONSE" \| sed 1d\n    exit 1\n  fi$'
         $vendor.IndexOf('case "$VS" in') | Should -BeLessThan $vendor.IndexOf('VID=') -Because "the status is asserted before the Location header is parsed"
-        $active | Should -Match '(?m)^test -n "\$VID" \|\| \\\n  \{ [^\n]*; exit 1; \}$' -Because "a success status with no Location still stops the recipe"
+        $vendor.IndexOf("grep -q 'A vendor with this company name already exists'") | Should -BeLessThan $vendor.IndexOf('LOOKUP_RESPONSE=') -Because "the duplicate is confirmed before the lookup is made"
+        $vendor.IndexOf('if [ "$LS" != "200" ]') | Should -BeLessThan $vendor.LastIndexOf('VID=') -Because "the lookup status is asserted before its body is parsed"
+        $active | Should -Match '(?m)^test -n "\$VID" \|\| \\\n  \{ [^\n]*; exit 1; \}$' -Because "a success status with no vendor id still stops the recipe"
 
         # Application: exactly 201 before the body is parsed for the credentials.
         $app = [regex]::Match($active, '(?ms)^APP_RESPONSE=\$\(AUTH_HTTP POST "\$CMS/v3/applications".*?^KEY=').Value
@@ -1487,7 +1498,7 @@ Describe "Northridge PostgreSQL restore recipe identity handoff" {
 
         # Each response has its status line read into a variable exactly once, so no caller reads the
         # status only inside a failure message after it has already trusted the response.
-        foreach ($response in @('DS_RESPONSE', 'VENDOR_RESPONSE', 'APP_RESPONSE', 'SMOKE_RESPONSE')) {
+        foreach ($response in @('DS_RESPONSE', 'VENDOR_RESPONSE', 'LOOKUP_RESPONSE', 'APP_RESPONSE', 'SMOKE_RESPONSE')) {
             @([regex]::Matches($active, [regex]::Escape("printf '%s\n' `"`$$response`" | sed -n 1p"))).Count | Should -Be 1 -Because "$response must have its status line read once, into a variable that is compared"
         }
     }

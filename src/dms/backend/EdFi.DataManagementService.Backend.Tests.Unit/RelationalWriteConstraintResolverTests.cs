@@ -177,9 +177,7 @@ public class Given_Relational_Write_Constraint_Resolver
         result
             .Should()
             .Be(
-                new RelationalWriteConstraintResolution.AbstractIdentityNaturalKeyUnique(
-                    fixture.NaturalKeyConstraintName
-                )
+                new RelationalWriteConstraintResolution.RootNaturalKeyUnique(fixture.NaturalKeyConstraintName)
             );
     }
 
@@ -235,11 +233,7 @@ public class Given_Relational_Write_Constraint_Resolver
 
         result
             .Should()
-            .Be(
-                new RelationalWriteConstraintResolution.AbstractIdentityNaturalKeyUnique(
-                    naturalKeyConstraintName
-                )
-            );
+            .Be(new RelationalWriteConstraintResolution.RootNaturalKeyUnique(naturalKeyConstraintName));
     }
 
     [Test]
@@ -306,11 +300,7 @@ public class Given_Relational_Write_Constraint_Resolver
 
         result
             .Should()
-            .Be(
-                new RelationalWriteConstraintResolution.AbstractIdentityNaturalKeyUnique(
-                    violatedConstraintName
-                )
-            );
+            .Be(new RelationalWriteConstraintResolution.RootNaturalKeyUnique(violatedConstraintName));
     }
 
     [Test]
@@ -330,11 +320,7 @@ public class Given_Relational_Write_Constraint_Resolver
 
         result
             .Should()
-            .Be(
-                new RelationalWriteConstraintResolution.AbstractIdentityNaturalKeyUnique(
-                    naturalKeyConstraintName
-                )
-            );
+            .Be(new RelationalWriteConstraintResolution.RootNaturalKeyUnique(naturalKeyConstraintName));
     }
 
     [Test]

@@ -1,0 +1,454 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Identity API Endpoints",
+    "description": "The identity management API is used to access a native identity system if one exists in the enterprise. The endpoints provide client applications with the ability to find and (optionally) create unique person identifiers that can be used with Student, Staff, and Contact resources. The Ed-Fi ODS / API enables applications to read and write education data stored in an Ed-Fi ODS through a secure REST interface. \n***\n > *Note: Consumers of ODS / API information should sanitize all data for display and storage. The ODS / API provides reasonable safeguards against cross-site scripting attacks and other malicious content, but the platform does not and cannot guarantee that the data it contains is free of all potentially harmful content.* \n***\n",
+    "version": "2"
+  },
+  "servers": [
+    {
+      "url": "https://api.ed-fi.org:443/v7.3/api/identity/v2"
+    }
+  ],
+  "paths": {
+    "/identities": {
+      "post": {
+        "tags": [
+          "Identities"
+        ],
+        "summary": "Creates a new Unique Id for the given Identity information.",
+        "description": "Assumption here is that the user has verified that possible matches are not correct matches. Returns the created identity information along with the assigned Unique Id.",
+        "operationId": "Identities_Create",
+        "requestBody": {
+          "description": "Identity object to be created.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityCreateRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityCreateRequest"
+              }
+            }
+          },
+          "required": true,
+          "x-bodyName": "request"
+        },
+        "responses": {
+          "200": {
+            "description": "An Identity was created. The new Unique Id is returned in the returned Identity record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "There were invalid properties.",
+            "content": {
+              "application/json": { },
+              "text/json": { }
+            }
+          },
+          "501": {
+            "description": "The server does not support the requested function."
+          },
+          "502": {
+            "description": "The underlying identity system returned an error."
+          }
+        }
+      }
+    },
+    "/identities/find": {
+      "post": {
+        "tags": [
+          "Identities"
+        ],
+        "summary": "Retrieve a multiple person records from their Unique Ids.",
+        "operationId": "Identities_Find",
+        "requestBody": {
+          "description": "Unique Ids of the persons to be retrieved.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "text/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "required": true,
+          "x-bodyName": "uniqueIds"
+        },
+        "responses": {
+          "200": {
+            "description": "The returned identities match the provided Unique Id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentitySearchResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentitySearchResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The identity query was accepted for asynchronous processing. The result will be available at the URL indicated in the location response header."
+          },
+          "501": {
+            "description": "The server does not support the requested function."
+          },
+          "502": {
+            "description": "The underlying identity system returned an error."
+          }
+        }
+      }
+    },
+    "/identities/results/{id}": {
+      "get": {
+        "tags": [
+          "Identities"
+        ],
+        "summary": "Retrieve asynchronous search results from a previously created request.",
+        "operationId": "Identities_Result",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The search token provided by a Find or Search request.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The identity results are contained in the body of this response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentitySearchResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentitySearchResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No identity search matching the provided search token was found."
+          },
+          "501": {
+            "description": "The server does not support the requested function."
+          },
+          "502": {
+            "description": "The underlying identity system returned an error."
+          }
+        }
+      }
+    },
+    "/identities/search": {
+      "post": {
+        "tags": [
+          "Identities"
+        ],
+        "summary": "Lookup existing Unique Ids for a persons, or suggest possible matches.",
+        "operationId": "Identities_Search",
+        "requestBody": {
+          "description": "One or more identity search request objects.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/IdentitySearchRequest"
+                }
+              }
+            },
+            "text/json": {
+              "schema": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/IdentitySearchRequest"
+                }
+              }
+            }
+          },
+          "required": true,
+          "x-bodyName": "criteria"
+        },
+        "responses": {
+          "200": {
+            "description": "The returned identities are possible matches for the provided identity search requests.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentitySearchResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentitySearchResponse"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "The identity query was accepted for asynchronous processing. The result will be available at the URL indicated in the location response header."
+          },
+          "501": {
+            "description": "The server does not support the requested function."
+          },
+          "502": {
+            "description": "The underlying identity system returned an error."
+          }
+        }
+      }
+    },
+    "/identities/{id}": {
+      "get": {
+        "tags": [
+          "Identities"
+        ],
+        "summary": "Retrieve a single person record from their Unique Id.",
+        "description": "Returns either a single identity or 404 and no data",
+        "operationId": "Identities_GetById",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Unique Id of the identity to be retrieved",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The returned identity matches the provided Unique Id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No identity matching the provided Unique Id was found."
+          },
+          "501": {
+            "description": "The server does not support the requested function."
+          },
+          "502": {
+            "description": "The underlying identity system returned an error."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "IdentityCreateRequest": {
+        "type": "object",
+        "properties": {
+          "BirthDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "BirthLocation": {
+            "$ref": "#/components/schemas/Location"
+          },
+          "BirthOrder": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "FirstName": {
+            "type": "string"
+          },
+          "GenerationCodeSuffix": {
+            "type": "string"
+          },
+          "LastSurname": {
+            "type": "string"
+          },
+          "MiddleName": {
+            "type": "string"
+          },
+          "SexType": {
+            "type": "string"
+          }
+        }
+      },
+      "IdentityResponse": {
+        "type": "object",
+        "properties": {
+          "BirthDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "BirthLocation": {
+            "$ref": "#/components/schemas/Location"
+          },
+          "BirthOrder": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "FirstName": {
+            "type": "string"
+          },
+          "GenerationCodeSuffix": {
+            "type": "string"
+          },
+          "LastSurname": {
+            "type": "string"
+          },
+          "MiddleName": {
+            "type": "string"
+          },
+          "Score": {
+            "type": "number",
+            "format": "double"
+          },
+          "SexType": {
+            "type": "string"
+          },
+          "UniqueId": {
+            "type": "string"
+          }
+        }
+      },
+      "IdentitySearchRequest": {
+        "type": "object",
+        "properties": {
+          "BirthDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "BirthLocation": {
+            "$ref": "#/components/schemas/Location"
+          },
+          "BirthOrder": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "FirstName": {
+            "type": "string"
+          },
+          "GenerationCodeSuffix": {
+            "type": "string"
+          },
+          "LastSurname": {
+            "type": "string"
+          },
+          "MiddleName": {
+            "type": "string"
+          },
+          "SexType": {
+            "type": "string"
+          }
+        }
+      },
+      "IdentitySearchResponse": {
+        "type": "object",
+        "properties": {
+          "SearchResponses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IdentitySearchResponses"
+            }
+          },
+          "Status": {
+            "enum": [
+              "Incomplete",
+              "Complete"
+            ],
+            "type": "string"
+          }
+        }
+      },
+      "IdentitySearchResponses": {
+        "type": "object",
+        "properties": {
+          "Responses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IdentityResponse"
+            }
+          }
+        }
+      },
+      "Location": {
+        "type": "object",
+        "properties": {
+          "City": {
+            "type": "string"
+          },
+          "Country": {
+            "type": "string"
+          },
+          "InternationalProvince": {
+            "type": "string"
+          },
+          "StateAbbreviation": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "oauth2_client_credentials": {
+        "type": "oauth2",
+        "description": "Ed-Fi ODS/API OAuth 2.0 Client Credentials Grant Type authorization",
+        "flows": {
+          "clientCredentials": {
+            "tokenUrl": "https://api.ed-fi.org/v7.3/api/oauth/token",
+            "scopes": { }
+          }
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "oauth2_client_credentials": [ ]
+    }
+  ],
+  "tags": [
+    {
+      "name": "Identities",
+      "description": "Retrieve or create Unique Ids for a person, and add or update their information. Version 2.0"
+    }
+  ]
+}

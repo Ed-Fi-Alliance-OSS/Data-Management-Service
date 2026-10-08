@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# Plugin acquisition for the Configuration Service: a pre-populated plugin root, bind-mounted
+# read-only. The Configuration Service counterpart of plugins-dms.yml, which it mirrors.
+#
+# Add with its own -f, after local-config.yml or published-config.yml, both of which it leaves
+# unchanged. start-local-config.ps1 has no setting that adds it: DMS_PLUGINS_COMPOSE_FILES is the
+# Data Management Service launchers' setting for DMS overlays, not a Configuration Service one.
+#
+# CMS_PLUGINS_MOUNT_SOURCE is declared with :? rather than a default. A deployment that composed
+# this file in meant to supply a host path, and a silent default would make Docker materialize an
+# empty root-owned directory beside it, which is exactly what keeping the mount out of the base
+# files avoids.
+#
+# Acquiring the bytes does not enable them. Nothing here writes Plugins:Allowed; the allowlist is
+# a separate deployment-owned setting on the config service. See eng/docker-compose/README.md,
+# "Loading plugins into the Configuration Service".
+services:
+  config:
+    volumes:
+      - ${CMS_PLUGINS_MOUNT_SOURCE:?set the host path holding the plugin directories}:/app/plugins:ro

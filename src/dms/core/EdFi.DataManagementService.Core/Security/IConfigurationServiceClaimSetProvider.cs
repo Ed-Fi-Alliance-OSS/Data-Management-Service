@@ -17,6 +17,10 @@ public interface IConfigurationServiceClaimSetProvider
     /// Retrieves all claim sets from the Configuration Service API.
     /// </summary>
     /// <param name="tenant">Optional tenant identifier for multi-tenant scenarios.</param>
+    /// <param name="cancellationToken">Cancellation token for the Configuration Service request.</param>
     /// <returns>List of claim sets from the Configuration Service.</returns>
-    Task<IList<ClaimSet>> GetAllClaimSets(string? tenant = null);
+    Task<IList<ClaimSet>> GetAllClaimSets(
+        string? tenant = null,
+        CancellationToken cancellationToken = default
+    );
 }

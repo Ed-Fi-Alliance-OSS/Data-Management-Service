@@ -11,11 +11,14 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Handler;
+using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Polly;
@@ -292,51 +295,6 @@ public class UpdateByIdHandlerTests
                         [
                             "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved.",
                         ]
-                    )
-                )
-                .Should()
-                .BeTrue();
-            requestInfo.FrontendResponse.Headers.Should().BeEmpty();
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
-    public class Given_A_Repository_That_Returns_If_None_Match_Precondition_Failure : UpdateByIdHandlerTests
-    {
-        internal class Repository : NotImplementedDocumentStoreRepository
-        {
-            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
-            {
-                return Task.FromResult<UpdateResult>(
-                    new UpdateFailureETagMisMatch(
-                        ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch
-                    )
-                );
-            }
-        }
-
-        private readonly RequestInfo requestInfo = RequestInfoWithRelationalMappingSet("trace-id");
-
-        [SetUp]
-        public async Task Setup()
-        {
-            var (updateByIdHandler, serviceProvider) = Handler(new Repository());
-            requestInfo.ScopedServiceProvider = serviceProvider;
-            await updateByIdHandler.Execute(requestInfo, NullNext);
-        }
-
-        [Test]
-        public void It_returns_complete_if_none_match_problem_details()
-        {
-            requestInfo.FrontendResponse.StatusCode.Should().Be(412);
-            JsonNode
-                .DeepEquals(
-                    requestInfo.FrontendResponse.Body,
-                    JsonNode.Parse(
-                        """
-                        {"detail":"The If-None-Match precondition failed because a current representation of the resource matched the request header.","type":"urn:ed-fi:api:precondition-failed:if-none-match","title":"If-None-Match Precondition Failed","status":412,"correlationId":"trace-id","validationErrors":{},"errors":["The 'If-None-Match' request header requires that no current representation match the supplied value, but a matching representation exists."]}
-                        """
                     )
                 )
                 .Should()
@@ -1387,6 +1345,121 @@ expected: {expected}
 actual: {requestInfo.FrontendResponse.Body}
 """
                 );
+        }
+    }
+
+    /// <summary>
+    /// DMS-1576: If-None-Match is a GET-only conditional-read validator; PUT (and POST, DELETE) ignore
+    /// it. These fixtures prove the shared Debug-log helper is wired in (fires once with the right method
+    /// when the header is present, not at all when absent) and that no write precondition reaches the
+    /// repository. The helper's own behavior is covered by <see cref="UtilityTests" />.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Put_That_Carries_An_If_None_Match_Header : UpdateByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public IUpdateRequest? CapturedRequest { get; private set; }
+
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
+            {
+                CapturedRequest = updateRequest;
+                return Task.FromResult<UpdateResult>(
+                    new UpdateSuccess(updateRequest.DocumentUuid, "\"test-etag\"")
+                );
+            }
+        }
+
+        private const string SentinelTag = "\"sentinel-7f3a\"";
+        private const string RequestTraceId = "if-none-match-trace";
+
+        private RecordingLogger _logger = new();
+        private readonly Repository _repository = new();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet(RequestTraceId);
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.Method = RequestMethod.PUT;
+            _requestInfo.FrontendRequest = _requestInfo.FrontendRequest with
+            {
+                Headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["If-None-Match"] = SentinelTag,
+                },
+            };
+
+            _logger = new RecordingLogger();
+
+            var serviceProvider = A.Fake<IServiceProvider>();
+            A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository))).Returns(_repository);
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await new UpdateByIdHandler(_logger, ResiliencePipeline.Empty).Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_logs_once_at_debug_that_if_none_match_was_ignored()
+        {
+            _logger
+                .Records.Where(record =>
+                    record.Level == LogLevel.Debug && record.Message.Contains("If-None-Match")
+                )
+                .Should()
+                .ContainSingle();
+        }
+
+        [Test]
+        public void It_logs_the_method_as_a_structured_property()
+        {
+            var record = _logger.Records.Single(record =>
+                record.Level == LogLevel.Debug && record.Message.Contains("If-None-Match")
+            );
+
+            record.Properties["Method"].Should().Be("PUT");
+        }
+
+        [Test]
+        public void It_passes_no_write_precondition_to_the_repository()
+        {
+            _repository.CapturedRequest!.WritePrecondition.Should().BeOfType<WritePrecondition.None>();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Put_Without_An_If_None_Match_Header : UpdateByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
+            {
+                return Task.FromResult<UpdateResult>(
+                    new UpdateSuccess(updateRequest.DocumentUuid, "\"test-etag\"")
+                );
+            }
+        }
+
+        private readonly RecordingLogger _logger = new();
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo.Method = RequestMethod.PUT;
+            var serviceProvider = A.Fake<IServiceProvider>();
+            A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository)))
+                .Returns(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await new UpdateByIdHandler(_logger, ResiliencePipeline.Empty).Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_does_not_log_that_if_none_match_was_ignored()
+        {
+            _logger.Records.Should().NotContain(record => record.Message.Contains("If-None-Match"));
         }
     }
 }

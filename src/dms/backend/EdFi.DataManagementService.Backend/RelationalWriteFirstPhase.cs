@@ -270,9 +270,10 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             // A POST branch owed right after capture, or a create-new branch whose relationship result precedes
             // reference resolution, cannot ride behind the capture's co-batched statements either.
             || input.PostTargetAuthorizationBundles is { RequiresOrderedSegments: true }
-            // A deferred ownership failure is owed in the ownership slot, ahead of the relationship statement
-            // and the hydration this command would carry, so the request takes the ordered-segments path the
-            // way a create-new immediate result does.
+            // A deferred stored-ownership failure is owed in the ownership slot, ahead of the relationship
+            // statement and the hydration this command would carry, so the request takes the ordered-segments
+            // path the way a create-new immediate result does. The create-side deferral does not: a create
+            // owes it in the second command, and no statement here depends on it.
             || input.DeferredStoredOwnershipFailureResult is not null
             || relationshipDisposition.Disposition
                 is not (StoredRelationshipDisposition.None or StoredRelationshipDisposition.Emitted)

@@ -96,6 +96,17 @@ default (PostgreSQL) compose file and will not remove the other engine's named d
 ./bootstrap-local-dms.ps1 -d -v
 ```
 
+Teardown does not remove locally built images, so the turnkey start reuses them by default. After
+updating the checkout, pass `-Rebuild` (alias `-r`) to rebuild the local images before the
+infrastructure starts:
+
+```pwsh
+./bootstrap-local-dms.ps1 -Rebuild
+```
+
+Because `-d -v` removes `.bootstrap/`, republish `api-schema-tools` as described under
+[Standard mode](#standard-mode-package-backed) before the next bootstrap.
+
 By default, authentication uses the Self-Contained (OpenIddict) identity provider. The environment and startup scripts are pre-configured for Self-Contained mode, and Keycloak is not required unless explicitly selected.
 
 When an E2E environment file defines `E2E_DATABASE_NAME`, that database must be
@@ -271,6 +282,11 @@ A few things are specific to the MSSQL path:
   `env-utility.psm1`), so the same base `-EnvironmentFile` names the matching package id for
   either engine. This section documents the CI build/publish/verify pipeline only; no local
   bootstrap flow currently restores these packages.
+
+For a self-contained smoke run, set `DMS_CONFIG_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1`
+in your `.env` before starting or recreating the stack: the Smoke Test Utility requests
+a new token for each resource GET and otherwise exceeds the default limit of 15.
+Restore the configured limit and recreate the stack after the smoke run.
 
 After the stack is up, run the smoke tests the same way as for PostgreSQL:
 
@@ -478,8 +494,9 @@ listed extension packages (the DS 5.2 default stages core + TPDM); custom or unp
 sets use Expert mode below.
 
 > **Requirement - `api-schema-tools` tool:** `prepare-dms-schema.ps1` needs the in-repo `api-schema-tools`
-> CLI published as a native executable. Build it once before running the prepare command (the
-> publish step is safe to re-run after branch switches).
+> CLI published as a native executable. Publish it before running the prepare command. The step is
+> safe to re-run and is required again after a branch switch changes the tool or after `-d -v`
+> removes the `.bootstrap/` workspace.
 
 ```pwsh
 # 1. Publish the api-schema-tools tool (required on a clean checkout)
@@ -683,7 +700,8 @@ The artifact includes:
 | `AppSettings:UseApiSchemaPath` | `true` (use staged bootstrap workspace schema; see activation note below) |
 | `AppSettings:ApiSchemaPath` | `<repo-root>/eng/docker-compose/.bootstrap/ApiSchema` (replace `<repo-root>` with your absolute path) |
 | `AppSettings:AuthenticationService` | `http://localhost:8081/connect/token` |
-| `JwtAuthentication:Authority` | `http://localhost:8081` |
+| `JwtAuthentication:Authority` | `http://localhost:8081` (must exactly match the self-contained CMS issuer configured in `.env.ide`) |
+| `JwtAuthentication:MetadataAddress` | `http://localhost:8081/.well-known/openid-configuration` (must share the advertised JWKS origin) |
 | `JwtAuthentication:ClientRole` | `dms-client` |
 | `JwtAuthentication:RoleClaimType` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` |
 
@@ -694,6 +712,29 @@ client creation, use your override here. Replace `<dms-config-database-encryptio
 with the value of `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` from your `.env` file (`.env.example`
 default `secret!_32_chars_xxxxxxxxxxxxxxx`). Replace `<repo-root>` with the absolute path
 to the repository root on your machine.
+
+For the self-contained IDE workflow, create a dedicated environment file before running bootstrap:
+
+```pwsh
+$baseEnvironmentFile = if (Test-Path .env) { ".env" } else { ".env.example" }
+Copy-Item $baseEnvironmentFile .env.ide
+```
+
+Use [.env.ide.example](.env.ide.example) as the documented override template. In `.env.ide`, set both
+values below to the host-reachable Config Service origin:
+
+```dotenv
+SELF_CONTAINED_DMS_JWT_AUTHORITY=http://localhost:8081
+SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS=http://localhost:8081/.well-known/openid-configuration
+```
+
+Pass `-EnvironmentFile ./.env.ide` to every bootstrap invocation for that IDE environment. The
+self-contained startup uses these values for the CMS issuer and DMS JWT settings, so metadata and
+the advertised JWKS URL share the `localhost:8081` origin without a hosts-file entry. Use this file
+for every manual phase, but only combine it with `-InfraOnly` when invoking a DMS start or bootstrap
+command; a containerized DMS cannot reach the Config Service through its own `localhost`. Keep
+`ConfigurationServiceSettings:BaseUrl` and `AppSettings:AuthenticationService` on `localhost:8081`
+for their separate host-side calls.
 
 > **Activation note:** `AppSettings:UseApiSchemaPath` and `AppSettings:ApiSchemaPath` point at
 > the staged bootstrap workspace. With `UseApiSchemaPath=true`, DMS reads discovery/specification
@@ -707,7 +748,7 @@ stop before launching DMS:
 
 ```pwsh
 cd eng/docker-compose
-./bootstrap-local-dms.ps1 -InfraOnly -EnableConfig -IdentityProvider self-contained
+./bootstrap-local-dms.ps1 -InfraOnly -EnableConfig -IdentityProvider self-contained -EnvironmentFile ./.env.ide
 ```
 
 The wrapper prints IDE next-step guidance (staged schema path and, when `CONFIG_SERVICE_CLIENT_*`
@@ -722,7 +763,7 @@ Start DMS in your IDE using the printed settings; this invocation does not wait 
 
 ```pwsh
 cd eng/docker-compose
-./bootstrap-local-dms.ps1 -InfraOnly -IdentityProvider self-contained
+./bootstrap-local-dms.ps1 -InfraOnly -IdentityProvider self-contained -EnvironmentFile ./.env.ide
 # → prints appsettings guidance (see the starter configuration table for the CMSReadOnlyAccess secret); stops before DMS startup
 # Start DMS in your IDE now using the printed settings.
 ```
@@ -736,15 +777,16 @@ wait passes.
 > [!IMPORTANT]
 > The two shapes are alternatives, not a sequence. If a previous wrapper run already created the
 > data store (for example a Shape 1 run on the same stack), add `-NoDataStore` to the follow-up run
-> so the configure phase reuses the existing data store instead of creating a duplicate:
-> `./bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -NoDataStore [-LoadSeedData ...]`
+> so the configure phase reuses the existing data store; without it, the configure phase registers
+> the same name again and CMS rejects it with 400:
+> `./bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -NoDataStore -EnvironmentFile ./.env.ide [-LoadSeedData ...]`
 >
 > `-NoDataStore` supports exactly one existing route-unqualified data store. If the earlier run
 > used `-SchoolYearRange` (or otherwise created route-qualified data stores), do **not** re-run the
-> wrapper — re-supplying `-SchoolYearRange` creates a new set of data stores instead of selecting
-> the existing ones. Use the explicit phase commands against the data stores the earlier run
-> created: `./start-local-dms.ps1 -InfraOnly -DmsBaseUrl <url>` for the health wait, then
-> `./load-dms-seed-data.ps1 -DmsBaseUrl <url> -SchoolYear <years...>` for seed loading.
+> wrapper — re-supplying `-SchoolYearRange` tries to create these data stores again, and CMS rejects
+> the repeated names with 400. Use the explicit phase commands against the data stores the earlier run
+> created: `./start-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> -EnvironmentFile ./.env.ide` for the health wait, then
+> `./load-dms-seed-data.ps1 -DmsBaseUrl <url> -SchoolYear <years...> -EnvironmentFile ./.env.ide` for seed loading.
 >
 > A fresh run recomposes the environment from its own switches, so if the stack was started with
 > `-SeparateConfigDatabase`, carry that switch on every follow-up command too — dropping it
@@ -753,12 +795,12 @@ wait passes.
 
 ```pwsh
 cd eng/docker-compose
-./bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl "http://localhost:5198" -IdentityProvider self-contained
+./bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl "http://localhost:5198" -IdentityProvider self-contained -EnvironmentFile ./.env.ide
 # → starts infra, provisions schema, waits for DMS at http://localhost:5198/health
 # Start DMS in your IDE before the 300-second timeout elapses.
 
 # With seed loading:
-./bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl "http://localhost:5198" -IdentityProvider self-contained `
+./bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl "http://localhost:5198" -IdentityProvider self-contained -EnvironmentFile ./.env.ide `
     -LoadSeedData -SeedTemplate Minimal
 ```
 
@@ -769,11 +811,11 @@ the health wait, then start DMS in the IDE between phases:
 cd eng/docker-compose
 ./prepare-dms-schema.ps1 -ApiSchemaPath ../../src/dms/EdFi.DataStandard52.ApiSchema -SchemaToolPath ...
 ./prepare-dms-claims.ps1
-./start-local-dms.ps1 -InfraOnly -IdentityProvider self-contained
-./configure-local-data-store.ps1 -AddSmokeTestCredentials
-./provision-dms-schema.ps1
+./start-local-dms.ps1 -InfraOnly -IdentityProvider self-contained -EnvironmentFile ./.env.ide
+./configure-local-data-store.ps1 -AddSmokeTestCredentials -EnvironmentFile ./.env.ide
+./provision-dms-schema.ps1 -EnvironmentFile ./.env.ide
 # Start DMS in your IDE now.
-./start-local-dms.ps1 -InfraOnly -DmsBaseUrl "http://localhost:5198"  # post-provision health wait only
+./start-local-dms.ps1 -InfraOnly -DmsBaseUrl "http://localhost:5198" -EnvironmentFile ./.env.ide  # post-provision health wait only
 ```
 
 **Fail-fast rules:**
@@ -1095,6 +1137,51 @@ services:
 The order written is the order plugins are invoked in. See the `Plugins` section of
 [docs/CONFIGURATION.md](../../docs/CONFIGURATION.md) for the full configuration
 surface.
+
+### Loading plugins into the Configuration Service
+
+The Configuration Service loads plugins the same way, from its own plugin root and
+its own allowlist; a plugin allowlisted for DMS is not thereby allowlisted for the
+Configuration Service, and the reverse. `plugins-config.yml` is the Configuration
+Service counterpart of `plugins-dms.yml`: it bind-mounts a pre-populated directory
+of plugin directories read-only at `/app/plugins` on the `config` service, and
+`local-config.yml` and `published-config.yml` are unchanged by it. There is no fetch
+overlay for the Configuration Service.
+
+`start-local-config.ps1` has no setting that adds this overlay.
+`DMS_PLUGINS_COMPOSE_FILES` is the DMS launchers' setting for the DMS overlays
+above and is not a Configuration Service mechanism. Add `plugins-config.yml` with its
+own `-f` after the base file, followed by a deployment-owned allowlist override for
+the `config` service, because this overlay allowlists nothing:
+
+```yaml
+# my-plugins-allowed-config.yml
+services:
+  config:
+    environment:
+      Plugins__Allowed: Acme.Cms.VaultResolver
+```
+
+```powershell
+cd eng/docker-compose
+# CMS_PLUGINS_MOUNT_SOURCE is required by plugins-config.yml; set it here or in the env file.
+$env:CMS_PLUGINS_MOUNT_SOURCE = "C:/cms-plugins"
+docker compose -f postgresql.yml -f local-config.yml -f keycloak.yml `
+  -f plugins-config.yml -f my-plugins-allowed-config.yml `
+  --env-file .env -p cs-local up -d config
+```
+
+These are the files `start-local-config.ps1` composes for a PostgreSQL stack, plus
+the two plugin files. As with DMS, compose them directly only against an environment
+a previous `start-local-config.ps1` run already set up: that script also creates the
+identity clients the Configuration Service needs, which no overlay does.
+
+| Variable | Overlay | Meaning |
+| -------- | ------- | ------- |
+| `CMS_PLUGINS_MOUNT_SOURCE` | `plugins-config.yml` | Host path holding the Configuration Service's plugin directories. Declared with `:?`, and listed commented out in `.env.example`. |
+
+See [Configuration Service plugins](../../docs/CONFIGURATION.md#configuration-service-plugins)
+for the Configuration Service's configuration surface.
 
 ## Kafka UI
 

@@ -42,8 +42,8 @@ public sealed class Given_Mssql_OwnershipAuthorization : MssqlApiIntegrationTest
         _applicationContextProvider;
 
     [Test]
-    public Task It_stamps_the_creator_ownership_token_on_create_and_never_denies_it() =>
-        OwnershipAuthorizationIntegrationScenario.It_stamps_the_creator_ownership_token_on_create_and_never_denies_it(
+    public Task It_stamps_the_creator_ownership_token_on_create_and_refuses_creates_the_caller_could_not_own() =>
+        OwnershipAuthorizationIntegrationScenario.It_stamps_the_creator_ownership_token_on_create_and_refuses_creates_the_caller_could_not_own(
             Harness
         );
 
@@ -76,8 +76,14 @@ public sealed class Given_Mssql_OwnershipAuthorization : MssqlApiIntegrationTest
         );
 
     [Test]
-    public Task It_creates_over_the_ownership_token_cap_and_fails_closed_for_the_post_as_update() =>
-        OwnershipAuthorizationIntegrationScenario.It_creates_over_the_ownership_token_cap_and_fails_closed_for_the_post_as_update(
+    public Task It_fails_closed_at_the_ownership_token_cap_for_a_post_create_and_a_post_as_update() =>
+        OwnershipAuthorizationIntegrationScenario.It_fails_closed_at_the_ownership_token_cap_for_a_post_create_and_a_post_as_update(
+            Harness
+        );
+
+    [Test]
+    public Task It_returns_the_create_ownership_verdict_ahead_of_an_if_match_precondition() =>
+        OwnershipAuthorizationIntegrationScenario.It_returns_the_create_ownership_verdict_ahead_of_an_if_match_precondition(
             Harness
         );
 
@@ -94,8 +100,14 @@ public sealed class Given_Mssql_OwnershipAuthorization : MssqlApiIntegrationTest
         );
 
     [Test]
-    public Task It_withholds_descriptor_operations_from_ownership_with_a_501() =>
-        OwnershipAuthorizationIntegrationScenario.It_withholds_descriptor_operations_from_ownership_with_a_501(
+    public Task It_enforces_descriptor_ownership_on_single_record_reads_and_writes() =>
+        OwnershipAuthorizationIntegrationScenario.It_enforces_descriptor_ownership_on_single_record_reads_and_writes(
+            Harness
+        );
+
+    [Test]
+    public Task It_filters_descriptor_get_many_and_partitions_to_the_callers_ownership_tokens() =>
+        OwnershipAuthorizationIntegrationScenario.It_filters_descriptor_get_many_and_partitions_to_the_callers_ownership_tokens(
             Harness
         );
 }

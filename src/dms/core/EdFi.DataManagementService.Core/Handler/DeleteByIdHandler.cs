@@ -24,6 +24,7 @@ internal class DeleteByIdHandler(ILogger _logger, ResiliencePipeline _resilience
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug("Entering DeleteByIdHandler - {TraceId}", requestInfo.FrontendRequest.TraceId.Value);
+        LogIfNoneMatchIgnoredOnWrite(_logger, requestInfo);
 
         // Resolve repository from the per-request scoped service provider
         var documentStoreRepository =

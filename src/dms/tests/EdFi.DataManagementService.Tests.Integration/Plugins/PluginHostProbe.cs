@@ -5,6 +5,7 @@
 
 using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using Microsoft.AspNetCore.Hosting;
@@ -41,17 +42,18 @@ internal static class PluginHostProbe
     public static string StagedFixtureRoot => Path.Combine(AppContext.BaseDirectory, "PluginFixtures");
 
     /// <summary>
-    /// Where the build staged the custom validation proof plugin.
+    /// Where the build staged the fixture plugins built against packed contracts.
     /// </summary>
     /// <remarks>
     /// A second root rather than another directory under <see cref="StagedFixtureRoot"/>, because
-    /// that one is produced by the shared staging machinery and this fixture is produced by
-    /// CustomValidationFixturePlugin.targets, which packs its two contracts into a folder feed
-    /// first. Keeping the roots apart is what lets the shared prune remove its whole tree without
-    /// reaching this one.
+    /// that one is produced by the shared staging machinery and these fixtures are produced by
+    /// PackedContractFixturePlugins.targets, which packs the plugin, custom-validation and identity
+    /// contracts into a folder feed once and publishes every fixture named there against it.
+    /// Keeping the roots apart is what lets the shared prune remove its whole tree without reaching
+    /// this one.
     /// </remarks>
-    public static string CustomValidationFixtureRoot =>
-        Path.Combine(AppContext.BaseDirectory, "CustomValidationPluginFixture");
+    public static string PackedContractFixtureRoot =>
+        Path.Combine(AppContext.BaseDirectory, "PackedContractPluginFixtures");
 
     /// <summary>A temporary plugin root holding copies of the named staged fixtures.</summary>
     public static string CreatePluginRoot(params string[] fixtureNames) =>
@@ -260,8 +262,67 @@ internal static class PluginHostProbe
 internal sealed class PluginLogCapture : ILogEventSink
 {
     private readonly ConcurrentQueue<LogEvent> _events = new();
+    private readonly object _waitersLock = new();
+    private readonly List<(Func<LogEvent, bool> Matches, TaskCompletionSource Logged)> _waiters = [];
 
-    public void Emit(LogEvent logEvent) => _events.Enqueue(logEvent);
+    public void Emit(LogEvent logEvent)
+    {
+        _events.Enqueue(logEvent);
+
+        lock (_waitersLock)
+        {
+            for (int index = _waiters.Count - 1; index >= 0; index--)
+            {
+                (Func<LogEvent, bool> matches, TaskCompletionSource logged) = _waiters[index];
+                if (matches(logEvent))
+                {
+                    // Its continuations run asynchronously, so none of them runs under the lock.
+                    logged.TrySetResult();
+                    _waiters.RemoveAt(index);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Completes once an event matching <paramref name="matches"/> has been captured, whether it was
+    /// written before this call or is written after it, so a case can wait for a known event rather
+    /// than for time.
+    /// </summary>
+    public Task WaitForEventAsync(Func<LogEvent, bool> matches)
+    {
+        lock (_waitersLock)
+        {
+            if (_events.Any(matches))
+            {
+                return Task.CompletedTask;
+            }
+
+            TaskCompletionSource logged = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            _waiters.Add((matches, logged));
+            return logged.Task;
+        }
+    }
+
+    /// <summary>
+    /// A Serilog logger writing every event into this capture.
+    /// </summary>
+    /// <param name="applyIdentityRedaction">
+    /// When true, the logger first runs the log-context and identity redaction stage production
+    /// applies, so a captured event is what a production sink would receive. False keeps the plain
+    /// capture every earlier plugin case relies on.
+    /// </param>
+    public Logger CreateLogger(bool applyIdentityRedaction = false)
+    {
+        LoggerConfiguration configuration = new LoggerConfiguration().MinimumLevel.Verbose();
+
+        if (applyIdentityRedaction)
+        {
+            configuration = LoggingConfigurator.ApplyLogContextAndIdentityRedaction(configuration);
+        }
+
+        return configuration.WriteTo.Sink(this).CreateLogger();
+    }
 
     /// <summary>Everything logged, in the order it was written.</summary>
     public IReadOnlyList<LogEvent> Events => [.. _events];

@@ -190,7 +190,7 @@ public class MetadataRouteValidator(
             : string.Empty;
     }
 
-    private static string RouteQualifierValueName(int index) =>
+    internal static string RouteQualifierValueName(int index) =>
         $"{MetadataRouteQualifierValueNamePrefix}{index}";
 
     private static Task WriteNotFoundAsync(HttpContext httpContext)

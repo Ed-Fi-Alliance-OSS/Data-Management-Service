@@ -44,7 +44,8 @@ internal sealed class ApplicationContextRequirementMiddleware(
         var provider = requestInfo.ScopedServiceProvider.GetRequiredService<IApplicationContextProvider>();
         ApplicationContextResult result = await provider.GetApplicationByClientIdAsync(
             requestInfo.ClientAuthorizations.ClientId,
-            requestInfo.FrontendRequest.Tenant
+            requestInfo.FrontendRequest.Tenant,
+            requestInfo.RequestCancellationToken
         );
 
         switch (result)

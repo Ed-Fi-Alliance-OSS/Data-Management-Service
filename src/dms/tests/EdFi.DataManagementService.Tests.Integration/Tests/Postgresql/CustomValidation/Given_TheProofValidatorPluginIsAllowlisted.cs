@@ -45,7 +45,7 @@ public sealed class Given_TheProofValidatorPluginIsAllowlisted : PostgresqlApiIn
     [OneTimeSetUp]
     public void StageThePlugin() =>
         _pluginRoot = PluginHostProbe.CreatePluginRootFromSource(
-            PluginHostProbe.CustomValidationFixtureRoot,
+            PluginHostProbe.PackedContractFixtureRoot,
             CustomValidationPluginScenario.PluginName
         );
 

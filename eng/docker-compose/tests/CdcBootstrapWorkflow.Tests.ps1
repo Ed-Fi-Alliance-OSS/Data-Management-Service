@@ -504,7 +504,7 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
         & (Join-Path $script:sandbox 'bootstrap-published-dms.ps1') -EnableKafkaUI -LoadSeedData
         $calls = @(Get-Content (Join-Path $script:sandbox 'calls'))
         $calls.Count | Should -Be 5
-        $calls[0] | Should -Be 'infra:postgresql:True:False:False:'
+        $calls[0] | Should -Be 'infra:postgresql:True:False:True:'
         $calls[3] | Should -Be 'dms:postgresql:True:False:False:'
     }
 }
