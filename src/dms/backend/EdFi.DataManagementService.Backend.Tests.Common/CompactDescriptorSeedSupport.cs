@@ -25,25 +25,3 @@ public static class CompactDescriptorSeedSupport
 }
 
 public sealed record SeededDescriptor(int DescriptorId, long DocumentId);
-
-/// <summary>Whole-string cases shared by compact descriptor database regressions.</summary>
-public sealed record CompactDescriptorUriCase(
-    string ProjectName,
-    string ResourceName,
-    string Namespace,
-    string CodeValue
-)
-{
-    public string Uri => $"{Namespace}#{CodeValue}";
-
-    public static IReadOnlyList<CompactDescriptorUriCase> Cases { get; } =
-    [
-        new("Ed-Fi", "KindDescriptor", "uri://Example.org/SchoolTypeDescriptor", "MiXeD"),
-        new("Ed-Fi", "TermDescriptor", "uri://Example.org/SchoolTypeDescriptor", "MiXeD"),
-        new("Sample", "KindDescriptor", "uri://Example.org/SchoolTypeDescriptor", "MiXeD"),
-        new("Ed-Fi", "SchoolTypeDescriptor", "uri://example.org/a#b", "c"),
-        new("Ed-Fi", "SchoolTypeDescriptor", "uri://example.org/a", "b#c"),
-        new("Ed-Fi", "SchoolTypeDescriptor", "uri://example.org/a ", "c"),
-        new("Ed-Fi", "SchoolTypeDescriptor", "uri://example.org/a", "c"),
-    ];
-}
