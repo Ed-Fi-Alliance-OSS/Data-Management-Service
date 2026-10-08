@@ -100,11 +100,16 @@ exit 0
 
 Describe 'Managed provisioning uses the configure phase selection' {
     BeforeAll {
+        # Invoke-ProvisionDmsSchema refuses to run under a leaked restore-candidate override; clear any
+        # ambient value for these cases and restore it in AfterAll.
+        $script:savedBootstrapRootOverride = $env:DMS_BOOTSTRAP_ROOT_OVERRIDE
+        Remove-Item Env:\DMS_BOOTSTRAP_ROOT_OVERRIDE -ErrorAction SilentlyContinue
         $tokens = $null
         $errors = $null
         foreach ($entry in @(
             @{ File = '../provision-dms-schema.ps1'; Function = 'Invoke-ProvisionDmsSchema' },
-            @{ File = '../configure-local-data-store.ps1'; Function = 'ConvertTo-ConfigureResult' }
+            @{ File = '../configure-local-data-store.ps1'; Function = 'ConvertTo-ConfigureResult' },
+            @{ File = '../bootstrap-manifest.psm1'; Function = 'Assert-NoBootstrapRootOverride' }
         )) {
             $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot $entry.File), [ref]$tokens, [ref]$errors)
             $name = $entry.Function
@@ -131,6 +136,10 @@ Describe 'Managed provisioning uses the configure phase selection' {
         }
         function Test-ProvisionTargetIsLocalComposeDatabase { param($Target, $EnvValues) return $true }
         function Write-ProvisionSummary { param($EnvValues, $SchemaWorkspace, $ProvisionedTargets) }
+    }
+
+    AfterAll {
+        $env:DMS_BOOTSTRAP_ROOT_OVERRIDE = $script:savedBootstrapRootOverride
     }
 
     BeforeEach {
