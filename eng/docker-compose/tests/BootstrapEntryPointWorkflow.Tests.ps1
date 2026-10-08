@@ -1897,6 +1897,19 @@ $resultStatement
             $script:restoreSurfaceLog | Should -Not -Exist -Because "every restore-mode exclusion must reject before any phase runs"
         }
 
+        It "rejects -RestoreTemplate with -IncludeE2EClaimSets on <_> before any phase invocation" -ForEach @("start-local-dms.ps1", "start-published-dms.ps1") {
+            # -IncludeE2EClaimSets is a test-only Invoke-BootstrapWrapper switch (neither entry script
+            # declares it), so the wrapper function is called directly. The restore candidate stages
+            # claims without it, so accepting the pair would silently drop the E2E claim sets.
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-wrapper.psm1") -Force
+
+            { Invoke-BootstrapWrapper -StartScriptName $_ -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal -IncludeE2EClaimSets } |
+                Should -Throw "*-RestoreTemplate is not valid with -IncludeE2EClaimSets*"
+
+            $script:restoreSurfaceLog | Should -Not -Exist -Because "the exclusion must reject before any phase runs"
+            Join-Path $script:repo.DockerComposeRoot ".bootstrap-restore" | Should -Not -Exist -Because "no restore candidate workspace may be created"
+        }
+
         It "forwards -RestoreTemplate and -PackageDirectory to Invoke-BootstrapWrapper on <_>" -ForEach @("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1") {
             # A valid restore request passes every exclusion and runs the restore pipeline with
             # the forwarded values - proof they arrived at Invoke-BootstrapWrapper.

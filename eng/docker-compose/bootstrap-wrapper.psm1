@@ -693,6 +693,9 @@ function Invoke-BootstrapWrapper {
         if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
             throw "-RestoreTemplate is not valid with -SchoolYearRange. One restore invocation replaces exactly one route-unqualified physical target."
         }
+        if ($IncludeE2EClaimSets) {
+            throw "-RestoreTemplate is not valid with -IncludeE2EClaimSets. The restore candidate stages claims without the test-only E2E claim sets, so they would be silently dropped; stage them on a bootstrap that provisions its own schema."
+        }
         if ($LoadSeedData -and -not ($seedTemplateSupplied -or $seedDataPathSupplied)) {
             throw "-LoadSeedData with -RestoreTemplate is the explicit supplemental seed and requires its own seed source (-SeedTemplate or -SeedDataPath). A bare -LoadSeedData is ambiguous in restore mode: the restored template already carries its data."
         }
