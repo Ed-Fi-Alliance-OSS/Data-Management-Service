@@ -90,7 +90,10 @@ Source documents:
   - Current RI lookup returns both IDs through the existing join. URI witnesses and original-case
     responses reconstruct the whole string; stored reference joins use the compact key.
   - The descriptor stamping trigger rejects `ResourceKeyId` drift from the owning document;
-    separate cascading document and `NO ACTION` resource-key FKs retain association/catalog integrity.
+    the `NO ACTION` resource-key FK retains catalog integrity. `FK_Descriptor_Document` is a
+    safety-net FK with `RESTRICT` on PostgreSQL and `NO ACTION` on SQL Server. Delete the
+    descriptor before its owning document in the same transaction so stamping and tombstone
+    capture can read the document metadata before it is removed.
 
 - `dms.DataStoreIdentity`
   - Always-provisioned singleton random source UUID, stable during ordinary operation and
