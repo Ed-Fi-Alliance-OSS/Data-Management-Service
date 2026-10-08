@@ -32,18 +32,7 @@ public class ApplicationModule : IEndpointModule
         endpoints.MapSecuredPut($"/v3/applications/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v3/applications/{{id}}", Delete);
 
-        // Only register the reset-credential endpoint if the feature flag is enabled.
-        // It is recommended to disable this endpoint when using multiple API clients for a single application.
-        // This avoids confusion and potential credential mismatches when resetting credentials, since
-        // the reset operation only affects the first API client found.
-        var enableResetEndpoint = endpoints
-            .ServiceProvider.GetRequiredService<IOptions<AppSettings>>()
-            .Value.EnableApplicationResetEndpoint;
-
-        if (enableResetEndpoint)
-        {
-            endpoints.MapSecuredPut($"/v3/applications/{{id}}/reset-credential", ResetCredential);
-        }
+        endpoints.MapSecuredPut($"/v3/applications/{{id}}/reset-credential", ResetCredential);
     }
 
     private async Task<IResult> InsertApplication(
@@ -428,7 +417,6 @@ public class ApplicationModule : IEndpointModule
         IApplicationRepository repository,
         IApiClientRepository apiClientRepository,
         IVendorRepository vendorRepository,
-        IDataStoreRepository dataStoreRepository,
         IProfileRepository profileRepository,
         IIdentityProviderRepository clientRepository,
         IApplicationLockManager lockManager,
@@ -461,7 +449,7 @@ public class ApplicationModule : IEndpointModule
                 var client = success.Clients.FirstOrDefault();
                 if (client != null)
                 {
-                    // Validate the request's references (vendor, data stores, profiles)
+                    // Validate the request's references (vendor, profiles)
                     // before mutating the identity provider so a rejected reference cannot
                     // leave the client update stranded ahead of a failed repository update.
                     // The duplicate-application-name constraint is still enforced by the
@@ -486,19 +474,6 @@ public class ApplicationModule : IEndpointModule
                                 contentType: "application/problem+json",
                                 statusCode: (int)HttpStatusCode.Conflict
                             );
-                    }
-
-                    if (
-                        await ValidateDataStoreIdsExist(
-                            command.DataStoreIds,
-                            dataStoreRepository,
-                            httpContext,
-                            logger
-                        ) is
-                        { } dataStoreFailure
-                    )
-                    {
-                        return dataStoreFailure;
                     }
 
                     if (
@@ -544,12 +519,15 @@ public class ApplicationModule : IEndpointModule
                     }
 
                     logger.LogInformation("Updating client {ClientId}", originalState.ClientId);
+                    // The client's existing data stores are re-sent unchanged: data store
+                    // assignment is per client (PUT /v3/apiClients/{id}), and a null set would
+                    // make Keycloak drop the client's dataStoreIds claim.
                     var clientUpdateResult = await clientRepository.UpdateClientAsync(
                         originalState.ClientUuid.ToString(),
                         command.ApplicationName,
                         command.ClaimSetName,
                         string.Join(",", command.EducationOrganizationIds),
-                        command.DataStoreIds,
+                        originalState.ClientDataStoreIds,
                         originalState.IsApproved,
                         identitySettings.Value.ClientRole
                     );
@@ -565,7 +543,6 @@ public class ApplicationModule : IEndpointModule
                                     {
                                         ClientId = originalState.ClientId,
                                         ClientUuid = updateSuccess.ClientUuid,
-                                        DataStoreIds = command.DataStoreIds,
                                     }
                                 );
                             }
@@ -746,7 +723,8 @@ public class ApplicationModule : IEndpointModule
                                     command.EducationOrganizationIds
                                 )
                                 && SetEquals(resolved.ProfileIds, command.ProfileIds)
-                                && SetEquals(resolved.ClientDataStoreIds, command.DataStoreIds)
+                                // The update never changes the client's data stores.
+                                && SetEquals(resolved.ClientDataStoreIds, originalState.ClientDataStoreIds)
                                 && resolved.ClientId == originalState.ClientId
                                 && resolved.IsApproved == originalState.IsApproved
                                 && resolved.ClientUuid == updateSuccess.ClientUuid;
@@ -824,20 +802,6 @@ public class ApplicationModule : IEndpointModule
                                     return Results.Json(
                                         FailureResponse.ForUnresolvedReference(
                                             "Reference 'VendorId' does not exist.",
-                                            httpContext.TraceIdentifier
-                                        ),
-                                        contentType: "application/problem+json",
-                                        statusCode: (int)HttpStatusCode.Conflict
-                                    );
-                                case ApplicationUpdateResult.FailureDataStoreNotFound:
-                                    if (!await TryCompensateAsync())
-                                    {
-                                        return FailureResults.Unknown(httpContext.TraceIdentifier);
-                                    }
-
-                                    return Results.Json(
-                                        FailureResponse.ForUnresolvedReference(
-                                            "Data store does not exist.",
                                             httpContext.TraceIdentifier
                                         ),
                                         contentType: "application/problem+json",
@@ -1106,8 +1070,18 @@ public class ApplicationModule : IEndpointModule
         var apiClientsResult = await repository.GetApplicationApiClients(id);
         switch (apiClientsResult)
         {
+            case ApplicationApiClientsResult.Success { Clients.Length: > 1 }:
+                // An application-level reset cannot tell which client's credentials to rotate.
+                return Results.Json(
+                    FailureResponse.ForConflict(
+                        "The application has more than one API client. Reset a specific client's credentials with PUT /v3/apiClients/{id}/reset-credential.",
+                        httpContext.TraceIdentifier
+                    ),
+                    contentType: "application/problem+json",
+                    statusCode: (int)HttpStatusCode.Conflict
+                );
             case ApplicationApiClientsResult.Success success:
-                var client = success.Clients.FirstOrDefault();
+                var client = success.Clients.SingleOrDefault();
                 if (client != null)
                 {
                     try
