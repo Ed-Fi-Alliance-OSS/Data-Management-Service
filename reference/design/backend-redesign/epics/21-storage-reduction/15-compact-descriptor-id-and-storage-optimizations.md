@@ -107,7 +107,7 @@ requires compatible templates to be rebuilt and verified before use.
 - Database equality alone does not establish a successful RI POST match. Preserve existing conflict behavior.
 - Descriptor PUT retains its ordinal whole-URI identity guard. Different URI text, including case-only changes, returns 400 for immutable identity, with stored values and stamps unchanged.
 - Distinct component pairs producing exactly the same URI pass the PUT identity guard; accepted component changes remain real updates under existing stamping and ETag rules.
-- An unchanged descriptor body returns 200 without changing its ETag, stamps, or change-query state.
+- An unchanged POST returns HTTP 200 and an unchanged PUT returns HTTP 204; both preserve descriptor and document IDs, ETag, content stamps, and change-query state.
 - Preserve existing authorization, descriptive-field update behavior, regular-resource identity-update rules, no-op detection, ETags, and change-version behavior.
 - Regression coverage includes mixed-case descriptor references, identical URI values across descriptor types, and descriptor types with identical resource names across projects.
 - Both providers have regression cases for distinct component pairs that reconstruct the same URI and for spaces immediately before "#" in references and descriptor-valued filters.

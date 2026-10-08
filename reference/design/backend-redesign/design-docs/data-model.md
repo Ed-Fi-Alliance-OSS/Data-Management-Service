@@ -316,8 +316,9 @@ Descriptor update semantics:
   including a case-only change, returns 400 for immutable identity without changing stamps.
   Different component pairs producing exactly the same whole URI pass that guard and persist.
 - Namespace and code value are independently compared representation fields. Accepted component
-  changes, descriptive changes and date changes receive normal stamps/ETags; an unchanged body
-  returns 200 with unchanged stamps/ETag. `ResourceKeyId` and both keys remain immutable.
+  changes, descriptive changes and date changes receive normal stamps/ETags. An unchanged POST
+  returns HTTP 200 and an unchanged PUT returns HTTP 204; both preserve IDs, ETag, content stamps,
+  and change-query state. `ResourceKeyId` and both keys remain immutable.
 - Descriptor endpoint query fields map to shared descriptor columns with root-table-only semantics, including `namespace`, `codeValue`, `shortDescription`, `description`, `effectiveBeginDate`, and `effectiveEndDate`.
 - Stable compact FKs are not rewritten by descriptor metadata updates.
 

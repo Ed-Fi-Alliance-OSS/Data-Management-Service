@@ -166,7 +166,8 @@ The current descriptor behavior on both providers is:
 - PUT by document UUID rejects different whole-URI text ordinally with immutable-identity 400,
   including case-only changes, leaving values and stamps unchanged. Different component pairs that
   reconstruct exactly the same URI pass the guard; accepted component changes still stamp.
-- An unchanged body succeeds with 200 and preserves ETag, stamps, and change-query state.
+- An unchanged POST returns HTTP 200 and an unchanged PUT returns HTTP 204; both preserve IDs,
+  ETag, content stamps, and change-query state.
   Descriptive updates and stored/proposed authorization retain their existing rules.
 - `dms.Document.ContentVersion` and `ContentLastModifiedAt` remain authoritative. Descriptor
   triggers update the owning `DocumentId` and mirror both stamps onto the compact descriptor row.
