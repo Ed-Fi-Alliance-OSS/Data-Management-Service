@@ -414,6 +414,12 @@
             "projectName": "Ed-Fi",
             "resourceName": "SchoolTypeDescriptor",
             "path": "$.choices[*].variants[*].schoolTypeDescriptor"
+          },
+          "Namespace": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.namespace"
           }
         },
         "jsonSchemaForInsert": {
@@ -470,6 +476,10 @@
                   "schoolTypeDescriptor"
                 ]
               }
+            },
+            "namespace": {
+              "type": "string",
+              "maxLength": 255
             }
           },
           "required": [
@@ -478,6 +488,12 @@
           ]
         },
         "queryFieldMapping": {
+          "itemCode": [
+            {
+              "path": "$.itemCode",
+              "type": "string"
+            }
+          ],
           "schoolTypeDescriptor": [
             {
               "path": "$.schoolTypeDescriptor",
@@ -487,7 +503,8 @@
         },
         "securableElements": {
           "Namespace": [
-            "$.schoolTypeDescriptor"
+            "$.schoolTypeDescriptor",
+            "$.namespace"
           ],
           "EducationOrganization": [],
           "Student": [],
@@ -565,6 +582,18 @@
           ]
         },
         "queryFieldMapping": {
+          "bridgeCode": [
+            {
+              "path": "$.bridgeCode",
+              "type": "string"
+            }
+          ],
+          "itemCode": [
+            {
+              "path": "$.itemReference.itemCode",
+              "type": "string"
+            }
+          ],
           "schoolTypeDescriptor": [
             {
               "path": "$.itemReference.schoolTypeDescriptor",

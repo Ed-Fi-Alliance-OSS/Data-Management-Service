@@ -69,6 +69,14 @@ public class Given_The_Parity_Scenario_Catalog
         "Api/CompactDescriptorResources/ReferencedDeleteProtection",
         "Api/CompactDescriptorResources/IdentityUpdatePropagation",
         "Api/CompactDescriptorResources/NamespaceAuthorization",
+        "Api/CompactDescriptorHistory/QualifiedDeleteRouting",
+        "Api/CompactDescriptorHistory/ProviderRecreationComparisons",
+        "Api/CompactDescriptorHistory/ResourceIdentitySnapshots",
+        "Api/CompactDescriptorHistory/ResourceRecreation",
+        "Api/CompactDescriptorHistory/ComponentUpdateAndNoOpHistory",
+        "Api/CompactDescriptorHistory/NamespaceHistoryAuthorization",
+        "Api/CompactDescriptorHistory/CustomViewLiveSeek",
+        "Api/CompactDescriptorHistory/CustomViewTombstoneProbe",
     ];
 
     private static readonly string[] ExpectedProfileIds =

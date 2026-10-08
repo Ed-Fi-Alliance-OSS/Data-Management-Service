@@ -191,6 +191,62 @@ public static partial class ParityScenarioCatalog
             "It_authorizes_custom_view_membership_by_the_owning_descriptor_document",
             fixtureSuffix: "CompactDescriptorCustomView"
         ),
+        Api(
+            "Api/CompactDescriptorHistory/QualifiedDeleteRouting",
+            "Deleted descriptor/document/RI rows retain exact external IDs, type-specific component snapshots and versions; same-named cross-project recreation suppresses only its own ResourceKeyId.",
+            "CompactDescriptorHistoryScenario.It_routes_deleted_descriptors_by_qualified_resource_key_without_live_rows",
+            "It_routes_deleted_descriptors_by_qualified_resource_key_without_live_rows",
+            fixtureSuffix: "DerivativeTrackedChanges_CompactDescriptors"
+        ),
+        Api(
+            "Api/CompactDescriptorHistory/ProviderRecreationComparisons",
+            "Descriptor recreation retains provider component collation verdicts for casing, namespace delimiter spaces, equal whole URIs with different components and extra delimiters.",
+            "CompactDescriptorHistoryScenario.It_preserves_provider_component_comparisons_for_descriptor_recreation",
+            "It_preserves_provider_component_comparisons_for_descriptor_recreation",
+            fixtureSuffix: "DerivativeTrackedChanges_CompactDescriptors"
+        ),
+        Api(
+            "Api/CompactDescriptorHistory/ResourceIdentitySnapshots",
+            "Direct and copied descriptor identity changes snapshot exact old/new URIs from compact keys; no-ops add no history and deletes survive loss of both live descriptors.",
+            "CompactDescriptorHistoryScenario.It_snapshots_direct_and_copied_descriptor_identities_for_resource_histories",
+            "It_snapshots_direct_and_copied_descriptor_identities_for_resource_histories",
+            fixtureSuffix: "DerivativeTrackedChanges_CompactDescriptors"
+        ),
+        Api(
+            "Api/CompactDescriptorHistory/ResourceRecreation",
+            "Recreated resources suppress their old deletes through the qualified descriptor compact key, preserving RI mixed-case matching and exact stored int values.",
+            "CompactDescriptorHistoryScenario.It_recreates_resources_using_compact_descriptor_identity_joins",
+            "It_recreates_resources_using_compact_descriptor_identity_joins",
+            fixtureSuffix: "DerivativeTrackedChanges_CompactDescriptors"
+        ),
+        Api(
+            "Api/CompactDescriptorHistory/ComponentUpdateAndNoOpHistory",
+            "Accepted equal-whole-URI descriptor component POST advances representation stamps without key history; identical POST/PUT preserve metadata and delete snapshots retain final components.",
+            "CompactDescriptorHistoryScenario.It_keeps_descriptor_component_updates_and_no_ops_out_of_delete_and_key_history",
+            "It_keeps_descriptor_component_updates_and_no_ops_out_of_delete_and_key_history",
+            fixtureSuffix: "DerivativeTrackedChanges_CompactDescriptors"
+        ),
+        Api(
+            "Api/CompactDescriptorHistory/NamespaceHistoryAuthorization",
+            "ReadChanges namespace filters use retained descriptor components and old resource identities after all live rows are deleted, with exact allow/deny results and counts.",
+            "CompactDescriptorHistoryScenario.It_authorizes_retained_namespaces_and_old_descriptor_identity_snapshots",
+            "It_authorizes_retained_namespaces_and_old_descriptor_identity_snapshots",
+            fixtureSuffix: "DerivativeTrackedChanges_CompactDescriptors"
+        ),
+        Api(
+            "Api/CompactDescriptorHistory/CustomViewLiveSeek",
+            "Descriptor-basis custom views use owning DocumentId for live seeks and old-key authorization; compact keys or equal-URI cross-project membership cannot authorize histories.",
+            "CompactDescriptorHistoryScenario.It_authorizes_descriptor_history_live_seeks_by_owning_document_membership",
+            "It_authorizes_descriptor_history_live_seeks_by_owning_document_membership",
+            fixtureSuffix: "DerivativeTrackedChanges_CustomView"
+        ),
+        Api(
+            "Api/CompactDescriptorHistory/CustomViewTombstoneProbe",
+            "IncludingDeletes seeks qualified descriptor tombstones and checks retained owning DocumentId membership after basis deletion, with cross-project and compact-key denial cases.",
+            "CompactDescriptorHistoryScenario.It_authorizes_descriptor_history_tombstone_probes_by_qualified_document_membership",
+            "It_authorizes_descriptor_history_tombstone_probes_by_qualified_document_membership",
+            fixtureSuffix: "DerivativeTrackedChanges_CustomViewIncludingDeletes"
+        ),
     ];
 
     private static ParityScenario Api(
