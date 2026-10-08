@@ -148,7 +148,7 @@ function Read-CompactDescriptorInventory {
     )
     foreach ($definition in @(
             @{ kind = 'Unique'; name = 'UX_Descriptor_DocumentId'; columns = @('DocumentId') },
-            @{ kind = 'ForeignKey'; name = 'FK_Descriptor_Document'; columns = @('DocumentId'); target_table = @{ schema = 'dms'; name = 'Document' }; target_columns = @('DocumentId'); on_delete = 'Cascade'; on_update = 'NoAction' }
+            @{ kind = 'ForeignKey'; name = 'FK_Descriptor_Document'; columns = @('DocumentId'); target_table = @{ schema = 'dms'; name = 'Document' }; target_columns = @('DocumentId'); on_delete = 'Restrict'; on_update = 'NoAction' }
         )) { $constraints.Add(@{ schema = 'dms'; table = 'Descriptor'; definition = $definition }) }
     foreach ($index in @(
             @{ name = 'PK_Descriptor'; table = @{ schema = 'dms'; name = 'Descriptor' }; kind = 'PrimaryKey'; is_unique = $true; key_columns = @('DescriptorId') },

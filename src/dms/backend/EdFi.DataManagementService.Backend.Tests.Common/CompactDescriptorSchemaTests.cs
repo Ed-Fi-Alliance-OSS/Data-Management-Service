@@ -310,6 +310,7 @@ public abstract class CompactDescriptorSchemaTests
     [TestCase("old_core")]
     [TestCase("missing_document_unique")]
     [TestCase("missing_document_fk")]
+    [TestCase("cascading_document_fk")]
     [TestCase("missing_uri_index")]
     [TestCase("wrong_uri_expression")]
     [TestCase("history_live_fk")]

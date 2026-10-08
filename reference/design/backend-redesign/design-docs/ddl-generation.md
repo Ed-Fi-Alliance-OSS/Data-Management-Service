@@ -266,7 +266,8 @@ document/UUID/version values, without a live-owner FK.
 
 With complete `resource_details`, each shared-descriptor resource's
 `shared_descriptor_table` reports `DescriptorId` as its `Int32` physical row identity and
-`DocumentId` as its `Int64` root locator, unique constraint and cascading document association.
+`DocumentId` as its `Int64` root locator, unique constraint and document association with
+`RESTRICT` on PostgreSQL and `NO ACTION` on SQL Server.
 Its per-resource `tables` list is empty. Core DDL supplies the native allocator, type key,
 document/resource agreement check, mirror fields and reconstructed-URI index; the SQL-free shared
 table model is not an inventory of every fixed core column. Derived indexes and tracked-change

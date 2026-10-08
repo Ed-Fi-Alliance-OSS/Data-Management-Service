@@ -69,8 +69,8 @@ BEGIN
             JOIN pg_attribute a ON a.attrelid = target AND a.attnum = k.attnum;
             IF constraint_row.contype <> 'f' OR constraint_row.confrelid IS DISTINCT FROM target
                OR actual_columns IS DISTINCT FROM definition->'target_columns'
-               OR constraint_row.confdeltype <> (CASE definition->>'on_delete' WHEN 'Cascade' THEN 'c' WHEN 'NoAction' THEN 'a' END)
-               OR constraint_row.confupdtype <> (CASE definition->>'on_update' WHEN 'Cascade' THEN 'c' WHEN 'NoAction' THEN 'a' END) THEN
+               OR constraint_row.confdeltype <> (CASE definition->>'on_delete' WHEN 'Cascade' THEN 'c' WHEN 'NoAction' THEN 'a' WHEN 'Restrict' THEN 'r' END)
+               OR constraint_row.confupdtype <> (CASE definition->>'on_update' WHEN 'Cascade' THEN 'c' WHEN 'NoAction' THEN 'a' WHEN 'Restrict' THEN 'r' END) THEN
                 RAISE EXCEPTION 'Compact descriptor baseline: FK target/actions mismatch %', item;
             END IF;
         ELSIF constraint_row.contype <> 'u' THEN

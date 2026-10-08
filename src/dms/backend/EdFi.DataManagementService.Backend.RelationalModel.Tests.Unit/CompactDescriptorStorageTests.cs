@@ -63,7 +63,7 @@ public class Given_A_Compact_Descriptor_Root(SqlDialect dialect)
         documentFk.Columns.Select(column => column.Value).Should().Equal("DocumentId");
         documentFk.TargetTable.Should().Be(new DbTableName(new("dms"), "Document"));
         documentFk.TargetColumns.Select(column => column.Value).Should().Equal("DocumentId");
-        documentFk.OnDelete.Should().Be(ReferentialAction.Cascade);
+        documentFk.OnDelete.Should().Be(ReferentialAction.Restrict);
         root.Columns.Select(column => column.ColumnName.Value).Should().NotContain("Uri", "Discriminator");
     }
 

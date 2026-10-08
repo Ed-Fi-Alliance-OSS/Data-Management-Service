@@ -66,8 +66,8 @@ BEGIN
         SET @target = OBJECT_ID(QUOTENAME(JSON_VALUE(@definition, '$.target_table.schema')) + N'.' + QUOTENAME(JSON_VALUE(@definition, '$.target_table.name')), 'U');
         SELECT @constraint = object_id FROM sys.foreign_keys WHERE parent_object_id = @relation AND name = @name COLLATE Latin1_General_100_BIN2
             AND referenced_object_id = @target AND is_disabled = 0 AND is_not_trusted = 0
-            AND delete_referential_action_desc = CASE JSON_VALUE(@definition, '$.on_delete') WHEN 'Cascade' THEN 'CASCADE' WHEN 'NoAction' THEN 'NO_ACTION' END
-            AND update_referential_action_desc = CASE JSON_VALUE(@definition, '$.on_update') WHEN 'Cascade' THEN 'CASCADE' WHEN 'NoAction' THEN 'NO_ACTION' END;
+            AND delete_referential_action_desc = CASE JSON_VALUE(@definition, '$.on_delete') WHEN 'Cascade' THEN 'CASCADE' WHEN 'NoAction' THEN 'NO_ACTION' WHEN 'Restrict' THEN 'NO_ACTION' END
+            AND update_referential_action_desc = CASE JSON_VALUE(@definition, '$.on_update') WHEN 'Cascade' THEN 'CASCADE' WHEN 'NoAction' THEN 'NO_ACTION' WHEN 'Restrict' THEN 'NO_ACTION' END;
         SELECT @actual = STRING_AGG(CONVERT(nvarchar(max), c.name), N',') WITHIN GROUP (ORDER BY k.constraint_column_id)
         FROM sys.foreign_key_columns k JOIN sys.columns c ON c.object_id = k.parent_object_id AND c.column_id = k.parent_column_id
         WHERE k.constraint_object_id = @constraint;

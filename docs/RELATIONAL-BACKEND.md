@@ -47,7 +47,8 @@ Descriptors have two independent keys:
 
 `ResourceKeyId` (`smallint`) identifies the qualified descriptor type. The descriptor
 stamping trigger enforces agreement with the owning document.
-`FK_Descriptor_Document` retains cascading deletion; `FK_Descriptor_ResourceKey` constrains
+`FK_Descriptor_Document` uses `RESTRICT` on PostgreSQL and `NO ACTION` on SQL Server;
+`FK_Descriptor_ResourceKey` constrains
 the type key to the catalog. Live descriptors have no `Discriminator`
 and no physically stored `Uri`. `UX_Descriptor_ResourceKeyId_Uri` enforces uniqueness over
 the unlowered whole `Namespace + '#' + CodeValue` within a type:

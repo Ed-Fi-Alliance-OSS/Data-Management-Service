@@ -1815,7 +1815,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     {
         _ddl.Should()
             .Contain(
-                "ADD CONSTRAINT [FK_Descriptor_Document]\nFOREIGN KEY ([DocumentId])\nREFERENCES [dms].[Document] ([DocumentId])\nON DELETE CASCADE"
+                "ADD CONSTRAINT [FK_Descriptor_Document]\nFOREIGN KEY ([DocumentId])\nREFERENCES [dms].[Document] ([DocumentId])\nON DELETE NO ACTION"
             );
     }
 
