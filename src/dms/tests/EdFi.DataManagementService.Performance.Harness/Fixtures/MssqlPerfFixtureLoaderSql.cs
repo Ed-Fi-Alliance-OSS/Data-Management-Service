@@ -289,57 +289,6 @@ public static class MssqlPerfFixtureLoaderSql
                 definition.RowCount
             ),
             new("student-visa-row-count", "SELECT COUNT(*) FROM [edfi].[StudentVisa];", definition.RowCount),
-            .. DescriptorBindingVerificationQueries(definition),
+            .. PerfDescriptorBindingVerificationQueries.Create(definition),
         ];
-
-    private static IEnumerable<PerfVerificationQuery> DescriptorBindingVerificationQueries(
-        PerfFixtureDefinition definition
-    )
-    {
-        (string Table, string Column, string Resource)[] bindings =
-        [
-            ("Student", "BirthSexDescriptor_DescriptorId", PerfFixtureDefinition.SexDescriptorResource),
-            (
-                "StudentOtherName",
-                "OtherNameTypeDescriptor_DescriptorId",
-                PerfFixtureDefinition.OtherNameTypeDescriptorResource
-            ),
-            (
-                "StudentIdentificationDocument",
-                "IdentificationDocumentUseDescriptor_DescriptorId",
-                PerfFixtureDefinition.IdentificationDocumentUseDescriptorResource
-            ),
-            (
-                "StudentIdentificationDocument",
-                "PersonalInformationVerificationDescriptor_DescriptorId",
-                PerfFixtureDefinition.PersonalInformationVerificationDescriptorResource
-            ),
-            (
-                "StudentPersonalIdentificationDocument",
-                "IdentificationDocumentUseDescriptor_DescriptorId",
-                PerfFixtureDefinition.IdentificationDocumentUseDescriptorResource
-            ),
-            (
-                "StudentPersonalIdentificationDocument",
-                "PersonalInformationVerificationDescriptor_DescriptorId",
-                PerfFixtureDefinition.PersonalInformationVerificationDescriptorResource
-            ),
-            ("StudentVisa", "VisaDescriptor_DescriptorId", PerfFixtureDefinition.VisaDescriptorResource),
-        ];
-        foreach ((string table, string column, string resource) in bindings)
-        {
-            yield return new PerfVerificationQuery(
-                $"{table}-{column}-compact-binding",
-                $"""
-                SELECT COUNT(*) FROM "edfi"."{table}" r
-                INNER JOIN "dms"."Descriptor" descriptor ON descriptor."DescriptorId" = r."{column}"
-                INNER JOIN "dms"."ResourceKey" rk ON rk."ResourceKeyId" = descriptor."ResourceKeyId"
-                WHERE descriptor."DocumentId" = {definition.DescriptorDocumentIdFor(resource)}
-                    AND rk."ProjectName" = '{PerfFixtureDefinition.ProjectName}'
-                    AND rk."ResourceName" = '{resource}';
-                """,
-                definition.RowCount
-            );
-        }
-    }
 }
