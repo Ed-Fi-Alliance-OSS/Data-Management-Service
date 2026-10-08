@@ -353,7 +353,7 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         }
 
         return new PlannedPredicate(
-            new QueryValuePredicate(column, comparisonOperator, parameterName, scalarType.Kind),
+            new QueryValuePredicate(column, comparisonOperator, parameterName),
             convertedValue!
         );
     }
@@ -412,7 +412,7 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         }
 
         return new PlannedPredicate(
-            new QueryValuePredicate(column, comparisonOperator, parameterName, ScalarKind.Int32),
+            new QueryValuePredicate(column, comparisonOperator, parameterName),
             descriptorId
         );
     }
@@ -469,8 +469,7 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
                 new QueryValuePredicate(
                     contentVersionColumn,
                     QueryComparisonOperator.GreaterThanOrEqual,
-                    MinChangeVersionParameterName,
-                    ScalarKind.Int64
+                    MinChangeVersionParameterName
                 )
             );
             parameterValues[MinChangeVersionParameterName] = minChangeVersion;
@@ -482,8 +481,7 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
                 new QueryValuePredicate(
                     contentVersionColumn,
                     QueryComparisonOperator.LessThanOrEqual,
-                    MaxChangeVersionParameterName,
-                    ScalarKind.Int64
+                    MaxChangeVersionParameterName
                 )
             );
             parameterValues[MaxChangeVersionParameterName] = maxChangeVersion;

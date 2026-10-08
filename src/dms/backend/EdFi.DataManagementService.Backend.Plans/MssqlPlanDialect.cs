@@ -15,7 +15,6 @@ namespace EdFi.DataManagementService.Backend.Plans;
 internal sealed class MssqlPlanDialect : IPlanSqlDialect
 {
     private static readonly DbTableName DocumentTable = new(new DbSchemaName("dms"), "Document");
-    private const string BinaryStringEqualityCollation = "Latin1_General_100_BIN2";
 
     /// <inheritdoc />
     public SqlDialect Dialect => SqlDialect.Mssql;
@@ -235,8 +234,7 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
         string tableAlias,
         DbColumnName column,
         string operatorToken,
-        string parameterName,
-        ScalarKind? scalarKind
+        string parameterName
     )
     {
         ArgumentNullException.ThrowIfNull(writer);
@@ -244,13 +242,14 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
         ArgumentNullException.ThrowIfNull(operatorToken);
         ArgumentNullException.ThrowIfNull(parameterName);
 
-        writer.Append($"{tableAlias}.").AppendQuoted(column.Value);
-
-        if (scalarKind == ScalarKind.String && string.Equals(operatorToken, "=", StringComparison.Ordinal))
-        {
-            writer.Append($" COLLATE {BinaryStringEqualityCollation}");
-        }
-
-        writer.Append(" ").Append(operatorToken).Append(" ").AppendParameter(parameterName);
+        // No query-side COLLATE: string predicates follow the column collation, which keeps index seeks
+        // available and gives identity columns their pinned identity collation.
+        writer
+            .Append($"{tableAlias}.")
+            .AppendQuoted(column.Value)
+            .Append(" ")
+            .Append(operatorToken)
+            .Append(" ")
+            .AppendParameter(parameterName);
     }
 }

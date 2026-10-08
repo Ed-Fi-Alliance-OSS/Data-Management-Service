@@ -179,8 +179,7 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
                 new QueryValuePredicate(
                     new DbColumnName(ContentVersionColumnName),
                     QueryComparisonOperator.GreaterThanOrEqual,
-                    MinChangeVersionParameterName,
-                    ScalarKind.Int64
+                    MinChangeVersionParameterName
                 )
             );
         }
@@ -191,8 +190,7 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
                 new QueryValuePredicate(
                     new DbColumnName(ContentVersionColumnName),
                     QueryComparisonOperator.LessThanOrEqual,
-                    MaxChangeVersionParameterName,
-                    ScalarKind.Int64
+                    MaxChangeVersionParameterName
                 )
             );
         }
@@ -258,20 +256,8 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
                 $"Descriptor query page planning requires descriptor column metadata for query field "
                     + $"'{supportedField.QueryFieldName}' with value kind '{supportedField.ValueKind}'."
             );
-        var scalarKind =
-            supportedField.ScalarKind
-            ?? throw new InvalidOperationException(
-                $"Descriptor query page planning requires scalar metadata for query field "
-                    + $"'{supportedField.QueryFieldName}' with value kind '{supportedField.ValueKind}'."
-            );
-
         // Descriptor columns live on the dms.Descriptor page keyset root itself.
-        return new QueryValuePredicate(
-            descriptorColumn,
-            QueryComparisonOperator.Equal,
-            parameterName,
-            scalarKind
-        );
+        return new QueryValuePredicate(descriptorColumn, QueryComparisonOperator.Equal, parameterName);
     }
 
     private static void ValidatePreprocessedValueKindOrThrow(PreprocessedDescriptorQueryElement queryElement)
