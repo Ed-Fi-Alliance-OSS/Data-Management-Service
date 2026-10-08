@@ -101,7 +101,10 @@ The descriptor stamping trigger copies insert stamps from its owning document; c
 stored representation fields stamp that document and mirror the result back to the descriptor.
 SQL Server pairs descriptor `inserted`/`deleted` rows by `DescriptorId` while stamping and
 mirroring through `DocumentId`. The trigger also rejects descriptor `ResourceKeyId` drift
-from the document; the resource-key catalog FK and document delete cascade remain.
+from the document; the resource-key catalog FK remains. `FK_Descriptor_Document` is a
+safety-net FK with `RESTRICT` on PostgreSQL and `NO ACTION` on SQL Server. Delete the
+descriptor before its owning document in the same transaction so stamping and tombstone
+capture can read the document metadata before it is removed.
 
 There is no live descriptor discriminator or physically stored URI. URI consumers reconstruct
 the whole `Namespace + '#' + CodeValue`; SQL Server's non-persisted computed URI exists for
