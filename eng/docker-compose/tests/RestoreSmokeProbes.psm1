@@ -58,6 +58,17 @@ $script:ImageBuildDefinitions = @(
 )
 $script:PublishedDmsRepository = "edfialliance/ed-fi-api"
 
+# The served-data probe (Test-RestoreSmokeApiRead) uses the repository's own helpers: env-utility
+# resolves the ports and the bootstrap admin client exactly as the configure phase does, and the
+# CMS/DMS calls are the Dms-Management and SmokeTest functions the bootstrap flows use.
+Import-Module (Join-Path $PSScriptRoot "../env-utility.psm1")
+Import-Module (Join-Path $PSScriptRoot "../../smoke_test/modules/SmokeTest.psm1")
+Import-Module (Join-Path $PSScriptRoot "../../Dms-Management.psm1")
+
+# Relative to the DMS base URL. Descriptors exist in every seeded template; schools only in Populated.
+$script:ApiProbeDescriptorPath = "data/ed-fi/academicSubjectDescriptors?limit=5"
+$script:ApiProbeSchoolPath = "data/ed-fi/schools?limit=5"
+
 function ConvertTo-RestoreSmokeLogSafeText {
     <#
     .SYNOPSIS
@@ -1188,6 +1199,396 @@ function Get-RestoreSmokePackageProvenance {
     return [pscustomobject]$record
 }
 
+function ConvertTo-RestoreSmokeRedactedText {
+    <#
+    .SYNOPSIS
+    Log-safe text in which every supplied secret (a client secret or a bearer token) is replaced by
+    ***. Used for messages built from a helper's exception, whose text the probe does not control.
+    #>
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Value,
+
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [string[]]$Secret = @()
+    )
+
+    $text = [string]$Value
+    foreach ($item in @($Secret | Where-Object { -not [string]::IsNullOrEmpty($_) })) {
+        $text = $text.Replace($item, "***")
+    }
+    return (ConvertTo-RestoreSmokeLogSafeText $text)
+}
+
+function Resolve-RestoreSmokeApiEndpoint {
+    <#
+    .SYNOPSIS
+    The CMS and DMS base URLs and the bootstrap admin client of the stack an env file starts, read
+    with the helpers the configure phase uses (Resolve-CmsBaseUrl, Resolve-DockerLocalDmsBaseUrl,
+    Resolve-BootstrapAdminClient). The engine, Data Standard, and image overlays the wrappers compose
+    set none of these keys. A multi-tenant stack is refused: its data stores are tenant-scoped and
+    its DMS routes carry a tenant segment, which the probe does not model.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$EnvironmentFile
+    )
+
+    $values = ReadValuesFromEnvFile -EnvironmentFile $EnvironmentFile
+    $multiTenancy = [string](Get-EnvValue -EnvValues $values -Name "DMS_CONFIG_MULTI_TENANCY" -DefaultValue "false")
+    if ($multiTenancy.Trim().Trim('"').Trim("'") -ine "false") {
+        throw "The served-data probe supports only a single-tenant stack, but DMS_CONFIG_MULTI_TENANCY is '$(ConvertTo-RestoreSmokeLogSafeText $multiTenancy)' in '$EnvironmentFile'."
+    }
+
+    return [pscustomobject]@{
+        CmsUrl      = ([string](Resolve-CmsBaseUrl -EnvValues $values)).TrimEnd("/")
+        DmsUrl      = ([string](Resolve-DockerLocalDmsBaseUrl -EnvValues $values)).TrimEnd("/")
+        AdminClient = Resolve-BootstrapAdminClient -EnvValues $values
+    }
+}
+
+function New-RestoreSmokeApiSession {
+    <#
+    .SYNOPSIS
+    The served-data probe's per-stack credential cache. The first Test-RestoreSmokeApiRead against a
+    started stack fills it (one smoke application, one DMS token); every later probe request against
+    that stack reuses the token. Reset-RestoreSmokeApiSession empties it whenever the stack is torn
+    down or started again. The token is held only here and is never logged or recorded.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Creates an in-memory record only.')]
+    param()
+
+    return [pscustomobject]@{
+        StackGeneration   = 0
+        Token             = $null
+        DataStore         = $null
+        TokenRequestCount = 0
+    }
+}
+
+function Reset-RestoreSmokeApiSession {
+    <#
+    .SYNOPSIS
+    Forgets the cached token and data-store selection, so the next probe obtains new ones. The smoke
+    calls it before every teardown and every wrapper run, because each recreates the stack.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Clears an in-memory record only.')]
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Session
+    )
+
+    $Session.Token = $null
+    $Session.DataStore = $null
+    $Session.StackGeneration++
+}
+
+function Select-RestoreSmokeDataStore {
+    <#
+    .SYNOPSIS
+    The one route-unqualified CMS data store whose stored connection string has the selected engine's
+    form and names the restored target database. No match, or more than one, throws, listing every
+    data store by id and name with the reason it was or was not selected. Connection strings carry
+    credentials, so only the parsed database name is ever reported.
+    #>
+    param(
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [object[]]$DataStores,
+
+        [Parameter(Mandatory)]
+        [string]$TargetDatabaseName,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine
+    )
+
+    # The keys configure-local-data-store.ps1 writes: host/database for PostgreSQL, Server/Database
+    # for SQL Server (Data Source / Initial Catalog are the SqlClient synonyms).
+    $engineKeys = @("Host")
+    $databaseKeys = @("Database")
+    if ($DatabaseEngine -eq "mssql") {
+        $engineKeys = @("Server", "Data Source")
+        $databaseKeys = @("Database", "Initial Catalog")
+    }
+
+    $records = [System.Collections.Generic.List[object]]::new()
+    foreach ($dataStore in @($DataStores | Where-Object { $null -ne $_ })) {
+        $record = [ordered]@{ Id = $null; Name = $null; DatabaseName = $null; Selected = $false; Reason = $null }
+        $records.Add($record)
+
+        $record.Name = ConvertTo-RestoreSmokeLogSafeText ([string](Get-RestoreSmokeEvidenceValue $dataStore "name"))
+        $parsedId = [long]0
+        if (-not [long]::TryParse([string](Get-RestoreSmokeEvidenceValue $dataStore "id"), [System.Globalization.NumberStyles]::None, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$parsedId) -or $parsedId -lt 1) {
+            $record.Reason = "it has no positive integer id"
+            continue
+        }
+        $record.Id = $parsedId
+
+        $contextList = Get-RestoreSmokeEvidenceValue $dataStore "dataStoreContexts"
+        if ($contextList -is [string]) {
+            $record.Reason = "its route contexts are not a list"
+            continue
+        }
+        $contexts = @()
+        if ($null -ne $contextList) {
+            $contexts = @(@($contextList) | Where-Object { $null -ne $_ })
+        }
+        if ($contexts.Count -gt 0) {
+            $pairs = @($contexts | ForEach-Object {
+                    "$(ConvertTo-RestoreSmokeLogSafeText ([string](Get-RestoreSmokeEvidenceValue $_ 'contextKey')))=$(ConvertTo-RestoreSmokeLogSafeText ([string](Get-RestoreSmokeEvidenceValue $_ 'contextValue')))"
+                })
+            $record.Reason = "it is route-qualified ($($pairs -join ', '))"
+            continue
+        }
+
+        $connectionString = [string](Get-RestoreSmokeEvidenceValue $dataStore "connectionString")
+        if ([string]::IsNullOrWhiteSpace($connectionString)) {
+            $record.Reason = "CMS returned no connection string for it"
+            continue
+        }
+        $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+        try {
+            # The setter, not property syntax: PowerShell adapts the builder as a dictionary, so
+            # "$builder.ConnectionString = ..." would only add a key named ConnectionString.
+            $builder.set_ConnectionString($connectionString)
+        }
+        catch {
+            $record.Reason = "its connection string could not be parsed"
+            continue
+        }
+        if (@($engineKeys | Where-Object { $builder.ContainsKey($_) }).Count -eq 0) {
+            $record.Reason = "its connection string is not the $DatabaseEngine form (no $($engineKeys -join ' or ') key)"
+            continue
+        }
+        $databaseNames = @($databaseKeys | Where-Object { $builder.ContainsKey($_) } | ForEach-Object { [string]$builder[$_] })
+        if ($databaseNames.Count -ne 1) {
+            $record.Reason = "its connection string names $($databaseNames.Count) databases"
+            continue
+        }
+        $record.DatabaseName = ConvertTo-RestoreSmokeLogSafeText $databaseNames[0]
+        if ($databaseNames[0] -cne $TargetDatabaseName) {
+            $record.Reason = "it targets database '$($record.DatabaseName)', not '$TargetDatabaseName'"
+            continue
+        }
+        $record.Selected = $true
+        $record.Reason = "route-unqualified $DatabaseEngine data store for '$TargetDatabaseName'"
+    }
+
+    $candidates = @($records | ForEach-Object { [pscustomobject]$_ })
+    $selected = @($candidates | Where-Object { $_.Selected })
+    $listing = ($candidates | ForEach-Object { "id=$($_.Id) name='$($_.Name)': $($_.Reason)" }) -join "; "
+    if ($selected.Count -eq 0) {
+        $detail = ""
+        if ($candidates.Count -gt 0) {
+            $detail = ": $listing"
+        }
+        throw "No route-unqualified data store targets the restored database '$TargetDatabaseName' ($($candidates.Count) listed$detail)."
+    }
+    if ($selected.Count -gt 1) {
+        throw "$($selected.Count) route-unqualified data stores target the restored database '$TargetDatabaseName' (ids $(($selected | ForEach-Object { $_.Id }) -join ', ')); the probe needs exactly one. Listed: $listing."
+    }
+
+    return [pscustomobject]@{
+        DataStoreId = $selected[0].Id
+        Name        = $selected[0].Name
+        Candidates  = $candidates
+    }
+}
+
+function Get-RestoreSmokeJsonArrayLength {
+    <#
+    .SYNOPSIS
+    Classifies a response body with System.Text.Json rather than ConvertFrom-Json, whose collection
+    conversion hides the shape: PowerShell unrolls an empty array to nothing and a one-element array
+    to its element, which then looks like an object. Returns the length only for a JSON array whose
+    elements are all objects; anything else returns the reason it is not one.
+    #>
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Content
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Content)) {
+        return [pscustomobject]@{ IsArray = $false; Length = $null; Reason = "the body is empty" }
+    }
+    try {
+        $document = [System.Text.Json.JsonDocument]::Parse($Content)
+    }
+    catch {
+        return [pscustomobject]@{ IsArray = $false; Length = $null; Reason = "the body is not a single JSON value" }
+    }
+    try {
+        $root = $document.RootElement
+        if ($root.ValueKind -ne [System.Text.Json.JsonValueKind]::Array) {
+            return [pscustomobject]@{ IsArray = $false; Length = $null; Reason = "the body's JSON root is $($root.ValueKind.ToString().ToLowerInvariant()), not an array" }
+        }
+        $index = 0
+        foreach ($element in $root.EnumerateArray()) {
+            if ($element.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) {
+                return [pscustomobject]@{ IsArray = $false; Length = $null; Reason = "array element $index is $($element.ValueKind.ToString().ToLowerInvariant()), not a resource object" }
+            }
+            $index++
+        }
+        return [pscustomobject]@{ IsArray = $true; Length = $root.GetArrayLength(); Reason = $null }
+    }
+    finally {
+        $document.Dispose()
+    }
+}
+
+function Invoke-RestoreSmokeApiGet {
+    <#
+    .SYNOPSIS
+    One authenticated GET, returning the status code and the raw body whatever the status.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$Uri,
+
+        [Parameter(Mandatory)]
+        [string]$Token
+    )
+
+    $response = Invoke-WebRequest -Uri $Uri -Method Get -Headers @{ Authorization = "Bearer $Token" } -SkipHttpErrorCheck -TimeoutSec 30 -ErrorAction Stop
+    $content = $response.Content
+    if ($content -is [byte[]]) {
+        $content = [System.Text.Encoding]::UTF8.GetString($content)
+    }
+    return [pscustomobject]@{ StatusCode = [int]$response.StatusCode; Content = [string]$content }
+}
+
+function Test-RestoreSmokeApiRead {
+    <#
+    .SYNOPSIS
+    The authenticated served-data probe. Reads the restored data through the DMS API and throws
+    unless every read returns HTTP 200 with a JSON array of resource objects. Returns the evidence
+    record; no token or secret appears in it or in any message.
+
+    .DESCRIPTION
+    academicSubjectDescriptors must be a non-empty array. -SchemaOnly (the source was not seeded)
+    accepts an empty array and reports the read as schema-only. -RequirePopulatedData also requires
+    a non-empty schools array.
+
+    Credentials and token budget: the first call against a stack lists the CMS data stores with the
+    bootstrap admin client, selects the one route-unqualified data store for the restored target,
+    creates the smoke application bound to it (Get-SmokeTestCredential), waits until CMS accepts the
+    new client (Wait-CmsClientAvailable; OpenIddict surfaces new applications asynchronously), and
+    calls Get-DmsToken once. Every later read against the same stack reuses that token, until
+    Reset-RestoreSmokeApiSession. The CMS per-client token limit keeps its default.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Session,
+
+        [Parameter(Mandatory)]
+        [pscustomobject]$Endpoint,
+
+        [Parameter(Mandatory)]
+        [string]$TargetDatabaseName,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [switch]$RequirePopulatedData,
+
+        [switch]$SchemaOnly
+    )
+
+    if ($RequirePopulatedData -and $SchemaOnly) {
+        throw "A Populated served-data read needs a seeded source; -SchemaOnly cannot be combined with -RequirePopulatedData."
+    }
+
+    $adminSecret = [string]$Endpoint.AdminClient.ClientSecret
+    $tokenReused = $null -ne $Session.Token
+    if (-not $tokenReused) {
+        $cmsToken = $null
+        try {
+            $cmsToken = Get-CmsToken -CmsUrl $Endpoint.CmsUrl -ClientId ([string]$Endpoint.AdminClient.ClientId) -ClientSecret $adminSecret
+            $dataStores = @(Get-DataStore -CmsUrl $Endpoint.CmsUrl -AccessToken $cmsToken)
+        }
+        catch {
+            throw "The served-data probe could not list the CMS data stores: $(ConvertTo-RestoreSmokeRedactedText $_.Exception.Message -Secret @($adminSecret, $cmsToken))"
+        }
+        $selection = Select-RestoreSmokeDataStore -DataStores $dataStores -TargetDatabaseName $TargetDatabaseName -DatabaseEngine $DatabaseEngine
+
+        $applicationSecret = $null
+        $token = $null
+        try {
+            $credential = Get-SmokeTestCredential -ConfigServiceUrl $Endpoint.CmsUrl -DataStoreIds @($selection.DataStoreId)
+            $applicationSecret = [string]$credential.Secret
+            Wait-CmsClientAvailable -CmsUrl $Endpoint.CmsUrl -ClientId ([string]$credential.Key) -ClientSecret $applicationSecret
+            $Session.TokenRequestCount++
+            $token = Get-DmsToken -DmsUrl $Endpoint.DmsUrl -Key ([string]$credential.Key) -Secret $applicationSecret
+        }
+        catch {
+            throw "The served-data probe could not obtain a DMS token for data store $($selection.DataStoreId): $(ConvertTo-RestoreSmokeRedactedText $_.Exception.Message -Secret @($adminSecret, $cmsToken, $applicationSecret, $token))"
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$token)) {
+            throw "The served-data probe received no DMS token for data store $($selection.DataStoreId)."
+        }
+        $Session.Token = [string]$token
+        $Session.DataStore = $selection
+    }
+
+    $resources = [System.Collections.Generic.List[object]]::new()
+    $resources.Add([pscustomobject]@{ Name = "academicSubjectDescriptors"; Path = $script:ApiProbeDescriptorPath; AllowEmpty = [bool]$SchemaOnly })
+    if ($RequirePopulatedData) {
+        $resources.Add([pscustomobject]@{ Name = "schools"; Path = $script:ApiProbeSchoolPath; AllowEmpty = $false })
+    }
+
+    $reads = [System.Collections.Generic.List[object]]::new()
+    foreach ($resource in $resources) {
+        $uri = "$($Endpoint.DmsUrl.TrimEnd('/'))/$($resource.Path)"
+        try {
+            $response = Invoke-RestoreSmokeApiGet -Uri $uri -Token $Session.Token
+        }
+        catch {
+            throw "GET $uri failed: $(ConvertTo-RestoreSmokeRedactedText $_.Exception.Message -Secret @($Session.Token))"
+        }
+        if ($response.StatusCode -ne 200) {
+            $body = ConvertTo-RestoreSmokeRedactedText $response.Content -Secret @($Session.Token)
+            if ($body.Length -gt 200) {
+                $body = $body.Substring(0, 200) + "..."
+            }
+            throw "GET $uri returned HTTP $($response.StatusCode); the served-data probe requires 200. Body: $body"
+        }
+        $shape = Get-RestoreSmokeJsonArrayLength -Content $response.Content
+        if (-not $shape.IsArray) {
+            throw "GET $uri returned HTTP 200, but $($shape.Reason); the served-data probe requires a JSON array of $($resource.Name)."
+        }
+        if ($shape.Length -lt 1 -and -not $resource.AllowEmpty) {
+            throw "GET $uri returned an empty array; the restored $($resource.Name) were not served."
+        }
+        $reads.Add([pscustomobject]@{ Resource = $resource.Name; Uri = $uri; StatusCode = $response.StatusCode; Count = $shape.Length })
+    }
+
+    $mode = "seeded"
+    if ($RequirePopulatedData) {
+        $mode = "populated"
+    }
+    elseif ($SchemaOnly) {
+        $mode = "schema-only"
+    }
+    return [pscustomobject]@{
+        Mode                = $mode
+        CmsUrl              = $Endpoint.CmsUrl
+        DmsUrl              = $Endpoint.DmsUrl
+        DataStoreId         = $Session.DataStore.DataStoreId
+        DataStoreName       = $Session.DataStore.Name
+        DataStoreCandidates = $Session.DataStore.Candidates
+        StackGeneration     = $Session.StackGeneration
+        TokenReused         = $tokenReused
+        TokenRequestCount   = $Session.TokenRequestCount
+        Reads               = @($reads)
+    }
+}
+
 function Get-RestoreSmokeEvidenceValue {
     <#
     .SYNOPSIS
@@ -1450,4 +1851,10 @@ Export-ModuleMember -Function `
     Get-RestoreSmokeStackObservation, `
     Get-RestoreSmokeEffectiveSchemaPackageList, `
     Get-RestoreSmokePackageProvenance, `
+    Resolve-RestoreSmokeApiEndpoint, `
+    New-RestoreSmokeApiSession, `
+    Reset-RestoreSmokeApiSession, `
+    Select-RestoreSmokeDataStore, `
+    Get-RestoreSmokeJsonArrayLength, `
+    Test-RestoreSmokeApiRead, `
     Get-RestoreSmokeResultClassification

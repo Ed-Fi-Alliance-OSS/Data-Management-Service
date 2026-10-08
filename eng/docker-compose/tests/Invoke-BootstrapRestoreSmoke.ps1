@@ -21,8 +21,8 @@
 
     Legs (select with -Leg; each leg starts from its own stack state):
       package-directory   Full restore via -PackageDirectory on a fresh volume; asserts DMS
-                          health, the restored dms.EffectiveSchema singleton, and (when the
-                          source was seeded) restored descriptor rows.
+                          health, the restored dms.EffectiveSchema singleton, (when the source
+                          was seeded) restored descriptor rows, and the served-data API read.
       separate-config     Same restore with -SeparateConfigDatabase against a pre-existing
                           separate-topology stack; asserts a marker table planted in
                           edfi_configurationservice BEFORE the restore survives it.
@@ -42,7 +42,8 @@
       running-stack       Attempts a restore while the stack is RUNNING; asserts the stop
                           proof refuses, naming the running containers.
       populated           Opt-in: the package-directory shape built from a Populated-seeded
-                          source, adding the non-descriptor document count probe. Long.
+                          source, adding the non-descriptor document count probe and the schools
+                          API read. Long.
 
     Prerequisites: an ISOLATED Docker daemon (see Foreign stacks); pwsh 7+; the .NET SDK (the
     smoke builds api-schema-tools); network access for the image builds and the source
@@ -73,6 +74,15 @@
     classifies the run: it is final evidence only when every one of those was observed and
     matched, the worktree was clean throughout, and -ExploratoryPackage was not set; otherwise it
     lists the reasons it is not.
+
+    Served data: every successful restore is also read back through the DMS API with a bearer
+    token. The bootstrap admin client lists the CMS data stores; exactly one route-unqualified data
+    store must target the restored database. A smoke application bound to it gets one DMS token,
+    which every probe request against that stack reuses; a teardown or wrapper run discards it.
+    academicSubjectDescriptors must answer HTTP 200 with a non-empty JSON array (with
+    -SkipSourceSeed an empty array passes and is reported as schema-only), and the populated leg
+    also reads schools. The CMS per-client token limit keeps its default. Endpoints, data-store
+    selection, and read counts go to the results; tokens and secrets never do.
 
     Trust: the smoke NEVER bypasses attestation. It registers an ephemeral development
     producer (restore-smoke-<hex>) in the git-ignored local trust overlay via
@@ -116,7 +126,8 @@
 
 .PARAMETER SkipSourceSeed
     Build the source datastore without seeding (schema only). Faster; descriptor-content
-    probes are skipped. The default seeds the Minimal template so the restored data is real.
+    probes are skipped, and the API read accepts an empty descriptor array (reported as
+    schema-only). The default seeds the Minimal template so the restored data is real.
 
 .PARAMETER ResultsPath
     Optional path; if supplied, writes the run's JSON summary: status, steps (status + timings),
@@ -185,6 +196,8 @@ $script:SmokeProducerRegistered = $false
 Import-Module (Join-Path $PSScriptRoot "RestoreSmokeProbes.psm1") -Force
 
 $script:RunId = [Guid]::NewGuid().ToString("N").Substring(0, 12)
+# One DMS token per started stack (Test-RestoreSmokeApiRead); cleared by every teardown and wrapper run.
+$script:ApiSession = New-RestoreSmokeApiSession
 $script:WrapperProfile = Get-RestoreSmokeWrapperProfile -Wrapper $Wrapper
 $script:DataStandardVersionSupplied = $PSBoundParameters.ContainsKey("DataStandardVersion")
 $script:ResolvedStandardVersion = Resolve-RestoreSmokeStandardVersion -StandardVersion $StandardVersion -DataStandardVersion $DataStandardVersion
@@ -216,6 +229,7 @@ $script:Provenance = [ordered]@{
     ForwardedImageKeys           = $null
     StackObservations            = [System.Collections.Generic.List[object]]::new()
     Packages                     = [System.Collections.Generic.List[object]]::new()
+    ApiReads                     = [System.Collections.Generic.List[object]]::new()
     SourceIdentity               = $null
     SourceIdentityReason         = "the pre-backup SourceIdentity capture is not implemented yet (Step 2.3)"
 }
@@ -301,6 +315,7 @@ function Invoke-SmokeTeardown {
     if (-not $script:TeardownAuthorized) {
         throw "Teardown of '$($WrapperProfile.ComposeProject)' was requested before the foreign-stack preflight authorized any Docker change."
     }
+    Reset-RestoreSmokeApiSession -Session $script:ApiSession
 
     Push-Location $script:DockerComposeRoot
     try {
@@ -411,6 +426,7 @@ function Invoke-RestoreWrapper {
         -DataStandardVersion $DataStandardVersion `
         -DataStandardVersionSupplied $script:DataStandardVersionSupplied
 
+    Reset-RestoreSmokeApiSession -Session $script:ApiSession
     Push-Location $script:DockerComposeRoot
     try {
         $global:LASTEXITCODE = 0
@@ -427,11 +443,14 @@ function Invoke-RestoreWrapper {
 function Assert-RestoredDatastore {
     <#
     .SYNOPSIS
-    The post-restore probes: DMS health, the dms.EffectiveSchema singleton, and (when the
-    source was seeded) at least one restored descriptor row.
+    The post-restore probes: DMS health, the dms.EffectiveSchema singleton, (when the source
+    was seeded) at least one restored descriptor row, and the authenticated served-data read
+    through the DMS API of the stack -EnvironmentFile started.
     #>
     param(
-        [switch]$RequirePopulatedData
+        [switch]$RequirePopulatedData,
+
+        [string]$EnvironmentFile = $script:ResolvedEnvironmentFile
     )
 
     Wait-SmokeDmsHealth
@@ -474,6 +493,19 @@ function Assert-RestoredDatastore {
         }
         Write-Host "[restore-smoke] restored populated documents: $populatedCount"
     }
+
+    $apiEndpoint = Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $EnvironmentFile
+    $apiRead = Test-RestoreSmokeApiRead `
+        -Session $script:ApiSession `
+        -Endpoint $apiEndpoint `
+        -TargetDatabaseName $script:TargetDatabaseName `
+        -DatabaseEngine $DatabaseEngine `
+        -RequirePopulatedData:$RequirePopulatedData `
+        -SchemaOnly:$SkipSourceSeed
+    $apiRead | Add-Member -NotePropertyName Label -NotePropertyValue ([string]$script:CurrentStepName)
+    $script:Provenance.ApiReads.Add($apiRead)
+    $readSummary = ($apiRead.Reads | ForEach-Object { "$($_.Resource)=$($_.Count)" }) -join ", "
+    Write-Host "[restore-smoke] served-data API read ($($apiRead.Mode)): data store $($apiRead.DataStoreId), HTTP 200, $readSummary (token reused: $($apiRead.TokenReused))"
 }
 
 function Build-SmokeSourceAndPackage {
@@ -806,7 +838,7 @@ try {
                 DatabaseEngine  = $DatabaseEngine
                 RestoreTemplate = "Minimal"
             }
-            Assert-RestoredDatastore
+            Assert-RestoredDatastore -EnvironmentFile $feedEnvironmentFile
         }
         Invoke-SmokeStep -Name "leg-directory-feed-teardown" -Body { Invoke-SmokeTeardown }
     }

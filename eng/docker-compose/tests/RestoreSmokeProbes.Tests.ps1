@@ -6,10 +6,10 @@
 #Requires -Version 7
 
 # Behavioral tests for the restore smoke's decision and evidence helpers (RestoreSmokeProbes.psm1)
-# and for the smoke's complete foreign-stack rejection path. No test reaches a real Docker daemon:
-# module tests mock docker/dotnet/pwsh, and the rejection-path tests run a sandbox copy of the
-# smoke in a child pwsh whose start/bootstrap scripts are logging stubs and whose docker/dotnet
-# are logging fakes.
+# and for the smoke's complete foreign-stack rejection path. No test reaches a real Docker daemon
+# or a real CMS/DMS: module tests mock docker/dotnet/pwsh and the CMS/DMS helpers, and the
+# rejection-path tests run a sandbox copy of the smoke in a child pwsh whose start/bootstrap
+# scripts are logging stubs and whose docker/dotnet are logging fakes.
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification = 'Mock bodies execute in the mocked module''s session state, where test-scope locals are invisible; global variables are the documented crossing mechanism and are removed in AfterAll.')]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Test helpers mirror the module''s plural-noun contracts.')]
@@ -53,7 +53,7 @@ AfterAll {
     if ($script:createdDockerFallback) {
         Remove-Item function:global:docker -ErrorAction SilentlyContinue
     }
-    Remove-Variable -Name RestoreSmokeTestDocker, RestoreSmokeTestTargetDir, RestoreSmokeTestPwshExit, RestoreSmokeImageTestState, RestoreSmokeTestVolumes, RestoreSmokeTestVolumeCalls -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name RestoreSmokeTestDocker, RestoreSmokeTestTargetDir, RestoreSmokeTestPwshExit, RestoreSmokeImageTestState, RestoreSmokeTestVolumes, RestoreSmokeTestVolumeCalls, RestoreSmokeApiTest -Scope Global -ErrorAction SilentlyContinue
 }
 
 Describe "Get-RestoreSmokeWrapperProfile" {
@@ -1230,6 +1230,511 @@ Describe "Get-RestoreSmokeSourceRevision" {
     }
 }
 
+Describe "Served-data API probe" {
+    BeforeAll {
+        $script:pgConnection = "host=dms-postgresql;port=5432;username=postgres;password=Pg-S3cret!;database=edfi_datamanagementservice"
+        $script:mssqlConnection = "Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=Ms-S3cret!;TrustServerCertificate=true"
+        $script:target = "edfi_datamanagementservice"
+        $script:descriptorUri = "http://localhost:18080/data/ed-fi/academicSubjectDescriptors?limit=5"
+        $script:schoolUri = "http://localhost:18080/data/ed-fi/schools?limit=5"
+
+        # The shape Get-DataStore returns (Invoke-RestMethod objects, camelCase CMS properties).
+        function script:New-TestDataStore {
+            param(
+                [object]$Id,
+                [string]$Name = "Local Development Data Store",
+                [AllowNull()]
+                [object]$ConnectionString = $script:pgConnection,
+                [object]$Contexts = @()
+            )
+
+            return [pscustomobject]@{ id = $Id; dataStoreType = "Development"; name = $Name; connectionString = $ConnectionString; dataStoreContexts = $Contexts }
+        }
+
+        function script:New-TestEndpoint {
+            return [pscustomobject]@{
+                CmsUrl      = "http://localhost:18081"
+                DmsUrl      = "http://localhost:18080"
+                AdminClient = [pscustomobject]@{ ClientId = "dms-data-store-admin"; ClientSecret = "Admin-S3cret!" }
+            }
+        }
+    }
+
+    Context "Resolve-RestoreSmokeApiEndpoint" {
+        It "reads the stack's ports and bootstrap admin client from the env file" {
+            $file = Join-Path $TestDrive "endpoint.env"
+            Set-Content -LiteralPath $file -Value @(
+                "DMS_HTTP_PORTS=18080"
+                "DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081"
+                "DMS_BOOTSTRAP_ADMIN_CLIENT_ID=custom-admin"
+                "DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=Custom-S3cret!"
+                "DMS_CONFIG_MULTI_TENANCY=false"
+            )
+
+            $endpoint = Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $file
+
+            $endpoint.CmsUrl | Should -Be "http://localhost:18081"
+            $endpoint.DmsUrl | Should -Be "http://localhost:18080"
+            $endpoint.AdminClient.ClientId | Should -Be "custom-admin"
+            $endpoint.AdminClient.ClientSecret | Should -Be "Custom-S3cret!"
+        }
+
+        It "falls back to the defaults the configure phase uses when the keys are absent" {
+            $file = Join-Path $TestDrive "defaults.env"
+            Set-Content -LiteralPath $file -Value "POSTGRES_DB_NAME=edfi_datamanagementservice"
+
+            $endpoint = Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $file
+
+            $endpoint.CmsUrl | Should -Be "http://localhost:8081"
+            $endpoint.DmsUrl | Should -Be "http://localhost:8080"
+            $endpoint.AdminClient.ClientId | Should -Be "dms-data-store-admin"
+        }
+
+        It "refuses a multi-tenant stack (DMS_CONFIG_MULTI_TENANCY=<value>)" -ForEach @(
+            @{ Value = "true" }
+            @{ Value = "True" }
+            @{ Value = '"true"' }
+        ) {
+            $file = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N") + ".env")
+            Set-Content -LiteralPath $file -Value "DMS_CONFIG_MULTI_TENANCY=$Value"
+
+            { Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $file } | Should -Throw "The served-data probe supports only a single-tenant stack*"
+        }
+    }
+
+    Context "Get-RestoreSmokeJsonArrayLength" {
+        It "returns the length of a JSON array with <case>" -ForEach @(
+            @{ Case = "no elements"; Content = '[]'; Expected = 0 }
+            @{ Case = "one element"; Content = '[{"codeValue":"Math"}]'; Expected = 1 }
+            @{ Case = "several elements"; Content = '[{"codeValue":"Math"},{"codeValue":"Art"},{"codeValue":"Science"}]'; Expected = 3 }
+        ) {
+            $shape = Get-RestoreSmokeJsonArrayLength -Content $Content
+
+            $shape.IsArray | Should -BeTrue
+            $shape.Length | Should -Be $Expected
+            $shape.Reason | Should -BeNullOrEmpty
+        }
+
+        It "rejects <case>" -ForEach @(
+            @{ Case = "a JSON object"; Content = '{"codeValue":"Math"}'; Reason = "the body's JSON root is object, not an array" }
+            @{ Case = "an object wrapping an array"; Content = '{"items":[{"codeValue":"Math"}]}'; Reason = "the body's JSON root is object, not an array" }
+            @{ Case = "a JSON string"; Content = '"Math"'; Reason = "the body's JSON root is string, not an array" }
+            @{ Case = "a JSON number"; Content = '5'; Reason = "the body's JSON root is number, not an array" }
+            @{ Case = "JSON null"; Content = 'null'; Reason = "the body's JSON root is null, not an array" }
+            @{ Case = "an array of numbers"; Content = '[1,2]'; Reason = "array element 0 is number, not a resource object" }
+            @{ Case = "an array holding null after an object"; Content = '[{"codeValue":"Math"},null]'; Reason = "array element 1 is null, not a resource object" }
+            @{ Case = "a nested array"; Content = '[[{"codeValue":"Math"}]]'; Reason = "array element 0 is array, not a resource object" }
+            @{ Case = "two JSON values"; Content = '[] []'; Reason = "the body is not a single JSON value" }
+            @{ Case = "text that is not JSON"; Content = 'Service Unavailable'; Reason = "the body is not a single JSON value" }
+            @{ Case = "an empty body"; Content = ''; Reason = "the body is empty" }
+            @{ Case = "a whitespace body"; Content = "  `n"; Reason = "the body is empty" }
+        ) {
+            $shape = Get-RestoreSmokeJsonArrayLength -Content $Content
+
+            $shape.IsArray | Should -BeFalse
+            $shape.Length | Should -BeNullOrEmpty
+            $shape.Reason | Should -Be $Reason
+        }
+
+        It "tells a one-element array from the object it holds, which ConvertFrom-Json does not" {
+            # The trap: after conversion the singleton array and the bare object are the same value.
+            $fromArray = '[{"codeValue":"Math"}]' | ConvertFrom-Json
+            $fromObject = '{"codeValue":"Math"}' | ConvertFrom-Json
+            @($fromArray).Count | Should -Be @($fromObject).Count
+            $fromArray.codeValue | Should -Be $fromObject.codeValue
+
+            (Get-RestoreSmokeJsonArrayLength -Content '[{"codeValue":"Math"}]').IsArray | Should -BeTrue
+            (Get-RestoreSmokeJsonArrayLength -Content '{"codeValue":"Math"}').IsArray | Should -BeFalse
+        }
+    }
+
+    Context "Select-RestoreSmokeDataStore" {
+        It "selects the one route-unqualified data store for the restored database among others" {
+            $stores = @(
+                New-TestDataStore -Id 1 -Name "Year 2025" -Contexts @([pscustomobject]@{ id = 1; dataStoreId = 1; contextKey = "schoolYear"; contextValue = "2025" })
+                New-TestDataStore -Id 2 -Name "Other" -ConnectionString ($script:pgConnection -replace 'database=edfi_datamanagementservice', 'database=edfi_other')
+                New-TestDataStore -Id 3
+            )
+
+            $result = Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine postgresql
+
+            $result.DataStoreId | Should -Be 3
+            $result.Name | Should -Be "Local Development Data Store"
+            @($result.Candidates.Id) | Should -Be @(1, 2, 3)
+            @($result.Candidates.Selected) | Should -Be @($false, $false, $true)
+            @($result.Candidates.Reason) | Should -Be @(
+                "it is route-qualified (schoolYear=2025)"
+                "it targets database 'edfi_other', not 'edfi_datamanagementservice'"
+                "route-unqualified postgresql data store for 'edfi_datamanagementservice'"
+            )
+            $result.Candidates[2].DatabaseName | Should -Be "edfi_datamanagementservice"
+        }
+
+        It "selects only the <engine> connection-string form" -ForEach @(
+            @{ Engine = "mssql"; SelectedId = 2; OtherReason = "its connection string is not the mssql form (no Server or Data Source key)" }
+            @{ Engine = "postgresql"; SelectedId = 1; OtherReason = "its connection string is not the postgresql form (no Host key)" }
+        ) {
+            $stores = @(
+                New-TestDataStore -Id 1 -ConnectionString $script:pgConnection
+                New-TestDataStore -Id 2 -ConnectionString $script:mssqlConnection
+            )
+
+            $result = Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine $Engine
+
+            $result.DataStoreId | Should -Be $SelectedId
+            @($result.Candidates | Where-Object { -not $_.Selected }).Reason | Should -Be $OtherReason
+        }
+
+        It "accepts the SqlClient synonyms Data Source and Initial Catalog" {
+            $stores = @(New-TestDataStore -Id 5 -ConnectionString "Data Source=dms-mssql,1433;Initial Catalog=edfi_datamanagementservice;User Id=sa;Password=Ms-S3cret!")
+
+            (Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine mssql).DataStoreId | Should -Be 5
+        }
+
+        It "fails when CMS lists no data store" {
+            { Select-RestoreSmokeDataStore -DataStores @() -TargetDatabaseName $script:target -DatabaseEngine postgresql } |
+                Should -Throw -ExpectedMessage "No route-unqualified data store targets the restored database 'edfi_datamanagementservice' (0 listed)."
+        }
+
+        It "fails when the only data store for the target is route-qualified" {
+            $stores = @(New-TestDataStore -Id 4 -Contexts @([pscustomobject]@{ contextKey = "schoolYear"; contextValue = "2025" }))
+
+            { Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine postgresql } |
+                Should -Throw -ExpectedMessage "No route-unqualified data store targets the restored database 'edfi_datamanagementservice' (1 listed: id=4 name='Local Development Data Store': it is route-qualified (schoolYear=2025))."
+        }
+
+        It "fails on an ambiguous match, naming every matching id" {
+            $stores = @(
+                New-TestDataStore -Id 4
+                New-TestDataStore -Id 7 -Name "Duplicate"
+            )
+
+            { Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine postgresql } |
+                Should -Throw -ExpectedMessage "2 route-unqualified data stores target the restored database 'edfi_datamanagementservice' (ids 4, 7); the probe needs exactly one.*"
+        }
+
+        It "does not select a data store <case>" -ForEach @(
+            @{ Case = "without an id"; Store = @{ Id = $null }; Reason = "it has no positive integer id" }
+            @{ Case = "with id 0"; Store = @{ Id = 0 }; Reason = "it has no positive integer id" }
+            @{ Case = "with a non-numeric id"; Store = @{ Id = "abc" }; Reason = "it has no positive integer id" }
+            @{ Case = "whose route contexts are a string"; Store = @{ Id = 3; Contexts = "schoolYear=2025" }; Reason = "its route contexts are not a list" }
+            @{ Case = "without a connection string"; Store = @{ Id = 3; ConnectionString = $null }; Reason = "CMS returned no connection string for it" }
+            @{ Case = "with an unparsable connection string"; Store = @{ Id = 3; ConnectionString = "host=dms-postgresql;database" }; Reason = "its connection string could not be parsed" }
+            @{ Case = "whose database differs only by case"; Store = @{ Id = 3; ConnectionString = "host=dms-postgresql;database=EdFi_DataManagementService" }; Reason = "it targets database 'EdFi_DataManagementService', not 'edfi_datamanagementservice'" }
+            @{ Case = "without a database"; Store = @{ Id = 3; ConnectionString = "host=dms-postgresql;port=5432" }; Reason = "its connection string names 0 databases" }
+        ) {
+            $parameters = @{}
+            foreach ($key in $Store.Keys) { $parameters[$key] = $Store[$key] }
+            $stores = @(New-TestDataStore @parameters)
+
+            $failure = $null
+            try {
+                Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine postgresql
+            }
+            catch {
+                $failure = $_.Exception.Message
+            }
+
+            $failure | Should -BeLike "No route-unqualified data store targets the restored database 'edfi_datamanagementservice' (1 listed: *: $Reason)."
+        }
+
+        It "does not select a SQL Server data store that names two databases" {
+            $stores = @(New-TestDataStore -Id 3 -ConnectionString "Server=dms-mssql,1433;Database=edfi_datamanagementservice;Initial Catalog=edfi_other;User Id=sa;Password=Ms-S3cret!")
+
+            { Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine mssql } |
+                Should -Throw -ExpectedMessage "*: its connection string names 2 databases)."
+        }
+
+        It "never reports a connection string or its password" {
+            $stores = @(
+                New-TestDataStore -Id 3
+                New-TestDataStore -Id 4 -ConnectionString $script:mssqlConnection
+                New-TestDataStore -Id 5
+            )
+
+            $failure = $null
+            try {
+                Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine postgresql
+            }
+            catch {
+                $failure = $_.Exception.Message
+            }
+            $selected = Select-RestoreSmokeDataStore -DataStores @($stores[0], $stores[1]) -TargetDatabaseName $script:target -DatabaseEngine postgresql | ConvertTo-Json -Depth 6
+
+            foreach ($text in @($failure, $selected)) {
+                $text | Should -Not -BeNullOrEmpty
+                $text | Should -Not -Match '(?i)password|Pg-S3cret|Ms-S3cret|dms-postgresql|dms-mssql'
+            }
+        }
+    }
+
+    Context "Test-RestoreSmokeApiRead" {
+        BeforeEach {
+            $global:RestoreSmokeApiTest = @{
+                DataStores = @(New-TestDataStore -Id 3)
+                Tokens     = [System.Collections.Generic.Queue[string]]::new([string[]]@("dms-token-1", "dms-token-2"))
+                Fail       = $null
+                Responses  = @{
+                    academicSubjectDescriptors = @{ StatusCode = 200; Content = '[{"codeValue":"Math"},{"codeValue":"Art"},{"codeValue":"Science"}]' }
+                    schools                    = @{ StatusCode = 200; Content = '[{"schoolId":255901001}]' }
+                }
+                Calls      = [System.Collections.Generic.List[string]]::new()
+            }
+
+            # Each helper fails, when asked to, with a message that quotes every secret in play.
+            Mock Get-CmsToken -ModuleName RestoreSmokeProbes {
+                $global:RestoreSmokeApiTest.Calls.Add("Get-CmsToken")
+                if ($global:RestoreSmokeApiTest.Fail -eq "Get-CmsToken") { throw "401 for dms-data-store-admin with Admin-S3cret!" }
+                return "cms-admin-token"
+            }
+            Mock Get-DataStore -ModuleName RestoreSmokeProbes {
+                $global:RestoreSmokeApiTest.Calls.Add("Get-DataStore")
+                if ($global:RestoreSmokeApiTest.Fail -eq "Get-DataStore") { throw "403 for bearer cms-admin-token" }
+                return $global:RestoreSmokeApiTest.DataStores
+            }
+            Mock Get-SmokeTestCredential -ModuleName RestoreSmokeProbes {
+                $global:RestoreSmokeApiTest.Calls.Add("Get-SmokeTestCredential")
+                if ($global:RestoreSmokeApiTest.Fail -eq "Get-SmokeTestCredential") { throw "Failed to create smoke test credentials: 500 (admin Admin-S3cret!)" }
+                return @{ Key = "app-key"; Secret = "App-S3cret!"; VendorId = 1; ApplicationName = "Smoke Test Application" }
+            }
+            Mock Wait-CmsClientAvailable -ModuleName RestoreSmokeProbes {
+                $global:RestoreSmokeApiTest.Calls.Add("Wait-CmsClientAvailable")
+                if ($global:RestoreSmokeApiTest.Fail -eq "Wait-CmsClientAvailable") { throw "CMS client 'app-key' (App-S3cret!) did not become available" }
+            }
+            Mock Get-DmsToken -ModuleName RestoreSmokeProbes {
+                $global:RestoreSmokeApiTest.Calls.Add("Get-DmsToken")
+                if ($global:RestoreSmokeApiTest.Fail -eq "Get-DmsToken") { throw "401 for app-key:App-S3cret!" }
+                if ($global:RestoreSmokeApiTest.Fail -eq "Get-DmsToken-blank") { return "" }
+                return $global:RestoreSmokeApiTest.Tokens.Dequeue()
+            }
+            Mock Invoke-WebRequest -ModuleName RestoreSmokeProbes {
+                $global:RestoreSmokeApiTest.Calls.Add("GET $Uri")
+                if ($global:RestoreSmokeApiTest.Fail -eq "GET") { throw "connection refused ($($Headers.Authorization))" }
+                $resource = ([uri]$Uri).AbsolutePath.Split("/")[-1]
+                $response = $global:RestoreSmokeApiTest.Responses[$resource]
+                return [pscustomobject]@{ StatusCode = $response.StatusCode; Content = $response.Content }
+            }
+
+            $script:session = New-RestoreSmokeApiSession
+            $script:endpoint = New-TestEndpoint
+            $script:readArguments = @{ Session = $script:session; Endpoint = $script:endpoint; TargetDatabaseName = $script:target; DatabaseEngine = "postgresql" }
+        }
+
+        It "reads a non-empty descriptor array with one token bound to the selected data store" {
+            $result = Test-RestoreSmokeApiRead @script:readArguments
+
+            $result.Mode | Should -Be "seeded"
+            $result.CmsUrl | Should -Be "http://localhost:18081"
+            $result.DmsUrl | Should -Be "http://localhost:18080"
+            $result.DataStoreId | Should -Be 3
+            $result.DataStoreName | Should -Be "Local Development Data Store"
+            $result.TokenReused | Should -BeFalse
+            $result.TokenRequestCount | Should -Be 1
+            $result.Reads.Count | Should -Be 1
+            $result.Reads[0].Resource | Should -Be "academicSubjectDescriptors"
+            $result.Reads[0].Uri | Should -Be $script:descriptorUri
+            $result.Reads[0].StatusCode | Should -Be 200
+            $result.Reads[0].Count | Should -Be 3
+            @($global:RestoreSmokeApiTest.Calls) | Should -Be @("Get-CmsToken", "Get-DataStore", "Get-SmokeTestCredential", "Wait-CmsClientAvailable", "Get-DmsToken", "GET $script:descriptorUri")
+            Should -Invoke Get-CmsToken -ModuleName RestoreSmokeProbes -Times 1 -Exactly -ParameterFilter { $CmsUrl -eq "http://localhost:18081" -and $ClientId -eq "dms-data-store-admin" -and $ClientSecret -eq "Admin-S3cret!" }
+            Should -Invoke Get-DataStore -ModuleName RestoreSmokeProbes -Times 1 -Exactly -ParameterFilter { $CmsUrl -eq "http://localhost:18081" -and $AccessToken -eq "cms-admin-token" }
+            Should -Invoke Get-SmokeTestCredential -ModuleName RestoreSmokeProbes -Times 1 -Exactly -ParameterFilter { $ConfigServiceUrl -eq "http://localhost:18081" -and @($DataStoreIds).Count -eq 1 -and $DataStoreIds[0] -eq 3 }
+            Should -Invoke Wait-CmsClientAvailable -ModuleName RestoreSmokeProbes -Times 1 -Exactly -ParameterFilter { $CmsUrl -eq "http://localhost:18081" -and $ClientId -eq "app-key" -and $ClientSecret -eq "App-S3cret!" }
+            Should -Invoke Get-DmsToken -ModuleName RestoreSmokeProbes -Times 1 -Exactly -ParameterFilter { $DmsUrl -eq "http://localhost:18080" -and $Key -eq "app-key" -and $Secret -eq "App-S3cret!" }
+            Should -Invoke Invoke-WebRequest -ModuleName RestoreSmokeProbes -Times 1 -Exactly -ParameterFilter { $Method -eq "Get" -and $Headers.Authorization -eq "Bearer dms-token-1" }
+        }
+
+        It "accepts a one-element descriptor array" {
+            $global:RestoreSmokeApiTest.Responses.academicSubjectDescriptors.Content = '[{"codeValue":"Math"}]'
+
+            (Test-RestoreSmokeApiRead @script:readArguments).Reads[0].Count | Should -Be 1
+        }
+
+        It "also reads a non-empty schools array for Populated, with the same token" {
+            $result = Test-RestoreSmokeApiRead @script:readArguments -RequirePopulatedData
+
+            $result.Mode | Should -Be "populated"
+            @($result.Reads.Resource) | Should -Be @("academicSubjectDescriptors", "schools")
+            @($result.Reads.Uri) | Should -Be @($script:descriptorUri, $script:schoolUri)
+            @($result.Reads | ForEach-Object { $_.Count }) | Should -Be @(3, 1)
+            Should -Invoke Get-DmsToken -ModuleName RestoreSmokeProbes -Times 1 -Exactly
+            Should -Invoke Invoke-WebRequest -ModuleName RestoreSmokeProbes -Times 2 -Exactly -ParameterFilter { $Headers.Authorization -eq "Bearer dms-token-1" }
+        }
+
+        It "fails on HTTP <status> from <resource>" -ForEach @(
+            @{ Resource = "academicSubjectDescriptors"; Status = 401; Populated = $false }
+            @{ Resource = "academicSubjectDescriptors"; Status = 404; Populated = $false }
+            @{ Resource = "academicSubjectDescriptors"; Status = 204; Populated = $false }
+            @{ Resource = "schools"; Status = 403; Populated = $true }
+            @{ Resource = "schools"; Status = 500; Populated = $true }
+        ) {
+            $global:RestoreSmokeApiTest.Responses[$Resource] = @{ StatusCode = $Status; Content = '{"detail":"denied"}' }
+
+            { Test-RestoreSmokeApiRead @script:readArguments -RequirePopulatedData:$Populated } |
+                Should -Throw -ExpectedMessage "GET http://localhost:18080/data/ed-fi/$Resource`?limit=5 returned HTTP $Status; the served-data probe requires 200. Body: {`"detail`":`"denied`"}"
+        }
+
+        It "fails when <resource> answers 200 with <case>" -ForEach @(
+            @{ Resource = "academicSubjectDescriptors"; Case = "a bare object"; Content = '{"codeValue":"Math"}'; Reason = "the body's JSON root is object, not an array" }
+            @{ Resource = "academicSubjectDescriptors"; Case = "an object wrapping the array"; Content = '{"items":[{"codeValue":"Math"}]}'; Reason = "the body's JSON root is object, not an array" }
+            @{ Resource = "academicSubjectDescriptors"; Case = "JSON null"; Content = 'null'; Reason = "the body's JSON root is null, not an array" }
+            @{ Resource = "academicSubjectDescriptors"; Case = "an array of strings"; Content = '["Math"]'; Reason = "array element 0 is string, not a resource object" }
+            @{ Resource = "academicSubjectDescriptors"; Case = "text"; Content = 'OK'; Reason = "the body is not a single JSON value" }
+            @{ Resource = "academicSubjectDescriptors"; Case = "no body"; Content = ''; Reason = "the body is empty" }
+            @{ Resource = "schools"; Case = "a bare object"; Content = '{"schoolId":255901001}'; Reason = "the body's JSON root is object, not an array" }
+        ) {
+            $global:RestoreSmokeApiTest.Responses[$Resource] = @{ StatusCode = 200; Content = $Content }
+
+            { Test-RestoreSmokeApiRead @script:readArguments -RequirePopulatedData:($Resource -eq "schools") } |
+                Should -Throw -ExpectedMessage "GET http://localhost:18080/data/ed-fi/$Resource`?limit=5 returned HTTP 200, but $Reason; the served-data probe requires a JSON array of $Resource."
+        }
+
+        It "fails on an empty descriptor array from a seeded source" {
+            $global:RestoreSmokeApiTest.Responses.academicSubjectDescriptors.Content = '[]'
+
+            { Test-RestoreSmokeApiRead @script:readArguments } |
+                Should -Throw -ExpectedMessage "GET $script:descriptorUri returned an empty array; the restored academicSubjectDescriptors were not served."
+        }
+
+        It "fails on an empty schools array for Populated" {
+            $global:RestoreSmokeApiTest.Responses.schools.Content = '[]'
+
+            { Test-RestoreSmokeApiRead @script:readArguments -RequirePopulatedData } |
+                Should -Throw -ExpectedMessage "GET $script:schoolUri returned an empty array; the restored schools were not served."
+        }
+
+        It "accepts an empty descriptor array with -SchemaOnly and reports the read as schema-only" {
+            $global:RestoreSmokeApiTest.Responses.academicSubjectDescriptors.Content = '[]'
+
+            $result = Test-RestoreSmokeApiRead @script:readArguments -SchemaOnly
+
+            $result.Mode | Should -Be "schema-only"
+            $result.Reads.Count | Should -Be 1
+            $result.Reads[0].Count | Should -Be 0
+            Should -Invoke Get-DmsToken -ModuleName RestoreSmokeProbes -Times 1 -Exactly
+        }
+
+        It "still requires HTTP 200 and a JSON array with -SchemaOnly (<case>)" -ForEach @(
+            @{ Case = "HTTP 401"; Status = 401; Content = '[]'; Expected = "*returned HTTP 401; the served-data probe requires 200.*" }
+            @{ Case = "a bare object"; Status = 200; Content = '{"codeValue":"Math"}'; Expected = "*returned HTTP 200, but the body's JSON root is object, not an array;*" }
+            @{ Case = "text"; Status = 200; Content = 'OK'; Expected = "*returned HTTP 200, but the body is not a single JSON value;*" }
+        ) {
+            $global:RestoreSmokeApiTest.Responses.academicSubjectDescriptors = @{ StatusCode = $Status; Content = $Content }
+
+            { Test-RestoreSmokeApiRead @script:readArguments -SchemaOnly } | Should -Throw -ExpectedMessage $Expected
+        }
+
+        It "refuses -SchemaOnly with -RequirePopulatedData before any call" {
+            { Test-RestoreSmokeApiRead @script:readArguments -SchemaOnly -RequirePopulatedData } |
+                Should -Throw -ExpectedMessage "A Populated served-data read needs a seeded source*"
+            $global:RestoreSmokeApiTest.Calls.Count | Should -Be 0
+        }
+
+        It "fails before creating any credential when <case>" -ForEach @(
+            @{ Case = "two route-unqualified data stores target the database"; Stores = @(@{ Id = 3 }, @{ Id = 9 }); Expected = "2 route-unqualified data stores target the restored database 'edfi_datamanagementservice' (ids 3, 9)*" }
+            @{ Case = "no data store is listed"; Stores = @(); Expected = "No route-unqualified data store targets the restored database 'edfi_datamanagementservice' (0 listed)." }
+            @{ Case = "the only data store targets another database"; Stores = @(@{ Id = 3; ConnectionString = "host=dms-postgresql;database=edfi_other" }); Expected = "No route-unqualified data store targets*it targets database 'edfi_other'*" }
+        ) {
+            $global:RestoreSmokeApiTest.DataStores = @($Stores | ForEach-Object { $parameters = $_; New-TestDataStore @parameters })
+
+            { Test-RestoreSmokeApiRead @script:readArguments } | Should -Throw -ExpectedMessage $Expected
+            @($global:RestoreSmokeApiTest.Calls) | Should -Be @("Get-CmsToken", "Get-DataStore")
+            $script:session.Token | Should -BeNullOrEmpty
+        }
+
+        It "fails without any read when <step> fails" -ForEach @(
+            @{ Step = "Get-CmsToken"; Expected = "The served-data probe could not list the CMS data stores: 401 for dms-data-store-admin with ***"; TokenRequests = 0 }
+            @{ Step = "Get-DataStore"; Expected = "The served-data probe could not list the CMS data stores: 403 for bearer ***"; TokenRequests = 0 }
+            @{ Step = "Get-SmokeTestCredential"; Expected = "The served-data probe could not obtain a DMS token for data store 3: Failed to create smoke test credentials: 500 (admin ***)"; TokenRequests = 0 }
+            @{ Step = "Wait-CmsClientAvailable"; Expected = "The served-data probe could not obtain a DMS token for data store 3: CMS client 'app-key' (***) did not become available"; TokenRequests = 0 }
+            @{ Step = "Get-DmsToken"; Expected = "The served-data probe could not obtain a DMS token for data store 3: 401 for app-key:***"; TokenRequests = 1 }
+            @{ Step = "Get-DmsToken-blank"; Expected = "The served-data probe received no DMS token for data store 3."; TokenRequests = 1 }
+        ) {
+            $global:RestoreSmokeApiTest.Fail = $Step
+            $message = $null
+
+            try { Test-RestoreSmokeApiRead @script:readArguments } catch { $message = $_.Exception.Message }
+
+            # Exact comparison: -ExpectedMessage is a wildcard match, where *** would match a leaked secret.
+            $message | Should -BeExactly $Expected
+            foreach ($secret in @("Admin-S3cret!", "App-S3cret!", "cms-admin-token")) {
+                $message | Should -Not -Match ([regex]::Escape($secret))
+            }
+            Should -Invoke Invoke-WebRequest -ModuleName RestoreSmokeProbes -Times 0 -Exactly
+            $script:session.Token | Should -BeNullOrEmpty
+            $script:session.TokenRequestCount | Should -Be $TokenRequests
+        }
+
+        It "keeps no token after a failed acquisition, so the next probe obtains one" {
+            $global:RestoreSmokeApiTest.Fail = "Get-DmsToken"
+            { Test-RestoreSmokeApiRead @script:readArguments } | Should -Throw
+            $global:RestoreSmokeApiTest.Fail = $null
+
+            $result = Test-RestoreSmokeApiRead @script:readArguments
+
+            $result.TokenReused | Should -BeFalse
+            $result.TokenRequestCount | Should -Be 2
+            Should -Invoke Invoke-WebRequest -ModuleName RestoreSmokeProbes -Times 1 -Exactly -ParameterFilter { $Headers.Authorization -eq "Bearer dms-token-1" }
+        }
+
+        It "obtains one DMS token per stack and reuses it for every probe request" {
+            $first = Test-RestoreSmokeApiRead @script:readArguments -RequirePopulatedData
+            $second = Test-RestoreSmokeApiRead @script:readArguments -RequirePopulatedData
+
+            $first.TokenReused | Should -BeFalse
+            $second.TokenReused | Should -BeTrue
+            $second.TokenRequestCount | Should -Be 1
+            $second.DataStoreId | Should -Be 3
+            $second.StackGeneration | Should -Be $first.StackGeneration
+            Should -Invoke Get-DmsToken -ModuleName RestoreSmokeProbes -Times 1 -Exactly
+            Should -Invoke Get-CmsToken -ModuleName RestoreSmokeProbes -Times 1 -Exactly
+            Should -Invoke Get-DataStore -ModuleName RestoreSmokeProbes -Times 1 -Exactly
+            Should -Invoke Get-SmokeTestCredential -ModuleName RestoreSmokeProbes -Times 1 -Exactly
+            Should -Invoke Wait-CmsClientAvailable -ModuleName RestoreSmokeProbes -Times 1 -Exactly
+            Should -Invoke Invoke-WebRequest -ModuleName RestoreSmokeProbes -Times 4 -Exactly
+            Should -Invoke Invoke-WebRequest -ModuleName RestoreSmokeProbes -Times 4 -Exactly -ParameterFilter { $Headers.Authorization -eq "Bearer dms-token-1" }
+        }
+
+        It "obtains a new token and credential after the session is reset for a recreated stack" {
+            $first = Test-RestoreSmokeApiRead @script:readArguments
+            Reset-RestoreSmokeApiSession -Session $script:session
+            $script:session.Token | Should -BeNullOrEmpty
+            $second = Test-RestoreSmokeApiRead @script:readArguments
+
+            $second.TokenReused | Should -BeFalse
+            $second.TokenRequestCount | Should -Be 2
+            $second.StackGeneration | Should -Be ($first.StackGeneration + 1)
+            Should -Invoke Get-DmsToken -ModuleName RestoreSmokeProbes -Times 2 -Exactly
+            Should -Invoke Get-SmokeTestCredential -ModuleName RestoreSmokeProbes -Times 2 -Exactly
+            Should -Invoke Get-DataStore -ModuleName RestoreSmokeProbes -Times 2 -Exactly
+            Should -Invoke Invoke-WebRequest -ModuleName RestoreSmokeProbes -Times 1 -Exactly -ParameterFilter { $Headers.Authorization -eq "Bearer dms-token-1" }
+            Should -Invoke Invoke-WebRequest -ModuleName RestoreSmokeProbes -Times 1 -Exactly -ParameterFilter { $Headers.Authorization -eq "Bearer dms-token-2" }
+        }
+
+        It "keeps the token out of a failed read's message" {
+            $global:RestoreSmokeApiTest.Responses.academicSubjectDescriptors = @{ StatusCode = 401; Content = '{"error":"invalid_token","token":"dms-token-1"}' }
+            $unauthorized = $null
+            try { Test-RestoreSmokeApiRead @script:readArguments } catch { $unauthorized = $_.Exception.Message }
+
+            Reset-RestoreSmokeApiSession -Session $script:session
+            $global:RestoreSmokeApiTest.Fail = "GET"
+            $unreachable = $null
+            try { Test-RestoreSmokeApiRead @script:readArguments } catch { $unreachable = $_.Exception.Message }
+
+            $unauthorized | Should -Be "GET $script:descriptorUri returned HTTP 401; the served-data probe requires 200. Body: {`"error`":`"invalid_token`",`"token`":`"***`"}"
+            $unreachable | Should -Be "GET $script:descriptorUri failed: connection refused (Bearer ***)"
+        }
+
+        It "keeps tokens and secrets out of the evidence record" {
+            $json = Test-RestoreSmokeApiRead @script:readArguments -RequirePopulatedData | ConvertTo-Json -Depth 10
+
+            foreach ($secret in @("dms-token-1", "cms-admin-token", "Admin-S3cret!", "App-S3cret!", "app-key", "Pg-S3cret!", "password")) {
+                $json | Should -Not -Match ([regex]::Escape($secret))
+            }
+        }
+    }
+}
+
 Describe "Get-RestoreSmokeResultClassification" {
     BeforeAll {
         $script:startRevision = "1111111111111111111111111111111111111111"
@@ -1467,6 +1972,12 @@ Describe "Invoke-BootstrapRestoreSmoke complete preflight path (sandboxed, no Do
             New-Item -ItemType Directory -Path $testsRoot -Force | Out-Null
             Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Invoke-BootstrapRestoreSmoke.ps1") -Destination $testsRoot
             Copy-Item -LiteralPath (Join-Path $PSScriptRoot "RestoreSmokeProbes.psm1") -Destination $testsRoot
+            # The helper modules the probe module imports, at their repository paths.
+            $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
+            New-Item -ItemType Directory -Path (Join-Path $checkout "eng/smoke_test/modules") -Force | Out-Null
+            foreach ($helperModule in @("eng/docker-compose/env-utility.psm1", "eng/docker-compose/database-safety.psm1", "eng/Dms-Management.psm1", "eng/smoke_test/modules/SmokeTest.psm1")) {
+                Copy-Item -LiteralPath (Join-Path $repoRoot $helperModule) -Destination (Join-Path $checkout $helperModule)
+            }
             Set-Content -LiteralPath (Join-Path $composeRoot ".env.example") -Value "POSTGRES_DB_NAME=edfi_datamanagementservice"
             # The repository's real engine compose files: leftover volumes are identified against them.
             if (-not $WithoutEngineComposeFiles) {

@@ -135,6 +135,53 @@ Describe "Invoke-BootstrapRestoreSmoke static contract" {
         }
     }
 
+    Context "Served-data API probe" {
+        BeforeAll {
+            function script:Get-SmokeFunctionBody {
+                param([string]$Name)
+
+                $tokens = $null
+                $errors = $null
+                $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:smokeScriptPath, [ref]$tokens, [ref]$errors)
+                $definitions = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) | Where-Object { $_.Name -eq $Name })
+                $definitions.Count | Should -Be 1
+                return $definitions[0].Body.Extent.Text
+            }
+        }
+
+        It "reads served data through the DMS API in every post-restore assertion, recording the result" {
+            $body = Get-SmokeFunctionBody -Name "Assert-RestoredDatastore"
+
+            $body.Contains('Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $EnvironmentFile') | Should -BeTrue
+            $body | Should -Match '(?s)Test-RestoreSmokeApiRead\s+`\s+-Session \$script:ApiSession\s+`.*-RequirePopulatedData:\$RequirePopulatedData\s+`\s+-SchemaOnly:\$SkipSourceSeed'
+            $body.Contains('$script:Provenance.ApiReads.Add($apiRead)') | Should -BeTrue
+        }
+
+        It "probes the directory-feed leg's stack through the env file that started it" {
+            $script:smokeContent.Contains('Assert-RestoredDatastore -EnvironmentFile $feedEnvironmentFile') | Should -BeTrue
+        }
+
+        It "discards the cached DMS token before <function> recreates the stack" -ForEach @(
+            @{ Function = "Invoke-SmokeTeardown"; Invocation = '& "$script:DockerComposeRoot/$($WrapperProfile.TeardownScriptName)"' }
+            @{ Function = "Invoke-RestoreWrapper"; Invocation = '& "$script:DockerComposeRoot/$($script:WrapperProfile.BootstrapScriptName)"' }
+        ) {
+            $body = Get-SmokeFunctionBody -Name $Function
+            $resetIndex = $body.IndexOf('Reset-RestoreSmokeApiSession -Session $script:ApiSession')
+            $invocationIndex = $body.IndexOf($Invocation)
+
+            $resetIndex | Should -BeGreaterThan 0
+            $invocationIndex | Should -BeGreaterThan $resetIndex
+        }
+
+        It "never sets the CMS per-client bearer-token limit (<file>)" -ForEach @(
+            @{ File = "Invoke-BootstrapRestoreSmoke.ps1" }
+            @{ File = "RestoreSmokeProbes.psm1" }
+        ) {
+            $content = Get-Content -LiteralPath (Join-Path $PSScriptRoot $File) -Raw
+            $content.Contains("DMS_CONFIG_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT") | Should -BeFalse
+        }
+    }
+
     Context "In-run image provenance" {
         BeforeAll {
             $script:repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
