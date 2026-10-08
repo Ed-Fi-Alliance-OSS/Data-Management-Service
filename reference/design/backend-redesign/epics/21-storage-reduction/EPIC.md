@@ -58,10 +58,12 @@ recorded in
 is accepted on trunk between DMS-1451 and DMS-1452/DMS-1454.
 
 E2E gating is engine-asymmetric: PostgreSQL runs the full suite, SQL Server runs only the
-`@MssqlRepresentative` cross-section. Every E2E scenario added by this epic that must gate SQL Server
-carries that tag (DMS-1451, DMS-1453, DMS-1454), engine-divergent verdicts use the `@PostgresqlOnly` /
-`@MssqlOnly` categories DMS-1443 introduces or stay at the integration level, and the representative
-set grows by roughly half a dozen scenarios as an accepted lane-time cost.
+`@MssqlRepresentative` or `@MssqlOnly` cross-section plus the DS 6.1 set in its own lane. Every E2E
+scenario added by this epic that must gate SQL Server carries one of those tags (DMS-1443,
+DMS-1451, DMS-1453, DMS-1454; DS 6.1 scenarios gate through `@StandardVersion-6_1`),
+engine-divergent verdicts use the `@PostgresqlOnly` / `@MssqlOnly`
+categories DMS-1443 introduces or stay at the integration level, and the representative set grows
+by roughly half a dozen scenarios as an accepted lane-time cost.
 
 ## Stories
 

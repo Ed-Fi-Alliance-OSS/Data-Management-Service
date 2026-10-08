@@ -44,12 +44,12 @@ assumption about the database engine.
 With the reads gone, the maintenance surface will go with them: every generated
 `TR_<R>_ReferentialIdentity` trigger, the `dms.uuidv5()` function on both engines, the PostgreSQL
 DMS relational DDL dependency on `pgcrypto` (uuidv5's `digest()` call is its only DMS relational
-consumer), the SQL Server `dms.UniqueIdentifierTable` table-valued parameter type, and the
-Core/backend C# surfaces that produce, carry, accept, return, compare, or test UUIDv5 referential
-ids. This is scoped to DMS relational provisioning. PostgreSQL `pgcrypto` remains owned by
-CMS/OpenIddict when encrypted signing keys require it, including self-contained local deployments
-where the Configuration Service objects share the same physical database as DMS, as described in
-[bootstrap command boundaries](bootstrap/command-boundaries.md).
+consumer), the SQL Server bulk RI lookup strategy, and the Core/backend C# surfaces that produce,
+carry, accept, return, compare, or test UUIDv5 referential ids. This is scoped to DMS relational
+provisioning. PostgreSQL `pgcrypto` remains owned by CMS/OpenIddict when encrypted signing keys
+require it, including self-contained local deployments where the Configuration Service objects share
+the same physical database as DMS, as described in [bootstrap command
+boundaries](bootstrap/command-boundaries.md).
 
 The migration will be **code-only and re-provision-only**; no in-place upgrade scripts will be
 provided. Databases provisioned before these changes must be re-provisioned.
@@ -107,11 +107,11 @@ The descriptor-specific probe target missing was a case-insensitive descriptor l
 design will add as a lower-storage unique index on the existing `dms.Descriptor` table: a PostgreSQL
 expression index, and a SQL Server non-persisted computed-column index. Case folding will be owned
 entirely by the database engines — PostgreSQL's builtin `pg_c_utf8` collation (available from
-PostgreSQL 17; DMS requires PostgreSQL 18+) and SQL Server's `SQL_Latin1_General_CP1_CI_AS` identity collation — so C# will
-never lowercase descriptor values. Descriptor URI values must be well-formed (no NUL, no unpaired
-surrogates) but will otherwise be accepted without a character-repertoire restriction, including
-non-ASCII characters. SQL Server's accepted version-80 collation limitation will make identity
-comparison lossy for some of that input space (see accepted trade-off #8).
+PostgreSQL 17; DMS requires PostgreSQL 18+) and SQL Server's `SQL_Latin1_General_CP1_CI_AS` identity
+collation — so C# will never lowercase descriptor values. Descriptor URI values must be well-formed
+(no NUL, no unpaired surrogates) but will otherwise be accepted without a character-repertoire
+restriction, including non-ASCII characters. SQL Server's accepted version-80 collation limitation
+will make identity comparison lossy for some of that input space (see accepted trade-off #8).
 
 **2. The hash is derived state, and derived state has carrying costs.** Every document insert and
 identity update fires a generated trigger that recomputes UUIDv5 hashes and writes one or two
@@ -189,7 +189,8 @@ Runtime readers (each will become an implementation ticket):
 Verified non-consumers (these will be untouched by this design): row locking (`dms.Document` by `DocumentId`),
 DELETE (captures by `DocumentUuid`; the only interaction was the ON DELETE CASCADE), GET-by-id,
 `?id=` queries, link injection, ownership authorization, stamping and tracked-change triggers, Change
-Query routing/response contracts/`/keyChanges`, and the entire DocumentCache path.
+Query routing/response contracts and the `/keyChanges` route (its custom-view filter shares the
+updated predicate), and the entire DocumentCache path.
 Change Query `/deletes` recreated-row detection and the descriptor comparisons in custom-view
 `ReadChanges` authorization are consumers of the natural-key and descriptor identity contracts
 below, so they will be updated by this design.
@@ -362,7 +363,7 @@ d."DocumentId" = (
             AND t."SessionReference_SchoolYear" = @p5
             AND t."SessionReference_SessionName" = @p6)
 )
-AND d."ResourceKeyId" = @rk
+AND d."ResourceKeyId" = @rk -- the resource's own ResourceKeyId stays a bound parameter
 ```
 
 Key properties:
@@ -514,24 +515,24 @@ lowercase a descriptor value. Descriptor URI values will accept all well-formed 
   by the framework decoder before parsing and are accepted as that (well-formed) code point.
 
 The PostgreSQL collation will be part of the descriptor identity contract, and it will pin the
-engine's folding rules. Every PostgreSQL descriptor identity index, lookup predicate, and Change Query
-recreated-row probe must lower values under the builtin **`pg_c_utf8`** collation, for example
+engine's folding rules. Every PostgreSQL descriptor identity index, lookup predicate, and Change
+Query recreated-row probe must lower values under the builtin **`pg_c_utf8`** collation, for example
 `lower("Uri" COLLATE "pg_c_utf8")`. The implementation must not emit an unqualified `lower("Uri")`
-or `lower(<namespace-codeValue expression>)` and rely on the database default. `pg_c_utf8`
-requires PostgreSQL 17+ and a UTF-8 database encoding. This design pins **PostgreSQL 18+** as the
-minimum version, a floor the team chose above the collation's own requirement for PostgreSQL 18's
-performance improvements. The collation's folding tables ship inside PostgreSQL and change only at
-a PostgreSQL major upgrade, so the upgrade playbook must include a `REINDEX` of the descriptor expression index —
-and account for the case where a Unicode revision makes two stored descriptors newly collide,
-which blocks the `REINDEX` until the data is resolved manually. On SQL Server, folding will follow
-the `LOWER(...)` computed column and the explicitly emitted `SQL_Latin1_General_CP1_CI_AS`
-identity collation. Every parameter-side descriptor fold must select that same casing table before
-`LOWER` executes, for example `LOWER(@uri COLLATE SQL_Latin1_General_CP1_CI_AS)`; an unqualified
-`LOWER(@uri)` would fold under the database default before collation precedence is applied to the
-comparison. This rule covers write/upsert, reference-resolution, query-filter, descriptor-valued
-identity, Change Query recreated-row probes, and custom-view `ReadChanges` authorization (live
-seeks and tombstone probe arms). The two engines' non-ASCII verdicts differ — an
-accepted trade-off (see "Risks and accepted trade-offs").
+or `lower(<namespace-codeValue expression>)` and rely on the database default. `pg_c_utf8` requires
+PostgreSQL 17+ and a UTF-8 database encoding. This design pins **PostgreSQL 18+** as the minimum
+version, a floor the team chose above the collation's own requirement for PostgreSQL 18's
+performance improvements. The collation's folding tables ship inside PostgreSQL and change only at a
+PostgreSQL major upgrade, so the upgrade playbook must include a `REINDEX` of the descriptor
+expression index — and account for the case where a Unicode revision makes two stored descriptors
+newly collide, which blocks the `REINDEX` until the data is resolved manually. On SQL Server,
+folding will follow the `LOWER(...)` computed column and the explicitly emitted
+`SQL_Latin1_General_CP1_CI_AS` identity collation. Every parameter-side descriptor fold must select
+that same casing table before `LOWER` executes, for example `LOWER(@uri COLLATE
+SQL_Latin1_General_CP1_CI_AS)`; an unqualified `LOWER(@uri)` would fold under the database default
+before collation precedence is applied to the comparison. This rule covers write/upsert,
+reference-resolution, query-filter, descriptor-valued identity, Change Query recreated-row probes,
+and custom-view `ReadChanges` authorization (live seeks and tombstone probe arms). The two engines'
+non-ASCII verdicts differ — an accepted trade-off (see "Risks and accepted trade-offs").
 
 The SQL Server difference is deliberately broader than case folding. The chosen
 `SQL_Latin1_General_CP1_CI_AS` identity collation is a legacy version-80 `SQL_*` collation. It can
@@ -635,7 +636,7 @@ SELECT descriptor."DocumentId", d."DocumentUuid", d."ContentVersion"
 FROM dms."Descriptor" descriptor
 INNER JOIN dms."Document" d ON d."DocumentId" = descriptor."DocumentId"
 WHERE lower(descriptor."Uri" COLLATE "pg_c_utf8") = lower(@uri COLLATE "pg_c_utf8")
-  AND descriptor."ResourceKeyId" = @resourceKeyId
+  AND descriptor."ResourceKeyId" = 42 -- compile-time ResourceKeyId literal for the descriptor type
 ```
 
 SQL Server will probe the computed-column index:
@@ -645,7 +646,7 @@ SELECT descriptor.[DocumentId], d.[DocumentUuid], d.[ContentVersion]
 FROM [dms].[Descriptor] descriptor
 INNER JOIN [dms].[Document] d ON d.[DocumentId] = descriptor.[DocumentId]
 WHERE descriptor.[UriLowered] = LOWER(@uri COLLATE SQL_Latin1_General_CP1_CI_AS)
-  AND descriptor.[ResourceKeyId] = @resourceKeyId
+  AND descriptor.[ResourceKeyId] = 42 -- compile-time ResourceKeyId literal for the descriptor type
 ```
 
 The `dms.Document` insert, `SCOPE_IDENTITY()` retrieval, row lock, uuid lookups, and delete builder
@@ -1129,25 +1130,26 @@ a follow-on to be filed only on evidence and is not part of the T1–T14 rollout
 ### To be dropped
 
 - `dms.ReferentialIdentity`; dropping the table removes its owned constraints and indexes. Its entry
-  in the DMS-managed CDC table inventory (`CdcDmsManagedTableInventory`, which drives the PostgreSQL
-  publication and SQL Server capture instances) goes with it — a public CDC contract change: the RI
-  change stream disappears for downstream consumers.
+  in the DMS-managed CDC table inventory (`CdcDmsManagedTableInventory`, which the CDC
+  connector-principal privilege audit checks against) goes with it. The table was never published,
+  so no CDC change stream changes.
 - All `TR_<R>_ReferentialIdentity` triggers; the `ReferentialIdentityMaintenance` trigger kind and
   `SuperclassAliasInfo` contract types; `IdentityElementMapping` will shrink from arity 4 to 2
   (`ScalarType`/`IsDescriptorReference` exist only for hash emission); the manifest emitter's RI
   trigger-kind serialization.
 - `dms.uuidv5()` on both engines — `ISqlDialect.CreateUuidv5Function` will be removed (breaking for
-  Managed-API implementers).
+  external `ISqlDialect` implementers).
 - DMS relational DDL's PostgreSQL `CREATE EXTENSION pgcrypto` preamble and every DMS dependency on
   `digest()`. This is not a global database-drop contract: CMS/OpenIddict PostgreSQL deployment still
   owns `pgcrypto` when encrypted signing keys are stored in the Configuration Service database, which
   may be the same physical database in self-contained shared-database local setups.
-- `dms.UniqueIdentifierTable` TVP type (sole consumer: the SQL Server bulk RI lookup strategy).
-  `dms.BigIntTable` will stay — it serves authorization.
+- The SQL Server bulk RI lookup strategy (`MssqlReferenceLookupBulkStrategy`), the only RI consumer
+  of the `dms.UniqueIdentifierTable` TVP type.
 - Core's UUIDv5 referential-id surface: `ReferentialId`, `ReferentialIdFactory`,
-  `ReferentialIdCalculator`, `No.ReferentialId`, the `Be.Vlaanderen.Basisregisters.Generators.Guid`
-  dependency if it has no remaining consumers, and all extractor/middleware code that computes or
-  compares referential ids.
+  `ReferentialIdCalculator`, `No.ReferentialId`, the
+  `Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic` package references in `Core` and
+  `Core.External` (the integration-test references and the central version go with T14), and all
+  extractor/middleware code that computes or compares referential ids.
 - All Core/backend contract members that carry referential ids, including
   `DocumentReference.ReferentialId`, `DescriptorReference.ReferentialId`,
   `SuperclassIdentity.ReferentialId`, `DocumentInfo.ReferentialId`,
@@ -1258,7 +1260,9 @@ its trigger topology except for concrete `ResourceKeyId` column population, the 
 document/resource FK, and explicit SQL Server identity collation; the DocumentCache table family;
 tracked-change tables and triggers; `auth.*`;
 `dms.ResourceKey` / `dms.EffectiveSchema` / `dms.SchemaComponent`; and the read/reconstitution
-pipeline.
+pipeline. The SQL Server `dms.UniqueIdentifierTable` TVP type stays: `MssqlRepresentationRestampStore`
+(DMS-1318) still binds it for restamping by document UUID. `dms.BigIntTable` stays — it serves
+authorization.
 
 ## Release compatibility and rollback
 
@@ -1355,8 +1359,8 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
 - **Engine-divergence golden fixtures**: live-database fixtures will document the accepted per-engine
   non-ASCII verdicts — at minimum `ß`/`ss`, width-variant values, dotted `İ`/`i`, precomposed `é` vs
   `e` + combining acute, missing version-80 casing data (`Ǹ`/`ǹ`), unweighted supplementary
-  characters (`A`/`A😀` and `A😀`/`A😁`), and the comparer-boundary candidates `Ǹ`/`ǹ`, `ſ`/`s`,
-  dotless `ı`/`i`, and Kelvin `K` (U+212A)/`k`, each recorded with both the collation verdict and
+  characters (`A`/`A😀` and `A😀`/`A😁`), and the comparer-boundary candidates `ſ`/`s`, dotless
+  `ı`/`i`, and Kelvin `K` (U+212A)/`k`, each recorded with both the collation verdict and
   the `OrdinalIgnoreCase` verdict so both residue directions are pinned explicitly and a
   comparer-looser pair, if one ever appears, is visible. Verdicts will be captured empirically per
   engine (on SQL Server, `LOWER`'s casing table and the CI collation's comparison weights are
@@ -1369,9 +1373,9 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
   target pins proving the probe projects concrete `ResourceKeyId` without a discriminator-to-key map.
 - **Abstract identity parity/corruption pins** proving trigger-maintained `<Abstract>Identity` rows
   and diagnostic union views stay in parity with concrete root rows across insert, committed root
-  delete via `dms.Document` cascade, identity rename, SQL Server identity collation behavior,
-  PostgreSQL byte-sensitive behavior, and concrete `ResourceKeyId` population from compile-time
-  member metadata.
+  delete (root row, then `dms.Document`, whose cascade removes the identity row), identity rename,
+  SQL Server identity collation behavior, PostgreSQL byte-sensitive behavior, and concrete
+  `ResourceKeyId` population from compile-time member metadata.
 - **Dialect SQL unit tests**: statement shape independent of batch size (PostgreSQL), OPENJSON +
   FORCE ORDER + leftmost-input pins, explicit DMS identity collation on every textual OPENJSON key
   operand, and the parameter-budget guard (SQL Server), plus the union-projection single-statement

@@ -30,17 +30,22 @@ consumers, and establish the re-provision rollback boundary.
 - Today the descriptor POST action selection added by DMS-1535 (`DescriptorPostTargetSelection` /
   `DescriptorPostBranch`) and the descriptor ownership checks added by DMS-1431 both select on the
   `ReferentialId` lookup; feed them the probe result instead. (DMS-1060 only stamped the creator
-  ownership token on descriptors.) Keep the existing behavior where a lookup that has gone stale by the time the row is locked fails closed to
-  a retryable conflict.
+  ownership token on descriptors.) Keep the existing behavior where a lookup that has gone stale by
+  the time the row is locked fails closed to a retryable conflict.
 - Implement stored-wins descriptor identity for descriptor writes, including persisted-identity
   binding, the split no-op comparer, and the provider-authoritative PUT identity guard.
 - Remove `DescriptorWriteRequest.ReferentialId` and stop writing `dms.ReferentialIdentity` from the
   descriptor handler.
 - Delete `DocumentInfo.ReferentialId`, `SuperclassIdentity.ReferentialId`, `ReferentialId`,
   `ReferentialIdFactory`, `ReferentialIdCalculator`, `No.ReferentialId`, Core extraction-time
-  referential-ID calculation, and the UUIDv5 package dependency if it has no remaining consumers
-  (DMS-1451 removes the resolver-facing members; this story removes the remaining Core carriers and
-  the type itself).
+  referential-ID calculation, and the UUIDv5 package references in `Core` and `Core.External`,
+  whose only consumer is `ReferentialIdFactory` (DMS-1451 removes the resolver-facing members; this
+  story removes the remaining Core carriers and the type itself).
+- Delete the remaining lookup surface that compiles against `ReferentialId`:
+  `RelationalWriteTargetLookupSupport.ResolveForPostAsync`, `IRelationalWriteTargetLookupResolver` /
+  `RelationalWriteTargetLookupResolver` with their registration and test fakes (the descriptor
+  handler is their last caller), and the SQL Server bulk RI lookup strategy
+  (`MssqlReferenceLookupBulkStrategy`) with its unit test.
 - Update every production and test compile-time consumer affected by these contract/type removals.
   DMS-1456 fixture cleanup must not be needed to make the solution compile or these suites pass.
 

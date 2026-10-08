@@ -27,23 +27,26 @@ bind the existing stored identity before authorization and no-op detection.
 
 - Replace the capture-predicate hash subselect with the inline natural-key
   RefKey/lowered-descriptor predicate on both write paths: statement 1 of the composite command and
-  the first command of the ordered-segments fallback (`ResolveInOrderedSegmentsAsync`). Do not
-  resequence the fallback; it captures before it resolves references today and keeps that order.
-  Since DMS-1535 the ordered-segments path is no longer a rare fallback. Split Create/Update POST
-  policies take it when `PostTargetAuthorizationBundles.RequiresOrderedSegments` is true (a branch
+  the first command of the ordered-segments path (`ResolveInOrderedSegmentsAsync`). Do not
+  resequence that path; it captures before it resolves references today and keeps that order.
+  Since DMS-1535 it is no longer a rare fallback. The path is taken, for example, when split
+  Create/Update POST policies set `PostTargetAuthorizationBundles.RequiresOrderedSegments` (a branch
   whose result is owed right after capture, such as a not-permitted branch, or a create-new
-  relationship result) or when the Update branch uses a stored custom view.
+  relationship result) or carry a stored custom view on the Update branch, or when any POST owes a
+  deferred stored-ownership failure.
 - Preserve POST action selection (DMS-1535) and ownership authorization (DMS-1060). The captured
-  target picks the Create or Update branch (`PostTargetAuthorizationBundles.Select`, `PostTargetAction.For`),
-  and an existing target is authorized as Update, including stored-ownership checks. The natural-key
-  capture predicate must produce the same target-context shape the RI capture produces today, plus
-  `ExistingDocument` for identities that are equal under the SQL Server identity collation but
-  differ in casing. Today the referential ID hashes exact-case values (only descriptor values are
-  folded), so such a case variant misses and is captured as `CreateNew`; after this story it
-  resolves to the existing document and selects the Update branch.
-- Delete `RelationalWriteTargetLookupResolver`'s RI-based POST lookup builders. They have no
-  production resource-POST consumer (the write executor does not call them); the descriptor handler's
-  use of the shared lookup support is cut over by DMS-1454.
+  target picks the Create or Update branch (`PostTargetAuthorizationBundles.Select`,
+  `PostTargetAction.For`), and an existing target is authorized as Update, including
+  stored-ownership checks. The natural-key capture predicate must produce the same target-context
+  shape the RI capture produces today, plus `ExistingDocument` for identities that are equal under
+  the SQL Server identity collation but differ in casing. Today the referential ID hashes
+  exact-case values (only descriptor values are folded), so such a case variant misses, resolves to
+  `UpsertTargetAction.Create`, and selects the `CreateNew` branch; after this story it resolves to
+  the existing document and selects the Update branch.
+- Delete `RelationalWriteTargetRequest.Post.ReferentialId` and the resource-POST capture predicate
+  builder (`BuildPostCaptureTargetPredicate`), which the natural-key capture replaces. Leave
+  `ResolveForPostAsync` and the lookup service in place: the descriptor handler still calls them,
+  and DMS-1454 removes them with the descriptor cutover.
 - Bind target resolution from `DocumentInfo.DocumentIdentity` and compiled own-key probe metadata.
 - On SQL Server, rebind merged root rows to stored identity before proposed-value authorization and
   no-op detection. Use the DMS-1443 schema comparer in the identity-stability guard
@@ -55,7 +58,6 @@ bind the existing stored identity before authorization and no-op detection.
   keeps resolved-id equality for reference/descriptor members, and rebinds a comparer-equal but
   byte-different member to the stored row's value so the row keeps its `CollectionItemId` and hidden
   profile columns. Values the comparer does not consider equal keep delete + insert semantics.
-- Delete `RelationalWriteTargetRequest.Post.ReferentialId` and RI target-lookup builders.
 - Update the write-flow design sketches to show the stored-identity rebind in the correct sequence.
 
 ## Acceptance Criteria
@@ -64,7 +66,8 @@ bind the existing stored identity before authorization and no-op detection.
   co-batched path, and the ordered-segments path keeps its current command count with the
   natural-key capture as its first command. The ordered-segments fixtures must actually reach
   `ResolveInOrderedSegmentsAsync`, through `RequiresOrderedSegments` or an Update-branch custom
-  view, and assert that they did.
+  view, and assert it through the command-stream shape (the capture runs as its own first
+  command).
 - Resource POST target lookup has zero RI command classifications; the create stream classifies
   exactly one natural-key capture/lookup command (`WriteSessionCommandStreamScenarios` create-stream
   expectations move from RI = 1 to RI = 0, natural-key = 1) and the update stream keeps RI = 0.

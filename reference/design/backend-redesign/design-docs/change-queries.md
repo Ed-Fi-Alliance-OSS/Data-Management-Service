@@ -1820,7 +1820,7 @@ AND EXISTS (
 )
 ```
 
-`TrackedChangeAuthorizationSqlEmitter` appends custom-view predicates as separate AND terms after the namespace predicate and the relationship OR-group, in CMS order, which is the composition rule in [auth.md](auth.md); the predicate list is `[namespace, relationship OR-group, custom views...]`, so requests without custom views render the same SQL as before. Custom views bind no claim parameters; the only parameters they add are the descriptor discriminator values (`@CustomViewDescriptorDiscriminator{n}` and its `Qualified` twin, numbered across the plan's custom views and distinct from the planner's `@DescriptorDiscriminator{n}`) that the `DescriptorSeek` tombstone probe arm routes by; live descriptor lookups use the descriptor's compile-time `ResourceKeyId` as a literal, so they enter the existing SQL Server parameter-cap check without a new rule. A null old value on a nullable securable first hop never matches, so the row is denied without special casing, the same outcome the relationship strategies produce.
+`TrackedChangeAuthorizationSqlEmitter` appends custom-view predicates as separate AND terms after the namespace predicate and the relationship OR-group, in CMS order, which is the composition rule in [auth.md](auth.md); the predicate list is `[namespace, relationship OR-group, custom views...]`, so requests without custom views render the same SQL as before. Custom views bind no claim parameters; the only parameters they add are the descriptor discriminator values (`@CustomViewDescriptorDiscriminator{n}` and its `Qualified` twin, numbered across the plan's custom views and distinct from the planner's `@Discriminator`/`@QualifiedDiscriminator`) that the `DescriptorSeek` tombstone probe arm routes by. Live descriptor-identity lookups use the descriptor's compile-time `ResourceKeyId` as a literal and bind nothing, so the discriminator parameters fall under the existing SQL Server parameter-cap check without a new rule. A null old value on a nullable securable first hop never matches, so the row is denied without special casing, the same outcome the relationship strategies produce.
 
 The first hop of the path may be an identity reference or any securable element the tombstone stores; later hops are identity-only. This is what the shared resolver already returns, and it is wider than the ODS rule, which admits identifying properties only. The difference is deliberate: DMS tombstones store securable values that ODS tombstones lack (ODS stores model-declared authorization columns such as `DisciplineAction.OldResponsibilitySchoolId`, but not C#-level overrides such as StudentAssessment's reported school), and the built-in relationship strategies already authorize those tombstones from those columns, so restricting custom views to identity references would protect nothing. In Data Standard 5.2 and 6.1 the non-identity securable elements are the EdOrg paths on `disciplineActions` (responsibility school), `organizationDepartments` (parent EdOrg), and `studentAssessments` (reported school, nullable), plus the Namespace paths on namespace-secured resources; none are person paths.
 
@@ -1888,14 +1888,14 @@ SELECT
 FROM 
   tracked_changes_edfi.Grade AS c
   LEFT JOIN dms.Descriptor AS OldGradeTypeDescriptor 
-    ON OldGradeTypeDescriptor.ResourceKeyId = @GradeTypeDescriptorResourceKeyId
+    ON OldGradeTypeDescriptor.ResourceKeyId = 42 -- compile-time literal for GradeTypeDescriptor
     AND OldGradeTypeDescriptor.UriLowered = LOWER(CONCAT(
       c.OldGradeTypeDescriptor_Namespace,
       '#',
       c.OldGradeTypeDescriptor_CodeValue) COLLATE SQL_Latin1_General_CP1_CI_AS)
 
   LEFT JOIN dms.Descriptor AS OldGradingPeriodDescriptor
-    ON OldGradingPeriodDescriptor.ResourceKeyId = @GradingPeriodDescriptorResourceKeyId
+    ON OldGradingPeriodDescriptor.ResourceKeyId = 57 -- compile-time literal for GradingPeriodDescriptor
     AND OldGradingPeriodDescriptor.UriLowered = LOWER(CONCAT(
       c.OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace,
       '#',
@@ -1929,7 +1929,7 @@ ORDER BY
   c.ChangeVersion OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
 ```
 
-In the SQL Server example above, we join with the live table using identifying values instead of surrogate keys so that we can hide entries that were recreated. Descriptor-valued identity parts use the same descriptor identity as write-time resolution: the computed `UriLowered` plus the descriptor resource's compile-time `ResourceKeyId`. The PostgreSQL renderer emits the equivalent `lower(descriptor."Uri" COLLATE "pg_c_utf8") = lower((old_namespace || '#' || old_code_value) COLLATE "pg_c_utf8")` expression so `UX_Descriptor_UriLowered_ResourceKeyId` serves the join on both engines without inheriting the database default collation. The `ResourceKeyId` parameters come from `MappingSet.ResourceKeyIdByResource` through each `TrackedChangeDescriptorJoinInfo.DescriptorResource`.
+In the SQL Server example above, we join with the live table using identifying values instead of surrogate keys so that we can hide entries that were recreated. Descriptor-valued identity parts use the same descriptor identity as write-time resolution: the computed `UriLowered` plus the descriptor resource's compile-time `ResourceKeyId`. The PostgreSQL renderer emits the equivalent `lower(descriptor."Uri" COLLATE "pg_c_utf8") = lower((old_namespace || '#' || old_code_value) COLLATE "pg_c_utf8")` expression so `UX_Descriptor_UriLowered_ResourceKeyId` serves the join on both engines without inheriting the database default collation. The `ResourceKeyId` values are compile-time literals resolved from `MappingSet.ResourceKeyIdByResource` through each `TrackedChangeDescriptorJoinInfo.DescriptorResource`; they bind no parameters.
 
 #### `*_RefKey` index ordering for `/deletes`
 
@@ -1956,10 +1956,10 @@ SELECT DISTINCT
 FROM 
   tracked_changes_edfi.Descriptor AS c 
   LEFT JOIN dms.Descriptor AS src 
-    ON src.ResourceKeyId = @CrisisTypeDescriptorResourceKeyId
+    ON src.ResourceKeyId = 31 -- compile-time literal for CrisisTypeDescriptor
     AND src.UriLowered = LOWER(CONCAT(c.OldNamespace, '#', c.OldCodeValue) COLLATE SQL_Latin1_General_CP1_CI_AS)
 WHERE 
-  c.Discriminator = @CrisisTypeDescriptorDiscriminator -- Route rows in the shared tombstone table only
+  c.Discriminator IN (@Discriminator, @QualifiedDiscriminator) -- route shared tombstone rows
   AND src.DocumentId IS NULL             -- Exclude entries that were recreated
   AND c.NewCodeValue IS NULL            -- Exclude key changes, use any New* identity column
   AND (
