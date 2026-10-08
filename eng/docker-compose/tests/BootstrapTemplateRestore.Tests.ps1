@@ -9,7 +9,7 @@ param()
 
 BeforeAll {
     $script:dockerComposeDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
-    Import-Module (Join-Path $script:dockerComposeDir "bootstrap-restore.psm1") -Force
+    $script:restoreModule = Import-Module (Join-Path $script:dockerComposeDir "bootstrap-restore.psm1") -Force -PassThru
     Import-Module (Join-Path $script:dockerComposeDir "../DatabaseTemplates/Template-RestoreCore.psm1") -Force
     Import-Module (Join-Path $script:dockerComposeDir "../DatabaseTemplates/Template-RestoreTrust.psm1") -Force
 
@@ -397,6 +397,23 @@ Describe "Find-RestoreTemplatePackage (directory feed via DATABASE_TEMPLATE_FEED
 
 Describe "Find-RestoreTemplatePackage (HTTP v3 feed)" {
     BeforeAll {
+        # Mock -ModuleName binds by module name and refuses when several loaded copies share it.
+        # Suites that run a sandbox copy of prepare-dms-schema.ps1 earlier in the same session leave
+        # their own bootstrap-package-resolver copies loaded globally, so every copy other than the
+        # instance bootstrap-restore actually calls is set aside here and put back in AfterAll.
+        $script:setAsideResolverModules = @()
+        $script:feedResolverModule = & $script:restoreModule { (Get-Command Resolve-HttpV3Package).Module }
+        $script:setAsideResolverModules = @(
+            Get-Module -Name bootstrap-package-resolver -All |
+                Where-Object { -not [object]::ReferenceEquals($_, $script:feedResolverModule) }
+        )
+        $script:setAsideResolverModules | Remove-Module -Force
+
+        $loadedResolverModules = @(Get-Module -Name bootstrap-package-resolver -All)
+        if ($loadedResolverModules.Count -ne 1 -or -not [object]::ReferenceEquals($loadedResolverModules[0], $script:feedResolverModule)) {
+            throw "The HTTP feed mock must bind to the bootstrap-package-resolver instance that bootstrap-restore calls; loaded copies: $(@($loadedResolverModules | ForEach-Object Path) -join ', ')"
+        }
+
         function script:Set-HttpFeedMock {
             # Serves a mocked NuGet v3 flat container from prebuilt files: the service index,
             # per-package version indexes, and the .nupkg downloads. The lookup tables travel
@@ -447,6 +464,12 @@ Describe "Find-RestoreTemplatePackage (HTTP v3 feed)" {
     AfterAll {
         Remove-Variable -Name HttpFeedMockPackageFilesById -Scope Global -ErrorAction SilentlyContinue
         Remove-Variable -Name HttpFeedMockVersionsById -Scope Global -ErrorAction SilentlyContinue
+
+        # Re-registers the same module instances (their state intact, even when the sandbox that
+        # held their files is gone), globally, as prepare-dms-schema.ps1 loaded them.
+        foreach ($setAsideModule in $script:setAsideResolverModules) {
+            Import-Module -ModuleInfo $setAsideModule -Global
+        }
     }
 
     It "downloads the template and its companion attestation package, extracting the attestation for verification" {
