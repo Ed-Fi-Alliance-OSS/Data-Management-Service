@@ -4182,7 +4182,7 @@ internal sealed class DescriptorWriteHandler(
                     "DocumentId", @resourceKeyId, @namespace, @codeValue, @shortDescription,
                     @description, @effectiveBeginDate::date, @effectiveEndDate::date
                 FROM new_doc
-                RETURNING "DescriptorId", "DocumentId"
+                RETURNING "DocumentId"
             )
             , new_referential AS (
                 INSERT INTO dms."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
@@ -4221,16 +4221,16 @@ internal sealed class DescriptorWriteHandler(
         short? createdByOwnershipTokenId
     )
     {
-        // Capture each generated key from its own insert via OUTPUT ... INTO, run every
-        // insert, then return it with a trailing SELECT so the row-producing statement is the final
-        // one (matching the PG insert CTE and every UPDATE builder). This keeps the reader's single
-        // result set unambiguous rather than relying on the batch fully executing after the first
-        // statement's OUTPUT is read. [dms].[Document] carries no trigger, so OUTPUT is legal there,
+        // Capture DocumentId and ContentVersion from the document insert via OUTPUT ... INTO,
+        // then carry DocumentId through the descriptor insert into RI. The database allocates
+        // DescriptorId independently; this batch does not consume it. Run all inserts before the
+        // trailing SELECT so the reader sees a single final result with ContentVersion and the
+        // cache enqueue outcome. [dms].[Document] carries no trigger, so OUTPUT is legal there,
         // and the descriptor stamp trigger only mirrors (never bumps) ContentVersion on descriptor
         // INSERT, so the captured value is exactly what a later GET reads.
         const string Sql = """
             DECLARE @insertedDocument TABLE ([DocumentId] BIGINT, [ContentVersion] BIGINT);
-            DECLARE @insertedDescriptor TABLE ([DescriptorId] INT, [DocumentId] BIGINT);
+            DECLARE @insertedDescriptor TABLE ([DocumentId] BIGINT);
 
             INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId], [CreatedByOwnershipTokenId])
             OUTPUT INSERTED.[DocumentId], INSERTED.[ContentVersion]
@@ -4241,8 +4241,8 @@ internal sealed class DescriptorWriteHandler(
                 [DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription],
                 [Description], [EffectiveBeginDate], [EffectiveEndDate]
             )
-            OUTPUT INSERTED.[DescriptorId], INSERTED.[DocumentId]
-                INTO @insertedDescriptor ([DescriptorId], [DocumentId])
+            OUTPUT INSERTED.[DocumentId]
+                INTO @insertedDescriptor ([DocumentId])
             SELECT
                 [DocumentId], @resourceKeyId, @namespace, @codeValue, @shortDescription,
                 @description, @effectiveBeginDate, @effectiveEndDate

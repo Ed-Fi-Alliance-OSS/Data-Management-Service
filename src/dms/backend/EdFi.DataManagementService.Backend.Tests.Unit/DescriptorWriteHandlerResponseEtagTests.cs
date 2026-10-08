@@ -66,7 +66,7 @@ public partial class Given_Descriptor_Write_Response_Etags
         if (dialect is SqlDialect.Pgsql)
         {
             insert.CommandText.Should().Contain("RETURNING \"DocumentId\"");
-            insert.CommandText.Should().Contain("RETURNING \"DescriptorId\", \"DocumentId\"");
+            insert.CommandText.Should().Contain("FROM new_doc\n    RETURNING \"DocumentId\"\n)");
             insert
                 .CommandText.Should()
                 .Contain("SELECT @referentialId, \"DocumentId\", @resourceKeyId\n    FROM new_descriptor");
@@ -77,9 +77,7 @@ public partial class Given_Descriptor_Write_Response_Etags
             insert
                 .CommandText.Should()
                 .Contain("DECLARE @insertedDocument TABLE ([DocumentId] BIGINT, [ContentVersion] BIGINT)");
-            insert
-                .CommandText.Should()
-                .Contain("DECLARE @insertedDescriptor TABLE ([DescriptorId] INT, [DocumentId] BIGINT)");
+            insert.CommandText.Should().Contain("DECLARE @insertedDescriptor TABLE ([DocumentId] BIGINT)");
             insert
                 .CommandText.Should()
                 .Contain(
@@ -87,9 +85,7 @@ public partial class Given_Descriptor_Write_Response_Etags
                 );
             insert
                 .CommandText.Should()
-                .Contain(
-                    "OUTPUT INSERTED.[DescriptorId], INSERTED.[DocumentId]\n    INTO @insertedDescriptor ([DescriptorId], [DocumentId])"
-                );
+                .Contain("OUTPUT INSERTED.[DocumentId]\n    INTO @insertedDescriptor ([DocumentId])");
             insert
                 .CommandText.Should()
                 .Contain("SELECT @referentialId, [DocumentId], @resourceKeyId\nFROM @insertedDescriptor");

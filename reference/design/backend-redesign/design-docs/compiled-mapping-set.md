@@ -606,8 +606,11 @@ For a write request targeting resource `R`:
    - Core extracts document/RI identity and reference instances with concrete JSON locations.
    - Regular-resource POST uses the current RI match to obtain an existing `DocumentId`, or
      allocates a document on insert. Descriptor creation allocates its `DocumentId` and native
-     `DescriptorId` independently, capturing each insert's generated key. Descriptor updates
-     preserve both IDs and reconstruct stored URI text for the ordinal PUT identity guard.
+     `DescriptorId` independently. The create command captures only values it consumes:
+     `DocumentId` for descriptor/RI inserts and cache work, and `ContentVersion` for the response.
+     SQL Server carries the owning `DocumentId` through `OUTPUT ... INTO` without reading the
+     descriptor's identity value. Descriptor updates preserve both IDs and reconstruct stored
+     URI text for the ordinal PUT identity guard.
 
 3. **Bulk reference + descriptor resolution**
    - Preserve existing Core extraction, URI normalization, RI calculation and type/witness
