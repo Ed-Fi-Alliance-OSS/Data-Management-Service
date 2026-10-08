@@ -793,11 +793,7 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
         if (kind is TrackedChangeTableKind.SharedDescriptor)
         {
             columns.Add(
-                SystemColumn(
-                    TrackedChangeSystemColumnRole.Discriminator,
-                    "Discriminator",
-                    new RelationalScalarType(ScalarKind.String)
-                )
+                SystemColumn(TrackedChangeSystemColumnRole.ResourceKeyId, "ResourceKeyId", scalarType: null)
             );
         }
 
@@ -858,7 +854,7 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
             [
                 RootColumn("Namespace", "$.namespace", ScalarKind.String),
                 RootColumn("CodeValue", "$.codeValue", ScalarKind.String),
-                RootColumn("Discriminator", sourceJsonPath: null, ScalarKind.String),
+                RootColumn("ResourceKeyId", sourceJsonPath: null, ScalarKind.Int32),
             ],
             CreateQueryFieldMappings(
                 ("namespace", "$.namespace", "string"),

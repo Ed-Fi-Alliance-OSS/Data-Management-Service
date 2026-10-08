@@ -871,12 +871,6 @@ public enum TrackedChangeSystemColumnRole
     CreatedAt,
 
     /// <summary>
-    /// Legacy descriptor routing role, retained for consumers awaiting the ResourceKeyId migration.
-    /// No newly derived tracked-change table uses this role.
-    /// </summary>
-    Discriminator,
-
-    /// <summary>
     /// <c>ResourceKeyId</c> — the owning document's qualified descriptor type key, copied from the
     /// deleted descriptor row. Present only on the shared descriptor tracked-change table.
     /// </summary>
