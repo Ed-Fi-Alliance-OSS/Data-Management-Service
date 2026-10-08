@@ -4,6 +4,11 @@
 
 Draft. This is an initial design proposal for replacing the current three-table document store (`Document`/`Alias`/`Reference`) with a relational model using tables per resource, while keeping DMS behavior metadata-driven via `ApiSchema.json`.
 
+The DMS-1404 storage baseline uses compact descriptor keys with the existing RI runtime.
+The natural-key resolver proposals linked below belong to later stories; lowered-URI
+lookup, RI removal, new validation/equality rules and stored-wins writes are not part of
+this storage change.
+
 ## Table of Contents
 
 - [Goals and Constraints](#goals-and-constraints)
@@ -20,13 +25,13 @@ Draft. This is an initial design proposal for replacing the current three-table 
 1. **Relational-first storage**: Store resources in traditional relational tables (one root table per resource, plus child tables for collections).
 2. **Metadata-driven behavior**: Continue to drive validation, identity/reference extraction, and query semantics using `ApiSchema.json` (no handwritten per-resource code).
 3. **Low coupling to document shape**: Avoid hard-coding resource shapes in C#; schema awareness comes from metadata + conventions.
-4. **Bounded cascades with stable FKs**: Store relationships as stable surrogate keys (`DocumentId`) for referential integrity, but also persist the referenced identity parts needed for query/reconstitution at the reference site (the `{RefBaseName}_{IdentityPart}` *binding* columns). These values stay consistent via full-composite FKs plus dialect-specific propagation: PostgreSQL uses `ON UPDATE CASCADE` for abstract targets and transitively mutable concrete targets (`ON UPDATE NO ACTION` otherwise); SQL Server retains native cascades where legal and safely prunes incoming edges at convergences. When `equalityConstraints` unify identity parts across sites/paths on the same row, those per-site/per-path bindings may be generated/persisted aliases of a canonical stored column (presence-gated when optional); see [key-unification.md](key-unification.md). [SQL Server foreign-key pruning](sql-server-pruning.md) is the normative SQL Server propagation contract and supersedes the earlier blanket `ON UPDATE NO ACTION` plus `MssqlIdentityPropagationTrigger` design.
+4. **Bounded cascades with stable FKs**: Store document relationships as stable `bigint DocumentId` keys and descriptor relationships as independent `int DescriptorId` keys for referential integrity, but also persist the referenced identity parts needed for query/reconstitution at the reference site (the `{RefBaseName}_{IdentityPart}` *binding* columns). These values stay consistent via full-composite FKs plus dialect-specific propagation: PostgreSQL uses `ON UPDATE CASCADE` for abstract targets and transitively mutable concrete targets (`ON UPDATE NO ACTION` otherwise); SQL Server retains native cascades where legal and safely prunes incoming edges at convergences. When `equalityConstraints` unify identity parts across sites/paths on the same row, those per-site/per-path bindings may be generated/persisted aliases of a canonical stored column (presence-gated when optional); see [key-unification.md](key-unification.md). [SQL Server foreign-key pruning](sql-server-pruning.md) is the normative SQL Server propagation contract and supersedes the earlier blanket `ON UPDATE NO ACTION` plus `MssqlIdentityPropagationTrigger` design.
 5. **SQL Server + PostgreSQL parity**: The design must be implementable (DDL + CRUD + query) on both engines.
    - Target platforms: the latest generally-available (GA) non-cloud releases of PostgreSQL and SQL Server.
 
 ### Constraints / Explicit Decisions
 
-- **ETag/LastModified are representation metadata (required)**: DMS updates stored `ContentVersion` / `ContentLastModifiedAt` when the full resource state changes, including due to identity cascades. It serves `_lastModifiedDate` from that timestamp and composes `_etag` from `ContentVersion` plus the request's representation `variantKey`, without hashing canonical JSON. Readable profile, link shaping, and content coding participate in the served tag through `profileCode`, `linkFlag`, and `contentCoding`, so byte-different variants have different ETags even though they share the same stored stamp. Descriptor identity/URI is immutable, while descriptor metadata fields are mutable and affect only the descriptor resource's own state stamp.
+- **ETag/LastModified are representation metadata (required)**: DMS updates stored `ContentVersion` / `ContentLastModifiedAt` when the full resource state changes, including due to identity cascades. It serves `_lastModifiedDate` from that timestamp and composes `_etag` from `ContentVersion` plus the request's representation `variantKey`, without hashing canonical JSON. Readable profile, link shaping, and content coding participate in the served tag through `profileCode`, `linkFlag`, and `contentCoding`, so byte-different variants have different ETags even though they share the same stored stamp. Descriptor PUT retains its ordinal whole-URI guard, including rejection of case-only URI changes. An RI-matched POST may update incoming components; accepted component changes, even with an unchanged whole URI, receive normal descriptor stamps. An unchanged representation preserves its stamps.
   - This redesign stores resource-state stamps on `dms.Document` and updates them in-transaction. Indirect state changes are realized as FK-cascade updates to canonical stored identity columns that back the local reference-identity bindings (which may be generated/persisted aliases under key unification), which then trigger normal stamping. See [update-tracking.md](update-tracking.md).
 - **Schema updates are validated, not applied**: DMS does not perform in-place schema changes. On first use of a given database connection string (after instance routing), DMS reads the database’s recorded effective schema fingerprint (the singleton `dms.EffectiveSchema` row + `dms.SchemaComponent` rows keyed by `EffectiveSchemaHash`), caches it per connection string, and selects a matching compiled mapping set. Requests fail fast if no matching mapping is available. In-process schema reload/hot-reload is out of scope for this design.
 - **Authentication & authorization**: request authentication (token validation) and authorization (data access decisions) are addressed in [auth.md](auth.md). This redesign assumes:
@@ -42,22 +47,33 @@ Draft. This is an initial design proposal for replacing the current three-table 
   - `dms.Alias` as the legacy identity-alias lookup table,
   - `dms.Reference` (+ FK) for reference validation and reverse lookups,
   - plus JSON rewrite cascades (`UpdateCascadeHandler`) to keep embedded reference identity values consistent.
-- In this redesign, canonical storage is relational (tables per resource). Referencing relationships are stored as stable `DocumentId` FKs, so:
+- In this redesign, canonical storage is relational (tables per resource). Document references use stable `DocumentId` FKs and descriptor references use compact `DescriptorId` FKs, so:
   - the database enforces referential integrity via FKs (no `dms.Reference` required), and
   - responses can reconstitute reference identity values directly from local reference-identity binding columns. Propagation to those columns is database-driven: PostgreSQL uses `ON UPDATE CASCADE` for eligible edges, and SQL Server uses retained native cascades plus safe full-composite `NO ACTION` cuts selected by [SQL Server foreign-key pruning](sql-server-pruning.md). Under key unification, those binding columns may be presence-gated aliases of canonical stored columns, preserving “absent optional reference ⇒ `NULL` at the binding columns”.
 - Identity/URI changes do not rewrite stable `..._DocumentId` foreign keys, but **do** propagate into the local canonical stored identity columns that underpin reference-identity bindings through retained native cascades. Row-local maintenance keeps only the surviving derived artifacts aligned:
   - abstract identity tables are maintained transactionally for polymorphic reference targets, and
   - update tracking metadata is maintained by normal stamping on `dms.Document` (no read-time dependency derivation required); see [update-tracking.md](update-tracking.md).
-- Identity uniqueness and lookup are enforced by the relational identity indexes themselves:
-  - concrete resources use the resource root table’s natural-key unique constraint and `RefKey` index,
-  - abstract targets use `{AbstractResource}Identity` uniqueness/`RefKey` indexes, and
-  - descriptors use the lowered-URI + `ResourceKeyId` descriptor index.
+- Current POST matching and reference resolution use `dms.ReferentialIdentity`; descriptor
+  joins reconstruct URI witnesses and return both the compact key and owning document key
+  without another round trip. Relational unique constraints remain the integrity backstop.
+- `dms.Descriptor` has native independent `int DescriptorId` allocation, a unique non-null
+  `bigint DocumentId` FK, and `smallint ResourceKeyId` type identity checked against its owner
+  by the stamping trigger and constrained to the resource-key catalog.
+  Every stored descriptor FK targets `DescriptorId`, including copied reference identities,
+  collections, extensions and unified keys. Document/RI, UUID, locking, concurrency, cache,
+  restamp and paging operations retain `DocumentId`.
+- Descriptor uniqueness uses `(ResourceKeyId, Namespace + '#' + CodeValue)` under the former
+  database-default provider collation: PostgreSQL expression index, SQL Server non-persisted
+  computed `Uri` index. Live descriptor discriminator storage is removed; shared history routes
+  by `ResourceKeyId`. Abstract identity discriminators and union-view outputs remain unchanged.
+- Generated natural-key and lowered-URI probes are future work described in
+  [natural-key-resolution.md](natural-key-resolution.md), rather than the current RI lookup path.
 
 ## High-Level Architecture
 
 Keep DMS Core mostly intact:
 
-- Core remains the home of API canonicalization, validation, and identity/reference extraction. It preserves ordered document identity and reference details for backend natural-key resolution.
+- Core remains the home of API canonicalization, validation, and identity/reference extraction. It preserves document/RI identities and ordered reference details for current lookup and later natural-key resolution.
 - For baseline non-profile relational writes, the required Core extraction-model change is to add concrete *JSON location* (with indices) to extracted document references (see “Document references inside nested collections” in [flattening-reconstitution.md](flattening-reconstitution.md)). Descriptors already carry location via `DescriptorReference.Path`.
 - Profile-constrained collection merges add a second Core/backend contract: Core supplies an optional request-scoped `ProfileAppliedWriteRequest` with a `WritableRequestBody`; backend then loads the current stored document and invokes a Core-owned projector to derive `ProfileAppliedWriteContext` (`VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`) so merge/delete decisions come from Core-projected stored state rather than backend-owned profile evaluation.
 - Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
@@ -65,7 +81,7 @@ Keep DMS Core mostly intact:
 - Core continues to produce `DocumentInfo` (document identity + extracted references/descriptors, including reference locations) and operates on JSON bodies. When profile-specific collection filtering applies, Core also provides the request-scoped write-shaping input described above.
 - Backend repositories (`IDocumentStoreRepository`, `IQueryHandler`) become responsible for:
   1. **Flattening** incoming JSON into relational tables
-  2. **Reference resolution** (natural keys → `DocumentId`)
+  2. **Reference resolution** (current RI lookup → `DocumentId`, plus `DescriptorId` for descriptors)
   3. **Reconstitution** (relational → JSON) for GET/query responses
 
 This keeps persistence-state loading in backend while keeping profile semantics centralized in Core; visibility comes from profile-shaped stored JSON, while row matching remains backend-owned via compiled semantic identities.
@@ -104,6 +120,25 @@ This redesign is split into focused docs in this directory:
  - **Remove legacy SchemaGenerator**: the existing legacy `EdFi.DataManagementService.SchemaGenerator` toolchain is obsolete under the relational-primary-store redesign and will be removed; the DDL generation utility described in [ddl-generation.md](ddl-generation.md) (and its verification harness) is the replacement.
  - **E2E testing approach changes**: Instead of switching schemas in-place, E2E tests should provision separate databases/containers (or separate DMS instances) per schema/version under test.
  - **Fail-fast on schema mismatch**: DMS should verify on first use of a given database connection string that the database schema matches an available effective `ApiSchema.json` mapping set (see `dms.EffectiveSchema`) and reject requests for that database if it does not.
+
+## Compact-schema deployment boundary
+
+DMS-1404 requires deliberate reprovisioning on currently supported engines, with no
+version upgrade or benchmark requirement. The 8.1 release-line mapping constant stays
+`v3`; generated DDL and mapping-set output are not hash inputs, so the unchanged hash
+cannot detect an older physical descriptor schema. Use fresh current DDL or verified
+compatible templates. The [developer guide](../../../../docs/RELATIONAL-BACKEND.md#reprovisioning-and-legacy-data-carry-forward)
+describes supported PostgreSQL legacy-dump staging, independent allocation, stored-reference
+remapping, history type-key conversion and allocator checks.
+
+DMS-1404 hands off fresh-schema RI behavior, regenerated fixtures, catalog assertions,
+working loaders/copy conversion and unequal-ID metadata/stamp/restamp/cache regressions.
+Both `dms.Document` stamp columns remain authoritative and mirrored to roots/descriptors.
+DMS-1401 owns the timestamp change and, for the planned sequence, the combined template
+rebuild/restore matrix and consumer-pin updates. Those package gates precede DMS-1401
+closure; DMS-1404 closes after its own checks. Defer template-backed deployment until
+compatible packages pass the catalog expectations. See the
+[handoff and release responsibilities](../../../../docs/RELATIONAL-BACKEND.md#descriptor-catalog-checks-and-template-handoff).
 
 ## Risks / Open Questions
 

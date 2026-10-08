@@ -20,8 +20,9 @@ The backend redesign needs resource-state-sensitive metadata:
   representation-sensitive: two representations of the same stored state that differ in served bytes
   (e.g. different readable profiles, links on vs. off, or identity vs. gzip coding) MUST carry different `_etag` values, as
   required for RFC 9110 §8.8.1 strong validators.
-  Descriptor identity/URI is immutable, while descriptor metadata fields are mutable and affect
-  only the descriptor resource's own representation.
+  Descriptor PUT retains its ordinal whole-URI guard, while an RI-matched POST can apply
+  incoming components. Accepted descriptor representation changes receive normal stamps;
+  unchanged descriptor bodies preserve stamps and ETags.
 - Ed-Fi Change Query APIs depend on a global monotonic `ChangeVersion`.
 
 This redesign accomplishes indirect-update semantics without a reverse-edge table by:
@@ -85,6 +86,46 @@ There is no separate document-level stamp for identity projection changes. When 
 alter the stored representation, including changes caused by cascaded updates to
 identity-component reference identity storage columns (see [key-unification.md](key-unification.md)),
 the same `ContentVersion` and `ContentLastModifiedAt` stamps are updated.
+
+### Compact descriptor keys and stamp ownership (DMS-1404)
+
+`dms.Descriptor.DescriptorId` is a native independently generated `int` primary key.
+`DocumentId` is its unique non-null `bigint` association to the owning document. Stored
+resource descriptor FKs and URI projection joins use the compact key; document stamps,
+UUID lookup, locks, RI, cache/projection work and representation restamping use `DocumentId`.
+Updating or restamping an existing descriptor preserves both IDs and touches the correct
+descriptor mirror through its document association even when the values differ.
+
+`dms.Document.ContentVersion` and `dms.Document.ContentLastModifiedAt` remain authoritative.
+The descriptor stamping trigger copies insert stamps from its owning document; changed
+stored representation fields stamp that document and mirror the result back to the descriptor.
+SQL Server pairs descriptor `inserted`/`deleted` rows by `DescriptorId` while stamping and
+mirroring through `DocumentId`. The trigger also rejects descriptor `ResourceKeyId` drift
+from the document; the resource-key catalog FK and document delete cascade remain.
+
+There is no live descriptor discriminator or physically stored URI. URI consumers reconstruct
+the whole `Namespace + '#' + CodeValue`; SQL Server's non-persisted computed URI exists for
+indexing. Namespace and code value remain independently compared stored representation fields.
+An RI-matched POST applies incoming components, including case changes. PUT rejects differing
+whole-URI text ordinally (including case-only text), but accepts changed component pairs that
+reconstruct exactly the same URI. Such accepted component changes receive stamps/ETag changes;
+an unchanged representation receives neither. This change preserves existing RI matching,
+normalization and no-op rules rather than adopting later stored-wins semantics.
+
+Cache materialization reconstructs original-case URI content while source metadata and work
+remain document-keyed. Resource-scope and UUID-scope representation restamps likewise retain
+document ownership. Unequal-ID regressions cover exact document/descriptor stamps and work
+for both engines before the timestamp change.
+
+[DMS-1401](../epics/21-storage-reduction/16-drop-document-content-last-modified-at.md)
+owns removal of the document timestamp and root/descriptor timestamp authority. DMS-1404
+hands off its working fresh-schema RI runtime, regenerated fixtures, reusable descriptor
+catalog assertions and working load/copy tooling with both document stamp columns present.
+The planned combined template rebuild/source-restore matrix and consumer-pin updates belong
+to DMS-1401 and precede its closure; they are deferred from DMS-1404 closure. Keep 8.1 mapping
+version `v3`, deliberately reprovision old physical schemas, and defer template-backed
+deployment until compatible rebuilds pass catalog checks. See the
+[reprovisioning and handoff guide](../../../../docs/RELATIONAL-BACKEND.md#descriptor-catalog-checks-and-template-handoff).
 
 ### Global sequence
 
@@ -279,6 +320,12 @@ Change Query candidate selection is defined in [change-queries.md](change-querie
 
 - The per-resource `ContentVersion` / `ContentLastModifiedAt` mirror on each `StorageKind = RelationalTables` root and on `dms.Descriptor` is what resource and descriptor `?minChangeVersion=X&maxChangeVersion=Y` reads filter on.
 - Per-resource `tracked_changes_<schema>.<resource>` tables and the shared `tracked_changes_edfi.Descriptor` back the `/deletes` and `/keyChanges` endpoints; they are populated by the same `*_Stamp` triggers that stamp `dms.Document` (extended with `DocumentStamping.ChangeTracking`).
+- Shared descriptor history routes by compile-time qualified `ResourceKeyId` with
+  `(ResourceKeyId, ChangeVersion)` indexing. It retains owning `DocumentId`, UUID and old/new
+  namespace/code snapshots without a live-owner FK, so type and identity survive deletion.
+  Resource history captures descriptor-valued identities by joining stored `Int32` values to
+  `dms.Descriptor.DescriptorId`; authorization/recreation comparisons retain existing behavior.
+- Abstract identity discriminator storage, union-view outputs and authorization are unchanged.
 - `/availableChangeVersions` is served by `GetMaxChangeVersion` (`"dms"."GetMaxChangeVersion"()` in PostgreSQL, `[dms].[GetMaxChangeVersion]` in SQL Server).
 
 `update-tracking.md` owns the stamping contract on `dms.Document` and how `_etag` / `_lastModifiedDate` are derived. It does not own the SQL or storage shape of candidate selection.
