@@ -142,7 +142,7 @@ internal sealed class DescriptorWriteHandler(
         CancellationToken cancellationToken
     )
     {
-        var body = DescriptorWriteBodyExtractor.Extract(request.RequestBody, request.Resource);
+        var body = DescriptorWriteBodyExtractor.Extract(request.RequestBody);
         var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(
             request.MappingSet,
             request.Resource
@@ -482,7 +482,7 @@ internal sealed class DescriptorWriteHandler(
         var customViewAuthorization = proceed.CustomViewAuthorization;
         var storedOwnershipAuthorization = proceed.StoredOwnershipAuthorization;
 
-        var body = DescriptorWriteBodyExtractor.Extract(request.RequestBody, request.Resource);
+        var body = DescriptorWriteBodyExtractor.Extract(request.RequestBody);
 
         IRelationalWriteSession? writeSession = null;
 
@@ -4176,19 +4176,18 @@ internal sealed class DescriptorWriteHandler(
             , new_descriptor AS (
                 INSERT INTO dms."Descriptor" (
                     "DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription",
-                    "Description", "EffectiveBeginDate", "EffectiveEndDate",
-                    "Discriminator", "Uri"
+                    "Description", "EffectiveBeginDate", "EffectiveEndDate"
                 )
                 SELECT
                     "DocumentId", @resourceKeyId, @namespace, @codeValue, @shortDescription,
-                    @description, @effectiveBeginDate::date, @effectiveEndDate::date,
-                    @discriminator, @uri
+                    @description, @effectiveBeginDate::date, @effectiveEndDate::date
                 FROM new_doc
+                RETURNING "DescriptorId", "DocumentId"
             )
             , new_referential AS (
                 INSERT INTO dms."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
                 SELECT @referentialId, "DocumentId", @resourceKeyId
-                FROM new_doc
+                FROM new_descriptor
             )
             SELECT 1 WHERE false;
 
@@ -4222,7 +4221,7 @@ internal sealed class DescriptorWriteHandler(
         short? createdByOwnershipTokenId
     )
     {
-        // Capture the insert-time ContentVersion into a table variable via OUTPUT ... INTO, run every
+        // Capture each generated key from its own insert via OUTPUT ... INTO, run every
         // insert, then return it with a trailing SELECT so the row-producing statement is the final
         // one (matching the PG insert CTE and every UPDATE builder). This keeps the reader's single
         // result set unambiguous rather than relying on the batch fully executing after the first
@@ -4230,28 +4229,28 @@ internal sealed class DescriptorWriteHandler(
         // and the descriptor stamp trigger only mirrors (never bumps) ContentVersion on descriptor
         // INSERT, so the captured value is exactly what a later GET reads.
         const string Sql = """
-            DECLARE @newDocumentId BIGINT;
-            DECLARE @insertedContentVersion TABLE ([ContentVersion] BIGINT);
+            DECLARE @insertedDocument TABLE ([DocumentId] BIGINT, [ContentVersion] BIGINT);
+            DECLARE @insertedDescriptor TABLE ([DescriptorId] INT, [DocumentId] BIGINT);
 
             INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId], [CreatedByOwnershipTokenId])
-            OUTPUT INSERTED.[ContentVersion] INTO @insertedContentVersion ([ContentVersion])
+            OUTPUT INSERTED.[DocumentId], INSERTED.[ContentVersion]
+                INTO @insertedDocument ([DocumentId], [ContentVersion])
             VALUES (@documentUuid, @resourceKeyId, @createdByOwnershipTokenId);
-
-            SET @newDocumentId = SCOPE_IDENTITY();
 
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription],
-                [Description], [EffectiveBeginDate], [EffectiveEndDate],
-                [Discriminator], [Uri]
+                [Description], [EffectiveBeginDate], [EffectiveEndDate]
             )
-            VALUES (
-                @newDocumentId, @resourceKeyId, @namespace, @codeValue, @shortDescription,
-                @description, @effectiveBeginDate, @effectiveEndDate,
-                @discriminator, @uri
-            );
+            OUTPUT INSERTED.[DescriptorId], INSERTED.[DocumentId]
+                INTO @insertedDescriptor ([DescriptorId], [DocumentId])
+            SELECT
+                [DocumentId], @resourceKeyId, @namespace, @codeValue, @shortDescription,
+                @description, @effectiveBeginDate, @effectiveEndDate
+            FROM @insertedDocument;
 
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            VALUES (@referentialId, @newDocumentId, @resourceKeyId);
+            SELECT @referentialId, [DocumentId], @resourceKeyId
+            FROM @insertedDescriptor;
 
             SELECT
                 inserted.[ContentVersion],
@@ -4259,13 +4258,13 @@ internal sealed class DescriptorWriteHandler(
                     WHEN EXISTS (
                         SELECT TOP (1) 1
                         FROM [dms].[DocumentProjectionWork] work
-                        WHERE work.[DocumentId] = @newDocumentId
+                        WHERE work.[DocumentId] = inserted.[DocumentId]
                           AND work.[RequiredContentVersion] >= inserted.[ContentVersion]
                     )
                     THEN @enqueueOutcomeAlreadySatisfied
                     ELSE @enqueueOutcomeNoWorkQueued
                 END AS int) AS [DocumentCacheEnqueueOutcome]
-            FROM @insertedContentVersion inserted;
+            FROM @insertedDocument inserted;
             """;
 
         return new RelationalCommand(
@@ -4290,8 +4289,7 @@ internal sealed class DescriptorWriteHandler(
                 "ShortDescription" = @shortDescription,
                 "Description" = @description,
                 "EffectiveBeginDate" = @effectiveBeginDate::date,
-                "EffectiveEndDate" = @effectiveEndDate::date,
-                "Uri" = @uri
+                "EffectiveEndDate" = @effectiveEndDate::date
             WHERE "DocumentId" = @documentId;
 
             SELECT
@@ -4325,8 +4323,7 @@ internal sealed class DescriptorWriteHandler(
                 [ShortDescription] = @shortDescription,
                 [Description] = @description,
                 [EffectiveBeginDate] = @effectiveBeginDate,
-                [EffectiveEndDate] = @effectiveEndDate,
-                [Uri] = @uri
+                [EffectiveEndDate] = @effectiveEndDate
             WHERE [DocumentId] = @documentId;
 
             SELECT
@@ -4366,8 +4363,7 @@ internal sealed class DescriptorWriteHandler(
                 "ShortDescription" = @shortDescription,
                 "Description" = @description,
                 "EffectiveBeginDate" = @effectiveBeginDate::date,
-                "EffectiveEndDate" = @effectiveEndDate::date,
-                "Uri" = @uri
+                "EffectiveEndDate" = @effectiveEndDate::date
             WHERE "DocumentId" = @documentId;
 
             INSERT INTO dms."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
@@ -4415,8 +4411,7 @@ internal sealed class DescriptorWriteHandler(
                 [ShortDescription] = @shortDescription,
                 [Description] = @description,
                 [EffectiveBeginDate] = @effectiveBeginDate,
-                [EffectiveEndDate] = @effectiveEndDate,
-                [Uri] = @uri
+                [EffectiveEndDate] = @effectiveEndDate
             WHERE [DocumentId] = @documentId;
 
             MERGE [dms].[ReferentialIdentity] AS target
@@ -4486,7 +4481,6 @@ internal sealed class DescriptorWriteHandler(
                         // the namespace-authorization uninitialized branch.
                         Namespace: reader.GetRequiredFieldValue<string>("Namespace"),
                         CodeValue: reader.GetRequiredFieldValue<string>("CodeValue"),
-                        Uri: reader.GetRequiredFieldValue<string>("Uri"),
                         ShortDescription: reader.GetNullableFieldValue<string>("ShortDescription"),
                         Description: reader.GetNullableFieldValue<string>("Description"),
                         EffectiveBeginDate: reader.GetNullableDateFieldValue("EffectiveBeginDate"),
@@ -4501,7 +4495,7 @@ internal sealed class DescriptorWriteHandler(
     private static RelationalCommand BuildPostgresqlReadCommand(long documentId)
     {
         const string Sql = """
-            SELECT "Namespace", "CodeValue", "Uri", "ShortDescription", "Description", "EffectiveBeginDate", "EffectiveEndDate"
+            SELECT "Namespace", "CodeValue", "ShortDescription", "Description", "EffectiveBeginDate", "EffectiveEndDate"
             FROM dms."Descriptor"
             WHERE "DocumentId" = @documentId;
             """;
@@ -4512,7 +4506,7 @@ internal sealed class DescriptorWriteHandler(
     private static RelationalCommand BuildMssqlReadCommand(long documentId)
     {
         const string Sql = """
-            SELECT [Namespace], [CodeValue], [Uri], [ShortDescription], [Description], [EffectiveBeginDate], [EffectiveEndDate]
+            SELECT [Namespace], [CodeValue], [ShortDescription], [Description], [EffectiveBeginDate], [EffectiveEndDate]
             FROM [dms].[Descriptor]
             WHERE [DocumentId] = @documentId;
             """;
@@ -4545,12 +4539,14 @@ internal sealed class DescriptorWriteHandler(
         // stored-namespace-uninitialized 403; descriptors cannot reach that state.)
         string Namespace,
         string CodeValue,
-        string Uri,
         string? ShortDescription,
         string? Description,
         DateOnly? EffectiveBeginDate,
         DateOnly? EffectiveEndDate
-    );
+    )
+    {
+        public string Uri => $"{Namespace}#{CodeValue}";
+    }
 
     private enum DescriptorPreconditionTargetKind
     {
@@ -4732,7 +4728,7 @@ internal sealed class DescriptorWriteHandler(
         short? createdByOwnershipTokenId
     )
     {
-        var parameters = BuildInsertFieldParameters(body);
+        var parameters = BuildCommonFieldParameters(body);
         parameters.Add(new RelationalParameter("@documentUuid", documentUuid.Value));
         parameters.Add(new RelationalParameter("@resourceKeyId", resourceKeyId));
         parameters.Add(new RelationalParameter("@referentialId", referentialId.Value));
@@ -4805,14 +4801,6 @@ internal sealed class DescriptorWriteHandler(
                 "@effectiveEndDate",
                 (object?)body.EffectiveEndDate?.ToString("yyyy-MM-dd")
             ),
-            new RelationalParameter("@uri", body.Uri),
         ];
-    }
-
-    private static List<RelationalParameter> BuildInsertFieldParameters(ExtractedDescriptorBody body)
-    {
-        var parameters = BuildCommonFieldParameters(body);
-        parameters.Add(new RelationalParameter("@discriminator", body.Discriminator));
-        return parameters;
     }
 }

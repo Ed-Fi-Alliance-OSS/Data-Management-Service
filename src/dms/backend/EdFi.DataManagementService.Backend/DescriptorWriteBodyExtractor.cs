@@ -5,7 +5,6 @@
 
 using System.Globalization;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -18,38 +17,34 @@ namespace EdFi.DataManagementService.Backend;
 /// <param name="Description">The long description (may be <c>null</c> when not provided).</param>
 /// <param name="EffectiveBeginDate">The optional effective begin date.</param>
 /// <param name="EffectiveEndDate">The optional effective end date.</param>
-/// <param name="Uri">
-/// The derived descriptor URI in original case: <c>{Namespace}#{CodeValue}</c>.
-/// </param>
-/// <param name="Discriminator">
-/// The descriptor type name used as a diagnostic discriminator column value
-/// (e.g., <c>AcademicSubjectDescriptor</c>).
-/// </param>
 public sealed record ExtractedDescriptorBody(
     string Namespace,
     string CodeValue,
     string? ShortDescription,
     string? Description,
     DateOnly? EffectiveBeginDate,
-    DateOnly? EffectiveEndDate,
-    string Uri,
-    string Discriminator
-);
+    DateOnly? EffectiveEndDate
+)
+{
+    /// <summary>
+    /// The whole descriptor URI reconstructed in original case for identity comparisons.
+    /// </summary>
+    public string Uri => $"{Namespace}#{CodeValue}";
+}
 
 /// <summary>
-/// Extracts descriptor field values from a validated request body and computes derived columns.
+/// Extracts stored descriptor field values from a validated request body.
 /// </summary>
 public static class DescriptorWriteBodyExtractor
 {
     /// <summary>
-    /// Extracts descriptor fields from <paramref name="requestBody" /> and computes
-    /// the derived <c>Uri</c> and <c>Discriminator</c> values.
+    /// Extracts descriptor fields from <paramref name="requestBody" />.
     /// </summary>
     /// <remarks>
     /// This method assumes the request body has already passed JSON schema validation
     /// in the pipeline. Missing required fields indicate an internal pipeline bug.
     /// </remarks>
-    public static ExtractedDescriptorBody Extract(JsonNode requestBody, QualifiedResourceName resource)
+    public static ExtractedDescriptorBody Extract(JsonNode requestBody)
     {
         ArgumentNullException.ThrowIfNull(requestBody);
 
@@ -72,18 +67,13 @@ public static class DescriptorWriteBodyExtractor
         var effectiveBeginDate = ParseDateOnly(requestBody["effectiveBeginDate"]);
         var effectiveEndDate = ParseDateOnly(requestBody["effectiveEndDate"]);
 
-        var uri = $"{ns}#{codeValue}";
-        var discriminator = resource.ResourceName;
-
         return new ExtractedDescriptorBody(
             ns,
             codeValue,
             shortDescription,
             description,
             effectiveBeginDate,
-            effectiveEndDate,
-            uri,
-            discriminator
+            effectiveEndDate
         );
     }
 
