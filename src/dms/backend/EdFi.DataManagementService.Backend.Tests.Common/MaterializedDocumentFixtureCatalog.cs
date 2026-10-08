@@ -260,11 +260,18 @@ public static class MaterializedDocumentFixtureCatalog
 
         foreach (var row in sourceSetup.Descriptors)
         {
-            if (row.DocumentId <= 0 || row.ResourceKeyId <= 0)
+            if (
+                row.DescriptorId <= 0
+                || row.DocumentId <= 0
+                || row.ResourceKeyId <= 0
+                || row.DescriptorId == row.DocumentId
+            )
             {
                 throw new InvalidOperationException($"Source setup '{path}' has an invalid descriptor row.");
             }
 
+            ArgumentException.ThrowIfNullOrWhiteSpace(row.ProjectName);
+            ArgumentException.ThrowIfNullOrWhiteSpace(row.ResourceName);
             ArgumentException.ThrowIfNullOrWhiteSpace(row.Namespace);
             ArgumentException.ThrowIfNullOrWhiteSpace(row.CodeValue);
             ArgumentException.ThrowIfNullOrWhiteSpace(row.ShortDescription);
@@ -575,6 +582,9 @@ public sealed record MaterializedDocumentSourceTableRow(
 );
 
 public sealed record MaterializedDocumentSourceDescriptorRow(
+    int DescriptorId,
+    string ProjectName,
+    string ResourceName,
     long DocumentId,
     short ResourceKeyId,
     string Namespace,

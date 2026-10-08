@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.External.Model;
+using FluentAssertions;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
@@ -19,6 +20,7 @@ internal static class PostgresqlDescriptorReadTestSupport
         short resourceKeyId
     )
     {
+        await database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         return await database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
@@ -43,12 +45,19 @@ internal static class PostgresqlDescriptorReadTestSupport
         );
         var documentId = await InsertDocumentAsync(database, seed.DocumentUuid, resourceKeyId);
 
-        await InsertDescriptorRowAsync(database, resource, documentId, resourceKeyId, seed);
+        var descriptorId = await InsertDescriptorRowAsync(
+            database,
+            resource,
+            documentId,
+            resourceKeyId,
+            seed
+        );
+        ((long)descriptorId).Should().NotBe(documentId);
 
         return documentId;
     }
 
-    public static async Task InsertDescriptorRowAsync(
+    public static async Task<int> InsertDescriptorRowAsync(
         PostgresqlGeneratedDdlTestDatabase database,
         QualifiedResourceName resource,
         long documentId,
@@ -56,9 +65,7 @@ internal static class PostgresqlDescriptorReadTestSupport
         DescriptorReadSeed seed
     )
     {
-        var discriminator = seed.Discriminator ?? resource.ResourceName;
-
-        await database.ExecuteNonQueryAsync(
+        return await database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
@@ -68,9 +75,7 @@ internal static class PostgresqlDescriptorReadTestSupport
                 "ShortDescription",
                 "Description",
                 "EffectiveBeginDate",
-                "EffectiveEndDate",
-                "Discriminator",
-                "Uri"
+                "EffectiveEndDate"
             )
             VALUES (
                 @documentId,
@@ -80,10 +85,8 @@ internal static class PostgresqlDescriptorReadTestSupport
                 @shortDescription,
                 @description,
                 @effectiveBeginDate,
-                @effectiveEndDate,
-                @discriminator,
-                @uri
-            );
+                @effectiveEndDate
+            ) RETURNING "DescriptorId";
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
@@ -102,9 +105,7 @@ internal static class PostgresqlDescriptorReadTestSupport
                 seed.EffectiveEndDate is not null
                     ? seed.EffectiveEndDate.Value.ToDateTime(TimeOnly.MinValue)
                     : DBNull.Value
-            ),
-            new NpgsqlParameter("discriminator", discriminator),
-            new NpgsqlParameter("uri", seed.Uri)
+            )
         );
     }
 
@@ -145,9 +146,7 @@ internal static class PostgresqlDescriptorReadTestSupport
                 "ShortDescription",
                 "Description",
                 "EffectiveBeginDate",
-                "EffectiveEndDate",
-                "Discriminator",
-                "Uri"
+                "EffectiveEndDate"
             FROM "dms"."Descriptor"
             WHERE "DocumentId" = @documentId;
             """,

@@ -8,6 +8,7 @@ using System.Data;
 using System.Data.Common;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
@@ -990,6 +991,7 @@ public class Given_A_Mssql_RepresentationRestampStore
 
     private async Task<Source> InsertDescriptorAsync(long version)
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         Guid uuid = Guid.NewGuid();
         long id = await _database.ExecuteScalarAsync<long>(
             """
@@ -1006,27 +1008,27 @@ public class Given_A_Mssql_RepresentationRestampStore
             new SqlParameter("@version", SqlDbType.BigInt) { Value = version }
         );
         await AdvanceSequencePastAsync(version);
-        await _database.ExecuteNonQueryAsync(
+        int descriptorId = await _database.ExecuteScalarAsync<int>(
             """
+            DECLARE @descriptor TABLE ([DescriptorId] int);
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId], [ResourceKeyId], [Namespace], [CodeValue],
-                [ShortDescription], [Discriminator], [Uri]
+                [ShortDescription]
             )
+            OUTPUT inserted.[DescriptorId] INTO @descriptor
             VALUES (
                 @id, @resourceKeyId, N'uri://ed-fi.org/SchoolTypeDescriptor', @codeValue,
-                @codeValue, N'Ed-Fi:SchoolTypeDescriptor', @uri
+                @codeValue
             );
+            SELECT [DescriptorId] FROM @descriptor;
             """,
             new SqlParameter("@id", SqlDbType.BigInt) { Value = id },
             new SqlParameter("@resourceKeyId", SqlDbType.SmallInt) { Value = DescriptorResourceKeyId },
-            new SqlParameter("@codeValue", SqlDbType.NVarChar, 50) { Value = $"code-{id}" },
-            new SqlParameter("@uri", SqlDbType.NVarChar, 306)
-            {
-                Value = $"uri://ed-fi.org/SchoolTypeDescriptor#code-{id}",
-            }
+            new SqlParameter("@codeValue", SqlDbType.NVarChar, 50) { Value = $"code-{id}" }
         );
         long currentVersion = (await CanonicalAsync(id)).Version;
-        return new(id, uuid, currentVersion);
+        ((long)descriptorId).Should().NotBe(id);
+        return new(id, uuid, currentVersion, descriptorId);
     }
 
     private Task LifecycleAsync(string state, bool latch) =>
@@ -1165,7 +1167,7 @@ public class Given_A_Mssql_RepresentationRestampStore
             )
         );
 
-    private sealed record Source(long DocumentId, Guid Uuid, long Version);
+    private sealed record Source(long DocumentId, Guid Uuid, long Version, int? DescriptorId = null);
 
     private sealed record ManifestProgress(
         long CommittedDocumentCount,

@@ -99,6 +99,9 @@ public class Given_A_Mssql_Descriptor_Namespace_Authorization_With_The_Authorita
     {
         // A descriptor row is self-contained, so no reference data is needed after the reset.
         await _context.Database.ResetAsync();
+        await _context.Database.ExecuteNonQueryAsync(
+            CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql
+        );
         _context.ResetRecorder();
     }
 
@@ -442,7 +445,7 @@ public class Given_A_Mssql_Descriptor_Namespace_Authorization_With_The_Authorita
 
     // ── Helpers ─────────────────────────────────────────────────────────
 
-    /// <summary>The descriptor's stored uri, which keys <c>dms.Descriptor</c> independently of the document.</summary>
+    /// <summary>The descriptor's reconstructed URI, which keys <c>dms.Descriptor</c> independently of the document.</summary>
     private static string DescriptorUri(string codeValue, string @namespace) => $"{@namespace}#{codeValue}";
 
     private static JsonNode CreateDescriptorBody(
@@ -476,6 +479,10 @@ public class Given_A_Mssql_Descriptor_Namespace_Authorization_With_The_Authorita
 
         RelationalQueryAuthorizationAssertions.AssertInsertSuccess(result);
 
+        var state = await ReadStateAsync(documentUuid);
+        ((long)state.Descriptor["DescriptorId"].Should().BeOfType<int>().Subject)
+            .Should()
+            .NotBe((long)state.Document["DocumentId"]!);
         return documentUuid;
     }
 
@@ -601,7 +608,10 @@ public class Given_A_Mssql_Descriptor_Namespace_Authorization_With_The_Authorita
         (
             await _context.Database.ExecuteScalarAsync<long>(
                 """
-                SELECT COUNT_BIG(*) FROM [dms].[Descriptor] WHERE [Uri] = @uri;
+                SELECT COUNT_BIG(*) FROM [dms].[Descriptor]
+                WHERE ([Namespace] + N'#' + [CodeValue]) = @uri
+                  AND [ResourceKeyId] = (SELECT [ResourceKeyId] FROM [dms].[ResourceKey]
+                      WHERE [ProjectName] = N'Ed-Fi' AND [ResourceName] = N'SchoolTypeDescriptor');
                 """,
                 new SqlParameter("@uri", descriptorUri)
             )

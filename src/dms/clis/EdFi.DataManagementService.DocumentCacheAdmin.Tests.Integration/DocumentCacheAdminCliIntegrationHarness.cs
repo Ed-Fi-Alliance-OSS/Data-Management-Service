@@ -17,6 +17,7 @@ using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Npgsql;
 using NpgsqlTypes;
@@ -736,7 +737,7 @@ internal sealed class DocumentCacheAdminCliStateInspector(
         DateTimeOffset observedAt = DateTimeOffset.UtcNow;
         Guid documentUuid = Guid.NewGuid();
         const string descriptorNamespace = "uri://ed-fi.org/SchoolTypeDescriptor";
-        string uri = $"{descriptorNamespace}#{codeValue}";
+        await database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await database.QueryRowsAsync(
             """
             WITH resource_key AS (
@@ -766,8 +767,6 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Discriminator",
-                "Uri",
                 "ContentVersion",
                 "ContentLastModifiedAt"
             )
@@ -777,24 +776,23 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                'SchoolTypeDescriptor',
-                @uri,
                 inserted_document."ContentVersion",
                 @observedAt
             FROM inserted_document
-            RETURNING "DocumentId";
+            RETURNING "DocumentId", "DescriptorId";
             """,
             new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = documentUuid },
             new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
             new NpgsqlParameter("observedAt", NpgsqlDbType.TimestampTz) { Value = observedAt },
             new NpgsqlParameter("namespace", NpgsqlDbType.Varchar) { Value = descriptorNamespace },
             new NpgsqlParameter("codeValue", NpgsqlDbType.Varchar) { Value = codeValue },
-            new NpgsqlParameter("shortDescription", NpgsqlDbType.Varchar) { Value = codeValue },
-            new NpgsqlParameter("uri", NpgsqlDbType.Varchar) { Value = uri }
+            new NpgsqlParameter("shortDescription", NpgsqlDbType.Varchar) { Value = codeValue }
         );
 
         long documentId = RequireInt64(rows.Single(), "DocumentId");
-        return new(documentId, documentUuid, contentVersion);
+        int descriptorId = Convert.ToInt32(rows.Single()["DescriptorId"]);
+        ((long)descriptorId).Should().NotBe(documentId);
+        return new(documentId, documentUuid, contentVersion, descriptorId);
     }
 
     public async Task<DocumentCacheAdminCliSeededDocument> InsertMssqlDescriptorDocumentAsync(
@@ -808,7 +806,7 @@ internal sealed class DocumentCacheAdminCliStateInspector(
         DateTime observedAt = DateTime.UtcNow;
         Guid documentUuid = Guid.NewGuid();
         const string descriptorNamespace = "uri://ed-fi.org/SchoolTypeDescriptor";
-        string uri = $"{descriptorNamespace}#{codeValue}";
+        await database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await database.QueryRowsAsync(
             """
             DECLARE @inserted TABLE (
@@ -844,8 +842,6 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
-                [Discriminator],
-                [Uri],
                 [ContentVersion],
                 [ContentLastModifiedAt]
             )
@@ -855,26 +851,26 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                N'SchoolTypeDescriptor',
-                @uri,
                 [inserted_document].[ContentVersion],
                 @observedAt
             FROM @inserted AS [inserted_document];
 
-            SELECT [DocumentId]
-            FROM @inserted;
+            SELECT descriptor.[DocumentId], descriptor.[DescriptorId]
+            FROM [dms].[Descriptor] descriptor
+            JOIN @inserted document ON document.[DocumentId] = descriptor.[DocumentId];
             """,
             new SqlParameter("documentUuid", documentUuid),
             new SqlParameter("contentVersion", contentVersion),
             new SqlParameter("observedAt", observedAt),
             new SqlParameter("namespace", descriptorNamespace),
             new SqlParameter("codeValue", codeValue),
-            new SqlParameter("shortDescription", codeValue),
-            new SqlParameter("uri", uri)
+            new SqlParameter("shortDescription", codeValue)
         );
 
         long documentId = RequireInt64(rows.Single(), "DocumentId");
-        return new(documentId, documentUuid, contentVersion);
+        int descriptorId = Convert.ToInt32(rows.Single()["DescriptorId"]);
+        ((long)descriptorId).Should().NotBe(documentId);
+        return new(documentId, documentUuid, contentVersion, descriptorId);
     }
 
     public Task ClearPostgresqlProjectionWorkAsync() =>
@@ -1179,7 +1175,8 @@ internal sealed record DocumentCacheAdminCliMutableCounts(long DocumentCacheRows
 internal sealed record DocumentCacheAdminCliSeededDocument(
     long DocumentId,
     Guid DocumentUuid,
-    long ContentVersion
+    long ContentVersion,
+    int? DescriptorId = null
 );
 
 internal sealed class DocumentCacheAdminCliPostgresqlInsertTransaction : IAsyncDisposable

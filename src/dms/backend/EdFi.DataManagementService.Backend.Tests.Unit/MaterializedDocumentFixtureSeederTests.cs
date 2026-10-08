@@ -146,15 +146,14 @@ public class Given_MaterializedDocumentFixtureSeeder
                 "INSERT INTO [dms].[Document] ([DocumentId], [DocumentUuid], [ResourceKeyId], [CreatedByOwnershipTokenId], [ContentVersion], [ContentLastModifiedAt], [CreatedAt]) VALUES (@p0, @p1, @p2, NULL, @p3, @p4, @p4)"
             );
 
-        var descriptorInsert = commands.Single(command =>
-            command.CommandText.StartsWith("INSERT INTO [dms].[Descriptor]", StringComparison.Ordinal)
-        );
+        var descriptorInsert = commands.Single(command => command.DescriptorKey is not null);
 
         descriptorInsert
             .CommandText.Should()
             .Contain("[EffectiveBeginDate]")
-            .And.Contain("[Discriminator]")
-            .And.Contain("[Uri]");
+            .And.NotContain("[Discriminator]")
+            .And.NotContain("[Uri]")
+            .And.Contain("OUTPUT inserted.[DescriptorId] INTO @descriptor");
         descriptorInsert
             .Parameters.Any(parameter =>
                 parameter.Value is DateOnly value && value == new DateOnly(2025, 1, 15)
@@ -172,7 +171,7 @@ public class Given_MaterializedDocumentFixtureSeeder
 
         var descriptorInsert = commands.Single(command =>
             command.CommandText.StartsWith("INSERT INTO \"dms\".\"Descriptor\"", StringComparison.Ordinal)
-            && command.Parameters.Any(parameter => Equals(parameter.Value, "MembershipTypeDescriptor"))
+            && command.Parameters.Any(parameter => Equals(parameter.Value, "Member"))
         );
 
         descriptorInsert.Parameters.Any(parameter => parameter.Value is null).Should().BeTrue();

@@ -320,6 +320,11 @@ internal sealed class CdcPublicationHistoryFixture(bool mssql) : IAsyncDisposabl
             UPDATE dms."DocumentCacheState" SET "ProjectionLifecycleState"='{lifecycle}', "CacheAheadRecoveryRequired"={latch} WHERE "StateId"=1;
             """
         );
+        await ExecuteAsync(
+            mssql
+                ? CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql
+                : CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql
+        );
         // Seed all mutable inventories so rejection proves preservation of content, not just empty counts.
         string uuid = mssql ? "NEWID()" : "gen_random_uuid()";
         string now = mssql ? "SYSUTCDATETIME()" : "CURRENT_TIMESTAMP";
@@ -327,9 +332,9 @@ internal sealed class CdcPublicationHistoryFixture(bool mssql) : IAsyncDisposabl
         await ExecuteAsync(
             $"""
             INSERT INTO dms."Document" ("DocumentUuid","ResourceKeyId","ContentVersion","ContentLastModifiedAt")
-            SELECT {uuid},"ResourceKeyId",10,{now} FROM dms."ResourceKey" WHERE "ResourceName"='SchoolTypeDescriptor';
-            INSERT INTO dms."Descriptor" ("DocumentId","ResourceKeyId","Namespace","CodeValue","ShortDescription","Discriminator","Uri","ContentVersion","ContentLastModifiedAt")
-            SELECT "DocumentId","ResourceKeyId",'uri://ed-fi.org/SchoolTypeDescriptor','History','History','SchoolTypeDescriptor','uri://ed-fi.org/SchoolTypeDescriptor#History',"ContentVersion",{now} FROM dms."Document";
+            SELECT {uuid},"ResourceKeyId",10,{now} FROM dms."ResourceKey" WHERE "ProjectName"='Ed-Fi' AND "ResourceName"='SchoolTypeDescriptor';
+            INSERT INTO dms."Descriptor" ("DocumentId","ResourceKeyId","Namespace","CodeValue","ShortDescription","ContentVersion","ContentLastModifiedAt")
+            SELECT "DocumentId","ResourceKeyId",'uri://ed-fi.org/SchoolTypeDescriptor','History','History',"ContentVersion",{now} FROM dms."Document";
             DELETE FROM dms."DocumentProjectionWork";
             INSERT INTO dms."DocumentProjectionWork" ("DocumentId","RequiredContentVersion","FirstEnqueuedAt","LastEnqueuedAt")
             SELECT "DocumentId","ContentVersion",{now},{now} FROM dms."Document";

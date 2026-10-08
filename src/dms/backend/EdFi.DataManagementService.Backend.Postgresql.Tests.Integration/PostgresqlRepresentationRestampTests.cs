@@ -8,6 +8,7 @@ using System.Data;
 using System.Data.Common;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
@@ -926,6 +927,7 @@ public class Given_A_Postgresql_RepresentationRestampStore
 
     private async Task<Source> InsertDescriptorAsync(long version)
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         Guid uuid = Guid.NewGuid();
         long id = await _database.ExecuteScalarAsync<long>(
             """INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId", "ContentVersion") VALUES (@uuid, @resourceKeyId, @version) RETURNING "DocumentId";""",
@@ -946,24 +948,24 @@ public class Given_A_Postgresql_RepresentationRestampStore
             """,
             new NpgsqlParameter("version", NpgsqlDbType.Bigint) { Value = version }
         );
-        await _database.ExecuteNonQueryAsync(
+        int descriptorId = await _database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId", "ResourceKeyId", "Namespace", "CodeValue",
-                "ShortDescription", "Discriminator", "Uri"
+                "ShortDescription"
             )
             VALUES (
                 @id, @resourceKeyId, 'uri://ed-fi.org/SchoolTypeDescriptor', @codeValue,
-                @codeValue, 'Ed-Fi:SchoolTypeDescriptor', @uri
-            );
+                @codeValue
+            ) RETURNING "DescriptorId";
             """,
             new NpgsqlParameter("id", id),
             new NpgsqlParameter("resourceKeyId", NpgsqlDbType.Smallint) { Value = DescriptorResourceKeyId },
-            new NpgsqlParameter("codeValue", $"code-{id}"),
-            new NpgsqlParameter("uri", $"uri://ed-fi.org/SchoolTypeDescriptor#code-{id}")
+            new NpgsqlParameter("codeValue", $"code-{id}")
         );
         long currentVersion = (await CanonicalAsync(id)).Version;
-        return new(id, uuid, currentVersion);
+        ((long)descriptorId).Should().NotBe(id);
+        return new(id, uuid, currentVersion, descriptorId);
     }
 
     private Task LifecycleAsync(string state, bool latch) =>
@@ -1011,7 +1013,7 @@ public class Given_A_Postgresql_RepresentationRestampStore
             new NpgsqlParameter("id", id)
         );
 
-    private sealed record Source(long DocumentId, Guid Uuid, long Version);
+    private sealed record Source(long DocumentId, Guid Uuid, long Version, int? DescriptorId = null);
 
     private sealed record ManifestProgress(
         long CommittedDocumentCount,

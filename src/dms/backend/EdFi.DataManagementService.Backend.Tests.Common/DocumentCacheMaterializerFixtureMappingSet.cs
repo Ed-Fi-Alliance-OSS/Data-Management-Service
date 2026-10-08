@@ -625,13 +625,16 @@ internal static class DocumentCacheMaterializerFixtureMappingSet
             JsonPath("$"),
             new TableKey(
                 "PK_Descriptor",
-                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+                [new DbKeyColumn(new DbColumnName("DescriptorId"), ColumnKind.Scalar)]
             ),
-            [ParentDocumentIdColumn()],
-            []
+            [
+                new(new("DescriptorId"), ColumnKind.Scalar, new(ScalarKind.Int32), false, null, null),
+                ParentDocumentIdColumn(),
+            ],
+            [new TableConstraint.Unique("UX_Descriptor_DocumentId", [new("DocumentId")])]
         )
         {
-            IdentityMetadata = RootIdentityMetadata(),
+            IdentityMetadata = new(DbTableKind.Root, [new("DescriptorId")], [new("DocumentId")], [], []),
         };
 
         return new RelationalResourceModel(
@@ -707,7 +710,7 @@ internal static class DocumentCacheMaterializerFixtureMappingSet
         new(
             new DbColumnName(name),
             ColumnKind.DescriptorFk,
-            new RelationalScalarType(ScalarKind.Int64),
+            new RelationalScalarType(ScalarKind.Int32),
             IsNullable: true,
             SourceJsonPath: JsonPath(path),
             TargetResource: targetResource
