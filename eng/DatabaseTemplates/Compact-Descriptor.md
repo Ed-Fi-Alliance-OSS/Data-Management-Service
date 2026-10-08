@@ -26,6 +26,8 @@ The single inventory reader is also the task-25 carry-forward input:
 ```powershell
 Import-Module ./eng/DatabaseTemplates/Compact-Descriptor.psm1
 $inventory = Read-CompactDescriptorInventory -Dialect pgsql -ExpectedModelManifestPath $baseline
+$inventory.data_schemas # resource/history table schemas to copy; includes extension histories
+$inventory.aliases # generated descriptor aliases, source-shape verification only; never writable
 $inventory.columns # canonical Stored DescriptorFk only; schema/table/name/scalar type/nullability
 $inventory.constraints # full composite membership, FK target columns and referential actions
 $inventory.indexes # complete ordered descriptor-related key/index membership

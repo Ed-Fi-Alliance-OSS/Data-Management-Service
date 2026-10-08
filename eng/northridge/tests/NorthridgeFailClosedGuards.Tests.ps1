@@ -402,7 +402,10 @@ Describe "Copy-NorthridgeDataForward.ps1 classifies every dms base table exactly
         # that stand in for discovery have to add up to the same number, or one side is wrong.
         $expected = [regex]::Match($script:recipe, "SELECT 'dms base tables', '(?<n>\d+)'").Groups["n"].Value
         $expected | Should -Not -BeNullOrEmpty -Because "step 6 must assert the dms base table count"
-        $script:knownDmsTable.Count | Should -Be ([int]$expected)
+        # The published artifact records the older ten-table inventory. Current provisioning adds
+        # the operational restamp table; it is classified but never restored as dataset state.
+        @($script:knownDmsTable | Where-Object { $_ -cne 'dms.RepresentationRestampOperation' }).Count | Should -Be ([int]$expected)
+        $script:knownDmsTable | Should -Contain 'dms.RepresentationRestampOperation'
         @($script:knownDmsTable | Sort-Object -Unique).Count | Should -Be $script:knownDmsTable.Count -Because "no table may be on two lists"
     }
 
@@ -411,7 +414,7 @@ Describe "Copy-NorthridgeDataForward.ps1 classifies every dms base table exactly
         $failure.Count | Should -Be 0
     }
 
-    It "fails an unknown eleventh dms table on either side, naming the table and the side" {
+    It "fails an unclassified dms table on either side, naming the table and the side" {
         # The false pass: a dms table the lists do not know is neither restored nor reconciled, and the
         # copy reported PASS around it.
         foreach ($case in @(
@@ -487,6 +490,7 @@ Describe "Copy-NorthridgeDataForward.ps1 refuses a database as its own source or
     BeforeAll {
         $script:copyCommon = @{
             OutputDirectory       = $TestDrive
+            ExpectedModelManifestPath = "not-read-in-WhatIf.json"
             ExpectedDocumentCount = 1
             WhatIf                = $true
         }
@@ -1661,5 +1665,146 @@ Describe "Northridge PostgreSQL restore recipe identity handoff" {
 
         $inDmscsSteps = @([regex]::Matches($active7, '\$CMSDB\b')).Count + @([regex]::Matches($active10, '\$CMSDB\b')).Count
         @([regex]::Matches($script:activeRecipe, '\$CMSDB\b')).Count | Should -Be $inDmscsSteps -Because "no other step names the CMS database"
+    }
+}
+
+Describe 'Compact descriptor carry-forward contracts and independent allocator guards' {
+    BeforeAll {
+        $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+        Import-Module (Join-Path $repo 'eng/DatabaseTemplates/Compact-Descriptor.psm1') -Force
+        $script:baseline = Join-Path $repo 'src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/compact-descriptor/expected/relational-model.pgsql.manifest.json'
+        $script:compactInventory = Read-CompactDescriptorInventory -Dialect pgsql -ExpectedModelManifestPath $script:baseline
+        foreach ($name in @('Get-DescriptorRemapSql', 'Get-DescriptorHistoryConversionSql', 'Assert-CopyColumnShape',
+                'Get-SequenceStateSql', 'Test-SequencePosition', 'Get-ScalarValue', 'Invoke-PsqlQuery', 'Assert-DescriptorInventoryCoverage')) {
+            . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:copyScript -FunctionName $name)))
+        }
+        $script:StagingSchema = 'northridge_staging'
+        $script:BulkSchema = @('edfi', 'sample', 'tracked_changes_edfi', 'auth')
+        $script:Container = 'mock-only'
+        $script:PostgresUser = 'postgres'
+        $script:sequenceMode = 'safe'
+        $script:sqlSent = [System.Collections.Generic.List[string]]::new()
+    }
+    BeforeEach {
+        $script:sequenceMode = 'safe'
+        $script:sqlSent.Clear()
+        Mock Get-ScalarValue {
+            if ($Sql -cmatch 'pg_get_serial_sequence.*Descriptor') {
+                if ($script:sequenceMode -ceq 'missing') { return '' }
+                if ($script:sequenceMode -ceq 'shared') { return 'dms."Document_DocumentId_seq"' }
+                return 'dms."Descriptor_DescriptorId_seq"'
+            }
+            if ($Sql -cmatch 'pg_get_serial_sequence.*Document') { return 'dms."Document_DocumentId_seq"' }
+            if ($Sql -cmatch 'string_agg') { return 'SELECT 9003 AS v' }
+            throw "Unexpected scalar SQL: $Sql"
+        }
+        Mock Invoke-PsqlQuery {
+            $script:sqlSent.Add($Sql)
+            if ($Sql -cmatch "SELECT 'ChangeVersionSequence\|") { return 'ChangeVersionSequence|202|true|1|202' }
+            if ($Sql -cmatch "SELECT 'DocumentIdentitySequence\|") { return 'DocumentIdentitySequence|5000000200|true|1|5000000200' }
+            if ($Sql -cmatch "SELECT 'DescriptorIdentitySequence\|") {
+                switch ($script:sequenceMode) {
+                    'uncalled' { return 'DescriptorIdentitySequence|42|false|1|42' }
+                    'behind' { return 'DescriptorIdentitySequence|41|true|1|42' }
+                    'descending' { return 'DescriptorIdentitySequence|44|true|-1|42' }
+                    'exhausted' { return 'DescriptorIdentitySequence|2147483647|true|1|2147483647' }
+                    'safeUncalled' { return 'DescriptorIdentitySequence|43|false|1|42' }
+                    default { return 'DescriptorIdentitySequence|42|true|1|42' }
+                }
+            }
+            if ($Sql -cmatch "SELECT 'CollectionItemIdSequence\|") { return 'CollectionItemIdSequence|9003|true|1|9003' }
+            throw "Unexpected query SQL: $Sql"
+        }
+    }
+    It 'Uses the shared reader exact stored-column inventory and excludes both generated aliases' {
+        $compactInventory.columns.Count | Should -Be 7
+        $compactInventory.aliases.Count | Should -Be 2
+        $sql = Get-DescriptorRemapSql -StagedTable '"northridge_staging"."example"' -Column $compactInventory.columns
+        @([regex]::Matches($sql, '(?m)^UPDATE ')).Count | Should -Be 7
+        @([regex]::Matches($sql, 'Unmapped descriptor reference')).Count | Should -Be 7
+        foreach ($alias in $compactInventory.aliases) { $sql | Should -Not -Match ([regex]::Escape('SET "' + $alias.name + '"')) }
+        $sql | Should -Match 'm\."DocumentId" = s\.'
+        $sql | Should -Match '= m\."DescriptorId"'
+    }
+    It 'Carries the authoritative core and Sample inventory through the same reader' {
+        foreach ($case in @(@{ Name = 'ds-5.2'; Count = 595 }, @{ Name = 'sample'; Count = 623 })) {
+            $path = Join-Path $repo "src/dms/backend/Fixtures/authoritative/$($case.Name)/expected/relational-model.pgsql.manifest.json"
+            $inventory = Read-CompactDescriptorInventory -Dialect pgsql -ExpectedModelManifestPath $path
+            $inventory.columns.Count | Should -Be $case.Count
+            if ($case.Name -ceq 'sample') { $inventory.data_schemas | Should -Contain 'tracked_changes_sample' }
+        }
+    }
+    It 'Rejects missing, incomplete, wrong-dialect and pre-compact inputs before any command boundary' {
+        { Read-CompactDescriptorInventory -Dialect pgsql -ExpectedModelManifestPath (Join-Path $TestDrive 'missing.json') } | Should -Throw
+        foreach ($mutation in @('coverage', 'dialect', 'wide')) {
+            $model = Get-Content $baseline -Raw | ConvertFrom-Json -AsHashtable
+            switch ($mutation) {
+                'coverage' { $model.resource_details = @($model.resource_details | Select-Object -Skip 1) }
+                'dialect' { $model.dialect = 'mssql' }
+                'wide' { ($model.resource_details.tables.columns | Where-Object { $_.kind -ceq 'DescriptorFk' } | Select-Object -First 1).type.kind = 'Int64' }
+            }
+            $path = Join-Path $TestDrive "$mutation.json"
+            ConvertTo-Json -InputObject $model -Depth 100 | Set-Content $path
+            { Read-CompactDescriptorInventory -Dialect pgsql -ExpectedModelManifestPath $path } | Should -Throw
+        }
+        Should -Invoke Invoke-PsqlQuery -Times 0 -Exactly
+    }
+    It 'Fails source preflight when a writable compact column is absent or omitted from remapping coverage' {
+        $target = @([pscustomobject]@{ Name = 'SchoolTypeDescriptor_DescriptorId'; Type = 'integer'; Generated = $false })
+        $source = @([pscustomobject]@{ Name = 'SchoolTypeDescriptor_DescriptorId'; Type = 'bigint'; Generated = $false })
+        { Assert-CopyColumnShape -QualifiedTable 'edfi.Student' -Source $source -Target $target -Inventory $compactInventory } | Should -Not -Throw
+        $missing = @([pscustomobject]@{ Name = 'Other'; Type = 'bigint'; Generated = $false })
+        { Assert-CopyColumnShape -QualifiedTable 'edfi.Student' -Source $missing -Target $target -Inventory $compactInventory } | Should -Throw '*source-shape coverage*'
+        $omitted = $compactInventory.Clone()
+        $omitted.columns = @($omitted.columns | Where-Object { $_.table -cne 'Student' })
+        { Assert-CopyColumnShape -QualifiedTable 'edfi.Student' -Source $source -Target $target -Inventory $omitted } | Should -Throw '*legacy source type*'
+    }
+    It 'Requires generated aliases to retain their compact target type and skips remapping them' {
+        $source = @([pscustomobject]@{ Name = 'PrimarySchoolTypeDescriptor_DescriptorId'; Type = 'bigint'; Generated = $true })
+        $target = @([pscustomobject]@{ Name = 'PrimarySchoolTypeDescriptor_DescriptorId'; Type = 'integer'; Generated = $true })
+        { Assert-CopyColumnShape -QualifiedTable 'edfi.ProfileRootOnlyMergeItem' -Source $source -Target $target -Inventory $compactInventory } | Should -Not -Throw
+        $target[0].Type = 'bigint'
+        { Assert-CopyColumnShape -QualifiedTable 'edfi.ProfileRootOnlyMergeItem' -Source $source -Target $target -Inventory $compactInventory } | Should -Throw '*noncompact generated descriptor alias*'
+    }
+    It 'Builds history conversion solely from the qualified descriptor catalog and fails unknown or ambiguous types' {
+        $sql = Get-DescriptorHistoryConversionSql -StagedTable '"northridge_staging"."history"' -Inventory $compactInventory
+        $sql | Should -Match 'Unknown or ambiguous descriptor history type identity'
+        $sql | Should -Match 'COUNT\(\*\).*dms\."ResourceKey"'
+        $sql | Should -Match ([regex]::Escape('"ProjectName" || ''.'' || k."ResourceName"'))
+        $sql | Should -Match '"project_name":"Ed-Fi"'
+        $sql | Should -Match '"project_name":"Sample"'
+        $sql | Should -Not -Match 'dms\."(Document|Descriptor)"'
+    }
+    It 'Passes independent compact allocation with unequal descriptor/document maxima and never advances sequences' {
+        (Test-SequencePosition -DatabaseName 'target').Count | Should -Be 0
+        $compactSql = @($script:sqlSent | Where-Object { $_ -cmatch "SELECT 'DescriptorIdentitySequence\|" })
+        $compactSql.Count | Should -Be 1
+        $compactSql[0] | Should -Match 'MAX\("DescriptorId"\) FROM dms\."Descriptor"'
+        $compactSql[0] | Should -Not -Match 'MAX\("DocumentId"\)'
+        $script:sqlSent -join "`n" | Should -Not -Match 'nextval\s*\('
+    }
+    It 'Rejects colliding, exhausted or non-ascending descriptor positions for <mode>' -ForEach @(@{ Mode = 'uncalled' }, @{ Mode = 'behind' }, @{ Mode = 'descending' }, @{ Mode = 'exhausted' }) {
+        $script:sequenceMode = $mode
+        (Test-SequencePosition -DatabaseName 'target') -join ';' | Should -Match 'DescriptorIdentitySequence'
+    }
+    It 'Computes the safe next descriptor value while is_called is false' {
+        $script:sequenceMode = 'safeUncalled'
+        (Test-SequencePosition -DatabaseName 'target').Count | Should -Be 0
+    }
+    It 'Fails on missing or shared descriptor allocator metadata for <mode>' -ForEach @(@{ Mode = 'missing' }, @{ Mode = 'shared' }) {
+        $script:sequenceMode = $mode
+        (Test-SequencePosition -DatabaseName 'target') -join ';' | Should -Match 'owns no independent sequence'
+    }
+    It 'Keeps both Copy and Checkpoint WhatIf database-free without opening the baseline' {
+        Mock docker { throw 'WhatIf contacted Docker' }
+        foreach ($mode in @('Copy', 'Checkpoint')) {
+            $arguments = @{ Mode = $mode; TargetDatabase = 'target'; ExpectedDocumentCount = 4;
+                ExpectedModelManifestPath = 'missing-baseline.json'; OutputDirectory = $TestDrive; WhatIf = $true }
+            if ($mode -ceq 'Copy') { $arguments.DumpPath = 'missing.dump'; $arguments.SourceDatabase = 'source' }
+            else { $arguments.CheckpointName = 'C2' }
+            (@(& $script:copyScript @arguments) -join "`n") | Should -Match 'WhatIf: no database was contacted'
+        }
+        Should -Invoke docker -Times 0 -Exactly
+        Should -Invoke Invoke-PsqlQuery -Times 0 -Exactly
     }
 }

@@ -93,6 +93,7 @@ function Read-CompactDescriptorInventory {
         throw 'Missing or pre-compact shared descriptor/history baseline.'
     }
 
+    $aliases = [System.Collections.Generic.List[object]]::new()
     $columns = [System.Collections.Generic.List[object]]::new()
     $constraints = [System.Collections.Generic.List[object]]::new()
     $indexes = [System.Collections.Generic.List[object]]::new()
@@ -102,6 +103,7 @@ function Read-CompactDescriptorInventory {
             if ($column.type.kind -cne 'Int32') { throw "Pre-compact descriptor column/alias: $tableKey/$($column.name)." }
             if ($column.storage.kind -ceq 'UnifiedAlias') {
                 $canonical = @($table.columns | Where-Object { $_.name -ceq $column.storage.canonical_column -and $_.storage.kind -ceq 'Stored' -and $_.kind -ceq 'DescriptorFk' })
+                $aliases.Add(@{ schema = $table.schema; table = $table.name; name = $column.name })
                 if ($canonical.Count -ne 1) { throw "Missing canonical descriptor storage for alias: $tableKey/$($column.name)." }
             }
             elseif ($column.storage.kind -cne 'Stored') { throw "Unsupported descriptor storage: $tableKey/$($column.name)." }
@@ -155,8 +157,9 @@ function Read-CompactDescriptorInventory {
             @{ name = 'PK_tracked_changes_edfi_Descriptor'; table = @{ schema = 'tracked_changes_edfi'; name = 'Descriptor' }; kind = 'PrimaryKey'; is_unique = $true; key_columns = @('ChangeVersion') }
         )) { $indexes.Add($index) }
     $expectedResources = @($model.resources) + @($model.abstract_identity_tables | ForEach-Object { $_.resource })
-    return @{ dialect = $Dialect; effective_schema_hash = $model.effective_schema_hash; projects = @($model.projects);
-        resources = $expectedResources; columns = @($columns.ToArray()); required_columns = $requiredColumns;
+    $dataSchemas = @(@($tables.Values | ForEach-Object { $_.schema }) + @($model.tracked_change_tables | ForEach-Object { $_.table.schema }) | Sort-Object -Unique -CaseSensitive)
+    return @{ data_schemas = $dataSchemas; dialect = $Dialect; effective_schema_hash = $model.effective_schema_hash; projects = @($model.projects);
+        resources = $expectedResources; aliases = @($aliases.ToArray()); columns = @($columns.ToArray()); required_columns = $requiredColumns;
         constraints = @($constraints.ToArray()); indexes = @($indexes.ToArray()) }
 }
 

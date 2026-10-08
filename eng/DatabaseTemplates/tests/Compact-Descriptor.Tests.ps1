@@ -14,6 +14,8 @@ Describe 'Compact descriptor manifest inventory' {
     It 'Selects exactly canonical storage, including extension/nested/abstract/composite shapes for <dialect>' -ForEach @(@{ Dialect = 'pgsql' }, @{ Dialect = 'mssql' }) {
         $inventory = Read-CompactDescriptorInventory -Dialect $dialect -ExpectedModelManifestPath (Join-Path $fixture "relational-model.$dialect.manifest.json")
         $inventory.columns.Count | Should -Be 7
+        $inventory.aliases.name | Should -Be @('PrimarySchoolTypeDescriptor_DescriptorId', 'SecondarySchoolTypeDescriptor_DescriptorId')
+        $inventory.data_schemas | Should -Be @('edfi', 'sample', 'tracked_changes_edfi')
         @($inventory.columns | Where-Object { $_.schema -ceq 'sample' }).Count | Should -Be 1
         @($inventory.columns | Where-Object { $_.table -ceq 'DescriptorSubjectIdentity' }).Count | Should -Be 1
         @($inventory.columns | Where-Object { $_.table -ceq 'ProfileRootOnlyMergeItemItemNested' }).Count | Should -Be 1
