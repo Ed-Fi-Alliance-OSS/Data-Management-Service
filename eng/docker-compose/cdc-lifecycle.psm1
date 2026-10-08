@@ -686,6 +686,12 @@ function Invoke-CdcDeploymentLifecycle {
     Governs all retained connectors before worker stop, retained startup, or destructive teardown.
     #>
     param([string]$Project, [string]$StartScript, [hashtable]$Parameters)
+    # Both entry scripts route here whenever a retained deployment exists, so a restore request would
+    # otherwise be silently ignored while the retained stack restarts. Refuse it before the lock is
+    # created and before any inventory, environment, lifecycle, or infrastructure effect.
+    if (-not [string]::IsNullOrWhiteSpace([string]$Parameters['RestoreTemplate']) -or -not [string]::IsNullOrWhiteSpace([string]$Parameters['PackageDirectory'])) {
+        throw 'Restore mode (-RestoreTemplate/-PackageDirectory) is unsupported while a retained CDC deployment exists for this project; retire it with -d -v first, or restore on a host without a retained deployment.'
+    }
     $lock = Enter-CdcDeploymentLock $Project
     $environmentSnapshot = @{}
     try {

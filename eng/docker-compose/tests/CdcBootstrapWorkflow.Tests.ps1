@@ -490,6 +490,49 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
         Test-Path (Join-Path $script:sandbox 'calls') | Should -BeFalse
     }
 
+    It 'refuses <restoreInput> on <wrapper>/<provider> with a retained deployment in <phase> before any effect' -ForEach @(
+        foreach ($wrapper in @('local', 'published')) {
+            foreach ($provider in @('postgresql', 'mssql')) {
+                foreach ($phase in @('Active', 'Stopped')) {
+                    @{ restoreInput = '-RestoreTemplate'; wrapper = $wrapper; provider = $provider; phase = $phase; restore = @{ RestoreTemplate = 'Minimal' } }
+                    @{ restoreInput = '-PackageDirectory'; wrapper = $wrapper; provider = $provider; phase = $phase; restore = @{ PackageDirectory = 'packages' } }
+                    @{ restoreInput = '-RestoreTemplate -PackageDirectory'; wrapper = $wrapper; provider = $provider; phase = $phase; restore = @{ RestoreTemplate = 'Minimal'; PackageDirectory = 'packages' } }
+                }
+            }
+        }
+    ) {
+        # A real retained deployment, registered through the entry point exactly as an ordinary CDC bootstrap does.
+        Copy-Item (Join-Path $script:composeRoot 'cdc-lifecycle.psm1') (Join-Path $script:sandbox 'cdc-lifecycle.psm1') -Force
+        '' | Set-Content (Join-Path $script:sandbox 'real-lifecycle')
+        $entryPoint = Join-Path $script:sandbox "bootstrap-$wrapper-dms.ps1"
+        & $entryPoint @script:arguments -DatabaseEngine $provider
+        $deployments = Join-Path $script:sandbox '.cdc-deployments'
+        if ($phase -eq 'Stopped') {
+            # The ordinary governed stop. A Stopped deployment is the shape an unguarded restore
+            # request would otherwise restart (infrastructure, worker, DMS) while ignoring the restore.
+            Mock -ModuleName cdc-lifecycle Invoke-CdcLifecycleCommand { $Entry.ConnectorName = 'connector-42' }
+            Mock -ModuleName cdc-lifecycle Invoke-CdcLifecycleRest {
+                if ($Path -eq 'connectors') { return @('connector-42') }
+                return @{ name = 'connector-42'; connector = @{ state = 'STOPPED' }; tasks = @() }
+            }
+            Mock -ModuleName cdc-lifecycle Invoke-CdcLifecycleDocker { return @() }
+            & $entryPoint -d
+        }
+        (Get-Content (Join-Path $deployments "dms-$wrapper.json") -Raw | ConvertFrom-Json).Phase | Should -Be $phase
+        Mock -ModuleName cdc-lifecycle Invoke-CdcLifecycleCommand { throw 'Unexpected controller command' }
+        # Reset the observable effects of that setup run: the phase call log and the lock file.
+        Remove-Item (Join-Path $script:sandbox 'calls') -Force
+        $lockPath = Join-Path $deployments "dms-$wrapper.lock"
+        Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
+        $inventoryBefore = @(Get-ChildItem -LiteralPath $deployments -File | Sort-Object Name | ForEach-Object { "$($_.Name)=$((Get-FileHash -LiteralPath $_.FullName).Hash)" })
+
+        { & $entryPoint @restore } | Should -Throw '*Restore mode (-RestoreTemplate/-PackageDirectory) is unsupported while a retained CDC deployment exists*'
+
+        Test-Path (Join-Path $script:sandbox 'calls') | Should -BeFalse -Because 'no start, configure, provision, CDC, DMS, or seed phase may run'
+        $lockPath | Should -Not -Exist -Because 'the refusal must precede lock acquisition'
+        @(Get-ChildItem -LiteralPath $deployments -File | Sort-Object Name | ForEach-Object { "$($_.Name)=$((Get-FileHash -LiteralPath $_.FullName).Hash)" }) | Should -Be $inventoryBefore
+    }
+
     It 'keeps non-CDC managed provisioning source-history-only before writer handoff for <wrapper>' -ForEach @(
         @{ wrapper = 'local' }, @{ wrapper = 'published' }
     ) {
