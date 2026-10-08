@@ -53,6 +53,14 @@ public class Given_The_Parity_Scenario_Catalog
         "Api/ProfileRootOnlyMerge/CreatesAndReadsViaVisibleProfile",
         "Api/ProfileRootOnlyMerge/PreservesHiddenFieldOnProfiledPut",
         "Api/ProfileRootOnlyMerge/RejectsWriteAgainstReadOnlyProfile",
+        "Api/DescriptorRuntime/RIPostComponentAndCasingUpdates",
+        "Api/DescriptorRuntime/EqualWholeUriPut",
+        "Api/DescriptorRuntime/IdenticalPostAndPutNoOps",
+        "Api/DescriptorRuntime/DuplicateWithoutRIMatch",
+        "Api/DescriptorRuntime/QualifiedTypeIsolation",
+        "Api/DescriptorRuntime/ImmutablePutIdentity",
+        "Api/DescriptorRuntime/DescriptiveAndDateUpdates",
+        "Api/DescriptorRuntime/NamespaceAuthorization",
     ];
 
     private static readonly string[] ExpectedProfileIds =
