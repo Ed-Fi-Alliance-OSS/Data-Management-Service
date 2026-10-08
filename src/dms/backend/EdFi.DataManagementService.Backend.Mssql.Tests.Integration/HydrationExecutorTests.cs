@@ -981,7 +981,7 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
             .ContainSingle()
             .Which.Rows.Select(row => row.DescriptorId)
             .Should()
-            .Equal(12001L, 12002L);
+            .Equal(12001, 12002);
 
         var documentReferenceLookup = _fastPathResult.DocumentReferenceLookup;
 

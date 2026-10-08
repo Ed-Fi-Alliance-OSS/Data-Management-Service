@@ -73,8 +73,8 @@ public class Given_Relational_Write_Current_State_Loader
                         (short)1
                     )
                 ),
-                CreateDescriptorRootTableRows((345L, 601L)),
-                CreateDescriptorRowsTable((601L, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"))
+                CreateDescriptorRootTableRows((345L, 601)),
+                CreateDescriptorRowsTable((601, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"))
             )
         );
         var connection = new RecordingDbConnection(command);
@@ -87,7 +87,7 @@ public class Given_Relational_Write_Current_State_Loader
         result.DocumentMetadata.DocumentId.Should().Be(345L);
         result.TableRowsInDependencyOrder.Should().ContainSingle();
         result.TableRowsInDependencyOrder[0].Rows.Should().ContainSingle();
-        ((long)result.TableRowsInDependencyOrder[0].Rows[0][1]!).Should().Be(601L);
+        ((long)result.TableRowsInDependencyOrder[0].Rows[0][1]!).Should().Be(601);
         command.CommandText.Should().NotContain("select \"DescriptorId\", \"Uri\" from dms.\"Descriptor\"");
         connection.CreateCommandCallCount.Should().Be(1);
         command.ExecuteReaderCallCount.Should().Be(1);
@@ -405,7 +405,7 @@ public class Given_Relational_Write_Current_State_Loader
                 new DbColumnModel(
                     new DbColumnName("EntryGradeLevelDescriptor_DescriptorId"),
                     ColumnKind.DescriptorFk,
-                    new RelationalScalarType(ScalarKind.Int64),
+                    new RelationalScalarType(ScalarKind.Int32),
                     false,
                     null,
                     descriptorResource,
@@ -515,11 +515,11 @@ public class Given_Relational_Write_Current_State_Loader
         return table;
     }
 
-    private static DataTable CreateDescriptorRootTableRows(params (long DocumentId, long DescriptorId)[] rows)
+    private static DataTable CreateDescriptorRootTableRows(params (long DocumentId, int DescriptorId)[] rows)
     {
         var table = new DataTable();
         table.Columns.Add("DocumentId", typeof(long));
-        table.Columns.Add("EntryGradeLevelDescriptor_DescriptorId", typeof(long));
+        table.Columns.Add("EntryGradeLevelDescriptor_DescriptorId", typeof(int));
 
         foreach (var row in rows)
         {
@@ -529,10 +529,10 @@ public class Given_Relational_Write_Current_State_Loader
         return table;
     }
 
-    private static DataTable CreateDescriptorRowsTable(params (long DescriptorId, string Uri)[] rows)
+    private static DataTable CreateDescriptorRowsTable(params (int DescriptorId, string Uri)[] rows)
     {
         var table = new DataTable();
-        table.Columns.Add("DescriptorId", typeof(long));
+        table.Columns.Add("DescriptorId", typeof(int));
         table.Columns.Add("Uri", typeof(string));
 
         foreach (var row in rows)

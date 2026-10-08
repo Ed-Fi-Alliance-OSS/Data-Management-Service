@@ -92,7 +92,7 @@ public class Given_DocumentReconstituter_With_Root_Scalars_Only
             tableRowsInDependencyOrder: [tableRows],
             referenceProjectionPlans: [],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -211,7 +211,7 @@ public class Given_DocumentReconstituter_With_Decimal_Scalars
             tableRowsInDependencyOrder: [tableRows],
             referenceProjectionPlans: [],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -348,7 +348,7 @@ public class Given_DocumentReconstituter_With_Null_Scalar
             tableRowsInDependencyOrder: [tableRows],
             referenceProjectionPlans: [],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -444,7 +444,7 @@ public class Given_DocumentReconstituter_With_Unsupported_Scalar_Value
                 tableRowsInDependencyOrder: [tableRows],
                 referenceProjectionPlans: [],
                 descriptorProjectionSources: [],
-                descriptorUriLookup: new Dictionary<long, string>()
+                descriptorUriLookup: new Dictionary<int, string>()
             );
 
         _exception = act.Should().Throw<InvalidOperationException>().Which;
@@ -528,7 +528,7 @@ public class Given_DocumentReconstituter_With_A_Date_Scalar_Read_As_DateTime
             tableRowsInDependencyOrder: [tableRows],
             referenceProjectionPlans: [],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -606,7 +606,7 @@ public class Given_DocumentReconstituter_With_A_DateTime_Scalar_Read_As_Unspecif
             tableRowsInDependencyOrder: [tableRows],
             referenceProjectionPlans: [],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -758,7 +758,7 @@ public class Given_DocumentReconstituter_With_Collection
             tableRowsInDependencyOrder: [rootTableRows, addressTableRows],
             referenceProjectionPlans: [],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -1022,7 +1022,7 @@ public class Given_DocumentReconstituter_With_Nested_Collection
             tableRowsInDependencyOrder: [rootTableRows, addressTableRows, periodTableRows],
             referenceProjectionPlans: [],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -1160,7 +1160,7 @@ public class Given_DocumentReconstituter_With_Reference
             tableRowsInDependencyOrder: [tableRows],
             referenceProjectionPlans: [refPlan],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -1290,7 +1290,7 @@ public class Given_DocumentReconstituter_With_A_Reference_Identity_Date_Field_Re
             tableRowsInDependencyOrder: [tableRows],
             referenceProjectionPlans: [refPlan],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -1408,7 +1408,7 @@ public class Given_DocumentReconstituter_With_A_Reference_Identity_Time_Field_Re
             tableRowsInDependencyOrder: [tableRows],
             referenceProjectionPlans: [refPlan],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -1455,7 +1455,7 @@ public class Given_DocumentReconstituter_With_Descriptor
             new(
                 ColumnName: new DbColumnName("EntryGradeLevelDescriptor_DescriptorId"),
                 Kind: ColumnKind.DescriptorFk,
-                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                ScalarType: new RelationalScalarType(ScalarKind.Int32),
                 IsNullable: false,
                 SourceJsonPath: null,
                 TargetResource: _gradeLevelDescriptorResource
@@ -1490,7 +1490,7 @@ public class Given_DocumentReconstituter_With_Descriptor
             DescriptorResource: _gradeLevelDescriptorResource
         );
 
-        object?[] row = [1L, 100L];
+        object?[] row = [1L, 100];
 
         var tableRows = new HydratedTableRows(tableModel, [row]);
 
@@ -1499,9 +1499,9 @@ public class Given_DocumentReconstituter_With_Descriptor
             tableRowsInDependencyOrder: [tableRows],
             referenceProjectionPlans: [],
             descriptorProjectionSources: [descriptorSource],
-            descriptorUriLookup: new Dictionary<long, string>
+            descriptorUriLookup: new Dictionary<int, string>
             {
-                { 100L, "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade" },
+                { 100, "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade" },
             }
         );
     }
@@ -1813,7 +1813,7 @@ public class Given_DocumentReconstituter_With_Nested_Collection_And_Root_Extensi
             ],
             referenceProjectionPlans: [],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -2194,7 +2194,7 @@ public class Given_DocumentReconstituter_With_Collection_Extension_Scope_And_Chi
             tableRowsInDependencyOrder: _tableRowsInDependencyOrder,
             referenceProjectionPlans: [],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -2495,7 +2495,7 @@ public class Given_DocumentReconstituter_With_Root_Extension_And_Child_Extension
             tableRowsInDependencyOrder: _tableRowsInDependencyOrder,
             referenceProjectionPlans: [],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -2879,7 +2879,7 @@ public class Given_DocumentReconstituter_With_Overlapping_Root_Extension_Project
             tableRowsInDependencyOrder: _tableRowsInDependencyOrder,
             referenceProjectionPlans: [],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -2940,7 +2940,7 @@ public class Given_DocumentReconstituter_With_Null_Descriptor_FK
             new(
                 ColumnName: new DbColumnName("EntryGradeLevelDescriptor_DescriptorId"),
                 Kind: ColumnKind.DescriptorFk,
-                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                ScalarType: new RelationalScalarType(ScalarKind.Int32),
                 IsNullable: true,
                 SourceJsonPath: null,
                 TargetResource: _gradeLevelDescriptorResource
@@ -2985,9 +2985,9 @@ public class Given_DocumentReconstituter_With_Null_Descriptor_FK
             tableRowsInDependencyOrder: [tableRows],
             referenceProjectionPlans: [],
             descriptorProjectionSources: [descriptorSource],
-            descriptorUriLookup: new Dictionary<long, string>
+            descriptorUriLookup: new Dictionary<int, string>
             {
-                { 100L, "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade" },
+                { 100, "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade" },
             }
         );
     }
@@ -3033,7 +3033,7 @@ public class Given_DocumentReconstituter_With_Unresolved_Descriptor_Id
             new(
                 ColumnName: new DbColumnName("EntryGradeLevelDescriptor_DescriptorId"),
                 Kind: ColumnKind.DescriptorFk,
-                ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                ScalarType: new RelationalScalarType(ScalarKind.Int32),
                 IsNullable: false,
                 SourceJsonPath: null,
                 TargetResource: _gradeLevelDescriptorResource
@@ -3069,7 +3069,7 @@ public class Given_DocumentReconstituter_With_Unresolved_Descriptor_Id
         );
 
         // FK value 999 is not in the lookup — simulates a projection plan or executor defect
-        object?[] row = [1L, 999L];
+        object?[] row = [1L, 999];
 
         var tableRows = new HydratedTableRows(tableModel, [row]);
 
@@ -3079,9 +3079,9 @@ public class Given_DocumentReconstituter_With_Unresolved_Descriptor_Id
                 tableRowsInDependencyOrder: [tableRows],
                 referenceProjectionPlans: [],
                 descriptorProjectionSources: [descriptorSource],
-                descriptorUriLookup: new Dictionary<long, string>
+                descriptorUriLookup: new Dictionary<int, string>
                 {
-                    { 100L, "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade" },
+                    { 100, "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade" },
                 }
             );
 
@@ -3184,7 +3184,7 @@ public class Given_DocumentReconstituter_With_Inlined_Nested_Scalars
             tableRowsInDependencyOrder: [tableRows],
             referenceProjectionPlans: [],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -3371,7 +3371,7 @@ public class Given_DocumentReconstituter_With_Collection_Under_Inlined_Object
             ],
             referenceProjectionPlans: [],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -3560,7 +3560,7 @@ public class Given_DocumentReconstituter_With_Empty_Collection
             tableRowsInDependencyOrder: [rootTableRows, addressTableRows],
             referenceProjectionPlans: [],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -3681,7 +3681,7 @@ public class Given_DocumentReconstituter_With_Null_Optional_Reference
             tableRowsInDependencyOrder: [tableRows],
             referenceProjectionPlans: [refPlan],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -3810,7 +3810,7 @@ public class Given_DocumentReconstituter_With_Physical_Order_Different_From_Comp
                 new DbColumnModel(
                     new DbColumnName("GammaDescriptor_DescriptorId"),
                     ColumnKind.DescriptorFk,
-                    new RelationalScalarType(ScalarKind.Int64),
+                    new RelationalScalarType(ScalarKind.Int32),
                     false,
                     null,
                     _gammaDescriptorResource
@@ -3916,7 +3916,7 @@ public class Given_DocumentReconstituter_With_Physical_Order_Different_From_Comp
             ]
         );
 
-        object?[] rootRow = [1L, "z-value", 55L, 3, "uri-space", 99L, "code-1"];
+        object?[] rootRow = [1L, "z-value", 55L, 3, "uri-space", 99, "code-1"];
         object?[] omegaRow = [2001L, 1L, 0, "delta-1"];
 
         _result = DocumentReconstituter.Reconstitute(
@@ -3937,7 +3937,7 @@ public class Given_DocumentReconstituter_With_Physical_Order_Different_From_Comp
                     DescriptorResource: _gammaDescriptorResource
                 ),
             ],
-            descriptorUriLookup: new Dictionary<long, string> { [99L] = "uri://gamma" }
+            descriptorUriLookup: new Dictionary<int, string> { [99] = "uri://gamma" }
         );
     }
 
@@ -4108,7 +4108,7 @@ public class Given_DocumentReconstituter_With_Empty_Collection_Under_Inlined_Obj
             ],
             referenceProjectionPlans: [],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -4330,7 +4330,7 @@ public class Given_DocumentReconstituter_With_Empty_Collection_Extension_Scope
             ],
             referenceProjectionPlans: [],
             descriptorProjectionSources: [],
-            descriptorUriLookup: new Dictionary<long, string>()
+            descriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -4476,7 +4476,7 @@ public class Given_DocumentReconstituter_With_Descriptor_On_Collection_Item
                 new DbColumnModel(
                     new DbColumnName("AddressType_DescriptorId"),
                     ColumnKind.DescriptorFk,
-                    new RelationalScalarType(ScalarKind.Int64),
+                    new RelationalScalarType(ScalarKind.Int32),
                     true,
                     null,
                     _addressTypeDescriptorResource
@@ -4503,7 +4503,7 @@ public class Given_DocumentReconstituter_With_Descriptor_On_Collection_Item
         );
 
         object?[] rootRow = [1L, 255901];
-        object?[] addressRow = [10L, 1L, 0, "Grand Bend", 100L];
+        object?[] addressRow = [10L, 1L, 0, "Grand Bend", 100];
 
         _result = DocumentReconstituter.Reconstitute(
             documentId: 1L,
@@ -4514,9 +4514,9 @@ public class Given_DocumentReconstituter_With_Descriptor_On_Collection_Item
             ],
             referenceProjectionPlans: [],
             descriptorProjectionSources: [descriptorSource],
-            descriptorUriLookup: new Dictionary<long, string>
+            descriptorUriLookup: new Dictionary<int, string>
             {
-                [100L] = "uri://ed-fi.org/AddressTypeDescriptor#Physical",
+                [100] = "uri://ed-fi.org/AddressTypeDescriptor#Physical",
             }
         );
     }
@@ -4750,7 +4750,7 @@ file static class PageBasedDocumentReconstituterTestData
                 new DbColumnModel(
                     new DbColumnName("SchoolCategoryDescriptor_DescriptorId"),
                     ColumnKind.DescriptorFk,
-                    new RelationalScalarType(ScalarKind.Int64),
+                    new RelationalScalarType(ScalarKind.Int32),
                     false,
                     null,
                     new QualifiedResourceName("Ed-Fi", "SchoolCategoryDescriptor")
@@ -4903,7 +4903,7 @@ file static class PageBasedDocumentReconstituterTestData
                 new HydratedTableRows(
                     rootTable,
                     [
-                        [1L, 255901, 42L, 9001, 601L],
+                        [1L, 255901, 42L, 9001, 601],
                     ]
                 ),
                 new HydratedTableRows(
@@ -4928,7 +4928,7 @@ file static class PageBasedDocumentReconstituterTestData
             descriptorRowsInPlanOrder:
             [
                 new HydratedDescriptorRows([
-                    new DescriptorUriRow(601L, "uri://ed-fi.org/SchoolCategoryDescriptor#Alternative"),
+                    new DescriptorUriRow(601, "uri://ed-fi.org/SchoolCategoryDescriptor#Alternative"),
                 ]),
             ]
         );
@@ -4939,9 +4939,9 @@ file static class PageBasedDocumentReconstituterTestData
             HydratedPage: hydratedPage,
             ReferenceProjectionPlans: referenceProjectionPlans,
             DescriptorProjectionSources: descriptorProjectionSources,
-            DescriptorUriLookup: new Dictionary<long, string>
+            DescriptorUriLookup: new Dictionary<int, string>
             {
-                [601L] = "uri://ed-fi.org/SchoolCategoryDescriptor#Alternative",
+                [601] = "uri://ed-fi.org/SchoolCategoryDescriptor#Alternative",
             }
         );
     }
@@ -5151,7 +5151,7 @@ file static class PageBasedDocumentReconstituterTestData
             HydratedPage: hydratedPage,
             ReferenceProjectionPlans: [],
             DescriptorProjectionSources: [],
-            DescriptorUriLookup: new Dictionary<long, string>()
+            DescriptorUriLookup: new Dictionary<int, string>()
         );
     }
 
@@ -5234,7 +5234,7 @@ file static class PageBasedDocumentReconstituterTestData
         HydratedPage HydratedPage,
         IReadOnlyList<ReferenceIdentityProjectionTablePlan> ReferenceProjectionPlans,
         IReadOnlyList<DescriptorEdgeSource> DescriptorProjectionSources,
-        IReadOnlyDictionary<long, string> DescriptorUriLookup
+        IReadOnlyDictionary<int, string> DescriptorUriLookup
     );
 }
 

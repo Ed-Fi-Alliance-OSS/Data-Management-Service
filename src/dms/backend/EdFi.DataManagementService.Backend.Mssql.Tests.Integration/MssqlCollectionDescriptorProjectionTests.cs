@@ -26,8 +26,8 @@ internal static class MssqlCollectionDescriptorProjectionFixture
     internal const long SchoolDocumentId1 = 820L;
     internal const long AddressCollectionItemId1 = 5001L;
     internal const long AddressCollectionItemId2 = 5002L;
-    internal const long DescriptorId920 = 920L;
-    internal const long DescriptorId921 = 921L;
+    internal const int DescriptorId920 = 920;
+    internal const int DescriptorId921 = 921;
     internal const string Uri920 = "uri://ed-fi.org/AddressTypeDescriptor#Physical";
     internal const string Uri921 = "uri://ed-fi.org/AddressTypeDescriptor#Mailing";
 
@@ -526,11 +526,11 @@ public class Given_Collection_Item_Null_Descriptor_FK_Omits_Property_Mssql
 
 file static class MssqlCollectionDescriptorProjectionTestHelper
 {
-    internal static IReadOnlyDictionary<long, string> BuildDescriptorUriLookup(
+    internal static IReadOnlyDictionary<int, string> BuildDescriptorUriLookup(
         IReadOnlyList<HydratedDescriptorRows> descriptorRowsInPlanOrder
     )
     {
-        Dictionary<long, string> lookup = [];
+        Dictionary<int, string> lookup = [];
 
         foreach (var descriptorRows in descriptorRowsInPlanOrder)
         {

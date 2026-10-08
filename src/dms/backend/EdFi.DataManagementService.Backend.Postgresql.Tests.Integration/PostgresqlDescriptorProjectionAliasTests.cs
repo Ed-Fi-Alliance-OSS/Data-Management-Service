@@ -31,7 +31,7 @@ internal static class DescriptorProjectionAliasFixture
     internal const string TestSchema = "descprojaliasinttest";
     internal const long DocumentId820 = 820L;
     internal const long DocumentId821 = 821L;
-    internal const long DescriptorId920 = 920L;
+    internal const int DescriptorId920 = 920;
     internal const string Uri920 = "uri://ed-fi.org/SubjectDescriptor#Mathematics";
 
     internal static readonly DbSchemaName Schema = new(TestSchema);
@@ -244,7 +244,7 @@ internal static class DescriptorProjectionAliasFixture
 public class Given_Key_Unified_Alias_Descriptor_FK_Executor_Returns_URI_From_Canonical_Column
 {
     private NpgsqlDataSource _dataSource = null!;
-    private IReadOnlyDictionary<long, string> _lookup = null!;
+    private IReadOnlyDictionary<int, string> _lookup = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()

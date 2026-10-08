@@ -23,8 +23,8 @@ internal static class MssqlDescriptorProjectionPipelineFixture
     internal const string TestSchema = "descprojpipelinemssqltest";
     internal const long DocumentId810 = 810L;
     internal const long DocumentId811 = 811L;
-    internal const long DescriptorId910 = 910L;
-    internal const long DescriptorId911 = 911L;
+    internal const int DescriptorId910 = 910;
+    internal const int DescriptorId911 = 911;
     internal const string Uri910 = "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts";
     internal const string Uri911 = "uri://ed-fi.org/InstructionLanguageDescriptor#English";
 
@@ -414,11 +414,11 @@ public class Given_Mssql_Reconstitution_With_Optional_Descriptor_Fk_Null
 
 file static class MssqlDescriptorProjectionPipelineTestHelper
 {
-    internal static IReadOnlyDictionary<long, string> BuildDescriptorUriLookup(
+    internal static IReadOnlyDictionary<int, string> BuildDescriptorUriLookup(
         IReadOnlyList<HydratedDescriptorRows> descriptorRowsInPlanOrder
     )
     {
-        Dictionary<long, string> lookup = [];
+        Dictionary<int, string> lookup = [];
 
         foreach (var descriptorRows in descriptorRowsInPlanOrder)
         {

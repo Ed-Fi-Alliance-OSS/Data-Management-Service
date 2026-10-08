@@ -18,7 +18,8 @@ public class Given_DescriptorReadRowReader
 
         await using var reader = CreateReader(
             RelationalAccessTestData.CreateRow(
-                ("DocumentId", 101L),
+                ("DescriptorId", 42),
+                ("DocumentId", 5000000042L),
                 ("DocumentUuid", documentUuid),
                 ("ContentVersion", 777L),
                 ("ContentLastModifiedAt", new DateTime(2026, 5, 5, 14, 30, 45, DateTimeKind.Unspecified)),
@@ -28,8 +29,7 @@ public class Given_DescriptorReadRowReader
                 ("ShortDescription", "Alternative"),
                 ("Description", "Alternative school type"),
                 ("EffectiveBeginDate", new DateTime(2025, 1, 15, 0, 0, 0, DateTimeKind.Unspecified)),
-                ("EffectiveEndDate", new DateOnly(2025, 12, 31)),
-                ("Discriminator", "SchoolTypeDescriptor")
+                ("EffectiveEndDate", new DateOnly(2025, 12, 31))
             )
         );
 
@@ -39,7 +39,7 @@ public class Given_DescriptorReadRowReader
             .Should()
             .Be(
                 new DescriptorReadRow(
-                    DocumentId: 101L,
+                    DocumentId: 5000000042L,
                     DocumentUuid: documentUuid,
                     ContentVersion: 777L,
                     ContentLastModifiedAt: new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero),
@@ -49,14 +49,13 @@ public class Given_DescriptorReadRowReader
                     ShortDescription: "Alternative",
                     Description: "Alternative school type",
                     EffectiveBeginDate: new DateOnly(2025, 1, 15),
-                    EffectiveEndDate: new DateOnly(2025, 12, 31),
-                    Discriminator: "SchoolTypeDescriptor"
+                    EffectiveEndDate: new DateOnly(2025, 12, 31)
                 )
             );
     }
 
     [Test]
-    public async Task It_preserves_null_optional_descriptor_fields_and_absent_discriminator()
+    public async Task It_preserves_null_optional_descriptor_fields()
     {
         var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-cccccccccccc");
 
@@ -82,7 +81,6 @@ public class Given_DescriptorReadRowReader
         result!.Description.Should().BeNull();
         result.EffectiveBeginDate.Should().BeNull();
         result.EffectiveEndDate.Should().BeNull();
-        result.Discriminator.Should().BeNull();
     }
 
     [TestCase("CodeValue")]
@@ -180,8 +178,7 @@ public class Given_DescriptorReadRowReader
                 ("ShortDescription", "Second"),
                 ("Description", "Second item"),
                 ("EffectiveBeginDate", new DateOnly(2025, 2, 1)),
-                ("EffectiveEndDate", null),
-                ("Discriminator", "SchoolTypeDescriptor")
+                ("EffectiveEndDate", null)
             )
         );
 
@@ -328,7 +325,6 @@ public class Given_DescriptorReadRowReader
             ("Description", null),
             ("EffectiveBeginDate", null),
             ("EffectiveEndDate", null),
-            ("Discriminator", "SchoolTypeDescriptor"),
         ];
 
         return RelationalAccessTestData.CreateRow(

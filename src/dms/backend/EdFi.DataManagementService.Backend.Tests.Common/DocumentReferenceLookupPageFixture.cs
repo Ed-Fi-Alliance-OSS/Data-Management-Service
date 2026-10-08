@@ -36,7 +36,7 @@ public static class DocumentReferenceLookupPageFixture
     public const long Program = 730;
     public const long OffPageProgram = 740;
 
-    public const long AttemptStatusDescriptorId = 800;
+    public const int AttemptStatusDescriptorId = 800;
     public const string AttemptStatusUri = "uri://ed-fi.org/AttemptStatusDescriptor#Active";
 
     public const short StudentResourceKeyId = 21;

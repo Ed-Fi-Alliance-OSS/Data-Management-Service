@@ -29,8 +29,8 @@ public class Given_HydrationReader_With_Descriptor_Result_Sets
 
         using var reader = HydrationDescriptorResultTestHelper.CreateReader(
             HydrationDescriptorResultTestHelper.CreateDescriptorRowsTableWithUriFirst(
-                ("uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade", 101L),
-                ("uri://ed-fi.org/GradeLevelDescriptor#Eleventh Grade", 202L)
+                ("uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade", 101),
+                ("uri://ed-fi.org/GradeLevelDescriptor#Eleventh Grade", 202)
             )
         );
 
@@ -43,8 +43,8 @@ public class Given_HydrationReader_With_Descriptor_Result_Sets
         result
             .Rows.Should()
             .Equal(
-                new DescriptorUriRow(101L, "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"),
-                new DescriptorUriRow(202L, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh Grade")
+                new DescriptorUriRow(101, "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"),
+                new DescriptorUriRow(202, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh Grade")
             );
     }
 }
@@ -83,10 +83,10 @@ public class Given_HydrationExecutor_With_Descriptor_Result_Sets
                 CreateRootTableRows((42L, 255901)),
                 CreateChildTableRows((100L, 42L, 0, "Springfield")),
                 CreateDescriptorRowsTableWithDescriptorIdFirst(
-                    (301L, "uri://ed-fi.org/SchoolTypeDescriptor#Charter")
+                    (301, "uri://ed-fi.org/SchoolTypeDescriptor#Charter")
                 ),
                 CreateDescriptorRowsTableWithDescriptorIdFirst(
-                    (401L, "uri://ed-fi.org/AddressTypeDescriptor#Home")
+                    (401, "uri://ed-fi.org/AddressTypeDescriptor#Home")
                 )
             )
         );
@@ -107,13 +107,13 @@ public class Given_HydrationExecutor_With_Descriptor_Result_Sets
             .Rows.Should()
             .ContainSingle()
             .Which.Should()
-            .Be(new DescriptorUriRow(301L, "uri://ed-fi.org/SchoolTypeDescriptor#Charter"));
+            .Be(new DescriptorUriRow(301, "uri://ed-fi.org/SchoolTypeDescriptor#Charter"));
         result
             .DescriptorRowsInPlanOrder[1]
             .Rows.Should()
             .ContainSingle()
             .Which.Should()
-            .Be(new DescriptorUriRow(401L, "uri://ed-fi.org/AddressTypeDescriptor#Home"));
+            .Be(new DescriptorUriRow(401, "uri://ed-fi.org/AddressTypeDescriptor#Home"));
     }
 
     [Test]
@@ -147,10 +147,10 @@ public class Given_HydrationExecutor_With_Descriptor_Result_Sets
                 CreateRootTableRows((42L, 255901)),
                 CreateChildTableRows((100L, 42L, 0, "Springfield")),
                 CreateDescriptorRowsTableWithDescriptorIdFirst(
-                    (301L, "uri://ed-fi.org/SchoolTypeDescriptor#Charter")
+                    (301, "uri://ed-fi.org/SchoolTypeDescriptor#Charter")
                 ),
                 CreateDescriptorRowsTableWithDescriptorIdFirst(
-                    (401L, "uri://ed-fi.org/AddressTypeDescriptor#Home")
+                    (401, "uri://ed-fi.org/AddressTypeDescriptor#Home")
                 )
             )
         );
@@ -302,11 +302,11 @@ public class Given_HydrationExecutor_With_Descriptor_Result_Sets
     }
 
     private static DataTable CreateDescriptorRowsTableWithDescriptorIdFirst(
-        params (long DescriptorId, string Uri)[] rows
+        params (int DescriptorId, string Uri)[] rows
     )
     {
         var table = new DataTable();
-        table.Columns.Add("DescriptorId", typeof(long));
+        table.Columns.Add("DescriptorId", typeof(int));
         table.Columns.Add("Uri", typeof(string));
 
         foreach (var row in rows)
@@ -521,12 +521,12 @@ internal static class HydrationDescriptorResultTestHelper
     }
 
     public static DataTable CreateDescriptorRowsTableWithUriFirst(
-        params (string Uri, long DescriptorId)[] rows
+        params (string Uri, int DescriptorId)[] rows
     )
     {
         var table = new DataTable();
         table.Columns.Add("Uri", typeof(string));
-        table.Columns.Add("DescriptorId", typeof(long));
+        table.Columns.Add("DescriptorId", typeof(int));
 
         foreach (var row in rows)
         {

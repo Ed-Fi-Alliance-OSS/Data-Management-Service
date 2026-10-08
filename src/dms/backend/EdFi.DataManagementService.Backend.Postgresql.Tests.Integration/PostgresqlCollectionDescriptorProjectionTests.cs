@@ -25,8 +25,8 @@ internal static class CollectionDescriptorProjectionFixture
     internal const long SchoolDocumentId1 = 820L;
     internal const long AddressCollectionItemId1 = 5001L;
     internal const long AddressCollectionItemId2 = 5002L;
-    internal const long DescriptorId920 = 920L;
-    internal const long DescriptorId921 = 921L;
+    internal const int DescriptorId920 = 920;
+    internal const int DescriptorId921 = 921;
     internal const string Uri920 = "uri://ed-fi.org/AddressTypeDescriptor#Physical";
     internal const string Uri921 = "uri://ed-fi.org/AddressTypeDescriptor#Mailing";
 

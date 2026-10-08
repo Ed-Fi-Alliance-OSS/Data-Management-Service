@@ -71,7 +71,7 @@ public static class DocumentReconstituter
         long documentId,
         ResourceReadPlan readPlan,
         IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
-        IReadOnlyDictionary<long, string> descriptorUriLookup
+        IReadOnlyDictionary<int, string> descriptorUriLookup
     )
     {
         ArgumentNullException.ThrowIfNull(readPlan);
@@ -197,7 +197,7 @@ public static class DocumentReconstituter
         IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
         IReadOnlyList<ReferenceIdentityProjectionTablePlan> referenceProjectionPlans,
         IReadOnlyList<DescriptorEdgeSource> descriptorProjectionSources,
-        IReadOnlyDictionary<long, string> descriptorUriLookup
+        IReadOnlyDictionary<int, string> descriptorUriLookup
     )
     {
         ArgumentNullException.ThrowIfNull(tableRowsInDependencyOrder);
@@ -223,7 +223,7 @@ public static class DocumentReconstituter
         long documentId,
         IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
         CompiledReconstitutionPlan compiledPlan,
-        IReadOnlyDictionary<long, string> descriptorUriLookup
+        IReadOnlyDictionary<int, string> descriptorUriLookup
     )
     {
         ArgumentNullException.ThrowIfNull(tableRowsInDependencyOrder);
@@ -579,7 +579,7 @@ public static class DocumentReconstituter
         JsonObject target,
         object?[] row,
         TableReconstitutionPlan tablePlan,
-        IReadOnlyDictionary<long, string> descriptorUriLookup
+        IReadOnlyDictionary<int, string> descriptorUriLookup
     )
     {
         foreach (var binding in tablePlan.DescriptorBindingsInOrder)
@@ -594,7 +594,7 @@ public static class DocumentReconstituter
                 .TableModel
                 .Columns[binding.DescriptorIdColumnOrdinal]
                 .ColumnName;
-            var descriptorId = ConvertDescriptorIdToInt64OrThrow(
+            var descriptorId = ReadDescriptorIdOrThrow(
                 descriptorIdValue,
                 tablePlan.Table,
                 descriptorIdColumn,
@@ -618,14 +618,18 @@ public static class DocumentReconstituter
         }
     }
 
-    private static long ConvertDescriptorIdToInt64OrThrow(
+    private static int ReadDescriptorIdOrThrow(
         object? value,
         DbTableName table,
         DbColumnName column,
         int columnOrdinal
     )
     {
-        return ConvertToInt64OrThrow(value, table, column, columnOrdinal, "descriptor ID");
+        return value is int descriptorId
+            ? descriptorId
+            : throw new InvalidOperationException(
+                CreateConversionFailureMessage("Int32 descriptor ID", table, column, columnOrdinal, value)
+            );
     }
 
     private static long ConvertToInt64OrThrow(

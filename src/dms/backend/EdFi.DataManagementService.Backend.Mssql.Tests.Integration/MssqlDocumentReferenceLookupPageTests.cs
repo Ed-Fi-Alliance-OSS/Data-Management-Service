@@ -336,7 +336,7 @@ public class Given_A_Mssql_Empty_Page_With_Document_References
 public class Given_A_Mssql_Descriptor_Only_Resource_Page
 {
     private const string TestSchema = "refpagedesc";
-    private const long GradeLevelDescriptorId = 810;
+    private const int GradeLevelDescriptorId = 810;
     private const string GradeLevelUri = "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade";
 
     private string _databaseName = null!;

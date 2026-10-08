@@ -30,9 +30,9 @@ internal static class DescriptorProjectionFixture
     internal const long DocumentId701 = 701L;
     internal const long DocumentId702 = 702L;
     internal const long DocumentId703 = 703L;
-    internal const long DescriptorId901 = 901L;
-    internal const long DescriptorId902 = 902L;
-    internal const long DescriptorId903 = 903L;
+    internal const int DescriptorId901 = 901;
+    internal const int DescriptorId902 = 902;
+    internal const int DescriptorId903 = 903;
     internal const string Uri901 = "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade";
     internal const string Uri902 = "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade";
     internal const string Uri903 = "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade";
@@ -255,7 +255,7 @@ internal static class DescriptorProjectionFixture
 public class Given_Required_Descriptor_FK_Resolves_To_URI
 {
     private NpgsqlDataSource _dataSource = null!;
-    private IReadOnlyDictionary<long, string> _lookup = null!;
+    private IReadOnlyDictionary<int, string> _lookup = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -426,8 +426,8 @@ public class Given_Null_Descriptor_FK_Omits_Property_From_Reconstituted_Document
 public class Given_Page_With_Multiple_Documents_And_Distinct_Descriptors
 {
     private NpgsqlDataSource _dataSource = null!;
-    private IReadOnlyDictionary<long, string> _lookup = null!;
-    private IReadOnlyDictionary<long, string> _sharedDescriptorLookup = null!;
+    private IReadOnlyDictionary<int, string> _lookup = null!;
+    private IReadOnlyDictionary<int, string> _sharedDescriptorLookup = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -644,7 +644,7 @@ public class Given_Descriptor_FK_Cleared_To_Null_Omits_Property_From_Reconstitut
 public class Given_Multi_Document_Page_Created_Via_Query_Keyset_Returns_All_Descriptor_URIs
 {
     private NpgsqlDataSource _dataSource = null!;
-    private IReadOnlyDictionary<long, string> _lookup = null!;
+    private IReadOnlyDictionary<int, string> _lookup = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -735,11 +735,11 @@ public class Given_Multi_Document_Page_Created_Via_Query_Keyset_Returns_All_Desc
 
 internal static class PostgresqlDescriptorProjectionTestHelper
 {
-    internal static IReadOnlyDictionary<long, string> BuildDescriptorUriLookup(
+    internal static IReadOnlyDictionary<int, string> BuildDescriptorUriLookup(
         IReadOnlyList<HydratedDescriptorRows> descriptorRowsInPlanOrder
     )
     {
-        Dictionary<long, string> lookup = [];
+        Dictionary<int, string> lookup = [];
 
         foreach (var descriptorRows in descriptorRowsInPlanOrder)
         {
