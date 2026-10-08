@@ -1223,7 +1223,7 @@ public class Given_MappingSetCompiler
                 new DbColumnModel(
                     ColumnName: new DbColumnName("AcademicSubjectDescriptorId"),
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: new JsonPathExpression(
                         "$.academicSubjectDescriptor",
