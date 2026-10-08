@@ -236,8 +236,8 @@ CREATE TABLE [dms].[Descriptor]
     [DescriptorId] int IDENTITY(1,1) NOT NULL,
     [DocumentId] bigint NOT NULL,
     [ResourceKeyId] smallint NOT NULL,
-    [Namespace] nvarchar(255) NOT NULL,
-    [CodeValue] nvarchar(50) NOT NULL,
+    [Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     [ShortDescription] nvarchar(75) NOT NULL,
     [Description] nvarchar(1024) NULL,
     [EffectiveBeginDate] date NULL,
@@ -754,7 +754,7 @@ CREATE TABLE [edfi].[ParentResourceParent]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentResource_DocumentId] bigint NOT NULL,
-    [ParentCode] nvarchar(30) NULL,
+    [ParentCode] nvarchar(30) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [ParentName] nvarchar(100) NULL,
     CONSTRAINT [PK_ParentResourceParent] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_ParentResourceParent_CollectionItemId_ParentResource_DocumentId] UNIQUE ([CollectionItemId], [ParentResource_DocumentId]),
@@ -768,7 +768,7 @@ CREATE TABLE [aligned].[ParentResourceExtensionParent]
     [BaseCollectionItemId] bigint NOT NULL,
     [ParentResource_DocumentId] bigint NOT NULL,
     [Sponsor_DocumentId] bigint NULL,
-    [Sponsor_SponsorName] nvarchar(30) NULL,
+    [Sponsor_SponsorName] nvarchar(30) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     CONSTRAINT [PK_ParentResourceExtensionParent] PRIMARY KEY ([BaseCollectionItemId]),
     CONSTRAINT [CK_ParentResourceExtensionParent_Sponsor_AllNone] CHECK (([Sponsor_DocumentId] IS NULL AND [Sponsor_SponsorName] IS NULL) OR ([Sponsor_DocumentId] IS NOT NULL AND [Sponsor_SponsorName] IS NOT NULL))
 );
@@ -779,7 +779,7 @@ CREATE TABLE [edfi].[Sponsor]
     [DocumentId] bigint NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Sponsor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Sponsor_ContentVersion] DEFAULT 0,
-    [SponsorName] nvarchar(30) NOT NULL,
+    [SponsorName] nvarchar(30) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     CONSTRAINT [PK_Sponsor] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_Sponsor_NK] UNIQUE ([SponsorName]),
     CONSTRAINT [UX_Sponsor_RefKey] UNIQUE ([SponsorName], [DocumentId])
@@ -800,8 +800,8 @@ CREATE TABLE [tracked_changes_edfi].[ParentResource]
 IF OBJECT_ID(N'tracked_changes_edfi.Sponsor', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[Sponsor]
 (
-    [OldSponsorName] nvarchar(30) NOT NULL,
-    [NewSponsorName] nvarchar(30) NULL,
+    [OldSponsorName] nvarchar(30) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewSponsorName] nvarchar(30) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [DocumentId] bigint NOT NULL,
