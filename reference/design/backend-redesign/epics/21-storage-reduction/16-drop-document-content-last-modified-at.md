@@ -57,12 +57,24 @@ descriptor by its owning DocumentId for document-oriented operations and use Des
 stored resource-reference joins. Retain DMS-1404's reference-resolution contracts and RI behavior.
 Extend its unequal-ID regression fixtures so the timestamp change cannot mask an ID interchange.
 
+The completed handoff includes descriptor resource-scope and UUID-scope restamping, cache-admin
+CLI/source-history consumers, both providers' CDC representation-restamp cases and performance
+fixture loaders. Its PostgreSQL legacy-dump conversion already remaps every stored descriptor
+reference, converts history types without live owners, preserves document/RI/stamps and verifies
+the independent allocator. Do not defer those checks to this story or require a full Northridge
+dataset run. See the [catalog assertion contract](../../../../../eng/DatabaseTemplates/Compact-Descriptor.md)
+and [working copy-forward workflow](../../../../../eng/northridge/README.md).
+
 Complete runtime and tooling changes and regenerate fixtures before producing the shared packages
 from the combined schema. Reuse DMS-1404's executable descriptor catalog assertions in the source
 and restored database checks alongside this story's timestamp assertions, then run the eight-leg
 build/restore matrix and update affected consumer pins to the verified prereleases. Select the
 descriptor expectations from the implementation baseline; missing compact-schema features in an
 old package must fail verification rather than cause those checks to be skipped.
+Pass the reviewed combined relational-model manifest for the provider and exact core/extension set through
+`ExpectedModelManifestPath`. The assertions and copy-forward conversion share
+`Read-CompactDescriptorInventory`; no second hand-maintained stored-reference inventory or
+feature detection from the inspected package may replace it.
 
 ## Implementation scope
 
@@ -189,6 +201,8 @@ not add another version bump within this release cycle. Because the effective sc
 not include generated DDL or mapping-set output, retaining `v3` means startup validation may not
 detect databases provisioned before this physical change; those databases must be deliberately
 reprovisioned.
+The next legitimate mapping bump is `v4`, at the first qualifying relational change after 8.1
+ships, then at most once per release with mapping changes.
 
 Story closure requires the verified build/restore artifacts and affected prerelease consumer-pin
 updates above. Stable v8.1 artifact production, publication, release-view promotion, and deployment

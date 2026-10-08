@@ -37,9 +37,9 @@ using the same provider equality contract as the natural-key resolver.
   (`TrackedChangeAuthorizationSqlEmitter`; DMS-1193 added custom views to it). It compares
   descriptor identity in four places, and all four move off exact `Namespace`/`CodeValue` equality:
   - the live-seek join (`ReadChangesCustomViewDescriptorKeyPair`) and the `DescriptorSeek` `EXISTS`
-    predicate, which join live `dms.Descriptor` by `Discriminator IN (...)` plus exact
-    `Namespace`/`CodeValue` equality. Move both to lowered URI plus the descriptor resource's
-    compile-time `ResourceKeyId`. `ReadChangesCustomViewPlanner` resolves that `ResourceKeyId` from
+    predicate, which join live `dms.Descriptor` by the qualified `ResourceKeyId` plus exact
+    `Namespace`/`CodeValue` equality. Move both to lowered URI while retaining the descriptor
+    resource's compile-time `ResourceKeyId`. `ReadChangesCustomViewPlanner` resolves that `ResourceKeyId` from
     `MappingSet.ResourceKeyIdByResource` and carries it on `ReadChangesCustomViewDescriptorKeyPair`
     and `ReadChangesCustomViewBasis.DescriptorSeek`; the emitter renders it as a literal and does
     not take a `MappingSet`.
@@ -51,9 +51,14 @@ using the same provider equality contract as the natural-key resolver.
     `<namespace>#<codeValue>` of both sides under the same per-engine fold the live probes use
     (`lower(… COLLATE "pg_c_utf8")` on PostgreSQL, `LOWER` under the DMS identity collation on SQL
     Server), and update that contract comment and the pinning tests. The `DescriptorSeek` probe arm
-    keeps `Discriminator` as its routing predicate over the shared descriptor tracked-change table.
-- Remove the live `IX_Descriptor_Discriminator_ContentVersion` index, which has no production
-  consumer once the live `Discriminator` predicates are gone.
+    keeps `ResourceKeyId` as its routing predicate over the shared descriptor tracked-change table.
+- Keep shared descriptor history routing by stored `ResourceKeyId` and the endpoint's compile-time
+  qualified resource key, including tombstones whose live descriptor/document rows are gone.
+  DMS-1404 already removed live/history descriptor discriminator storage and
+  `IX_Descriptor_Discriminator_ContentVersion`; no removal or string-routing transition remains here.
+- Resource identity joins compare compact descriptor FKs to live `DescriptorId`; custom-view
+  membership bridges to owning `DocumentId`. Preserve document/UUID/component history snapshots
+  and ResourceKeyId/DocumentId paging and ResourceKeyId/ContentVersion/DocumentId live indexes.
 - Preserve descriptor route, response, and authorization contracts.
 - Own the cross-engine Unicode verdict fixture matrix (moved here from DMS-1447): live-database
   fixtures that record, per engine, both the collation verdict and the `OrdinalIgnoreCase` verdict
@@ -87,7 +92,8 @@ using the same provider equality contract as the natural-key resolver.
   `IX_Descriptor_Discriminator_ContentVersion` index.
 - Every SQL Server descriptor probe applies the explicit identity collation to its input inside
   `LOWER`.
-- Every PostgreSQL descriptor probe lowers both the live `Uri` and any tombstoned
+- Every PostgreSQL descriptor probe lowers both the live reconstructed
+  `Namespace || '#' || CodeValue` and any tombstoned
   `<namespace>#<codeValue>` expression under `COLLATE "pg_c_utf8"`, never an unqualified `lower()`.
 - Under the `Latin1_General_100_CS_AS_SC_UTF8` SQL Server database default (reusing the
   alternate-collation provisioning), a descriptor deleted and recreated with only casing changed is
@@ -97,6 +103,9 @@ using the same provider equality contract as the natural-key resolver.
   case-only recreation and SQL Server aliases accepted by the configured collation.
 - The same suppression behavior applies to descriptor-valued resource `/deletes` identity joins.
 - The same URI under another `ResourceKeyId` does not suppress the tombstone.
+- Unequal-ID and deleted-owner fixtures retain ResourceKeyId routing and compact resource joins
+  for identically named descriptor types in different projects. Abstract discriminators and their
+  authorization behavior remain unchanged.
 - Descriptor route, response, and authorization behavior remains unchanged, except for the
   custom-view verdict changes and the `/deletes` tombstone suppression changes above.
 - The engine-divergence fixture matrix pins both verdicts for every listed pair on both engines; a

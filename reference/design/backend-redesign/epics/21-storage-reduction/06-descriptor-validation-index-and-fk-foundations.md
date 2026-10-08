@@ -11,6 +11,11 @@ epic: DMS-1402
 Prepare the final provider-specific descriptor storage and equality contract while keeping the legacy
 RI resolver fully functional until the atomic resolver cutover.
 
+Build on DMS-1404's native `int DescriptorId`, unique owning `bigint DocumentId`, compact
+references, reconstructed whole URI and `ResourceKeyId`-routed history. This story owns the later
+validation, lowered-URI equality and declarative invariant changes; DMS-1404 is independently
+deliverable and introduces none of them.
+
 ## Design References
 
 - [Natural-key resolution](../../design-docs/natural-key-resolution.md)
@@ -37,9 +42,13 @@ RI resolver fully functional until the atomic resolver cutover.
 - Retain existing `ToLowerInvariant()` and UUIDv5 normalization wherever the active RI path requires
   them. Raw descriptor identities begin at DMS-1451.
 - On PostgreSQL, emit a unique expression index on
-  `lower("Uri" COLLATE "pg_c_utf8"), "ResourceKeyId"` without adding a column.
-- On SQL Server, emit non-persisted `UriLowered AS LOWER([Uri])` and a unique index on
-  `(UriLowered, ResourceKeyId)`.
+  `lower(("Namespace" || '#' || "CodeValue") COLLATE "pg_c_utf8"), "ResourceKeyId"`
+  without adding a column; PostgreSQL has no `Uri` column.
+- On SQL Server, emit non-persisted
+  `UriLowered AS LOWER(([Namespace] + N'#' + [CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)`
+  and a unique index on `(UriLowered, ResourceKeyId)`. Use the stored components directly because
+  `Uri` is already computed. Preserve required effective SET options on provisioning and ordinary
+  pooled runtime connections. Fold the reconstructed whole URI, never the components separately.
 - Remove `FK_Descriptor_Document` and `FK_Descriptor_ResourceKey`, replacing them with the single
   `FK_Descriptor_DocumentResourceKey` foreign key on `(DocumentId, ResourceKeyId)`, which keeps
   DMS-1268's `Restrict` delete action (RESTRICT on PostgreSQL, NO ACTION on SQL Server).
@@ -48,7 +57,11 @@ RI resolver fully functional until the atomic resolver cutover.
   ResourceKeyId = NEW.ResourceKeyId) THEN RAISE/THROW` block in `CoreDdlEmitter`) and the emitter
   comment that justifies it by "no FK ties the two together"; the composite FK is the sole owner of
   that invariant. Keep the triggers' no-op guard and stamp/mirror behavior unchanged.
-- Retain discriminator-authoritative uniqueness through the transition.
+- Retain DMS-1404's unlowered `UX_Descriptor_ResourceKeyId_Uri` through the internal transition;
+  DMS-1456 removes it after descriptor writes and Change Query probes cut over. DMS-1404 already
+  removed `UX_Descriptor_Uri_Discriminator` and `IX_Descriptor_Discriminator_ContentVersion`;
+  do not recreate them or descriptor discriminator storage. Preserve ResourceKeyId/DocumentId
+  paging and ResourceKeyId/ContentVersion/DocumentId change-window indexes.
 
 ## Acceptance Criteria
 
@@ -62,7 +75,8 @@ RI resolver fully functional until the atomic resolver cutover.
 - A JSON `\uD800`-class escape in any body string property returns a malformed-body 400 (never a
   5xx) on a descriptor and on a non-descriptor resource (query-side pins belong to DMS-1451, which
   owns descriptor query preprocessing).
-- The PostgreSQL golden DDL pins `lower("Uri" COLLATE "pg_c_utf8")` in the expression index, and a
+- The PostgreSQL golden DDL pins
+  `lower(("Namespace" || '#' || "CodeValue") COLLATE "pg_c_utf8")` in the expression index, and a
   live fixture on a database created with a non-default collation (`LC_COLLATE='C'` or an ICU
   locale) proves the index folds identically to the default-collation database.
 - Corruption tests reject descriptor/document `ResourceKeyId` drift as a foreign-key violation
@@ -70,3 +84,6 @@ RI resolver fully functional until the atomic resolver cutover.
   mismatched `ResourceKeyId`, and prove the stamping triggers still stamp/no-op correctly without
   the guard.
 - Legacy RI-based descriptor resolution remains green until DMS-1451.
+- Both providers preserve independently allocated DescriptorId, unique DocumentId, compact
+  descriptor references and ResourceKeyId history. Unequal-ID fixtures verify that FK replacement
+  changes invariant ownership without changing document stamp/mirror ownership on the baseline.

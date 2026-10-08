@@ -132,3 +132,34 @@ requires compatible templates to be rebuilt and verified before use.
 - Final v8.1 template production, publication, release-view promotion, and deployment package-version pins remain in the release workflow. Verify packages built from the final release schema against this story's descriptor expectations alongside DMS-1401's timestamp requirements when both changes are included.
 - Abstract-identity discriminator columns and behavior remain unchanged.
 - Update affected backend-redesign documentation to reflect the separate DescriptorId and DocumentId roles, compact descriptor foreign keys, descriptor uniqueness by ResourceKeyId and reconstructed whole URI under existing provider collation behavior, URI reconstruction, and ResourceKeyId-based descriptor change tracking. Reconcile overlapping storage-reduction stories and design documents so subsequent natural-key work builds on this storage schema while retaining ownership of its equality and platform changes. Preserve the exclusion of abstract-identity discriminator replacement.
+
+## Implementation and verification coverage
+
+The task IDs below refer to this story's repository implementation checklist. The coverage review
+connects all eight acceptance sections to implementation and required verification:
+
+| Acceptance section | Implementation tasks | Verification tasks |
+|---|---|---|
+| 1. Compact identity | 01, 03, 04, 06: native allocation, separate document association, Int32 stored/copy/unified bindings and two-ID resolution | 16 independent allocation/catalogs; 17–18 unequal-ID runtime; 20 authoritative DS/extension inventories |
+| 2. Type and natural key | 01–02, 07: ResourceKeyId type, agreement enforcement, whole-URI uniqueness and CRUD | 16 provider collations/type drift/collisions; 17 cross-type/project conflict/CRUD; 19 history routing |
+| 3. Removed stored URI | 02, 05, 07–09, 11–13: reconstructed URI in RI, writes, filters, reads, cache and history | 16 physical/session checks; 17–19 mixed-case, equal-whole-URI component pairs, delimiter spaces and retained comparisons |
+| 4. Correct ID roles | 04, 06, 08–11, 13–14: resolver/replay, writes, filters, hydration, auth bridges, metadata/cache/restamp and seed helpers | 11 document-owned cache/restamp; 17–19 HTTP/backend unequal-ID scenarios; 20 sample smoke; 24 loader smoke |
+| 5. Change tracking | 12–13: ResourceKeyId history, compact resource joins and document membership bridges | 19 deleted-owner type/UUID/components, recreation, namespace/custom-view authorization and exact old/new snapshots |
+| 6. Preserved behavior | 05–11, 13–14: current RI, ordinal PUT, incoming-component POST, no-op/ETag/auth/cache contracts | 11 both-provider cache/CLI/restamp/CDC; 17 descriptor CRUD; 18 in-process API/backend resource/query/FK/authorization; 19 history; parity catalog |
+| 7. Storage validation | 15–16, 20: focused/authoritative provider models, DDL/plans and reusable baseline-driven catalog assertions; 24–25 compatible loaders and copy-forward conversion | 16 fresh/old catalogs and independent sessions; 20 both-provider authoritative sample smoke; 24 both-provider Explicit loader smoke; 25 actual representative legacy-dump conversion |
+| 8. Provisioning/scope | 21–23: schema/runtime/future-story docs, deliberate reprovisioning, v3 release cadence and DMS-1401 handoff | Generated-artifact/link/contract review; retained abstract discriminators; final acceptance/task review |
+
+Required provider cases in tasks 11 and 16–19 and loader cases in task 24 must execute successfully
+on both PostgreSQL and SQL Server; zero selected tests or skips do not satisfy those gates. Task 11
+includes descriptor resource/UUID restamp scopes, cache-admin CLI seed consumers and the existing
+PostgreSQL/SQL Server CDC representation-restamp fixtures, with both document stamps retained.
+Task 18 uses the existing in-process API/backend suites as its single verification path, including
+authorization row-set correctness; it adds no separate timing or measurement harness.
+
+Task 25 executes the real representative legacy-dump conversion, covering every writable stored
+reference once, deleted-row type/history conversion, preserved document/RI/stamp values and the
+next native descriptor allocation. Tasks 16 and 25 consume the same implementation-generated
+exact-schema relational manifest through `ExpectedModelManifestPath` and the shared inventory
+reader. Task 22 includes profiles and partitioned cursor paging. The combined template matrix and
+consumer pins remain DMS-1401 gates; full-dataset conversion, benchmarks, measured savings,
+generic migration frameworks and AOT are outside this story's completion requirements.

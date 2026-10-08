@@ -26,6 +26,9 @@ injection, middleware composition, or public resolver-facing contracts.
 - Implement `NaturalKeyReferenceResolver` with the DMS-1449 builders, structural memo, shared typed-value
   conversion, ordinal result mapping, target compatibility checks, and composite-embeddability seams.
 - Introduce internal structural request/result keys alongside the still-active RI contracts.
+- Retain the compact baseline's two-ID descriptor result: stored reference consumers receive
+  `int DescriptorId`, while metadata, RI, locks, cache and document-oriented operations keep
+  `long DocumentId`. Snapshot/replay contracts preserve both; no extra descriptor round trip is needed.
 - Introduce the internal `ReferenceLookupKey` record struct (`(target resource, DocumentIdentity)`)
   and the resolved document-reference map/factory contract (`IResolvedDocumentReferenceMap` /
   `IResolvedDocumentReferenceMapFactory`). The factory is the only construction path and installs
@@ -45,4 +48,6 @@ injection, middleware composition, or public resolver-facing contracts.
   through the factory and resolves two structurally identical `DocumentIdentity` instances backed by
   different arrays to the same `DocumentId`.
 - The composite command factory can embed the new lookup statement.
+- Unequal descriptor/document IDs survive direct descriptor resolution and descriptor-valued
+  document-reference identities without substituting the owning document key for compact storage.
 - Production command-stream and RI resolver tests remain unchanged.

@@ -30,6 +30,10 @@ every textual identity value, independent of the database default collation.
   and the `Old*Descriptor_Namespace`/`_CodeValue` reference copies on resource tracked-change
   tables), and local collection identity members.
 - Preserve purpose-specific explicit collations.
+- For the compact descriptor baseline, collate stored `Namespace`/`CodeValue` and their whole-URI
+  reconstruction; PostgreSQL has no `Uri` column and SQL Server `Uri` is non-persisted computed.
+  DMS-1404 preserves provider-default URI collation; this story owns the later explicit identity
+  collation. No live or historical descriptor discriminator is an identity-text column.
 - Introduce the backend identity-equality contract used by DDL and runtime composition. Select
   `OrdinalIgnoreCase` for SQL Server and `Ordinal` for PostgreSQL.
 - Add an explicit SQL-free identity-text column role/inventory to the derived model. It is the

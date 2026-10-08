@@ -32,8 +32,15 @@ consumers, and establish the re-provision rollback boundary.
   `ReferentialId` lookup; feed them the probe result instead. (DMS-1060 only stamped the creator
   ownership token on descriptors.) Keep the existing behavior where a lookup that has gone stale by
   the time the row is locked fails closed to a retryable conflict.
+- Return both compact DescriptorId and owning DocumentId from the target probe. PostgreSQL
+  reconstructs URI from stored components; SQL Server probes its computed lowered whole URI.
+  Preserve native descriptor allocation and both IDs on updates, capture each SQL Server identity
+  separately on create, and retain document-oriented locks, UUID/delete, cache and restamp roles.
 - Implement stored-wins descriptor identity for descriptor writes, including persisted-identity
   binding, the split no-op comparer, and the provider-authoritative PUT identity guard.
+- This changes DMS-1404's current behavior: an RI-matched POST applies incoming components and
+  an ordinal whole-URI PUT rejects case-only changes. The stored-wins/engine-equality cutover is
+  owned here; no physically stored `Uri` or descriptor discriminator is restored.
 - Remove `DescriptorWriteRequest.ReferentialId` and stop writing `dms.ReferentialIdentity` from the
   descriptor handler.
 - Delete `DocumentInfo.ReferentialId`, `SuperclassIdentity.ReferentialId`, `ReferentialId`,
@@ -58,6 +65,8 @@ consumers, and establish the re-provision rollback boundary.
 - A case-variant descriptor re-POST selects the Update branch on both providers: it is authorized
   with the Update policy and the stored row's ownership, and a client with only Create permission
   gets the Update denial rather than a create or a unique violation.
+- Unequal-ID fixtures preserve compact references, owning document metadata and unchanged ID
+  allocation on update; stamp/restamp/cache behavior follows the baseline's ownership model.
 - The four `DescriptorCaseInsensitiveValidation.feature` E2E scenarios (the ODS-derived casing
   artifact) are tagged `@MssqlRepresentative` and pass on the SQL Server lane; today they carry only
   `@e2e-ci-shard-2` and never run against SQL Server.

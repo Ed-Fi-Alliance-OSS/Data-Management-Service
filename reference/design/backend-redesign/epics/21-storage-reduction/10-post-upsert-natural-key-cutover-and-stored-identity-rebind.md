@@ -48,6 +48,9 @@ bind the existing stored identity before authorization and no-op detection.
   `ResolveForPostAsync` and the lookup service in place: the descriptor handler still calls them,
   and DMS-1454 removes them with the descriptor cutover.
 - Bind target resolution from `DocumentInfo.DocumentIdentity` and compiled own-key probe metadata.
+- Inline descriptor-valued identity subselects return `int DescriptorId` to compare to compact
+  stored columns, including descriptor parts inside document-reference target identities; the
+  outer resource capture still returns/locks its owning `bigint DocumentId`.
 - On SQL Server, rebind merged root rows to stored identity before proposed-value authorization and
   no-op detection. Use the DMS-1443 schema comparer in the identity-stability guard
   (`RelationalWriteIdentityStability`, `object.Equals` today) so CI-equal identity values are
