@@ -867,10 +867,8 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
                     null,
                     null,
                     null,
-                    null,
                     null
-                ),
-                DiscriminatorStrategy.ResourceKeyId
+                )
             )
         );
 

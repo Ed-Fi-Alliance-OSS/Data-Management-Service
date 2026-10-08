@@ -196,10 +196,8 @@ internal sealed class CompactDescriptorAuthorizationFixture
                     new("ShortDescription"),
                     new("Description"),
                     new("EffectiveBeginDate"),
-                    new("EffectiveEndDate"),
-                    null
-                ),
-                DiscriminatorStrategy.ResourceKeyId
+                    new("EffectiveEndDate")
+                )
             )
         );
     }

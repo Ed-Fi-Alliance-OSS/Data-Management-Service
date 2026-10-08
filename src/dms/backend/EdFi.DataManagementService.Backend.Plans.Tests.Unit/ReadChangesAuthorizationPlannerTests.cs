@@ -1559,10 +1559,8 @@ public class ReadChangesAuthorizationPlannerTests
                     null,
                     null,
                     null,
-                    null,
                     null
-                ),
-                DiscriminatorStrategy.ResourceKeyId
+                )
             )
         );
     }

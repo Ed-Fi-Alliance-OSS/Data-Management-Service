@@ -3051,10 +3051,8 @@ public partial class Given_DescriptorReadHandler
                     ShortDescription: null,
                     Description: null,
                     EffectiveBeginDate: null,
-                    EffectiveEndDate: null,
-                    Discriminator: null
-                ),
-                DiscriminatorStrategy.ResourceKeyId
+                    EffectiveEndDate: null
+                )
             )
             : null;
 

@@ -600,10 +600,8 @@ public class TrackedChangeQueryRequestHandlerTests
                         ShortDescription: null,
                         Description: null,
                         EffectiveBeginDate: null,
-                        EffectiveEndDate: null,
-                        Discriminator: null
-                    ),
-                    DiscriminatorStrategy.ResourceKeyId
+                        EffectiveEndDate: null
+                    )
                 )
                 : null;
 

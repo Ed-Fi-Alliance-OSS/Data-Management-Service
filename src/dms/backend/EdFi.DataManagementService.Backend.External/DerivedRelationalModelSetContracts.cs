@@ -24,27 +24,6 @@ public sealed record ProjectSchemaInfo(
 );
 
 /// <summary>
-/// Classifies the discriminator strategy for descriptor resources.
-/// </summary>
-public enum DiscriminatorStrategy
-{
-    /// <summary>
-    /// Use <c>dms.Document.ResourceKeyId</c> as the primary resource-type discriminator.
-    /// </summary>
-    ResourceKeyId,
-
-    /// <summary>
-    /// Use <c>dms.Descriptor.Discriminator</c> column as a secondary discriminator.
-    /// </summary>
-    DescriptorColumn,
-
-    /// <summary>
-    /// Both discriminator strategies are recorded for flexibility.
-    /// </summary>
-    Both,
-}
-
-/// <summary>
 /// Defines the canonical descriptor column contract for the shared <c>dms.Descriptor</c> table.
 /// </summary>
 /// <param name="Namespace">The namespace column name.</param>
@@ -53,26 +32,20 @@ public enum DiscriminatorStrategy
 /// <param name="Description">The description column name (optional).</param>
 /// <param name="EffectiveBeginDate">The effective begin date column name (optional).</param>
 /// <param name="EffectiveEndDate">The effective end date column name (optional).</param>
-/// <param name="Discriminator">The discriminator column name (optional).</param>
 public sealed record DescriptorColumnContract(
     DbColumnName Namespace,
     DbColumnName CodeValue,
     DbColumnName? ShortDescription,
     DbColumnName? Description,
     DbColumnName? EffectiveBeginDate,
-    DbColumnName? EffectiveEndDate,
-    DbColumnName? Discriminator
+    DbColumnName? EffectiveEndDate
 );
 
 /// <summary>
 /// Metadata for descriptor resources stored in the shared <c>dms.Descriptor</c> table.
 /// </summary>
 /// <param name="ColumnContract">The descriptor column contract.</param>
-/// <param name="DiscriminatorStrategy">The discriminator strategy for resource-type identification.</param>
-public sealed record DescriptorMetadata(
-    DescriptorColumnContract ColumnContract,
-    DiscriminatorStrategy DiscriminatorStrategy
-);
+public sealed record DescriptorMetadata(DescriptorColumnContract ColumnContract);
 
 /// <summary>
 /// The derived relational model for a concrete resource.
