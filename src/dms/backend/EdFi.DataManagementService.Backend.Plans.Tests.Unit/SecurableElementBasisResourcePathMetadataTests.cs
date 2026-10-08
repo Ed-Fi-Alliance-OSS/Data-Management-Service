@@ -335,8 +335,10 @@ public class Given_SecurableElementColumnPathResolver_BasisPathMetadata
             []
         );
 
-        result.Steps.Should().ContainSingle();
+        result.Steps.Should().HaveCount(2);
         result.Steps[0].TargetTable.Should().Be(DescriptorTable);
+        result.Steps[0].TargetColumnName.Should().Be(Col("DescriptorId"));
+        result.Steps[1].SourceColumnName.Should().Be(Col("DocumentId"));
         result.TerminalReferenceJsonPaths.Should().Equal("$.transportationTypeDescriptor");
     }
 

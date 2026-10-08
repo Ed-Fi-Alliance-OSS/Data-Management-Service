@@ -18,7 +18,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// <param name="Checks">The planned namespace authorization checks in emission order.</param>
 /// <param name="NamespacePrefixParameterization">Dialect-specific namespace prefix parameterization.</param>
 /// <param name="DocumentIdParameterName">Bare parameter name used for the stored row's DocumentId.</param>
-/// <param name="ProposedNamespaceParameterName">Bare parameter name carrying the proposed namespace value.</param>
+/// <param name="ProposedNamespaceParameterName">Bare parameter name carrying the proposed namespace string or compact descriptor key, as specified by the check.</param>
 /// <param name="RowGuardPredicateSql">
 /// Optional raw predicate appended as a <c>WHERE</c> clause to every emitted check select. When it is
 /// false the check's result set is empty and none of its branches — including the abort device —
@@ -154,6 +154,10 @@ public sealed class NamespaceAuthorizationSqlCompiler(SqlDialect dialect)
 
         using (writer.Indent())
         {
+            var namespaceAlias = check.IsDescriptorReference ? DescriptorNamespaceSqlHelper.Alias : RootAlias;
+            var namespaceColumn = check.IsDescriptorReference
+                ? DescriptorNamespaceSqlHelper.NamespaceColumn
+                : check.NamespaceColumn;
             // Authorized: row exists with non-null namespace matching at least one prefix.
             writer.Append("WHEN EXISTS (");
             AppendStoredRowSelect(
@@ -164,8 +168,8 @@ public sealed class NamespaceAuthorizationSqlCompiler(SqlDialect dialect)
                 {
                     NamespacePrefixSqlHelper.AppendRootTableNamespacePredicate(
                         predicateWriter,
-                        RootAlias,
-                        check.NamespaceColumn,
+                        namespaceAlias,
+                        namespaceColumn,
                         spec.NamespacePrefixParameterization
                     );
                 }
@@ -183,9 +187,9 @@ public sealed class NamespaceAuthorizationSqlCompiler(SqlDialect dialect)
                 appendNamespacePredicate: predicateWriter =>
                 {
                     predicateWriter.Append("(");
-                    predicateWriter.Append($"{RootAlias}.").AppendQuoted(check.NamespaceColumn.Value);
+                    predicateWriter.Append($"{namespaceAlias}.").AppendQuoted(namespaceColumn.Value);
                     predicateWriter.Append(" IS NULL OR ");
-                    predicateWriter.Append($"{RootAlias}.").AppendQuoted(check.NamespaceColumn.Value);
+                    predicateWriter.Append($"{namespaceAlias}.").AppendQuoted(namespaceColumn.Value);
                     predicateWriter.Append(" = '')");
                 }
             );
@@ -228,10 +232,21 @@ public sealed class NamespaceAuthorizationSqlCompiler(SqlDialect dialect)
         {
             // Proposed value is null or empty → 'r'.
             writer.Append("WHEN ");
-            NamespacePrefixSqlHelper.AppendParameterIsNullOrEmpty(
-                writer,
-                spec.ProposedNamespaceParameterName
-            );
+            if (check.IsDescriptorReference)
+            {
+                writer.Append("(");
+                AppendProposedNamespaceValue(writer, check, spec);
+                writer.Append(" IS NULL OR ");
+                AppendProposedNamespaceValue(writer, check, spec);
+                writer.Append(" = '')");
+            }
+            else
+            {
+                NamespacePrefixSqlHelper.AppendParameterIsNullOrEmpty(
+                    writer,
+                    spec.ProposedNamespaceParameterName
+                );
+            }
             writer.Append(" THEN ");
             AppendAuth1Throw(
                 writer,
@@ -244,7 +259,7 @@ public sealed class NamespaceAuthorizationSqlCompiler(SqlDialect dialect)
             writer.Append("WHEN ");
             NamespacePrefixSqlHelper.AppendLikeMatch(
                 writer,
-                lhsWriter => lhsWriter.AppendParameter(spec.ProposedNamespaceParameterName),
+                lhsWriter => AppendProposedNamespaceValue(lhsWriter, check, spec),
                 spec.NamespacePrefixParameterization
             );
             writer.AppendLine(" THEN 1");
@@ -256,6 +271,22 @@ public sealed class NamespaceAuthorizationSqlCompiler(SqlDialect dialect)
         }
 
         writer.Append("END");
+    }
+
+    private static void AppendProposedNamespaceValue(
+        SqlWriter writer,
+        NamespaceAuthorizationCheckSpec check,
+        NamespaceAuthorizationSqlSpec spec
+    )
+    {
+        if (check.IsDescriptorReference)
+        {
+            DescriptorNamespaceSqlHelper.AppendProposedNamespace(writer, spec.ProposedNamespaceParameterName);
+        }
+        else
+        {
+            writer.AppendParameter(spec.ProposedNamespaceParameterName);
+        }
     }
 
     private void AppendAuth1Throw(
@@ -303,7 +334,12 @@ public sealed class NamespaceAuthorizationSqlCompiler(SqlDialect dialect)
         Action<SqlWriter> appendNamespacePredicate
     )
     {
-        AppendStoredRowByDocumentId(writer, check, documentIdParameterName);
+        AppendStoredRowByDocumentId(
+            writer,
+            check,
+            documentIdParameterName,
+            joinDescriptor: check.IsDescriptorReference
+        );
         writer.Append(" AND ");
         appendNamespacePredicate(writer);
     }
@@ -311,12 +347,18 @@ public sealed class NamespaceAuthorizationSqlCompiler(SqlDialect dialect)
     private static void AppendStoredRowByDocumentId(
         SqlWriter writer,
         NamespaceAuthorizationCheckSpec check,
-        string documentIdParameterName
+        string documentIdParameterName,
+        bool joinDescriptor = false
     )
     {
         writer.Append("SELECT 1 FROM ");
         writer.AppendRelation(new SqlRelationRef.PhysicalTable(check.RootTable));
-        writer.Append($" {RootAlias} WHERE {RootAlias}.");
+        writer.Append($" {RootAlias}");
+        if (joinDescriptor)
+        {
+            DescriptorNamespaceSqlHelper.AppendJoin(writer, RootAlias, check.NamespaceColumn);
+        }
+        writer.Append($" WHERE {RootAlias}.");
         writer.AppendQuoted("DocumentId");
         writer.Append(" = ");
         writer.AppendParameter(documentIdParameterName);

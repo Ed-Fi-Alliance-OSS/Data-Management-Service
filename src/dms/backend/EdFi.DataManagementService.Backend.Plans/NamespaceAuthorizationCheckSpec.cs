@@ -17,7 +17,8 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </param>
 /// <param name="ValueSource">Whether this check evaluates the stored row or the proposed request body.</param>
 /// <param name="RootTable">The concrete root table of the subject resource. Always a root table — never a child collection.</param>
-/// <param name="NamespaceColumn">The resolved root-table column carrying the Namespace value.</param>
+/// <param name="NamespaceColumn">The resolved root-table column carrying the namespace string or compact descriptor reference.</param>
+/// <param name="IsDescriptorReference">Whether the column must be dereferenced through DescriptorId to read the stored descriptor Namespace.</param>
 /// <param name="StrategyName">The configured strategy name — always <c>NamespaceBased</c>.</param>
 /// <param name="RawConfiguredIndex">
 /// Zero-based position of the originating <c>NamespaceBased</c> strategy in the CMS-configured strategy
@@ -36,5 +37,6 @@ public sealed record NamespaceAuthorizationCheckSpec(
     DbTableName RootTable,
     DbColumnName NamespaceColumn,
     string StrategyName = AuthorizationStrategyNameConstants.NamespaceBased,
-    int RawConfiguredIndex = 0
+    int RawConfiguredIndex = 0,
+    bool IsDescriptorReference = false
 );

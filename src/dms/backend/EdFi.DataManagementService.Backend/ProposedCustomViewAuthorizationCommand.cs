@@ -120,14 +120,17 @@ internal static class ProposedCustomViewAuthorizationCommand
 
             // The compiled check's first use of the parameter is "@p IS NULL", from which PostgreSQL cannot infer
             // a null parameter's type (42P08 "could not determine data type of parameter"). The bound column is
-            // the root's reference DocumentId (or DescriptorId) column, always a bigint, so type it explicitly:
+            // the root's reference key column, so retain its compact or document type explicitly:
             // a body that omits the basis reference then reaches the ProposedBasisValueMissing branch (a 403
             // element-required denial) instead of failing the write.
+            var check = runtimeCheck.Values.Single(value => value.Check.Index == checkIndex).Check;
+            var binding = ((CustomViewAuthorizationCheckTarget.Proposed)check.CheckTarget).Binding;
+            var dbType = binding.KeyScalarKind is ScalarKind.Int32 ? DbType.Int32 : DbType.Int64;
             parameters.Add(
                 new RelationalParameter(
                     $"@{parameter.ParameterName}",
                     basisValue,
-                    static dbParameter => dbParameter.DbType = DbType.Int64
+                    dbParameter => dbParameter.DbType = dbType
                 )
             );
         }

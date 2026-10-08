@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Backend.Composite;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Unit.Composite;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -430,6 +431,71 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
             );
 
         (await act.Should().ThrowAsync<FakeDbException>()).Which.Should().BeSameAs(providerFailure);
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_carries_the_merged_compact_descriptor_key_through_the_proposed_namespace_command(
+        SqlDialect dialect
+    )
+    {
+        var fixture = new CompactDescriptorAuthorizationFixture(dialect);
+        var row = fixture.RootRow(CompactDescriptorAuthorizationFixture.DescriptorId);
+        var model = fixture.Subject.RelationalModel;
+        var checks = (
+            (NamespaceAuthorizationPlanOutcome.Plan)
+                NamespaceAuthorizationPlanner.Plan(
+                    fixture.Subject,
+                    NamespaceAuthorizationOperation.Update,
+                    new([], ["uri://Example.org/"])
+                )
+        ).Checks;
+        var input = new RelationalWriteExecutorInput(
+            fixture.MappingSet,
+            RelationalWriteOperationKind.Put,
+            new RelationalWriteTargetRequest.Put(ExistingDocumentUuid),
+            new(model, [row.TableWritePlan]),
+            Given_Default_Relational_Write_Executor.CreateReadPlan(model, dialect),
+            JsonNode.Parse("{}")!,
+            false,
+            new TraceId("compact-descriptor-namespace"),
+            new(fixture.MappingSet, model.Resource, [], [])
+        )
+        {
+            ProposedNamespaceAuthorization = new(
+                [checks[1] with { Index = 0 }],
+                NamespacePrefixParameterizationFactory.Create(
+                    dialect,
+                    ["uri://Example.org/"],
+                    "namespacePrefixes"
+                )
+            ),
+        };
+        var request = input.Resolve(
+            new RelationalWriteTargetContext.ExistingDocument(
+                CompactDescriptorAuthorizationFixture.DocumentId,
+                ExistingDocumentUuid,
+                44
+            )
+        );
+        var mergedRow = new RelationalWriteMergedTableRow(row.Values, row.Values);
+        var merge = new RelationalWriteMergeResult([new(row.TableWritePlan, [mergedRow], [mergedRow])], true);
+        var session = new ScriptedWriteSession(CreateReader(CreateAuthorizedTable()));
+
+        var result = await CreateSut()
+            .ResolveAsync(request, merge, RelationalWriteSecondCommandMode.AuthorizationOnly, session);
+
+        result.ImmediateResult.Should().BeNull();
+        var parameter = session
+            .Commands.Single()
+            .Parameters.Single(p => p.Name.StartsWith("@proposedNamespace", StringComparison.Ordinal));
+        parameter.Value.Should().BeOfType<int>().Which.Should().Be(42);
+        DbParameter native =
+            dialect is SqlDialect.Pgsql
+                ? new Npgsql.NpgsqlParameter()
+                : new Microsoft.Data.SqlClient.SqlParameter();
+        parameter.ConfigureParameter!.Invoke(native);
+        native.DbType.Should().Be(DbType.Int32);
     }
 
     private static CompositeRelationalWriteSecondCommand CreateSut(

@@ -77,7 +77,13 @@ public static class NamespaceAuthorizationPlanner
         }
 
         var rootTable = resource.RelationalModel.Root.Table;
-        return new NamespaceAuthorizationPlanOutcome.Plan(BuildChecks(operation, rootTable, namespaceColumn));
+        var isDescriptorReference = resource.RelationalModel.Root.Columns.Any(column =>
+            column.ColumnName == namespaceColumn && column.Kind is ColumnKind.DescriptorFk
+        );
+        return new NamespaceAuthorizationPlanOutcome.Plan([
+            .. BuildChecks(operation, rootTable, namespaceColumn)
+                .Select(check => check with { IsDescriptorReference = isDescriptorReference }),
+        ]);
     }
 
     /// <summary>

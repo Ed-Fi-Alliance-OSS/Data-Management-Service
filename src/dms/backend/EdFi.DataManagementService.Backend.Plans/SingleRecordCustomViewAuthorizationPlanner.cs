@@ -202,7 +202,10 @@ public static class SingleRecordCustomViewAuthorizationPlanner
                 firstStep.SourceTable,
                 firstStep.SourceColumnName,
                 $"{planned.Strategy.ConfiguredStrategy.StrategyName}:{firstStep.SourceColumnName.Value}",
-                $"{ProposedValueParameterSeedPrefix}{index}"
+                $"{ProposedValueParameterSeedPrefix}{index}",
+                firstStep.TargetColumnName == RelationalNameConventions.DescriptorKeyColumnName
+                    ? ScalarKind.Int32
+                    : ScalarKind.Int64
             )
         );
     }
