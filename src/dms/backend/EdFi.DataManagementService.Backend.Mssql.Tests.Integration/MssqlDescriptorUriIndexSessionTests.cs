@@ -18,10 +18,11 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// SqlClient sessions. Runtime SET options must work independently of the provisioning connection.
 /// </summary>
 [TestFixture]
+[NonParallelizable] // Other fixture teardown calls ClearAllPools; this test explicitly proves pool reuse.
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [Category(MssqlCiShards.Shard1)]
-public class Given_A_Mssql_Descriptor_Uri_Index_On_Independent_Sessions
+public class Given_A_Mssql_CompactDescriptor_Uri_Index_On_Independent_Sessions
 {
     private MssqlGeneratedDdlTestDatabase _database = default!;
 
@@ -56,6 +57,7 @@ public class Given_A_Mssql_Descriptor_Uri_Index_On_Independent_Sessions
             await ExecuteAsync(connection, batch);
         }
 
+        await AssertEffectiveIndexOptionsAsync(connection);
         await ExecuteAsync(
             connection,
             """

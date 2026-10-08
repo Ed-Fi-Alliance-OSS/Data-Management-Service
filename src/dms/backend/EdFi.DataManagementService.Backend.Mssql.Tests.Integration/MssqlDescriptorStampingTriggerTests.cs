@@ -118,23 +118,20 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
             "SELECT MIN(ResourceKeyId) FROM [dms].[ResourceKey];"
         );
 
-        var uriOrDiscriminator = $"uri://ed-fi.org/SexDescriptor#{codeValue}";
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [dms].[Descriptor]
                 ([DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription], [Description],
-                 [EffectiveBeginDate], [EffectiveEndDate], [Discriminator], [Uri])
+                 [EffectiveBeginDate], [EffectiveEndDate])
             VALUES (@documentId, @resourceKeyId, @namespace, @codeValue, @shortDescription, @description,
-                    NULL, NULL, @discriminator, @uri);
+                    NULL, NULL);
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", "uri://ed-fi.org/SexDescriptor"),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
-            new SqlParameter("@description", codeValue),
-            new SqlParameter("@discriminator", uriOrDiscriminator),
-            new SqlParameter("@uri", uriOrDiscriminator)
+            new SqlParameter("@description", codeValue)
         );
     }
 
@@ -371,9 +368,9 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
                 """
                 INSERT INTO [dms].[Descriptor]
                     ([DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription], [Description],
-                     [EffectiveBeginDate], [EffectiveEndDate], [Discriminator], [Uri])
+                     [EffectiveBeginDate], [EffectiveEndDate])
                 VALUES (@documentId, 32000, 'uri://ed-fi.org/SexDescriptor', 'Female', 'Female', 'Female',
-                        NULL, NULL, 'uri://ed-fi.org/SexDescriptor#Female', 'uri://ed-fi.org/SexDescriptor#Female');
+                        NULL, NULL);
                 """,
                 new SqlParameter("@documentId", documentId)
             );

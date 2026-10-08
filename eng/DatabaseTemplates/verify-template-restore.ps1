@@ -45,6 +45,11 @@
 .PARAMETER RequirePopulatedData
     Additionally require populated (non-descriptor) sample data to survive the
     restore and be serveable by DMS.
+
+.PARAMETER ExpectedModelManifestPath
+    Optional reviewed implementation-generated relational-model manifest with complete
+    resource_details for this exact provider/core/extension schema set. Supplying it opts
+    into compact descriptor catalog assertions on both source and restored databases.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Verification entry script intentionally writes operator progress to the console.')]
@@ -74,7 +79,11 @@ param (
 
     [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!",
 
-    [switch]$RequirePopulatedData
+    [switch]$RequirePopulatedData,
+
+    # The caller selects expectations from the reviewed implementation baseline.
+    # Never infer compact-descriptor support from the source/restored catalogs or v3 hash.
+    [string]$ExpectedModelManifestPath = ""
 )
 
 Set-StrictMode -Version Latest
@@ -121,10 +130,20 @@ function Invoke-SqlcmdScalar {
 Assert-SafeDatabaseName -DatabaseName $SourceDatabaseName
 Assert-SafeDatabaseName -DatabaseName $VerificationDatabaseName
 
+if ($ExpectedModelManifestPath) {
+    $ExpectedModelManifestPath = (Resolve-Path -LiteralPath $ExpectedModelManifestPath).Path
+}
+
 Push-Location $PSScriptRoot
 try {
     Import-Module ./Template-Management.psm1 -Force
     Import-Module ../Dms-Management.psm1 -Force
+
+    if ($ExpectedModelManifestPath) {
+        & ./Assert-CompactDescriptor.ps1 -ExpectedModelManifestPath $ExpectedModelManifestPath `
+            -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName `
+            -DatabaseName $SourceDatabaseName -MssqlPassword $MssqlPassword
+    }
 
     # --- Restore the package into a fresh verification database ---
     $expectedSchemas = @(Get-UserSchemaNames -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -DatabaseName $SourceDatabaseName -MssqlPassword $MssqlPassword)
@@ -132,6 +151,12 @@ try {
 
     $packageName = Restore-TemplatePackage -PackageDirectory $PackageDirectory -DatabaseName $VerificationDatabaseName -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -MssqlPassword $MssqlPassword
     Write-Host "Verifying template package: $packageName" -ForegroundColor Cyan
+
+    if ($ExpectedModelManifestPath) {
+        & ./Assert-CompactDescriptor.ps1 -ExpectedModelManifestPath $ExpectedModelManifestPath `
+            -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName `
+            -DatabaseName $VerificationDatabaseName -MssqlPassword $MssqlPassword
+    }
 
     # --- Structural and data assertions ---
     $restoredSchemas = @(Get-UserSchemaNames -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -DatabaseName $VerificationDatabaseName -MssqlPassword $MssqlPassword)

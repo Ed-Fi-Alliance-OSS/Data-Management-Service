@@ -1,0 +1,55 @@
+{
+  "api_schema_format_version": "1.0.0",
+  "relational_mapping_version": "v3",
+  "effective_schema_hash": "374a57f60a086b94618b03e3a0c1b9c87046bf14bb51fc83d1ebfba893cf71e9",
+  "resource_key_count": 5,
+  "resource_key_seed_hash": "eb007019c3a0e214e3020662b53983ad5170081d9d67449d0711309ba4d3a83c",
+  "schema_components": [
+    {
+      "project_endpoint_name": "ed-fi",
+      "project_name": "Ed-Fi",
+      "project_version": "5.0.0",
+      "is_extension_project": false,
+      "project_hash": "b1918b6d47baaf6de2528e2094baea376a0ff646ed8d106a5be592d7fe4a495e"
+    },
+    {
+      "project_endpoint_name": "sample",
+      "project_name": "Sample",
+      "project_version": "1.0.0",
+      "is_extension_project": true,
+      "project_hash": "bff57b91bd0bea754ea56051ac024bbca197fdc8e797f04904d5b4a9cdd6a3f6"
+    }
+  ],
+  "resource_keys": [
+    {
+      "resource_key_id": 1,
+      "project_name": "Ed-Fi",
+      "resource_name": "DescriptorSubject",
+      "resource_version": "5.0.0"
+    },
+    {
+      "resource_key_id": 2,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProfileRootOnlyMergeItem",
+      "resource_version": "5.0.0"
+    },
+    {
+      "resource_key_id": 3,
+      "project_name": "Ed-Fi",
+      "resource_name": "SchoolTypeDescriptor",
+      "resource_version": "5.0.0"
+    },
+    {
+      "resource_key_id": 4,
+      "project_name": "Ed-Fi",
+      "resource_name": "Student",
+      "resource_version": "5.0.0"
+    },
+    {
+      "resource_key_id": 5,
+      "project_name": "Sample",
+      "resource_name": "SchoolTypeDescriptor",
+      "resource_version": "1.0.0"
+    }
+  ]
+}
