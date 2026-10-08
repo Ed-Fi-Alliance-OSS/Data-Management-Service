@@ -253,7 +253,7 @@ internal sealed record CollectionPagingTelemetryContext
     /// </summary>
     private static string DescribeRefused(string value)
     {
-        string sanitized = LoggingSanitizer.SanitizeForLogging(value);
+        string sanitized = LoggingSanitizer.SanitizeInternalValueForLogging(value);
 
         return sanitized.Length <= MaxRefusedLabelLength ? sanitized : sanitized[..MaxRefusedLabelLength];
     }

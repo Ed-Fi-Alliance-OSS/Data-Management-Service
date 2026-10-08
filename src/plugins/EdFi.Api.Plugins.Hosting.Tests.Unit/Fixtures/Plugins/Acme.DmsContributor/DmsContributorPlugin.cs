@@ -8,6 +8,7 @@ using EdFi.Api.Plugins;
 using EdFi.Api.Plugins.Hosting;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.CustomValidation;
+using EdFi.DataManagementService.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -81,6 +82,12 @@ public sealed class DmsContributorPlugin : EdFiApiPlugin
                 AddValidator(services);
                 break;
 
+            case "identityAdd":
+                // The one registration the identity contract asks of a provider, against the real
+                // contract, beside the host's own default for it.
+                services.AddScoped<IIdentityService, FixtureIdentityService>();
+                break;
+
             default:
                 AddValidator(services);
                 break;
@@ -135,4 +142,40 @@ public sealed class FixtureResourceValidator : ICustomResourceValidator
         string traceId,
         CancellationToken cancellationToken
     ) => Task.FromResult<IReadOnlyList<CustomValidationFailure>>([]);
+}
+
+/// <summary>An identity provider of the plugin's own, against the real contract, that does nothing.</summary>
+public sealed class FixtureIdentityService : IIdentityService
+{
+    public IdentityCapabilities Capabilities => IdentityCapabilities.None;
+
+    public Task<IdentityResult> CreateAsync(
+        JsonObject request,
+        IdentityRequestContext context,
+        CancellationToken cancellationToken
+    ) => throw new NotSupportedException("the fixture never intends this to be called");
+
+    public Task<IdentityResult> GetByIdAsync(
+        string uniqueId,
+        IdentityRequestContext context,
+        CancellationToken cancellationToken
+    ) => throw new NotSupportedException("the fixture never intends this to be called");
+
+    public Task<IdentityAsyncResult> FindAsync(
+        IReadOnlyList<string> uniqueIds,
+        IdentityRequestContext context,
+        CancellationToken cancellationToken
+    ) => throw new NotSupportedException("the fixture never intends this to be called");
+
+    public Task<IdentityAsyncResult> SearchAsync(
+        IReadOnlyList<JsonObject> requests,
+        IdentityRequestContext context,
+        CancellationToken cancellationToken
+    ) => throw new NotSupportedException("the fixture never intends this to be called");
+
+    public Task<IdentityResult> ResultsAsync(
+        string requestToken,
+        IdentityRequestContext context,
+        CancellationToken cancellationToken
+    ) => throw new NotSupportedException("the fixture never intends this to be called");
 }

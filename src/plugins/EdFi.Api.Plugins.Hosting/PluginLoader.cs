@@ -97,9 +97,13 @@ public static class PluginLoader
             loaded.Add(LoadPlugin(name, resolvedRoot, contractAssemblyNames, diagnostics, observer));
         }
 
-        ReportDirectoriesNobodyAskedFor(resolvedRoot, plugins.AllowedNames, diagnostics);
+        PluginLoadWarning? unallowlisted = ReportDirectoriesNobodyAskedFor(
+            resolvedRoot,
+            plugins.AllowedNames,
+            diagnostics
+        );
 
-        return new LoadedPlugins(loaded);
+        return new LoadedPlugins(loaded, unallowlisted is null ? [] : [unallowlisted]);
     }
 
     private static PluginsConfiguration Bind(IConfiguration configuration, TextWriter diagnostics)
@@ -796,7 +800,11 @@ public static class PluginLoader
     /// touched, and the warning exists so that an operator who expected it to load finds out why it did
     /// not.
     /// </remarks>
-    private static void ReportDirectoriesNobodyAskedFor(
+    /// <returns>
+    /// The warning to replay through the host's logger, or null when there was nothing to warn about.
+    /// The line is still written here, because this channel is the only one that exists yet.
+    /// </returns>
+    private static PluginLoadWarning? ReportDirectoriesNobodyAskedFor(
         string resolvedRoot,
         IReadOnlyList<string> allowedNames,
         TextWriter diagnostics
@@ -823,19 +831,22 @@ public static class PluginLoader
                 "plugins: the plugin root could not be listed for unallowlisted directories: "
                     + PluginDiagnosticText.Quote(exception.Message)
             );
-            return;
+            return PluginLoadWarning.RootNotListed(PluginDiagnosticText.Quote(exception.Message));
         }
 
-        if (ignored.Length > 0)
+        if (ignored.Length == 0)
         {
-            diagnostics.WriteLine(
-                "plugins: ignoring directories not in the allowlist: "
-                    + string.Join(
-                        ", ",
-                        ignored.Select(directory => $"'{PluginDiagnosticText.Quote(directory)}'")
-                    )
-            );
+            return null;
         }
+
+        diagnostics.WriteLine(
+            "plugins: ignoring directories not in the allowlist: "
+                + string.Join(", ", ignored.Select(directory => $"'{PluginDiagnosticText.Quote(directory)}'"))
+        );
+
+        return PluginLoadWarning.UnallowlistedDirectories(
+            [.. ignored.Select(PluginDiagnosticText.Quote)]
+        );
     }
 
     /// <summary>

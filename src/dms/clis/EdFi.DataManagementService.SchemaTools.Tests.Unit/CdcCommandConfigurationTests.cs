@@ -457,11 +457,11 @@ public partial class Given_Cdc_command_configuration(string providerToken, CoreP
         await act.Should().ThrowAsync<Exception>();
     }
 
-    private async Task<CdcDeploymentRequest> RequestAsync()
+    private async Task<CdcDeploymentRequest> RequestAsync(string statePath = "")
     {
         await using var connection = _config.CreateConnection();
         return await _config.CreateRequestAsync(
-            _root,
+            statePath.Length == 0 ? _root : statePath,
             connection,
             new ApiSchemaFileLoader(
                 new ApiSchemaInputNormalizer(NullLogger<ApiSchemaInputNormalizer>.Instance),

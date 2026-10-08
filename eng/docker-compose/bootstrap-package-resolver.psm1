@@ -49,6 +49,40 @@ if (-not (Get-Command Format-LogSafeText -ErrorAction SilentlyContinue))
     }
 }
 
+# Guarded fallback for standalone imports. Normal bootstrap runs use the canonical formatter exported by
+# bootstrap-manifest.psm1; this fallback preserves printable path characters while stripping controls.
+if (-not (Get-Command Format-LogSafePath -ErrorAction SilentlyContinue))
+{
+    function script:Format-LogSafePath
+    {
+        param(
+            $Value
+        )
+
+        if ($null -eq $Value)
+        {
+            return ""
+        }
+
+        $text = [string]$Value
+        if ([string]::IsNullOrEmpty($text))
+        {
+            return ""
+        }
+
+        $builder = [System.Text.StringBuilder]::new()
+        foreach ($character in $text.ToCharArray())
+        {
+            if (-not [char]::IsControl($character))
+            {
+                $null = $builder.Append($character)
+            }
+        }
+
+        return $builder.ToString()
+    }
+}
+
 function Resolve-NupkgFileName
 {
     <#
@@ -93,7 +127,7 @@ function Expand-Nupkg
     }
     catch
     {
-        throw "Failed to extract package '$(Format-LogSafeText $NupkgPath)' into '$(Format-LogSafeText $DestinationDirectory)': $(Format-LogSafeText ($_.Exception.Message))"
+        throw "Failed to extract package '$(Format-LogSafePath $NupkgPath)' into '$(Format-LogSafePath $DestinationDirectory)': $(Format-LogSafeText ($_.Exception.Message))"
     }
 }
 
@@ -121,7 +155,7 @@ function Resolve-LocalFolderPackage
 
     if (-not (Test-Path -LiteralPath $FolderPath -PathType Container))
     {
-        throw "Local feed folder not found: $(Format-LogSafeText $FolderPath)"
+        throw "Local feed folder not found: $(Format-LogSafePath $FolderPath)"
     }
 
     $expectedFileName = Resolve-NupkgFileName -PackageId $PackageId -Version $Version
@@ -143,10 +177,10 @@ function Resolve-LocalFolderPackage
 
         if ($anyVersion.Count -eq 0)
         {
-            throw "Package '$(Format-LogSafeText $PackageId)' was not found in local feed folder '$(Format-LogSafeText $FolderPath)'."
+            throw "Package '$(Format-LogSafeText $PackageId)' was not found in local feed folder '$(Format-LogSafePath $FolderPath)'."
         }
 
-        throw "Package '$(Format-LogSafeText $PackageId)' version '$(Format-LogSafeText $Version)' was not found in local feed folder '$(Format-LogSafeText $FolderPath)'. Available versions may differ - pinned version resolution never falls back to latest."
+        throw "Package '$(Format-LogSafeText $PackageId)' version '$(Format-LogSafeText $Version)' was not found in local feed folder '$(Format-LogSafePath $FolderPath)'. Available versions may differ - pinned version resolution never falls back to latest."
     }
 
     return $candidates[0].FullName
@@ -357,7 +391,7 @@ function Resolve-StandardSchemaPackage
             -PackageId $PackageId `
             -Version $Version
 
-        Write-Verbose "Resolved package '$(Format-LogSafeText $PackageId)' version '$(Format-LogSafeText $Version)' from local feed: $(Format-LogSafeText $nupkgPath)"
+        Write-Verbose "Resolved package '$(Format-LogSafeText $PackageId)' version '$(Format-LogSafeText $Version)' from local feed: $(Format-LogSafePath $nupkgPath)"
     }
     else
     {
@@ -386,10 +420,10 @@ function Resolve-StandardSchemaPackage
     $apiSchemaDir = Join-Path $isolationDir "contentFiles/any/any/ApiSchema"
     if (-not (Test-Path -LiteralPath $apiSchemaDir -PathType Container))
     {
-        throw "Package '$(Format-LogSafeText $PackageId)' version '$(Format-LogSafeText $Version)' was extracted to '$(Format-LogSafeText $isolationDir)' but the expected asset-only contract path 'contentFiles/any/any/ApiSchema/' was not found. Verify the package is an asset-only ApiSchema NuGet package."
+        throw "Package '$(Format-LogSafeText $PackageId)' version '$(Format-LogSafeText $Version)' was extracted to '$(Format-LogSafePath $isolationDir)' but the expected asset-only contract path 'contentFiles/any/any/ApiSchema/' was not found. Verify the package is an asset-only ApiSchema NuGet package."
     }
 
-    Write-Verbose "Resolved package '$(Format-LogSafeText $PackageId)' version '$(Format-LogSafeText $Version)' to '$(Format-LogSafeText $isolationDir)'"
+    Write-Verbose "Resolved package '$(Format-LogSafeText $PackageId)' version '$(Format-LogSafeText $Version)' to '$(Format-LogSafePath $isolationDir)'"
 
     return [pscustomobject]@{
         PackageId           = $PackageId
@@ -423,12 +457,12 @@ function Assert-SafeManifestRelativePath
 
     if ([System.IO.Path]::IsPathRooted($RelativePath))
     {
-        throw "Package '$(Format-LogSafeText $ExpectedPackageId)': manifest '$FieldName' must be a relative path inside the package, but '$(Format-LogSafeText $RelativePath)' is rooted."
+        throw "Package '$(Format-LogSafeText $ExpectedPackageId)': manifest '$FieldName' must be a relative path inside the package, but '$(Format-LogSafePath $RelativePath)' is rooted."
     }
 
     if (($RelativePath -split '[\\/]+') -contains "..")
     {
-        throw "Package '$(Format-LogSafeText $ExpectedPackageId)': manifest '$FieldName' must not contain '..' path segments, but '$(Format-LogSafeText $RelativePath)' does. Asset-only payloads must stay within 'contentFiles/any/any/ApiSchema/'."
+        throw "Package '$(Format-LogSafeText $ExpectedPackageId)': manifest '$FieldName' must not contain '..' path segments, but '$(Format-LogSafePath $RelativePath)' does. Asset-only payloads must stay within 'contentFiles/any/any/ApiSchema/'."
     }
 }
 
@@ -494,7 +528,7 @@ function Assert-AssetOnlyPackageContract
     # --- 1. Verify asset-only contract directory exists ---
     if (-not (Test-Path -LiteralPath $ApiSchemaDirectory -PathType Container))
     {
-        throw "Package '$(Format-LogSafeText $ExpectedPackageId)': asset-only contract directory 'contentFiles/any/any/ApiSchema/' was not found at '$(Format-LogSafeText $ApiSchemaDirectory)'."
+        throw "Package '$(Format-LogSafeText $ExpectedPackageId)': asset-only contract directory 'contentFiles/any/any/ApiSchema/' was not found at '$(Format-LogSafePath $ApiSchemaDirectory)'."
     }
 
     # --- 2. Check for forbidden DLL/assembly shape entries anywhere in the payload ---
@@ -508,7 +542,7 @@ function Assert-AssetOnlyPackageContract
     if ($null -ne $forbiddenDir)
     {
         $forbiddenDirName = $forbiddenDir.Name.ToLowerInvariant()
-        $forbiddenDirPath = Format-LogSafeText ($forbiddenDir.FullName)
+        $forbiddenDirPath = Format-LogSafePath ($forbiddenDir.FullName)
         throw "Package '$(Format-LogSafeText $ExpectedPackageId)': forbidden assembly-shape directory '$forbiddenDirName/' was found at '$forbiddenDirPath'. Asset-only packages must not contain lib/, ref/, bin/, or obj/ directories anywhere in the payload."
     }
 
@@ -516,7 +550,7 @@ function Assert-AssetOnlyPackageContract
         Where-Object { $_.Extension -ieq ".dll" -or $_.Extension -ieq ".cs" })
     if ($dllFiles.Count -gt 0)
     {
-        $firstForbidden = Format-LogSafeText ($dllFiles[0].FullName)
+        $firstForbidden = Format-LogSafePath ($dllFiles[0].FullName)
         throw "Package '$(Format-LogSafeText $ExpectedPackageId)': forbidden file type found: '$firstForbidden'. Asset-only packages must not contain *.dll or *.cs files."
     }
 
@@ -524,7 +558,7 @@ function Assert-AssetOnlyPackageContract
     $manifestPath = Join-Path $ApiSchemaDirectory "package-manifest.json"
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf))
     {
-        throw "Package '$(Format-LogSafeText $ExpectedPackageId)': required file 'package-manifest.json' is missing from '$(Format-LogSafeText $ApiSchemaDirectory)'."
+        throw "Package '$(Format-LogSafeText $ExpectedPackageId)': required file 'package-manifest.json' is missing from '$(Format-LogSafePath $ApiSchemaDirectory)'."
     }
 
     $manifestContent = Get-Content -LiteralPath $manifestPath -Raw -ErrorAction Stop
@@ -655,7 +689,7 @@ function Assert-AssetOnlyPackageContract
 
     if ($schemaJsonFiles.Count -eq 0)
     {
-        throw "Package '$(Format-LogSafeText $ExpectedPackageId)': no schema JSON file found at the asset-only contract path '$(Format-LogSafeText $ApiSchemaDirectory)'. Expected exactly one schema JSON (e.g. ApiSchema.json)."
+        throw "Package '$(Format-LogSafeText $ExpectedPackageId)': no schema JSON file found at the asset-only contract path '$(Format-LogSafePath $ApiSchemaDirectory)'. Expected exactly one schema JSON (e.g. ApiSchema.json)."
     }
 
     if ($schemaJsonFiles.Count -gt 1)
@@ -669,14 +703,14 @@ function Assert-AssetOnlyPackageContract
     $schemaFilePath = Join-Path $ApiSchemaDirectory $manifest.schemaPath
     if (-not (Test-Path -LiteralPath $schemaFilePath -PathType Leaf))
     {
-        throw "Package '$(Format-LogSafeText $ExpectedPackageId)': manifest 'schemaPath' references '$(Format-LogSafeText $manifest.schemaPath)' but that file does not exist at '$(Format-LogSafeText $schemaFilePath)'."
+        throw "Package '$(Format-LogSafeText $ExpectedPackageId)': manifest 'schemaPath' references '$(Format-LogSafePath $manifest.schemaPath)' but that file does not exist at '$(Format-LogSafePath $schemaFilePath)'."
     }
 
     $resolvedSchemaFilePath = [System.IO.Path]::GetFullPath($schemaFilePath)
     $resolvedRootSchemaPath = [System.IO.Path]::GetFullPath($schemaJsonFiles[0].FullName)
     if (-not $resolvedSchemaFilePath.Equals($resolvedRootSchemaPath, [System.StringComparison]::OrdinalIgnoreCase))
     {
-        throw "Package '$(Format-LogSafeText $ExpectedPackageId)': manifest 'schemaPath' must reference the single schema JSON at the asset-only contract root, but '$(Format-LogSafeText $manifest.schemaPath)' does not match the found root schema file '$(Format-LogSafeText $schemaJsonFiles[0].Name)'."
+        throw "Package '$(Format-LogSafeText $ExpectedPackageId)': manifest 'schemaPath' must reference the single schema JSON at the asset-only contract root, but '$(Format-LogSafePath $manifest.schemaPath)' does not match the found root schema file '$(Format-LogSafePath $schemaJsonFiles[0].Name)'."
     }
 
     # --- 8. Verify optional manifest-declared static assets exist when non-null ---
@@ -698,7 +732,7 @@ function Assert-AssetOnlyPackageContract
         $resolvedDiscoverySpecPath = Join-Path $ApiSchemaDirectory $manifest.discoverySpecPath
         if (-not (Test-Path -LiteralPath $resolvedDiscoverySpecPath -PathType Leaf))
         {
-            throw "Package '$(Format-LogSafeText $ExpectedPackageId)': manifest 'discoverySpecPath' references '$(Format-LogSafeText $manifest.discoverySpecPath)' but that file does not exist at '$(Format-LogSafeText $resolvedDiscoverySpecPath)'."
+            throw "Package '$(Format-LogSafeText $ExpectedPackageId)': manifest 'discoverySpecPath' references '$(Format-LogSafePath $manifest.discoverySpecPath)' but that file does not exist at '$(Format-LogSafePath $resolvedDiscoverySpecPath)'."
         }
 
         # A declared discoverySpecPath must carry content. A zero-byte file would finalize a workspace
@@ -706,7 +740,7 @@ function Assert-AssetOnlyPackageContract
         # Optional discovery-spec content is expressed by omitting the field or setting it to null.
         if ((Get-Item -LiteralPath $resolvedDiscoverySpecPath).Length -eq 0)
         {
-            throw "Package '$(Format-LogSafeText $ExpectedPackageId)': manifest 'discoverySpecPath' references '$(Format-LogSafeText $manifest.discoverySpecPath)' but that file is empty at '$(Format-LogSafeText $resolvedDiscoverySpecPath)'. A declared discoverySpecPath must contain content; omit the field or use JSON null when the package has no discovery spec."
+            throw "Package '$(Format-LogSafeText $ExpectedPackageId)': manifest 'discoverySpecPath' references '$(Format-LogSafePath $manifest.discoverySpecPath)' but that file is empty at '$(Format-LogSafePath $resolvedDiscoverySpecPath)'. A declared discoverySpecPath must contain content; omit the field or use JSON null when the package has no discovery spec."
         }
     }
 
@@ -723,7 +757,7 @@ function Assert-AssetOnlyPackageContract
         $resolvedXsdDirectory = Join-Path $ApiSchemaDirectory $manifest.xsdDirectory
         if (-not (Test-Path -LiteralPath $resolvedXsdDirectory -PathType Container))
         {
-            throw "Package '$(Format-LogSafeText $ExpectedPackageId)': manifest 'xsdDirectory' references '$(Format-LogSafeText $manifest.xsdDirectory)' but that directory does not exist at '$(Format-LogSafeText $resolvedXsdDirectory)'."
+            throw "Package '$(Format-LogSafeText $ExpectedPackageId)': manifest 'xsdDirectory' references '$(Format-LogSafePath $manifest.xsdDirectory)' but that directory does not exist at '$(Format-LogSafePath $resolvedXsdDirectory)'."
         }
 
         # A declared xsdDirectory must actually carry XSD content. prepare-dms-schema.ps1 records and
@@ -733,7 +767,7 @@ function Assert-AssetOnlyPackageContract
         $declaredXsdFiles = @(Get-ChildItem -LiteralPath $resolvedXsdDirectory -File -Filter "*.xsd" -Recurse -ErrorAction SilentlyContinue)
         if ($declaredXsdFiles.Count -eq 0)
         {
-            throw "Package '$(Format-LogSafeText $ExpectedPackageId)': manifest 'xsdDirectory' references '$(Format-LogSafeText $manifest.xsdDirectory)' but no .xsd files were found under '$(Format-LogSafeText $resolvedXsdDirectory)'. A declared xsdDirectory must contain XSD content; omit the field or use JSON null when the package has no XSD content."
+            throw "Package '$(Format-LogSafeText $ExpectedPackageId)': manifest 'xsdDirectory' references '$(Format-LogSafePath $manifest.xsdDirectory)' but no .xsd files were found under '$(Format-LogSafePath $resolvedXsdDirectory)'. A declared xsdDirectory must contain XSD content; omit the field or use JSON null when the package has no XSD content."
         }
     }
 
@@ -746,7 +780,7 @@ function Assert-AssetOnlyPackageContract
         $normalizedRelative = $relativePath.Replace('\', '/').ToLowerInvariant()
         if ($normalizedPaths.ContainsKey($normalizedRelative))
         {
-            throw "Package '$(Format-LogSafeText $ExpectedPackageId)': duplicate normalized relative path detected: '$(Format-LogSafeText $normalizedRelative)'. Package payload must not contain duplicate paths (case-insensitive, path-separator normalized)."
+            throw "Package '$(Format-LogSafeText $ExpectedPackageId)': duplicate normalized relative path detected: '$(Format-LogSafePath $normalizedRelative)'. Package payload must not contain duplicate paths (case-insensitive, path-separator normalized)."
         }
         $normalizedPaths[$normalizedRelative] = $true
     }

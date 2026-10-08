@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.Api.Plugins.Hosting;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
@@ -89,8 +90,12 @@ public class CoreAppSettingsStartupValidationTests
     {
         CreateFactoryWith(settingKey, settingValue);
 
+        // The host must refuse to start. Which exception WebApplicationFactory surfaces is a race in
+        // its deferred host: the OptionsValidationException from host start, or an
+        // ObjectDisposedException when RunAsync has already disposed the failed host. The cause is
+        // asserted through the status file, which Program writes before starting the host.
         Action startHost = () => _factory!.CreateClient();
-        startHost.Should().Throw<OptionsValidationException>();
+        startHost.Should().Throw<Exception>();
 
         File.Exists(_statusFilePath).Should().BeTrue();
         var startupStatus = JsonNode.Parse(await File.ReadAllTextAsync(_statusFilePath))!.AsObject();
@@ -128,7 +133,7 @@ public class Given_The_Core_App_Settings_Startup_Validator
             }
         );
 
-        builder.AddServices();
+        builder.AddServices(LoadedPlugins.Empty);
 
         return builder.Services.BuildServiceProvider();
     }

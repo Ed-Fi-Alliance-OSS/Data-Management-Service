@@ -82,7 +82,10 @@ internal sealed class FakeSequentialRelationalWriteFirstPhase(
 
         if (planSelectionImmediateResult is not null)
         {
-            return RelationalWriteFirstPhaseResolution.Immediate(planSelectionImmediateResult);
+            return RelationalWriteFirstPhaseResolution.Immediate(
+                planSelectionImmediateResult,
+                CompositeRelationalWriteFirstPhase.SelectPostAction(input, targetContext)
+            );
         }
 
         RelationalWriteLockedTarget? lockedTarget = null;
@@ -114,7 +117,10 @@ internal sealed class FakeSequentialRelationalWriteFirstPhase(
                 { } storedAuthorizationResult
             )
             {
-                return RelationalWriteFirstPhaseResolution.Immediate(storedAuthorizationResult);
+                return RelationalWriteFirstPhaseResolution.Immediate(
+                    storedAuthorizationResult,
+                    CompositeRelationalWriteFirstPhase.SelectPostAction(input, targetContext)
+                );
             }
 
             if (
@@ -122,7 +128,10 @@ internal sealed class FakeSequentialRelationalWriteFirstPhase(
                 { } missingReadPlanResult
             )
             {
-                return RelationalWriteFirstPhaseResolution.Immediate(missingReadPlanResult);
+                return RelationalWriteFirstPhaseResolution.Immediate(
+                    missingReadPlanResult,
+                    CompositeRelationalWriteFirstPhase.SelectPostAction(input, targetContext)
+                );
             }
 
             var includeDescriptorProjection =

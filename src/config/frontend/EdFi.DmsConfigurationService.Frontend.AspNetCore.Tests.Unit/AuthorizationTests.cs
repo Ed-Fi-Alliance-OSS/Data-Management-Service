@@ -98,7 +98,7 @@ public class AuthorizationTests
         public void SetUp()
         {
             A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
-                .Returns(new VendorInsertResult.Success(1, IsNewVendor: true));
+                .Returns(new VendorInsertResult.Success(1));
 
             A.CallTo(() => _vendorRepository.QueryVendor(A<VendorQuery>.Ignored))
                 .Returns(
@@ -128,8 +128,17 @@ public class AuthorizationTests
                     )
                 );
 
+            // The vendor update resolves its affected clients before mutating anything, so the
+            // authorization scenarios need a resolvable vendor with no clients.
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(A<int>.Ignored))
+                .Returns(
+                    new VendorUpdateStateResult.Success(
+                        new VendorUpdateState("Test Company", "Test", "test@test.com", "Test Prefix", [])
+                    )
+                );
+
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
-                .Returns(new VendorUpdateResult.Success(new List<Guid>()));
+                .Returns(new VendorUpdateResult.Success());
 
             A.CallTo(() => _vendorRepository.DeleteVendor(A<int>.Ignored))
                 .Returns(new VendorDeleteResult.Success());
@@ -195,7 +204,7 @@ public class AuthorizationTests
         public void SetUp()
         {
             A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
-                .Returns(new VendorInsertResult.Success(1, IsNewVendor: false));
+                .Returns(new VendorInsertResult.Success(1));
 
             A.CallTo(() => _vendorRepository.QueryVendor(A<VendorQuery>.Ignored))
                 .Returns(

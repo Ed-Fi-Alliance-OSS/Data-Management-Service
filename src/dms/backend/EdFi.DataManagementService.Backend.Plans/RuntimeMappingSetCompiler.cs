@@ -88,7 +88,7 @@ public sealed class RuntimeMappingSetCompiler(
 
     private static string FormatKey(MappingSetKey key)
     {
-        return $"{SanitizeForLog(key.EffectiveSchemaHash)}/{key.Dialect}/{SanitizeForLog(key.RelationalMappingVersion)}";
+        return $"{SanitizeInternalValueForLog(key.EffectiveSchemaHash)}/{key.Dialect}/{SanitizeInternalValueForLog(key.RelationalMappingVersion)}";
     }
 
     private static EffectiveSchemaSet CloneEffectiveSchemaSet(EffectiveSchemaSet original)

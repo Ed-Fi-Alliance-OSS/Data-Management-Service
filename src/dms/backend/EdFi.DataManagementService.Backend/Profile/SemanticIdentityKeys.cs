@@ -83,7 +83,7 @@ internal static class SemanticIdentityKeys
     /// messages as <c>path=value</c> pairs joined by commas, with explicit <c>(missing)</c>
     /// annotation for parts whose <see cref="SemanticIdentityPart.IsPresent"/> is false. The
     /// <see cref="SemanticIdentityPart.RelativePath"/> values come from compiled metadata and
-    /// must be wrapped in <c>LogSanitizer.SanitizeForLog</c> by callers that include the
+    /// must be wrapped in <c>LogSanitizer.SanitizeInternalValueForLog</c> by callers that include the
     /// formatted output in log or exception messages.
     /// </summary>
     public static string FormatForDiagnostics(ImmutableArray<SemanticIdentityPart> parts)

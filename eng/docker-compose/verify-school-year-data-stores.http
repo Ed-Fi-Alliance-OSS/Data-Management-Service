@@ -125,7 +125,7 @@ Content-Type: application/json
 {
   "vendorId": {{vendorId}},
   "applicationName": "School Year Data Store Test App",
-  "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+  "claimSetName": "EdFiSandbox",
   "educationOrganizationIds": [255901, 255902],
   "dataStoreIds": [1, 2]
 }

@@ -116,7 +116,9 @@ schema contract and claims-staging contract rather than introducing a second pat
   security metadata, and additive otherwise.
 - `-ClaimsDirectoryPath` is additive-only: fragments may attach permissions only to effective claim set
   references already declared in the embedded `Claims.json`. Bootstrap fails fast when a staged fragment
-  references an unknown effective claim set name.
+  references an unknown effective claim set name. This "already declared" rule is the bootstrap staging
+  rule; CMS composition itself registers a fragment's implicitly named claim set when the embedded
+  `Claims.json` does not declare it (see `bootstrap-design.md`, fragment file contract).
 - `-ApiSchemaPath` mode satisfies the DMS-916 requirement that claimset loading is automatic from the
   selected schema and available claims inputs. It validates staged schema normalization and caller-supplied
   fragment structure, but it does not infer or guarantee authorization coverage for arbitrary custom non-core
@@ -185,9 +187,10 @@ schema contract and claims-staging contract rather than introducing a second pat
   ship in the embedded DS 5.2 `Claims.json`), records `uri://tpdm.ed-fi.org`, and contributes leaf readiness
   checks. Entries without a known built-in seed namespace prefix write no prefix to the root bootstrap
   manifest, and bootstrap must not infer prefixes from arbitrary direct filesystem schema content.
-  Core-baseline fragments (`001-namespace-claimset.json`, `002-nofurtherauth-claimset.json`,
-  `003-edorgsonly-claimset.json`) remain part of embedded `Claims.json` loading and are never staged into
-  the additive workspace. Staged extensions whose `projectName` is not in the lookup are treated as
+  The E2E fragments (`001-namespace-claimset.json`, `002-nofurtherauth-claimset.json`,
+  `003-edorgsonly-claimset.json` and the `003a`–`003c` variants) are test-owned: they live under the CMS E2E
+  project's `TestData/Claims/Fragments/`, define the E2E claim sets that the embedded `Claims.json` does not
+  declare, and are staged only by the test-only `-IncludeE2EClaimSets` path. Staged extensions whose `projectName` is not in the lookup are treated as
   unmapped: `-ClaimsDirectoryPath` is required and the caller-supplied fragments are the only security
   inputs for those projects. The lookup is a v1 implementation detail of the claims phase, not a separate
   catalog artifact in the repo.

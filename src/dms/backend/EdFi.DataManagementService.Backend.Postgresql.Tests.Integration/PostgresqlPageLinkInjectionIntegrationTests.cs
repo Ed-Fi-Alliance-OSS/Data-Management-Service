@@ -347,7 +347,11 @@ public class Given_A_Postgresql_Page_Of_AcademicWeeks_With_Link_Injection
             Headers: [],
             TraceId: new TraceId("pg-page-link-injection-seed-school"),
             DocumentUuid: seed.SchoolDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
@@ -373,7 +377,11 @@ public class Given_A_Postgresql_Page_Of_AcademicWeeks_With_Link_Injection
             Headers: [],
             TraceId: new TraceId("pg-page-link-injection-seed-academicweek"),
             DocumentUuid: seed.AcademicWeekDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()

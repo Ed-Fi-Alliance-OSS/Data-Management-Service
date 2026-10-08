@@ -31,6 +31,26 @@ public class KeycloakClientRepository(
     /// </summary>
     private static readonly string _serviceAccountScopeName = "service_account";
 
+    /// <summary>
+    /// Fixed phrases the create-path failure logs carry to say whether a client may exist. They
+    /// are the operator's entry point into the recovery procedure: only an attempted creation can
+    /// have left a client behind, and a creation that reported no usable identifier cannot be
+    /// compensated because there is nothing to address the deletion to.
+    /// </summary>
+    private const string CreationNotAttempted = "creation not attempted";
+
+    private const string CreationOutcomeUnconfirmed = "creation outcome unconfirmed";
+
+    /// <summary>
+    /// Provisioning phases named in the create-path failure logs, so an operator can tell which
+    /// step failed and, from that, what the client's role state is.
+    /// </summary>
+    private const string ClientIdentifierParsePhase = "client-identifier-parse";
+
+    private const string ServiceAccountLookupPhase = "service-account-lookup";
+
+    private const string RoleAssignmentPhase = "role-assignment";
+
     public async Task<ClientCreateResult> CreateClientAsync(
         string clientId,
         string clientSecret,
@@ -43,6 +63,11 @@ public class KeycloakClientRepository(
         bool isApproved = true
     )
     {
+        // Tracks whether the create call has been issued, so a failure reaching the catches below
+        // can state whether a client may exist. Nothing before that call leaves a client behind,
+        // while the call itself can fail after Keycloak has already persisted one.
+        string creationOutcome = CreationNotAttempted;
+
         try
         {
             var protocolMappers = ConfigServiceRoleProtocolMapper();
@@ -67,7 +92,10 @@ public class KeycloakClientRepository(
                 ProtocolMappers = protocolMappers,
             };
 
-            // Read role from the realm
+            // Preflight: the realm role and the claim-set scope are resolved before the client is
+            // created, so a failure in either leaves nothing behind to compensate. Each provider
+            // boolean is checked; a rejected creation is reported as a provider failure rather
+            // than being discovered later, or never, through a follow-up lookup.
             var realmRoles = await keycloakClientFacade.GetRolesAsync(_realm);
             Role? clientRole = realmRoles.FirstOrDefault(x =>
                 x.Name.Equals(role, StringComparison.InvariantCultureIgnoreCase)
@@ -75,106 +103,381 @@ public class KeycloakClientRepository(
 
             if (clientRole is null)
             {
-                await keycloakClientFacade.CreateRoleAsync(_realm, new Role() { Name = role });
+                if (!await keycloakClientFacade.CreateRoleAsync(_realm, new Role() { Name = role }))
+                {
+                    logger.LogError(
+                        "Client provisioning failed during role-creation for client {ClientId}: the identity provider did not create the realm role {Role}",
+                        SanitizeForLog(clientId),
+                        SanitizeForLog(role)
+                    );
+                    return new ClientCreateResult.FailureIdentityProvider(
+                        new IdentityProviderError("The identity provider did not create the realm role.")
+                    );
+                }
 
                 clientRole = await keycloakClientFacade.GetRoleByNameAsync(_realm, role);
             }
 
-            await CheckAndCreateClientScopeAsync(scope);
+            if (clientRole is null)
+            {
+                logger.LogError(
+                    "Client provisioning failed during role-lookup for client {ClientId}: realm role {Role} not found",
+                    SanitizeForLog(clientId),
+                    SanitizeForLog(role)
+                );
+                return new ClientCreateResult.FailureUnknown($"Role {role} not found.");
+            }
 
+            if (!await CheckAndCreateClientScopeAsync(scope))
+            {
+                logger.LogError(
+                    "Client provisioning failed during scope-creation for client {ClientId}: the identity provider did not create the client scope {Scope}",
+                    SanitizeForLog(clientId),
+                    SanitizeForLog(scope)
+                );
+                return new ClientCreateResult.FailureIdentityProvider(
+                    new IdentityProviderError("The identity provider did not create the client scope.")
+                );
+            }
+
+            creationOutcome = CreationOutcomeUnconfirmed;
             string? createdClientUuid = await keycloakClientFacade.CreateClientAndRetrieveClientIdAsync(
                 _realm,
                 client
             );
-            if (!string.IsNullOrEmpty(createdClientUuid))
+
+            if (string.IsNullOrEmpty(createdClientUuid))
             {
-                if (clientRole != null)
-                {
-                    // Assign the service role to client's service account
-                    var serviceAccountUser = await keycloakClientFacade.GetUserForServiceAccountAsync(
-                        _realm,
-                        createdClientUuid
-                    );
-
-                    _ = await keycloakClientFacade.AddRealmRoleMappingsToUserAsync(
-                        _realm,
-                        serviceAccountUser.Id,
-                        [clientRole]
-                    );
-
-                    return new ClientCreateResult.Success(Guid.Parse(createdClientUuid));
-                }
-                else
-                {
-                    return new ClientCreateResult.FailureUnknown($"Role {role} not found.");
-                }
+                logger.LogError(
+                    "Error while creating the client {ClientId}: the identity provider returned no client identifier and raised no exception, so the {CreationOutcome}",
+                    SanitizeForLog(clientId),
+                    CreationOutcomeUnconfirmed
+                );
+                return new ClientCreateResult.FailureUnknown($"Error while creating the client: {clientId}");
             }
 
-            logger.LogError(
-                "Error while creating the client {ClientId}. CreateClientAndRetrieveClientIdAsync returned empty string with no exception.",
-                SanitizeForLog(clientId)
-            );
-            return new ClientCreateResult.FailureUnknown($"Error while creating the client: {clientId}");
+            // The client exists at the provider from here on, so every failure below is
+            // compensated by deleting it: the request returns no credentials and persists no row,
+            // which would leave a client nothing could ever address again.
+            if (!Guid.TryParse(createdClientUuid, out Guid parsedClientUuid))
+            {
+                LogProvisioningFailure(ClientIdentifierParsePhase, clientId, createdClientUuid);
+                return await CompensateFailedProvisioningAsync(
+                    createdClientUuid,
+                    clientId,
+                    new ClientCreateResult.FailureUnknown(
+                        "The identity provider returned a client identifier that is not a UUID."
+                    )
+                );
+            }
+
+            if (
+                await ProvisionServiceAccountRoleAsync(createdClientUuid, clientId, clientRole) is
+                { } provisioningFailure
+            )
+            {
+                return await CompensateFailedProvisioningAsync(
+                    createdClientUuid,
+                    clientId,
+                    provisioningFailure
+                );
+            }
+
+            return new ClientCreateResult.Success(parsedClientUuid);
         }
         catch (FlurlHttpException ex)
         {
-            logger.LogError(ex, "Create client failure");
+            logger.LogError(
+                ex,
+                "Create client failure for client {ClientId}; {CreationOutcome}",
+                SanitizeForLog(clientId),
+                creationOutcome
+            );
             return new ClientCreateResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Create client failure");
+            logger.LogError(
+                ex,
+                "Create client failure for client {ClientId}; {CreationOutcome}",
+                SanitizeForLog(clientId),
+                creationOutcome
+            );
             return new ClientCreateResult.FailureUnknown(ex.Message);
         }
     }
 
+    /// <summary>
+    /// Assigns the resolved realm role to the service account of the client this request created.
+    /// Returns <c>null</c> when the provider reported the assignment applied, otherwise the
+    /// classified failure, already logged with the phase that produced it. Exceptions are
+    /// classified here rather than at the method boundary because the caller has to compensate
+    /// the client that now exists; a lost response leaves the assignment unconfirmed rather than
+    /// known to be absent.
+    /// </summary>
+    private async Task<ClientCreateResult?> ProvisionServiceAccountRoleAsync(
+        string createdClientUuid,
+        string clientId,
+        Role clientRole
+    )
+    {
+        string phase = ServiceAccountLookupPhase;
+        try
+        {
+            var serviceAccountUser = await keycloakClientFacade.GetUserForServiceAccountAsync(
+                _realm,
+                createdClientUuid
+            );
+
+            if (serviceAccountUser is null || string.IsNullOrEmpty(serviceAccountUser.Id))
+            {
+                LogProvisioningFailure(phase, clientId, createdClientUuid);
+                return new ClientCreateResult.FailureUnknown(
+                    "The identity provider returned no service account for the client."
+                );
+            }
+
+            phase = RoleAssignmentPhase;
+            if (
+                !await keycloakClientFacade.AddRealmRoleMappingsToUserAsync(
+                    _realm,
+                    serviceAccountUser.Id,
+                    [clientRole]
+                )
+            )
+            {
+                LogProvisioningFailure(phase, clientId, createdClientUuid);
+                return new ClientCreateResult.FailureIdentityProvider(
+                    new IdentityProviderError(
+                        "The identity provider did not assign the realm role to the client's service account."
+                    )
+                );
+            }
+
+            return null;
+        }
+        catch (FlurlHttpException ex)
+        {
+            LogProvisioningFailure(phase, clientId, createdClientUuid, ex);
+            return new ClientCreateResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
+        }
+        catch (Exception ex)
+        {
+            LogProvisioningFailure(phase, clientId, createdClientUuid, ex);
+            return new ClientCreateResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Deletes the client a failed provisioning attempt created and decides the outcome the
+    /// caller sees. A deletion the provider reports successful, a client it reports already
+    /// absent, and a deletion it reports unsuccessful for a provider reason all keep the
+    /// provisioning classification: the whole request is then provider attributable. An unknown
+    /// result, an unrecognized one, or an unexpected exception is not, so the outcome becomes an
+    /// unknown failure. The client is never recreated and no secret is ever reissued.
+    /// </summary>
+    private async Task<ClientCreateResult> CompensateFailedProvisioningAsync(
+        string createdClientUuid,
+        string clientId,
+        ClientCreateResult provisioningFailure
+    )
+    {
+        ClientDeleteResult cleanupResult;
+        try
+        {
+            cleanupResult = await DeleteClientAsync(createdClientUuid);
+        }
+        catch (Exception ex)
+        {
+            // DeleteClientAsync classifies provider failures itself, so only an unexpected
+            // exception arrives here, and it may have been raised after the deletion took effect.
+            LogUnconfirmedCleanup(createdClientUuid, clientId, ex.GetType().Name, ex);
+            return AsUnknownFailure(provisioningFailure);
+        }
+
+        switch (cleanupResult)
+        {
+            case ClientDeleteResult.Success:
+                logger.LogInformation(
+                    "Deleted provider client {ClientUuid} (client {ClientId}) after failed provisioning",
+                    SanitizeForLog(createdClientUuid),
+                    SanitizeForLog(clientId)
+                );
+                return provisioningFailure;
+
+            case ClientDeleteResult.FailureClientNotFound:
+                logger.LogWarning(
+                    "Provider client {ClientUuid} (client {ClientId}) was already absent during cleanup after failed provisioning",
+                    SanitizeForLog(createdClientUuid),
+                    SanitizeForLog(clientId)
+                );
+                return provisioningFailure;
+
+            case ClientDeleteResult.FailureIdentityProvider:
+                LogUnconfirmedCleanup(
+                    createdClientUuid,
+                    clientId,
+                    nameof(ClientDeleteResult.FailureIdentityProvider)
+                );
+                return provisioningFailure;
+
+            case ClientDeleteResult.FailureUnknown:
+                LogUnconfirmedCleanup(createdClientUuid, clientId, nameof(ClientDeleteResult.FailureUnknown));
+                return AsUnknownFailure(provisioningFailure);
+
+            default:
+                LogUnconfirmedCleanup(createdClientUuid, clientId, cleanupResult.GetType().Name);
+                return AsUnknownFailure(provisioningFailure);
+        }
+
+        static ClientCreateResult AsUnknownFailure(ClientCreateResult failure) =>
+            failure is ClientCreateResult.FailureUnknown unknown
+                ? unknown
+                : new ClientCreateResult.FailureUnknown(
+                    "The client created for this request could not be removed after its provisioning failed."
+                );
+    }
+
+    private void LogProvisioningFailure(
+        string phase,
+        string clientId,
+        string createdClientUuid,
+        Exception? exception = null
+    ) =>
+        logger.LogError(
+            exception,
+            "Client provisioning failed during {Phase} for client {ClientId} (provider client {ClientUuid}); deleting the created client",
+            phase,
+            SanitizeForLog(clientId),
+            SanitizeForLog(createdClientUuid)
+        );
+
+    private void LogUnconfirmedCleanup(
+        string createdClientUuid,
+        string clientId,
+        string outcome,
+        Exception? exception = null
+    ) =>
+        logger.LogError(
+            exception,
+            "Could not confirm deletion of provider client {ClientUuid} (client {ClientId}) after failed provisioning; cleanup outcome {Outcome}; the client may remain and must be reviewed manually",
+            SanitizeForLog(createdClientUuid),
+            SanitizeForLog(clientId),
+            outcome
+        );
+
+    /// <summary>
+    /// Rewrites one client's namespace-prefixes claim **in place**, under its existing UUID. The
+    /// client's identity therefore survives every outcome — with it the secret, the service
+    /// account and its realm role mappings, the claim-set default scope, and every unrelated
+    /// claim — so no failure arising from this update can invalidate the UUID the database
+    /// already stores. The claim-set scope is never touched, so no scope convergence is needed.
+    /// </summary>
     public async Task<ClientUpdateResult> UpdateClientNamespaceClaimAsync(
         string clientUuid,
         string namespacePrefixes
     )
     {
+        if (!Guid.TryParse(clientUuid, out Guid storedClientUuid))
+        {
+            logger.LogError("The stored client identifier is not a valid UUID");
+            return new ClientUpdateResult.FailureUnknown("The stored client identifier is not a valid UUID.");
+        }
+
+        // The stored-client lookup is classified on its own, before any other phase can fail.
+        // Keycloak answers a missing client with a 404 that Flurl raises as an exception, so
+        // without this phase the disappearance of a stored client would be reported as an
+        // upstream provider fault instead of the internal consistency failure it is.
+        Client client;
         try
         {
-            var client = await keycloakClientFacade.GetClientAsync(_realm, clientUuid);
-
-            // Delete the existing client
-            await keycloakClientFacade.DeleteClientAsync(_realm, clientUuid);
-
-            var protocolMappers = ConfigServiceRoleProtocolMapper();
-            protocolMappers.Add(NamespacePrefixProtocolMapper(namespacePrefixes));
-            Client newClient = new()
-            {
-                ClientId = client.ClientId,
-                Enabled = client.Enabled,
-                Secret = client.Secret,
-                Name = client.Name,
-                ServiceAccountsEnabled = true,
-                DefaultClientScopes = client.DefaultClientScopes,
-                ProtocolMappers = protocolMappers,
-            };
-            // Re-create the client
-            string? newClientId = await keycloakClientFacade.CreateClientAndRetrieveClientIdAsync(
-                _realm,
-                newClient
-            );
-            if (!string.IsNullOrEmpty(newClientId))
-            {
-                return new ClientUpdateResult.Success(Guid.Parse(newClientId));
-            }
-
-            logger.LogError("Update client failure");
-            return new ClientUpdateResult.FailureUnknown($"Error while updating the client: {clientUuid}");
+            client = await keycloakClientFacade.GetClientAsync(_realm, clientUuid);
         }
         catch (FlurlHttpException ex)
         {
-            logger.LogError(ex, "Update client failure");
-            return new ClientUpdateResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
+            logger.LogError(ex, "Namespace claim update failure while reading the stored client");
+            return ex.StatusCode == 404
+                ? new ClientUpdateResult.FailureNotFound($"Client {clientUuid} not found")
+                : new ClientUpdateResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Update client failure");
+            logger.LogError(ex, "Namespace claim update failure while reading the stored client");
             return new ClientUpdateResult.FailureUnknown(ex.Message);
         }
+
+        if (client is null)
+        {
+            logger.LogError("The stored client {ClientUuid} was not found", SanitizeForLog(clientUuid));
+            return new ClientUpdateResult.FailureNotFound($"Client {clientUuid} not found");
+        }
+
+        List<ClientProtocolMapper> protocolMappers = [.. client.ProtocolMappers ?? []];
+        UpsertNamespacePrefixesClaim(protocolMappers, namespacePrefixes);
+        client.ProtocolMappers = protocolMappers;
+        // The secret is never written back. Keycloak leaves a client's secret untouched when the
+        // representation omits it or carries null, so the fetched value — which a provider is
+        // free to mask — can never overwrite the real credential. The model declares the property
+        // non-nullable, but clearing it is exactly how the update opts out of sending it.
+        client.Secret = null!;
+
+        bool updated;
+        try
+        {
+            updated = await keycloakClientFacade.UpdateClientAsync(_realm, clientUuid, client);
+        }
+        catch (FlurlHttpException ex)
+        {
+            logger.LogError(ex, "Namespace claim update failure while updating the stored client");
+            // The client is addressed directly here, so a 404 is unambiguously its disappearance.
+            return ex.StatusCode == 404
+                ? new ClientUpdateResult.FailureNotFound($"Client {clientUuid} not found")
+                : new ClientUpdateResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Namespace claim update failure while updating the stored client");
+            return new ClientUpdateResult.FailureUnknown(ex.Message);
+        }
+
+        if (!updated)
+        {
+            logger.LogError(
+                "Keycloak did not apply the namespace claim update for client {ClientUuid}",
+                SanitizeForLog(clientUuid)
+            );
+            return new ClientUpdateResult.FailureUnknown($"Error while updating the client: {clientUuid}");
+        }
+
+        return new ClientUpdateResult.Success(storedClientUuid);
+    }
+
+    /// <summary>
+    /// Sets the client's namespace-prefixes claim to the requested value, preserving every
+    /// unrelated mapper. The first matching mapper keeps its identity and unrelated configuration;
+    /// its value and JSON type are updated for the requested claim shape. Any further duplicates
+    /// are removed so exactly one mapper carries the claim. A client carrying no such mapper
+    /// receives the fully configured one.
+    /// </summary>
+    private void UpsertNamespacePrefixesClaim(
+        List<ClientProtocolMapper> protocolMappers,
+        string namespacePrefixes
+    )
+    {
+        ClientProtocolMapper? namespaceClaim = protocolMappers.Find(mapper =>
+            HasClaimName(mapper, "namespacePrefixes")
+        );
+
+        if (namespaceClaim is null)
+        {
+            protocolMappers.Add(NamespacePrefixProtocolMapper(namespacePrefixes));
+            return;
+        }
+
+        ConfigureNamespacePrefixesClaim(namespaceClaim, namespacePrefixes);
+        protocolMappers.RemoveAll(mapper =>
+            !ReferenceEquals(mapper, namespaceClaim) && HasClaimName(mapper, "namespacePrefixes")
+        );
     }
 
     public async Task<ClientDeleteResult> DeleteClientAsync(string clientUuid)
@@ -248,36 +551,42 @@ public class KeycloakClientRepository(
         }
     }
 
-    private async Task CheckAndCreateClientScopeAsync(string scope)
+    /// <summary>
+    /// Ensures the claim-set client scope exists. Returns <c>true</c> when it already exists or
+    /// the provider reports it created; <c>false</c> when the provider reports the creation
+    /// unsuccessful, so callers fail fast instead of proceeding against a scope that may be
+    /// absent.
+    /// </summary>
+    private async Task<bool> CheckAndCreateClientScopeAsync(string scope)
     {
-        bool scopeExists = await ClientScopeExistsAsync(scope);
-
-        if (!scopeExists)
+        if (await ClientScopeExistsAsync(scope))
         {
-            await keycloakClientFacade.CreateClientScopeAsync(
-                _realm,
-                new ClientScope()
-                {
-                    Name = scope,
-                    Protocol = "openid-connect",
-                    ProtocolMappers = new List<ProtocolMapper>([
-                        new ProtocolMapper()
-                        {
-                            Name = "audience resolve",
-                            Protocol = "openid-connect",
-                            _ProtocolMapper = "oidc-audience-resolve-mapper",
-                            ConsentRequired = false,
-                            Config = new Dictionary<string, string>
-                            {
-                                { "introspection.token.claim", "true" },
-                                { "access.token.claim", "true" },
-                            },
-                        },
-                    ]),
-                    Attributes = new Attributes() { IncludeInTokenScope = "true" },
-                }
-            );
+            return true;
         }
+
+        return await keycloakClientFacade.CreateClientScopeAsync(
+            _realm,
+            new ClientScope()
+            {
+                Name = scope,
+                Protocol = "openid-connect",
+                ProtocolMappers = new List<ProtocolMapper>([
+                    new ProtocolMapper()
+                    {
+                        Name = "audience resolve",
+                        Protocol = "openid-connect",
+                        _ProtocolMapper = "oidc-audience-resolve-mapper",
+                        ConsentRequired = false,
+                        Config = new Dictionary<string, string>
+                        {
+                            { "introspection.token.claim", "true" },
+                            { "access.token.claim", "true" },
+                        },
+                    },
+                ]),
+                Attributes = new Attributes() { IncludeInTokenScope = "true" },
+            }
+        );
     }
 
     private async Task<bool> ClientScopeExistsAsync(string scope) =>
@@ -356,7 +665,18 @@ public class KeycloakClientRepository(
         HashSet<string> realmDefaultScopeIds;
         try
         {
-            await CheckAndCreateClientScopeAsync(scope);
+            if (!await CheckAndCreateClientScopeAsync(scope))
+            {
+                logger.LogError(
+                    "Update client failure: the identity provider did not create the client scope {Scope} for client {ClientUuid}",
+                    SanitizeForLog(scope),
+                    SanitizeForLog(clientUuid)
+                );
+                return new ClientUpdateResult.FailureIdentityProvider(
+                    new IdentityProviderError("The identity provider did not create the client scope.")
+                );
+            }
+
             ClientScope? targetScope = await FindClientScopeAsync(scope);
             if (targetScope is null || string.IsNullOrEmpty(targetScope.Id))
             {
@@ -584,7 +904,24 @@ public class KeycloakClientRepository(
 
     private ClientProtocolMapper NamespacePrefixProtocolMapper(string value)
     {
-        return ProtocolMapper("Namespace Prefixes", "namespacePrefixes", value);
+        ClientProtocolMapper mapper = ProtocolMapper("Namespace Prefixes", "namespacePrefixes", value);
+        ConfigureNamespacePrefixesClaim(mapper, value);
+        return mapper;
+    }
+
+    private static void ConfigureNamespacePrefixesClaim(ClientProtocolMapper mapper, string value)
+    {
+        if (value.Length is 0)
+        {
+            // Keycloak omits empty protocol-mapper config values. Encode the empty string as JSON so
+            // the configured value remains non-empty while the hardcoded mapper emits an empty claim.
+            mapper.Config["claim.value"] = "\"\"";
+            mapper.Config["jsonType.label"] = "JSON";
+            return;
+        }
+
+        mapper.Config["claim.value"] = value;
+        mapper.Config["jsonType.label"] = "String";
     }
 
     private ClientProtocolMapper EducationOrganizationProtocolMapper(string value)

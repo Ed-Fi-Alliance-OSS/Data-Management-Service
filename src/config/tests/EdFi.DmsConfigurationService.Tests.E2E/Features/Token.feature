@@ -123,3 +123,56 @@ Feature: Token validation
              When a token is requested using raw HTTP Basic auth with the captured credentials
              Then it should respond with 200
               And the response body has a non-empty access_token
+
+        # A client that authenticates but carries no role receives a token its API requests cannot
+        # use, so the claim itself is the acceptance evidence. Both clients an application can
+        # produce are checked: the one created with it, and one added afterwards.
+        Scenario: 05 A newly created client's token carries the configured client role
+             When a POST request is made to "/v3/vendors" with
+                  """
+                    {
+                      "company": "V-role-{scenarioRunId}",
+                      "contactName": "Test",
+                      "contactEmailAddress": "test@gmail.com",
+                      "namespacePrefixes": "uri://role-test-{scenarioRunId}.org"
+                    }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/dataStores" with
+                  """
+                    {
+                      "dataStoreType": "Test",
+                      "name": "DS-role-{scenarioRunId}",
+                      "connectionString": "Server=test;Database=TestDb;"
+                    }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/applications" with
+                  """
+                    {
+                      "vendorId": {vendorId},
+                      "applicationName": "App-role-{scenarioRunId}",
+                      "claimSetName": "ClaimSet05Role",
+                      "educationOrganizationIds": [],
+                      "dataStoreIds": [{dataStoreId}]
+                    }
+                  """
+             Then it should respond with 201
+              And the response body credentials are captured as "applicationClient"
+             When a POST request is made to "/v3/apiClients" with
+                  """
+                    {
+                      "applicationId": {applicationId},
+                      "name": "Client-role-{scenarioRunId}",
+                      "isApproved": true,
+                      "dataStoreIds": [{dataStoreId}]
+                    }
+                  """
+             Then it should respond with 201
+              And the response body credentials are captured as "additionalClient"
+             When a token is requested with the credentials captured as "applicationClient" and scope "ClaimSet05Role"
+             Then it should respond with 200
+              And the token carries the configured client role claim
+             When a token is requested with the credentials captured as "additionalClient" and scope "ClaimSet05Role"
+             Then it should respond with 200
+              And the token carries the configured client role claim

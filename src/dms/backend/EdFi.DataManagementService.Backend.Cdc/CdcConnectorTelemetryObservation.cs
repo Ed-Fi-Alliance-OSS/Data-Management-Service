@@ -67,6 +67,12 @@ public sealed class CdcTelemetryObservationPass : IDisposable
     internal long ThresholdMilliseconds { get; }
     internal bool IsValid => Volatile.Read(ref _invalidated) == 0;
 
+    // A separate invalid state identifies one precise reason a fresh pass may be needed.
+    // Any other invalidation (including native recovery or disposal) supersedes it.
+    internal bool CurrentLagUnavailable => Volatile.Read(ref _invalidated) == 2;
+
+    internal void InvalidateForUnavailableCurrentLag() => Interlocked.CompareExchange(ref _invalidated, 2, 0);
+
     internal bool Claim(CdcDeploymentRequest request) =>
         ReferenceEquals(Request, request) && IsValid && Interlocked.CompareExchange(ref _claimed, 1, 0) == 0;
 

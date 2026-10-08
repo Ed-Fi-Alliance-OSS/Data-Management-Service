@@ -63,11 +63,13 @@ project.lock.json
 project.fragment.lock.json
 artifacts/
 eng/docker-compose/.bootstrap/
+eng/docker-compose/.e2e-claims/
 eng/docker-compose/.cdc-deployments/
-eng/docker-compose/.cdc-diagnostics/
+eng/docker-compose/.cdc-api-e2e.lock
 eng/docker-compose/.cdc-state
 eng/docker-compose/.derived/
 eng/docker-compose/.env.perf-hostpg
+eng/docker-compose/.env.ide
 
 # Database-template restore trust artifacts: local signer keys, the operator-local
 # trust-policy overlay, detached attestation documents, and the transient companion
@@ -472,6 +474,9 @@ CLAUDE.local.md
 .plans/
 .claude/
 
+# Local implementation plan
+/PLAN.md
+
 # SDK generation artifacts
 /eng/sdkGen/csharp/*
 openApi-codegen-cli*.jar
@@ -492,3 +497,10 @@ tmpclaude*
 *.lscache
 
 docs/superpowers/
+
+# Local folder feed the packed contract fixture plugins restore their contract
+# packages from. Written by the integration test project's PackedContractFixturePlugins.targets.
+/eng/fixtures/plugins/.local-feed/
+
+# CDC execution reports are retained outside source control.
+/reference/cdc-documentation/evidence/

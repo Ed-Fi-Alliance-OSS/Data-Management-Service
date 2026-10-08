@@ -24,17 +24,15 @@ internal sealed class RelationalWriteExecutionStateResolver(
         logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
-    /// True when the request carries an HTTP conditional write precondition (If-Match or
-    /// If-None-Match) whose current existence/etag the write flow must resolve. If-None-Match is a
-    /// sibling of If-Match, so every structural "is a precondition present?" gate must admit both;
-    /// only the proceed-vs-412 outcome differs, centralized in <see cref="EtagPreconditionEvaluator"/>.
+    /// True when the request carries an HTTP conditional write precondition (If-Match) whose current
+    /// existence/etag the write flow must resolve. The proceed-vs-412 outcome is centralized in
+    /// <see cref="EtagPreconditionEvaluator"/>.
     /// </summary>
     internal static bool HasEtagPrecondition(WritePrecondition precondition) =>
         precondition switch
         {
             WritePrecondition.None => false,
             WritePrecondition.IfMatch => true,
-            WritePrecondition.IfNoneMatch => true,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(precondition),
                 precondition,
@@ -42,6 +40,12 @@ internal sealed class RelationalWriteExecutionStateResolver(
             ),
         };
 
+    /// <remarks>
+    /// A create whose ownership verdict denies it owes that 403 or token-cap 500 ahead of its If-Match 412,
+    /// exactly like a proposed authorization failure, so the precondition is deferred behind the second
+    /// command that returns the verdict. Gated on the create target: a shared-policy POST carries the verdict
+    /// on either branch, and an update never owes it.
+    /// </remarks>
     public static EtagPreconditionEvaluation GetEtagPreconditionEvaluation(
         RelationalWriteExecutorRequest request
     ) =>
@@ -49,7 +53,9 @@ internal sealed class RelationalWriteExecutionStateResolver(
             request.WritePrecondition,
             request.ProposedRelationshipAuthorization,
             request.StoredNamespaceAuthorization,
-            request.ProposedNamespaceAuthorization
+            request.ProposedNamespaceAuthorization,
+            hasPendingCreateOwnershipFailure: request.TargetContext is RelationalWriteTargetContext.CreateNew
+                && request.DeferredCreateOwnershipFailureResult is not null
         );
 
     /// <summary>
@@ -57,14 +63,35 @@ internal sealed class RelationalWriteExecutionStateResolver(
     /// emission — which happens before the target is observed — cannot drift from the resolved
     /// request's decision.
     /// </summary>
-    public static EtagPreconditionEvaluation GetEtagPreconditionEvaluation(
+    /// <summary>
+    /// The evaluation before the target is known. A POST whose branches differ defers when either branch
+    /// would, so work planned ahead of the target (the hydrated descriptor projection) covers both; the
+    /// executor's own decision is made from the selected branch once the target is resolved.
+    /// </summary>
+    public static EtagPreconditionEvaluation GetEtagPreconditionEvaluation(RelationalWriteExecutorInput input)
+    {
+        var evaluation = GetUnresolvedEtagPreconditionEvaluation(input);
+
+        return
+            evaluation is EtagPreconditionEvaluation.BeforeProposedAuthorization
+            && input.PostTargetAuthorizationBundles?.CreateNew
+                is PostBranchAuthorization.Authorized createNewBranch
+            ? GetUnresolvedEtagPreconditionEvaluation(input.WithPostBranchInputs(createNewBranch.Inputs))
+            : evaluation;
+    }
+
+    // The create ownership verdict is left out deliberately. This decision only shapes the current-state
+    // hydration planned ahead of the target, which runs only for an existing target, and an existing target
+    // never owes the create verdict; counting it here would change first-phase SQL for no outcome.
+    private static EtagPreconditionEvaluation GetUnresolvedEtagPreconditionEvaluation(
         RelationalWriteExecutorInput input
     ) =>
         GetEtagPreconditionEvaluation(
             input.WritePrecondition,
             GetUnresolvedProposedRelationshipAuthorization(input),
             input.StoredNamespaceAuthorization,
-            input.ProposedNamespaceAuthorization
+            input.ProposedNamespaceAuthorization,
+            hasPendingCreateOwnershipFailure: false
         );
 
     private static RelationshipAuthorizationResult? GetUnresolvedProposedRelationshipAuthorization(
@@ -96,13 +123,15 @@ internal sealed class RelationalWriteExecutionStateResolver(
         WritePrecondition writePrecondition,
         RelationshipAuthorizationResult? proposedRelationshipAuthorization,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
-        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
+        bool hasPendingCreateOwnershipFailure
     ) =>
         HasEtagPrecondition(writePrecondition)
         && (
             proposedRelationshipAuthorization is not null
             || storedNamespaceAuthorization is not null
             || proposedNamespaceAuthorization is not null
+            || hasPendingCreateOwnershipFailure
         )
             ? EtagPreconditionEvaluation.DeferredUntilAfterProposedAuthorization
             : EtagPreconditionEvaluation.BeforeProposedAuthorization;
@@ -112,9 +141,6 @@ internal sealed class RelationalWriteExecutionStateResolver(
         RelationalWriteCurrentState? currentState
     )
     {
-        // FAIL-OPEN HAZARD: this early return must admit BOTH If-Match and If-None-Match. If it kept
-        // keying on If-Match only, an If-None-Match write against an existing, authorization-bounded
-        // target would take the deferred path, return null here, and proceed WITHOUT the required 412.
         if (!HasEtagPrecondition(request.WritePrecondition))
         {
             return null;
@@ -122,14 +148,11 @@ internal sealed class RelationalWriteExecutionStateResolver(
 
         if (request.TargetContext is RelationalWriteTargetContext.CreateNew)
         {
-            // If-Match on an insert fails (no current representation to match). If-None-Match on an
-            // insert is the create-only success case, so it proceeds.
-            return request.WritePrecondition is WritePrecondition.IfMatch
-                ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(
-                    request.OperationKind,
-                    ETagPreconditionFailureReason.TargetDoesNotExist
-                )
-                : null;
+            // If-Match on an insert fails (no current representation to match).
+            return RelationalWriteExecutorResults.BuildPreconditionFailureResult(
+                request.OperationKind,
+                ETagPreconditionFailureReason.TargetDoesNotExist
+            );
         }
 
         if (request.TargetContext is not RelationalWriteTargetContext.ExistingDocument)
@@ -162,9 +185,7 @@ internal sealed class RelationalWriteExecutionStateResolver(
                     new UpsertResult.UpsertFailureWriteConflict()
                 ),
                 // RFC 9110 §13.1.1 If-Match: * requires the target to exist; a wildcard against a missing PUT
-                // target yields the precondition-failed (412) result rather than not-exists (404). An
-                // If-None-Match against a now-missing target is the success case, so it falls through to
-                // the normal not-exists (404) result.
+                // target yields the precondition-failed (412) result rather than not-exists (404).
                 RelationalWriteOperationKind.Put => request.WritePrecondition
                     is WritePrecondition.IfMatch { IsWildcard: true }
                     ? RelationalWriteExecutorResults.BuildPreconditionFailureResult(

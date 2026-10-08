@@ -35,7 +35,7 @@ and never couples normal API readiness to projection drain.
 - `DMS-1322` — `03-document-state-transform.md` — Add the DMS-specific relational record transform
 - `DMS-1323` — `04-bootstrap-enable-kafka-cdc.md` — Add explicit local/bootstrap connector registration
 - `DMS-1324` — `05-message-contract-tests.md` — Add message and source-routing contract tests
-- `DMS-1325` — `06-e2e-kafka-scenarios.md` — Replace legacy Kafka E2E expectations
+- `DMS-1325` — `06-e2e-kafka-scenarios.md` — Add API-driven relational Kafka E2E coverage
 - `DMS-1326` — `07-ops-docs-runbooks.md` — Add setup, monitoring, recovery, and security runbooks
 
 ## Delivery Dependencies

@@ -97,7 +97,7 @@ function Resolve-DmsSchemaTool {
     if (-not [string]::IsNullOrWhiteSpace($RequestedPath)) {
         $fullPath = [System.IO.Path]::GetFullPath($RequestedPath)
         if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
-            throw "The configured api-schema-tools executable was not found: $(Format-LogSafeText $fullPath)"
+            throw "The configured api-schema-tools executable was not found: $(Format-LogSafePath $fullPath)"
         }
 
         return $fullPath
@@ -124,7 +124,7 @@ function Resolve-DmsSchemaTool {
             throw "In-repo api-schema-tools tool not found. Build src/dms/clis/EdFi.DataManagementService.SchemaTools, set DMS_SCHEMA_TOOL_PATH, or set DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK=true to opt in to PATH fallback."
         }
 
-        Write-Warning "Falling back to PATH-resolved api-schema-tools executable: $(Format-LogSafeText ($pathCommand.Source))"
+        Write-Warning "Falling back to PATH-resolved api-schema-tools executable: $(Format-LogSafePath ($pathCommand.Source))"
         return $pathCommand.Source
     }
 

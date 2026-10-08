@@ -346,7 +346,11 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
             Headers: [],
             TraceId: new TraceId("mssql-29c-seed-school"),
             DocumentUuid: SchoolDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
@@ -376,7 +380,11 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
             Headers: [],
             TraceId: new TraceId($"mssql-29c-seed-classperiod-{traceSuffix}"),
             DocumentUuid: documentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
@@ -402,7 +410,11 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
             Headers: [],
             TraceId: new TraceId("mssql-29c-seed-bellschedule"),
             DocumentUuid: BellScheduleDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()

@@ -209,7 +209,11 @@ DMS_CONFIG_CLAIMS_DIRECTORY=/app/claims-fragments  # if using Hybrid or Filesyst
 
 ### Fragment File Structure
 
-Fragment files extend the claims hierarchy by adding new claim sets. Each fragment must follow the naming pattern `*-claimset.json` and contains only the resource claims to be added:
+Fragment files extend the claims hierarchy. Each fragment must follow the naming pattern `*-claimset.json` and contains only the resource claims to be added.
+
+A fragment can define one claim set. Its non-parent resource claims (those without `"isParent": true`) grant actions under the fragment's top-level `name`, or under the file name when `name` is absent. When the base claims do not already declare that name, it is registered as a new system-reserved claim set. Because it is system-reserved, the Management API cannot change or delete it, and removing the fragment later does not remove the claim set. A name must follow the Management API claim set name rules (non-empty, at most 256 characters, no white space). A fragment whose name contains white space or is longer than 256 characters is still applied, but its claim set is not registered and an error is logged. A fragment with an empty `name` fails claims validation, and the whole claims load is rejected. Parent resource claims (`"isParent": true`) only add hierarchy nodes and attach actions to claim sets that already exist; a fragment containing only parent entries defines no claim set.
+
+A fragment that defines a claim set looks like this:
 
 ```json
 {
@@ -261,9 +265,8 @@ Fragment files extend the claims hierarchy by adding new claim sets. Each fragme
 Files must follow the pattern: `{number}-{description}-claimset.json`
 
 Examples:
-- `001-namespace-claimset.json`
-- `002-nofurtherauth-claimset.json`
-- `003-edorgsonly-claimset.json`
+- `004-sample-extension-claimset.json`
+- `005-homograph-extension-claimset.json`
 
 ### Fragment Composition Process
 
@@ -428,6 +431,64 @@ No additional configuration needed.
 | Hybrid | `Hybrid` | Required | Development with fragment extensions |
 | Filesystem | `Filesystem` | Required | Complete external control |
 | Upload | Any | Optional | Dynamic management via API |
+
+### Upgrading an Existing Deployment: E2E Claim Sets
+
+Earlier releases shipped six test-only claim sets in the embedded base claims:
+
+- `E2E-NameSpaceBasedClaimSet`
+- `E2E-NoFurtherAuthRequiredClaimSet`
+- `E2E-RelationshipsWithEdOrgsOnlyClaimSet`
+- `E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet`
+- `E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet`
+- `E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet`
+
+New deployments no longer get them. The Configuration Service loads claims at startup only into an
+empty database, so a database provisioned by an earlier release keeps these claim sets and their
+grants after an upgrade. They are system-reserved, so neither a claims reload nor
+`DELETE /v3/claimSets/{id}` removes them. To remove them:
+
+1. Confirm that no application in any tenant uses one of them. System-reserved claim sets are
+   shared by every tenant, and `GET /v3/applications` returns only the calling tenant's
+   applications, so query the table directly:
+
+   ```sql
+   SELECT ApplicationName, ClaimSetName FROM dmscs.Application
+   WHERE ClaimSetName IN (
+       'E2E-NameSpaceBasedClaimSet',
+       'E2E-NoFurtherAuthRequiredClaimSet',
+       'E2E-RelationshipsWithEdOrgsOnlyClaimSet',
+       'E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet',
+       'E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet',
+       'E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet'
+   );
+   ```
+
+   On PostgreSQL, quote the identifiers: `"dmscs"."Application"`, `"ApplicationName"` and
+   `"ClaimSetName"`. Move every application this returns to another claim set first.
+   Applications are not tied to claim set rows, so an application left on a removed claim set has
+   every DMS request fail with a security-configuration error.
+2. Delete the six rows from the `dmscs.ClaimSet` table:
+
+   ```sql
+   DELETE FROM dmscs.ClaimSet
+   WHERE ClaimSetName IN (
+       'E2E-NameSpaceBasedClaimSet',
+       'E2E-NoFurtherAuthRequiredClaimSet',
+       'E2E-RelationshipsWithEdOrgsOnlyClaimSet',
+       'E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet',
+       'E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet',
+       'E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet'
+   );
+   ```
+
+   On PostgreSQL, quote the identifiers: `"dmscs"."ClaimSet"` and `"ClaimSetName"`.
+
+The six claim sets' grants stay in the stored claims hierarchy. They have no effect unless a claim
+set with one of these names is created again, which would inherit them, so do not reuse these
+names. Do not use `POST /management/reload-claims` to clear them: a reload replaces the whole
+stored claims document, which deletes every claim set that is not system-reserved and every grant
+that is not in the configured claims source.
 
 ## Security and Production Considerations
 

@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using NUnit.Framework;
 using Ddl = EdFi.DataManagementService.Backend.Ddl;
 
@@ -512,6 +513,7 @@ internal class Given_CdcInitialReadiness(Ddl.CdcProvider provider) : CdcReadines
     [TestCase("barrier")]
     [TestCase("projection-2")]
     [TestCase("metrics")]
+    [TestCase("provider")]
     public async Task It_preserves_cancellation_and_disposes_runtime(string stage)
     {
         using var cancellation = new CancellationTokenSource();
@@ -523,7 +525,9 @@ internal class Given_CdcInitialReadiness(Ddl.CdcProvider provider) : CdcReadines
             }
         };
         Func<Task> act = async () => await ReadyAsync(cancellation.Token);
-        await act.Should().ThrowAsync<OperationCanceledException>();
+        (await act.Should().ThrowAsync<OperationCanceledException>())
+            .Which.CancellationToken.Should()
+            .Be(cancellation.Token);
         _disposals.Should().Be(1);
         ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
     }
@@ -773,6 +777,46 @@ internal class Given_CdcInitialReadiness(Ddl.CdcProvider provider) : CdcReadines
         ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_classifies_a_nested_provider_call_deadline_as_timeout(bool cooperative)
+    {
+        ShortTiming(1000);
+        TaskCompletionSource<Ddl.CdcProviderSetupResult> pending = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        CancellationToken providerToken = default;
+        A.CallTo(() => _provider.SetupAsync(A<Ddl.CdcProviderSetupRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(
+                (Ddl.CdcProviderSetupRequest _, CancellationToken token) =>
+                {
+                    providerToken = token;
+                    return cooperative ? pending.Task.WaitAsync(token) : pending.Task;
+                }
+            );
+        try
+        {
+            // Finish before the five-second workflow deadline: this is the nested call's expiry.
+            var result = await ReadyAsync().WaitAsync(TimeSpan.FromSeconds(4));
+            result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
+            var diagnostic = result.Diagnostics.Should().ContainSingle().Which;
+            diagnostic.Component.Should().Be(CdcDeploymentComponent.ProviderSetup);
+            diagnostic.Failure.Should().Be(CdcDeploymentFailure.Timeout);
+            providerToken.IsCancellationRequested.Should().BeTrue();
+            _disposals.Should().Be(1);
+            ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+            await using var session = await _store.AcquireAsync(
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromMilliseconds(5),
+                CancellationToken.None
+            );
+        }
+        finally
+        {
+            pending.TrySetCanceled();
+        }
+    }
+
     [Test]
     public async Task It_does_not_substitute_running_or_low_lag_for_committed_barrier_progress()
     {
@@ -857,4 +901,69 @@ internal class Given_CdcInitialReadiness(Ddl.CdcProvider provider) : CdcReadines
             );
         ReadJournal().WriterPublicationAuthorized.Should().Be(Provider == Ddl.CdcProvider.Postgresql);
     }
+}
+
+[TestFixture]
+[Platform(Exclude = "Win", Reason = "Local CDC state requires Unix owner-only permissions.")]
+internal class Given_readiness_call_deadline_uses_the_injected_clock()
+    : CdcReadinessTestBase(Ddl.CdcProvider.SqlServer)
+{
+    private CdcTransportResult<CdcWriterPublicationResult> _result = null!;
+
+    protected override TimeProvider CreateObservationTime() => new FakeTimeProvider(DateTimeOffset.UtcNow);
+
+    [SetUp]
+    public async Task SetupDeadline()
+    {
+        ShortTiming(1000);
+        var started = new TaskCompletionSource<CancellationToken>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var pending = new TaskCompletionSource<CdcTransportResult<CdcWorkerInspection>>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        A.CallTo(() => _worker.InspectAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(
+                (CdcDeploymentRequest _, CancellationToken token) =>
+                {
+                    started.SetResult(token);
+                    return pending.Task;
+                }
+            );
+        using var cancellation = new CancellationTokenSource();
+        Task<CdcTransportResult<CdcWriterPublicationResult>> readiness = ReadyAsync(cancellation.Token);
+        try
+        {
+            (await Task.WhenAny(started.Task, readiness)).Should().BeSameAs(started.Task);
+            CancellationToken callToken = await started.Task;
+            ((FakeTimeProvider)ObservationTime).Advance(_request.Timing.CallTimeout);
+            callToken
+                .IsCancellationRequested.Should()
+                .BeTrue("the injected clock must expire the active call");
+            _result = await readiness;
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+            try
+            {
+                await readiness;
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+            {
+                // Drain the operation before fixture teardown if a deadline assertion failed.
+            }
+        }
+    }
+
+    [Test]
+    public void It_reports_the_call_timeout() =>
+        _result.Diagnostics.Should().ContainSingle().Which.Failure.Should().Be(CdcDeploymentFailure.Timeout);
+
+    [Test]
+    public void It_cleans_up_the_runtime() => _disposals.Should().Be(1);
+
+    [Test]
+    public void It_does_not_authorize_publication() =>
+        ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
 }

@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# Plugin acquisition, recipe 1: a pre-populated plugin root, bind-mounted read-only.
+#
+# Add with its own -f. It is an alternative to plugins-fetch-dms.yml rather than an addition
+# to it: /app/plugins is one mount target and two overlays cannot both claim it.
+#
+# DMS_PLUGINS_MOUNT_SOURCE is declared with :? rather than a default. A deployment that
+# composed this file in meant to supply a host path, and a silent default would make Docker
+# materialize an empty root-owned directory beside it, which is exactly what keeping the
+# mount out of the base files avoids.
+#
+# Acquiring the bytes does not enable them. Nothing here writes Plugins:Allowed; the
+# allowlist is a separate deployment-owned setting. See eng/docker-compose/README.md,
+# "Loading plugins".
+services:
+  dms:
+    volumes:
+      - ${DMS_PLUGINS_MOUNT_SOURCE:?set the host path holding the plugin directories}:/app/plugins:ro

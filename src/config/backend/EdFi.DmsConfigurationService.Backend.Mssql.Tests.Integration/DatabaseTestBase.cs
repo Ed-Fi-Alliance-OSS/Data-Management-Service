@@ -54,6 +54,8 @@ public abstract class DatabaseTestBase
                     new("dmscs", "vendornamespaceprefix"),
                     new("dmscs", "application"),
                     new("dmscs", "applicationeducationorganization"),
+                    new("dmscs", "profile"),
+                    new("dmscs", "applicationprofile"),
                     new("dmscs", "apiclientownershiptoken"),
                     new("dmscs", "ownershiptoken"),
                     new("dmscs", "apiclient"),
@@ -70,6 +72,8 @@ public abstract class DatabaseTestBase
                     new("dmscs", "openiddictclientrole"),
                     new("dmscs", "openiddicttoken"),
                     new("dmscs", "openiddictkey"),
+                    new("dmscs", "job"),
+                    new("dmscs", "jobschedule"),
                 ],
                 DbAdapter = DbAdapter.SqlServer,
             }

@@ -104,7 +104,11 @@ file static class WriteSessionCommandStreamTestSupport
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
     public static UpdateRequest CreateUpdateRequest(
         MappingSet mappingSet,
@@ -153,7 +157,11 @@ file static class WriteSessionCommandStreamTestSupport
             Headers: [],
             TraceId: new TraceId("pg-write-session-reference-embedding"),
             DocumentUuid: documentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
     }
 
     /// <summary>

@@ -55,6 +55,66 @@ $script:DmsRelevantPathPrefix = @(
     'src/plugins/'
 )
 
+# Paths that make the document-embed check relevant. It is its own flag rather than part of
+# dms_relevant because the check's whole point is the pull request that changes a documented recipe
+# and nothing else: docs/ is not DMS-relevant, so such a pull request would skip the equality
+# assertion entirely and learn about the drift in the merge queue.
+#
+# Deliberately coarser than the file list Invoke-DocumentEmbedChecks.ps1 reads. The job is a
+# checkout and one script with no build and no module install, so the cost of running it for an
+# unrelated documentation edit is nothing worth narrowing for, and being coarse fails in the safe
+# direction. eng/verification/ is here because the verifier, the runner and their tests live there;
+# eng/docker-compose/ and src/plugins/ because that is where the embedded files and the second
+# checked document are. DmsChangeCategories.Tests.ps1 asserts every path the runner names reaches
+# one of these rules, so a document added to that table cannot land outside them unnoticed.
+$script:DocumentEmbedPathPrefix = @(
+    'docs/'
+    'eng/docker-compose/'
+    'eng/verification/'
+    'src/plugins/'
+    # The custom-validation contract's packed readme is the third checked document, and it lives
+    # under src/dms/ rather than under any prefix above. The embed job gates on this flag alone and
+    # not on dms_relevant, so without this entry a pull request editing that readme would reach no
+    # rule here and skip the guard entirely.
+    'src/dms/core/EdFi.DataManagementService.CustomValidation/'
+    # The reference plugin whose regions docs/UNIQUEID-VALIDATION.md embeds lives here rather than
+    # under eng/verification/, because it is also loaded and run by the integration suite, not just
+    # read by this check. Without this entry a pull request editing the plugin's source would leave
+    # the guide's embedded sample unverified against it and reach no rule here at all.
+    'eng/fixtures/plugins/'
+    # The secrets contract's packed readme is the fifth checked document, and it lives under
+    # src/config/ rather than under any prefix above. Its worked examples sit under
+    # eng/verification/, which is already here; the readme itself would otherwise reach no rule,
+    # and a pull request editing only that readme would skip the guard entirely.
+    'src/config/contracts/EdFi.DmsConfigurationService.Secrets/'
+)
+
+# Operator documents checked by CdcRunbookLinkTests.Documents and their linked design targets.
+# These select the existing Contract lane even outside the DMS tree.
+# Keep other relevance flags governed by their existing rules.
+$script:CdcDocumentExactPath = @(
+    'reference/cdc-documentation/README.md'
+    'reference/cdc-documentation/operations-runbook.md'
+    'reference/cdc-documentation/cdc-inv-evidence.md'
+    'reference/document-cache-documentation/README.md'
+    'reference/document-cache-documentation/operations-runbook.md'
+    'src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md'
+    'src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md'
+    'eng/docker-compose/README.md'
+    'src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md'
+    'docs/CONFIGURATION.md'
+    'docs/CDC-QUALIFICATION.md'
+    'docs/RELATIONAL-BACKEND.md'
+    'src/dms/tests/RestClient/local-development-setup.http'
+    'reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md'
+    'reference/design/backend-redesign/design-docs/data-model.md'
+    'reference/design/backend-redesign/design-docs/ddl-generation.md'
+)
+
+$script:CdcDocumentPathPrefix = @(
+    'reference/design/backend-redesign/design-docs/cdc/'
+)
+
 # Promoted-suite categories. Each names one or two integration lanes that a pull request runs only
 # when its changed files reach them; the merge queue always runs all of them. The two DMS-API lanes
 # share one category because they share one test project and one in-process pipeline, and the two
@@ -215,7 +275,7 @@ function ConvertTo-DmsChangeCategoryResult {
 
         [Parameter(Mandatory)]
         [bool]
-        $Draft,
+        $DocumentEmbedsRelevant,
 
         [Parameter(Mandatory)]
         [System.Collections.Specialized.OrderedDictionary]
@@ -223,9 +283,9 @@ function ConvertTo-DmsChangeCategoryResult {
     )
 
     $result = [ordered]@{
-        fresh_build_required = $FreshBuildRequired
-        dms_relevant         = $DmsRelevant
-        draft                = $Draft
+        fresh_build_required     = $FreshBuildRequired
+        dms_relevant             = $DmsRelevant
+        document_embeds_relevant = $DocumentEmbedsRelevant
     }
 
     foreach ($name in $Category.Keys) {
@@ -277,7 +337,8 @@ function Get-DmsChangeCategory {
     .SYNOPSIS
         Classifies an event's changed files into the flags the DMS pull request workflow gates on.
     .DESCRIPTION
-        Returns fresh_build_required, dms_relevant, draft, and one flag per promoted-suite category.
+        Returns fresh_build_required, dms_relevant, document_embeds_relevant, and one flag per
+        promoted-suite category.
         Only pull_request narrows: merge_group validates the merged result, so nothing may be
         skipped there, and every other event runs the full suite.
     .PARAMETER EventName
@@ -289,10 +350,6 @@ function Get-DmsChangeCategory {
     .PARAMETER DiffUnavailable
         Set when no trustworthy file list could be produced - a missing merge-group base SHA, or a
         failed git diff. Narrowing requires a trustworthy list, so this forces the full suite.
-    .PARAMETER IsDraft
-        Set when the event is a pull request still in draft. Reported as the draft flag, which the
-        expensive jobs gate on. It is independent of the file classification: a draft is a statement
-        about the pull request, not about what it changed, so it survives the full-suite paths below.
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -305,21 +362,14 @@ function Get-DmsChangeCategory {
         $ChangedFile = @(),
 
         [switch]
-        $DiffUnavailable,
-
-        [switch]
-        $IsDraft
+        $DiffUnavailable
     )
-
-    # Only a pull request can be a draft. Guarded here as well as in the workflow so a payload that
-    # carries a stale value on another event cannot silently gate the merge queue.
-    $draft = $IsDraft.IsPresent -and $EventName -eq 'pull_request'
 
     if ($DiffUnavailable -or ($EventName -ne 'pull_request' -and $EventName -ne 'merge_group')) {
         return ConvertTo-DmsChangeCategoryResult `
             -FreshBuildRequired $true `
             -DmsRelevant $true `
-            -Draft $draft `
+            -DocumentEmbedsRelevant $true `
             -Category (Get-DmsCategoryDefault -InitialValue $true)
     }
 
@@ -328,6 +378,7 @@ function Get-DmsChangeCategory {
     $narrows = $EventName -eq 'pull_request'
     $freshBuildRequired = $false
     $dmsRelevant = -not $narrows
+    $documentEmbedsRelevant = -not $narrows
     $category = Get-DmsCategoryDefault -InitialValue (-not $narrows)
 
     foreach ($path in $ChangedFile) {
@@ -344,6 +395,19 @@ function Get-DmsChangeCategory {
             $freshBuildRequired = $true
         }
 
+        # Before the DMS-relevance test below, and outside it. docs/ is not DMS-relevant, and the
+        # documentation-only pull request that edits an embedded recipe is precisely the one this
+        # check has to run for.
+        if (Test-DmsChangedFileMatch -Path $path -PathPrefix $script:DocumentEmbedPathPrefix) {
+            $documentEmbedsRelevant = $true
+        }
+
+        # Checked runbook inputs outside eng/ and src/ must select Contract before the general
+        # relevance filter skips them. This does not opt documentation into broader DMS jobs.
+        if (Test-DmsChangedFileMatch -Path $path -ExactPath $script:CdcDocumentExactPath -PathPrefix $script:CdcDocumentPathPrefix) {
+            $category['cdc_relevant'] = $true
+        }
+
         if (
             -not (
                 Test-DmsChangedFileMatch `
@@ -352,8 +416,8 @@ function Get-DmsChangeCategory {
                     -PathPrefix $script:DmsRelevantPathPrefix
             )
         ) {
-            # Not DMS-relevant at all - documentation, editor configuration and the like. It cannot
-            # make a promoted suite relevant either, so it must not reach the fail-open rule.
+            # Outside the general DMS tree. Dedicated document rules above may select checks,
+            # but this path must not reach the promoted-suite fail-open rule.
             continue
         }
 
@@ -367,7 +431,7 @@ function Get-DmsChangeCategory {
     return ConvertTo-DmsChangeCategoryResult `
         -FreshBuildRequired $freshBuildRequired `
         -DmsRelevant $dmsRelevant `
-        -Draft $draft `
+        -DocumentEmbedsRelevant $documentEmbedsRelevant `
         -Category $category
 }
 

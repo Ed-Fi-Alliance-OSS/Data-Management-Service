@@ -7,6 +7,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
+using EdFi.DmsConfigurationService.DataModel;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
@@ -60,7 +61,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                     expiresAt.ToUnixTimeSeconds().ToString(),
                     ClaimValueTypes.Integer64
                 ),
-                new Claim("client_id", clientId),
+                new Claim(SecurityConstants.ClientIdClaimType, clientId),
                 new Claim("typ", "Bearer"),
                 new Claim("azp", clientId),
                 new Claim("scope", scope),

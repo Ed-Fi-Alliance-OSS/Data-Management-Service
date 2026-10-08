@@ -3,11 +3,14 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+#Requires -Version 7.5
+
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Variables supply the dynamic scope of executable primitive blocks extracted from the scripts under test.')]
 param()
 
 Describe 'Managed CDC deployment lifecycle ordering' {
     BeforeAll {
+        . (Join-Path $PSScriptRoot 'cdc-runbook-snippets.ps1')
         $script:root = Join-Path $TestDrive 'compose'
         New-Item -ItemType Directory $script:root | Out-Null
         Copy-Item (Join-Path $PSScriptRoot '../cdc-lifecycle.psm1') $script:root
@@ -99,6 +102,9 @@ Export-ModuleMember -Function Resolve-BootstrapSchemaWorkspace
             $first | Should -Not -BeNullOrEmpty
             $last | Should -Not -BeNullOrEmpty
             $selection = $ast.Extent.Text.Substring($first.Extent.StartOffset, $last.Extent.EndOffset - $first.Extent.StartOffset)
+            # A scriptblock built from text has no script file, so $PSScriptRoot inside it is empty.
+            # Bind it to the directory the extracted span would have seen when run as its script.
+            $selection = $selection.Replace('$PSScriptRoot', '$composeRoot')
             $CdcDatabaseInfrastructure = $CdcKafkaInfrastructure = $EnableKafkaUI = $EnableKafka = $d = $false
             $InfraOnly = $EnableSwaggerUI = $usePostgresqlTmpfs = $databaseOnlyStartup = $bootstrapMode = $false
             $CdcBrokerSizeOverrideFile = ''
@@ -491,7 +497,7 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
             }
             Mock -ModuleName cdc-lifecycle Invoke-CdcInfrastructure {
                 $Parameters.IdentityProvider | Should -Be $script:bridgeIdentity
-                if ($Parameters.d) {
+                if ($Parameters['d']) {
                     (Read-TestDeployment $script:bridgeProject).Phase | Should -Be 'Retired'
                     $script:trace | Should -Contain 'rest:connectors'
                     $script:trace.Add('down-volumes')
@@ -660,8 +666,11 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
         (Read-TestDeployment).Phase | Should -Be 'Active'
     }
 
-    It 'stops and verifies both connectors before worker shutdown while retaining custom roots' {
-        Invoke-TestLifecycle @{ d = $true }
+    It 'CDC-DOC cdc-managed-stop' {
+        $invocation = Get-CdcRunbookInvocation 'cdc-managed-stop' $script:root
+        $invocation.Path | Should -Be 'eng/docker-compose/bootstrap-local-dms.ps1'
+        $documented = $invocation.Parameters
+        Invoke-TestLifecycle $documented
         $script:trace | Should -Be @('stop:42', 'stop:43', 'rest:connectors', 'rest:connectors/connector-42/status', 'rest:connectors/connector-43/status', 'stop-worker')
         $deployment = Read-TestDeployment
         $deployment.Phase | Should -Be 'Stopped'
@@ -684,10 +693,13 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
         { Invoke-TestLifecycle @{ d = $true } } | Should -Throw '*inventory*'
         $script:trace | Should -Not -Contain 'stop-worker'
     }
-    It 'starts REST with all retained connectors stopped before individual guarded resume and DMS' {
+    It 'CDC-DOC cdc-managed-start' {
+        $invocation = Get-CdcRunbookInvocation 'cdc-managed-start' $script:root
+        $invocation.Path | Should -Be 'eng/docker-compose/bootstrap-local-dms.ps1'
+        $documented = $invocation.Parameters
         Invoke-TestLifecycle @{ d = $true }
         $script:trace.Clear()
-        Invoke-TestLifecycle @{}
+        Invoke-TestLifecycle $documented
         $script:trace | Should -Be @('infra', 'start-worker:42', 'rest:connectors', 'rest:connectors/connector-42/status', 'rest:connectors/connector-43/status', 'start:42', 'start:43', 'dms')
         (Read-TestDeployment).Phase | Should -Be 'Active'
         $merged = Get-Content (Join-Path $script:root '.cdc-deployments/dms-local.dms.json') -Raw | ConvertFrom-Json -AsHashtable
@@ -696,6 +708,19 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
         Should -Invoke -ModuleName cdc-lifecycle Invoke-CdcInfrastructure -Times 1 -ParameterFilter {
             $Parameters['InfraOnly'] -and $Parameters.EnvironmentFile -eq (Join-Path $script:root '.env.custom') -and
             -not $Parameters.ContainsKey('CdcBrokerSizeOverrideFile') -and $Parameters.SuppressWriterGuidance
+        }
+    }
+    It 'forwards an explicit retained local rebuild only to infrastructure preparation' {
+        Invoke-TestLifecycle @{ d = $true }
+        $script:trace.Clear()
+
+        Invoke-TestLifecycle @{ Rebuild = $true }
+
+        Should -Invoke -ModuleName cdc-lifecycle Invoke-CdcInfrastructure -Times 1 -Exactly -ParameterFilter {
+            $Parameters['InfraOnly'] -and $Parameters['r']
+        }
+        Should -Invoke -ModuleName cdc-lifecycle Invoke-CdcInfrastructure -Times 1 -Exactly -ParameterFilter {
+            $Parameters['DmsOnly'] -and -not $Parameters.ContainsKey('r')
         }
     }
     It 'waits for managed <project> <operation> startup evidence: <scenario>' -ForEach @(
@@ -927,11 +952,14 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
             $commands[1] | Should -Match "-p dms-$flavor up --detach --remove-orphans$"
         }
     }
-    It 'never resumes or starts DMS if worker restart lost STOPPED state' {
+    It 'CDC-DOC cdc-managed-start-rejected' {
+        $invocation = Get-CdcRunbookInvocation 'cdc-managed-start' $script:root
+        $invocation.Path | Should -Be 'eng/docker-compose/bootstrap-local-dms.ps1'
+        $documented = $invocation.Parameters
         Invoke-TestLifecycle @{ d = $true }
         $script:trace.Clear()
         $script:badStatus = $true
-        { Invoke-TestLifecycle @{} } | Should -Throw '*not currently verified*'
+        { Invoke-TestLifecycle $documented } | Should -Throw '*not currently verified*'
         $script:trace | Should -Not -Contain 'start:42'
         $script:trace | Should -Not -Contain 'dms'
         (Read-TestDeployment).Phase | Should -Be 'Transition'
@@ -980,14 +1008,17 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
         $script:trace | Should -Not -Contain 'down-volumes'
         (Read-TestDeployment).Phase | Should -Be 'Retiring'
     }
-    It 'retains partial cleanup and retries controller retirement before volume deletion' {
+    It 'CDC-DOC cdc-stack-teardown' {
+        $invocation = Get-CdcRunbookInvocation 'cdc-stack-teardown' $script:root
+        $invocation.Path | Should -Be 'eng/docker-compose/bootstrap-local-dms.ps1'
+        $documented = $invocation.Parameters
         $script:failure = 'retire:43'
-        { Invoke-TestLifecycle @{ d = $true; v = $true } } | Should -Throw
+        { Invoke-TestLifecycle $documented } | Should -Throw
         $script:trace | Should -Not -Contain 'down-volumes'
         (Read-TestDeployment).Phase | Should -Be 'Retiring'
         $script:failure = ''
         $script:trace.Clear()
-        Invoke-TestLifecycle @{ d = $true; v = $true }
+        Invoke-TestLifecycle $documented
         $script:trace | Should -Be @('retire:42', 'retire:43', 'rest:connectors', 'down-volumes')
     }
     It 'restores stopped infrastructure without resuming before destructive cleanup' {
@@ -1475,6 +1506,7 @@ Describe 'Managed primitive DMS startup selection' {
         function docker { }
         function Wait-HttpEndpointHealthy { }
         function Invoke-TestDmsStartup($flavor, $DmsOnly, $CdcDmsComposeFile, $EnableSwaggerUI) {
+            Set-StrictMode -Version Latest
             $path = Join-Path $PSScriptRoot "../start-$flavor-dms.ps1"
             $ast = [Management.Automation.Language.Parser]::ParseFile($path, [ref]$null, [ref]$null)
             # Execute production validation, argument construction and the DMS branch in order.
@@ -1494,6 +1526,7 @@ Describe 'Managed primitive DMS startup selection' {
             $EnvironmentFile = '/selected/.env'
             $databaseOnlyStartup = $false
             $CdcDatabaseInfrastructure = $false
+            $CdcApiE2E = $false
             $dmsUrl = 'http://localhost:8080'
             & ([scriptblock]::Create(($nodes.Extent.Text -join "`n"))) | Out-Null
         }
@@ -1789,5 +1822,33 @@ $global:LASTEXITCODE = 0
     It 'ends ownership after a child failure' {
         { Invoke-CdcInfrastructure -StartScript $script:child -Parameters @{ Fail = $true } } | Should -Throw '*Child failure*'
         Test-CdcInfrastructureInvocation | Should -BeFalse
+    }
+}
+
+Describe 'Live runbook SQL Server lifecycle fixture commands' {
+    BeforeAll {
+        Import-Module (Join-Path $PSScriptRoot 'cdc-fixture-inputs.psm1') -Force
+        # Execute the actual nested adapter without provisioning a full live stack.
+        $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'cdc-runbook-lifecycle.ps1'), [ref]$null, [ref]$null)
+        $adapter = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-OwnedSql' }, $true)
+        . ([scriptblock]::Create($adapter.Extent.Text))
+    }
+    It 'uses the shared SQL transport with session options before the requested SQL' {
+        $Provider = 'Mssql'
+        Mock -ModuleName cdc-fixture-inputs Invoke-NativeCommandWithInput {
+            [pscustomobject]@{ FailureKind = 'None'; ExitCode = 0; StandardOutput = "  17`n" }
+        }
+        Invoke-OwnedSql -Database 'owned-target' -Sql 'SELECT 17;' | Should -Be '17'
+        Should -Invoke -ModuleName cdc-fixture-inputs Invoke-NativeCommandWithInput -Times 1 -Exactly -ParameterFilter {
+            $FilePath -eq 'docker' -and $ArgumentList[-1] -eq 'owned-target' -and
+            $InputText -eq "SET NOCOUNT ON;`nSET QUOTED_IDENTIFIER ON;`nSELECT 17;"
+        }
+    }
+    It 'does not accept a failed SQL process as an observation' {
+        $Provider = 'Mssql'
+        Mock -ModuleName cdc-fixture-inputs Invoke-NativeCommandWithInput {
+            [pscustomobject]@{ FailureKind = 'None'; ExitCode = 1; StandardOutput = '' }
+        }
+        { Invoke-OwnedSql -Database 'owned-target' -Sql 'SELECT 17;' } | Should -Throw
     }
 }

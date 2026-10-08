@@ -311,6 +311,10 @@ public class Given_A_Mssql_IfMatch_Cascade_Referential_Identity_Fixture
                 TraceId: new TraceId(traceId),
                 DocumentUuid: documentUuid
             )
+            {
+                ActionAuthorization =
+                    UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+            }
         );
     }
 

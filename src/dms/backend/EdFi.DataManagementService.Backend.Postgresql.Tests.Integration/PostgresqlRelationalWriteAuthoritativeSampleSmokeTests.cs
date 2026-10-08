@@ -868,7 +868,11 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             Headers: [],
             TraceId: new TraceId("pg-authoritative-sample-create"),
             DocumentUuid: AssociationDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
@@ -2021,7 +2025,11 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_C
             Headers: [],
             TraceId: new TraceId("pg-propagated-reference-identity-cascade-create"),
             DocumentUuid: AssociationDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()

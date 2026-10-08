@@ -57,6 +57,29 @@ public class ApplicationRepository(
         return count == dataStoreIds.Distinct().Count();
     }
 
+    /// <summary>
+    /// True when every requested profile belongs to the current tenant. A profile created in another
+    /// tenant counts as missing, exactly like an id that does not exist.
+    /// </summary>
+    private async Task<bool> AllProfilesInTenant(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        int[] profileIds
+    )
+    {
+        int[] distinctProfileIds = [.. profileIds.Distinct()];
+        string sql = $"""
+            SELECT COUNT(1) FROM "dmscs"."Profile"
+            WHERE "Id" = ANY(@ProfileIds) AND {TenantContext.TenantWhereClause()};
+            """;
+        int count = await connection.ExecuteScalarAsync<int>(
+            sql,
+            new { ProfileIds = distinctProfileIds, TenantId },
+            transaction
+        );
+        return count == distinctProfileIds.Length;
+    }
+
     private async Task<bool> ApplicationExistsForTenant(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -173,6 +196,13 @@ public class ApplicationRepository(
 
             if (command.ProfileIds.Length > 0)
             {
+                if (!await AllProfilesInTenant(connection, transaction, command.ProfileIds))
+                {
+                    logger.LogWarning("Profile not found");
+                    await transaction.RollbackAsync();
+                    return new ApplicationInsertResult.FailureProfileNotFound();
+                }
+
                 sql = """
                     INSERT INTO "dmscs"."ApplicationProfile" ("ApplicationId", "ProfileId", "CreatedBy")
                     VALUES (@ApplicationId, @ProfileId, @CreatedBy);
@@ -499,6 +529,16 @@ public class ApplicationRepository(
                 logger.LogWarning("Update application failure: Data store not found");
                 await transaction.RollbackAsync();
                 return new ApplicationUpdateResult.FailureDataStoreNotFound();
+            }
+
+            if (
+                command.ProfileIds.Length > 0
+                && !await AllProfilesInTenant(connection, transaction, command.ProfileIds)
+            )
+            {
+                logger.LogWarning("Update application failure: Profile not found");
+                await transaction.RollbackAsync();
+                return new ApplicationUpdateResult.FailureProfileNotFound();
             }
 
             sql =

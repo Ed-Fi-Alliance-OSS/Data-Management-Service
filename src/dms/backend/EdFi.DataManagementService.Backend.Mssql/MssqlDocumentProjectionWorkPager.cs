@@ -90,7 +90,9 @@ internal sealed class MssqlDocumentProjectionWorkPager : IDocumentProjectionWork
 
         _logger.LogDebug(
             "Paging SQL Server DocumentProjectionWork for target {TargetKey} with cursor {HasCursor}.",
-            LoggingSanitizer.SanitizeForLogging(request.TargetExecutionContext.TargetKey.ToString()),
+            LoggingSanitizer.SanitizeInternalValueForLogging(
+                request.TargetExecutionContext.TargetKey.ToString()
+            ),
             request.Cursor.HasValue
         );
 

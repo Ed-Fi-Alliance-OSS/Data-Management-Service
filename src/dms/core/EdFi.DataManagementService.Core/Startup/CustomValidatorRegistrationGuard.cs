@@ -42,12 +42,11 @@ internal sealed class CustomValidatorRegistrationGuard(
     ILogger<CustomValidatorRegistrationGuard> logger
 ) : IDmsStartupTask
 {
-    // IDmsStartupTask.cs recommends 200-299 for schema processing; nothing enforces that label and
-    // this guard is not schema processing. The binding constraint is that it run inside a window
-    // Program.cs executes and after LoadAndBuildEffectiveSchemaTask, whose effective ApiSchema the
-    // AppliesTo check reads. It runs before the backend-mapping and auth-metadata windows, so a
-    // validator constructor reading state those initialize would fail here despite being resolvable
-    // at request time.
+    // IDmsStartupTask.cs reserves 250-299 for registration validation, the window Program.cs runs as
+    // the ValidatePluginRegistrations phase once the InitializeApiSchemas phase completes, so this
+    // guard runs after LoadAndBuildEffectiveSchemaTask, whose effective ApiSchema the AppliesTo check
+    // reads. It runs before the backend-mapping and auth-metadata windows, so a validator constructor
+    // reading state those initialize would fail here despite being resolvable at request time.
     public int Order => 250;
 
     public string Name => "Validate Custom Validator Registration";
@@ -198,7 +197,7 @@ internal sealed class CustomValidatorRegistrationGuard(
                     + "throwaway scope failed, which is the check that stands in for the per-request "
                     + "resolution a validator would otherwise fail on the first write reaching it. "
                     + $"Underlying activation exception: {activationException.GetType().FullName}: "
-                    + LoggingSanitizer.SanitizeForLogging(activationException.Message),
+                    + LoggingSanitizer.SanitizeInternalValueForLogging(activationException.Message),
                 activationException
             );
         }
@@ -378,7 +377,7 @@ internal sealed class CustomValidatorRegistrationGuard(
                 unusableValidators.Add(
                     $"'{validatorTypeName}': reading or walking AppliesTo threw "
                         + $"{appliesToException.GetType().FullName}: "
-                        + LoggingSanitizer.SanitizeForLogging(appliesToException.Message)
+                        + LoggingSanitizer.SanitizeInternalValueForLogging(appliesToException.Message)
                 );
             }
         }
@@ -399,8 +398,8 @@ internal sealed class CustomValidatorRegistrationGuard(
         ValidatedResource appliesToEntry
     )
     {
-        string projectName = LoggingSanitizer.SanitizeForLogging(appliesToEntry.ProjectName);
-        string resourceName = LoggingSanitizer.SanitizeForLogging(appliesToEntry.ResourceName);
+        string projectName = LoggingSanitizer.SanitizeInternalValueForLogging(appliesToEntry.ProjectName);
+        string resourceName = LoggingSanitizer.SanitizeInternalValueForLogging(appliesToEntry.ResourceName);
 
         logger.LogInformation(
             "ICustomResourceValidator '{ValidatorType}' AppliesTo entry: ProjectName '{ProjectName}', "

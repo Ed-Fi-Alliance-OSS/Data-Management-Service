@@ -474,7 +474,7 @@ internal static class CdcStateStoreText
 
     public static string? SanitizeOptional(string? value)
     {
-        string sanitized = LoggingSanitizer.SanitizeForLogging(value);
+        string sanitized = LoggingSanitizer.SanitizeInternalValueForLogging(value);
         if (string.IsNullOrWhiteSpace(sanitized))
         {
             return null;

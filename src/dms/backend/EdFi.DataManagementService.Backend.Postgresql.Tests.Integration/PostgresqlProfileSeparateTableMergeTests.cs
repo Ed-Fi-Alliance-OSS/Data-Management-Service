@@ -267,7 +267,11 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);
     }
@@ -341,7 +345,11 @@ internal static class PostgresqlProfileSeparateTableMergeSupport
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid,
             BackendProfileWriteContext: profileContext
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);
     }

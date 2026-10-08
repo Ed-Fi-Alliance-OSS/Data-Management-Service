@@ -169,7 +169,11 @@ file static class RollbackSafetyIntegrationTestSupport
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
     public static async Task<NoProfileAtomicRollbackAssertions.FullSurfaceRollbackSnapshot> ReadFullSurfaceSnapshotAsync(
         MssqlGeneratedDdlTestDatabase database

@@ -124,7 +124,7 @@ internal sealed record DocumentCacheWriterMetricContext
     }
 
     private static string ProviderLabel(RelationalProviderToken providerToken) =>
-        LoggingSanitizer.SanitizeForLogging(
+        LoggingSanitizer.SanitizeInternalValueForLogging(
             (providerToken ?? throw new ArgumentNullException(nameof(providerToken))).Value
         );
 
@@ -152,7 +152,7 @@ internal sealed record DocumentCacheWriterMetricContext
             throw new ArgumentException("Metric label must be present.", parameterName);
         }
 
-        string sanitized = LoggingSanitizer.SanitizeForLogging(value);
+        string sanitized = LoggingSanitizer.SanitizeInternalValueForLogging(value);
         if (sanitized.Length == 0)
         {
             sanitized = DocumentCacheWriterTelemetryLabel.Unknown;

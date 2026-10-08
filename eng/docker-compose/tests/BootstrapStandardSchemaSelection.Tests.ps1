@@ -1251,6 +1251,15 @@ exit $ExitCode
     }
 
     Context "Given_PublishedToolLocation_AutoDiscovery" {
+        It "It_Resolve-DmsSchemaTool_preserves_backslashes_in_a_missing_explicit_tool_path" {
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-schema-tool.psm1") -Force
+            $missingTool = Join-Path $script:repo.RepoRoot "tools\missing\api-schema-tools.exe"
+            $expectedPath = [System.IO.Path]::GetFullPath($missingTool)
+
+            { Resolve-DmsSchemaTool -RequestedPath $missingTool } |
+                Should -Throw -ExpectedMessage "*$expectedPath*"
+        }
+
         It "It_Resolve-DmsSchemaTool_discovers_the_published_tool_under_.bootstrap_tools_api-schema-tools" {
             # The README publishes api-schema-tools to .bootstrap/tools/api-schema-tools, and the wrapper shorthand
             # (bootstrap-local-dms.ps1) cannot forward -SchemaToolPath. The resolver must auto-discover
@@ -1288,6 +1297,23 @@ exit $ExitCode
             finally {
                 $env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK = $oldFallback
             }
+        }
+    }
+
+    Context "Given_PackageResolutionPathErrors" {
+        It "It_Resolve-StandardSchemaPackage_preserves_backslashes_in_a_local_feed_path" {
+            Import-Module (Join-Path $script:repo.DockerComposeRoot "bootstrap-package-resolver.psm1") -Force
+            $feedDirectory = Join-Path $script:repo.RepoRoot "feeds\empty"
+            $destinationRoot = Join-Path $script:repo.BootstrapRoot "package-resolution"
+            New-Item -ItemType Directory -Path $feedDirectory -Force | Out-Null
+
+            {
+                Resolve-StandardSchemaPackage `
+                    -FeedUrl $feedDirectory `
+                    -PackageId "EdFi.Missing.ApiSchema" `
+                    -Version "1.0.0" `
+                    -DestinationRoot $destinationRoot
+            } | Should -Throw -ExpectedMessage "*$feedDirectory*"
         }
     }
 }

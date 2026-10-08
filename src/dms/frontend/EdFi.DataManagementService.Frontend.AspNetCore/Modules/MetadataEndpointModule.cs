@@ -8,21 +8,60 @@ using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
+using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
+using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
-public partial class MetadataEndpointModule : IEndpointModule
+public partial class MetadataEndpointModule(
+    IOptions<FrontendAppSettings> appSettings,
+    IOptions<CoreAppSettings> coreOptions
+) : IEndpointModule
 {
     private const string DataOpenApiRouteBase = "data";
     private const string ChangeQueriesOpenApiRouteBase = "changeQueries/v1";
+    private const string IdentityOpenApiRouteBase = "identity/v2";
+
+    private static string GetPublicOAuthTokenUrl(
+        HttpContext httpContext,
+        IOptions<FrontendAppSettings> appSettings
+    )
+    {
+        string prefix = DiscoveryEndpointModule.BuildRouteQualifierPrefix(
+            httpContext,
+            appSettings,
+            useMetadataRouteValues: true
+        );
+        return $"{httpContext.Request.RootUrl()}{prefix}/oauth/token";
+    }
+
+    private static JsonNode WithPublicOAuthTokenUrl(JsonNode content, string tokenUrl)
+    {
+        if (
+            content["components"]
+                ?["securitySchemes"]
+                ?["oauth2_client_credentials"]
+                ?["flows"]
+                ?["clientCredentials"]
+            is JsonObject clientCredentials
+        )
+        {
+            clientCredentials["tokenUrl"] = tokenUrl;
+        }
+
+        return content;
+    }
 
     /// <summary>
     /// Builds servers array for the OpenAPI spec using the configured multi-tenancy and route qualifier settings.
@@ -30,7 +69,7 @@ public partial class MetadataEndpointModule : IEndpointModule
     private static JsonArray GetServers(
         HttpContext httpContext,
         IDataStoreProvider dataStoreProvider,
-        IOptions<Configuration.AppSettings> appSettings,
+        IOptions<FrontendAppSettings> appSettings,
         string openApiRouteBase
     )
     {
@@ -212,9 +251,6 @@ public partial class MetadataEndpointModule : IEndpointModule
 
     private sealed record SpecificationSection(string name, string prefix);
 
-    [GeneratedRegex(@"specifications\/(?<section>[^-]+)-spec.json?")]
-    private static partial Regex PathExpression();
-
     private static readonly SpecificationSection[] _sections =
     [
         new SpecificationSection("Resources", string.Empty),
@@ -243,11 +279,70 @@ public partial class MetadataEndpointModule : IEndpointModule
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/metadata", GetMetadata);
+        bool identityManagementEnabled = coreOptions.Value.EnableIdentityManagement;
+
+        MapMetadataEndpoints(endpoints, string.Empty, validateRoute: false, identityManagementEnabled);
+
+        MapTenantOnlyMetadataRejections(endpoints);
+
+        string routePattern = MetadataRouteValidator.BuildRoutePattern(
+            appSettings.Value.GetRouteQualifierSegmentsArray(),
+            appSettings.Value.MultiTenancy
+        );
+
+        if (!string.IsNullOrEmpty(routePattern))
+        {
+            MapMetadataEndpoints(endpoints, routePattern, validateRoute: true, identityManagementEnabled);
+        }
+    }
+
+    private void MapTenantOnlyMetadataRejections(IEndpointRouteBuilder endpoints)
+    {
+        if (!appSettings.Value.MultiTenancy || appSettings.Value.GetRouteQualifierSegmentsArray().Length == 0)
+        {
+            return;
+        }
+
+        // These routes would otherwise match the fully-qualified discovery route with
+        // "metadata" and, for deeper paths, the endpoint name as route qualifier values. Metadata endpoints
+        // require all configured route qualifiers, so reserve the tenant-only forms as 404.
+        endpoints.MapGet("/{tenant}/metadata", () => Results.NotFound());
+        endpoints.MapGet("/{tenant}/metadata/dependencies", () => Results.NotFound());
+        endpoints.MapGet("/{tenant}/metadata/specifications", () => Results.NotFound());
+    }
+
+    private static void MapMetadataEndpoints(
+        IEndpointRouteBuilder endpoints,
+        string routePattern,
+        bool validateRoute,
+        bool identityManagementEnabled
+    )
+    {
         endpoints.MapGet(
-            "/metadata/dependencies",
-            async (HttpContext httpContext, IApiService apiService) =>
+            $"{routePattern}/metadata",
+            async (HttpContext httpContext, IMetadataRouteValidator metadataRouteValidator) =>
             {
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                {
+                    return;
+                }
+
+                await GetMetadata(httpContext);
+            }
+        );
+        endpoints.MapGet(
+            $"{routePattern}/metadata/dependencies",
+            async (
+                HttpContext httpContext,
+                IMetadataRouteValidator metadataRouteValidator,
+                IApiService apiService
+            ) =>
+            {
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                {
+                    return;
+                }
+
                 var acceptHeader = httpContext.Request.Headers["Accept"].ToString();
 
                 if (acceptHeader.Contains("application/graphml", StringComparison.OrdinalIgnoreCase))
@@ -260,16 +355,150 @@ public partial class MetadataEndpointModule : IEndpointModule
                 }
             }
         );
-        endpoints.MapGet("/metadata/specifications", GetSections);
-        endpoints.MapGet("/metadata/specifications/resources-spec.json", GetResourceOpenApiSpec);
-        endpoints.MapGet("/metadata/specifications/descriptors-spec.json", GetDescriptorOpenApiSpec);
-        endpoints.MapGet("/metadata/changequeries/v1/swagger.json", GetChangeQueriesOpenApiSpec);
-        endpoints.MapGet("/metadata/specifications/{section}-spec.json", GetSectionMetadata);
-
         endpoints.MapGet(
-            $"/metadata/specifications/profiles/{{profileName}}/resources-spec.json",
-            GetProfileResourceOpenApiSpec
+            $"{routePattern}/metadata/specifications",
+            async (
+                HttpContext httpContext,
+                IMetadataRouteValidator metadataRouteValidator,
+                IApiService apiService,
+                IOptions<FrontendAppSettings> options
+            ) =>
+            {
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                {
+                    return;
+                }
+
+                await GetSections(httpContext, apiService, options, identityManagementEnabled);
+            }
         );
+        endpoints.MapGet(
+            $"{routePattern}/metadata/specifications/resources-spec.json",
+            async (
+                HttpContext httpContext,
+                IMetadataRouteValidator metadataRouteValidator,
+                IApiService apiService,
+                IDataStoreProvider dataStoreProvider,
+                IOptions<FrontendAppSettings> options
+            ) =>
+            {
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                {
+                    return;
+                }
+
+                await GetResourceOpenApiSpec(httpContext, apiService, dataStoreProvider, options);
+            }
+        );
+        endpoints.MapGet(
+            $"{routePattern}/metadata/specifications/descriptors-spec.json",
+            async (
+                HttpContext httpContext,
+                IMetadataRouteValidator metadataRouteValidator,
+                IApiService apiService,
+                IDataStoreProvider dataStoreProvider,
+                IOptions<FrontendAppSettings> options
+            ) =>
+            {
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                {
+                    return;
+                }
+
+                await GetDescriptorOpenApiSpec(httpContext, apiService, dataStoreProvider, options);
+            }
+        );
+        endpoints.MapGet(
+            $"{routePattern}/metadata/changequeries/v1/swagger.json",
+            async (
+                HttpContext httpContext,
+                IMetadataRouteValidator metadataRouteValidator,
+                IApiService apiService,
+                IDataStoreProvider dataStoreProvider,
+                IOptions<FrontendAppSettings> options
+            ) =>
+            {
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                {
+                    return;
+                }
+
+                await GetChangeQueriesOpenApiSpec(httpContext, apiService, dataStoreProvider, options);
+            }
+        );
+        if (identityManagementEnabled)
+        {
+            endpoints.MapGet(
+                $"{routePattern}/metadata/identity/v2/swagger.json",
+                async (
+                    HttpContext httpContext,
+                    IMetadataRouteValidator metadataRouteValidator,
+                    IApiService apiService,
+                    IDataStoreProvider dataStoreProvider,
+                    IOptions<FrontendAppSettings> options
+                ) =>
+                {
+                    if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                    {
+                        return;
+                    }
+
+                    await GetIdentityOpenApiSpec(httpContext, apiService, dataStoreProvider, options);
+                }
+            );
+        }
+        endpoints.MapGet(
+            $"{routePattern}/metadata/specifications/{{section}}-spec.json",
+            async (
+                HttpContext httpContext,
+                IMetadataRouteValidator metadataRouteValidator,
+                IContentProvider contentProvider,
+                IOptions<FrontendAppSettings> options,
+                IDataStoreProvider dataStoreProvider
+            ) =>
+            {
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                {
+                    return;
+                }
+
+                await GetSectionMetadata(httpContext, contentProvider, options, dataStoreProvider);
+            }
+        );
+        endpoints.MapGet(
+            $"{routePattern}/metadata/specifications/profiles/{{profileName}}/resources-spec.json",
+            async (
+                HttpContext httpContext,
+                string profileName,
+                IMetadataRouteValidator metadataRouteValidator,
+                IDataStoreProvider dataStoreProvider,
+                IApiService apiService,
+                IOptions<FrontendAppSettings> options
+            ) =>
+            {
+                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                {
+                    return;
+                }
+
+                await GetProfileResourceOpenApiSpec(
+                    httpContext,
+                    profileName,
+                    dataStoreProvider,
+                    apiService,
+                    options
+                );
+            }
+        );
+    }
+
+    private static Task<bool> ValidateMetadataRouteAsync(
+        HttpContext httpContext,
+        IMetadataRouteValidator metadataRouteValidator,
+        bool validateRoute
+    )
+    {
+        return validateRoute ? metadataRouteValidator.ValidateAsync(httpContext) : Task.FromResult(true);
     }
 
     internal static async Task GetMetadata(HttpContext httpContext)
@@ -334,31 +563,35 @@ public partial class MetadataEndpointModule : IEndpointModule
         HttpContext httpContext,
         IApiService apiService,
         IDataStoreProvider dataStoreProvider,
-        IOptions<Configuration.AppSettings> appSettings
+        IOptions<FrontendAppSettings> appSettings
     )
     {
         JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, DataOpenApiRouteBase);
         JsonNode content = apiService.GetResourceOpenApiSpecification(servers);
-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
+        );
     }
 
     internal static async Task GetDescriptorOpenApiSpec(
         HttpContext httpContext,
         IApiService apiService,
         IDataStoreProvider dataStoreProvider,
-        IOptions<Configuration.AppSettings> appSettings
+        IOptions<FrontendAppSettings> appSettings
     )
     {
         JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, DataOpenApiRouteBase);
         JsonNode content = apiService.GetDescriptorOpenApiSpecification(servers);
-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
+        );
     }
 
     internal static async Task GetChangeQueriesOpenApiSpec(
         HttpContext httpContext,
         IApiService apiService,
         IDataStoreProvider dataStoreProvider,
-        IOptions<Configuration.AppSettings> appSettings
+        IOptions<FrontendAppSettings> appSettings
     )
     {
         JsonArray servers = GetServers(
@@ -375,7 +608,28 @@ public partial class MetadataEndpointModule : IEndpointModule
             return;
         }
 
-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
+        );
+    }
+
+    /// <summary>
+    /// Serves the fixed identity OpenAPI document. Unlike Change-Queries, the identity
+    /// document is always present once mapped - the route itself is mapped only when
+    /// AppSettings:EnableIdentityManagement is true - so there is no missing-document 404 branch here.
+    /// </summary>
+    internal static async Task GetIdentityOpenApiSpec(
+        HttpContext httpContext,
+        IApiService apiService,
+        IDataStoreProvider dataStoreProvider,
+        IOptions<FrontendAppSettings> appSettings
+    )
+    {
+        JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, IdentityOpenApiRouteBase);
+        JsonNode content = apiService.GetIdentityOpenApiSpecification(servers);
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
+        );
     }
 
     /// <summary>
@@ -386,17 +640,27 @@ public partial class MetadataEndpointModule : IEndpointModule
         string profileName,
         IDataStoreProvider dataStoreProvider,
         IApiService apiService,
-        IOptions<Configuration.AppSettings> appSettings
+        IOptions<FrontendAppSettings> appSettings
     )
     {
         string? tenant = ExtractTenantFromRoute(httpContext);
         JsonArray servers = GetServers(httpContext, dataStoreProvider, appSettings, DataOpenApiRouteBase);
 
-        JsonNode? content = await apiService.GetProfileOpenApiSpecificationAsync(
-            profileName,
-            tenant,
-            servers
-        );
+        JsonNode? content;
+        try
+        {
+            content = await apiService.GetProfileOpenApiSpecificationAsync(profileName, tenant, servers);
+        }
+        catch (ProfileDataUnavailableException)
+        {
+            // The profile provider already logged the cause. An unavailable catalog is not a missing
+            // profile, so this is a retriable 503 rather than the 404 below.
+            await WriteProfileDataUnavailableAsync(
+                httpContext,
+                AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings)
+            );
+            return;
+        }
 
         if (content is null)
         {
@@ -404,10 +668,17 @@ public partial class MetadataEndpointModule : IEndpointModule
             return;
         }
 
-        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            WithPublicOAuthTokenUrl(content, GetPublicOAuthTokenUrl(httpContext, appSettings))
+        );
     }
 
-    internal static async Task GetSections(HttpContext httpContext, IApiService apiService)
+    internal static async Task GetSections(
+        HttpContext httpContext,
+        IApiService apiService,
+        IOptions<FrontendAppSettings> appSettings,
+        bool identityManagementEnabled = false
+    )
     {
         var baseUrl = httpContext.Request.UrlWithPathSegment();
         List<RouteInformation> sections = [];
@@ -422,19 +693,49 @@ public partial class MetadataEndpointModule : IEndpointModule
             );
         }
 
+        const string SpecificationsSuffix = "/specifications";
+        string requestPath = httpContext.Request.Path.ToString().TrimEnd('/');
+        string metadataPrefix = requestPath.EndsWith(
+            "/metadata/specifications",
+            StringComparison.OrdinalIgnoreCase
+        )
+            ? baseUrl[..^SpecificationsSuffix.Length]
+            : $"{httpContext.Request.RootUrl()}/metadata";
+
         if (apiService.HasChangeQueriesOpenApiSpecification())
         {
             sections.Add(
                 new RouteInformation(
                     "Change-Queries",
-                    $"{httpContext.Request.RootUrl()}/metadata/changequeries/v1/swagger.json",
+                    $"{metadataPrefix}/changequeries/v1/swagger.json",
                     "Other"
                 )
             );
         }
 
+        if (identityManagementEnabled)
+        {
+            sections.Add(
+                new RouteInformation("Identity", $"{metadataPrefix}/identity/v2/swagger.json", "Other")
+            );
+        }
+
         string? tenant = ExtractTenantFromRoute(httpContext);
-        IReadOnlyList<string> profileNames = await apiService.GetProfileNamesAsync(tenant);
+        IReadOnlyList<string> profileNames;
+        try
+        {
+            profileNames = await apiService.GetProfileNamesAsync(tenant);
+        }
+        catch (ProfileDataUnavailableException)
+        {
+            // The profile provider already logged the cause. The whole listing is refused: one
+            // without the profile sections would publish a partial catalog.
+            await WriteProfileDataUnavailableAsync(
+                httpContext,
+                AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings)
+            );
+            return;
+        }
         foreach (string profileName in profileNames)
         {
             sections.Add(
@@ -449,25 +750,39 @@ public partial class MetadataEndpointModule : IEndpointModule
         await httpContext.Response.WriteAsSerializedJsonAsync(sections);
     }
 
+    private static Task WriteProfileDataUnavailableAsync(HttpContext httpContext, TraceId traceId)
+    {
+        httpContext.Response.StatusCode = (int)HttpStatusCode.ServiceUnavailable;
+        httpContext.Response.ContentType = "application/problem+json";
+        return httpContext.Response.WriteAsync(
+            JsonSerializer.Serialize(
+                FailureResponse.ForServiceUnavailable(traceId),
+                AspNetCoreFrontend.SharedSerializerOptions
+            )
+        );
+    }
+
     internal static async Task GetSectionMetadata(
         HttpContext httpContext,
         IContentProvider contentProvider,
-        IOptions<Configuration.AppSettings> options,
+        IOptions<FrontendAppSettings> options,
         IDataStoreProvider dataStoreProvider
     )
     {
-        var request = httpContext.Request;
-        Match match = PathExpression().Match(request.Path);
-        if (!match.Success)
+        if (
+            !httpContext.Request.RouteValues.TryGetValue("section", out object? sectionValue)
+            || sectionValue is not string sectionValueString
+            || string.IsNullOrWhiteSpace(sectionValueString)
+        )
         {
             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
             await httpContext.Response.WriteAsync(_errorResourcePath);
             return;
         }
 
-        string section = match.Groups["section"].Value.ToLower();
-        string? rootUrl = request.RootUrl();
-        string oAuthUrl = options.Value.AuthenticationService;
+        string section = sectionValueString.ToLowerInvariant();
+        string rootUrl = httpContext.Request.RootUrl();
+        string oAuthUrl = GetPublicOAuthTokenUrl(httpContext, options);
         if (
             Array.Exists(
                 _sections,
@@ -475,7 +790,10 @@ public partial class MetadataEndpointModule : IEndpointModule
             )
         )
         {
-            var content = contentProvider.LoadJsonContent(section, rootUrl, oAuthUrl);
+            JsonNode content = WithPublicOAuthTokenUrl(
+                contentProvider.LoadJsonContent(section, rootUrl, oAuthUrl),
+                oAuthUrl
+            );
             content["servers"] = GetServers(httpContext, dataStoreProvider, options, DataOpenApiRouteBase);
             await httpContext.Response.WriteAsSerializedJsonAsync(content);
         }

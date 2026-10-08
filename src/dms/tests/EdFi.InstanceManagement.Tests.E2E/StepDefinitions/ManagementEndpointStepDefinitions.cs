@@ -176,7 +176,7 @@ public class ManagementEndpointStepDefinitions(InstanceManagementContext context
             .ContainKey(tenantName, $"fixture credentials for tenant {tenantName} must exist");
 
         var (clientKey, clientSecret) = context.CredentialsByTenant[tenantName];
-        return await TokenHelper.GetDmsTokenAsync(
+        return await TokenHelper.GetReusableDmsTokenAsync(
             $"{TestConfiguration.ConfigServiceUrl}/connect/token/",
             clientKey,
             clientSecret

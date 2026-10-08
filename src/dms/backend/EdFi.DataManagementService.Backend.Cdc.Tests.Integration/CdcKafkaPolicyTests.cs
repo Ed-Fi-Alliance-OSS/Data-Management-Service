@@ -81,6 +81,22 @@ public sealed class Given_authorized_three_broker_cdc_policy
     }
 
     [Test]
+    public async Task It_executes_marked_broker_retention_inspections_and_rejects_denied_authority()
+    {
+        // All broker replicas are inspected, not just the leader. Repeat sample after real
+        // publication; small active segments need not compact during this bounded observation.
+        for (int sample = 0; sample < 2; sample++)
+        {
+            await _fixture.ProduceAsync("connector-a", _request.Binding.TopicName, Token);
+            for (int broker = 0; broker < 3; broker++)
+            {
+                await _fixture.InspectRunbookRetentionAsync(_request, broker, sample, denied: false, Token);
+            }
+        }
+        await _fixture.InspectRunbookRetentionAsync(_request, 0, 0, denied: true, Token);
+    }
+
+    [Test]
     public async Task It_inspects_retirement_offsets_with_existing_admin_authority_and_rejects_denied_access()
     {
         var scope = new CdcArtifactCleanupScope(

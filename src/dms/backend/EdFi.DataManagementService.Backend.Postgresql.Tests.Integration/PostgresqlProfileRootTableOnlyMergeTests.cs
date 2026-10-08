@@ -202,7 +202,11 @@ internal static class PostgresqlProfileRootTableOnlyMergeSupport
             Headers: [],
             TraceId: new TraceId(traceLabel),
             DocumentUuid: documentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);
     }
@@ -470,7 +474,11 @@ public class Given_A_Profiled_Post_Create_New_For_Root_Only_Resource
             TraceId: new TraceId("profile-merge-create-new-post"),
             DocumentUuid: DocumentUuid,
             BackendProfileWriteContext: profileContext
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);
     }
@@ -615,7 +623,11 @@ public class Given_A_Profiled_Post_As_Update_With_Hidden_Inlined_Preservation
             TraceId: new TraceId("profile-merge-post-as-update-profiled"),
             DocumentUuid: PostAsUpdateDocumentUuid,
             BackendProfileWriteContext: profileContext
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);
     }
@@ -772,7 +784,11 @@ public class Given_A_Profiled_Put_With_Multi_Table_Plan_And_Root_Only_Runtime_Sh
             Headers: [],
             TraceId: new TraceId("profile-merge-multi-table-root-only-seed"),
             DocumentUuid: ExistingDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);
     }

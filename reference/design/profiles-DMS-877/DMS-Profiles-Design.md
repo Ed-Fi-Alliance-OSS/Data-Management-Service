@@ -1013,8 +1013,13 @@ The following error responses match the ODS/API implementation:
 | Client not authorized for specified profile | 403 | `security:data-policy:incorrect-usage` |
 | Profile excludes required members (non-creatable) | 400 | `data-policy-enforced` |
 | Profile excludes required child item members | 400 | `data-policy-enforced` |
+| Profile data unavailable from the Configuration Service (any failure other than a 404 for a single profile, including timeout, transport, malformed response, or a 404 for the application) | 503 | `service-unavailable` |
 
 **Note:** All error types use the `urn:ed-fi:api:` prefix.
+
+**Note:** The 503 row applies to resource requests, token info, and the profile
+metadata endpoints. Existing missing/invalid-profile 406/415 behavior remains
+unchanged; dependency-fetch failures return 503.
 
 ### 8.3 Error Response Format
 
@@ -1290,6 +1295,14 @@ cached alongside them with the same TTL.
 
 **Note:** For immediate invalidation, consider implementing a webhook or
 polling mechanism in a future iteration.
+
+**Dependency failures:** A failed catalog or assignment fetch is never cached,
+so the next request fetches again. An expired catalog is not served stale; a
+failed refresh answers 503 (see 8.2). A Configuration Service 404 for a single
+profile still means that profile is absent. A 404 for the application is a
+failure, not "no profiles assigned": the application id comes from the
+client's resolved application context, so the 404 means DMS and the
+Configuration Service disagree.
 
 ---
 

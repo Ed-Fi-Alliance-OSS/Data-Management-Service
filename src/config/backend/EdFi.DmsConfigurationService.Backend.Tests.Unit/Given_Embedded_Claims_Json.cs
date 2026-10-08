@@ -8,12 +8,14 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Claims;
+using EdFi.DmsConfigurationService.Backend.Claims.Models;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 
@@ -22,13 +24,16 @@ public class Given_Embedded_Claims_Json
 {
     private JsonObject _claims = null!;
 
-    // Resource claims whose SeedLoader Create grant declares an explicit
+    // SeedLoader is granted Update alongside Create because a POST that finds an existing record is
+    // authorized as Update, and re-running seed delivery against a seeded database re-POSTs every record.
+    //
+    // Resource claims whose SeedLoader Create and Update grants declare an explicit
     // NoFurtherAuthorizationRequired override because the inherited authorization chain does not
-    // cover Create. The canonical example is schoolYearType: the parent edFiTypes
-    // defaultAuthorization does not define Create, so the SeedLoader Application would otherwise see
-    // zero strategies on Create and 403 the Story-02 REST precondition POST. See
+    // cover either action. The canonical example is schoolYearType: the parent edFiTypes
+    // defaultAuthorization defines neither Create nor Update, so the SeedLoader Application would otherwise
+    // see zero strategies and 403 the Story-02 REST precondition POST. See
     // bootstrap-design.md §7.2 "schoolYearType override" for the design rationale.
-    private static readonly HashSet<string> SeedLoaderCreateOverrideExceptions = new(StringComparer.Ordinal)
+    private static readonly HashSet<string> SeedLoaderOverrideExceptions = new(StringComparer.Ordinal)
     {
         "http://ed-fi.org/identity/claims/ed-fi/schoolYearType",
     };
@@ -87,7 +92,47 @@ public class Given_Embedded_Claims_Json
         "http://ed-fi.org/identity/claims/services/identity",
     ];
 
-    public static IEnumerable<string> SeedLoaderInventorySource => SeedLoaderInventory;
+    public static IEnumerable<TestCaseData> SeedLoaderGrantSource =>
+        from resourceClaimUri in SeedLoaderInventory
+        from actionName in new[] { "Create", "Update" }
+        select new TestCaseData(resourceClaimUri, actionName);
+
+    // Resources the Ed-Fi-Data-Standard v6.1.0 Populated sample writes that do not exist in DS 5.2,
+    // so the inventory above, checked against ds52, cannot cover them.
+    private static readonly string[] Ds61OnlySeedLoaderInventory =
+    [
+        // Populated: SpecialEducation.xml
+        "http://ed-fi.org/identity/claims/ed-fi/IDEAEvent",
+        "http://ed-fi.org/identity/claims/ed-fi/StudentIEP",
+        "http://ed-fi.org/identity/claims/ed-fi/StudentIEPGoal",
+        "http://ed-fi.org/identity/claims/ed-fi/StudentIEPServiceDelivery",
+        "http://ed-fi.org/identity/claims/ed-fi/StudentIEPServicePrescription",
+    ];
+
+    public static IEnumerable<TestCaseData> Ds61OnlySeedLoaderGrantSource =>
+        from resourceClaimUri in Ds61OnlySeedLoaderInventory
+        from actionName in new[] { "Create", "Update" }
+        select new TestCaseData(resourceClaimUri, actionName);
+
+    // The claim sets a default deployment loads. The E2E claim sets are defined only by the
+    // test-owned claims fragments, never by the shipped Claims.json.
+    private static readonly string[] ShippedClaimSetNames =
+    [
+        "SISVendor",
+        "EdFiSandbox",
+        "RosterVendor",
+        "AssessmentVendor",
+        "AssessmentRead",
+        "BootstrapDescriptorsandEdOrgs",
+        "SeedLoader",
+        "DistrictHostedSISVendor",
+        "EdFiODSAdminApp",
+        "ABConnect",
+        "EdFiAPIPublisherReader",
+        "EdFiAPIPublisherWriter",
+        "FinanceVendor",
+        "EducationPreparationProgram",
+    ];
 
     [SetUp]
     public void Setup()
@@ -117,16 +162,7 @@ public class Given_Embedded_Claims_Json
             .OfType<JsonObject>()
             .Select(claimSet => claimSet["claimSetName"]!.GetValue<string>())
             .Should()
-            .Contain([
-                "E2E-NameSpaceBasedClaimSet",
-                "E2E-NoFurtherAuthRequiredClaimSet",
-                "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
-                "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet",
-                "E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet",
-                "E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet",
-                "SeedLoader",
-                "EdFiODSAdminApp",
-            ]);
+            .Contain(["SeedLoader", "EdFiODSAdminApp"]);
 
         ClaimNames(claims["claimsHierarchy"]!)
             .Should()
@@ -135,11 +171,12 @@ public class Given_Embedded_Claims_Json
         SeedLoaderGrant? epdmGrant = FindSeedLoaderGrant(
             claims["claimsHierarchy"]!,
             "http://ed-fi.org/identity/claims/domains/epdm",
-            new SeedLoaderGrant(HasCreate: false, HasOverride: false)
+            "Create",
+            new SeedLoaderGrant(HasAction: false, HasOverride: false)
         );
 
         epdmGrant.Should().NotBeNull();
-        epdmGrant!.HasCreate.Should().BeTrue();
+        epdmGrant!.HasAction.Should().BeTrue();
         epdmGrant.HasOverride.Should().BeFalse();
     }
 
@@ -279,13 +316,121 @@ public class Given_Embedded_Claims_Json
         }
     }
 
-    [TestCaseSource(nameof(SeedLoaderInventorySource))]
-    public void It_grants_SeedLoader_Create_with_inherited_authorization(string resourceClaimUri)
+    [TestCase("ds52")]
+    [TestCase("ds61")]
+    public void It_declares_exactly_the_shipped_claim_sets(string standardFolder)
+    {
+        DeclaredClaimSetNames(LoadEmbeddedClaims(standardFolder))
+            .Should()
+            .BeEquivalentTo(ShippedClaimSetNames);
+    }
+
+    [TestCase("ds52")]
+    [TestCase("ds61")]
+    public void It_grants_only_declared_claim_sets_and_no_E2E_claim_set(string standardFolder)
+    {
+        JsonObject claims = LoadEmbeddedClaims(standardFolder);
+
+        List<string> grantedClaimSetNames =
+        [
+            .. ClaimNodes(claims["claimsHierarchy"]!)
+                .SelectMany(GrantedClaimSetNames)
+                .Distinct(StringComparer.Ordinal),
+        ];
+
+        grantedClaimSetNames
+            .Should()
+            .Contain("EdFiSandbox", "the hierarchy walk must reach claim set grants");
+        grantedClaimSetNames.Should().BeSubsetOf(DeclaredClaimSetNames(claims));
+        grantedClaimSetNames.Should().NotContain(name => name.StartsWith("E2E-", StringComparison.Ordinal));
+    }
+
+    // Every default compose deployment runs Hybrid with the shipped AdditionalClaimsets directory
+    // mounted, so a non-parent fragment there would register its claim set in every deployment
+    [TestCase("ds52")]
+    [TestCase("ds61")]
+    public void It_registers_no_claim_set_from_the_default_fragment_directory(string standardFolder)
+    {
+        string defaultFragmentsPath = Path.Combine(
+            Given_E2E_Test_Fragments.FindRepositoryRoot(),
+            "src",
+            "config",
+            "backend",
+            "EdFi.DmsConfigurationService.Backend",
+            "Deploy",
+            "AdditionalClaimsets"
+        );
+        JsonObject baseClaims = LoadEmbeddedClaims(standardFolder);
+
+        ClaimsLoadResult result = new ClaimsFragmentComposer(
+            A.Fake<ILogger<ClaimsFragmentComposer>>()
+        ).ComposeClaimsFromFragments(
+            new ClaimsDocument(baseClaims["claimSets"]!, baseClaims["claimsHierarchy"]!),
+            defaultFragmentsPath
+        );
+
+        result.Failures.Should().BeEmpty();
+        JsonObject composed = new()
+        {
+            ["claimSets"] = result.Nodes!.ClaimSetsNode.DeepClone(),
+            ["claimsHierarchy"] = result.Nodes.ClaimsHierarchyNode.DeepClone(),
+        };
+
+        DeclaredClaimSetNames(composed).Should().BeEquivalentTo(ShippedClaimSetNames);
+        ClaimNodes(composed["claimsHierarchy"]!)
+            .SelectMany(GrantedClaimSetNames)
+            .Distinct(StringComparer.Ordinal)
+            .Should()
+            .BeSubsetOf(ShippedClaimSetNames);
+    }
+
+    [TestCase("ds52")]
+    [TestCase("ds61")]
+    public void It_has_no_empty_claim_sets_on_hierarchy_nodes(string standardFolder)
+    {
+        List<JsonObject> nodesWithClaimSets =
+        [
+            .. ClaimNodes(LoadEmbeddedClaims(standardFolder)["claimsHierarchy"]!)
+                .Where(node => node.ContainsKey("claimSets")),
+        ];
+
+        nodesWithClaimSets.Should().NotBeEmpty();
+        nodesWithClaimSets
+            .Where(node => node["claimSets"] is not JsonArray { Count: > 0 })
+            .Select(node => node["name"]!.GetValue<string>())
+            .Should()
+            .BeEmpty("a hierarchy node whose last grant was removed must drop its claimSets key");
+    }
+
+    [TestCaseSource(nameof(SeedLoaderGrantSource))]
+    public void It_grants_SeedLoader_the_action_with_inherited_authorization(
+        string resourceClaimUri,
+        string actionName
+    )
+    {
+        AssertSeedLoaderGrant(_claims["claimsHierarchy"]!, resourceClaimUri, actionName);
+    }
+
+    [TestCaseSource(nameof(Ds61OnlySeedLoaderGrantSource))]
+    public void It_grants_SeedLoader_the_ds61_only_action_with_inherited_authorization(
+        string resourceClaimUri,
+        string actionName
+    )
+    {
+        AssertSeedLoaderGrant(LoadEmbeddedClaims("ds61")["claimsHierarchy"]!, resourceClaimUri, actionName);
+    }
+
+    private static void AssertSeedLoaderGrant(
+        JsonNode claimsHierarchy,
+        string resourceClaimUri,
+        string actionName
+    )
     {
         SeedLoaderGrant? result = FindSeedLoaderGrant(
-            _claims["claimsHierarchy"]!,
+            claimsHierarchy,
             resourceClaimUri,
-            new SeedLoaderGrant(HasCreate: false, HasOverride: false)
+            actionName,
+            new SeedLoaderGrant(HasAction: false, HasOverride: false)
         );
 
         result
@@ -295,17 +440,17 @@ public class Given_Embedded_Claims_Json
             );
 
         result!
-            .HasCreate.Should()
-            .BeTrue($"SeedLoader Create must be granted on '{resourceClaimUri}' or any ancestor");
+            .HasAction.Should()
+            .BeTrue($"SeedLoader {actionName} must be granted on '{resourceClaimUri}' or any ancestor");
 
-        if (SeedLoaderCreateOverrideExceptions.Contains(resourceClaimUri))
+        if (SeedLoaderOverrideExceptions.Contains(resourceClaimUri))
         {
             result
                 .HasOverride.Should()
                 .BeTrue(
-                    $"SeedLoader Create on '{resourceClaimUri}' must declare an explicit "
+                    $"SeedLoader {actionName} on '{resourceClaimUri}' must declare an explicit "
                         + "authorizationStrategyOverrides entry because the inherited authorization chain "
-                        + "does not cover Create (e.g. edFiTypes defaultAuthorization does not define Create for "
+                        + $"does not cover {actionName} (e.g. edFiTypes defaultAuthorization does not define it for "
                         + "closed-XSD-enum types); see bootstrap-design.md §7.2 'schoolYearType override'"
                 );
         }
@@ -314,7 +459,7 @@ public class Given_Embedded_Claims_Json
             result
                 .HasOverride.Should()
                 .BeFalse(
-                    $"SeedLoader Create on '{resourceClaimUri}' (or any ancestor) must not declare "
+                    $"SeedLoader {actionName} on '{resourceClaimUri}' (or any ancestor) must not declare "
                         + "authorizationStrategyOverrides — bootstrap-design.md §7.2 requires SeedLoader to inherit "
                         + "the claim's existing authorization strategy so the relationship-based-data strategies "
                         + "still gate the SeedLoader Application's namespace prefixes and EdOrg IDs at runtime"
@@ -322,7 +467,7 @@ public class Given_Embedded_Claims_Json
         }
     }
 
-    private sealed record SeedLoaderGrant(bool HasCreate, bool HasOverride);
+    private sealed record SeedLoaderGrant(bool HasAction, bool HasOverride);
 
     private static IEnumerable<string> ClaimNames(JsonNode node)
     {
@@ -374,9 +519,44 @@ public class Given_Embedded_Claims_Json
         }
     }
 
+    private static IEnumerable<string> DeclaredClaimSetNames(JsonObject claims) =>
+        claims["claimSets"]!
+            .AsArray()
+            .OfType<JsonObject>()
+            .Select(claimSet => claimSet["claimSetName"]!.GetValue<string>());
+
+    private static IEnumerable<JsonObject> ClaimNodes(JsonNode node)
+    {
+        IEnumerable<JsonObject> nodes = node switch
+        {
+            JsonArray array => array.OfType<JsonObject>(),
+            JsonObject obj => [obj],
+            _ => [],
+        };
+
+        foreach (JsonObject claim in nodes)
+        {
+            yield return claim;
+
+            if (claim["claims"] is JsonArray children)
+            {
+                foreach (JsonObject child in ClaimNodes(children))
+                {
+                    yield return child;
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<string> GrantedClaimSetNames(JsonObject claimNode) =>
+        (claimNode["claimSets"] as JsonArray ?? [])
+            .OfType<JsonObject>()
+            .Select(claimSet => claimSet["name"]!.GetValue<string>());
+
     private static SeedLoaderGrant? FindSeedLoaderGrant(
         JsonNode node,
         string targetUri,
+        string actionName,
         SeedLoaderGrant ancestor
     )
     {
@@ -389,7 +569,7 @@ public class Given_Embedded_Claims_Json
                     continue;
                 }
 
-                SeedLoaderGrant? result = FindSeedLoaderGrant(item, targetUri, ancestor);
+                SeedLoaderGrant? result = FindSeedLoaderGrant(item, targetUri, actionName, ancestor);
                 if (result is not null)
                 {
                     return result;
@@ -404,9 +584,9 @@ public class Given_Embedded_Claims_Json
             return null;
         }
 
-        SeedLoaderGrant local = ReadSeedLoaderGrantAt(obj);
+        SeedLoaderGrant local = ReadSeedLoaderGrantAt(obj, actionName);
         SeedLoaderGrant effective = new(
-            HasCreate: ancestor.HasCreate || local.HasCreate,
+            HasAction: ancestor.HasAction || local.HasAction,
             HasOverride: ancestor.HasOverride || local.HasOverride
         );
 
@@ -429,7 +609,7 @@ public class Given_Embedded_Claims_Json
                     continue;
                 }
 
-                SeedLoaderGrant? result = FindSeedLoaderGrant(child, targetUri, effective);
+                SeedLoaderGrant? result = FindSeedLoaderGrant(child, targetUri, actionName, effective);
                 if (result is not null)
                 {
                     return result;
@@ -440,14 +620,14 @@ public class Given_Embedded_Claims_Json
         return null;
     }
 
-    private static SeedLoaderGrant ReadSeedLoaderGrantAt(JsonObject claimNode)
+    private static SeedLoaderGrant ReadSeedLoaderGrantAt(JsonObject claimNode, string actionName)
     {
         if (
             !claimNode.TryGetPropertyValue("claimSets", out JsonNode? claimSetsNode)
             || claimSetsNode is not JsonArray claimSets
         )
         {
-            return new SeedLoaderGrant(HasCreate: false, HasOverride: false);
+            return new SeedLoaderGrant(HasAction: false, HasOverride: false);
         }
 
         JsonObject? seedLoader = claimSets
@@ -458,7 +638,7 @@ public class Given_Embedded_Claims_Json
 
         if (seedLoader is null)
         {
-            return new SeedLoaderGrant(HasCreate: false, HasOverride: false);
+            return new SeedLoaderGrant(HasAction: false, HasOverride: false);
         }
 
         if (
@@ -466,23 +646,23 @@ public class Given_Embedded_Claims_Json
             || actionsNode is not JsonArray actions
         )
         {
-            return new SeedLoaderGrant(HasCreate: false, HasOverride: false);
+            return new SeedLoaderGrant(HasAction: false, HasOverride: false);
         }
 
-        JsonObject? createAction = actions
+        JsonObject? action = actions
             .OfType<JsonObject>()
             .FirstOrDefault(a =>
-                a.TryGetPropertyValue("name", out JsonNode? n) && n?.GetValue<string>() == "Create"
+                a.TryGetPropertyValue("name", out JsonNode? n) && n?.GetValue<string>() == actionName
             );
 
-        if (createAction is null)
+        if (action is null)
         {
-            return new SeedLoaderGrant(HasCreate: false, HasOverride: false);
+            return new SeedLoaderGrant(HasAction: false, HasOverride: false);
         }
 
-        bool hasOverride = createAction.TryGetPropertyValue("authorizationStrategyOverrides", out _);
+        bool hasOverride = action.TryGetPropertyValue("authorizationStrategyOverrides", out _);
 
-        return new SeedLoaderGrant(HasCreate: true, HasOverride: hasOverride);
+        return new SeedLoaderGrant(HasAction: true, HasOverride: hasOverride);
     }
 
     private async Task<ClaimSetMetadata> CreateClaimSetMetadata(string claimSetName)

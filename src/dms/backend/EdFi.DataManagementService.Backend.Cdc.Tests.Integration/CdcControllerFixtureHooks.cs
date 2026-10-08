@@ -66,11 +66,15 @@ internal sealed class CdcControllerFixtureHooks
 {
     private readonly ConcurrentQueue<CdcControllerFixtureEvent> _trace = new();
     private readonly ConcurrentQueue<object> _connectObservations = new();
+    private readonly ConcurrentQueue<object> _offsetObservations = new();
     private readonly ConcurrentDictionary<(CdcControllerBoundary, CdcControllerEdge), int> _counts = new();
+    private readonly ConcurrentQueue<object> _kafkaTopics = new();
+    public IReadOnlyList<object> KafkaTopics => _kafkaTopics.ToArray();
     private long _sequence;
     public Action<CdcControllerFixtureEvent> OnBoundary { get; set; } = _ => { };
     public IReadOnlyList<CdcControllerFixtureEvent> Trace => _trace.OrderBy(e => e.Sequence).ToArray();
     public IReadOnlyList<object> ConnectObservations => _connectObservations.ToArray();
+    public IReadOnlyList<object> OffsetObservations => _offsetObservations.ToArray();
 
     public void Hit(CdcControllerBoundary boundary, CdcControllerEdge edge)
     {
@@ -97,6 +101,99 @@ internal sealed class CdcControllerFixtureHooks
         try
         {
             result = await operation(token);
+            if (result is CdcTransportResult<CdcConnectOffsetEvidence>.Observed offset)
+            {
+                _offsetObservations.Enqueue(
+                    new { At = DateTimeOffset.UtcNow, State = offset.Value.State.ToString() }
+                );
+            }
+            if (result is CdcTransportResult<CdcConnectOffsetEvidence>.Unavailable unavailableOffset)
+            {
+                _offsetObservations.Enqueue(
+                    new
+                    {
+                        At = DateTimeOffset.UtcNow,
+                        State = "Unavailable",
+                        unavailableOffset.Diagnostic.Failure,
+                    }
+                );
+            }
+            if (result is CdcTransportResult<CdcConnectOffsetEvidence>.Absent)
+            {
+                _offsetObservations.Enqueue(new { At = DateTimeOffset.UtcNow, State = "Absent" });
+            }
+            while (_offsetObservations.Count > 128)
+            {
+                _offsetObservations.TryDequeue(out _);
+            }
+            if (result is CdcTransportResult<CdcKafkaTopicEvidence>.Absent)
+            {
+                _kafkaTopics.Enqueue(new { At = DateTimeOffset.UtcNow, State = "Absent" });
+            }
+            if (result is CdcTransportResult<CdcKafkaTopicEvidence>.Unavailable unavailableTopic)
+            {
+                _kafkaTopics.Enqueue(
+                    new
+                    {
+                        At = DateTimeOffset.UtcNow,
+                        State = "Unavailable",
+                        unavailableTopic.Diagnostic.Failure,
+                    }
+                );
+            }
+            if (result is CdcTransportResult<CdcKafkaTopicEvidence>.Observed topic)
+            {
+                _kafkaTopics.Enqueue(
+                    new
+                    {
+                        At = DateTimeOffset.UtcNow,
+                        State = "Observed",
+                        TopicSha256 = Convert.ToHexStringLower(
+                            SHA256.HashData(Encoding.UTF8.GetBytes(topic.Value.Name))
+                        ),
+                        PartitionCount = topic.Value.PartitionReplicas.Count,
+                        ReplicaCounts = topic
+                            .Value.PartitionReplicas.OrderBy(p => p.Key)
+                            .Take(32)
+                            .Select(p => p.Value.Count)
+                            .ToArray(),
+                        Configuration = new[]
+                        {
+                            "cleanup.policy",
+                            "min.insync.replicas",
+                            "delete.retention.ms",
+                            "max.message.bytes",
+                            "retention.ms",
+                            "retention.bytes",
+                        }
+                            .Select(key =>
+                            {
+                                bool present = topic.Value.Configuration.TryGetValue(key, out var entry);
+                                bool numeric = long.TryParse(
+                                    entry?.Value,
+                                    System.Globalization.NumberStyles.Integer,
+                                    System.Globalization.CultureInfo.InvariantCulture,
+                                    out long value
+                                );
+                                return new
+                                {
+                                    Key = key,
+                                    Present = present,
+                                    Numeric = numeric,
+                                    Number = numeric ? value : 0,
+                                    Compact = entry?.Value == "compact",
+                                    Delete = entry?.Value == "delete",
+                                    IsTopicOverride = entry?.IsTopicOverride == true,
+                                };
+                            })
+                            .ToArray(),
+                    }
+                );
+            }
+            while (_kafkaTopics.Count > 128)
+            {
+                _kafkaTopics.TryDequeue(out _);
+            }
             if (result is CdcTransportResult<CdcConnectStatus>.Observed status)
             {
                 _connectObservations.Enqueue(

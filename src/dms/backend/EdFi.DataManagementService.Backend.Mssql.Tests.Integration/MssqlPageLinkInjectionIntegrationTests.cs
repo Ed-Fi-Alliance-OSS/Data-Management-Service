@@ -359,7 +359,11 @@ public class Given_A_Mssql_Page_Of_AcademicWeeks_With_Link_Injection
             Headers: [],
             TraceId: new TraceId("mssql-page-link-injection-seed-school"),
             DocumentUuid: seed.SchoolDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
@@ -385,7 +389,11 @@ public class Given_A_Mssql_Page_Of_AcademicWeeks_With_Link_Injection
             Headers: [],
             TraceId: new TraceId("mssql-page-link-injection-seed-academicweek"),
             DocumentUuid: seed.AcademicWeekDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()

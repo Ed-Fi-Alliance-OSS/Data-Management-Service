@@ -408,7 +408,11 @@ internal sealed class SqlServerCdcStateProviderOperations()
             """,
             cancellationToken
         );
-        await ExecuteNonQueryAsync(connection, $"CREATE DATABASE [{databaseName}];", cancellationToken);
+        await ExecuteNonQueryAsync(
+            connection,
+            $"CREATE DATABASE [{databaseName}]; ALTER DATABASE [{databaseName}] SET READ_COMMITTED_SNAPSHOT ON; ALTER DATABASE [{databaseName}] SET ALLOW_SNAPSHOT_ISOLATION ON;",
+            cancellationToken
+        );
     }
 
     private static async Task ExecuteNonQueryAsync(
@@ -560,7 +564,10 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
                 cancellationToken
             );
             await ProvisionGeneratedDmsSchemaAsync(providerPort, providerOperations, cancellationToken);
-            CdcConnectorTemplateRequest request = await pinnedFixture.CreateRequestAsync(cancellationToken);
+            CdcConnectorTemplateRequest request = await pinnedFixture.CreateRequestAsync(
+                cancellationToken,
+                generatedSchema: true
+            );
             var fixture = new RepresentationRestampCdcStateFixture(
                 providerOperations,
                 pinnedFixture,
@@ -760,6 +767,7 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
             DocumentCacheAdminCliFixture.Shared.ApiSchemaDirectory
         );
         services.AddLogging();
+        services.AddSingleton<IDocumentLinkSlugResolver, DescriptorOnlySlugResolver>();
         services.AddSingleton<IEffectiveSchemaSetProvider>(
             new FixedEffectiveSchemaSetProvider(effectiveSchemaSet)
         );
@@ -922,6 +930,14 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
         command.CommandText = sql;
         command.Parameters.Add(_providerOperations.Parameter("documentId", documentId));
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    private sealed class DescriptorOnlySlugResolver : IDocumentLinkSlugResolver
+    {
+        public DocumentLinkSlugTriple Resolve(MappingSet mappingSet, short resourceKeyId) =>
+            throw new InvalidOperationException(
+                "The descriptor restamp fixture must not emit resource links."
+            );
     }
 
     private sealed record SeededDocument(long DocumentId, Guid Uuid, long ContentVersion);

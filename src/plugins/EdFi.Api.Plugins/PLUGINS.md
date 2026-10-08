@@ -1,20 +1,38 @@
 # Ed-Fi API Plugins
 
-This package defines `EdFiApiPlugin`, the base class a district or vendor implements to extend the
-Ed-Fi Data Management Service or the Ed-Fi DMS Configuration Service without rebuilding either one.
+This package defines `EdFiApiPlugin`, the base class a district or vendor implements to extend an
+Ed-Fi API host without rebuilding it.
 
-> **This readme is a placeholder.**
->
-> The plugin mechanism is being built one story at a time, and this file is packed from the first of
-> them so that the package metadata is complete and asserted from the outset. It is replaced with the
-> real implementer guide by the documentation story of the same epic, which is also the story that
-> writes the operator-facing chapter this file will link to.
->
-> Nothing that loads a plugin ships yet. No published Ed-Fi image contains a plugin loader, so a
-> subclass of `EdFiApiPlugin` compiles today but is loaded by nothing. Build against this package to
-> pin the contract and to compile early, and expect the release notes of a Data Management Service
-> release to announce when plugin loading is supported and to state which contract versions that
-> release carries.
+> **Both hosts load plugins, each for its own contracts.** The contract and the loader are
+> host-neutral, which is why the base class is named for the Ed-Fi API platform rather than for one
+> host. The Data Management Service loads plugins for custom validation. The Configuration Service
+> loads them with the same loader for the secrets contracts in `EdFi.Api.Secrets`, a secret resolver
+> and a client secret hasher; see
+> [Configuration Service plugins](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/CONFIGURATION.md#configuration-service-plugins).
+> How to implement those contracts, and how to serve either host's configuration secrets from a
+> vault, is in the
+> [`EdFi.Api.Secrets` implementer guide](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/config/contracts/EdFi.DmsConfigurationService.Secrets/README.md),
+> which links back here for packaging, delivery, the allowlist and the trust model.
+> Each host has its own plugin root and its own allowlist, so allowlisting a plugin for one host
+> does not run it in the other.
+
+A plugin is a directory of assemblies you publish, compiled against this package. An operator drops
+that directory into the host's plugin root and names it in an allowlist. The host loads it into an
+isolated assembly load context and calls your contribution hooks. **No image is derived and nobody
+rebuilds the Ed-Fi API.**
+
+This guide is about packaging and delivering a plugin. For the custom-validation contract itself —
+what a validator receives and what it returns — see
+[CUSTOM-VALIDATION.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/dms/core/EdFi.DataManagementService.CustomValidation/CUSTOM-VALIDATION.md).
+
+The host assembly manifest attached to a Data Management Service release states which contract
+versions that release carries. That is what tells you which version of this package to build against
+for a given host.
+
+> **Links out of this readme point at the current documentation on `main`**, not at the
+> documentation for the package version you resolved. Where the two could differ — a rule this
+> guide states, a failure this guide names — the copy in the Data Management Service release you are
+> targeting is the authority.
 
 ## What is here
 
@@ -22,20 +40,505 @@ One public type, `EdFiApiPlugin`, an abstract class with:
 
 - `Name`, an abstract property that must return the name of the directory the plugin is deployed
   into. The host verifies this at load time and a mismatch is fatal.
-- `ContributeServices`, a virtual method the host calls before it builds its container. The base
-  implementation does nothing, so a plugin overrides only what it needs.
+- `ContributeConfiguration`, a virtual method the host calls to let the plugin add configuration
+  sources, before anything that reads a value a plugin can supply. Added in contract 1.1.0; see
+  [Contributing configuration](#contributing-configuration).
+- `ContributeServices`, a virtual method the host calls before it builds its container.
+
+Both base implementations do nothing, so a plugin overrides only what it needs. The host runs the
+two phases in that order: `ContributeConfiguration` on every loaded plugin in allowlist order, then,
+once every configuration hook has returned, `ContributeServices` on every loaded plugin in the same
+order. It calls each hook on every loaded plugin unconditionally. There is no interface to implement,
+no per-phase discovery, and no way for an allowlisted plugin to be silently skipped.
+
+## A plugin, end to end
+
+This compiles against this package alone. It is checked against the copy in this repository's
+consumer fixture, so it is a sample that has been compiled rather than one that was typed into a
+document.
+
+<!-- embed: eng/verification/PluginsConsumer/AcmePlugin.cs#sample -->
+```csharp
+using EdFi.Api.Plugins;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Acme.Dms.Sample;
+
+public sealed class AcmeSamplePlugin : EdFiApiPlugin
+{
+    public override string Name => "Acme.Dms.Sample";
+
+    public override void ContributeServices(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddSingleton(new AcmeEndpoint(configuration["Acme:Endpoint"] ?? "https://localhost"));
+    }
+}
+
+internal sealed class AcmeEndpoint(string address)
+{
+    public string Address { get; } = address;
+}
+```
+
+Only the plugin class has to be public; everything else it ships may stay internal, as
+`AcmeEndpoint` does.
+
+**The project settings are part of the sample**, because the host requires four names to be one
+string and the SDK defaults will not give you that on their own:
+
+```xml
+<PropertyGroup>
+  <TargetFramework>net10.0</TargetFramework>
+  <AssemblyName>Acme.Dms.Sample</AssemblyName>
+  <RootNamespace>Acme.Dms.Sample</RootNamespace>
+</PropertyGroup>
+```
+
+### What this sample is not
+
+**It is not a deployable plugin.** It demonstrates the contract: the class shape, the hook, and that
+both parameter types resolve for an outside project. A plugin that registers no declared plugin
+contract and contributes no configuration source has contributed nothing the host will ever call, and
+**startup fails naming it**, listing what it did register.
+
+What a real Data Management Service plugin registers is a declared contract. For custom validation
+that is `ICustomResourceValidator`, which needs a reference to `EdFi.Api.CustomValidation` as well as
+to this package:
+
+```csharp
+services.TryAddEnumerable(
+    ServiceDescriptor.Transient<ICustomResourceValidator, StudentIdentityValidator>());
+```
+
+That snippet is an illustration and is not mirrored into the consumer fixture, because that fixture
+exists to prove this package resolves and compiles on its own.
+
+## Contributing configuration
+
+A plugin that supplies configuration values, such as one that reads secrets from a vault, overrides
+`ContributeConfiguration`:
+
+```csharp
+public override void ContributeConfiguration(
+    IConfigurationBuilder configurationBuilder, IConfiguration bootstrapConfiguration)
+{
+    string vaultAddress = bootstrapConfiguration["Acme:VaultAddress"] ?? "https://localhost";
+    configurationBuilder.Add(new AcmeVaultConfigurationSource(vaultAddress));
+}
+```
+
+That snippet is an illustration and is not mirrored into the consumer fixture.
+
+**The two parameters.**
+
+- `configurationBuilder` is a builder the host hands your hook alone. It starts with the host's sources
+  as they stand when your hook runs, and a copy of the host's builder properties, so a relative file
+  path resolves as it would against the host. Set your own base path on it, as a plugin reading a
+  file shipped beside its assembly does, and that base path is where your relative paths resolve; the
+  host's own is left as it was. Add your sources to it. Adding a source loads nothing; the
+  host loads what you added, once, after your hook returns.
+
+  **The builder your sources are built with is not this one.** This builder starts with the host's
+  sources, but the host builds your additions with a separate builder holding only the sources your
+  hook added, in the order you added them, and a copy of this builder's properties. The host's
+  sources and every earlier plugin's are not in it. So a source you write yourself must not read
+  host or earlier-plugin settings from the builder passed to its `Build()` method: they are not
+  there. If it needs such a setting, read it from `bootstrapConfiguration` in your hook and pass it
+  to the source when you construct it, as the vault address above is.
+- `bootstrapConfiguration` is the configuration already layered at that moment, so you can read the
+  settings you need to build your sources, your own vault address being the usual case. It includes
+  what plugins earlier in the allowlist contributed. It is the host's live configuration, not a copy
+  or a read-only view, so nothing stops you writing through it, or casting it back to a builder and
+  adding a source there; do not. Either is outside what the contract supports and its effect on the
+  host is undefined. A source you add that way skips placement, so it can outrank the operator.
+
+**Contribution is additive only.** Add sources; never remove or reorder a source that was present
+when your hook began, including the one the host inserted for an earlier plugin. The host compares
+your builder's source list with its own by reference after your hook:
+
+- **What it rejects.** A pre-existing source that is gone, or that is no longer in the same order
+  relative to the others, fails startup, naming your plugin. So does an exception thrown out of the
+  hook, and so does an exception thrown when the host loads a source you added, such as a vault that
+  is unreachable.
+- **What it cannot see.** A change to a pre-existing source object's own properties, such as an
+  environment source's prefix or a JSON source's path, leaves the list looking unchanged, and so does
+  a write through `bootstrapConfiguration`. Neither is detected; both are trust assumptions the host
+  does not enforce, and both can silently change how the whole host resolves configuration. Do not do
+  either.
+
+**Where your sources end up is decided by the host, not by where you add them.** After your hook
+passes that check, the host builds the sources you added, once and in the order you added them, and
+inserts the result into its own configuration as one source, immediately below the unprefixed
+environment source ASP.NET Core's builder installs. Each of your sources loads once per startup,
+however many plugins follow yours. So:
+
+- every plugin source outranks the host's JSON files, including an empty value `appsettings.json`
+  ships for the same key;
+- every plugin source also outranks the `ASPNETCORE_` and `DOTNET_` prefixed environment sources,
+  which ASP.NET Core's builder installs below the JSON files, so an operator's prefixed variable
+  does not override a value your plugin supplies;
+- the operator override is the unprefixed environment source DMS appends and the command-line
+  arguments: those outrank every plugin source added through `ContributeConfiguration`;
+- among plugins, **allowlist order is contractual**: a plugin later in `Plugins:Allowed` outranks an
+  earlier one for any key both supply.
+
+**The host neither reloads nor disposes your sources.** A reload the host starts, through
+`IConfigurationRoot.Reload()`, does not reach them, and they are not disposed when the host's
+configuration is: they live as long as the process. A source that watches for its own changes, such
+as a JSON file added with `reloadOnChange: true`, still reloads itself and raises its change
+notification through the host's configuration. A source that must pick up new values on a schedule,
+such as a vault lease that expires, has to refresh itself; a source that holds a resource has to
+tolerate never being disposed.
+
+Some values are read before any configuration hook runs, so a plugin cannot supply them: the
+`Plugins` section itself, which decided that your plugin loads, and the host's startup status file
+path. The operator configuration guide lists them for each host.
+
+**A configuration source counts as a contribution.** A plugin that adds at least one configuration
+source satisfies the host's "contributed nothing" check even if it registers no service at all, which
+is the whole of what a pure configuration plugin does. A plugin that adds no source and registers no
+declared plugin contract still fails startup. So does a plugin that registered declared plugin
+contracts and had every one of them removed by a later plugin, whether or not it also added a
+source: the source does not stand in for registrations the plugin meant the host to call.
+
+`ContributeConfiguration` reaches configuration and nothing else. Anything you want to register
+belongs in `ContributeServices`, where the host can see it. `ContributeServices` receives the host's
+live configuration too, for reading; adding a source to it from there is the same unsupported
+bypass as adding one through `bootstrapConfiguration`.
+
+## Names: four of them, and they must all match
+
+Ordinally, and each mismatch is fatal on its own:
+
+1. the plugin **directory** name under the plugin root;
+2. the entry **assembly's file name**, `<Name>.dll`, which is how the host finds it;
+3. the loaded assembly's own **`AssemblyName`**, which the file name does not prove;
+4. **`EdFiApiPlugin.Name`**, what your class returns.
+
+The project settings above are what make 2 and 3 agree when your project file is not already named
+for the plugin. Every comparison is ordinal, and the host holds to that on **every** filesystem: it
+reads each name back from the directory instead of asking whether a path exists, so
+`Acme.Dms.Sample` and `acme.dms.sample` are two different names on a case-insensitive developer
+machine exactly as they are in the released Linux image. A mis-cased directory, entry assembly or
+`.deps.json` is a named startup failure wherever you run it, not a surprise at deployment.
+
+## Discovery
+
+The host resolves `<PluginRoot>/<Name>/<Name>.dll` and reflects over its **public exported types**
+for an `EdFiApiPlugin` subclass. The entry assembly must expose exactly one **public, non-abstract,
+non-generic** subclass with a **public parameterless constructor**.
+
+- Zero is fatal: the operator allowlisted a directory that contributes nothing. An `internal` class
+  is invisible here, and so is one whose only constructor takes arguments.
+- More than one is fatal: choosing between them would be arbitrary.
+
+Only the entry assembly is reflected over. Nothing else in your directory is scanned.
+
+## Publishing
+
+Publish **framework-dependent**, into a directory named for the plugin:
+
+```shell
+dotnet publish --no-self-contained -o out/Acme.Dms.Sample
+```
+
+That produces `Acme.Dms.Sample.dll`, `Acme.Dms.Sample.deps.json`, and a flattened copy of **every
+package dependency in your closure**, including ones the host also carries. Shared-framework
+assemblies are the exception and are not copied: a framework-dependent publish leaves those to the
+runtime. All three outputs matter:
+
+- The **`.deps.json` is required.** A plugin directory without one is fatal, because the plugin's
+  private dependencies would not resolve and the failure would land on a request rather than at
+  startup.
+- A **self-contained publish is fatal.** It writes a `runtimepack` library into the `.deps.json`,
+  which the host refuses by name. A RID-specific *framework-dependent* publish
+  (`-r <rid> --no-self-contained`) is fine and is how a plugin ships native assets.
+- Flattening the dependency graph into a runnable directory is your job, not the operator's. Nothing
+  on the deploy path runs a NuGet restore.
+
+**Ship the whole publish output, and do not prune it against the host assembly manifest.**
+`dotnet publish` does not inspect the host image and could not subtract its assemblies if it tried.
+Nor should it: what decides which copy runs is **host-first resolution at load time**, not what is on
+disk. If the host carries an assembly, the host's copy is served and yours sits unused; if it does
+not, yours is loaded. Shipping your own copy of something like `Microsoft.Extensions.Primitives` is
+normal and correct, and deleting files because the manifest lists them breaks your plugin on any host
+that turns out not to carry them.
+
+## Packaging
+
+A plugin package is **asset-only**. It carries the published directory under
+`contentFiles/any/any/<Name>/` and contains no `lib/` or `ref/` entries:
+
+```text
+Acme.Dms.Sample.1.2.0.nupkg
+└── contentFiles/any/any/Acme.Dms.Sample/
+    ├── Acme.Dms.Sample.dll
+    ├── Acme.Dms.Sample.deps.json
+    └── ...every package dependency the publish produced
+```
+
+A conventional library package declares dependencies and expects a restore to resolve them, and
+nothing on the deploy path runs one. The package is transport for a directory that was already
+proven to run, and `unzip` is all it takes to get it back out.
+
+## Delivery
+
+You publish the package; the **operator** gets it into the plugin root and names it in
+`Plugins:Allowed`. There are two recipes — a pre-populated read-only mount, and a one-shot fetch step
+that verifies a digest you publish — and both are documented for operators in
+[OPERATIONS.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/OPERATIONS.md#plugins).
+The allowlist itself is in
+[CONFIGURATION.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/CONFIGURATION.md#plugins).
+
+Publish the SHA-256 of your `.nupkg` bytes beside the package. That is the value an operator pins,
+and the fetch recipe refuses to extract without it.
+
+## Compatibility
+
+### What you compile against
+
+The compatibility surface is **the contract packages plus the host assembly manifest** for the
+Data Management Service version you are targeting. Each release publishes a host assembly manifest
+as a release asset beside the SBOM: the name and assembly version of every managed assembly the host
+can serve, with the contract versions that release carries at the top.
+
+It exists because of how assemblies resolve. Each plugin gets its own load context, and resolution is
+**host-first**: any assembly the host itself carries is served from the host, and your own copy is
+used only for assemblies the host does not have. So the host's whole assembly closure is part of what
+your plugin must be compatible with, whether or not an assembly appears in a hook signature — and no
+contract package announces that closure. The manifest is what lets you see it before you deploy.
+
+**A version the host cannot serve is fatal, not a fallback.** If your plugin declares a *higher*
+version of an assembly the host also carries, it is refused by name rather than quietly given its own
+copy, because two copies of one assembly means two identities for every type they exchange.
+
+### Two limits on that check, both real
+
+**For `Microsoft.Extensions.*`, it fires on major skew and not on minor.** The manifest lists
+`AssemblyVersion`s and the host compares `AssemblyVersion`s, and those packages hold that version
+stable across a major version, so a plugin built against a newer *minor* of one of them loads without
+complaint. Do not read the manifest as a minor-level compatibility check for them.
+
+That is a property of how those assemblies version themselves, not a rule about every comparison the
+host makes. **The contract packages are the counterexample**: `EdFi.Api.Plugins` moves its
+`AssemblyVersion` whenever its surface moves, which is at the minor, so a plugin compiled against
+contract 1.1, which added `ContributeConfiguration`, *is* refused by a host carrying 1.0, by name.
+Read each row of the manifest with the versioning policy of the package it came from in mind.
+
+**When it fires depends on how *you* obtained the assembly, not on which section of the manifest
+lists it.** Skew on anything your own `.deps.json` declares a runtime entry for is caught at load,
+before your plugin is even constructed. An assembly you reach **only through a framework reference**
+is declared nowhere in a framework-dependent `.deps.json`, so skew on that one is caught later, at
+first use.
+
+Those are not the same list, and the manifest's shared-framework section is not a shortcut to
+either. `Microsoft.Extensions.Configuration.Abstractions` and
+`Microsoft.Extensions.DependencyInjection.Abstractions` sit in that section *and* are ordinary
+`PackageReference`s for a plugin compiling against the hook signature, which is how the consumer
+fixture takes them. A `PackageReference` puts a runtime entry in your `.deps.json`, so those two are
+checked at load despite where the manifest lists them. Read a manifest section as **where the host
+gets an assembly**, never as when your skew is caught.
+
+That distinction has a cost worth knowing. If the first use falls inside startup, you get the same
+named failure. If it falls on a request — because the assembly is only touched on a request path —
+there is no loader frame above it to turn the runtime's error into a readable one, so it surfaces as
+a `FileLoadException` inside the request and repeats on **every** request that reaches it, rather
+than stopping the process.
+
+### Older plugin, newer host
+
+An older plugin runs on a newer host **by construction**, and that phrase is used for the contract
+and for nothing wider. `EdFiApiPlugin` is a base class whose members are virtuals with no-op bodies,
+and the compatibility policy for this package is **additive-only for the life of the package**: new
+virtual members with no-op bodies, never a new abstract member, never a signature change, never a
+removal. Adding a member that way is binary-compatible with every plugin already published: a
+plugin built against 1.0.0, which has no `ContributeConfiguration`, runs unchanged on a host carrying
+1.1.0, and its configuration hook is the base no-op.
+
+The same policy binds every interface a plugin implements, including `ICustomResourceValidator`: a
+member added after first publication carries a default implementation, and a member that cannot be
+defaulted is a **new package id** rather than a major version bump.
+
+The reverse direction is **not** supported and is not silently attempted. A plugin compiled against a
+newer contract than the host carries is refused at load, by name — "requires `EdFi.Api.Plugins` >= X,
+host carries Y" — rather than failing later with a `MissingMethodException` inside a hook.
+
+The compatibility surface as a whole carries no by-construction guarantee. Only the contract does.
+
+## Trust
+
+**A loaded plugin runs with full process trust.** It can read every connection string, every
+decrypted secret, every request body, and every token. The isolated load context isolates **assembly
+identity**; it is **not** a security boundary, and nothing constrains what your code does once it is
+loaded.
+
+Operators are told the same thing, in the same words, in
+[OPERATIONS.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/OPERATIONS.md#plugins).
+They are also told that the plugin root must never be writable by the runtime identity, because write
+access to it is equivalent to code execution as the host process. Treat your published bytes
+accordingly: publish a digest, and keep your build lane as trustworthy as the deployment that trusts
+it.
+
+## Do not name an assembly with an Ed-Fi host prefix
+
+**No assembly you author may be named `EdFi.DataManagementService.*` or
+`EdFi.DmsConfigurationService.*`.**
+
+The host decides what is host-owned by assembly name and by nothing else, so a type declared in an
+assembly you published as `EdFi.DataManagementService.Acme` is treated as the host's. Your plugin then
+fails the host-owned displacement check on its **own** types. Read this as a naming rule, not as an
+inexplicable startup failure.
+
+The rule covers the assemblies you write, not the ones you redistribute unchanged. A publish output
+carrying `EdFi.DataManagementService.CustomValidation.dll` is correct and required: that is the
+assembly inside the `EdFi.Api.CustomValidation` package, whose package id and assembly name
+deliberately differ, and it is where `ICustomResourceValidator` is declared. Ship the whole publish
+output as [Publishing](#publishing) says. The displacement check tests the declared plugin contracts
+first and only then applies the name rule, so registering that contract is admitted; what the rule
+refuses is a host-prefixed type of your own.
+
+## What you may register, and how
+
+### May
+
+- Your own types, freely.
+- `Microsoft.Extensions.*` types, freely.
+- The declared plugin contracts, in the form their cardinality requires — see below.
+- Additional logging **providers**: `ILoggingBuilder.AddSerilog` and its equivalents are fine.
+- Removal or replacement of a descriptor **you** added, which is routine registration work, and of a
+  pre-existing framework or third-party descriptor, which is permitted and recorded in the load
+  inventory.
+
+### May not
+
+- Register a host-owned service type that is not a declared plugin contract. Fatal, naming you and
+  the service type.
+- Remove, replace, or overwrite any host-owned descriptor that existed before your hook ran. Fatal.
+  Plugins contribute registrations; they do not edit the host's.
+- Remove, replace, or overwrite the host's logging registrations — `ILoggerProvider`,
+  `ILoggerFactory`, `ILogger`, or `ILogger<>`. **Fatal.** `logging.ClearProviders()` is exactly a
+  removal of `ILoggerProvider` and lands here. The host wires its logging before your hook runs, so
+  clearing providers would silence the service *and* the inventory record of your plugin doing it.
+  Add a provider instead.
+- **Add** an unkeyed `ILoggerFactory`, non-generic `ILogger`, or `ILogger<>` registration, open or
+  closed. **Fatal**, on `Add`, on `Insert`, and through the indexer alike. Those services are
+  resolved singly, so the last registration wins and adding one displaces the host's logging just as
+  surely as removing one. `IServiceCollection.AddSerilog` can register an `ILoggerFactory` and is
+  therefore refused, while `ILoggingBuilder.AddSerilog` adds a provider and is permitted. Keyed
+  logging registrations are unaffected.
+- Register a declared plugin contract under a wildcard service key. Fatal: enumerable resolution
+  cannot reach a wildcard registration, so the host's startup probe could not cover it.
+
+### The registration form per cardinality is a rule, not a suggestion
+
+The host detects conflicting claims, and its detection depends on the form you use.
+
+- A **fan-in** contract — one where every registered implementation runs — is registered with
+  `TryAddEnumerable`.
+- A **replace** contract — one with a single claimant — is registered with a plain **`Add`**, never
+  with a `TryAdd`. A replace contract has one claimant, so there is nothing to try.
+
+Ignoring that rule fails in two shapes, and the second is the reason it is a rule:
+
+1. A `TryAdd` that declines, when your plugin is left with no declared contract registered and
+   added no configuration source, leaves you registering nothing the host will call, and **startup
+   fails naming you**, even if you also registered helper services of your own. Annoying, but loud.
+2. A `TryAdd` that declines in a plugin that *also* registered something declared, or added a
+   configuration source in `ContributeConfiguration`, is **not detected at all**. Your plugin loads,
+   startup succeeds, and the replacement simply never happens.
+
+There is no startup failure waiting to teach you the second case. Follow the rule instead.
+
+## When something goes wrong
+
+An allowlisted plugin that does not load is **fatal**: the host does not start. That is deliberate —
+a validation plugin that silently failed to load would mean business rules stop being enforced while
+writes keep succeeding.
+
+Two places carry the answer, and they answer different questions.
+
+- **Why startup failed** is in the host's startup status file, a JSON document naming the bootstrap
+  phase, the exception type, and the message. During loading the host also writes to standard error,
+  because plugin loading runs before the logging pipeline exists.
+- **What actually loaded** is in the log, as one `Plugin inventory` event per plugin listing the
+  files you declared, the service types you registered, the descriptors you removed, and the
+  host-first substitutions recorded by the time the event was written. That last list is a startup
+  snapshot, emitted before the host's startup tasks run, and it carries a resolution only where the
+  version the host served differs from the version your manifest declared. Read it as evidence that
+  a substitution happened, never as evidence that one did not: an assembly missing from it may still
+  have been served from the host. The host assembly manifest is how you avoid one beforehand.
+
+The full catalogue of failures, grouped by what an operator does about each, is in
+[OPERATIONS.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/OPERATIONS.md#plugins).
 
 ## Versioning
 
 This package carries its own semantic version, independent of the Data Management Service release
 version, because the host compares contract assembly versions when it decides whether a plugin can
-run. The version moves when the public surface moves, and only then.
+run. Tying it to the release version would have an 8.3 host refuse a plugin built against an
+identical 8.4 contract, naming two versions that differ in nothing you could act on.
 
-The compatibility policy is additive-only for the life of the package: new virtual members with no-op
-bodies, never a new abstract member, never a signature change, never a removal. A plugin compiled
-against an older version of this contract runs on a newer host without being rebuilt. A plugin
-compiled against a newer version than the host carries is refused at load, by name, rather than
-failing later inside a hook.
+The version moves when **what you compile and resolve against** moves, which is three things rather
+than one:
+
+- the assembly's public and protected surface, read from its metadata: a type or member added,
+  removed or renamed, a signature, parameter name, default value, constant or generic constraint
+  changed;
+- the XML documentation that ships beside the assembly, because this contract's load-bearing rules
+  live only in `///` comments and a rule rewritten there is a changed contract your IDE shows you;
+- the package's declared dependencies, because they decide what your project inherits without any
+  signature changing.
+
+The publish lane enforces that. It compares those three against the version already on the feed and
+refuses to republish a version whose contract differs, naming which of the three changed. A changed
+readme is not one of them: prose can be fixed without a bump. A version that is on the feed is never
+overwritten: an unchanged contract at that version is skipped and a changed one is refused, so the
+bytes you restore for a version are the bytes everyone restores for it.
+
+A breaking change to this contract is not a version bump; it is a **new package id**, with a new base
+class the host discovers alongside the old one for as long as both are supported.
+
+## Getting the package
+
+`EdFi.Api.Plugins`, `EdFi.Api.CustomValidation` and `EdFi.Api.Secrets` are published to the Ed-Fi
+Azure Artifacts feed:
+
+```text
+https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json
+```
+
+```xml
+<PackageReference Include="EdFi.Api.Plugins" Version="[1.1.0]" />
+```
+
+`EdFi.Api.CustomValidation` carries its own version in the same way; add it only if your plugin
+registers a validator. Each contract declares its version in its own source -
+`src/plugins/Directory.Build.props` for this one, its project file for each of the others - so their
+numbers move independently of each other and of either host's release.
+
+Pin the version exactly, in brackets, as above. A bare version is a minimum rather than a pin, and
+the host assembly manifest attached to the Data Management Service release you are targeting states
+which contract versions that release carries. Build against 1.1.0. It is the version that adds
+`ContributeConfiguration`. 1.0.0 is on the same feed and pre-release hosts carry it, so a plugin
+may already be pinned to `[1.0.0]`; that plugin runs unchanged on a host carrying 1.1.0, as
+[Older plugin, newer host](#older-plugin-newer-host) describes, but it cannot contribute
+configuration until it is rebuilt against 1.1.0.
+
+A Configuration Service plugin that resolves secrets or replaces the client secret hasher also
+references `EdFi.Api.Secrets`, on the same feed:
+
+```xml
+<PackageReference Include="EdFi.Api.Plugins" Version="[1.1.0]" />
+<PackageReference Include="EdFi.Api.Secrets" Version="[1.0.0]" />
+```
+
+Its version is declared in its own project file,
+`src/config/contracts/EdFi.DmsConfigurationService.Secrets/EdFi.DmsConfigurationService.Secrets.csproj`,
+and moves independently of the Configuration Service release. Its
+[implementer guide](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/config/contracts/EdFi.DmsConfigurationService.Secrets/README.md)
+is the package readme. Its worked examples need `EdFi.Api.Plugins` 1.1.0 or later, because the
+vault configuration sources they show are contributed through `ContributeConfiguration`.
 
 ## License
 

@@ -86,10 +86,15 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
         CreateProfileSchemasAndRewriteOperations(specification, profileDefinition);
 
         // Step 5: Remove base schemas that now have suffixed versions, unless Change Query
-        // responses still reference the unprofiled schema graph.
-        HashSet<string> schemasReferencedByChangeQueries =
-            GetSchemaNamesReachableFromRetainedChangeQueryPaths(specification, retainedChangeQueryPathKeys);
-        RemoveBaseSchemasWithSuffixedVersions(specification, schemasReferencedByChangeQueries);
+        // responses still reference the unprofiled schema graph, or a retained component response
+        // points at the base schema. A retained response references the base name, never a suffixed
+        // one, so replacing the base out from under it would leave it unresolvable.
+        HashSet<string> schemasToPreserve = GetSchemaNamesReachableFromRetainedChangeQueryPaths(
+            specification,
+            retainedChangeQueryPathKeys
+        );
+        schemasToPreserve.UnionWith(GetSchemaNamesReachableFromRetainedResponses(specification));
+        RemoveBaseSchemasWithSuffixedVersions(specification, schemasToPreserve);
 
         // Step 6: Final cleanup - remove any schemas orphaned after profile schema creation
         RemoveUnusedSchemas(specification);
@@ -528,6 +533,32 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
         }
 
         return changeQueryPathKeys;
+    }
+
+    /// <summary>
+    /// The schema names reachable from the entries left in <c>components.responses</c>.
+    /// </summary>
+    /// <remarks>
+    /// Responses are never pruned, so an entry can outlive every operation that referenced it and still
+    /// name a base schema. Preserving what those entries reach is what keeps a retained response
+    /// resolvable once base schemas are replaced by their profile-suffixed versions.
+    /// </remarks>
+    private static HashSet<string> GetSchemaNamesReachableFromRetainedResponses(JsonNode specification)
+    {
+        var schemaNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (
+            specification["components"] is not JsonObject components
+            || components["schemas"] is not JsonObject schemas
+            || components["responses"] is not JsonObject responses
+        )
+        {
+            return schemaNames;
+        }
+
+        CollectReachableSchemaNames(responses, components, schemas, schemaNames);
+
+        return schemaNames;
     }
 
     private static HashSet<string> GetSchemaNamesReachableFromRetainedChangeQueryPaths(
@@ -991,6 +1022,16 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
         if (specification["paths"] is JsonObject paths)
         {
             CollectReachableSchemaNames(paths, components, schemas, keep);
+        }
+
+        // Seed references from the retained responses as well. There is no response-pruning step, so a
+        // components.responses entry outlives every operation that referenced it; removing the schema it
+        // points at would leave that retained entry unresolvable in the served document. Seeded from
+        // responses only: request bodies and parameters are deliberately not seeded, because a schema
+        // reachable only from those is write-side or off-profile content this filter is meant to drop.
+        if (components["responses"] is JsonObject retainedResponses)
+        {
+            CollectReachableSchemaNames(retainedResponses, components, schemas, keep);
         }
 
         // Traverse schema graph to include transitive dependencies (handled during enqueue)

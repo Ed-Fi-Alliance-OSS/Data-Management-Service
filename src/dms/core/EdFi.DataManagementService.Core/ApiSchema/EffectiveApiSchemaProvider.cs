@@ -251,9 +251,9 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
                 // _ext at $.properties.addresses.items)
                 _logger.LogDebug(
                     "Skipping duplicate key '{Key}' in '{NodeKey}' for resource '{ResourceName}' during extension merge — will be handled by common extension overrides",
-                    LoggingSanitizer.SanitizeForLogging(sourceObject.Key),
-                    LoggingSanitizer.SanitizeForLogging(nodeKey),
-                    LoggingSanitizer.SanitizeForLogging(resourceName)
+                    LoggingSanitizer.SanitizeInternalValueForLogging(sourceObject.Key),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(nodeKey),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(resourceName)
                 );
             }
             else
@@ -551,8 +551,8 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
 
                     _logger.LogDebug(
                         "Applied common extension override at '{JsonPath}' for resource '{ResourceName}'",
-                        LoggingSanitizer.SanitizeForLogging(jsonPath),
-                        LoggingSanitizer.SanitizeForLogging(resourceName)
+                        LoggingSanitizer.SanitizeInternalValueForLogging(jsonPath),
+                        LoggingSanitizer.SanitizeInternalValueForLogging(resourceName)
                     );
                 }
             }

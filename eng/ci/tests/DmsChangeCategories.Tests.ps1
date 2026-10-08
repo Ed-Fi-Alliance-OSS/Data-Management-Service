@@ -6,7 +6,7 @@
 #Requires -Version 7
 
 # Behavioral specs for the On DMS Pull Request change classifier. These import the real module and
-# call it; nothing here reads workflow or script source text. The classifier decides which CI lanes
+# call it; document coverage also reads the checked-input inventory. The classifier decides which CI lanes
 # run, and until it was extracted from an inline bash step there was no way to exercise it outside a
 # CI run.
 
@@ -317,42 +317,6 @@ Describe "DMS pull request change classifier" {
         }
     }
 
-    Context "Draft reporting" {
-        It "reports draft for a draft pull request" {
-            (Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @("src/dms/x.cs") -IsDraft).draft |
-                Should -BeTrue
-        }
-
-        It "does not report draft for a ready pull request" {
-            (Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @("src/dms/x.cs")).draft |
-                Should -BeFalse
-        }
-
-        It "never reports draft for <EventName>, whatever the payload carried" -ForEach @(
-            @{ EventName = "merge_group" }
-            @{ EventName = "workflow_dispatch" }
-        ) {
-            # A draft is a statement about a pull request. If a stale payload value ever reached
-            # another event, gating the merge queue on it would skip the full suite it exists to run.
-            (Get-DmsChangeCategory -EventName $EventName -ChangedFile @("src/dms/x.cs") -IsDraft).draft |
-                Should -BeFalse
-        }
-
-        It "still reports draft when the diff could not be produced" {
-            # Draft state does not depend on the file list, so the fail-open path must not lose it.
-            (Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @() -DiffUnavailable -IsDraft).draft |
-                Should -BeTrue
-        }
-
-        It "reports draft alongside, not instead of, the file classification" {
-            $result = Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @("src/dms/Dockerfile") -IsDraft
-
-            $result.draft | Should -BeTrue
-            $result.dms_relevant | Should -BeTrue
-            $result.fresh_build_required | Should -BeTrue
-        }
-    }
-
     Context "merge_group never narrows" {
         It "reports DMS-relevant even for a docs-only merge group" {
             $result = Get-DmsChangeCategory -EventName "merge_group" -ChangedFile @("docs/README.md")
@@ -477,6 +441,128 @@ Describe "DMS pull request change classifier" {
             $result.fresh_build_required | Should -BeFalse
         }
     }
+
+    Context "Checked CDC documents select Contract without broadening other flags" {
+        BeforeDiscovery {
+            $linkTestsPath = Join-Path $PSScriptRoot '../../../src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookLinkTests.cs'
+            $source = Get-Content -LiteralPath $linkTestsPath -Raw
+            $inventory = [regex]::Match($source, '(?s)string\[\] Documents =\s*\[(.*?)\];')
+            if (-not $inventory.Success) {
+                throw 'Could not read CdcRunbookLinkTests.Documents; keep the checked-input guard aligned.'
+            }
+            $checkedDocument = @([regex]::Matches($inventory.Groups[1].Value, '"([^"]+)"') | ForEach-Object {
+                @{ Path = $_.Groups[1].Value }
+            })
+            if ($checkedDocument.Count -eq 0) {
+                throw 'CdcRunbookLinkTests.Documents must not be empty.'
+            }
+        }
+
+        It "selects Contract for the checked input <Path> alone and preserves other flags" -ForEach $checkedDocument {
+            $result = Get-DmsChangeCategory -EventName 'pull_request' -ChangedFile @($Path)
+            $result.cdc_relevant | Should -BeTrue
+
+            # An unchecked sibling follows the existing directory rules, including broader flags
+            # already set for src/ and eng/. The new document rule may change only cdc_relevant.
+            $sibling = $Path.Substring(0, $Path.LastIndexOf('/') + 1) + 'unchecked-document.md'
+            $baseline = Get-DmsChangeCategory -EventName 'pull_request' -ChangedFile @($sibling)
+            foreach ($flag in $baseline.PSObject.Properties.Name | Where-Object { $_ -ne 'cdc_relevant' }) {
+                $result.$flag | Should -Be $baseline.$flag -Because "$Path must preserve $flag"
+            }
+        }
+
+        It "selects only Contract for the linked design target <Path>" -ForEach @(
+            @{ Path = 'reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md' }
+            @{ Path = 'reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/data-model.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/ddl-generation.md' }
+        ) {
+            $result = Get-DmsChangeCategory -EventName 'pull_request' -ChangedFile @($Path)
+            $result.cdc_relevant | Should -BeTrue
+            foreach ($flag in $result.PSObject.Properties.Name | Where-Object { $_ -ne 'cdc_relevant' }) {
+                $result.$flag | Should -BeFalse -Because "$Path must not select $flag"
+            }
+        }
+
+        It "does not promote unrelated or near-match document <Path>" -ForEach @(
+            @{ Path = 'docs/README.md' }
+            @{ Path = 'reference/cdc-documentation/notes.md' }
+            @{ Path = 'reference/document-cache-documentation/notes.md' }
+            @{ Path = 'reference/cdc-documentation/operations-runbook.md.bak' }
+            @{ Path = 'reference/cdc-documentation/Operations-runbook.md' }
+            @{ Path = 'reference/cdc-documentation-extra/operations-runbook.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/overview.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/cdc-extra/cdc-streaming.md' }
+            @{ Path = 'reference/design/backend-redesign/design-docs/data-model.md.bak' }
+            @{ Path = 'reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md.bak' }
+        ) {
+            $result = Get-DmsChangeCategory -EventName 'pull_request' -ChangedFile @($Path)
+            $result.cdc_relevant | Should -BeFalse
+            $result.dms_relevant | Should -BeFalse
+            $result.fresh_build_required | Should -BeFalse
+            $result.backend_mssql_relevant | Should -BeFalse
+            $result.dms_api_relevant | Should -BeFalse
+            $result.schematools_relevant | Should -BeFalse
+        }
+    }
+
+    Context "The document-embed check gets its own relevance flag" {
+        BeforeAll {
+            $script:embedChecks = Join-Path $script:repoRoot "eng/verification/Invoke-DocumentEmbedChecks.ps1"
+        }
+
+        It "routes <Path> to the embed check" -ForEach @(
+            @{ Path = "docs/OPERATIONS.md" }
+            @{ Path = "eng/docker-compose/plugins-dms.yml" }
+            @{ Path = "eng/verification/Assert-DocumentEmbeds.ps1" }
+            @{ Path = "eng/verification/PluginsConsumer/AcmePlugin.cs" }
+            @{ Path = "src/plugins/EdFi.Api.Plugins/PLUGINS.md" }
+            @{ Path = "eng/fixtures/plugins/Acme.UniqueIdValidation/UniqueIdValidator.cs" }
+            @{ Path = "src/config/contracts/EdFi.DmsConfigurationService.Secrets/README.md" }
+        ) {
+            (Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @($Path)).document_embeds_relevant |
+                Should -BeTrue
+        }
+
+        It "reports docs/OPERATIONS.md embed-relevant while it stays DMS-irrelevant" {
+            # The whole reason for a separate flag. dms_relevant excludes docs/, so a pull request
+            # that edits only a documented Compose recipe reaches no DMS lane at all, and the
+            # equality assertion it should fail would not run until the merge queue.
+            $result = Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @("docs/OPERATIONS.md")
+
+            $result.document_embeds_relevant | Should -BeTrue
+            $result.dms_relevant | Should -BeFalse
+        }
+
+        It "does not route <Path> to the embed check" -ForEach @(
+            @{ Path = "README.md" }
+            @{ Path = "src/dms/core/EdFi.DataManagementService.Core/Something.cs" }
+            @{ Path = "eng/smoke_test/Invoke-NonDestructiveApiTests.ps1" }
+            # Prefix matching must not spill past the directory boundary.
+            @{ Path = "docsite/index.md" }
+        ) {
+            (Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @($Path)).document_embeds_relevant |
+                Should -BeFalse
+        }
+
+        It "reports the check relevant for every path its runner reads" {
+            # The guard that keeps the two halves together, and the one no test of either half alone
+            # could be. A document added to the runner's table but landing outside the prefixes above
+            # would leave the check gated behind a lane that a pull request changing that document
+            # never reaches, which is a silent hole rather than a failure.
+            foreach ($path in @(& $script:embedChecks -ListPath)) {
+                (Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @($path)).document_embeds_relevant |
+                    Should -BeTrue -Because "'$path' is read by the document-embed check"
+            }
+        }
+
+        It "never narrows for merge_group" {
+            (Get-DmsChangeCategory -EventName "merge_group" -ChangedFile @("README.md")).document_embeds_relevant |
+                Should -BeTrue
+        }
+    }
 }
 
 Describe "Write-DmsChangeCategories output contract" {
@@ -521,6 +607,33 @@ Describe "Write-DmsChangeCategories output contract" {
         $written | Should -Contain "dms_relevant=false"
     }
 
+    It "emits the document-embed flag the embed check gates on" {
+        Set-Content -LiteralPath $script:changedFilePath -Value "docs/OPERATIONS.md"
+
+        & $script:writeScript `
+            -EventName "pull_request" `
+            -ChangedFilePath $script:changedFilePath `
+            -OutputPath $script:outputPath | Out-Null
+
+        $written = @(Get-Content -LiteralPath $script:outputPath)
+
+        # Both halves matter: an output declared but never true would skip the job forever, and a
+        # docs-only pull request is exactly the case where dms_relevant cannot stand in for it.
+        $written | Should -Contain "document_embeds_relevant=true"
+        $written | Should -Contain "dms_relevant=false"
+    }
+
+    It "writes the document-embed flag false when nothing reaches it" {
+        Set-Content -LiteralPath $script:changedFilePath -Value "README.md"
+
+        & $script:writeScript `
+            -EventName "pull_request" `
+            -ChangedFilePath $script:changedFilePath `
+            -OutputPath $script:outputPath | Out-Null
+
+        @(Get-Content -LiteralPath $script:outputPath) | Should -Contain "document_embeds_relevant=false"
+    }
+
     It "treats a missing changed-file list as an empty list" {
         # workflow_dispatch never computes a diff, so the file the workflow names does not exist.
         & $script:writeScript `
@@ -532,31 +645,6 @@ Describe "Write-DmsChangeCategories output contract" {
 
         $written | Should -Contain "fresh_build_required=true"
         $written | Should -Contain "dms_relevant=true"
-    }
-
-    It "emits the draft flag the workflow gates on" {
-        Set-Content -LiteralPath $script:changedFilePath -Value "src/dms/x.cs"
-
-        & $script:writeScript `
-            -EventName "pull_request" `
-            -ChangedFilePath $script:changedFilePath `
-            -IsDraft `
-            -OutputPath $script:outputPath | Out-Null
-
-        @(Get-Content -LiteralPath $script:outputPath) | Should -Contain "draft=true"
-    }
-
-    It "emits draft=false rather than omitting it on a ready pull request" {
-        # An omitted output evaluates to the empty string, which would silently satisfy
-        # `draft != 'true'` today and hide a wiring mistake later.
-        Set-Content -LiteralPath $script:changedFilePath -Value "src/dms/x.cs"
-
-        & $script:writeScript `
-            -EventName "pull_request" `
-            -ChangedFilePath $script:changedFilePath `
-            -OutputPath $script:outputPath | Out-Null
-
-        @(Get-Content -LiteralPath $script:outputPath) | Should -Contain "draft=false"
     }
 
     It "emits every promoted category flag the workflow gates on" {

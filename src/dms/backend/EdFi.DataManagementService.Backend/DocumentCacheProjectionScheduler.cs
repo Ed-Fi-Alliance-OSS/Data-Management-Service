@@ -1346,7 +1346,7 @@ public sealed class DocumentCacheProjectionScheduler(
             logger.LogError(
                 exception,
                 "DocumentCache projection scheduler page dispatch failed for target {TargetKey}; peer targets continue.",
-                LoggingSanitizer.SanitizeForLogging(context.TargetKey.ToString())
+                LoggingSanitizer.SanitizeInternalValueForLogging(context.TargetKey.ToString())
             );
             ObserveIdleOrBackoff(context, completedAt);
             return RecordDispatchResult(

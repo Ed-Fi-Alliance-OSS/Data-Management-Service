@@ -8,6 +8,7 @@
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     </PropertyGroup>
     <ItemGroup>
+        <PackageReference Include="Confluent.Kafka" />
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="FakeItEasy" />
         <PackageReference Include="Microsoft.Data.SqlClient" />
@@ -35,7 +36,10 @@
         <ProjectReference Include="..\..\clis\EdFi.DataManagementService.DocumentCacheAdmin\EdFi.DataManagementService.DocumentCacheAdmin.csproj" />
     </ItemGroup>
     <ItemGroup>
-        <Compile Include="..\..\clis\EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration\DocumentCacheAdminCliIntegrationHarness.cs" Link="DocumentCacheAdminCliIntegrationHarness.cs" />
+        <Compile
+            Include="..\..\clis\EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration\DocumentCacheAdminCliIntegrationHarness.cs"
+            Link="DocumentCacheAdminCliIntegrationHarness.cs"
+        />
     </ItemGroup>
     <ItemGroup>
         <Compile
@@ -49,7 +53,10 @@
     </ItemGroup>
     <!-- The governed cleanup qualification invokes the production CLI through the wrapper's native tool boundary. -->
     <ItemGroup>
-        <ProjectReference Include="../../clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj" ReferenceOutputAssembly="false" />
+        <ProjectReference
+            Include="../../clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
+            ReferenceOutputAssembly="false"
+        />
     </ItemGroup>
     <!-- Compile the production provisioning owners into this test assembly; no CLI executable dependency. -->
     <ItemGroup>
@@ -75,11 +82,60 @@
         />
     </ItemGroup>
     <ItemGroup>
-        <None Include="../Fixtures/document-cache/materialized-documents/descriptor-school-type/expected-cache-row.json" Link="Fixtures/record-size-cache-row.json" CopyToOutputDirectory="PreserveNewest" />
+        <None
+            Include="../Fixtures/document-cache/materialized-documents/descriptor-school-type/expected-cache-row.json"
+            Link="Fixtures/record-size-cache-row.json"
+            CopyToOutputDirectory="PreserveNewest"
+        />
         <None
             Include="../../clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/Fixtures/minimal-api-schema.json"
             Link="Fixtures/minimal-api-schema.json"
             CopyToOutputDirectory="PreserveNewest"
+        />
+    </ItemGroup>
+    <ItemGroup>
+        <Compile
+            Include="../../clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookExamples.cs"
+            Link="Shared/CdcRunbookExamples.cs"
+        />
+        <Compile
+            Include="../../clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/CdcRunbookArguments.cs"
+            Link="Shared/CdcRunbookArguments.cs"
+        />
+    </ItemGroup>
+    <Import Project="../Fixtures/cdc/message-contract/MessageContractFixtures.props" />
+    <ItemGroup>
+        <None
+            Update="MessageContractRunner/**/*"
+            CopyToOutputDirectory="PreserveNewest"
+            CopyToPublishDirectory="PreserveNewest"
+        />
+    </ItemGroup>
+    <ItemGroup>
+        <!-- Share test-only fixture helpers without referencing another test assembly. -->
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractTraceabilityTests.cs"
+            Link="MessageContractTraceabilityTests.cs"
+        />
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractAdmissionFixture.cs"
+            Link="MessageContractAdmissionFixture.cs"
+        />
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractFixtureCatalog.cs"
+            Link="MessageContractFixtureCatalog.cs"
+        />
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumer.cs"
+            Link="MessageContractConsumer.cs"
+        />
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractConsumerBootstrap.cs"
+            Link="MessageContractConsumerBootstrap.cs"
+        />
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractJson.cs"
+            Link="MessageContractJson.cs"
         />
     </ItemGroup>
 </Project>

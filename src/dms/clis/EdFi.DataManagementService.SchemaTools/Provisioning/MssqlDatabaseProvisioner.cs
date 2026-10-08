@@ -93,7 +93,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : DatabaseProvisio
 
         Logger.LogInformation(
             "Checking if database exists: {DatabaseName}",
-            LoggingSanitizer.SanitizeForLogging(targetDatabase)
+            LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)
         );
 
         // Connect to the master database to create the target database
@@ -114,14 +114,14 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : DatabaseProvisio
         {
             Logger.LogInformation(
                 "Database already exists: {DatabaseName}",
-                LoggingSanitizer.SanitizeForLogging(targetDatabase)
+                LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)
             );
             return false;
         }
 
         Logger.LogInformation(
             "Creating database: {DatabaseName}",
-            LoggingSanitizer.SanitizeForLogging(targetDatabase)
+            LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)
         );
 
         // Use a quoted identifier to safely handle the database name
@@ -140,14 +140,14 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : DatabaseProvisio
             Logger.LogInformation(
                 ex,
                 "Database was created concurrently by another process: {DatabaseName}",
-                LoggingSanitizer.SanitizeForLogging(targetDatabase)
+                LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)
             );
             return false;
         }
 
         Logger.LogInformation(
             "Database created successfully: {DatabaseName}",
-            LoggingSanitizer.SanitizeForLogging(targetDatabase)
+            LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)
         );
 
         return true;
@@ -163,7 +163,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : DatabaseProvisio
 
         Logger.LogInformation(
             "Executing DDL in transaction against database: {DatabaseName}",
-            LoggingSanitizer.SanitizeForLogging(targetDatabase)
+            LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)
         );
 
         // Split on GO batch separators. GO is not valid T-SQL; it is a sqlcmd/SSMS
@@ -204,13 +204,13 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : DatabaseProvisio
                 Logger.LogError(
                     rollbackEx,
                     "Failed to roll back transaction for database: {DatabaseName}",
-                    LoggingSanitizer.SanitizeForLogging(targetDatabase)
+                    LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)
                 );
             }
 
             throw new InvalidOperationException(
                 $"DDL batch {currentBatch + 1} of {batchList.Count} failed for database "
-                    + $"'{LoggingSanitizer.SanitizeForLogging(targetDatabase)}'",
+                    + $"'{LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)}'",
                 ex
             );
         }
@@ -221,7 +221,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : DatabaseProvisio
 
         Logger.LogInformation(
             "DDL executed successfully against database: {DatabaseName}",
-            LoggingSanitizer.SanitizeForLogging(targetDatabase)
+            LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)
         );
     }
 
@@ -303,7 +303,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : DatabaseProvisio
             // Enable MVCC settings on the newly created database
             Logger.LogInformation(
                 "Configuring MVCC isolation for new database: {DatabaseName}",
-                LoggingSanitizer.SanitizeForLogging(targetDatabase)
+                LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)
             );
 
             using var rcsiCommand = connection.CreateCommand();
@@ -316,7 +316,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : DatabaseProvisio
 
             Logger.LogInformation(
                 "MVCC isolation configured for database: {DatabaseName}",
-                LoggingSanitizer.SanitizeForLogging(targetDatabase)
+                LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)
             );
         }
         else
@@ -349,7 +349,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : DatabaseProvisio
 
                 Logger.LogWarning(
                     "READ_COMMITTED_SNAPSHOT is OFF for database: {DatabaseName}",
-                    LoggingSanitizer.SanitizeForLogging(targetDatabase)
+                    LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)
                 );
                 Console.Error.WriteLine($"Warning: {warning}");
             }

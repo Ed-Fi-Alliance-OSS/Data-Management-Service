@@ -1,0 +1,132 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# DMS-1502: proves that a PULLED published ed-fi-api image runs third-party plugin code, with no
+# derived image and no DMS rebuild.
+#
+# This lane is isolated on purpose. It pulls a version-and-digest pinned image from Docker Hub and
+# brings four stacks up and down, which is neither fast nor free, and it can only run once a
+# qualifying release exists. Per-PR validation of this work stays at the Pester level, where the
+# harness is driven against a shim; nothing here is added to the PR checks.
+#
+# Until that release is published the committed pin carries a status of "pending". A scheduled run
+# then reports not-ready and stops without claiming anything: a skip is not evidence that the
+# mechanism works. A run somebody asked for by hand fails on the same pin, because they asked for
+# the proof and silence would read as success.
+name: Scheduled Stock Image Plugin Proof
+
+on:
+  workflow_dispatch:
+    inputs:
+      pin-file:
+        description: 'Pin document to run against. Defaults to the committed one. A pending, malformed or incomplete pin fails a dispatched run.'
+        required: false
+        type: string
+        default: 'eng/docker-compose/tests/plugin-deployment/stock-image-pin.json'
+  schedule:
+  - cron: '15 7 * * 2' # Tuesdays at 07:15 UTC, away from the nightly lanes.
+
+permissions: read-all
+
+env:
+  PIN_FILE: ${{ inputs.pin-file || 'eng/docker-compose/tests/plugin-deployment/stock-image-pin.json' }}
+
+jobs:
+  publication-readiness:
+    name: Publication readiness
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    outputs:
+      ready: ${{ steps.readiness.outputs.ready }}
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Fails the job on a malformed, unknown or incoherent pin, and on a pending pin whenever the
+      # run was requested rather than scheduled. Reports ready=false and exits zero only for a
+      # pending pin on a schedule, which is the one expected pre-publication state.
+      # The pin path is read out of the environment, never interpolated into this script. It can
+      # come from a dispatch input, and a value carrying a quote would otherwise close the literal
+      # and run as PowerShell in a job that holds the feed credential.
+      - name: Read the pin
+        id: readiness
+        run: ./eng/ci/Test-StockImagePinReadiness.ps1 -PinFile $env:PIN_FILE -EventName $env:GITHUB_EVENT_NAME
+
+      # The skip has to say what it is. A green run with no proof job and no explanation is the
+      # thing most likely to be read later as "the proof passed".
+      - name: Say that a skip is not evidence
+        if: steps.readiness.outputs.ready != 'true'
+        env:
+          # Read from the environment for the same reason the pin path is: this value is derived
+          # from a file a dispatched run can name, and nothing derived from an input belongs in
+          # PowerShell source.
+          READINESS_REASON: ${{ steps.readiness.outputs.reason }}
+        run: |
+          $summary = @(
+            '## Stock image plugin proof: not run'
+            ''
+            "The pin is not ready: $env:READINESS_REASON"
+            ''
+            'This run proved nothing. A skipped proof is not evidence that a published image loads'
+            'third-party plugins; it only means there is no published image to run against yet.'
+            'No proof evidence was produced or uploaded.'
+          )
+          $summary | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+
+  stock-image-plugin-proof:
+    name: Stock image plugin proof
+    needs: publication-readiness
+    if: needs.publication-readiness.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      ARTIFACTS_FEED_URL: ${{ vars.AZURE_ARTIFACTS_FEED_URL }}
+      ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+      VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      # buildx imagetools is how the harness asks the registry what the pinned tag resolves to,
+      # which is the only way to tell a tag and a digest apart without trusting a local pull.
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Run the stock image plugin proof
+        id: proof
+        run: ./eng/docker-compose/tests/plugin-deployment/Invoke-StockImagePluginProof.ps1 -PinFile $env:PIN_FILE
+
+      # Only this job writes proof evidence, and only when the proof step ran, whatever it
+      # concluded. A passing run's evidence is the record that the pinned image passed; a failing
+      # run's is the record of why. The readiness job has nothing to upload, which is what keeps a
+      # skipped proof from leaving an artifact somebody reads as one.
+      - name: Upload the proof evidence
+        if: always() && steps.proof.outcome != 'skipped'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: stock-image-plugin-proof-evidence
+          path: .ai-work/verification/stock-image-plugin-proof.json
+          if-no-files-found: warn
+          retention-days: 10
+
+      # The harness removes what it created on its way out, including when it fails. This is the
+      # backstop for a harness that died before its own cleanup ran.
+      #
+      # It acts only on a receipt the harness wrote after its preflight found the project
+      # unoccupied and before the first operation that could create it. With no receipt it runs no
+      # Docker command at all, which is what keeps a proof that refused to touch somebody else's
+      # stack from having that stack removed by its own teardown step.
+      - name: Tear down anything this proof still owns
+        if: always()
+        run: ./eng/docker-compose/tests/plugin-deployment/Invoke-StockImageProofFallbackCleanup.ps1

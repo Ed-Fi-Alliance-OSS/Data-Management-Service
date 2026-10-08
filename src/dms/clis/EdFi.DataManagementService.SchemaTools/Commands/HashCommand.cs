@@ -56,7 +56,7 @@ public static class HashCommand
     {
         logger.LogInformation(
             "Loading schemas: core={CorePath}, extensions={ExtensionCount}",
-            LoggingSanitizer.SanitizeForLogging(coreSchemaPath),
+            LoggingSanitizer.SanitizeInternalValueForLogging(coreSchemaPath),
             extensionSchemaPaths.Length
         );
 
@@ -80,7 +80,7 @@ public static class HashCommand
 
                 logger.LogInformation(
                     "Schema loaded and normalized successfully. Core: {CoreEndpoint}, Extensions: {ExtensionCount}",
-                    LoggingSanitizer.SanitizeForLogging(coreEndpoint),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(coreEndpoint),
                     extensionCount
                 );
 
@@ -94,7 +94,10 @@ public static class HashCommand
 
                     logger.LogInformation(
                         "Extension endpoints: {Extensions}",
-                        string.Join(", ", extensionEndpoints.Select(LoggingSanitizer.SanitizeForLogging))
+                        string.Join(
+                            ", ",
+                            extensionEndpoints.Select(LoggingSanitizer.SanitizeInternalValueForLogging)
+                        )
                     );
                 }
 

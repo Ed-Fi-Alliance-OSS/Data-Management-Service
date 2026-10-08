@@ -358,9 +358,19 @@ public sealed class CdcProviderSetupOrchestration
     {
         using var call = CancellationTokenSource.CreateLinkedTokenSource(token);
         call.CancelAfter(request.Timing.CallTimeout);
-        var result = await _provider.SetupAsync(setup, call.Token).WaitAsync(call.Token);
-        call.Token.ThrowIfCancellationRequested();
-        return result;
+        try
+        {
+            var result = await _provider.SetupAsync(setup, call.Token).WaitAsync(call.Token);
+            call.Token.ThrowIfCancellationRequested();
+            return result;
+        }
+        catch (OperationCanceledException)
+            when (!token.IsCancellationRequested && call.IsCancellationRequested)
+        {
+            // The enclosing controller owns caller/operation cancellation. This local
+            // deadline remains a timeout when setup participates in that controller's session.
+            throw new TimeoutException();
+        }
     }
 
     internal static CdcProviderSetupObservationMapping MapRetainedProvider(

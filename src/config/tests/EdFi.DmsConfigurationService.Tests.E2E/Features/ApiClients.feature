@@ -6,7 +6,7 @@ Feature: ApiClients endpoints
               And a POST request is made to "/v3/vendors" with
                   """
                     {
-                        "company": "Test Vendor",
+                        "company": "Test Vendor {scenarioRunId}",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
                         "namespacePrefixes": "uri://ed-fi-e2e.org"
@@ -16,7 +16,7 @@ Feature: ApiClients endpoints
                   """
                     {
                         "dataStoreType": "Test",
-                        "name": "Test Data Store",
+                        "name": "Test Data Store {scenarioRunId}",
                         "connectionString": "Server=test;Database=TestDb;"
                     }
                   """
@@ -94,7 +94,7 @@ Feature: ApiClients endpoints
                   """
                     {
                         "dataStoreType": "Test",
-                        "name": "Test Data Store 2",
+                        "name": "Test Data Store 2 {scenarioRunId}",
                         "connectionString": "Server=test2;Database=TestDb2;"
                     }
                   """
@@ -124,7 +124,7 @@ Feature: ApiClients endpoints
                   """
                     {
                         "dataStoreType": "Test",
-                        "name": "Test Data Store 2",
+                        "name": "Test Data Store 2 {scenarioRunId}",
                         "connectionString": "Server=test2;Database=TestDb2;"
                     }
                   """
@@ -1143,3 +1143,118 @@ Feature: ApiClients endpoints
               # 32-bit integer either, so there is no numeric fallback and the key 404 stands.
              When a GET request is made to "/v3/apiClients/12abc-not-a-client-key"
              Then it should respond with 404
+
+        # API client names are unique within an application, on POST and on a PUT rename alike; the
+        # same name under another application is a different client.
+        @DMS-1341 @MssqlRepresentative
+        Scenario: 28 Verify a duplicate apiClient name within an application is rejected on POST and PUT
+             When a POST request is made to "/v3/apiClients" with
+                  """
+                  {
+                   "applicationId": {applicationId},
+                   "name": "Client 28 {scenarioRunId}",
+                   "isApproved": true,
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/apiClients" with
+                  """
+                  {
+                   "applicationId": {applicationId},
+                   "name": "Client 28 {scenarioRunId}",
+                   "isApproved": false,
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 400
+              And the response header "location" is not present
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "validationErrors": {
+                          "Name": [
+                              "An API client with this name already exists for the application."
+                          ]
+                      },
+                      "errors": []
+                  }
+                  """
+             When a POST request is made to "/v3/apiClients" with
+                  """
+                  {
+                   "applicationId": {applicationId},
+                   "name": "Client 28b {scenarioRunId}",
+                   "isApproved": true,
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response body credentials are captured as "otherClient28"
+              And the response body id is captured as "otherClient28Id"
+             When a PUT request is made to "/v3/apiClients/{otherClient28Id}" with
+                  """
+                  {
+                   "id": {otherClient28Id},
+                   "applicationId": {applicationId},
+                   "name": "Client 28 {scenarioRunId}",
+                   "isApproved": true,
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "validationErrors": {
+                          "Name": [
+                              "An API client with this name already exists for the application."
+                          ]
+                      },
+                      "errors": []
+                  }
+                  """
+             When a GET request is made to "/v3/apiClients/{otherClient28Id}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "id": {otherClient28Id},
+                    "applicationId": {applicationId},
+                    "clientId": "{otherClient28Key}",
+                    "clientUuid": "{clientUuid}",
+                    "name": "Client 28b {scenarioRunId}",
+                    "isApproved": true,
+                    "creatorOwnershipTokenId": null,
+                    "ownershipTokenIds": [],
+                    "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             When a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Test Application 28",
+                   "claimSetName": "TestClaim01",
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/apiClients" with
+                  """
+                  {
+                   "applicationId": {applicationId},
+                   "name": "Client 28 {scenarioRunId}",
+                   "isApproved": true,
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 201

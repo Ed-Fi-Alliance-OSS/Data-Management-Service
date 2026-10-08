@@ -27,6 +27,8 @@ public class Given_CMS_PostgreSQL_database_shape
         "DataStore",
         "DataStoreContext",
         "DataStoreDerivative",
+        "Job",
+        "JobSchedule",
         "OpenIddictApplication",
         "OpenIddictApplicationScope",
         "OpenIddictAuthorization",
@@ -53,7 +55,7 @@ public class Given_CMS_PostgreSQL_database_shape
         ["OpenIddictApplication"] = ["Id", "ClientId", "ClientSecret", "ProtocolMappers"],
         ["OpenIddictToken"] = ["Id", "ApplicationId", "ReferenceId", "ExpirationDate", "Payload"],
         ["Tenant"] = ["Id", "Name"],
-        ["Profile"] = ["Id", "ProfileName"],
+        ["Profile"] = ["Id", "TenantId", "ProfileName"],
     };
 
     private static readonly ConstraintExpectation[] ExpectedRepresentativeConstraints =
@@ -67,7 +69,7 @@ public class Given_CMS_PostgreSQL_database_shape
             ["VendorId", "ApplicationName"],
             false
         ),
-        new("UX_Vendor_Company", "Vendor", "u", ["Company"], false),
+        new("UX_Vendor_TenantId_Company", "Vendor", "u", ["TenantId", "Company"], true),
         new("FK_Vendor_Tenant", "Vendor", "f", ["TenantId"], false),
         new("UX_ClaimSet_ClaimSetName", "ClaimSet", "u", ["ClaimSetName"], false),
         new(
@@ -79,7 +81,8 @@ public class Given_CMS_PostgreSQL_database_shape
         ),
         new("UX_ResourceClaim_ClaimName", "ResourceClaim", "u", ["ClaimName"], false),
         new("UX_Tenant_Name", "Tenant", "u", ["Name"], false),
-        new("UX_Profile_ProfileName", "Profile", "u", ["ProfileName"], false),
+        new("UX_Profile_TenantId_ProfileName", "Profile", "u", ["TenantId", "ProfileName"], true),
+        new("FK_Profile_Tenant", "Profile", "f", ["TenantId"], false),
         new(
             "PK_OpenIddictApplicationScope",
             "OpenIddictApplicationScope",
@@ -103,6 +106,8 @@ public class Given_CMS_PostgreSQL_database_shape
             false
         ),
         new("CK_DataStoreDerivative_DerivativeType", "DataStoreDerivative", "c", ["DerivativeType"], false),
+        new("UX_DataStore_TenantId_Name", "DataStore", "u", ["TenantId", "Name"], true),
+        new("UX_ApiClient_ApplicationId_Name", "ApiClient", "u", ["ApplicationId", "Name"], false),
     ];
 
     private static readonly string[] ExpectedNonUniqueLookupIndexes =
@@ -112,6 +117,7 @@ public class Given_CMS_PostgreSQL_database_shape
         "IX_AuthorizationStrategy_TenantId",
         "IX_ResourceClaim_TenantId",
         "IX_DataStore_TenantId",
+        "IX_Profile_TenantId",
         "IX_OpenIddictToken_ApplicationId",
         "IX_OpenIddictToken_Subject",
         "IX_OpenIddictToken_ReferenceId",
@@ -125,7 +131,9 @@ public class Given_CMS_PostgreSQL_database_shape
     /// EducationOrganizationId is an Ed-Fi education organization id, not a CMS resource id, and the
     /// draft Management API v3 spec declares it int64. Tenant.Id has no Admin API counterpart and
     /// ClaimsHierarchy.Id is an internal concurrency token; both are out of scope, as are the
-    /// TenantId foreign keys that reference Tenant.Id.
+    /// TenantId foreign keys that reference Tenant.Id. Job.Id, Job.FencingToken, JobSchedule.Id, and
+    /// JobSchedule.FencingToken (DMS-1437) are internal job-infrastructure identifiers with no Admin API
+    /// counterpart, and Job.SourceScheduleId references JobSchedule.Id.
     /// </summary>
     private static readonly (string TableName, string ColumnName)[] ExpectedBigintColumns =
     [
@@ -134,7 +142,15 @@ public class Given_CMS_PostgreSQL_database_shape
         ("ClaimSet", "TenantId"),
         ("ClaimsHierarchy", "Id"),
         ("DataStore", "TenantId"),
+        ("Job", "FencingToken"),
+        ("Job", "Id"),
+        ("Job", "SourceScheduleId"),
+        ("Job", "TenantId"),
+        ("JobSchedule", "FencingToken"),
+        ("JobSchedule", "Id"),
+        ("JobSchedule", "TenantId"),
         ("OwnershipToken", "TenantId"),
+        ("Profile", "TenantId"),
         ("ResourceClaim", "TenantId"),
         ("Tenant", "Id"),
         ("Vendor", "TenantId"),
@@ -175,6 +191,22 @@ public class Given_CMS_PostgreSQL_database_shape
         "idx_datastore_context_unique",
         "ix_profile_name",
         "IX_DataStoreDerivative_DataStoreId",
+    ];
+
+    /// <summary>
+    /// The only unique indexes that are not constraint-backed. PostgreSQL cannot declare a partial
+    /// unique constraint, so a uniqueness rule that applies to a subset of rows is a partial unique
+    /// index; every other logical uniqueness rule is a UX_* constraint. JobSchedule (DMS-1437) keys
+    /// tenant schedules on (TenantId, ScheduleType) and single-tenant schedules, whose TenantId is
+    /// NULL and so would never collide in a plain unique index, on ScheduleType alone. Job keys a
+    /// scheduled occurrence on (SourceScheduleId, ScheduledOccurrence) only when both are set, so
+    /// manual jobs, which leave both NULL, never collide.
+    /// </summary>
+    private static readonly string[] ExpectedPartialUniqueIndexNames =
+    [
+        "UX_Job_SourceScheduleId_ScheduledOccurrence",
+        "UX_JobSchedule_SingleTenant_Type",
+        "UX_JobSchedule_Tenant_Type",
     ];
 
     private string _databaseName = string.Empty;
@@ -298,6 +330,34 @@ public class Given_CMS_PostgreSQL_database_shape
         }
     }
 
+    /// <summary>
+    /// DMS-1430: the token cleanup sweep compares this column against a bound the repository binds
+    /// as an instant. While it was declared timestamp without time zone, both the insert and the
+    /// sweep converted through the PostgreSQL session time zone, and those conversions do not
+    /// round-trip on a DST-observing server. Only the timestamptz declaration keeps the stored value
+    /// and the sweep bound in agreement, so the declared type is asserted here rather than left to
+    /// the DDL alone. CreationDate and RedemptionDate remain wall-clock columns: no predicate
+    /// compares them and no production path reads them, so converting them is a possible follow-up
+    /// rather than part of this fix.
+    /// </summary>
+    [Test]
+    public void It_should_declare_the_OpenIddictToken_expiration_as_an_instant()
+    {
+        ColumnShape expirationColumn = _columns
+            .Should()
+            .ContainSingle(column =>
+                column.TableName == "OpenIddictToken" && column.ColumnName == "ExpirationDate"
+            )
+            .Which;
+
+        expirationColumn
+            .DataType.Should()
+            .Be(
+                "timestamp with time zone",
+                "the cleanup sweep must compare instants, not session-time-zone wall clocks"
+            );
+    }
+
     [Test]
     public void It_should_use_DMS_style_constraint_names_for_representative_core_tenant_and_OpenIddict_tables()
     {
@@ -322,12 +382,10 @@ public class Given_CMS_PostgreSQL_database_shape
     {
         string[] globalUniqueNames =
         [
-            "UX_Vendor_Company",
             "UX_ClaimSet_ClaimSetName",
             "UX_AuthorizationStrategy_AuthorizationStrategyName",
             "UX_ResourceClaim_ClaimName",
             "UX_Tenant_Name",
-            "UX_Profile_ProfileName",
             "UX_OpenIddictApplication_ClientId",
             "UX_OpenIddictScope_Name",
             "UX_OpenIddictRole_Name",
@@ -347,16 +405,35 @@ public class Given_CMS_PostgreSQL_database_shape
     }
 
     [Test]
+    public void It_should_remove_the_global_vendor_and_profile_name_constraints_after_the_replay()
+    {
+        // Replaying 0001 and 0026 re-adds these, so their absence proves 0032 drops them on replay too.
+        _constraints
+            .Select(constraint => constraint.Name)
+            .Should()
+            .NotContain(["UX_Vendor_Company", "UX_Profile_ProfileName"]);
+    }
+
+    [Test]
     public void It_should_keep_lookup_indexes_non_unique_and_remove_redundant_unique_indexes()
     {
         string[] indexNames = _indexes.Select(index => index.Name).ToArray();
 
         indexNames.Should().NotContain(RemovedRedundantIndexNames);
 
-        _indexes
+        IndexShape[] uniqueIndexesWithoutConstraint = _indexes
             .Where(index => index.IsUnique && !index.IsConstraintBacked)
+            .ToArray();
+
+        uniqueIndexesWithoutConstraint
+            .Select(index => index.Name)
             .Should()
-            .BeEmpty("logical uniqueness should be represented by UX_* constraints");
+            .BeEquivalentTo(
+                ExpectedPartialUniqueIndexNames,
+                "logical uniqueness should be represented by UX_* constraints, except where only a partial "
+                    + "unique index can express it"
+            );
+        uniqueIndexesWithoutConstraint.Should().OnlyContain(index => index.IsPartial);
 
         foreach (string expectedIndexName in ExpectedNonUniqueLookupIndexes)
         {
@@ -512,7 +589,8 @@ public class Given_CMS_PostgreSQL_database_shape
     private const string IndexesSql = """
         SELECT index_info.relname AS Name,
                index_catalog.indisunique AS IsUnique,
-               constraint_info.oid IS NOT NULL AS IsConstraintBacked
+               constraint_info.oid IS NOT NULL AS IsConstraintBacked,
+               index_catalog.indpred IS NOT NULL AS IsPartial
         FROM pg_index index_catalog
         JOIN pg_class index_info
             ON index_info.oid = index_catalog.indexrelid
@@ -544,5 +622,5 @@ public class Given_CMS_PostgreSQL_database_shape
         bool NullsNotDistinct
     );
 
-    private sealed record IndexShape(string Name, bool IsUnique, bool IsConstraintBacked);
+    private sealed record IndexShape(string Name, bool IsUnique, bool IsConstraintBacked, bool IsPartial);
 }

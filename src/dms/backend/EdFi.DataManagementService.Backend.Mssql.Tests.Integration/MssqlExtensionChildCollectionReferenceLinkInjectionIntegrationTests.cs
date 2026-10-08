@@ -302,7 +302,11 @@ public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
             Headers: [],
             TraceId: new TraceId("mssql-29e-seed-bus"),
             DocumentUuid: BusDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
@@ -342,7 +346,11 @@ public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
             Headers: [],
             TraceId: new TraceId("mssql-29e-seed-school"),
             DocumentUuid: SchoolDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()

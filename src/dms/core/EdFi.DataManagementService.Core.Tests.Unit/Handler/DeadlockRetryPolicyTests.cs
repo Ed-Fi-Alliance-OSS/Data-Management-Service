@@ -669,7 +669,10 @@ public class DeadlockRetryPolicyTests
 
             IServiceProvider serviceProvider = CreateServiceProvider(_repository);
             var handler = new UpsertHandler(_logger, BuildHandlerPipeline(maxRetryAttempts: 3));
-            _requestInfo = RequestInfoWithRelationalMappingSet("canonical-upsert-retry", serviceProvider);
+            _requestInfo = UpsertRequestInfoWithRelationalMappingSet(
+                "canonical-upsert-retry",
+                serviceProvider
+            );
             _requestInfo.Method = RequestMethod.POST;
             _requestInfo.PathComponents = WritePath();
             _requestInfo.ParsedBody = new JsonObject { ["schoolId"] = 1 };

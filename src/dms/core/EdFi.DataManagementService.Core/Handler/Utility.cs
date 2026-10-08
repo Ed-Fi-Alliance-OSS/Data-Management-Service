@@ -124,8 +124,8 @@ public static class Utility
         logger.LogError(
             "Backend reported an unknown failure for {Method} {Path}: {FailureMessage} - {TraceId}",
             requestInfo.Method,
-            LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Path),
-            LoggingSanitizer.SanitizeForLogging(failureMessage),
+            LoggingSanitizer.SanitizeInternalValueForLogging(requestInfo.FrontendRequest.Path),
+            LoggingSanitizer.SanitizeInternalValueForLogging(failureMessage),
             requestInfo.FrontendRequest.TraceId.Value
         );
 
@@ -141,10 +141,19 @@ public static class Utility
         ILogger logger,
         RequestInfo requestInfo,
         string[] errors,
-        SecurityConfigurationFailureDiagnostic[]? diagnostics = null
+        SecurityConfigurationFailureDiagnostic[]? diagnostics = null,
+        string? cmsAction = null,
+        IReadOnlyList<string>? configuredStrategyNames = null
     )
     {
-        SecurityConfigurationFailureLogger.Log(logger, requestInfo, errors, diagnostics: diagnostics);
+        SecurityConfigurationFailureLogger.Log(
+            logger,
+            requestInfo,
+            errors,
+            cmsAction: cmsAction,
+            configuredStrategyNames: configuredStrategyNames,
+            diagnostics: diagnostics
+        );
 
         return new FrontendResponse(
             StatusCode: 500,
@@ -152,6 +161,28 @@ public static class Utility
             Headers: [],
             ContentType: "application/problem+json"
         );
+    }
+
+    /// <summary>
+    /// Logs at Debug when a write request (POST, PUT, DELETE) carries an If-None-Match header, since
+    /// <see cref="Backend.WritePreconditionFactory.Create" /> ignores it (DMS-1576: If-None-Match is a
+    /// conditional-read validator only; ODS/API parity). Shared by UpsertHandler, UpdateByIdHandler, and
+    /// DeleteByIdHandler so the check and message stay identical across all three. Logs the method and
+    /// TraceId only -- never the header's value.
+    /// </summary>
+    internal static void LogIfNoneMatchIgnoredOnWrite(ILogger logger, RequestInfo requestInfo)
+    {
+        if (
+            logger.IsEnabled(LogLevel.Debug)
+            && Backend.WritePreconditionFactory.IsIfNoneMatchIgnored(requestInfo.FrontendRequest.Headers)
+        )
+        {
+            logger.LogDebug(
+                "{Method} ignored the If-None-Match header (DMS honors it only on GET) and is processing the request as if it were absent - {TraceId}",
+                requestInfo.MethodName,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+        }
     }
 
     internal static MappingSet RequireMappingSet(RequestInfo requestInfo, string operationName)

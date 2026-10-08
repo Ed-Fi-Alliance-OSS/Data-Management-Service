@@ -18,6 +18,199 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [Platform(Exclude = "Win", Reason = "Local CDC state requires Unix owner-only permissions.")]
 internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcRegistrationTestBase(provider)
 {
+    [TestCase(CdcDeploymentFailure.Unavailable, false)]
+    [TestCase(CdcDeploymentFailure.Timeout, false)]
+    [TestCase(CdcDeploymentFailure.Unavailable, true)]
+    public async Task It_retries_transient_registration_reads_without_repeating_creation(
+        CdcDeploymentFailure failure,
+        bool loseCreateResponse
+    )
+    {
+        var clock = await UseRegistrationClockAsync();
+        if (loseCreateResponse)
+        {
+            _onCall = name =>
+            {
+                if (name == "post-after")
+                {
+                    throw new TimeoutException();
+                }
+            };
+        }
+        SetRegistrationConfigurationReads(read =>
+        {
+            if (read <= 2)
+            {
+                AssertRegistrationPending();
+            }
+            return read == 1
+                ? new CdcTransportResult<IReadOnlyDictionary<string, string>>.Unavailable(
+                    new(CdcDeploymentComponent.Connect, failure)
+                )
+                : Observed<IReadOnlyDictionary<string, string>>(_live);
+        });
+
+        (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Observed);
+        _posts.Should().Be(1);
+        clock.PollDelays.Should().Be(1);
+        ReadJournal()
+            .Operations.Single(o => o.Effect == CdcWorkflowEffect.RegisterConnector)
+            .Completions.Should()
+            .ContainSingle();
+        AssertNoIncident();
+    }
+
+    [Test]
+    public async Task It_retries_a_registration_read_that_exceeds_its_call_timeout()
+    {
+        ShortTiming(100);
+        var clock = await UseRegistrationClockAsync();
+        int reads = 0;
+        A.CallTo(() => _connect.ReadConfigurationAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(
+                async (CdcDeploymentRequest _, CancellationToken token) =>
+                {
+                    if (!_connectorExists)
+                    {
+                        return new CdcTransportResult<IReadOnlyDictionary<string, string>>.Absent();
+                    }
+                    if (++reads == 1)
+                    {
+                        AssertRegistrationPending();
+                        await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                    }
+                    return Observed<IReadOnlyDictionary<string, string>>(_live);
+                }
+            );
+
+        (await RunAsync().WaitAsync(TimeSpan.FromSeconds(3)))
+            .State.Should()
+            .Be(CdcTransportEvidenceState.Observed);
+        _posts.Should().Be(1);
+        clock.PollDelays.Should().Be(1);
+    }
+
+    [TestCase(CdcDeploymentFailure.Unavailable)]
+    [TestCase(CdcDeploymentFailure.Timeout)]
+    public async Task It_bounds_persistent_registration_read_failures_by_the_original_deadline(
+        CdcDeploymentFailure failure
+    )
+    {
+        ShortTiming(100);
+        var clock = await UseRegistrationClockAsync();
+        SetRegistrationConfigurationReads(_ => new CdcTransportResult<
+            IReadOnlyDictionary<string, string>
+        >.Unavailable(new(CdcDeploymentComponent.Connect, failure)));
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+
+        var result = await RunAsync().WaitAsync(TimeSpan.FromSeconds(3));
+
+        result.Diagnostics.Should().ContainSingle().Which.Failure.Should().Be(CdcDeploymentFailure.Timeout);
+        result.Diagnostics[0].Component.Should().Be(CdcDeploymentComponent.Connect);
+        elapsed
+            .Elapsed.Should()
+            .BeGreaterThanOrEqualTo(_request.Timing.WaitTimeout - TimeSpan.FromMilliseconds(50));
+        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2));
+        clock.PollDelays.Should().BeGreaterThan(1);
+        _posts.Should().Be(1);
+        AssertRegistrationPending();
+    }
+
+    [Test]
+    public async Task It_cancels_registration_read_polling_without_completing_or_repeating_creation()
+    {
+        var clock = await UseRegistrationClockAsync();
+        using var cancellation = new CancellationTokenSource();
+        SetRegistrationConfigurationReads(_ => new CdcTransportResult<
+            IReadOnlyDictionary<string, string>
+        >.Unavailable(new(CdcDeploymentComponent.Connect, CdcDeploymentFailure.Unavailable)));
+        clock.OnPoll = cancellation.Cancel;
+
+        Func<Task> run = () => RunAsync(cancellation.Token).WaitAsync(TimeSpan.FromSeconds(3));
+        await run.Should().ThrowAsync<OperationCanceledException>();
+
+        clock.PollDelays.Should().Be(1);
+        _posts.Should().Be(1);
+        AssertRegistrationPending();
+        SetRegistrationConfigurationReads(_ => Observed<IReadOnlyDictionary<string, string>>(_live));
+        clock.OnPoll = () => { };
+        (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Observed);
+        _posts.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_rejects_configuration_drift_after_a_transient_registration_read_failure()
+    {
+        var clock = await UseRegistrationClockAsync();
+        SetRegistrationConfigurationReads(read =>
+            read == 1
+                ? new CdcTransportResult<IReadOnlyDictionary<string, string>>.Unavailable(
+                    new(CdcDeploymentComponent.Connect, CdcDeploymentFailure.Unavailable)
+                )
+                : Observed<IReadOnlyDictionary<string, string>>(
+                    new Dictionary<string, string>(_live) { ["tasks.max"] = "2" }
+                )
+        );
+
+        var result = await RunAsync();
+
+        result
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.Failure.Should()
+            .Be(CdcDeploymentFailure.ValidationFailed);
+        clock.PollDelays.Should().Be(1);
+        _posts.Should().Be(1);
+        AssertRegistrationPending();
+    }
+
+    [TestCase(CdcDeploymentFailure.AuthenticationFailed)]
+    [TestCase(CdcDeploymentFailure.ValidationFailed)]
+    [TestCase(CdcDeploymentFailure.Conflict)]
+    public async Task It_does_not_retry_definitive_registration_read_failures(CdcDeploymentFailure failure)
+    {
+        var clock = await UseRegistrationClockAsync();
+        int reads = 0;
+        SetRegistrationConfigurationReads(_ =>
+        {
+            reads++;
+            return new CdcTransportResult<IReadOnlyDictionary<string, string>>.Unavailable(
+                new(CdcDeploymentComponent.Connect, failure)
+            );
+        });
+
+        var result = await RunAsync();
+
+        result.Diagnostics.Should().ContainSingle().Which.Failure.Should().Be(failure);
+        reads.Should().Be(1);
+        clock.PollDelays.Should().Be(0);
+        _posts.Should().Be(1);
+        AssertRegistrationPending();
+    }
+
+    private void SetRegistrationConfigurationReads(
+        Func<int, CdcTransportResult<IReadOnlyDictionary<string, string>>> read
+    )
+    {
+        int reads = 0;
+        A.CallTo(() => _connect.ReadConfigurationAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .ReturnsLazily(() =>
+                _connectorExists
+                    ? read(++reads)
+                    : new CdcTransportResult<IReadOnlyDictionary<string, string>>.Absent()
+            );
+    }
+
+    private void AssertRegistrationPending()
+    {
+        ReadJournal()
+            .Operations.Single(o => o.Effect == CdcWorkflowEffect.RegisterConnector)
+            .Completions.Should()
+            .BeEmpty();
+        ReadJournal().Operations.Should().NotContain(o => o.Effect == CdcWorkflowEffect.EstablishConnector);
+        _offsetReads.Should().Be(0);
+    }
+
     [TestCase("acls", 1)]
     [TestCase("worker", 2)]
     public async Task It_returns_timeout_for_expired_pre_registration_evidence_before_post(
@@ -928,6 +1121,7 @@ internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcReg
 
     [TestCase(CdcConnectOffsetState.Missing)]
     [TestCase(CdcConnectOffsetState.Snapshot)]
+    [TestCase(CdcConnectOffsetState.AwaitingStreaming)]
     public async Task It_waits_for_initial_streaming_offsets_without_resetting(CdcConnectOffsetState initial)
     {
         ShortTiming(500);

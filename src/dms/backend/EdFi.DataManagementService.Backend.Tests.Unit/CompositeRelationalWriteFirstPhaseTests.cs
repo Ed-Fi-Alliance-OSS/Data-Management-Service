@@ -144,6 +144,451 @@ public class Given_The_Composite_Relational_Write_First_Phase
     }
 
     [Test]
+    public async Task It_returns_the_update_branch_result_right_after_capturing_an_existing_target()
+    {
+        var updateImmediate = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Update)
+        );
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs()),
+            new PostBranchAuthorization.Immediate(updateImmediate)
+        );
+        var adapterFactory = new TestReferenceResolverAdapterFactory
+        {
+            ExceptionToThrow = new FakeDbException("reference lookup must not execute"),
+        };
+        var session = new ScriptedWriteSession(
+            CreateCaptureReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value))
+        );
+
+        var resolution = await CreateSut(adapterFactory).ResolveAsync(input, session);
+
+        resolution.Outcome.Should().BeNull();
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .Be(new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Update));
+        session.Commands.Should().ContainSingle();
+        session.Commands[0].CommandText.Should().NotContain("current-state-hydration");
+    }
+
+    [Test]
+    public async Task It_returns_the_create_branch_result_right_after_capturing_no_target()
+    {
+        var createImmediate = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Create)
+        );
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Immediate(createImmediate),
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs())
+        );
+        var adapterFactory = new TestReferenceResolverAdapterFactory
+        {
+            ExceptionToThrow = new FakeDbException("reference lookup must not execute"),
+        };
+        var session = new ScriptedWriteSession(CreateCaptureReader(target: null));
+
+        var resolution = await CreateSut(adapterFactory).ResolveAsync(input, session);
+
+        resolution.Outcome.Should().BeNull();
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .Be(new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Create));
+        session.Commands.Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task It_applies_the_create_branch_authorization_when_no_target_is_captured()
+    {
+        var createNamespace = CreateStoredNamespaceAuthorization();
+        var updateNamespace = CreateStoredNamespaceAuthorization();
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    ProposedNamespaceAuthorization = createNamespace,
+                }
+            ),
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    ProposedNamespaceAuthorization = updateNamespace,
+                }
+            )
+        );
+        var session = new ScriptedWriteSession(CreateCompositeReader(target: null));
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution
+            .Outcome!.ExecutionRequest.ProposedNamespaceAuthorization.Should()
+            .BeSameAs(createNamespace);
+    }
+
+    [Test]
+    public async Task It_applies_the_update_branch_authorization_when_an_existing_target_is_captured()
+    {
+        var createNamespace = CreateStoredNamespaceAuthorization();
+        var updateNamespace = CreateStoredNamespaceAuthorization();
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    ProposedNamespaceAuthorization = createNamespace,
+                }
+            ),
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    ProposedNamespaceAuthorization = updateNamespace,
+                }
+            )
+        );
+        var target = new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value);
+        var session = new ScriptedWriteSession(CreateCompositeReader(target));
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution
+            .Outcome!.ExecutionRequest.ProposedNamespaceAuthorization.Should()
+            .BeSameAs(updateNamespace);
+    }
+
+    [Test]
+    public async Task It_runs_the_update_branch_stored_check_against_a_captured_existing_target()
+    {
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Immediate(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Create)
+                )
+            ),
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
+                }
+            ),
+            includeReadPlan: false
+        );
+        var payload = NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
+            new NamespaceAuthorizationAuth1FailurePayload(
+                0,
+                NamespaceAuthorizationAuth1FailureKind.NamespaceMismatch
+            )
+        );
+        var extractor = new TestProviderFailureExtractor(
+            NamespaceAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+            payload
+        );
+        var session = new ScriptedWriteSession(
+            CreateCaptureReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value)),
+            new FakeDbException("namespace denial")
+        );
+
+        var resolution = await CreateSut(providerFailureExtractor: extractor).ResolveAsync(input, session);
+
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>();
+        session.Commands.Should().HaveCount(2);
+        session.Commands[0].CommandText.Should().NotContain("AUTH1");
+        session.Commands[1].CommandText.Should().Contain("AUTH1");
+    }
+
+    [Test]
+    public async Task It_co_batches_the_capture_when_both_branches_are_authorized()
+    {
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs()),
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs())
+        );
+        var session = new ScriptedWriteSession(
+            CreateCompositeReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value))
+        );
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        session.Commands.Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task It_captures_a_new_post_target_without_validating_an_update_only_custom_view()
+    {
+        // Co-batched, the update branch's view would be validated and sent before the capture decides the
+        // target, applying that branch's configuration to a create.
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs()),
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+                }
+            ),
+            includeReadPlan: false
+        );
+        var session = new ScriptedWriteSession(CreateCaptureReader(target: null));
+        var validationExecutor = new StubValidationCommandExecutor(
+            new FakeDbException("invalid custom authorization view DocumentId contract")
+        );
+
+        var resolution = await CreateSut(customViewValidationCommandExecutor: validationExecutor)
+            .ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution
+            .Outcome!.ExecutionRequest.TargetContext.Should()
+            .BeOfType<RelationalWriteTargetContext.CreateNew>();
+        resolution.Outcome.ExecutionRequest.CustomViewAuthorization.Should().BeNull();
+        validationExecutor.ExecutedCommands.Should().BeEmpty();
+        session.Commands.Should().ContainSingle();
+        session.Commands[0].CommandText.Should().NotContain("SchoolWithATag");
+    }
+
+    [Test]
+    public async Task It_validates_an_update_only_custom_view_after_capturing_an_existing_post_target()
+    {
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs()),
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+                }
+            ),
+            includeReadPlan: false
+        );
+        var session = new ScriptedWriteSession(
+            CreateCaptureReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value))
+        );
+        var validationExecutor = new StubValidationCommandExecutor(
+            new FakeDbException("invalid custom authorization view DocumentId contract")
+        );
+
+        var act = async () =>
+            await CreateSut(customViewValidationCommandExecutor: validationExecutor)
+                .ResolveAsync(input, session);
+
+        await act.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+        validationExecutor
+            .ExecutedCommands.Should()
+            .ContainSingle()
+            .Subject.CommandText.Should()
+            .Contain("SchoolWithATag");
+        session.Commands.Should().ContainSingle();
+        session.Commands[0].CommandText.Should().NotContain("SchoolWithATag");
+    }
+
+    [Test]
+    public async Task It_runs_an_update_only_custom_view_as_its_own_segment_after_capturing_an_existing_post_target()
+    {
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs()),
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+                }
+            ),
+            includeReadPlan: false
+        );
+        var session = new ScriptedWriteSession(
+            CreateCaptureReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value)),
+            CreateReader(CreateAuthorizationTable())
+        );
+        var validationExecutor = new StubValidationCommandExecutor();
+
+        await CreateSut(customViewValidationCommandExecutor: validationExecutor).ResolveAsync(input, session);
+
+        validationExecutor.ExecutedCommands.Should().ContainSingle();
+        session.Commands.Should().HaveCount(2);
+        session.Commands[0].CommandText.Should().NotContain("SchoolWithATag");
+        session.Commands[1].CommandText.Should().Contain("SchoolWithATag");
+    }
+
+    [Test]
+    public async Task It_keeps_co_batching_a_custom_view_shared_by_both_post_actions()
+    {
+        var input = CreateInput(RelationalWriteOperationKind.Post, includeReadPlan: false) with
+        {
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+        };
+        var session = new ScriptedWriteSession(
+            CreateReader(
+                CreateCaptureTable(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value)),
+                CreateAuthorizationTable()
+            )
+        );
+        var validationExecutor = new StubValidationCommandExecutor();
+
+        await CreateSut(customViewValidationCommandExecutor: validationExecutor).ResolveAsync(input, session);
+
+        validationExecutor.ExecutedCommands.Should().ContainSingle();
+        session.Commands.Should().ContainSingle();
+        session.Commands[0].CommandText.Should().Contain("SchoolWithATag");
+    }
+
+    [Test]
+    public async Task It_attributes_a_co_batched_stored_security_configuration_failure_on_a_post_to_update()
+    {
+        var input = CreateInput(RelationalWriteOperationKind.Post, includeReadPlan: false) with
+        {
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithATag", 0)),
+        };
+        var session = new ScriptedWriteSession(new FakeDbException("custom view denial"));
+
+        // Index 4 addresses no planned check, so the stored check's payload is a configuration defect.
+        var resolution = await CreateSut(providerFailureExtractor: CustomViewFailureExtractor(4))
+            .ResolveAsync(input, session);
+
+        resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>();
+        TargetActionOf(resolution.ImmediateResult).Should().Be(UpsertTargetAction.Update);
+    }
+
+    [Test]
+    public async Task It_attributes_a_post_branch_security_configuration_result_to_the_selected_action()
+    {
+        var securityConfiguration = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureSecurityConfiguration(["misconfigured"])
+        );
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Immediate(securityConfiguration),
+            new PostBranchAuthorization.Immediate(securityConfiguration)
+        );
+        var session = new ScriptedWriteSession(CreateCaptureReader(target: null));
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        TargetActionOf(resolution.ImmediateResult).Should().Be(UpsertTargetAction.Create);
+    }
+
+    [Test]
+    public async Task It_leaves_a_post_denial_unattributed()
+    {
+        var denial = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Create)
+        );
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Immediate(denial),
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs())
+        );
+        var session = new ScriptedWriteSession(CreateCaptureReader(target: null));
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeSameAs(denial);
+    }
+
+    [Test]
+    public void It_defers_the_unresolved_precondition_when_only_the_create_branch_authorizes_proposed_values()
+    {
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    ProposedNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
+                }
+            ),
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs())
+        ) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("\"etag\""),
+        };
+
+        RelationalWriteExecutionStateResolver
+            .GetEtagPreconditionEvaluation(input)
+            .Should()
+            .Be(EtagPreconditionEvaluation.DeferredUntilAfterProposedAuthorization);
+    }
+
+    [Test]
+    public void It_evaluates_the_unresolved_precondition_before_authorization_when_neither_branch_authorizes()
+    {
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs()),
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs())
+        ) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("\"etag\""),
+        };
+
+        RelationalWriteExecutionStateResolver
+            .GetEtagPreconditionEvaluation(input)
+            .Should()
+            .Be(EtagPreconditionEvaluation.BeforeProposedAuthorization);
+    }
+
+    /// <summary>
+    /// The unresolved decision shapes only the hydration of an existing target, which never owes the create
+    /// ownership verdict, so the verdict — shared or carried by the create branch alone — leaves it, and with
+    /// it the first-phase command, unchanged. The resolved create request is what defers the If-Match 412.
+    /// </summary>
+    [Test]
+    public void It_does_not_defer_the_unresolved_precondition_for_a_pending_create_ownership_verdict()
+    {
+        var denial = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureOwnershipNotAuthorized(
+                new OwnershipAuthorizationFailure(
+                    OwnershipAuthorizationFailureKind.OwnershipTokenMismatch,
+                    0,
+                    "OwnershipBased"
+                )
+            )
+        );
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    DeferredCreateOwnershipFailureResult = denial,
+                }
+            ),
+            new PostBranchAuthorization.Authorized(EmptyBranchInputs())
+        ) with
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("\"etag\""),
+            DeferredCreateOwnershipFailureResult = denial,
+        };
+
+        RelationalWriteExecutionStateResolver
+            .GetEtagPreconditionEvaluation(input)
+            .Should()
+            .Be(EtagPreconditionEvaluation.BeforeProposedAuthorization);
+    }
+
+    private static RelationalWriteExecutorInput CreatePostInputWithBranches(
+        PostBranchAuthorization createNew,
+        PostBranchAuthorization existingDocument,
+        bool includeReadPlan = true
+    )
+    {
+        var input = CreateInput(RelationalWriteOperationKind.Post, includeReadPlan) with
+        {
+            PostTargetAuthorizationBundles = new PostTargetAuthorizationBundles(createNew, existingDocument),
+        };
+
+        // As the repository preflight hands it over: the input's own members are the existing-document
+        // branch's, which is what any check emitted before the target is known must use.
+        return existingDocument is PostBranchAuthorization.Authorized authorized
+            ? input.WithPostBranchInputs(authorized.Inputs)
+            : input;
+    }
+
+    private static PostBranchAuthorizationInputs EmptyBranchInputs() =>
+        new(null, null, null, null, null, null, null, null, null);
+
+    [Test]
     public async Task It_keeps_stored_authorization_and_hydration_vacuous_after_an_absent_capture()
     {
         var input = CreateInput(RelationalWriteOperationKind.Post, includeReadPlan: false) with
@@ -990,10 +1435,11 @@ public class Given_The_Composite_Relational_Write_First_Phase
     }
 
     /// <summary>
-    /// This is the assertion that pins D1: a POST that resolves to a create is never denied by ownership.
-    /// The statement carries the carrier's row guard, so with no captured target it produces no rows and
-    /// none of its branches — the AUTH1 abort device included — evaluates. Asserted with the caller holding
-    /// zero ownership tokens, which is the configuration most likely to deny if the guard were missing.
+    /// The stored-token statement cannot deny a POST that resolves to a create: it carries the carrier's row
+    /// guard, so with no captured target it produces no rows and none of its branches — the AUTH1 abort device
+    /// included — evaluates. Asserted with the caller holding zero ownership tokens, which is the configuration
+    /// most likely to deny if the guard were missing. A create is decided instead by the create-side verdict,
+    /// which the second command returns in its ownership slot.
     /// </summary>
     [Test]
     public async Task It_keeps_the_ownership_statement_vacuous_for_a_create_with_no_tokens()
@@ -1052,7 +1498,8 @@ public class Given_The_Composite_Relational_Write_First_Phase
 
         var resolution = await CreateSut().ResolveAsync(input, session);
 
-        resolution.ImmediateResult.Should().BeSameAs(deferred);
+        // The owed failure is the existing-document branch's configuration, so it is attributed to Update.
+        resolution.ImmediateResult.Should().Be(AttributedTo(deferred, UpsertTargetAction.Update));
         resolution.Outcome.Should().BeNull();
         // Capture, then the namespace segment, then the deferred failure in the ownership slot: no
         // relationship, reference or hydration command follows it.
@@ -1064,8 +1511,9 @@ public class Given_The_Composite_Relational_Write_First_Phase
     }
 
     /// <summary>
-    /// A create never sees the deferred failure: ownership never denies a create, and the over-limit list was
-    /// never parameterized for one, so the write proceeds with no ownership statement or parameter at all.
+    /// A create never sees the stored-side deferred failure, which is owed only to an existing target, and the
+    /// over-limit list is never parameterized, so the first phase proceeds with no ownership statement or
+    /// parameter at all. The cap reaches a create through its own create-side deferral instead.
     /// </summary>
     [Test]
     public async Task It_ignores_the_deferred_ownership_failure_for_a_post_create()
@@ -1089,6 +1537,216 @@ public class Given_The_Composite_Relational_Write_First_Phase
         var commandText = session.Commands.Should().ContainSingle().Subject.CommandText;
         commandText.Should().NotContain("CreatedByOwnershipTokenId");
         commandText.Should().NotContain("ownershipTokenIds");
+    }
+
+    /// <summary>
+    /// The create-side deferral reaches the resolved request of a create through <c>Resolve</c>, and the first
+    /// phase neither returns it nor emits anything for it: it is decided in C# and consumed after the proposed
+    /// filters, so the capture remains the only command.
+    /// </summary>
+    [Test]
+    public async Task It_carries_the_deferred_create_ownership_failure_to_a_post_create_without_returning_it()
+    {
+        var deferred = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureOwnershipNotAuthorized(
+                new OwnershipAuthorizationFailure(
+                    OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized,
+                    0,
+                    "OwnershipBased"
+                )
+            )
+        );
+        var input = CreateInput(RelationalWriteOperationKind.Post, includeReadPlan: false) with
+        {
+            DeferredCreateOwnershipFailureResult = deferred,
+        };
+        var session = new ScriptedWriteSession(CreateCaptureReader(target: null));
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution
+            .Outcome!.ExecutionRequest.TargetContext.Should()
+            .BeOfType<RelationalWriteTargetContext.CreateNew>();
+        resolution.Outcome.ExecutionRequest.DeferredCreateOwnershipFailureResult.Should().BeSameAs(deferred);
+        var commandText = session.Commands.Should().ContainSingle().Subject.CommandText;
+        commandText.Should().NotContain("CreatedByOwnershipTokenId");
+        commandText.Should().NotContain("ownershipTokenIds");
+    }
+
+    /// <summary>
+    /// Unlike the stored deferral, the create-side one does not route an upsert-as-update through the
+    /// ordered segments: it affects no statement the first phase emits, so the single composite command still
+    /// captures and hydrates, and nothing is returned in the ownership slot.
+    /// </summary>
+    [Test]
+    public async Task It_keeps_the_single_composite_command_for_an_existing_post_target_with_a_deferred_create_ownership_failure()
+    {
+        var deferred = RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
+            RelationalWriteOperationKind.Post,
+            ["ownership token cap"]
+        );
+        var input = CreateInput(RelationalWriteOperationKind.Post) with
+        {
+            DeferredCreateOwnershipFailureResult = deferred,
+        };
+        var session = new ScriptedWriteSession(
+            CreateCompositeReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value))
+        );
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution
+            .Outcome!.ExecutionRequest.TargetContext.Should()
+            .BeOfType<RelationalWriteTargetContext.ExistingDocument>();
+        resolution.Outcome.CurrentState!.DocumentMetadata.ContentVersion.Should().Be(44L);
+        session.Commands.Should().ContainSingle();
+    }
+
+    /// <summary>
+    /// The parameter budget alone decides whether a create's stored-token statement co-batches with the
+    /// capture, and the create-side deferral takes no part in it. At exact fit and one parameter over, on SQL
+    /// Server where each token binds its own parameter, a create sends the same commands, text and parameters
+    /// alike, whether or not the verdict is carried.
+    /// </summary>
+    [TestCase(0)]
+    [TestCase(1)]
+    public async Task It_selects_the_same_budget_fallback_for_a_post_create_with_or_without_the_create_ownership_verdict(
+        int parametersOverBudget
+    )
+    {
+        var input = CreateInput(
+            RelationalWriteOperationKind.Post,
+            includeReadPlan: false,
+            dialect: SqlDialect.Mssql
+        ) with
+        {
+            StoredOwnershipAuthorization = CreateStoredOwnershipAuthorization(
+                ownershipTokenIds: [11, 12, 13],
+                dialect: SqlDialect.Mssql
+            ),
+        };
+        var deferred = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureOwnershipNotAuthorized(
+                new OwnershipAuthorizationFailure(
+                    OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized,
+                    1,
+                    "OwnershipBased"
+                )
+            )
+        );
+
+        var probe = new ScriptedWriteSession(
+            CreateReader(CreateCaptureTable(target: null), CreateAuthorizationTable())
+        );
+        await CreateSut().ResolveAsync(input, probe);
+        var exactFit = probe.Commands.Should().ContainSingle().Subject.Parameters.Count;
+        var budget = new RelationalCommandBudget(exactFit - parametersOverBudget, MaxRowsPerStatement: 1000);
+
+        var withoutVerdict = await RecordFirstPhaseAsync(input);
+        var withVerdict = await RecordFirstPhaseAsync(
+            input with
+            {
+                DeferredCreateOwnershipFailureResult = deferred,
+            }
+        );
+
+        withVerdict.Should().BeEquivalentTo(withoutVerdict, options => options.WithStrictOrdering());
+        withVerdict
+            .Should()
+            .ContainSingle()
+            .Which.CommandText.Contains("CreatedByOwnershipTokenId", StringComparison.Ordinal)
+            .Should()
+            .Be(parametersOverBudget == 0, "only a fit co-batches the stored-token check with the capture");
+
+        async Task<
+            IReadOnlyList<(string CommandText, (string Name, object? Value)[] Parameters)>
+        > RecordFirstPhaseAsync(RelationalWriteExecutorInput recordedInput)
+        {
+            var session = new ScriptedWriteSession(
+                parametersOverBudget == 0
+                    ? CreateReader(CreateCaptureTable(target: null), CreateAuthorizationTable())
+                    : CreateCaptureReader(target: null)
+            );
+
+            var resolution = await CreateSut(commandBudget: budget).ResolveAsync(recordedInput, session);
+
+            resolution.ImmediateResult.Should().BeNull();
+            resolution
+                .Outcome!.ExecutionRequest.TargetContext.Should()
+                .BeOfType<RelationalWriteTargetContext.CreateNew>();
+
+            return
+            [
+                .. session.Commands.Select(static command =>
+                    (
+                        command.CommandText,
+                        command
+                            .Parameters.Select(static parameter => (parameter.Name, parameter.Value))
+                            .ToArray()
+                    )
+                ),
+            ];
+        }
+    }
+
+    /// <summary>
+    /// With differing policies each branch plans its own create-side deferral, and the input arrives holding
+    /// the ExistingDocument branch's. The capture's overlay through <c>WithPostBranchInputs</c> must replace it
+    /// with the Create branch's for a create — a member the overlay dropped would leave the Update policy's
+    /// verdict deciding the create — and keep the ExistingDocument branch's for an upsert-as-update.
+    /// </summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_overlays_the_deferred_create_ownership_failure_from_the_selected_post_branch(
+        bool targetExists
+    )
+    {
+        var createBranchDeferred = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureOwnershipNotAuthorized(
+                new OwnershipAuthorizationFailure(
+                    OwnershipAuthorizationFailureKind.OwnershipTokenMismatch,
+                    0,
+                    "OwnershipBased"
+                )
+            )
+        );
+        var existingBranchDeferred = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureOwnershipNotAuthorized(
+                new OwnershipAuthorizationFailure(
+                    OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized,
+                    1,
+                    "OwnershipBased"
+                )
+            )
+        );
+        var input = CreatePostInputWithBranches(
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    DeferredCreateOwnershipFailureResult = createBranchDeferred,
+                }
+            ),
+            new PostBranchAuthorization.Authorized(
+                EmptyBranchInputs() with
+                {
+                    DeferredCreateOwnershipFailureResult = existingBranchDeferred,
+                }
+            )
+        );
+        var session = new ScriptedWriteSession(
+            CreateCompositeReader(
+                targetExists ? new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value) : null
+            )
+        );
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution
+            .Outcome!.ExecutionRequest.DeferredCreateOwnershipFailureResult.Should()
+            .BeSameAs(targetExists ? existingBranchDeferred : createBranchDeferred);
     }
 
     /// <summary>
@@ -1400,4 +2058,31 @@ public class Given_The_Composite_Relational_Write_First_Phase
     }
 
     private sealed class FakeDbException(string message) : DbException(message);
+
+    /// <summary>
+    /// <paramref name="result"/>'s security-configuration failure with <paramref name="action"/> as the action
+    /// it is attributed to.
+    /// </summary>
+    private static RelationalWriteExecutorResult AttributedTo(
+        RelationalWriteExecutorResult result,
+        UpsertTargetAction action
+    )
+    {
+        var upsert = (RelationalWriteExecutorResult.Upsert)result;
+        return upsert with
+        {
+            Result = ((UpsertResult.UpsertFailureSecurityConfiguration)upsert.Result) with
+            {
+                TargetAction = action,
+            },
+        };
+    }
+
+    private static UpsertTargetAction? TargetActionOf(RelationalWriteExecutorResult? result) =>
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+            .Which.TargetAction;
 }

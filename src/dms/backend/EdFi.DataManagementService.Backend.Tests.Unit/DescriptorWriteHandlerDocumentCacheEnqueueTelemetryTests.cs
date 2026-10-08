@@ -11,10 +11,13 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -49,7 +52,7 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         );
         var sut = CreateSut(targetLookupService, sessionFactory, telemetry);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid)
         );
 
@@ -88,7 +91,9 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         );
         var sut = CreateSut(targetLookupService, sessionFactory, telemetry);
 
-        await sut.HandlePostAsync(CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid));
+        await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+            CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid)
+        );
 
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         telemetry.Successes.Should().ContainSingle();
@@ -114,7 +119,7 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         );
         var sut = CreateSut(targetLookupService, sessionFactory, telemetry);
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid)
         );
 
@@ -153,7 +158,9 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
                 44L
             );
 
-            await sut.HandlePostAsync(CreatePostRequest(mappingSet, documentUuid));
+            await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                CreatePostRequest(mappingSet, documentUuid)
+            );
         }
         else
         {
@@ -206,7 +213,9 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             targetLookupService.PostResult = new RelationalWriteTargetLookupResult.CreateNew(documentUuid);
             sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(46L)]);
 
-            result = await sut.HandlePostAsync(CreatePostRequest(mappingSet, documentUuid));
+            result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                CreatePostRequest(mappingSet, documentUuid)
+            );
         }
         else if (writePath == DescriptorWritePath.PostAsUpdate)
         {
@@ -221,7 +230,9 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             ]);
             sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
 
-            result = await sut.HandlePostAsync(CreatePostRequest(mappingSet, documentUuid));
+            result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                CreatePostRequest(mappingSet, documentUuid)
+            );
         }
         else
         {
@@ -299,7 +310,7 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             tenantKey: peerTargetKey.TenantKey
         );
 
-        var result = await sut.HandlePostAsync(
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
             CreatePostRequest(
                 CreateMappingSet(SqlDialect.Pgsql),
                 documentUuid,
@@ -356,7 +367,9 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             targetLookupService.PostResult = new RelationalWriteTargetLookupResult.CreateNew(documentUuid);
             sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(46L)]);
 
-            result = await sut.HandlePostAsync(CreatePostRequest(mappingSet, documentUuid));
+            result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                CreatePostRequest(mappingSet, documentUuid)
+            );
         }
         else if (writePath == DescriptorWritePath.PostAsUpdate)
         {
@@ -371,7 +384,9 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             ]);
             sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
 
-            result = await sut.HandlePostAsync(CreatePostRequest(mappingSet, documentUuid));
+            result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                CreatePostRequest(mappingSet, documentUuid)
+            );
         }
         else
         {
@@ -645,7 +660,9 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             targetLookupService.PostResult = new RelationalWriteTargetLookupResult.CreateNew(documentUuid);
             sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(46L)]);
 
-            result = await sut.HandlePostAsync(CreatePostRequest(mappingSet, documentUuid));
+            result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                CreatePostRequest(mappingSet, documentUuid)
+            );
         }
         else if (writePath == DescriptorWritePath.PostAsUpdate)
         {
@@ -660,7 +677,9 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             ]);
             sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionResultSet(45L)]);
 
-            result = await sut.HandlePostAsync(CreatePostRequest(mappingSet, documentUuid));
+            result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                CreatePostRequest(mappingSet, documentUuid)
+            );
         }
         else
         {
@@ -687,6 +706,100 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         telemetry.Failures.Should().BeEmpty();
     }
 
+    /// <summary>
+    /// A write OwnershipBased refuses reaches no data-modifying statement, so it enqueues no cache work and
+    /// records no enqueue telemetry: a create whose creator token the client does not hold is refused before a
+    /// session opens, and an update the stored-stamp check denies is rolled back inside the locked session.
+    /// </summary>
+    [TestCase(DescriptorWritePath.PostInsert)]
+    [TestCase(DescriptorWritePath.PostAsUpdate)]
+    [TestCase(DescriptorWritePath.PutUpdate)]
+    public async Task It_records_no_descriptor_enqueue_telemetry_for_a_write_ownership_denies(
+        DescriptorWritePath writePath
+    )
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService();
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        var telemetry = new RecordingDocumentCacheEnqueueTelemetry(
+            () => sessionFactory.Session.CommitCallCount,
+            () => sessionFactory.Session.RollbackCallCount
+        );
+        // The stored-stamp check aborts with the AUTH1 mismatch payload, decoded by the real ownership mapper.
+        var sut = CreateSut(
+            targetLookupService,
+            sessionFactory,
+            telemetry,
+            providerFailureExtractor: new OwnershipAuthStubProviderFailureExtractor(
+                OwnershipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+                OwnershipAuthTestDoubles.EncodePayload(
+                    0,
+                    OwnershipAuthorizationAuth1FailureKind.OwnershipTokenMismatch
+                )
+            )
+        );
+        var mappingSet = CreateMappingSet(SqlDialect.Pgsql);
+        var nonOwner = new RelationalAuthorizationContext(
+            [],
+            [],
+            creatorOwnershipTokenId: 42,
+            ownershipTokenIds: [7]
+        );
+        AuthorizationStrategyEvaluator[] ownershipBased =
+        [
+            new(AuthorizationStrategyNameConstants.OwnershipBased, [], FilterOperator.And),
+        ];
+
+        if (writePath is not DescriptorWritePath.PostInsert)
+        {
+            var existing = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L);
+            targetLookupService.PostResult = existing;
+            targetLookupService.PutResult = existing;
+            sessionFactory.Session.ScalarResults.Enqueue(44L);
+            sessionFactory.Session.Executor.ResultSets.Enqueue([
+                CreatePersistedDescriptorResultSet(description: "Previous Description"),
+            ]);
+            // The persisted-row read succeeds; the ownership check that follows it aborts.
+            sessionFactory.Session.Executor.ExceptionsToThrow.Enqueue(null);
+            sessionFactory.Session.Executor.ExceptionsToThrow.Enqueue(new StubDbException("AUTH1"));
+        }
+        else
+        {
+            targetLookupService.PostResult = new RelationalWriteTargetLookupResult.CreateNew(documentUuid);
+        }
+
+        object result =
+            writePath is DescriptorWritePath.PutUpdate
+                ? await sut.HandlePutAsync(
+                    CreatePutRequest(mappingSet, documentUuid, description: "Updated Description") with
+                    {
+                        AuthorizationStrategyEvaluators = ownershipBased,
+                        RelationalAuthorizationContext = nonOwner,
+                    }
+                )
+                : await sut.HandlePostAsync(
+                    CreatePostRequest(mappingSet, documentUuid) with
+                    {
+                        RelationalAuthorizationContext = nonOwner,
+                    },
+                    UpsertActionAuthorization.SamePolicyForCreateAndUpdate(ownershipBased)
+                );
+
+        result
+            .Should()
+            .BeOfType(
+                writePath is DescriptorWritePath.PutUpdate
+                    ? typeof(UpdateResult.UpdateFailureOwnershipNotAuthorized)
+                    : typeof(UpsertResult.UpsertFailureOwnershipNotAuthorized)
+            );
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory
+            .Session.RollbackCallCount.Should()
+            .Be(writePath is DescriptorWritePath.PostInsert ? 0 : 1);
+        telemetry.Successes.Should().BeEmpty();
+        telemetry.Failures.Should().BeEmpty();
+    }
+
     public enum DescriptorWritePath
     {
         PostInsert,
@@ -702,7 +815,8 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         string tenantKey = TargetKeyTenant,
         IRelationalWriteExceptionClassifier? writeExceptionClassifier = null,
         IDocumentCacheProviderCommandTimeoutClassifier? documentCacheProviderCommandTimeoutClassifier = null,
-        ILogger<DescriptorWriteHandler>? logger = null
+        ILogger<DescriptorWriteHandler>? logger = null,
+        IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null
     )
     {
         return new DescriptorWriteHandler(
@@ -712,6 +826,7 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             writeSessionFactory,
             logger ?? NullLogger<DescriptorWriteHandler>.Instance,
             new ServedEtagComposer(),
+            relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor,
             dataStoreSelection: CreateSelectedDataStoreSelection(tenantKey),
             documentCacheEnqueueTelemetry: telemetry,
             documentCacheTargetRegistry: targetRegistry

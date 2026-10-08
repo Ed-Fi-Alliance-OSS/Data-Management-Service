@@ -259,7 +259,7 @@ public sealed class Given_Cdc_Compose_Persistence(CdcProvider provider)
             .Brokers.Should()
             .OnlyContain(b =>
                 b.ReplicaFetchMaxBytes >= ceiling
-                && b.SocketRequestMaxBytes >= ceiling
+                && b.SocketRequestMaxBytes >= CdcDeploymentKafkaPolicy.MinimumBrokerRequestBytes(ceiling)
                 && b.ReplicaFetchResponseMaxBytes >= ceiling
             );
         AssertSentinel();

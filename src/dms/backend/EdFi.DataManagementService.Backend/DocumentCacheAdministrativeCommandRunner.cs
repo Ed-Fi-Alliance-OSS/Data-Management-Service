@@ -716,7 +716,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     exception,
                     "DocumentCache administrative mutex acquisition failed for command {Command} and target {TargetKey}.",
                     request.Command,
-                    LoggingSanitizer.SanitizeForLogging(request.TargetKey.TargetKey.ToString())
+                    LoggingSanitizer.SanitizeInternalValueForLogging(request.TargetKey.TargetKey.ToString())
                 );
                 RecordAdministrativeMutexOutcome(
                     request,
@@ -824,7 +824,9 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                         exception,
                         "DocumentCache administrative mutex session was lost for command {Command} and target {TargetKey}.",
                         request.Command,
-                        LoggingSanitizer.SanitizeForLogging(request.TargetKey.TargetKey.ToString())
+                        LoggingSanitizer.SanitizeInternalValueForLogging(
+                            request.TargetKey.TargetKey.ToString()
+                        )
                     );
                     classifiedResult = RecordAdministrativeCommandResult(
                         AugmentResult(workflow, commandContext, CreateSessionLossResult(commandContext)),
@@ -839,7 +841,9 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                         exception,
                         "DocumentCache administrative provider command timed out for command {Command} and target {TargetKey}.",
                         request.Command,
-                        LoggingSanitizer.SanitizeForLogging(request.TargetKey.TargetKey.ToString())
+                        LoggingSanitizer.SanitizeInternalValueForLogging(
+                            request.TargetKey.TargetKey.ToString()
+                        )
                     );
                     classifiedResult = RecordAdministrativeCommandResult(
                         AugmentResult(workflow, commandContext, CreateProviderTimeoutResult(commandContext)),
@@ -854,8 +858,10 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                         "DocumentCache administrative provider concurrency retry budget was exhausted after {AttemptCount} attempts for command {Command}, target {TargetKey}, and provider {Provider}.",
                         exception.AttemptCount,
                         request.Command,
-                        LoggingSanitizer.SanitizeForLogging(request.TargetKey.TargetKey.ToString()),
-                        LoggingSanitizer.SanitizeForLogging(exception.ProviderToken.Value)
+                        LoggingSanitizer.SanitizeInternalValueForLogging(
+                            request.TargetKey.TargetKey.ToString()
+                        ),
+                        LoggingSanitizer.SanitizeInternalValueForLogging(exception.ProviderToken.Value)
                     );
                     classifiedResult = RecordAdministrativeCommandResult(
                         AugmentResult(
@@ -881,7 +887,9 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                         exception,
                         "DocumentCache administrative mutex session was lost for command {Command} and target {TargetKey}.",
                         request.Command,
-                        LoggingSanitizer.SanitizeForLogging(request.TargetKey.TargetKey.ToString())
+                        LoggingSanitizer.SanitizeInternalValueForLogging(
+                            request.TargetKey.TargetKey.ToString()
+                        )
                     );
                     classifiedResult = RecordAdministrativeCommandResult(
                         AugmentResult(workflow, commandContext, CreateSessionLossResult(commandContext)),
@@ -895,7 +903,9 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                         exception,
                         "DocumentCache administrative command {Command} failed unexpectedly for target {TargetKey}.",
                         request.Command,
-                        LoggingSanitizer.SanitizeForLogging(request.TargetKey.TargetKey.ToString())
+                        LoggingSanitizer.SanitizeInternalValueForLogging(
+                            request.TargetKey.TargetKey.ToString()
+                        )
                     );
                     classifiedResult = RecordAdministrativeCommandResult(
                         AugmentResult(
@@ -965,7 +975,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                 exception,
                 "DocumentCache administrative mutex cleanup failed after command {Command} and target {TargetKey}. ClassifiedResultPreserved: {ClassifiedResultPreserved}.",
                 request.Command,
-                LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString()),
+                LoggingSanitizer.SanitizeInternalValueForLogging(targetContext.TargetKey.ToString()),
                 hasClassifiedResult
             );
         }
@@ -996,9 +1006,9 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                 exception,
                 "DocumentCache administrative command observation cleanup failed after command {Command}, target {TargetKey}, generation {TargetGeneration}, and execution {ExecutionId}. ClassifiedResultPreserved: {ClassifiedResultPreserved}.",
                 request.Command,
-                LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString()),
+                LoggingSanitizer.SanitizeInternalValueForLogging(targetContext.TargetKey.ToString()),
                 targetContext.Generation.Value,
-                LoggingSanitizer.SanitizeForLogging(executionId.ToString()),
+                LoggingSanitizer.SanitizeInternalValueForLogging(executionId.ToString()),
                 hasClassifiedResult
             );
         }
@@ -1023,7 +1033,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                 exception,
                 "DocumentCache administrative retained target-context cleanup failed after command {Command}, target {TargetKey}, and generation {TargetGeneration}. ClassifiedResultPreserved: {ClassifiedResultPreserved}.",
                 request.Command,
-                LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString()),
+                LoggingSanitizer.SanitizeInternalValueForLogging(targetContext.TargetKey.ToString()),
                 targetContext.Generation.Value,
                 hasClassifiedResult
             );

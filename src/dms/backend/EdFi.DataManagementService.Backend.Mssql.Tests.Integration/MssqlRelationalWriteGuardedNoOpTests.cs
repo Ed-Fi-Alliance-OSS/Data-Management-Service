@@ -360,7 +360,11 @@ file static class GuardedNoOpIntegrationTestSupport
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
     public static UpdateRequest CreateUpdateRequest(
         MappingSet mappingSet,
@@ -406,7 +410,11 @@ file static class GuardedNoOpIntegrationTestSupport
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
     public static async Task<GuardedNoOpPersistedState> ReadPersistedStateAsync(
         MssqlGeneratedDdlTestDatabase database,

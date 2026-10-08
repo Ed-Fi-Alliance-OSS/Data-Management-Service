@@ -22,9 +22,9 @@ public sealed record FullDdlEmission(
 public static class FullDdlEmitter
 {
     /// <summary>
-    /// Emits the complete DDL SQL by combining Phase 0 bounded provisioning guards,
-    /// core schema DDL, relational model DDL, and seed DML for the given dialect and
-    /// derived model set.
+    /// Emits the complete DDL SQL by combining the dialect's script prologue, Phase 0 bounded
+    /// provisioning guards, core schema DDL, relational model DDL, and seed DML for the given
+    /// dialect and derived model set.
     /// </summary>
     public static string Emit(ISqlDialect dialect, DerivedRelationalModelSet modelSet) =>
         EmitWithMetadata(dialect, modelSet).CombinedSql;
@@ -52,7 +52,13 @@ public static class FullDdlEmitter
         );
 
         return new FullDdlEmission(
-            JoinSegments(preflightDdl, coreEmission.Sql, relationalDdl, seedDml),
+            JoinSegments(
+                dialect.RenderScriptPrologue(),
+                preflightDdl,
+                coreEmission.Sql,
+                relationalDdl,
+                seedDml
+            ),
             coreEmission.CdcSourceInventory,
             cdcDmsManagedTableInventory
         );

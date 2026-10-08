@@ -177,7 +177,7 @@ public sealed class DocumentCacheTargetKey : IEquatable<DocumentCacheTargetKey>
     public override string ToString()
     {
         string tenantForDiagnostics =
-            TenantKey.Length == 0 ? "(default)" : LoggingSanitizer.SanitizeForLogging(TenantKey);
+            TenantKey.Length == 0 ? "(default)" : LoggingSanitizer.SanitizeInternalValueForLogging(TenantKey);
         return $"{tenantForDiagnostics}:{DataStoreId}";
     }
 

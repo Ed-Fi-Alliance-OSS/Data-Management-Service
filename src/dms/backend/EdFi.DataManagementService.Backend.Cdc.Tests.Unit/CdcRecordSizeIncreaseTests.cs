@@ -169,6 +169,7 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
         ResetIncrease();
         _trace.Clear();
         Fake.ClearRecordedCalls(_connect);
+        Fake.ClearRecordedCalls(_runtime);
     }
 
     private void ResetIncrease()
@@ -189,7 +190,18 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
         _increase = new(_store, bindings, _kafka, _sizes, _connect, _validation, TimeProvider.System);
     }
 
-    private CdcKafkaBrokerEvidence Brokers() => new(true, [new(0, _brokerLimit, _brokerLimit, _brokerLimit)]);
+    private CdcKafkaBrokerEvidence Brokers() =>
+        new(
+            true,
+            [
+                new(
+                    0,
+                    CdcDeploymentKafkaPolicy.MinimumBrokerRequestBytes(_brokerLimit),
+                    _brokerLimit,
+                    _brokerLimit
+                ),
+            ]
+        );
 
     private CdcKafkaTopicEvidence Topic(string name)
     {
@@ -854,6 +866,54 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
         }
     }
 
+    [TestCase("eligible")]
+    [TestCase("missing-confirmation")]
+    [TestCase("missing-provenance")]
+    [TestCase("start-failure")]
+    public async Task It_starts_projection_after_confirmed_alignment_before_resume(string scenario)
+    {
+        if (scenario == "missing-confirmation")
+        {
+            _confirmChange = c => c with { CompleteInventoryAndCapacityConfirmed = false };
+        }
+        if (scenario == "missing-provenance")
+        {
+            Directory.Delete(Path.Combine(_root, "workflows"), true);
+        }
+        int starts = 0;
+        A.CallTo(() => _runtime.StartProcessingAsync(A<CancellationToken>._))
+            .Invokes(() =>
+            {
+                starts++;
+                _brokerLimit.Should().Be(Ceiling);
+                _topicLimit.Should().Be(Ceiling);
+                _live["producer.override.max.request.size"]
+                    .Should()
+                    .Be(Ceiling.ToString(CultureInfo.InvariantCulture));
+                _stopped.Should().BeTrue();
+                _effects.Should().NotContain("resume-before");
+                var pending = ReadJournal().Operations.Single(o => o.OperationId == _scope.OperationId);
+                pending.RecordSizeIncrease.Single().Acknowledgements.Should().HaveCount(1);
+                pending.Completions.Should().BeEmpty();
+                if (scenario == "start-failure")
+                {
+                    throw new InvalidOperationException("fixture projection start failure");
+                }
+            });
+        var result = await Execute();
+        starts.Should().Be(scenario is "eligible" or "start-failure" ? 1 : 0);
+        result.Succeeded.Should().Be(scenario == "eligible");
+        if (scenario != "eligible")
+        {
+            _effects.Should().NotContain("resume-before");
+        }
+        if (scenario == "start-failure")
+        {
+            ReadJournal().HasPendingRecordSizeIncrease.Should().BeTrue();
+            result.Diagnostics.Should().Contain(d => d.Component == CdcDeploymentComponent.Projection);
+        }
+    }
+
     [Test]
     public async Task It_orders_confirmed_effects_and_restores_only_fresh_readiness()
     {
@@ -883,6 +943,185 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
         ReadJournal().HasPendingRecordSizeIncrease.Should().BeFalse();
         _trace.Count(s => s == "metrics").Should().BeGreaterThanOrEqualTo(3);
     }
+
+    [Test]
+    public async Task It_reobserves_initial_unusable_lag_without_repeating_the_rollout()
+    {
+        ShortTiming(1000);
+        _onCall = step =>
+        {
+            if (step == "resume-after")
+            {
+                UnavailableCurrentLag(2);
+            }
+        };
+
+        var result = await Execute();
+
+        result.Succeeded.Should().BeTrue(because: JsonSerializer.Serialize(result));
+        result.Ready.Should().BeTrue();
+        result.Diagnostics.Should().BeEmpty();
+        AssertSingleRollout();
+        ReadJournal().HasPendingRecordSizeIncrease.Should().BeFalse();
+        ReadJournal()
+            .Operations.Single(o => o.Effect == CdcWorkflowEffect.ResumeConnector)
+            .Completions.Should()
+            .ContainSingle();
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_bounds_initial_unusable_lag_without_completing_the_rollout(bool cancel)
+    {
+        CatchUpTiming(cancel);
+        using var caller = new CancellationTokenSource();
+        int passes = 0;
+        _onCall = step =>
+        {
+            if (step == "resume-after")
+            {
+                UnavailableCurrentLag(int.MaxValue);
+            }
+            if (step == "provider" && _effects.Contains("resume-after") && ++passes == 3 && cancel)
+            {
+                caller.Cancel();
+                caller.Token.ThrowIfCancellationRequested();
+            }
+        };
+
+        if (cancel)
+        {
+            await FluentActions
+                .Awaiting(() => Execute(caller.Token))
+                .Should()
+                .ThrowAsync<OperationCanceledException>();
+        }
+        else
+        {
+            var result = await Execute();
+            result.Succeeded.Should().BeFalse();
+            result.Ready.Should().BeFalse();
+            result.Diagnostics.Should().Contain(d => d.Failure == CdcDeploymentFailure.Timeout);
+        }
+        passes.Should().BeGreaterThanOrEqualTo(3);
+        AssertSingleRollout();
+        ReadJournal().HasPendingRecordSizeIncrease.Should().BeTrue();
+        ReadJournal()
+            .Operations.Single(o => o.Effect == CdcWorkflowEffect.ResumeConnector)
+            .Completions.Should()
+            .BeEmpty();
+    }
+
+    [TestCase("worker")]
+    [TestCase("provider")]
+    [TestCase("topic")]
+    [TestCase("terminal")]
+    public async Task It_rejects_other_evidence_changes_while_initial_rollout_lag_is_unusable(string change)
+    {
+        ShortTiming(1000);
+        int passes = 0;
+        _onCall = step =>
+        {
+            if (step == "resume-after")
+            {
+                UnavailableCurrentLag(int.MaxValue);
+            }
+            if (step == "provider" && _effects.Contains("resume-after") && ++passes == 2)
+            {
+                if (change == "terminal")
+                {
+                    _identity = new('b', 64);
+                }
+                else if (change == "worker")
+                {
+                    _workerEvidence = new(
+                        "replacement",
+                        _workerEvidence.MetricsEndpoint,
+                        _workerEvidence.EffectiveConfiguration,
+                        _workerEvidence.ImageDigest,
+                        _workerEvidence.HeapBytes,
+                        "replacement-worker"
+                    );
+                }
+            }
+            if (passes >= 2 && step == change && change is "provider" or "topic")
+            {
+                throw new IOException("private-failure");
+            }
+        };
+
+        var result = await Execute();
+
+        result.Succeeded.Should().BeFalse();
+        result.Ready.Should().BeFalse();
+        result.Diagnostics.Should().NotContain(d => d.Failure == CdcDeploymentFailure.Timeout);
+        passes.Should().BeGreaterThanOrEqualTo(2);
+        AssertSingleRollout(stopCount: change == "terminal" ? 2 : 1);
+        if (change == "terminal")
+        {
+            result.Observation.IncidentPersistence.Should().Be(CdcIncidentPersistenceState.Persisted);
+            result.Observation.Containment.Should().Be(CdcConnectorContainmentState.Stopped);
+        }
+        ReadJournal().HasPendingRecordSizeIncrease.Should().BeTrue();
+        ReadJournal()
+            .Operations.Single(o => o.Effect == CdcWorkflowEffect.ResumeConnector)
+            .Completions.Should()
+            .BeEmpty();
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_rejects_unusable_lag_after_usable_rollout_evidence(bool completedResume)
+    {
+        ShortTiming(1000);
+        int passes = 0;
+        _onCall = step =>
+        {
+            if (step == "resume-after")
+            {
+                _backlog = !completedResume;
+            }
+            if (step == "provider" && _effects.Contains("resume-after") && ++passes == 2)
+            {
+                UnavailableCurrentLag(int.MaxValue);
+            }
+        };
+
+        var result = await Execute();
+
+        result.Succeeded.Should().BeFalse();
+        result.Ready.Should().BeFalse();
+        passes.Should().Be(2);
+        result.Diagnostics.Should().NotContain(d => d.Failure == CdcDeploymentFailure.Timeout);
+        AssertSingleRollout();
+        ReadJournal().HasPendingRecordSizeIncrease.Should().BeTrue();
+        ReadJournal()
+            .Operations.Single(o => o.Effect == CdcWorkflowEffect.ResumeConnector)
+            .Completions.Should()
+            .HaveCount(completedResume ? 1 : 0);
+    }
+
+    private void UnavailableCurrentLag(int count) =>
+        A.CallTo(() =>
+                _metrics.CollectAsync(
+                    A<CdcDeploymentRequest>._,
+                    A<CdcTelemetryObservationPass>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(
+                (CdcDeploymentRequest _, CdcTelemetryObservationPass pass, CancellationToken _) =>
+                {
+                    Trace("metrics");
+                    pass.InvalidateForUnavailableCurrentLag();
+                    return Task.FromResult<CdcTransportResult<CdcConnectorTelemetryObservation>>(
+                        new CdcTransportResult<CdcConnectorTelemetryObservation>.Unavailable(
+                            new(CdcDeploymentComponent.Metrics, CdcDeploymentFailure.ValidationFailed)
+                        )
+                    );
+                }
+            )
+            .NumberOfTimes(count);
 
     [TestCase("lag")]
     [TestCase("backlog")]
@@ -957,7 +1196,7 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
         bool cancel
     )
     {
-        ShortTiming(200);
+        CatchUpTiming(cancel);
         using var caller = new CancellationTokenSource();
         int observations = 0;
         _onCall = step =>
@@ -1012,6 +1251,26 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
             _request.Timing.CallTimeout,
             _request.Timing.PollInterval,
             CancellationToken.None
+        );
+    }
+
+    private void CatchUpTiming(bool cancel)
+    {
+        // Journal persistence precedes catch-up, so allow it time to finish under load.
+        // Equal call and wait budgets isolate the overall deadline from per-call expiry.
+        // Caller cancellation has more headroom to reach its explicit third-pass trigger.
+        var wait = TimeSpan.FromSeconds(cancel ? 30 : 10);
+        _request = new(
+            _request.Binding,
+            _request.DmsSettings,
+            _request.ProviderSetup,
+            _request.ConnectEndpoint,
+            _request.WorkerMetricsEndpoint,
+            _request.ConnectorPolicy,
+            _request.WorkerPolicy,
+            _request.ProviderConnectionProperties,
+            _request.KafkaClientSecurityProperties,
+            new(wait, wait, TimeSpan.FromMilliseconds(5))
         );
     }
 
@@ -1153,13 +1412,14 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
         );
     }
 
-    private void AssertSingleRollout()
+    private void AssertSingleRollout(int stopCount = 1)
     {
         _confirmations.Should().Be(1);
         foreach (string effect in new[] { "stop", "broker", "topic", "buffer", "request", "resume" })
         {
-            _effects.Count(e => e == effect + "-before").Should().Be(1);
-            _effects.Count(e => e == effect + "-after").Should().Be(1);
+            int expected = effect == "stop" ? stopCount : 1;
+            _effects.Count(e => e == effect + "-before").Should().Be(expected);
+            _effects.Count(e => e == effect + "-after").Should().Be(expected);
         }
         ReadJournal()
             .Operations.Single(o => o.OperationId == _scope.OperationId)
@@ -1614,7 +1874,10 @@ internal class Given_CdcRecordSizeIncrease(Ddl.CdcProvider provider) : CdcReadin
             .MustNotHaveHappened();
         A.CallTo(() => _connect.DeleteAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
             .MustNotHaveHappened();
-        A.CallTo(() => _runtime.StartProcessingAsync(A<CancellationToken>._)).MustNotHaveHappened();
+        Fake.GetCalls(_runtime)
+            .Should()
+            .NotContain(c => c.Method.Name == nameof(ICdcProjectionRuntime.ActivateAsync));
+        _disposals.Should().Be(0);
         _posts.Should().Be(1);
     }
 }

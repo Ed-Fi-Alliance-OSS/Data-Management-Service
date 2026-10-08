@@ -46,10 +46,10 @@ internal sealed record DocumentCacheWriterCacheAheadIncidentRequest
 
     public TimeSpan IncidentTimeout { get; }
 
-    public string SanitizedProvider => LoggingSanitizer.SanitizeForLogging(ProviderToken.Value);
+    public string SanitizedProvider => LoggingSanitizer.SanitizeInternalValueForLogging(ProviderToken.Value);
 
     public string SanitizedTargetKey =>
-        LoggingSanitizer.SanitizeForLogging(
+        LoggingSanitizer.SanitizeInternalValueForLogging(
             $"{(TargetKey.TenantKey.Length == 0 ? "(default)" : TargetKey.TenantKey)}:{TargetKey.DataStoreId.Value}"
         );
 }

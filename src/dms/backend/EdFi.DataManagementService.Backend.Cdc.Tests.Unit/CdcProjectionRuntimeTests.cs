@@ -106,9 +106,8 @@ public class Given_CdcProjectionRuntimeComposition
     }
 
     [Test]
-    public async Task It_initializes_schema_before_resolving_the_selected_target_and_does_not_start_processing()
+    public async Task It_applies_registration_callback_before_initializing_schema_and_resolving_target_without_processing()
     {
-        IServiceCollection services = Services(Configuration("postgresql", "tenanta"));
         List<string> order = [];
         IEffectiveSchemaBootstrapper bootstrapper = A.Fake<IEffectiveSchemaBootstrapper>();
         A.CallTo(() => bootstrapper.InitializeAsync(A<CancellationToken>._))
@@ -138,23 +137,73 @@ public class Given_CdcProjectionRuntimeComposition
             .Returns(snapshot);
         A.CallTo(() => registry.CurrentRuntimeSnapshot)
             .Returns(new DocumentCacheTargetRuntimeSnapshot([context], DateTimeOffset.UtcNow));
-        services.Replace(ServiceDescriptor.Singleton(bootstrapper));
-        services.Replace(ServiceDescriptor.Singleton(registry));
-        ServiceProvider provider = services.BuildServiceProvider();
-        var result = await CdcProjectionRuntimeFactory.OpenAsync(provider, Target, CancellationToken.None);
+        IServiceProvider provider = null!;
+        int callbackCount = 0;
+        var configuration = Configuration("postgresql", "tenanta");
+        configuration["Cdc:Compose:DatabaseHostPort"] = "54320";
+        var result = await CdcProjectionRuntimeFactory.CreateAsync(
+            configuration,
+            new LoggerConfiguration().CreateLogger(),
+            Target,
+            registeredServices =>
+            {
+                callbackCount++;
+                registeredServices.Replace(ServiceDescriptor.Singleton(registry));
+                registeredServices.Replace(
+                    ServiceDescriptor.Singleton<IEffectiveSchemaBootstrapper>(sp =>
+                    {
+                        provider = sp;
+                        return bootstrapper;
+                    })
+                );
+            },
+            CancellationToken.None
+        );
         var runtime = result
             .Should()
             .BeOfType<CdcTransportResult<ICdcProjectionRuntime>.Observed>()
             .Subject.Value;
         await using (runtime)
         {
+            callbackCount.Should().Be(1);
             order.Should().Equal("schema", "target");
+            provider.GetRequiredService<IDocumentCacheTargetRegistry>().Should().BeSameAs(registry);
             provider.GetRequiredService<DocumentCacheProjectionSupervisor>().ExecuteTask.Should().BeNull();
             provider
                 .GetRequiredService<DocumentCacheProjectionSupervisor>()
                 .CurrentTargetContexts.Should()
                 .BeEmpty();
         }
+        Action resolve = () => provider.GetRequiredService<IDocumentCacheTargetRegistry>();
+        resolve.Should().Throw<ObjectDisposedException>();
+    }
+
+    [Test]
+    public async Task It_sanitizes_registration_callback_failures_before_initialization()
+    {
+        IEffectiveSchemaBootstrapper bootstrapper = A.Fake<IEffectiveSchemaBootstrapper>();
+        int callbackCount = 0;
+        var result = await CdcProjectionRuntimeFactory.CreateAsync(
+            Configuration("postgresql"),
+            new LoggerConfiguration().CreateLogger(),
+            Target,
+            services =>
+            {
+                callbackCount++;
+                services.Replace(ServiceDescriptor.Singleton(bootstrapper));
+                throw new InvalidOperationException("Host=private;Password=secret");
+            },
+            CancellationToken.None
+        );
+
+        callbackCount.Should().Be(1);
+        result
+            .Should()
+            .BeOfType<CdcTransportResult<ICdcProjectionRuntime>.Unavailable>()
+            .Which.Diagnostic.Component.Should()
+            .Be(CdcDeploymentComponent.Projection);
+        JsonSerializer.Serialize(result).Should().NotContain("private").And.NotContain("secret");
+        A.CallTo(() => bootstrapper.InitializeAsync(A<CancellationToken>._)).MustNotHaveHappened();
     }
 
     [TestCase(false)]
@@ -286,6 +335,7 @@ public class Given_CdcProjectionRuntimeLifetime
     private RecordingSupervisor _lifetime = null!;
     private IDocumentCacheProjectionSupervisor _supervisor = null!;
     private IDocumentCacheGuardedNewEmptyActivationCommand _activation = null!;
+    private IDocumentCacheOnlineCacheRebuildCommand _rebuild = null!;
     private IDocumentCacheStatusService _status = null!;
     private CdcProjectionRuntime _runtime = null!;
 
@@ -295,12 +345,14 @@ public class Given_CdcProjectionRuntimeLifetime
         _lifetime = new();
         _supervisor = A.Fake<IDocumentCacheProjectionSupervisor>();
         _activation = A.Fake<IDocumentCacheGuardedNewEmptyActivationCommand>();
+        _rebuild = A.Fake<IDocumentCacheOnlineCacheRebuildCommand>();
         _status = A.Fake<IDocumentCacheStatusService>();
         IServiceCollection services = new ServiceCollection();
         services.AddSingleton(_ => _lifetime);
         services.AddSingleton(_supervisor);
         services.AddSingleton(_activation);
         services.AddSingleton(_status);
+        services.AddSingleton(_rebuild);
         _provider = services.BuildServiceProvider();
         _ = _provider.GetRequiredService<RecordingSupervisor>();
         _runtime = new(_provider, _target, _lifetime);
@@ -371,6 +423,87 @@ public class Given_CdcProjectionRuntimeLifetime
     }
 
     [Test]
+    public async Task It_forwards_the_exact_online_rebuild_request_token_and_result_without_starting_an_executor()
+    {
+        using CancellationTokenSource cancellation = new();
+        DocumentCacheOnlineCacheRebuildRequest request = new(
+            DocumentCacheAdministrativeTargetKey.FromTargetKey(_target),
+            new("sha256:" + new string('a', 64)),
+            DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
+        );
+        DocumentCacheAdministrativeCommandResult expected = new(
+            DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+            request.TargetKey,
+            DocumentCacheAdministrativeCommandStatus.Completed,
+            DocumentCacheAdministrativeCommandClassification.Succeeded,
+            true
+        );
+        A.CallTo(() => _rebuild.ExecuteAsync(request, cancellation.Token)).Returns(expected);
+        var actual = await _runtime.RebuildOnlineAsync(request, cancellation.Token);
+        actual.Should().BeSameAs(expected);
+        A.CallTo(() => _rebuild.ExecuteAsync(request, cancellation.Token)).MustHaveHappenedOnceExactly();
+        _lifetime.Events.Should().BeEmpty();
+    }
+
+    [TestCase("target")]
+    [TestCase("disposed")]
+    [TestCase("cancelled")]
+    [TestCase("null")]
+    public async Task It_guards_rebuild_before_command_dispatch(string guard)
+    {
+        using CancellationTokenSource cancellation = new();
+        DocumentCacheOnlineCacheRebuildRequest request = new(
+            DocumentCacheAdministrativeTargetKey.FromTargetKey(_target)
+        );
+        if (guard == "target")
+        {
+            request = new(new("Other", 7));
+        }
+        if (guard == "disposed")
+        {
+            await _runtime.DisposeAsync();
+        }
+        if (guard == "cancelled")
+        {
+            await cancellation.CancelAsync();
+        }
+        Func<Task> action = () =>
+            _runtime.RebuildOnlineAsync(guard == "null" ? null! : request, cancellation.Token);
+        var failure = await action.Should().ThrowAsync<Exception>();
+        Type expected = guard switch
+        {
+            "target" => typeof(ArgumentException),
+            "disposed" => typeof(ObjectDisposedException),
+            "cancelled" => typeof(OperationCanceledException),
+            _ => typeof(ArgumentNullException),
+        };
+        failure.Which.Should().BeOfType(expected);
+        A.CallTo(() =>
+                _rebuild.ExecuteAsync(A<DocumentCacheOnlineCacheRebuildRequest>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_preserves_rebuild_failures_and_the_running_executor()
+    {
+        await _runtime.StartProcessingAsync(CancellationToken.None);
+        InvalidOperationException failure = new("Rebuild failed");
+        A.CallTo(() =>
+                _rebuild.ExecuteAsync(A<DocumentCacheOnlineCacheRebuildRequest>._, A<CancellationToken>._)
+            )
+            .ThrowsAsync(failure);
+        Func<Task> action = () =>
+            _runtime.RebuildOnlineAsync(
+                new(DocumentCacheAdministrativeTargetKey.FromTargetKey(_target)),
+                CancellationToken.None
+            );
+        (await action.Should().ThrowAsync<InvalidOperationException>()).Which.Should().BeSameAs(failure);
+        await _runtime.StartProcessingAsync(CancellationToken.None);
+        _lifetime.StartCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_uses_standalone_status_observation()
     {
         using CancellationTokenSource cancellation = new();
@@ -396,6 +529,19 @@ public class Given_CdcProjectionRuntimeLifetime
         await _runtime.DisposeAsync();
         _lifetime.Events.Should().Equal("refresh", "start", "stop", "dispose");
         _lifetime.CleanupToken.CanBeCanceled.Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_preserves_the_running_executor_on_repeated_start()
+    {
+        A.CallTo(() =>
+                _supervisor.RefreshAsync(DocumentCacheTargetRefreshReason.Startup, A<CancellationToken>._)
+            )
+            .Invokes(() => _lifetime.Events.Add("refresh"));
+        await _runtime.StartProcessingAsync(CancellationToken.None);
+        await _runtime.StartProcessingAsync(CancellationToken.None);
+        await _runtime.DisposeAsync();
+        _lifetime.Events.Should().Equal("refresh", "start", "stop", "dispose");
     }
 
     [Test]

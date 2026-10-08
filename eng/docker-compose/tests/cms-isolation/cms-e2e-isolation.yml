@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# Renames the Configuration Service E2E stack so build-config.ps1 E2ETest can run beside another local
+# stack. start-local-config.ps1 composes it after its own files when CMS_COMPOSE_OVERLAY_FILES names
+# it; Invoke-IsolatedConfigE2E.ps1 writes that and every variable below into the environment file it
+# derives. Only names change here; the derived file moves the ports, including the Configuration
+# Service's, which listens on the same port inside and outside its container as in the stock stack.
+# Hostnames stay as the base files set them, because they are per network.
+services:
+  db:
+    container_name: ${CMS_POSTGRES_CONTAINER:?}
+  keycloak:
+    container_name: ${CMS_KEYCLOAK_CONTAINER:?}
+  config:
+    container_name: ${CMS_CONFIG_CONTAINER:?}
+
+networks:
+  dms:
+    name: ${CMS_COMPOSE_NETWORK:?}
+    external: true

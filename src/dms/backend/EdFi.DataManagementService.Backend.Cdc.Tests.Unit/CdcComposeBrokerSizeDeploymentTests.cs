@@ -119,7 +119,7 @@ public class Given_CdcRecordSizeIncrease_compose_broker
     private Task Apply() =>
         _deployment.ApplyAsync(
             _request,
-            [new(1, 100_000_000, 100_000_000, 100_000_000)],
+            [new(1, 101_048_576, 100_000_000, 100_000_000)],
             CancellationToken.None
         );
 

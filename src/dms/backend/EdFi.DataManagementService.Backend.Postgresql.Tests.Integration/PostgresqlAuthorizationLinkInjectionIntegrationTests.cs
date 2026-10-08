@@ -313,7 +313,11 @@ public class Given_A_Postgresql_AcademicWeek_Read_With_Different_Caller_Authoriz
             Headers: [],
             TraceId: new TraceId("pg-32-seed-school"),
             DocumentUuid: SchoolDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
@@ -339,7 +343,11 @@ public class Given_A_Postgresql_AcademicWeek_Read_With_Different_Caller_Authoriz
             Headers: [],
             TraceId: new TraceId("pg-32-seed-academicweek"),
             DocumentUuid: AcademicWeekDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()

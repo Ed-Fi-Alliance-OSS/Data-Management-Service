@@ -24,7 +24,7 @@ Describe 'Keycloak nightly Slack notifications' {
 
     It 'retains aggregate success and failure reporting and suppresses manual notifications' {
         $script:notification | Should -Match '(?m)^    needs: keycloak-e2e$'
-        $script:notification | Should -Match '(?m)^    if: always\(\)$'
+        $script:notification | Should -Match "(?m)^    if: always\(\) && \(github\.event_name != 'schedule' \|\| github\.repository_owner == 'Ed-Fi-Alliance-OSS'\)$"
         $script:notification | Should -Match "if: github.event_name != 'workflow_dispatch' && needs.keycloak-e2e.result == 'success'"
         $script:notification | Should -Match "if: github.event_name != 'workflow_dispatch' && needs.keycloak-e2e.result != 'success'"
         [regex]::Matches($script:notification, 'webhook: \$\{\{ secrets.SLACK_WEBHOOK_URL \}\}').Count | Should -Be 2

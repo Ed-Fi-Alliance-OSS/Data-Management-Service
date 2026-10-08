@@ -336,7 +336,11 @@ file static class MssqlProfileIfMatchEtagTestSupport
             Headers: new Dictionary<string, string> { ["If-Match"] = ifMatch },
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()

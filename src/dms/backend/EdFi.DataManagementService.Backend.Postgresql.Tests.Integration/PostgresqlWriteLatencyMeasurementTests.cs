@@ -173,6 +173,10 @@ public class Given_A_Postgresql_Warm_Steady_State_Write_Latency_Measurement
                     TraceId: new TraceId("pg-write-latency-upsert"),
                     DocumentUuid: documentUuid ?? new DocumentUuid(Guid.NewGuid())
                 )
+                {
+                    ActionAuthorization =
+                        UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+                }
             );
     }
 

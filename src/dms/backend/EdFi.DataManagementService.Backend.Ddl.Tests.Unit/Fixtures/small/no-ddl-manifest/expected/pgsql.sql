@@ -570,7 +570,7 @@ BEGIN
         ADD CONSTRAINT "FK_Descriptor_Document"
         FOREIGN KEY ("DocumentId")
         REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
+        ON DELETE RESTRICT
         ON UPDATE NO ACTION;
     END IF;
 END $$;
@@ -700,7 +700,7 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "IX_Descriptor_ResourceKeyId_DocumentId" ON "dms"."Descriptor" ("ResourceKeyId", "DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_Document_CreatedByOwnershipTokenId" ON "dms"."Document" ("CreatedByOwnershipTokenId");
+CREATE INDEX IF NOT EXISTS "IX_Document_CreatedByOwnershipTokenId" ON "dms"."Document" ("CreatedByOwnershipTokenId") WHERE "CreatedByOwnershipTokenId" IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS "IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId" ON "dms"."DocumentProjectionWork" ("FirstEnqueuedAt", "DocumentId");
 
@@ -1074,7 +1074,7 @@ BEGIN
         ADD CONSTRAINT "FK_Person_Document"
         FOREIGN KEY ("DocumentId")
         REFERENCES "dms"."Document" ("DocumentId")
-        ON DELETE CASCADE
+        ON DELETE RESTRICT
         ON UPDATE NO ACTION;
     END IF;
 END $$;

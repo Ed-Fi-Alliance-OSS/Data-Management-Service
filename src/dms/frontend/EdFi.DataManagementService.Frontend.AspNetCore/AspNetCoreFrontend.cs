@@ -14,8 +14,11 @@ using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
+using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -396,20 +399,227 @@ public static class AspNetCoreFrontend
     }
 
     /// <summary>
-    /// Takes an HttpRequest and returns a unique trace identifier
+    /// Takes an HttpRequest and returns its correlation ID as a normalized
+    /// <see cref="TraceId"/>. This is the single ingestion point: both candidate sources - the
+    /// configured client header and the server-generated identifier - are normalized here, so
+    /// every downstream log event and error response body carries the identical value.
     /// </summary>
-    public static TraceId ExtractTraceIdFrom(HttpRequest request, IOptions<AppSettings> options)
+    /// <remarks>
+    /// A client-supplied header that normalizes to nothing but whitespace falls through to the
+    /// server-generated identifier, so blankness is tested after normalization rather than before
+    /// it. Why: <c>reference/adr-correlation-id-normalization.md</c>.
+    ///
+    /// The test is <see cref="string.IsNullOrWhiteSpace(string?)"/> rather than a length check
+    /// because whitespace is neither control nor format, and so is retained by the
+    /// correlation-ID allowlist by design: an all-whitespace header would otherwise survive
+    /// normalization intact and become the correlation ID. Kestrel strips leading and trailing
+    /// ASCII optional whitespace, but decodes header bytes as Latin-1 by default, so U+00A0
+    /// NO-BREAK SPACE - whitespace to .NET and not OWS to Kestrel - reaches here. Internal
+    /// whitespace in a correlation ID is still accepted whole; only the all-blank case falls back.
+    ///
+    /// Total, and in particular does not surface <see cref="OptionsValidationException"/>, so no
+    /// caller needs to guard this call.
+    /// </remarks>
+    public static TraceId ExtractTraceIdFrom(HttpRequest request, IOptions<AppSettings> options) =>
+        IngestCorrelationIdFrom(request, options).TraceId;
+
+    /// <summary>
+    /// The key under which the one ingestion result for a request is cached on
+    /// <see cref="HttpContext.Items"/>.
+    /// </summary>
+    /// <remarks>
+    /// Namespaced rather than a bare word, because <c>HttpContext.Items</c> is shared with every
+    /// other middleware, framework component and third-party package in the pipeline.
+    /// </remarks>
+    internal const string CorrelationIdItemsKey =
+        "EdFi.DataManagementService.Frontend.CorrelationIdIngestion";
+
+    /// <summary>
+    /// <see cref="ExtractTraceIdFrom"/> plus the derived facts about what normalization did to a
+    /// client-supplied value, for the one caller - <c>LoggingMiddleware</c> - that reports them.
+    /// </summary>
+    /// <remarks>
+    /// Computed at most once per request and cached on <see cref="HttpContext.Items"/>, so
+    /// "normalized once" is a property of the code rather than of the function happening to be
+    /// pure. A cache miss still computes, so a caller that somehow runs ahead of the
+    /// request-logging middleware simply becomes the one that populates it. Total: every request
+    /// gets an ingestion, including one whose <c>AppSettings</c> cannot be read, through
+    /// <see cref="IngestUnreadableConfiguration"/> below rather than through any caller's own
+    /// fallback.
+    /// </remarks>
+    internal static CorrelationIdIngestion IngestCorrelationIdFrom(
+        HttpRequest request,
+        IOptions<AppSettings> options
+    )
     {
-        string headerName = options.Value.CorrelationIdHeader;
+        IDictionary<object, object?> items = request.HttpContext.Items;
         if (
-            !string.IsNullOrEmpty(headerName)
-            && request.Headers.TryGetValue(headerName, out var correlationId)
-            && !string.IsNullOrEmpty(correlationId)
+            items.TryGetValue(CorrelationIdItemsKey, out object? cached)
+            && cached is CorrelationIdIngestion ingested
         )
         {
-            return new TraceId(correlationId!);
+            return ingested;
         }
-        return new TraceId(request.HttpContext.TraceIdentifier);
+
+        AppSettings appSettings;
+        try
+        {
+            // The only statement here that can throw OptionsValidationException, and deliberately
+            // the only one inside the try: a validation failure anywhere further down would be a
+            // different fault with a different answer.
+            appSettings = options.Value;
+        }
+        catch (OptionsValidationException)
+        {
+            return IngestUnreadableConfiguration(request.HttpContext);
+        }
+
+        int maxLength = appSettings.CorrelationIdMaxLength;
+        string headerName = appSettings.CorrelationIdHeader;
+
+        // Empty when the setting names no header or the request omits it, which is the same
+        // starting point as a header sent empty. Normalize("") short-circuits to string.Empty,
+        // so all three of those cases reach the fallback below through one code path.
+        string clientSupplied =
+            !string.IsNullOrEmpty(headerName)
+            && request.Headers.TryGetValue(headerName, out StringValues headerValue)
+                ? headerValue.ToString()
+                : string.Empty;
+
+        CorrelationIdNormalizer.NormalizationDetail detail = CorrelationIdNormalizer.NormalizeWithDetail(
+            clientSupplied,
+            maxLength
+        );
+
+        string normalized = detail.Value;
+        bool fellBack = string.IsNullOrWhiteSpace(normalized);
+        if (fellBack)
+        {
+            normalized = CorrelationIdNormalizer.Normalize(request.HttpContext.TraceIdentifier, maxLength);
+        }
+
+        // A header that was absent, disabled by configuration, or sent empty is not "a value the
+        // client supplied", so nothing about it is reportable and the flags below are all false.
+        // That is what keeps the normal path - which is the overwhelming majority of requests -
+        // free of a per-request log line.
+        bool clientSuppliedAValue = !string.IsNullOrEmpty(clientSupplied);
+
+        CorrelationIdIngestion result = new(
+            TraceId: new TraceId(normalized),
+            ClientSuppliedAValue: clientSuppliedAValue,
+            SuppliedLength: clientSupplied.Length,
+            Truncated: clientSuppliedAValue && detail.Truncated,
+            CharactersRemoved: clientSuppliedAValue && detail.CharactersRemoved,
+            FellBackToServerIdentifier: clientSuppliedAValue && fellBack
+        );
+
+        return CacheIngestionOn(request.HttpContext, result);
+    }
+
+    /// <summary>
+    /// This request's one ingestion result for a host whose <c>AppSettings</c> cannot be read at
+    /// all, because validating them is what failed.
+    /// </summary>
+    /// <remarks>
+    /// The decision lives here rather than at the two call sites that encounter it -
+    /// <c>LoggingMiddleware</c> ingesting the request, and
+    /// <c>ReportInvalidConfigurationMiddleware</c> reading the correlation ID for the 500 body it
+    /// short-circuits with - which would otherwise each need a <c>catch</c> making this same
+    /// policy choice, one policy in two places and free to drift apart.
+    ///
+    /// <see cref="Configuration.AppSettings.DefaultCorrelationIdMaxLength"/> stands in for the
+    /// cap there is no validated value for, and the server-generated identifier still goes
+    /// through the same <see cref="CorrelationIdNormalizer"/> as every other path, so this one
+    /// cannot emit a differently-shaped value.
+    /// <see cref="CorrelationIdIngestion.ClientSuppliedAValue"/> is false because no client value
+    /// was considered at all: the header <i>name</i> lives in the configuration that failed to
+    /// validate, so the <c>CorrelationIdModified</c> notice stays silent. The result is cached
+    /// like any other, which is what makes the 500 body a client reads and the <c>TraceId</c> it
+    /// searches the logs for one value rather than two that merely agree.
+    ///
+    /// What this mode does to a host, and why: <c>reference/adr-correlation-id-normalization.md</c>.
+    /// </remarks>
+    private static CorrelationIdIngestion IngestUnreadableConfiguration(HttpContext context) =>
+        CacheIngestionOn(
+            context,
+            CorrelationIdIngestion.ForServerGeneratedIdentifier(
+                CorrelationIdNormalizer.Normalize(
+                    context.TraceIdentifier,
+                    AppSettings.DefaultCorrelationIdMaxLength
+                )
+            )
+        );
+
+    /// <summary>
+    /// Records <paramref name="ingestion"/> as this request's one ingestion result, returning what
+    /// it stored so a caller can cache and return in a single expression.
+    /// </summary>
+    /// <remarks>
+    /// Exists so that <see cref="CorrelationIdItemsKey"/> is written in exactly one place, and is
+    /// private so that place stays inside this class - no middleware can write the key behind the
+    /// ingestion point's back.
+    /// </remarks>
+    private static CorrelationIdIngestion CacheIngestionOn(
+        HttpContext context,
+        CorrelationIdIngestion ingestion
+    )
+    {
+        context.Items[CorrelationIdItemsKey] = ingestion;
+        return ingestion;
+    }
+
+    /// <summary>
+    /// One request's correlation ID together with the derived facts about how it was reached.
+    /// Carries no part of the client-supplied value beyond its length and its normalized form.
+    /// </summary>
+    /// <param name="TraceId">The normalized correlation ID every log event and error response body carries.</param>
+    /// <param name="ClientSuppliedAValue">
+    /// Whether the configured correlation header was present on the request with a non-empty value.
+    /// </param>
+    /// <param name="SuppliedLength">
+    /// The length in UTF-16 code units of the client-supplied value, or zero when there was none.
+    /// </param>
+    /// <param name="Truncated">Whether the client-supplied value exceeded the configured length cap.</param>
+    /// <param name="CharactersRemoved">
+    /// Whether the allowlist removed at least one character from the client-supplied value.
+    /// </param>
+    /// <param name="FellBackToServerIdentifier">
+    /// Whether the client-supplied value normalized to blank and was replaced in full by
+    /// <see cref="HttpContext.TraceIdentifier"/>.
+    /// </param>
+    internal readonly record struct CorrelationIdIngestion(
+        TraceId TraceId,
+        bool ClientSuppliedAValue,
+        int SuppliedLength,
+        bool Truncated,
+        bool CharactersRemoved,
+        bool FellBackToServerIdentifier
+    )
+    {
+        /// <summary>
+        /// Whether the value the client sent is not the value the request is correlated by. False
+        /// when no value was supplied, and false when the supplied value survived normalization
+        /// unchanged - the two cases that must stay silent.
+        /// </summary>
+        public bool WasModified =>
+            ClientSuppliedAValue && (Truncated || CharactersRemoved || FellBackToServerIdentifier);
+
+        /// <summary>
+        /// The ingestion result for a request whose correlation ID came from the server-generated
+        /// trace identifier without any client-supplied value being considered. Lives here rather
+        /// than at the call site so <c>AspNetCoreFrontend</c> remains the only production file that
+        /// constructs a <see cref="Core.External.Model.TraceId"/>.
+        /// </summary>
+        /// <param name="normalized">The already-normalized server-generated identifier.</param>
+        internal static CorrelationIdIngestion ForServerGeneratedIdentifier(string normalized) =>
+            new(
+                TraceId: new TraceId(normalized),
+                ClientSuppliedAValue: false,
+                SuppliedLength: 0,
+                Truncated: false,
+                CharactersRemoved: false,
+                FellBackToServerIdentifier: false
+            );
     }
 
     /// <summary>
@@ -430,7 +640,7 @@ public static class AspNetCoreFrontend
     /// The segment must be the third of the <c>{project}/{resource}/partitions</c> shape. Testing only
     /// the final segment would also recognize a two-segment collection whose resource is itself named
     /// <c>partitions</c>, where <c>number</c> is an ordinary query field and rewriting its spelling
-    /// would change which field is filtered on or which name an unknown-field error reports. The
+    /// would change which field is filtered on or which name the ignored-parameter warning reports. The
     /// position requirement is what makes that impossible rather than merely unlikely, so nothing
     /// here rests on an assumption about which resource names a schema declares.
     /// </remarks>
@@ -491,7 +701,7 @@ public static class AspNetCoreFrontend
     /// The cursor parameters are canonicalized everywhere. The partition count is canonicalized only
     /// on the partitions operation, because <c>number</c> is generic enough to collide with a
     /// resource query field, and rewriting its spelling elsewhere would change resource filtering and
-    /// unknown-field error text on collections this feature does not otherwise touch.
+    /// the ignored-parameter warning on collections this feature does not otherwise touch.
     /// </remarks>
     /// <remarks>
     /// Recognition is an ordinal case-insensitive comparison, which is the same relation the query
@@ -861,7 +1071,8 @@ public static class AspNetCoreFrontend
                     appSettings,
                     includeBody: false,
                     includeForm: false
-                )
+                ),
+                httpContext.RequestAborted
             ),
             httpContext,
             dmsPath
@@ -893,7 +1104,8 @@ public static class AspNetCoreFrontend
                     includeBody: !isUrlEncodedForm,
                     includeForm: isUrlEncodedForm,
                     parseJsonBody: false
-                )
+                ),
+                httpContext.RequestAborted
             ),
             httpContext,
             string.Empty
@@ -917,7 +1129,8 @@ public static class AspNetCoreFrontend
                     appSettings,
                     includeBody: false,
                     includeForm: false
-                )
+                ),
+                httpContext.RequestAborted
             ),
             httpContext,
             string.Empty
@@ -942,7 +1155,8 @@ public static class AspNetCoreFrontend
                     appSettings,
                     includeBody: false,
                     includeForm: false
-                )
+                ),
+                httpContext.RequestAborted
             ),
             httpContext,
             dmsPath
@@ -1001,6 +1215,269 @@ public static class AspNetCoreFrontend
                 ),
                 httpContext.Request.Method
             ),
+            httpContext,
+            dmsPath
+        );
+    }
+
+    /// <summary>
+    /// The literal route segment every identity operation route is anchored on, used both to
+    /// derive the redacted route-template path and to locate the real request path's tail
+    /// for the Location header math in <see cref="ToResult"/>.
+    /// </summary>
+    private const string IdentitiesRouteSegment = "/identity/v2/identities";
+
+    /// <summary>
+    /// The route parameter name for the identity get-by-id segment (IdentityEndpointModule) and the
+    /// <see cref="Microsoft.AspNetCore.Mvc.FromRouteAttribute.Name"/> <see cref="IdentityGetById"/>
+    /// binds from. Deliberately not "id": a configured route-qualifier segment (AppSettings:
+    /// RouteQualifierSegments) can itself be named "id", and the qualifier prefix segments are built
+    /// from that configured name (FixedRoutePattern), so a literal "id" here would make the identity
+    /// route template repeat a parameter name and fail host start. Follows the
+    /// "__metadataRouteQualifier{n}" precedent (MetadataRouteValidator) of a double-underscore name,
+    /// and the frontend AppSettingsValidator refuses a configured qualifier with this name at startup.
+    /// </summary>
+    internal const string IdentityIdRouteParameterName = "__identityId";
+
+    /// <summary>
+    /// The route parameter name for the identity results-poll token segment (IdentityEndpointModule)
+    /// and the <see cref="Microsoft.AspNetCore.Mvc.FromRouteAttribute.Name"/> <see cref="IdentityResults"/>
+    /// binds from. See <see cref="IdentityIdRouteParameterName"/> for why this is not the literal
+    /// "token".
+    /// </summary>
+    internal const string IdentityTokenRouteParameterName = "__identityToken";
+
+    /// <summary>
+    /// The real, unredacted request path in its escaped (percent-encoded) form, no leading slash, used
+    /// only as the dmsPath argument to <see cref="ToResult"/>. <see cref="ToResult"/> strips exactly
+    /// this many characters off the tail of <see cref="HttpRequestResponseExtensions.UrlWithPathSegment"/>,
+    /// which is itself built from the escaped path, so this must be the escaped path too - a decoded
+    /// value would be the wrong length whenever a segment (for example a results token or a route
+    /// qualifier) contains a character that needed escaping. For identity routes the value must also
+    /// span the whole path - tenant, route qualifiers, and all - because
+    /// <see cref="RequestInfo.IdentityPollPathPrefix"/> is itself already tenant/qualifier-qualified
+    /// (it is derived from <see cref="BuildIdentityTemplatePath"/>, which carries that prefix on
+    /// <see cref="FrontendRequest.Path"/> for redaction). Stripping only the identities tail here, as a
+    /// non-identity dmsPath would, would leave the tenant/qualifier prefix in the computed base and
+    /// double it when Core's already-qualified Location path is appended.
+    /// </summary>
+    private static string ExtractIdentityDmsPath(HttpRequest request) =>
+        request.Path.ToUriComponent().TrimStart('/');
+
+    /// <summary>
+    /// The redacted route-template path carried on <see cref="FrontendRequest.Path"/>:
+    /// tenant and route-qualifier segments are literal and escaped (read from the real request path's
+    /// escaped form, so a qualifier value carrying a space or other reserved character stays a valid
+    /// URL path segment when it reaches <see cref="ToResult"/>'s Location header), while any identifier
+    /// segment is replaced by a placeholder so the identifier itself never reaches a log. Also the
+    /// source Core's ComputeIdentityPollPathPrefix reads to build the poll URL. The route segment match
+    /// is case-insensitive because ASP.NET Core routing matches these routes case-insensitively, so a
+    /// differently-cased request (for example .../Identity/V2/Identities/find) must still find the
+    /// prefix boundary; the emitted "/identity/v2/identities" suffix always stays canonical lowercase
+    /// since it comes from the <see cref="IdentitiesRouteSegment"/> constant, not the request text. The
+    /// last occurrence is the real route: tenant or qualifier values can themselves spell the segment,
+    /// while the tail after it (empty, "/find", "/search", an identifier, or "/results/{token}") is one
+    /// or two escaped segments and never can.
+    /// </summary>
+    private static string BuildIdentityTemplatePath(HttpRequest request, string operationSuffix)
+    {
+        string requestPath = request.Path.ToUriComponent();
+        int segmentIndex = requestPath.LastIndexOf(
+            IdentitiesRouteSegment,
+            StringComparison.OrdinalIgnoreCase
+        );
+        string prefix = segmentIndex >= 0 ? requestPath[..segmentIndex] : string.Empty;
+        return $"{prefix}{IdentitiesRouteSegment}{operationSuffix}";
+    }
+
+    /// <summary>
+    /// The configured Kestrel request-line budget, read from the running server so Core can bound
+    /// a composed poll path against the real deployment limit rather than a hard-coded guess, reduced
+    /// by <see cref="HttpRequest.PathBase"/>'s escaped length. Core's composed-path arithmetic
+    /// (<see cref="Identity.IdentityRequestTokenRule.Evaluate"/>) measures the prefix from
+    /// <see cref="HttpRequest.Path"/>, which excludes PathBase, but the real request line the client
+    /// sends - and the one Kestrel measures against <c>MaxRequestLineSize</c> - is the fully qualified
+    /// path, PathBase included (<see cref="HttpRequestResponseExtensions.RootUrl"/>;
+    /// <c>UsePathBase</c> in Program.cs from <c>AppSettings:PathBase</c>). Shrinking the budget passed
+    /// to Core here keeps its arithmetic describing the real request line without Core needing to know
+    /// PathBase exists.
+    /// </summary>
+    private static int ResolveMaxRequestLineSize(
+        HttpRequest httpRequest,
+        IOptions<KestrelServerOptions> kestrelOptions
+    ) => kestrelOptions.Value.Limits.MaxRequestLineSize - httpRequest.PathBase.ToUriComponent().Length;
+
+    /// <summary>
+    /// Converts an AspNetCore HttpRequest to a DMS FrontendRequest for one of the five identity
+    /// operation entry points. Unlike <see cref="FromRequest"/>, the path is supplied by the
+    /// caller as the already-redacted route template rather than derived from a dmsPath route
+    /// value, and no query-parameter canonicalization applies (identity has no partitions
+    /// operation).
+    /// </summary>
+    private static async Task<FrontendRequest> FromIdentityRequest(
+        HttpRequest httpRequest,
+        string path,
+        IOptions<AppSettings> appSettings,
+        IOptions<KestrelServerOptions> kestrelOptions,
+        bool includeBody
+    )
+    {
+        JsonBodyExtractionResult jsonBody = includeBody
+            ? await ExtractJsonBodyFrom(httpRequest)
+            : JsonBodyExtractionResult.Empty;
+
+        return new(
+            Body: null,
+            Form: null,
+            Headers: ExtractHeadersFrom(httpRequest),
+            Path: path,
+            QueryParameters: httpRequest.Query.ToDictionary(
+                queryParam => FromValidatedQueryParam(queryParam, canonicalizePartitionNumber: false),
+                x => x.Value[^1] ?? ""
+            ),
+            TraceId: ExtractTraceIdFrom(httpRequest, appSettings),
+            RouteQualifiers: ExtractRouteQualifiersFrom(httpRequest, appSettings),
+            Tenant: ExtractTenantFrom(httpRequest, appSettings),
+            ParsedBody: jsonBody.ParsedBody,
+            BodyParseErrorMessage: jsonBody.ParseErrorMessage,
+            DuplicatePropertyPath: jsonBody.DuplicatePropertyPath,
+            ResponseContentCoding: HttpMethods.IsGet(httpRequest.Method)
+                ? ResolveResponseContentCoding(httpRequest.HttpContext)
+                : ResponseContentCoding.Identity,
+            MaxRequestLineSize: ResolveMaxRequestLineSize(httpRequest, kestrelOptions)
+        );
+    }
+
+    /// <summary>
+    /// ASP.NET Core entry point for the identity create request: POST /identity/v2/identities
+    /// </summary>
+    public static async Task<IResult> IdentityCreate(
+        HttpContext httpContext,
+        IApiService apiService,
+        IOptions<AppSettings> appSettings,
+        IOptions<KestrelServerOptions> kestrelOptions
+    )
+    {
+        string dmsPath = ExtractIdentityDmsPath(httpContext.Request);
+        FrontendRequest frontendRequest = await FromIdentityRequest(
+            httpContext.Request,
+            BuildIdentityTemplatePath(httpContext.Request, string.Empty),
+            appSettings,
+            kestrelOptions,
+            includeBody: true
+        );
+
+        return ToResult(
+            await apiService.IdentityCreate(frontendRequest, httpContext.RequestAborted),
+            httpContext,
+            dmsPath
+        );
+    }
+
+    /// <summary>
+    /// ASP.NET Core entry point for the identity get-by-id request: GET /identity/v2/identities/{id}.
+    /// Also reached by GET /identity/v2/identities/results with id = "results", since that path has
+    /// no further segment for the results-polling route to match.
+    /// </summary>
+    public static async Task<IResult> IdentityGetById(
+        HttpContext httpContext,
+        IApiService apiService,
+        [FromRoute(Name = IdentityIdRouteParameterName)] string id,
+        IOptions<AppSettings> appSettings,
+        IOptions<KestrelServerOptions> kestrelOptions
+    )
+    {
+        string dmsPath = ExtractIdentityDmsPath(httpContext.Request);
+        FrontendRequest frontendRequest = await FromIdentityRequest(
+            httpContext.Request,
+            BuildIdentityTemplatePath(httpContext.Request, "/{id}"),
+            appSettings,
+            kestrelOptions,
+            includeBody: false
+        );
+
+        return ToResult(
+            await apiService.IdentityGetById(frontendRequest, id, httpContext.RequestAborted),
+            httpContext,
+            dmsPath
+        );
+    }
+
+    /// <summary>
+    /// ASP.NET Core entry point for the identity find request: POST /identity/v2/identities/find
+    /// </summary>
+    public static async Task<IResult> IdentityFind(
+        HttpContext httpContext,
+        IApiService apiService,
+        IOptions<AppSettings> appSettings,
+        IOptions<KestrelServerOptions> kestrelOptions
+    )
+    {
+        string dmsPath = ExtractIdentityDmsPath(httpContext.Request);
+        FrontendRequest frontendRequest = await FromIdentityRequest(
+            httpContext.Request,
+            BuildIdentityTemplatePath(httpContext.Request, "/find"),
+            appSettings,
+            kestrelOptions,
+            includeBody: true
+        );
+
+        return ToResult(
+            await apiService.IdentityFind(frontendRequest, httpContext.RequestAborted),
+            httpContext,
+            dmsPath
+        );
+    }
+
+    /// <summary>
+    /// ASP.NET Core entry point for the identity search request: POST /identity/v2/identities/search
+    /// </summary>
+    public static async Task<IResult> IdentitySearch(
+        HttpContext httpContext,
+        IApiService apiService,
+        IOptions<AppSettings> appSettings,
+        IOptions<KestrelServerOptions> kestrelOptions
+    )
+    {
+        string dmsPath = ExtractIdentityDmsPath(httpContext.Request);
+        FrontendRequest frontendRequest = await FromIdentityRequest(
+            httpContext.Request,
+            BuildIdentityTemplatePath(httpContext.Request, "/search"),
+            appSettings,
+            kestrelOptions,
+            includeBody: true
+        );
+
+        return ToResult(
+            await apiService.IdentitySearch(frontendRequest, httpContext.RequestAborted),
+            httpContext,
+            dmsPath
+        );
+    }
+
+    /// <summary>
+    /// ASP.NET Core entry point for the identity asynchronous job results poll request:
+    /// GET /identity/v2/identities/results/{token}
+    /// </summary>
+    public static async Task<IResult> IdentityResults(
+        HttpContext httpContext,
+        IApiService apiService,
+        [FromRoute(Name = IdentityTokenRouteParameterName)] string token,
+        IOptions<AppSettings> appSettings,
+        IOptions<KestrelServerOptions> kestrelOptions
+    )
+    {
+        string dmsPath = ExtractIdentityDmsPath(httpContext.Request);
+        FrontendRequest frontendRequest = await FromIdentityRequest(
+            httpContext.Request,
+            BuildIdentityTemplatePath(httpContext.Request, "/results/{token}"),
+            appSettings,
+            kestrelOptions,
+            includeBody: false
+        );
+
+        return ToResult(
+            await apiService.IdentityResults(frontendRequest, token, httpContext.RequestAborted),
             httpContext,
             dmsPath
         );

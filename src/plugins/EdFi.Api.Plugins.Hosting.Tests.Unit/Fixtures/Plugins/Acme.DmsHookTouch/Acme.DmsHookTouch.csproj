@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        The late-reading case against the Data Management Service's own registry.
+
+        Acme.HookTouch already touches a declared dependency from inside its hook, but it registers
+        only fixture contracts, and under the real registry a plugin that contributes no declared
+        contract fails the surviving-contribution check. So the boot would abort for a reason that has
+        nothing to do with the flag under test. This fixture is that one's touch plus the real
+        validator registration, which is the smallest thing that can be loaded by the real host.
+
+        Two declared dependencies, deliberately: Acme.Private is reached from the hook, so its row is
+        loaded by the time the inventory event is emitted, and Acme.FixtureContracts is reached from
+        nowhere, so its row is declared, digested and not loaded. A flag frozen when loading finished
+        would report the first as not loaded; an inventory built from the context's assembly list would
+        omit the second entirely.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.DmsHookTouch</AssemblyName>
+        <RootNamespace>Acme.DmsHookTouch</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <ProjectReference Include="..\..\Support\AcmePrivate\Acme.Private.csproj" />
+        <ProjectReference Include="..\..\Support\AcmeFixtureContracts\Acme.FixtureContracts.csproj" />
+        <ProjectReference
+            Include="..\..\..\..\..\dms\core\EdFi.DataManagementService.CustomValidation\EdFi.DataManagementService.CustomValidation.csproj"
+        />
+    </ItemGroup>
+</Project>

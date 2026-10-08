@@ -211,6 +211,12 @@ public sealed class CdcConnectOffsetEvidence(
         }
         if (!sqlServer)
         {
+            // Debezium can commit its initial context before a completely processed LSN
+            // exists. Only this exact seed shape is pending, and it supplies no position.
+            if (IsPostgresqlInitialOffset(offset))
+            {
+                return Empty(CdcConnectOffsetState.AwaitingStreaming);
+            }
             if (
                 !offset.TryGetProperty("lsn_proc", out var lsn)
                 || lsn.ValueKind != JsonValueKind.Number
@@ -282,6 +288,23 @@ public sealed class CdcConnectOffsetEvidence(
                     .ToDictionary(p => p.Name, p => p.Value.GetString()!, StringComparer.Ordinal),
             }
             : Empty(CdcConnectOffsetState.Malformed);
+    }
+
+    private static bool IsPostgresqlInitialOffset(JsonElement offset) =>
+        offset.EnumerateObject().Count() == 3
+        && TryInt64(offset, "lsn", out long lsn)
+        && lsn is not 0
+        && TryInt64(offset, "txId", out long transactionId)
+        && transactionId > 0
+        && TryInt64(offset, "ts_usec", out long timestamp)
+        && timestamp > 0;
+
+    private static bool TryInt64(JsonElement offset, string property, out long value)
+    {
+        value = 0;
+        return offset.TryGetProperty(property, out var field)
+            && field.ValueKind == JsonValueKind.Number
+            && field.TryGetInt64(out value);
     }
 
     internal static bool TryString(JsonElement element, string property, out string value)

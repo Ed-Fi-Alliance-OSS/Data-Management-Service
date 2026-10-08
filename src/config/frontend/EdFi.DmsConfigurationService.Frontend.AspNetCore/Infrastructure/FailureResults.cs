@@ -103,6 +103,37 @@ internal static class FailureResults
         );
     }
 
+    /// <summary>
+    /// Structured 429 <c>urn:ed-fi:api:security:authentication:too-many-tokens</c> response for a
+    /// client that already holds <paramref name="limit"/> active access tokens.
+    /// </summary>
+    public static IResult TooManyTokens(int limit, string correlationId)
+    {
+        return Results.Json(
+            FailureResponse.ForTooManyTokens(limit, correlationId),
+            contentType: _errorContentType,
+            statusCode: 429
+        );
+    }
+
+    /// <summary>
+    /// Structured 409 for a request that could not be serialized against the other requests in
+    /// flight for the same resource before the contention budget ran out. Same status and same
+    /// wording the application-lock paths use for their own acquisition timeouts, because it is
+    /// the same condition: nothing is wrong with the request and retrying is the answer.
+    /// </summary>
+    public static IResult ConcurrentModification(string correlationId)
+    {
+        return Results.Json(
+            FailureResponse.ForConflict(
+                "Unable to process the request due to a concurrent modification. Retry the request.",
+                correlationId
+            ),
+            contentType: _errorContentType,
+            statusCode: 409
+        );
+    }
+
     // invalid_client and unauthorized_client both map to the same 401 contract.
     public static IResult InvalidClient(string detail, string correlationId) =>
         Unauthorized(detail, correlationId);

@@ -118,8 +118,8 @@ internal class ValidateResourceKeySeedMiddleware(
                 ex.FailureDescription,
                 ex.TargetKind,
                 selectedInstance.Id,
-                LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
-                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                LoggingSanitizer.SanitizeInternalValueForLogging(selectedInstance.Name),
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
 #pragma warning restore S6667
 
@@ -150,8 +150,8 @@ internal class ValidateResourceKeySeedMiddleware(
                 "Resource key seed validation failed with an unexpected {ExceptionType} for data store {DataStoreId} ({Name}). TraceId: {TraceId}",
                 ex.GetType().Name,
                 selectedInstance.Id,
-                LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
-                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                LoggingSanitizer.SanitizeInternalValueForLogging(selectedInstance.Name),
+                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
 #pragma warning restore S6667
 
@@ -194,9 +194,9 @@ internal class ValidateResourceKeySeedMiddleware(
                     "Resource key seed mismatch for data store {DataStoreId} ({Name}). "
                         + "Diff report: {DiffReport}. TraceId: {TraceId}",
                     selectedInstance.Id,
-                    LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(selectedInstance.Name),
                     LoggingSanitizer.SanitizeForConsole(failure.DiffReport),
-                    LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                    LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
                 );
 
                 requestInfo.FrontendResponse = new FrontendResponse(

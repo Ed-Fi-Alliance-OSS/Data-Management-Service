@@ -24,7 +24,7 @@ public sealed record CdcRecordSizeIncreaseResult(
 /// <summary>
 /// Explicit, acknowledged size rollout. The previous request and scope are retained on retry. The
 /// confirmation callback obtains fresh operator input for this invocation while the controller lock
-/// is held. Projection remains caller-owned; success is observational, never writer authorization.
+/// is held. The caller owns runtime disposal; success is observational, never writer authorization.
 /// </summary>
 public sealed class CdcRecordSizeIncrease
 {
@@ -227,6 +227,13 @@ public sealed class CdcRecordSizeIncrease
                     );
                     await RequireEligible();
 
+                    // The standalone command owns an initialized but unstarted runtime. After
+                    // confirmed capacity alignment and fresh eligibility, start its executor for
+                    // publication-readiness observations. Existing executors are preserved.
+                    component = CdcDeploymentComponent.Projection;
+                    await previousTarget.Runtime.StartProcessingAsync(ct);
+                    ct.ThrowIfCancellationRequested();
+                    component = CdcDeploymentComponent.WorkflowState;
                     resumeId = Guid.NewGuid();
                     await session.RecordIntentAsync(
                         previous.TargetIdentity,
@@ -239,12 +246,17 @@ public sealed class CdcRecordSizeIncrease
                     await RequireEligible();
                     component = CdcDeploymentComponent.Connect;
                     await Attempt(() => Call(t => _connect.ResumeAsync(desired, t)));
-                    var ready = await ValidateStage(true);
+                    bool allowInitialCurrentLag = true;
+                    var ready = await ValidateStage(true, allowInitialCurrentLag: allowInitialCurrentLag);
                     while (!ready.PublicationReady)
                     {
-                        Require(ready.PreStartEligible);
+                        // The authorized resume has already run. Re-read all evidence while only its
+                        // first usable lag is pending; never repeat rollout effects or extend the deadline.
+                        // Once usable evidence arrives, later unknown lag must reject even during catch-up.
+                        allowInitialCurrentLag &= ready.AwaitingInitialCurrentLag;
+                        Require(ready.PreStartEligible || allowInitialCurrentLag);
                         await Task.Delay(desired.Timing.PollInterval, _time, ct);
-                        ready = await ValidateStage(true);
+                        ready = await ValidateStage(true, allowInitialCurrentLag: allowInitialCurrentLag);
                     }
                     // Readiness is measured while the pending gate is still durable. Only this live
                     // acknowledged invocation may complete it; generic status/restart cannot enter here.
@@ -309,7 +321,8 @@ public sealed class CdcRecordSizeIncrease
 
                     async Task<CdcEstablishedValidationObservation> ValidateStage(
                         bool publication,
-                        bool retryRecovery = true
+                        bool retryRecovery = true,
+                        bool allowInitialCurrentLag = false
                     )
                     {
                         component = CdcDeploymentComponent.Connect;
@@ -333,14 +346,19 @@ public sealed class CdcRecordSizeIncrease
                                 ? CdcEstablishedValidationMode.RunningPublication
                                 : CdcEstablishedValidationMode.PreStart,
                             resumeId,
-                            rollout
+                            rollout,
+                            allowInitialCurrentLag: allowInitialCurrentLag
                         );
                         if (observation.Worker is not null && worker is not null)
                         {
                             CdcConnectorRegistration.RequireSameWorker(desired, worker, observation.Worker);
                         }
 
-                        if (observation.Recovery.RequiresFreshPass && retryRecovery)
+                        if (
+                            observation.Recovery.RequiresFreshPass
+                            && retryRecovery
+                            && !observation.AwaitingInitialCurrentLag
+                        )
                         {
                             return await ValidateStage(publication, false);
                         }
@@ -497,7 +515,8 @@ public sealed class CdcRecordSizeIncrease
             CdcEstablishedValidationMode mode = CdcEstablishedValidationMode.PreStart,
             Guid resumeId = default,
             CdcRecordSizeRollout rollout = null!,
-            bool stopAfterRetainedIncident = false
+            bool stopAfterRetainedIncident = false,
+            bool allowInitialCurrentLag = false
         )
         {
             CdcEstablishedValidationObservation observation = null!;
@@ -519,7 +538,16 @@ public sealed class CdcRecordSizeIncrease
                 mode == CdcEstablishedValidationMode.RunningPublication
                 && rollout is not null
                 && CdcKnownCatchUp.CanCatchUp(observation, lastObservation);
-            if (!catchingUp && lastObservation.Diagnostics.FirstOrDefault() is { } diagnostic)
+            bool awaitingInitialLag =
+                allowInitialCurrentLag
+                && mode == CdcEstablishedValidationMode.RunningPublication
+                && rollout is not null
+                && observation is { AwaitingInitialCurrentLag: true };
+            if (
+                !catchingUp
+                && !awaitingInitialLag
+                && lastObservation.Diagnostics.FirstOrDefault() is { } diagnostic
+            )
             {
                 throw new CdcEstablishedValidation.EvidenceException(diagnostic);
             }

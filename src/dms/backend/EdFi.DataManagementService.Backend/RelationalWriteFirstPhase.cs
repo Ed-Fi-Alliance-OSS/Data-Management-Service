@@ -41,6 +41,15 @@ internal sealed record RelationalWriteFirstPhaseResolution(
     public static RelationalWriteFirstPhaseResolution Immediate(
         RelationalWriteExecutorResult immediateResult
     ) => new(null, immediateResult);
+
+    /// <summary>
+    /// An immediate result decided for a POST whose target selected <paramref name="selectedPostAction"/>; a
+    /// security-configuration failure carries that action so it is attributed to it.
+    /// </summary>
+    public static RelationalWriteFirstPhaseResolution Immediate(
+        RelationalWriteExecutorResult immediateResult,
+        UpsertTargetAction? selectedPostAction
+    ) => new(null, PostActionAttribution.Apply(immediateResult, selectedPostAction));
 }
 
 /// <summary>
@@ -258,9 +267,13 @@ internal sealed class CompositeRelationalWriteFirstPhase(
 
         if (
             input.PostRelationshipAuthorizationPlans?.CreateNewImmediateResult is not null
-            // A deferred ownership failure is owed in the ownership slot, ahead of the relationship statement
-            // and the hydration this command would carry, so the request takes the ordered-segments path the
-            // way a create-new immediate result does.
+            // A POST branch owed right after capture, or a create-new branch whose relationship result precedes
+            // reference resolution, cannot ride behind the capture's co-batched statements either.
+            || input.PostTargetAuthorizationBundles is { RequiresOrderedSegments: true }
+            // A deferred stored-ownership failure is owed in the ownership slot, ahead of the relationship
+            // statement and the hydration this command would carry, so the request takes the ordered-segments
+            // path the way a create-new immediate result does. The create-side deferral does not: a create
+            // owes it in the second command, and no statement here depends on it.
             || input.DeferredStoredOwnershipFailureResult is not null
             || relationshipDisposition.Disposition
                 is not (StoredRelationshipDisposition.None or StoredRelationshipDisposition.Emitted)
@@ -298,7 +311,12 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         // is already executed and validated in configured order.
         var (customViewsBeforeNamespace, customViewsAfterNamespace) = PartitionCustomViewRuns(input);
 
-        if (customViewsAfterNamespace.Count > 0)
+        if (
+            customViewsAfterNamespace.Count > 0
+            // Distinct POST action policies: a view emitted here is validated and sent before the capture decides
+            // the target, so it would apply the existing-document branch's configuration to a create.
+            || (input.PostTargetAuthorizationBundles is not null && customViewsBeforeNamespace.Count > 0)
+        )
         {
             return null;
         }
@@ -435,7 +453,14 @@ internal sealed class CompositeRelationalWriteFirstPhase(
                 { } mapped
             )
             {
-                return RelationalWriteFirstPhaseResolution.Immediate(mapped);
+                // Only stored-value checks ride this command, and each is vacuous unless the capture observed
+                // a target, so a mapped denial is always the existing-document branch's.
+                return RelationalWriteFirstPhaseResolution.Immediate(
+                    mapped,
+                    input.TargetRequest is RelationalWriteTargetRequest.Post
+                        ? UpsertTargetAction.Update
+                        : null
+                );
             }
 
             throw;
@@ -462,10 +487,11 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             input,
             targetContext
         );
+        var postAction = SelectPostAction(input, targetContext);
 
         if (planSelectionImmediateResult is not null)
         {
-            return RelationalWriteFirstPhaseResolution.Immediate(planSelectionImmediateResult);
+            return RelationalWriteFirstPhaseResolution.Immediate(planSelectionImmediateResult, postAction);
         }
 
         if (capturedTarget is not null)
@@ -482,7 +508,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
 
             if (storedRelationshipResult is not null)
             {
-                return RelationalWriteFirstPhaseResolution.Immediate(storedRelationshipResult);
+                return RelationalWriteFirstPhaseResolution.Immediate(storedRelationshipResult, postAction);
             }
 
             if (
@@ -490,7 +516,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
                 { } missingReadPlanResult
             )
             {
-                return RelationalWriteFirstPhaseResolution.Immediate(missingReadPlanResult);
+                return RelationalWriteFirstPhaseResolution.Immediate(missingReadPlanResult, postAction);
             }
         }
 
@@ -557,10 +583,11 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             input,
             targetContext
         );
+        var postAction = SelectPostAction(input, targetContext);
 
         if (planSelectionImmediateResult is not null)
         {
-            return RelationalWriteFirstPhaseResolution.Immediate(planSelectionImmediateResult);
+            return RelationalWriteFirstPhaseResolution.Immediate(planSelectionImmediateResult, postAction);
         }
 
         if (capturedTarget is not null)
@@ -581,7 +608,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
                 { } customViewBeforeResult
             )
             {
-                return RelationalWriteFirstPhaseResolution.Immediate(customViewBeforeResult);
+                return RelationalWriteFirstPhaseResolution.Immediate(customViewBeforeResult, postAction);
             }
 
             var storedNamespaceResult = await ExecuteStandaloneStoredNamespaceAsync(
@@ -594,7 +621,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
 
             if (storedNamespaceResult is not null)
             {
-                return RelationalWriteFirstPhaseResolution.Immediate(storedNamespaceResult);
+                return RelationalWriteFirstPhaseResolution.Immediate(storedNamespaceResult, postAction);
             }
 
             if (
@@ -609,7 +636,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
                 { } customViewAfterResult
             )
             {
-                return RelationalWriteFirstPhaseResolution.Immediate(customViewAfterResult);
+                return RelationalWriteFirstPhaseResolution.Immediate(customViewAfterResult, postAction);
             }
 
             // Ownership last among the AND filters, so after both custom-view runs and the namespace check,
@@ -626,7 +653,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
                 { } ownershipResult
             )
             {
-                return RelationalWriteFirstPhaseResolution.Immediate(ownershipResult);
+                return RelationalWriteFirstPhaseResolution.Immediate(ownershipResult, postAction);
             }
 
             var storedRelationshipResult = await ResolveStandaloneStoredRelationshipDispositionAsync(
@@ -640,7 +667,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
 
             if (storedRelationshipResult is not null)
             {
-                return RelationalWriteFirstPhaseResolution.Immediate(storedRelationshipResult);
+                return RelationalWriteFirstPhaseResolution.Immediate(storedRelationshipResult, postAction);
             }
 
             if (
@@ -648,7 +675,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
                 { } missingReadPlanResult
             )
             {
-                return RelationalWriteFirstPhaseResolution.Immediate(missingReadPlanResult);
+                return RelationalWriteFirstPhaseResolution.Immediate(missingReadPlanResult, postAction);
             }
         }
 
@@ -1228,6 +1255,26 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         RelationalWriteTargetContext targetContext
     )
     {
+        // A POST whose Create and Update policies differ first takes the branch the observed target selects.
+        // The branch either owes its result now, ahead of every stored check, or supplies the authorization
+        // its own POST planning produced, whose relationship plans the selection below then applies exactly
+        // as for a single action list.
+        if (input.PostTargetAuthorizationBundles is { } bundles)
+        {
+            input = input with { PostTargetAuthorizationBundles = null };
+
+            switch (bundles.Select(targetContext))
+            {
+                case PostBranchAuthorization.Immediate immediate:
+                    return (input.Resolve(targetContext), immediate.Result);
+                case PostBranchAuthorization.Authorized authorized:
+                    input = input.WithPostBranchInputs(authorized.Inputs);
+                    break;
+                default:
+                    throw new InvalidOperationException("Unsupported POST branch authorization.");
+            }
+        }
+
         var executionRequest = input.Resolve(targetContext);
 
         if (input.PostRelationshipAuthorizationPlans is not { } plans)
@@ -1264,6 +1311,19 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             },
             null
         );
+    }
+
+    /// <summary>
+    /// The action a POST's observed target selects, or <see langword="null"/> for a PUT.
+    /// </summary>
+    internal static UpsertTargetAction? SelectPostAction(
+        RelationalWriteExecutorInput input,
+        RelationalWriteTargetContext targetContext
+    )
+    {
+        return input.TargetRequest is RelationalWriteTargetRequest.Post
+            ? PostTargetAction.For(targetContext)
+            : null;
     }
 
     private static RelationshipAuthorizationResult.Authorized? GetExistingResourceProposedAuthorization(

@@ -1138,4 +1138,129 @@ Describe "DMS-1153 Claims-ready gate (bootstrap-claims-gate.psm1)" {
             $script:error_j2 | Should -Match "tpdm/evaluation"
         }
     }
+
+    # ===========================================================================
+    # Scenario (k): the canonical E2E readiness probes (e2e-readiness-checks.json)
+    # match CMS /authorizationMetadata literally. The E2E fragments use endpoint-
+    # style names (ed-fi/schoolYearTypes), so extracted checks could never match;
+    # the probes carry full leaf URIs instead.
+    # ===========================================================================
+    Context "Scenario (k) - canonical E2E readiness probes pass against the serialized metadata shape" {
+        BeforeAll {
+            Import-Module $script:moduleUnderTest -Force
+
+            $readinessChecksPath = Join-Path $script:sourceDockerComposeRoot "../../src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments/e2e-readiness-checks.json"
+            $script:e2eProbes_k = @(Get-Content -LiteralPath $readinessChecksPath -Raw | ConvertFrom-Json)
+
+            $tempDir = New-TempManifestDir
+            $script:manifestPath_k1 = New-ManifestFile `
+                -Dir $tempDir `
+                -Checks @($script:e2eProbes_k | ForEach-Object {
+                        @{ claimSetName = $_.claimSetName; resourceClaim = $_.resourceClaim; action = $_.action }
+                    }) `
+                -FileName "manifest-k1.json"
+
+            # Leaf grants CMS serves for the six E2E claim sets, taken from the pre-change embedded grants.
+            $script:e2eMetadataClaims_k = @{
+                "E2E-NameSpaceBasedClaimSet" = @(
+                    @{ name = "http://ed-fi.org/identity/claims/ed-fi/survey"; actions = @("Create", "Read", "Update", "Delete", "ReadChanges") }
+                )
+                "E2E-NoFurtherAuthRequiredClaimSet" = @(
+                    @{ name = "http://ed-fi.org/identity/claims/ed-fi/academicWeek"; actions = @("Create", "Read", "Update", "Delete") },
+                    @{ name = "http://ed-fi.org/identity/claims/ed-fi/schoolYearType"; actions = @("Create", "Read", "Update", "Delete") }
+                )
+                "E2E-RelationshipsWithEdOrgsOnlyClaimSet" = @(
+                    @{ name = "http://ed-fi.org/identity/claims/ed-fi/academicWeek"; actions = @("Create", "Read", "Update", "Delete") }
+                )
+                "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet" = @(
+                    @{ name = "http://ed-fi.org/identity/claims/ed-fi/academicWeek"; actions = @("Create", "Read", "Update", "Delete") }
+                )
+                "E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet" = @(
+                    @{ name = "http://ed-fi.org/identity/claims/ed-fi/academicWeek"; actions = @("Create", "Read", "Update", "Delete") }
+                )
+                "E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet" = @(
+                    @{ name = "http://ed-fi.org/identity/claims/ed-fi/academicWeek"; actions = @("Read") }
+                )
+            }
+
+            Mock Invoke-RestMethod -ModuleName bootstrap-claims-gate {
+                param($Uri, $Method, $ContentType, $Headers, $Body)
+                if ($Uri -match "/v3/authorizationMetadata\?claimSetName=(?<name>[^&]+)") {
+                    $claimSetName = [System.Uri]::UnescapeDataString($Matches["name"])
+                    return New-AuthMetadataResponse -ClaimSetName $claimSetName -Claims $script:e2eMetadataClaims_k[$claimSetName]
+                }
+            }
+
+            $script:error_k1 = $null
+            try {
+                Test-CmsClaimsReady `
+                    -CmsBaseUrl $script:cmsBaseUrl `
+                    -AccessToken $script:accessToken `
+                    -ManifestPath $script:manifestPath_k1
+            }
+            catch {
+                $script:error_k1 = $_.Exception.Message
+            }
+        }
+
+        It "loads one probe per E2E claim set" {
+            @($script:e2eProbes_k | ForEach-Object claimSetName | Sort-Object) |
+                Should -Be @($script:e2eMetadataClaims_k.Keys | Sort-Object)
+        }
+
+        It "does not throw when CMS serves every probe's leaf claim and action" {
+            $script:error_k1 | Should -BeNullOrEmpty
+        }
+
+        It "queries /authorizationMetadata once per E2E claim set" {
+            Should -Invoke Invoke-RestMethod -ModuleName bootstrap-claims-gate -Times 6 -Exactly -Scope Context -ParameterFilter {
+                $Uri -match "/v3/authorizationMetadata\?claimSetName=E2E-"
+            }
+        }
+    }
+
+    Context "Scenario (k) - a check using the fragments' extracted plural name fails against the same metadata" {
+        BeforeAll {
+            Import-Module $script:moduleUnderTest -Force
+
+            # The pre-fix extraction produced the fragment's endpoint-style name, which CMS never serves.
+            $tempDir = New-TempManifestDir
+            $script:manifestPath_k2 = New-ManifestFile `
+                -Dir $tempDir `
+                -Checks @(
+                    @{ claimSetName = "E2E-NoFurtherAuthRequiredClaimSet"; resourceClaim = "ed-fi/schoolYearTypes"; action = "Read" }
+                ) `
+                -FileName "manifest-k2.json"
+
+            Mock Invoke-RestMethod -ModuleName bootstrap-claims-gate {
+                param($Uri, $Method, $ContentType, $Headers, $Body)
+                if ($Uri -match "/v3/authorizationMetadata") {
+                    return New-AuthMetadataResponse `
+                        -ClaimSetName "E2E-NoFurtherAuthRequiredClaimSet" `
+                        -Claims @(
+                            @{ name = "http://ed-fi.org/identity/claims/ed-fi/schoolYearType"; actions = @("Create", "Read", "Update", "Delete") }
+                        )
+                }
+            }
+
+            $script:error_k2 = $null
+            try {
+                Test-CmsClaimsReady `
+                    -CmsBaseUrl $script:cmsBaseUrl `
+                    -AccessToken $script:accessToken `
+                    -ManifestPath $script:manifestPath_k2
+            }
+            catch {
+                $script:error_k2 = $_.Exception.Message
+            }
+        }
+
+        It "throws even though CMS grants Read on the schoolYearType leaf" {
+            $script:error_k2 | Should -Not -BeNullOrEmpty
+        }
+
+        It "error message reports the unmatched extracted resource claim" {
+            $script:error_k2 | Should -Match "ed-fi/schoolYearTypes"
+        }
+    }
 }

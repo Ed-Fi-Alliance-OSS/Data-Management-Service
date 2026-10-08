@@ -4,9 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
-using System.Net;
 using System.Text.Json;
 using System.Threading.RateLimiting;
+using EdFi.Api.Plugins.Hosting;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Mssql;
@@ -31,8 +31,20 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 
 public static class WebApplicationBuilderExtensions
 {
-    public static void AddServices(this WebApplicationBuilder webAppBuilder)
+    /// <summary>
+    /// Registers everything the host owns, then invokes the plugin service-contribution phase over
+    /// <paramref name="loadedPlugins"/>.
+    /// </summary>
+    /// <param name="webAppBuilder">The builder being configured.</param>
+    /// <param name="loadedPlugins">
+    /// What the plugin loader returned for this process. Required rather than defaulted, so that a
+    /// caller cannot silently compose against no plugins on a deployment that allowlisted some; a test
+    /// with nothing to contribute passes <see cref="LoadedPlugins.Empty"/> explicitly.
+    /// </param>
+    public static void AddServices(this WebApplicationBuilder webAppBuilder, LoadedPlugins loadedPlugins)
     {
+        ArgumentNullException.ThrowIfNull(loadedPlugins);
+
         var logger = ConfigureLogging();
 
         // Debug logging
@@ -53,6 +65,7 @@ public static class WebApplicationBuilderExtensions
             .AddTransient<IContentProvider, ContentProvider>()
             .AddTransient<IVersionProvider, VersionProvider>()
             .AddTransient<ITenantValidator, TenantValidator>()
+            .AddTransient<IMetadataRouteValidator, MetadataRouteValidator>()
             .AddTransient<IOAuthManager, OAuthManager>()
             .Configure<DatabaseOptions>(webAppBuilder.Configuration.GetSection("DatabaseOptions"))
             .Configure<Frontend.AspNetCore.Configuration.AppSettings>(
@@ -158,7 +171,7 @@ public static class WebApplicationBuilderExtensions
         // last registration of that type. With no plugin loaded the contribution phase is a no-op and
         // the checks run and find nothing, which is what keeps a plugin-free deployment on the same
         // path as any other.
-        webAppBuilder.Services.AddPluginServiceContributions(webAppBuilder.Configuration);
+        webAppBuilder.Services.AddPluginServiceContributions(webAppBuilder.Configuration, loadedPlugins);
     }
 
     private static void ConfigureDatastore(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)
@@ -202,11 +215,10 @@ public static class WebApplicationBuilderExtensions
         var rateLimitOptions = new RateLimitOptions();
         webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Bind(rateLimitOptions);
 
-        webAppBuilder.Services.AddRateLimiter(limiterOptions =>
-        {
-            limiterOptions.RejectionStatusCode = (int)HttpStatusCode.TooManyRequests;
-            limiterOptions.OnRejected = WriteRateLimitRejectionAsync;
-            limiterOptions.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+        // Container-owned so it is disposed with the host, which stops its replenishment timer.
+        // GlobalRateLimitingMiddleware applies it to every request.
+        webAppBuilder.Services.AddSingleton(_ =>
+            PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
                 RateLimitPartition.GetFixedWindowLimiter(
                     partitionKey: httpContext.Request.Headers.Host.ToString(),
                     factory: _ => new FixedWindowRateLimiterOptions
@@ -216,13 +228,13 @@ public static class WebApplicationBuilderExtensions
                         Window = TimeSpan.FromSeconds(rateLimitOptions.Window),
                     }
                 )
-            );
-        });
+            )
+        );
     }
 
     /// <summary>
-    /// Serves the rejection produced by the rate limiter middleware, which applies
-    /// RejectionStatusCode before invoking this callback. Rejected requests never reach the DMS
+    /// Serves the rejection produced by <see cref="GlobalRateLimitingMiddleware"/>, which sets the
+    /// 429 status code before invoking this. Rejected requests never reach the DMS
     /// core pipeline, so the Retry-After header and the problem-details body are written at this
     /// boundary. The Retry-After value is the limiter's recommended retry delay rounded up to
     /// whole seconds so a client never retries sooner than recommended, and the body stays

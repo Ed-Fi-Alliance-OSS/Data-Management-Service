@@ -41,7 +41,10 @@ public class TenantValidator(IDataStoreProvider dataStoreProvider, ILogger<Tenan
         // Check if tenant exists in cache
         if (dataStoreProvider.TenantExists(tenant))
         {
-            logger.LogDebug("Tenant {Tenant} found in cache", LoggingSanitizer.SanitizeForLogging(tenant));
+            logger.LogDebug(
+                "Tenant {Tenant} found in cache",
+                LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
+            );
             return true;
         }
 
@@ -49,7 +52,7 @@ public class TenantValidator(IDataStoreProvider dataStoreProvider, ILogger<Tenan
         // LoadDataStores populates _instancesByTenant, which is what TenantExists checks
         logger.LogDebug(
             "Tenant {Tenant} not found in cache, attempting to load from Configuration Service",
-            LoggingSanitizer.SanitizeForLogging(tenant)
+            LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
         );
 
         try
@@ -62,7 +65,7 @@ public class TenantValidator(IDataStoreProvider dataStoreProvider, ILogger<Tenan
             // The instances are now cached, so TenantExists will return true
             logger.LogDebug(
                 "Tenant {Tenant} loaded successfully with {InstanceCount} instances",
-                LoggingSanitizer.SanitizeForLogging(tenant),
+                LoggingSanitizer.SanitizeInternalValueForLogging(tenant),
                 instances.Count
             );
             return true;
@@ -73,7 +76,7 @@ public class TenantValidator(IDataStoreProvider dataStoreProvider, ILogger<Tenan
             logger.LogDebug(
                 ex,
                 "Tenant {Tenant} not found in Configuration Service",
-                LoggingSanitizer.SanitizeForLogging(tenant)
+                LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
             );
         }
         catch (Exception ex)
@@ -81,11 +84,14 @@ public class TenantValidator(IDataStoreProvider dataStoreProvider, ILogger<Tenan
             logger.LogWarning(
                 ex,
                 "Failed to load tenant {Tenant} from Configuration Service",
-                LoggingSanitizer.SanitizeForLogging(tenant)
+                LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
             );
         }
 
-        logger.LogDebug("Tenant {Tenant} validation failed", LoggingSanitizer.SanitizeForLogging(tenant));
+        logger.LogDebug(
+            "Tenant {Tenant} validation failed",
+            LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
+        );
         return false;
     }
 }

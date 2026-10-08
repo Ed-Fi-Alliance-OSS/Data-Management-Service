@@ -52,7 +52,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
 
         _logger.LogDebug(
             "Executing PostgreSQL DocumentCache writer for target {TargetKey} with purpose {Purpose}",
-            LoggingSanitizer.SanitizeForLogging(request.TargetContext.TargetKey.ToString()),
+            LoggingSanitizer.SanitizeInternalValueForLogging(request.TargetContext.TargetKey.ToString()),
             request.Purpose
         );
 
@@ -145,7 +145,9 @@ internal sealed class PostgresqlDocumentCacheWriter(
             _logger.LogWarning(
                 exception,
                 "PostgreSQL session-bound DocumentCache writer lost the administrative mutex session for target {TargetKey}.",
-                LoggingSanitizer.SanitizeForLogging(writerRequest.TargetContext.TargetKey.ToString())
+                LoggingSanitizer.SanitizeInternalValueForLogging(
+                    writerRequest.TargetContext.TargetKey.ToString()
+                )
             );
 
             return DocumentCacheSessionBoundWriterResult.SessionLoss(
@@ -161,7 +163,9 @@ internal sealed class PostgresqlDocumentCacheWriter(
             _logger.LogWarning(
                 exception,
                 "PostgreSQL session-bound DocumentCache writer observed a provider command timeout for target {TargetKey}.",
-                LoggingSanitizer.SanitizeForLogging(writerRequest.TargetContext.TargetKey.ToString())
+                LoggingSanitizer.SanitizeInternalValueForLogging(
+                    writerRequest.TargetContext.TargetKey.ToString()
+                )
             );
 
             return DocumentCacheSessionBoundWriterResult.ProviderCommandTimeout(
@@ -174,7 +178,9 @@ internal sealed class PostgresqlDocumentCacheWriter(
             _logger.LogWarning(
                 exception,
                 "PostgreSQL session-bound DocumentCache writer observed a closed administrative mutex session for target {TargetKey}.",
-                LoggingSanitizer.SanitizeForLogging(writerRequest.TargetContext.TargetKey.ToString())
+                LoggingSanitizer.SanitizeInternalValueForLogging(
+                    writerRequest.TargetContext.TargetKey.ToString()
+                )
             );
 
             return DocumentCacheSessionBoundWriterResult.SessionLoss(
@@ -187,7 +193,9 @@ internal sealed class PostgresqlDocumentCacheWriter(
             _logger.LogWarning(
                 exception,
                 "PostgreSQL session-bound DocumentCache writer observed a lost administrative mutex session for target {TargetKey}.",
-                LoggingSanitizer.SanitizeForLogging(writerRequest.TargetContext.TargetKey.ToString())
+                LoggingSanitizer.SanitizeInternalValueForLogging(
+                    writerRequest.TargetContext.TargetKey.ToString()
+                )
             );
 
             return DocumentCacheSessionBoundWriterResult.SessionLoss(

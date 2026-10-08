@@ -203,11 +203,11 @@ function Read-BootstrapManifest {
     try {
         $manifest = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -AsHashtable
     } catch {
-        throw "Bootstrap manifest '$(Format-LogSafeText $Path)' contains malformed JSON. $(Format-LogSafeText ($_.Exception.Message))"
+        throw "Bootstrap manifest '$(Format-LogSafePath $Path)' contains malformed JSON. $(Format-LogSafeText ($_.Exception.Message))"
     }
 
     if ($manifest -isnot [System.Collections.IDictionary]) {
-        throw "Bootstrap manifest '$(Format-LogSafeText $Path)' must contain a JSON object."
+        throw "Bootstrap manifest '$(Format-LogSafePath $Path)' must contain a JSON object."
     }
 
     if (-not $manifest.ContainsKey("version") -or $null -eq $manifest["version"]) {
@@ -218,7 +218,7 @@ function Read-BootstrapManifest {
     try {
         $manifestVersion = [int]$manifest["version"]
     } catch {
-        throw "Bootstrap manifest '$(Format-LogSafeText $Path)' has malformed version: $(Format-LogSafeText ($manifest["version"]))"
+        throw "Bootstrap manifest '$(Format-LogSafePath $Path)' has malformed version: $(Format-LogSafeText ($manifest["version"]))"
     }
 
     if ($manifestVersion -gt 1) {
@@ -226,7 +226,7 @@ function Read-BootstrapManifest {
     }
 
     if ($manifestVersion -lt 1) {
-        throw "Bootstrap manifest '$(Format-LogSafeText $Path)' has malformed version: $(Format-LogSafeText $manifestVersion)"
+        throw "Bootstrap manifest '$(Format-LogSafePath $Path)' has malformed version: $(Format-LogSafeText $manifestVersion)"
     }
 
     $manifest["version"] = $manifestVersion
@@ -364,12 +364,12 @@ function Resolve-BootstrapWorkspaceRelativePath {
 
     $normalizedPath = $RelativePath.Replace("\", "/")
     if ([System.IO.Path]::IsPathRooted($RelativePath) -or $normalizedPath.StartsWith("/")) {
-        throw "Bootstrap manifest field '$(Format-LogSafeText $ManifestField)' must be relative to the bootstrap workspace: $(Format-LogSafeText $RelativePath)"
+        throw "Bootstrap manifest field '$(Format-LogSafeText $ManifestField)' must be relative to the bootstrap workspace: $(Format-LogSafePath $RelativePath)"
     }
 
     $pathSegments = @($normalizedPath -split "/")
     if ($pathSegments | Where-Object { [string]::IsNullOrWhiteSpace($_) -or $_ -eq "." -or $_ -eq ".." }) {
-        throw "Bootstrap manifest field '$(Format-LogSafeText $ManifestField)' must not contain empty, current, or parent path segments: $(Format-LogSafeText $RelativePath)"
+        throw "Bootstrap manifest field '$(Format-LogSafeText $ManifestField)' must not contain empty, current, or parent path segments: $(Format-LogSafePath $RelativePath)"
     }
 
     return $normalizedPath
@@ -414,7 +414,7 @@ function Get-BootstrapWorkspaceFingerprint {
     )
 
     if (-not (Test-Path -LiteralPath $Path)) {
-        throw "Workspace path does not exist: $(Format-LogSafeText $Path)"
+        throw "Workspace path does not exist: $(Format-LogSafePath $Path)"
     }
 
     $excludeSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -523,11 +523,11 @@ function Set-BootstrapStartupEnvironment {
 
     $apiSchemaPath = Join-Path $script:BootstrapRoot "ApiSchema"
     if (-not $SkipArtifactValidation -and -not (Test-Path -LiteralPath $apiSchemaPath)) {
-        throw "Bootstrap ApiSchema workspace is missing: $(Format-LogSafeText $apiSchemaPath)"
+        throw "Bootstrap ApiSchema workspace is missing: $(Format-LogSafePath $apiSchemaPath)"
     }
 
     if (-not $SkipArtifactValidation -and -not (Test-Path -LiteralPath $apiSchemaManifestPath -PathType Leaf)) {
-        throw "Bootstrap ApiSchema manifest is missing: $(Format-LogSafeText $apiSchemaManifestPath)"
+        throw "Bootstrap ApiSchema manifest is missing: $(Format-LogSafePath $apiSchemaManifestPath)"
     }
 
     # Activate the staged schema workspace as runtime-authoritative (bootstrap-design.md §3 activation
@@ -571,7 +571,7 @@ function Set-BootstrapStartupEnvironment {
 
     $claimsPath = Resolve-BootstrapPath -RelativePath $claimsDirectory
     if (-not $SkipArtifactValidation -and -not (Test-Path -LiteralPath $claimsPath)) {
-        throw "Bootstrap claims workspace is missing: $(Format-LogSafeText $claimsPath)"
+        throw "Bootstrap claims workspace is missing: $(Format-LogSafePath $claimsPath)"
     }
 
     if (-not $manifest.ContainsKey("seed")) {
@@ -667,6 +667,68 @@ function Restore-BootstrapEnvSnapshot {
     }
 }
 
+function Get-E2EClaimsFragmentsDirectory {
+    <#
+    .SYNOPSIS
+    Absolute path to the test-owned E2E claimset fragments (and their readiness checks file).
+    #>
+    return Join-Path $script:RepoRoot "src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments"
+}
+
+function Initialize-E2EClaimsWorkspace {
+    <#
+    .SYNOPSIS
+    Stages the default claimset fragments plus the test-owned E2E claimset fragments into
+    eng/docker-compose/.e2e-claims and returns its absolute path, for use as the CMS claims mount.
+    .DESCRIPTION
+    The directory is created only when missing and is never deleted or replaced: a later startup
+    phase calls this again while CMS is bind-mounted to it, and replacing it would leave CMS mounted
+    to the orphaned original. Content is synced in place instead: every intended file is copied over
+    its staged copy and stale *-claimset.json files are removed.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal E2E staging helper; the E2E setup scripts do not expose -WhatIf end to end.')]
+    param()
+
+    $sourceDirectories = @(
+        (Join-Path $script:RepoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets"),
+        (Get-E2EClaimsFragmentsDirectory)
+    )
+
+    $intendedSources = [System.Collections.Generic.Dictionary[string, string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+    foreach ($sourceDirectory in $sourceDirectories) {
+        if (-not (Test-Path -LiteralPath $sourceDirectory -PathType Container)) {
+            throw "E2E claimset fragment directory does not exist: $(Format-LogSafePath $sourceDirectory)"
+        }
+
+        foreach ($fragment in @(Get-ChildItem -LiteralPath $sourceDirectory -Filter "*-claimset.json" -File | Sort-Object -Property Name)) {
+            if ($intendedSources.ContainsKey($fragment.Name)) {
+                throw "Claimset fragment filename collision for '$(Format-LogSafeText $fragment.Name)' from '$(Format-LogSafePath $fragment.FullName)' and '$(Format-LogSafePath ($intendedSources[$fragment.Name]))'."
+            }
+
+            $intendedSources[$fragment.Name] = $fragment.FullName
+        }
+    }
+
+    $workspace = Join-Path $script:DockerComposeRoot ".e2e-claims"
+    if (-not (Test-Path -LiteralPath $workspace -PathType Container)) {
+        New-Item -ItemType Directory -Path $workspace -ErrorAction Stop | Out-Null
+    }
+
+    foreach ($staged in @(Get-ChildItem -LiteralPath $workspace -Filter "*-claimset.json" -File)) {
+        if (-not $intendedSources.ContainsKey($staged.Name)) {
+            Remove-Item -LiteralPath $staged.FullName -Force -ErrorAction Stop
+        }
+    }
+
+    foreach ($fileName in $intendedSources.Keys) {
+        Copy-Item -LiteralPath $intendedSources[$fileName] -Destination (Join-Path $workspace $fileName) -Force -ErrorAction Stop
+    }
+
+    return $workspace
+}
+
 function Invoke-BootstrapStartupConfiguration {
     <#
     .SYNOPSIS
@@ -718,11 +780,12 @@ function Invoke-BootstrapStartupConfiguration {
             Write-Information "Extension Security Metadata: bootstrap mode is active; staged claims from manifest govern (AddExtensionSecurityMetadata flag is ignored in bootstrap mode)." -InformationAction Continue
         }
     } elseif ($AddExtensionSecurityMetadata) {
-        # Non-bootstrap mode: activate Hybrid claims so extension claimset fragments
-        # are loaded from /app/additional-claims (already mounted by the Config Service compose file).
+        # Non-bootstrap mode: activate Hybrid claims so the extension and E2E claimset fragments
+        # staged in .e2e-claims are loaded from /app/additional-claims. Every caller of this branch
+        # is an E2E setup path, and the E2E claim sets are defined only by test-owned fragments.
         $env:DMS_CONFIG_CLAIMS_SOURCE = "Hybrid"
         $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
-        $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = ""
+        $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = Initialize-E2EClaimsWorkspace
         Write-Information "Extension Security Metadata: Hybrid claims mode enabled (non-bootstrap startup)." -InformationAction Continue
     }
 
@@ -751,7 +814,7 @@ function Remove-BootstrapWorkspaceIfRequested {
         return
     }
     if (Test-Path -LiteralPath $bootstrapDir) {
-        Write-Output "Removing bootstrap workspace at $(Format-LogSafeText $bootstrapDir)"
+        Write-Output "Removing bootstrap workspace at $(Format-LogSafePath $bootstrapDir)"
         # Remove-Item is non-terminating by default; promote to a terminating error so a failed
         # cleanup cannot leave a stale manifest behind for the next start to pick up.
         Remove-Item -LiteralPath $bootstrapDir -Recurse -Force -ErrorAction Stop
@@ -779,5 +842,7 @@ Export-ModuleMember -Function `
     Set-BootstrapStartupEnvironment, `
     Get-BootstrapEnvSnapshot, `
     Restore-BootstrapEnvSnapshot, `
+    Get-E2EClaimsFragmentsDirectory, `
+    Initialize-E2EClaimsWorkspace, `
     Invoke-BootstrapStartupConfiguration, `
     Remove-BootstrapWorkspaceIfRequested

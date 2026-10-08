@@ -29,9 +29,13 @@ internal static partial class CdcConnectorTelemetryMetrics
         var request = pass.Request;
         string provider =
             request.Binding.Provider == CoreCdc.CdcProvider.Postgresql ? "postgres" : "sql_server";
-        long current =
-            Lag(lines, "current", provider, request.Binding.ConnectorName)
-            ?? throw new InvalidDataException();
+        var currentValue = Value(lines, "current", provider, request.Binding.ConnectorName, true);
+        if (currentValue is not null && currentValue.Value.Equals(-1d))
+        {
+            // This is an unusable measurement, not zero lag or proof of initialization.
+            throw new CdcCurrentLagUnavailableException();
+        }
+        long current = Milliseconds(currentValue) ?? throw new InvalidDataException();
         var p50 = Value(lines, "p50", provider, request.Binding.ConnectorName);
         var p95 = Value(lines, "p95", provider, request.Binding.ConnectorName);
         var p99 = Value(lines, "p99", provider, request.Binding.ConnectorName);
@@ -71,11 +75,6 @@ internal static partial class CdcConnectorTelemetryMetrics
         return (observation, new(minimum, maximum, average));
     }
 
-    private static long? Lag(string[] lines, string statistic, string provider, string connector)
-    {
-        return Milliseconds(Value(lines, statistic, provider, connector));
-    }
-
     private static long? Milliseconds(double? value)
     {
         // Core exposes integer milliseconds. Round upward conservatively, never understate lag.
@@ -84,7 +83,13 @@ internal static partial class CdcConnectorTelemetryMetrics
             : null;
     }
 
-    private static double? Value(string[] lines, string statistic, string provider, string connector)
+    private static double? Value(
+        string[] lines,
+        string statistic,
+        string provider,
+        string connector,
+        bool allowUnavailableCurrentLag = false
+    )
     {
         string name = Prefix + statistic + "_milliseconds";
         if (!HasGaugeType(lines, name))
@@ -128,7 +133,7 @@ internal static partial class CdcConnectorTelemetryMetrics
                 parsed.Count != 2
                 || !parsed.TryGetValue("provider", out var actualProvider)
                 || actualProvider != provider
-                || !Number(sample.Groups["value"].Value, out double value)
+                || !Number(sample.Groups["value"].Value, out double value, allowUnavailableCurrentLag)
             )
             {
                 return null;
@@ -157,10 +162,10 @@ internal static partial class CdcConnectorTelemetryMetrics
         lines.Count(line => line.StartsWith("# TYPE " + name + " ", StringComparison.Ordinal)) == 1
         && lines.Contains("# TYPE " + name + " gauge", StringComparer.Ordinal);
 
-    private static bool Number(string text, out double value) =>
+    private static bool Number(string text, out double value, bool allowUnavailableCurrentLag = false) =>
         double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value)
         && double.IsFinite(value)
-        && value >= 0;
+        && (value >= 0 || allowUnavailableCurrentLag && value.Equals(-1d));
 
     private static void Require(bool condition)
     {
@@ -183,3 +188,10 @@ internal static partial class CdcConnectorTelemetryMetrics
     )]
     private static partial Regex Labels();
 }
+
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Sonar",
+    "S3871",
+    Justification = "Internal parser control flow caught by the telemetry adapter; never escapes its API."
+)]
+internal sealed class CdcCurrentLagUnavailableException : Exception;

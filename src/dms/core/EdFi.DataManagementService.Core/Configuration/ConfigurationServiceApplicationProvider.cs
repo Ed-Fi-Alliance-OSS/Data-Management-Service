@@ -6,6 +6,7 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Configuration;
@@ -26,37 +27,49 @@ public class ConfigurationServiceApplicationProvider(
     private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     /// <inheritdoc />
-    public async Task<ApplicationContextResult> GetApplicationByClientIdAsync(string clientId, string? tenant)
+    public async Task<ApplicationContextResult> GetApplicationByClientIdAsync(
+        string clientId,
+        string? tenant,
+        CancellationToken cancellationToken = default
+    )
     {
-        return await FetchApplicationByClientIdAsync(clientId, tenant);
+        return await FetchApplicationByClientIdAsync(clientId, tenant, cancellationToken);
     }
 
     /// <inheritdoc />
     public async Task<ApplicationContextResult> ReloadApplicationByClientIdAsync(
         string clientId,
-        string? tenant
+        string? tenant,
+        CancellationToken cancellationToken = default
     )
     {
-        logger.LogInformation("Force reloading application context for clientId: {ClientId}", clientId);
-        return await FetchApplicationByClientIdAsync(clientId, tenant);
+        logger.LogInformation(
+            "Force reloading application context for clientId: {ClientId}",
+            LoggingSanitizer.SanitizeInternalValueForLogging(clientId)
+        );
+        return await FetchApplicationByClientIdAsync(clientId, tenant, cancellationToken);
     }
 
     private async Task<ApplicationContextResult> FetchApplicationByClientIdAsync(
         string clientId,
-        string? tenant
+        string? tenant,
+        CancellationToken cancellationToken
     )
     {
+        string sanitizedClientId = LoggingSanitizer.SanitizeInternalValueForLogging(clientId);
+
         try
         {
             string configurationServiceToken = await configurationServiceTokenHandler.GetTokenAsync(
                 configurationServiceContext.clientId,
                 configurationServiceContext.clientSecret,
-                configurationServiceContext.scope
+                configurationServiceContext.scope,
+                cancellationToken
             );
 
-            logger.LogDebug("Fetching application context for clientId: {ClientId}", clientId);
+            logger.LogDebug("Fetching application context for clientId: {ClientId}", sanitizedClientId);
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"/v3/apiClients/{clientId}");
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"v3/apiClients/{clientId}");
             request.Headers.Authorization = new AuthenticationHeaderValue(
                 "Bearer",
                 configurationServiceToken
@@ -69,12 +82,13 @@ public class ConfigurationServiceApplicationProvider(
 
             request.Options.Set(ConfigurationServiceResponseHandler.AllowNotFoundResponse, true);
             using HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(
-                request
+                request,
+                cancellationToken
             );
 
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                logger.LogWarning("Application not found for clientId: {ClientId}", clientId);
+                logger.LogWarning("Application not found for clientId: {ClientId}", sanitizedClientId);
                 return new ApplicationContextResult.NotFound();
             }
 
@@ -83,19 +97,19 @@ public class ConfigurationServiceApplicationProvider(
                 logger.LogError(
                     "Configuration Service returned {StatusCode} while fetching application context for clientId: {ClientId}",
                     response.StatusCode,
-                    clientId
+                    sanitizedClientId
                 );
                 return new ApplicationContextResult.Unavailable();
             }
 
-            string responseBody = await response.Content.ReadAsStringAsync();
+            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
             ApplicationContext? applicationContext = DeserializeApplicationContext(responseBody);
 
             if (applicationContext is null)
             {
                 logger.LogError(
                     "Failed to deserialize application context for clientId: {ClientId}",
-                    clientId
+                    sanitizedClientId
                 );
                 return new ApplicationContextResult.Unavailable();
             }
@@ -104,8 +118,8 @@ public class ConfigurationServiceApplicationProvider(
             {
                 logger.LogError(
                     "Configuration Service returned an application context for a different clientId. Requested clientId: {RequestedClientId}, returned clientId: {ResponseClientId}",
-                    clientId,
-                    applicationContext.ClientId
+                    sanitizedClientId,
+                    LoggingSanitizer.SanitizeInternalValueForLogging(applicationContext.ClientId)
                 );
                 return new ApplicationContextResult.Unavailable();
             }
@@ -121,7 +135,7 @@ public class ConfigurationServiceApplicationProvider(
                     "Configuration Service returned an invalid application context for clientId: {ClientId}. "
                         + "Id: {Id}, ApplicationId: {ApplicationId}, ClientUuid: {ClientUuid}, "
                         + "CreatorOwnershipTokenId: {CreatorOwnershipTokenId}, OwnershipTokenCount: {OwnershipTokenCount}",
-                    clientId,
+                    sanitizedClientId,
                     applicationContext.Id,
                     applicationContext.ApplicationId,
                     applicationContext.ClientUuid,
@@ -133,7 +147,7 @@ public class ConfigurationServiceApplicationProvider(
 
             logger.LogDebug(
                 "Successfully fetched application context for clientId: {ClientId}, ApplicationId: {ApplicationId}",
-                clientId,
+                sanitizedClientId,
                 applicationContext.ApplicationId
             );
 
@@ -146,12 +160,16 @@ public class ConfigurationServiceApplicationProvider(
                 }
             );
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (HttpRequestException ex)
         {
             logger.LogError(
                 ex,
                 "HTTP request failed while fetching application context for clientId: {ClientId}",
-                clientId
+                sanitizedClientId
             );
             return new ApplicationContextResult.Unavailable();
         }
@@ -160,7 +178,7 @@ public class ConfigurationServiceApplicationProvider(
             logger.LogError(
                 ex,
                 "Failed to parse application context response for clientId: {ClientId}",
-                clientId
+                sanitizedClientId
             );
             return new ApplicationContextResult.Unavailable();
         }
@@ -169,7 +187,7 @@ public class ConfigurationServiceApplicationProvider(
             logger.LogError(
                 ex,
                 "Unexpected error while fetching application context for clientId: {ClientId}",
-                clientId
+                sanitizedClientId
             );
             return new ApplicationContextResult.Unavailable();
         }

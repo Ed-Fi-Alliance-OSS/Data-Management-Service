@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        The plugin the deployment harness publishes, packs and loads. It consumes the two contracts
+        as packed nupkgs from a local folder feed rather than by project reference, which is exactly
+        how an outside implementer consumes them; a project reference would prove the source tree and
+        not the packages.
+
+        The four names the loader requires to agree all read Acme.SampleValidator: this directory, the
+        assembly name, the published file name, and the plugin's own Name.
+
+        It carries no lock file and belongs to no solution. Nothing in the repository builds it except
+        the harness beside it.
+    -->
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <AssemblyName>Acme.SampleValidator</AssemblyName>
+        <RootNamespace>Acme.SampleValidator</RootNamespace>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <!--
+        Both versions arrive from the harness, which reads them from what it just packed. The
+        defaults below exist only so that a bare build fails with a restore error naming a version
+        that does not exist, rather than quietly succeeding against whatever happens to be in the
+        feed. Each is pinned in [brackets]: a bare version is a floor, not a pin, so with more than
+        one nupkg in a folder feed NuGet resolves a different one and warns instead of failing.
+    -->
+    <PropertyGroup>
+        <PluginsPackageVersion Condition="'$(PluginsPackageVersion)' == ''">0.0.0-local</PluginsPackageVersion>
+        <CustomValidationPackageVersion Condition="'$(CustomValidationPackageVersion)' == ''">0.0.0-local</CustomValidationPackageVersion>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="EdFi.Api.Plugins" Version="[$(PluginsPackageVersion)]" />
+        <PackageReference Include="EdFi.Api.CustomValidation" Version="[$(CustomValidationPackageVersion)]" />
+        <!--
+            Named here rather than leaned on transitively, for the reason the plugin contract's own
+            scratch consumer records: an implementer writing registration code against the hook
+            signature compiles against both assemblies directly. The versions are independent of what
+            DMS itself resolves, as an outside implementer's would be, but they cannot go below the
+            floor the contract declares.
+        -->
+        <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.1" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
+    </ItemGroup>
+</Project>

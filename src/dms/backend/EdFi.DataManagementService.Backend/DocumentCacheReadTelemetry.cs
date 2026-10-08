@@ -144,7 +144,7 @@ internal sealed record DocumentCacheReadTelemetryContext
             throw new ArgumentException("Metric label must be present.", parameterName);
         }
 
-        string sanitized = LoggingSanitizer.SanitizeForLogging(value);
+        string sanitized = LoggingSanitizer.SanitizeInternalValueForLogging(value);
         if (sanitized.Length == 0)
         {
             sanitized = DocumentCacheReadTelemetryLabel.Unknown;

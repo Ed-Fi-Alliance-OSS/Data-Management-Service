@@ -34,4 +34,16 @@ This material stops at the DocumentCache projection boundary. Kafka connector
 operation, binding/source history, topic management, source replacement, consumer-state
 recovery, and downstream publication containment are separate Kafka/CDC operations
 concerns; start with the
-[Kafka/CDC operations guidance](../design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md).
+[CDC operator reference](../cdc-documentation/README.md) and its
+[projection administration/history handoff](../cdc-documentation/operations-runbook.md#projection-handoff).
+The handoff documents the shipped production history reader for `activate-offline`,
+`deactivate-offline` and `recover-cache-ahead`; this reference set retains their
+projection and offline procedure ownership.
+
+For representation corrections, use the
+[CDC restamp handoff](../cdc-documentation/operations-runbook.md#representation-restamp)
+to the DocumentCacheAdmin procedure; for previously disclosed sensitive values, use
+[sensitive-data response](../cdc-documentation/operations-runbook.md#sensitive-data-response).
+The [contract-change owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations)
+defines those boundaries. Physical-source replacement remains a
+[v1 deferral](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral).

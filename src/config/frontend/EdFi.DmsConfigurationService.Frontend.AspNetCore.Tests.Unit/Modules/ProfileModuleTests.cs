@@ -136,7 +136,7 @@ public class ProfileModuleTests
             definition = "<Profile name=\"TestProfile\"><Resource name=\"Resource1\"></Resource></Profile>",
         };
         A.CallTo(() => _profileRepository.InsertProfile(A<ProfileInsertCommand>.Ignored))
-            .Returns(new ProfileInsertResult.FailureDuplicateName("TestProfile"));
+            .Returns(new ProfileInsertResult.FailureDuplicateName());
         using var client = SetUpClient();
         using var content = new StringContent(
             JsonSerializer.Serialize(duplicateProfile),
@@ -147,11 +147,27 @@ public class ProfileModuleTests
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "Data validation failed. See 'validationErrors' for details.",
+              "type": "urn:ed-fi:api:bad-request:data",
+              "title": "Data Validation Failed",
+              "status": 400,
+              "correlationId": "{correlationId}",
+              "validationErrors": {
+                "Name": [
+                  "A profile with this name already exists."
+                ]
+              },
+              "errors": []
+            }
+            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+        );
+
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Name"]![0]!
-            .GetValue<string>()
-            .Should()
-            .Contain("Profile 'TestProfile' already exists");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().BeTrue();
     }
 
     [Test]
@@ -464,7 +480,7 @@ public class ProfileModuleTests
             definition = "<Profile name=\"ExistingProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>",
         };
         A.CallTo(() => _profileRepository.UpdateProfile(A<ProfileUpdateCommand>.Ignored))
-            .Returns(new ProfileUpdateResult.FailureDuplicateName("ExistingProfile"));
+            .Returns(new ProfileUpdateResult.FailureDuplicateName());
         using var client = SetUpClient();
         using var content = new StringContent(
             JsonSerializer.Serialize(updateProfile),
@@ -475,11 +491,27 @@ public class ProfileModuleTests
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
+        var expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "Data validation failed. See 'validationErrors' for details.",
+              "type": "urn:ed-fi:api:bad-request:data",
+              "title": "Data Validation Failed",
+              "status": 400,
+              "correlationId": "{correlationId}",
+              "validationErrors": {
+                "Name": [
+                  "A profile with this name already exists."
+                ]
+              },
+              "errors": []
+            }
+            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+        );
+
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Name"]![0]!
-            .GetValue<string>()
-            .Should()
-            .Contain("A profile with this name already exists");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().BeTrue();
     }
 
     [Test]
@@ -842,9 +874,9 @@ public class ProfileMissingBodyTests
             .Equal("A non-empty request body is required.");
     }
 
-    private static WebApplicationFactory<Program> CreateFactory()
+    private static WebApplicationFactory<Program> CreateFactory(IProfileRepository? repository = null)
     {
-        var profileRepository = A.Fake<IProfileRepository>();
+        var profileRepository = repository ?? A.Fake<IProfileRepository>();
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
@@ -871,6 +903,70 @@ public class ProfileMissingBodyTests
                 }
             );
         });
+    }
+
+    /// <summary>
+    /// DMS builds its profile catalog from the profile reads with the service-account scope that covers
+    /// its other Configuration Service reads. That scope must reach both reads and no write.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_token_with_only_the_auth_metadata_scope
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _getAllResponse = null!;
+        private HttpResponseMessage _getByIdResponse = null!;
+        private HttpResponseMessage _postResponse = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var profile = new ProfileResponse
+            {
+                Id = 1,
+                Name = "TestProfile",
+                Definition =
+                    "<Profile name=\"TestProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>",
+            };
+            var repository = A.Fake<IProfileRepository>();
+            A.CallTo(() => repository.QueryProfiles(A<ProfileQuery>.Ignored))
+                .Returns(new ProfileGetResult[] { new ProfileGetResult.Success(profile) });
+            A.CallTo(() => repository.GetProfile(1)).Returns(new ProfileGetResult.Success(profile));
+
+            _factory = CreateFactory(repository);
+            _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Add(
+                "X-Test-Scope",
+                AuthorizationScopes.AuthMetadataReadOnlyAccessScope.Name
+            );
+
+            _getAllResponse = await _client.GetAsync("/v3/profiles");
+            _getByIdResponse = await _client.GetAsync("/v3/profiles/1");
+            using var content = new StringContent(
+                """{"name":"TestProfile","definition":"<Profile name=\"TestProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>"}""",
+                Encoding.UTF8,
+                "application/json"
+            );
+            _postResponse = await _client.PostAsync("/v3/profiles", content);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_allows_listing_profiles() => _getAllResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_allows_reading_a_profile_by_id() =>
+            _getByIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_still_forbids_creating_a_profile() =>
+            _postResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     [TestFixture]

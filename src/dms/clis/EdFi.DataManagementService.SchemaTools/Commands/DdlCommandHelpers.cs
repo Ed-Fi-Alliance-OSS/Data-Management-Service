@@ -85,7 +85,7 @@ internal static class DdlCommandHelpers
     {
         foreach (var resource in modelSet.ConcreteResourcesInNameOrder)
         {
-            var resourceLabel = LoggingSanitizer.SanitizeForLogging(
+            var resourceLabel = LoggingSanitizer.SanitizeInternalValueForLogging(
                 $"{resource.ResourceKey.Resource.ProjectName}:{resource.ResourceKey.Resource.ResourceName}"
             );
 
@@ -101,9 +101,9 @@ internal static class DdlCommandHelpers
                 {
                     logger.LogDebug(
                         "  Skipped: source={Source}, target={Target}, unresolved={Endpoint}",
-                        LoggingSanitizer.SanitizeForLogging(entry.SourcePath.Canonical),
-                        LoggingSanitizer.SanitizeForLogging(entry.TargetPath.Canonical),
-                        LoggingSanitizer.SanitizeForLogging(entry.UnresolvedEndpoint)
+                        LoggingSanitizer.SanitizeInternalValueForLogging(entry.SourcePath.Canonical),
+                        LoggingSanitizer.SanitizeInternalValueForLogging(entry.TargetPath.Canonical),
+                        LoggingSanitizer.SanitizeInternalValueForLogging(entry.UnresolvedEndpoint)
                     );
                 }
             }
@@ -120,8 +120,8 @@ internal static class DdlCommandHelpers
                 {
                     logger.LogDebug(
                         "  Fallback: path={Path}, reason={Reason}",
-                        LoggingSanitizer.SanitizeForLogging(entry.SourcePath.Canonical),
-                        LoggingSanitizer.SanitizeForLogging(entry.Reason)
+                        LoggingSanitizer.SanitizeInternalValueForLogging(entry.SourcePath.Canonical),
+                        LoggingSanitizer.SanitizeInternalValueForLogging(entry.Reason)
                     );
                 }
             }

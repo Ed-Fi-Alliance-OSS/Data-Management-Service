@@ -40,10 +40,10 @@ internal sealed record DocumentCacheWriterRetryRequest
 
     public CancellationToken CancellationToken { get; }
 
-    public string SanitizedProvider => LoggingSanitizer.SanitizeForLogging(ProviderToken.Value);
+    public string SanitizedProvider => LoggingSanitizer.SanitizeInternalValueForLogging(ProviderToken.Value);
 
     public string SanitizedTargetKey =>
-        LoggingSanitizer.SanitizeForLogging(
+        LoggingSanitizer.SanitizeInternalValueForLogging(
             $"{(TargetKey.TenantKey.Length == 0 ? "(default)" : TargetKey.TenantKey)}:{TargetKey.DataStoreId.Value}"
         );
 }

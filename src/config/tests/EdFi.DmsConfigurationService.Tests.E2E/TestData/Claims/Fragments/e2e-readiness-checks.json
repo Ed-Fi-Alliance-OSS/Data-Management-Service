@@ -1,0 +1,32 @@
+[
+  {
+    "claimSetName": "E2E-NameSpaceBasedClaimSet",
+    "resourceClaim": "http://ed-fi.org/identity/claims/ed-fi/survey",
+    "action": "Read"
+  },
+  {
+    "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+    "resourceClaim": "http://ed-fi.org/identity/claims/ed-fi/academicWeek",
+    "action": "Read"
+  },
+  {
+    "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+    "resourceClaim": "http://ed-fi.org/identity/claims/ed-fi/academicWeek",
+    "action": "Read"
+  },
+  {
+    "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyInvertedClaimSet",
+    "resourceClaim": "http://ed-fi.org/identity/claims/ed-fi/academicWeek",
+    "action": "Read"
+  },
+  {
+    "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyOrInvertedClaimSet",
+    "resourceClaim": "http://ed-fi.org/identity/claims/ed-fi/academicWeek",
+    "action": "Read"
+  },
+  {
+    "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyMixedStrategyClaimSet",
+    "resourceClaim": "http://ed-fi.org/identity/claims/ed-fi/academicWeek",
+    "action": "Read"
+  }
+]

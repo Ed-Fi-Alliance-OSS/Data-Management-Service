@@ -1244,7 +1244,11 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
             Headers: [],
             TraceId: new TraceId($"pg-query-seed-{schoolSeed.SchoolId}"),
             DocumentUuid: schoolSeed.DocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()

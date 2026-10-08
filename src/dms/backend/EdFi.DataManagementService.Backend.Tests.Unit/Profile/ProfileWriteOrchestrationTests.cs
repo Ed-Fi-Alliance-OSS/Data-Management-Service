@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.External.Profile;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
@@ -77,6 +78,8 @@ public class Given_No_Profile_Relational_Post
         );
 
         var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate);
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(resourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(OrchestrationTestHelpers.CreateDocumentInfo());
@@ -263,6 +266,8 @@ public class Given_A_Profiled_Relational_Post
         );
 
         var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ActionAuthorization)
+            .Returns(UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate);
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(resourceInfo);
         A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => upsertRequest.DocumentInfo).Returns(OrchestrationTestHelpers.CreateDocumentInfo());

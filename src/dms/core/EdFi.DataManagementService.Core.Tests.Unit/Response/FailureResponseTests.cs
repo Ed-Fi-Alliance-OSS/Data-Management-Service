@@ -291,3 +291,72 @@ public class Given_FailureResponse_For_Security_Configuration
             );
     }
 }
+
+[TestFixture]
+[Parallelizable]
+public class Given_FailureResponse_For_Too_Many_Tokens
+{
+    private static readonly TraceId _traceId = new("token-limit-trace");
+
+    private const string ReconstructedMessage =
+        "Too many access tokens have been requested (limit is 5). Access tokens should be reused "
+        + "until they expire.";
+
+    private System.Text.Json.Nodes.JsonNode _response = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _response = FailureResponse.ForTooManyTokens(_traceId, [ReconstructedMessage]);
+    }
+
+    // A sibling of the authentication type, and deliberately NOT the rate limiter's
+    // urn:ed-fi:api:too-many-requests, which shares the 429 status but means something else.
+    [Test]
+    public void It_has_the_too_many_tokens_type()
+    {
+        _response["type"]!.ToString().Should().Be("urn:ed-fi:api:security:authentication:too-many-tokens");
+    }
+
+    [Test]
+    public void It_has_the_too_many_tokens_title()
+    {
+        _response["title"]!.ToString().Should().Be("Too Many Tokens");
+    }
+
+    [Test]
+    public void It_has_status_429()
+    {
+        _response["status"]!.GetValue<int>().Should().Be(429);
+    }
+
+    [Test]
+    public void It_renders_the_tickets_detail()
+    {
+        _response["detail"]!
+            .ToString()
+            .Should()
+            .Be("The caller has authenticated too many times in too short of a time period.");
+    }
+
+    [Test]
+    public void It_carries_the_supplied_correlation_id()
+    {
+        _response["correlationId"]!.ToString().Should().Be(_traceId.Value);
+    }
+
+    [Test]
+    public void It_has_empty_validation_errors()
+    {
+        _response["validationErrors"]!.AsObject().Count.Should().Be(0);
+    }
+
+    // The errors array is the caller's, unlike every other factory in this file, because the
+    // caller is what rebuilds the message from a parsed limit.
+    [Test]
+    public void It_carries_the_supplied_errors_entry()
+    {
+        _response["errors"]!.AsArray().Count.Should().Be(1);
+        _response["errors"]![0]!.ToString().Should().Be(ReconstructedMessage);
+    }
+}

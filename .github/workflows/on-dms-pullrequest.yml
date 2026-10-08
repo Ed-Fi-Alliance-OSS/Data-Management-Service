@@ -12,12 +12,12 @@ on:
   # the heavy jobs skip when no DMS-relevant file changed, so idle PRs stay cheap and the gate
   # still reports (a skipped dependency counts as a pass).
   # The default type set is opened, synchronize and reopened. Declaring types replaces that set
-  # outright, so all three are listed alongside the two draft transitions. ready_for_review is what
-  # makes draft gating safe: the expensive jobs below skip while a pull request is a draft, and
-  # marking it ready fires this trigger so the full suite validates it before review.
+  # outright, so all three are listed alongside the two draft transitions. No job runs while a pull
+  # request is a draft: detect-fresh-build-changes is the root of every lane and skips on a draft,
+  # and the always() jobs repeat the draft check. ready_for_review is what makes that safe, since
+  # marking the PR ready fires this trigger and the full suite validates it before review.
   # converted_to_draft is the cost side of the same gate: the cancel-in-progress concurrency group
-  # cancels the in-flight run, and the replacement run classifies as a draft, so its expensive jobs
-  # skip instead of finishing for a pull request that just declared itself not ready.
+  # cancels the in-flight run, and the replacement run skips every job.
   pull_request:
     types:
       - opened
@@ -47,6 +47,7 @@ env:
   CONFIGURATION: "Release"
   CUSTOM_VALIDATION_PACKAGE_NAME: "EdFi.Api.CustomValidation"
   PLUGINS_PACKAGE_NAME: "EdFi.Api.Plugins"
+  IDENTITY_PACKAGE_NAME: "EdFi.Api.Identity"
   MSSQL_IMAGE: "mcr.microsoft.com/mssql/server:2025-latest"
   MSSQL_CONTAINER_MEMORY: "10g"
   MSSQL_MEMORY_LIMIT_MB: "4096"
@@ -63,6 +64,10 @@ permissions: read-all
 jobs:
   detect-fresh-build-changes:
     name: Detect Fresh Build Changes
+    # Every other job needs this one directly or transitively, so skipping it on a draft skips the
+    # whole workflow except the always() jobs, which carry the same check. pull_request is null on
+    # merge_group and workflow_dispatch, so those always run.
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -73,10 +78,11 @@ jobs:
       # suite while this workflow still runs and reports dms-ci-gate. src/config counts as
       # DMS-relevant, so a config-only PR does not skip.
       dms_relevant: ${{ steps.detect.outputs.dms_relevant }}
-      # True while a pull request is a draft. Only the expensive roots and leaves gate on it, so a
-      # draft still gets the cheap lanes and still gets a reporting dms-ci-gate; ready_for_review is
-      # in the trigger types above, so marking the PR ready re-runs the full suite.
-      draft: ${{ steps.detect.outputs.draft }}
+      # True when the pull request changed a file that could move a document's embedded blocks or one
+      # of the files they copy. Separate from dms_relevant because docs/ is not DMS-relevant, and a
+      # pull request that edits only a documented Compose recipe is exactly the drift the embed check
+      # exists to refuse.
+      document_embeds_relevant: ${{ steps.detect.outputs.document_embeds_relevant }}
       # Promoted-suite categories. Six integration lanes that have caught nothing at pull request
       # time run only when a changed file reaches them; merge_group and workflow_dispatch always
       # report every category true, so the merge queue still runs the full suite. Anything
@@ -102,8 +108,6 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
           HEAD_SHA: ${{ github.sha }}
-          # Empty on merge_group and workflow_dispatch, which have no pull request.
-          PULL_REQUEST_IS_DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           # PowerShell 7.4 makes a non-zero native exit code terminating under
           # ErrorActionPreference Stop, which this step must not be: a git failure is handled
@@ -151,8 +155,7 @@ jobs:
           ./eng/ci/Write-DmsChangeCategories.ps1 `
             -EventName $env:EVENT_NAME `
             -ChangedFilePath $changedFilePath `
-            -DiffUnavailable:$diffUnavailable `
-            -IsDraft:($env:PULL_REQUEST_IS_DRAFT -eq 'true')
+            -DiffUnavailable:$diffUnavailable
 
           # The step's own success is decided by the classifier having run, not by the exit code
           # of the last git command, which is deliberately tolerated above.
@@ -242,10 +245,17 @@ jobs:
             "eng/docker-compose/tests/DataStandardEnvironmentFile.Tests.ps1",
             "eng/docker-compose/tests/DataStoreConnectionString.Tests.ps1",
             "eng/docker-compose/tests/DockerComposeLogging.Tests.ps1",
+            "eng/docker-compose/tests/PluginComposeFileResolution.Tests.ps1",
+            "eng/docker-compose/tests/StockImagePinSelection.Tests.ps1",
+            "eng/docker-compose/tests/StockImageProofDecisions.Tests.ps1",
+            "eng/docker-compose/tests/StockImageProofOrchestration.Tests.ps1",
+            "eng/docker-compose/tests/StockImageProofEntryScript.Tests.ps1",
             "eng/docker-compose/tests/ProvisionE2EDatabaseReset.Tests.ps1",
             "eng/docker-compose/tests/AzureVmDeployment.Tests.ps1",
             "eng/docker-compose/tests/E2EEngineForwarding.Tests.ps1",
             "eng/docker-compose/tests/E2ETestProcessContext.Tests.ps1",
+            "eng/docker-compose/tests/E2EIdentityEnvironment.Tests.ps1",
+            "eng/docker-compose/tests/IdentityToggleWiring.Tests.ps1",
             "eng/docker-compose/tests/E2ETeardownSafety.Tests.ps1",
             "eng/docker-compose/tests/InstanceE2EForwarding.Tests.ps1",
             "eng/ci/tests/BuildScriptTestGuards.Tests.ps1",
@@ -253,8 +263,14 @@ jobs:
             "eng/ci/tests/DmsPullRequestMssqlWorkflow.Tests.ps1",
             "eng/ci/tests/DmsChangeCategories.Tests.ps1",
             "eng/ci/tests/DmsPullRequestCiBudget.Tests.ps1",
+            "eng/ci/tests/DmsPrereleaseImageTags.Tests.ps1",
+            "eng/ci/tests/StockImagePinReadiness.Tests.ps1",
+            "eng/ci/tests/StockImageProofWorkflow.Tests.ps1",
             "eng/ci/tests/UnitTestCoverage.Tests.ps1",
             "eng/ci/tests/PullCiImages.Tests.ps1",
+            "eng/ci/tests/DocumentCacheAdminPackageTarget.Tests.ps1",
+            "eng/ci/tests/ScheduledMergeQueueEnqueue.Tests.ps1",
+            "eng/ci/tests/KeycloakNightlyNotifications.Tests.ps1",
             "eng/ci/tests/TemplateWorkflowAttestation.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-RestoreCore.Tests.ps1",
@@ -272,6 +288,33 @@ jobs:
           if ($result.FailedCount -gt 0 -or $result.FailedContainersCount -gt 0 -or $result.FailedBlocksCount -gt 0) {
               throw "Bootstrap Pester lane failed: $($result.FailedCount) test(s), $($result.FailedContainersCount) container(s), $($result.FailedBlocksCount) block(s)."
           }
+
+  verify-document-embeds:
+    name: Verify Document Embeds
+    needs: detect-fresh-build-changes
+    # Its own narrow gate. The same assertion runs inside the eng/verification/tests suite in
+    # Verify DMS Packages, but that job requires dms_relevant, so the one pull request this check is
+    # for - a documentation-only edit to an embedded Compose recipe - would skip it and learn about
+    # the drift in the merge queue.
+    # This job is a checkout and one script: no build, no module install, no container.
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.document_embeds_relevant == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Assert Documents Embed Their Files Verbatim
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          ./eng/verification/Invoke-DocumentEmbedChecks.ps1
 
   verify-lock-files:
     name: Verify DMS Lock Files
@@ -308,9 +351,6 @@ jobs:
   verify-dms-packages:
     name: Verify DMS Packages
     needs: detect-fresh-build-changes
-    # Draft-gated: BuildAndPublish plus four package builds and two scratch-consumer compiles is one
-    # of the most expensive jobs here, and nothing about packaging is feedback a draft needs.
-    #
     # Deliberately NOT a dms-build-output consumer, even though it does compile the solution. Its
     # target is BuildAndPublish, not Build, and the difference is the whole point of the job:
     # BuildAndPublish regenerates src/dms/Directory.Build.props to version-stamp the assemblies
@@ -321,8 +361,7 @@ jobs:
     # exclusion together with the reason, so the decision has to be revisited if the reason moves.
     if: >-
       github.event_name != 'pull_request' ||
-      (needs.detect-fresh-build-changes.outputs.dms_relevant == 'true' &&
-      needs.detect-fresh-build-changes.outputs.draft != 'true')
+      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -435,6 +474,11 @@ jobs:
         run: |
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
 
+          # -DMSVersion is passed deliberately, and it is deliberately the wrong version for this
+          # package. The contract is versioned on its own public surface, so the release version on
+          # this command line must not reach the artifact; the assertion below reads the csproj's
+          # declared version instead and would fail if it did. Removing this argument would remove
+          # the only thing being disproved here.
           ./build-dms.ps1 Package `
             -DMSVersion $packageVersion `
             -Configuration ${{ env.CONFIGURATION }} `
@@ -444,25 +488,34 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+          Import-Module ./package-helpers.psm1
+          $contractVersion = Get-CustomValidationContractVersion
 
-          # Asserts on what is inside the artifact, not that a file appeared. The package is not
-          # published yet, so this is the only thing standing between a broken csproj and a broken
-          # first release.
+          # Asserts on what is inside the artifact, not that a file appeared. The prerelease pack
+          # job runs this same assertion on the artifact before it is uploaded for publication;
+          # running it here catches a broken csproj before it reaches a release. This job is gated
+          # on a pull request touching a DMS-relevant path, and runs unconditionally in the merge
+          # queue, so nothing merges without it.
           ./eng/verification/Assert-CustomValidationPackage.ps1 `
-            -PackageFile "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}.$packageVersion.nupkg" `
+            -PackageFile "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}.$contractVersion.nupkg" `
             -ExtractTo (Join-Path $env:RUNNER_TEMP "custom-validation-nupkg") `
-            -PackageId "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}"
+            -PackageId "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}" `
+            -ExpectedPackageVersion $contractVersion
 
       - name: Compile Scratch Consumer
         run: |
           $ErrorActionPreference = "Stop"
 
-          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+          Import-Module ./package-helpers.psm1
+          $contractVersion = Get-CustomValidationContractVersion
 
+          # The contract version is fixed at its own surface version rather than moving with every
+          # build, so the same version string extracts to the same cache path on every run. A fresh
+          # global-packages folder per run is what stops a previously extracted copy satisfying this
+          # restore in place of the package just packed.
           ./eng/verification/Invoke-CustomValidationConsumerCheck.ps1 `
-            -PackageVersion $packageVersion `
-            -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-custom-validation")
+            -PackageVersion $contractVersion `
+            -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-custom-validation-$([guid]::NewGuid().ToString('N'))")
 
       - name: Create Plugins NuGet Package
         run: |
@@ -505,6 +558,52 @@ jobs:
           ./eng/verification/Invoke-PluginsConsumerCheck.ps1 `
             -PackageVersion $contractVersion `
             -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-plugins-$([guid]::NewGuid().ToString('N'))")
+
+      - name: Create Identity NuGet Package
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # No -DMSVersion. The identity contract is versioned on its own public surface,
+          # independently of the DMS release, the same way EdFi.Api.Plugins is. The target reads
+          # src/dms/core/EdFi.DataManagementService.Identity/EdFi.DataManagementService.Identity.csproj
+          # and ignores the release version entirely.
+          ./build-dms.ps1 Package `
+            -Configuration ${{ env.CONFIGURATION }} `
+            -PackageTarget Identity
+
+      - name: Assert Identity Package Contents
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Import-Module ./package-helpers.psm1
+          $contractVersion = Get-IdentityContractVersion
+
+          # A fresh extraction directory per run. The script refuses a non-empty one rather than
+          # emptying it, so a warm runner would otherwise fail here.
+          ./eng/verification/Assert-IdentityPackage.ps1 `
+            -PackageFile "${{ env.IDENTITY_PACKAGE_NAME }}.$contractVersion.nupkg" `
+            -ExtractTo (Join-Path $env:RUNNER_TEMP "identity-nupkg-$([guid]::NewGuid().ToString('N'))") `
+            -PackageId "${{ env.IDENTITY_PACKAGE_NAME }}" `
+            -ExpectedPackageVersion $contractVersion
+
+      # After both packs, necessarily: this is the one check that restores both contracts, because
+      # the samples CUSTOM-VALIDATION.md publishes are a validator and the plugin that registers
+      # it. Placing it earlier would restore an EdFi.Api.Plugins that had not been packed yet.
+      - name: Compile and Run the Documented Custom Validator Samples
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Import-Module ./package-helpers.psm1
+          $pluginsContractVersion = Get-PluginsContractVersion
+          $customValidationContractVersion = Get-CustomValidationContractVersion
+
+          # Two versions from two sources, deliberately: each contract declares its own version in
+          # its own file and neither moves with the release, so neither is derived from the other
+          # or from the release version. These are the versions the two pack steps above produced.
+          ./eng/verification/Invoke-CustomValidatorPluginConsumerCheck.ps1 `
+            -CustomValidationPackageVersion $customValidationContractVersion `
+            -PluginsPackageVersion $pluginsContractVersion `
+            -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-validator-plugin-$([guid]::NewGuid().ToString('N'))")
 
       # Not preinstalled on the runner image, and this is the only Pester use in this job. The
       # bootstrap and MSSQL lanes install the same pinned version the same way.
@@ -555,9 +654,7 @@ jobs:
   build-dms-solution:
     name: Build DMS Solution
     needs: detect-fresh-build-changes
-    # Gated on DMS relevance only, and deliberately not draft-gated: run-unit-tests depends on this
-    # producer, so draft-gating here would skip unit tests on every draft DMS pull request through
-    # the dependency.
+    # Gated on DMS relevance only.
     if: >-
       github.event_name != 'pull_request' ||
       needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
@@ -700,6 +797,19 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      - name: Restore with locked mode
+        # The unit tests run with --no-build against the downloaded build output, so this restore
+        # compiles nothing. It is here for the packages folder: some Core unit tests read the
+        # packaged ApiSchema.json of the pinned ApiSchema packages straight from ~/.nuget/packages
+        # at test time, and without a restore that folder is only what the cache above happened to
+        # hold. The cache key is a hash of Directory.Packages.props alone and actions/cache never
+        # rewrites an existing key, so a PR that adds a PackageReference at an already pinned
+        # version, or that changes a lock file, gets a cache that predates it - on the PR and on
+        # main after the merge. Restoring in locked mode guarantees every package in the lock files
+        # is present and fails by name if one cannot be fetched. It runs before the extraction below
+        # so the build job's own restore markers, laid down by the tar, are what --no-build reads.
+        run: dotnet restore ./src/dms/EdFi.DataManagementService.sln --locked-mode
+
       - name: Download DMS Build Output
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -768,12 +878,11 @@ jobs:
     # Both a consumer and a producer: it takes the shared build output and republishes the much
     # smaller slice the eight integration lanes need, so they download megabytes rather than
     # gigabytes. All five projects it stages are in the solution the shared build already compiles.
-    # Draft-gated. This is the root of every integration lane, so gating it here skips all eight
-    # through their needs rather than repeating the condition on each.
+    # This is the root of every integration lane, so gating it here skips all eight through their
+    # needs rather than repeating the condition on each.
     if: >-
       github.event_name != 'pull_request' ||
-      (needs.detect-fresh-build-changes.outputs.dms_relevant == 'true' &&
-      needs.detect-fresh-build-changes.outputs.draft != 'true')
+      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -903,12 +1012,11 @@ jobs:
   build-ci-docker-images:
     name: Build CI Docker Images
     needs: detect-fresh-build-changes
-    # Draft-gated. This is the root of every E2E, instance-E2E and OpenAPI lane, so gating it here
-    # skips that whole family through their needs.
+    # This is the root of every E2E, instance-E2E and OpenAPI lane, so gating it here skips that
+    # whole family through their needs.
     if: >-
       github.event_name != 'pull_request' ||
-      (needs.detect-fresh-build-changes.outputs.dms_relevant == 'true' &&
-      needs.detect-fresh-build-changes.outputs.draft != 'true')
+      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1382,6 +1490,57 @@ jobs:
         if: always()
         run: docker rm -f dms-ci-postgresql
 
+  run-dms-api-plugin-integration-tests:
+    name: Run DMS API Plugin Integration Tests
+    needs: build-integration-test-assemblies
+    # Not path-promoted and not database-gated. These cases boot the production host over a plugin
+    # root of their own against external doubles, so the lane needs no container and finishes in
+    # well under a minute; and the two database lanes filter on Category=ApiIntegration, which no
+    # plugin fixture carries, so without this job nothing runs them at all.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      TEST_ASSEMBLY: ./TestArtifacts/integration-test-assemblies/dms-api/EdFi.DataManagementService.Tests.Integration.dll
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Download Integration Test Assemblies
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dms-integration-test-assemblies
+          path: TestArtifacts/integration-test-assemblies
+
+      - name: Run DMS API Plugin Integration Tests
+        run: |
+          dotnet test ${{ env.TEST_ASSEMBLY }} `
+            -v normal `
+            --results-directory "./src/dms/tests/EdFi.DataManagementService.Tests.Integration/TestResults" `
+            --filter "Category=PluginIntegration" `
+            --logger "trx;LogFileName=EdFi.DataManagementService.Tests.Integration.Plugins.trx" `
+            --logger "console" `
+            --nologo
+
+      - name: Upload DMS API Plugin Integration Test Results
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        if: (success() || failure())
+        with:
+          name: DMS API Plugin Integration Tests
+          path: "**/*.trx"
+          path-replace-backslashes: "true"
+          reporter: dotnet-trx
+          list-tests: failed
+          use-actions-summary: "true"
+
   run-backend-cdc-integration-tests:
     name: Run Backend CDC Integration Tests
     needs: [detect-fresh-build-changes, build-integration-test-assemblies]
@@ -1440,8 +1599,7 @@ jobs:
     needs: detect-fresh-build-changes
     if: >-
       github.event_name != 'pull_request' ||
-      (needs.detect-fresh-build-changes.outputs.cdc_relevant == 'true' &&
-      needs.detect-fresh-build-changes.outputs.draft != 'true')
+      needs.detect-fresh-build-changes.outputs.cdc_relevant == 'true'
     runs-on: ubuntu-latest
     # Fast controller/CLI/offline/wrapper checks remain required before merge.
     # All live provider and Kafka qualification runs in nightly-cdc-qualification.yml.
@@ -1464,15 +1622,15 @@ jobs:
         run: Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force
 
       - name: Run story-owned CDC qualification
-        run: ./eng/ci/Invoke-CdcQualification.ps1 -Lane Contract -ResultsDirectory TestResults/cdc-qualification
+        run: ./eng/ci/Invoke-CdcQualification.ps1 -Lane Contract -ResultsDirectory "$env:RUNNER_TEMP/cdc-qualification"
 
       - name: Record unavailable qualification environment
         if: failure()
         run: |
-          if (-not (Test-Path TestResults/cdc-qualification/qualification.json)) {
-            New-Item -ItemType Directory -Force TestResults/cdc-qualification | Out-Null
+          if (-not (Test-Path "$env:RUNNER_TEMP/cdc-qualification/qualification.json")) {
+            New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/cdc-qualification" | Out-Null
             @(@{ Name = 'environment-setup'; Status = 'EnvironmentUnavailable'; Total = 0; Passed = 0; Failed = 0; Skipped = 0 }) |
-              ConvertTo-Json -AsArray | Set-Content TestResults/cdc-qualification/qualification.json
+              ConvertTo-Json -AsArray | Set-Content "$env:RUNNER_TEMP/cdc-qualification/qualification.json"
           }
 
       - name: Upload structured CDC qualification evidence
@@ -1480,7 +1638,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cdc-qualification-Contract-All-${{ github.run_attempt }}
-          path: TestResults/cdc-qualification/**
+          path: ${{ runner.temp }}/cdc-qualification/**
           if-no-files-found: error
           retention-days: 14
 
@@ -1564,11 +1722,9 @@ jobs:
   run-cli-integration-tests:
     name: Run CLI Integration Tests (${{ matrix.cli }})
     needs: detect-fresh-build-changes
-    # Draft-gated: two matrix legs, each a separate restore, build and test.
     if: >-
       github.event_name != 'pull_request' ||
-      (needs.detect-fresh-build-changes.outputs.dms_relevant == 'true' &&
-      needs.detect-fresh-build-changes.outputs.draft != 'true')
+      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -2872,7 +3028,8 @@ jobs:
         run-e2e-tests-mssql,
         run-e2e-tests-mssql-ds61,
       ]
-    if: always()
+    # always() overrides the skip a draft inherits through needs, so the draft check is repeated.
+    if: always() && github.event.pull_request.draft != true
     steps:
       - name: Check DMS E2E matrix result
         shell: pwsh
@@ -3086,6 +3243,206 @@ jobs:
           path: |
             TestResults/EdFi.InstanceManagement.Tests.E2E.instance-shard-${{ matrix.shard }}.trx
             TestResults/test-timings/instance-shard-${{ matrix.shard }}/**
+          if-no-files-found: ignore
+          retention-days: 30
+
+  run-instance-management-identity-plugin-e2e-tests:
+    name: Run Instance Management Identity Plugin E2E Tests
+    needs: [build-ci-docker-images, build-dms-solution]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
+      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Login to GitHub Container Registry
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Pull CI Docker images
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
+        uses: ./.github/actions/pull-ci-images
+        with:
+          images: |
+            ${{ needs.build-ci-docker-images.outputs.dms_image }}
+            ${{ needs.build-ci-docker-images.outputs.config_image }}
+
+      - name: Set up Docker Buildx
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Cache Docker layers
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('src/Directory.Packages.props', 'src/nuget.config', 'src/dms/Dockerfile', 'src/dms/**', 'src/config/Dockerfile', 'src/config/**') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build DMS Docker image
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          load: true
+          context: ./src/dms
+          file: ./src/dms/Dockerfile
+          build-contexts: |
+            parentdir=./src
+          push: false
+          tags: ed-fi-api-local:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
+
+      - name: Build Config Docker image
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          load: true
+          context: ./src/config
+          file: ./src/config/Dockerfile
+          build-contexts: |
+            parentdir=./src
+          push: false
+          tags: ed-fi-api-config-local:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
+
+      - name: Cache Nuget packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dms-build-output
+          path: ${{ runner.temp }}/dms-build-output
+
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
+
+      - name: Prepare identity plugin environment
+        run: |
+          $fixtureRoot = "${{ github.workspace }}/src/dms/tests/EdFi.DataManagementService.Tests.Integration/bin/${{ env.CONFIGURATION }}/net10.0/PackedContractPluginFixtures"
+          $fixtureDll = Join-Path $fixtureRoot "Acme.IdentityFixture/Acme.IdentityFixture.dll"
+          if (-not (Test-Path -LiteralPath $fixtureDll -PathType Leaf)) {
+              throw "The staged identity fixture plugin is missing from the extracted dms-build-output artifact: expected '$fixtureDll'. The artifact must carry PackedContractPluginFixtures/Acme.IdentityFixture."
+          }
+
+          $envFile = Join-Path $env:RUNNER_TEMP "identity-plugin.env"
+          ./src/dms/tests/EdFi.InstanceManagement.Tests.E2E/New-IdentityPluginEnvironmentFile.ps1 `
+            -PluginRoot $fixtureRoot `
+            -Destination $envFile
+          "IDENTITY_PLUGIN_ENV_FILE=$envFile" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Run Instance Management Identity Plugin E2E Tests
+        if: success()
+        env:
+          DMS_API_URL: http://localhost:8080
+        run: |
+          # Build script handles Docker environment setup, database configuration, and test execution
+          ./build-dms.ps1 InstanceE2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -EnvironmentFile "$env:IDENTITY_PLUGIN_ENV_FILE" -TestFilter 'Category=@instance-management-identity-plugin'
+
+      - name: Export Docker Logs
+        if: failure()
+        run: |
+          Write-Host "Capturing Docker container logs before teardown..." -ForegroundColor Cyan
+          $logDir = "${{ github.workspace }}/logs"
+          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+          docker ps -a --format "{{.Names}}" | ForEach-Object {
+              $container = $_
+              Write-Host "Capturing logs for container: $container" -ForegroundColor Yellow
+              $logPath = Join-Path $logDir "$container.log"
+              docker logs $container > $logPath 2>&1
+
+              if ($container -eq "dms-postgresql") {
+                  $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
+                  docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
+                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+              }
+
+              # Also display DMS logs in the workflow output for easier debugging
+              if ($container -eq "ed-fi-api") {
+                  Write-Host "`n========== DMS Container Logs ==========" -ForegroundColor Cyan
+                  docker logs $container 2>&1
+                  Write-Host "`n========================================`n" -ForegroundColor Cyan
+              }
+          }
+        shell: pwsh
+
+      - name: Teardown Instance Management Test Environment
+        if: always()
+        run: |
+          # Use the Instance Management teardown script to stop Docker
+          ./src/dms/tests/EdFi.InstanceManagement.Tests.E2E/teardown-local-dms.ps1
+
+      - name: Upload Logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: instance-management-identity-plugin-test-logs
+          path: |
+            ${{ github.workspace }}/logs
+          retention-days: 10
+
+      - name: Upload Test Results
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        if: (success() || failure())
+        with:
+          name: Instance Management Identity Plugin E2E Test Results
+          path: "**/*.trx"
+          path-replace-backslashes: "true"
+          reporter: dotnet-trx
+          list-tests: failed
+          use-actions-summary: "true"
+
+      - name: Summarize Instance Management Identity Plugin Test Timings
+        if: always()
+        run: |
+          ./eng/ci/summarize-test-timings.ps1 `
+            -Path "./TestResults/EdFi.InstanceManagement.Tests.E2E.trx" `
+            -OutputDirectory "./TestResults/test-timings/instance-identity-plugin" `
+            -SuiteName "Instance Management Identity Plugin E2E" `
+            -AppendToGitHubStepSummary
+
+      - name: Upload Instance Management Identity Plugin Timing Artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: test-timings-instance-identity-plugin
+          path: |
+            TestResults/EdFi.InstanceManagement.Tests.E2E.trx
+            TestResults/test-timings/instance-identity-plugin/**
           if-no-files-found: ignore
           retention-days: 30
 
@@ -3639,7 +3996,7 @@ jobs:
   fresh-rebuild-docker-images:
     name: Fresh Rebuild DMS and Config Docker Images
     needs: [detect-fresh-build-changes, build-and-start-dms]
-    if: always() && needs.detect-fresh-build-changes.outputs.fresh_build_required == 'true' && needs.build-and-start-dms.result == 'success'
+    if: always() && github.event.pull_request.draft != true && needs.detect-fresh-build-changes.outputs.fresh_build_required == 'true' && needs.build-and-start-dms.result == 'success'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -3668,17 +4025,18 @@ jobs:
         run-e2e-tests-mssql-ds61,
         run-instance-management-e2e-tests,
         run-instance-management-e2e-tests-mssql,
+        run-instance-management-identity-plugin-e2e-tests,
         run-backend-mssql-integration-tests,
         run-dms-api-mssql-integration-tests,
       ]
     # Draft-gated as well as DMS-gated. Unlike the lanes above this one skips through its own
-    # condition rather than a needs chain, so without the draft clause it would run on a draft and
-    # summarize an empty download directory.
+    # condition rather than a needs chain, so without these clauses it would run on a draft or a
+    # docs-only pull request and summarize an empty download directory.
     if: >-
       always() &&
+      github.event.pull_request.draft != true &&
       (github.event_name != 'pull_request' ||
-      (needs.detect-fresh-build-changes.outputs.dms_relevant == 'true' &&
-      needs.detect-fresh-build-changes.outputs.draft != 'true'))
+      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true')
     permissions:
       contents: read
     defaults:
@@ -3728,6 +4086,7 @@ jobs:
         e2e-summary,
         run-instance-management-e2e-tests,
         run-instance-management-e2e-tests-mssql,
+        run-instance-management-identity-plugin-e2e-tests,
         run-backend-mssql-integration-tests,
         test-timing-summary,
         run-backend-postgresql-integration-tests,
@@ -3744,7 +4103,8 @@ jobs:
         validate-discovery-spec,
         fresh-rebuild-docker-images,
       ]
-    if: always()
+    # always() overrides the skip a draft inherits through needs, so the draft check is repeated.
+    if: always() && github.event.pull_request.draft != true
     steps:
       - name: Upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -3768,6 +4128,7 @@ jobs:
       - detect-fresh-build-changes
       - scan-actions-bidi
       - run-bootstrap-pester-tests
+      - verify-document-embeds
       - verify-lock-files
       - verify-dms-packages
       - build-dms-solution
@@ -3780,6 +4141,7 @@ jobs:
       - run-backend-cdc-integration-tests
       - run-cdc-qualification
       - run-dms-api-postgresql-integration-tests
+      - run-dms-api-plugin-integration-tests
       - run-cli-integration-tests
       - run-schematools-cli-integration-tests
       - run-schematools-postgresql-integration-tests
@@ -3792,12 +4154,15 @@ jobs:
       - e2e-summary
       - run-instance-management-e2e-tests
       - run-instance-management-e2e-tests-mssql
+      - run-instance-management-identity-plugin-e2e-tests
       - build-and-start-dms
       - validate-resources-spec
       - validate-descriptors-spec
       - validate-discovery-spec
       - fresh-rebuild-docker-images
-    if: always()
+    # Reports whatever its dependencies did, except on a draft, where nothing runs. A draft cannot
+    # be merged or enqueued, and ready_for_review re-runs the workflow so the gate reports then.
+    if: always() && github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     permissions:
       contents: read

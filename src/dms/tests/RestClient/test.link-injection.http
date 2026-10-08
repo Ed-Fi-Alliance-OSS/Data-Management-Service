@@ -118,7 +118,7 @@ Authorization: bearer {{configToken}}
 {
     "vendorId": {{vendorId}},
     "applicationName": "DMS-1145 Link Injection Demo",
-    "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+    "claimSetName": "EdFiSandbox",
     "educationOrganizationIds": [ 255, 255901 ],
     "dataStoreIds": [ {{dataStoreId}} ]
 }

@@ -82,11 +82,11 @@ internal sealed class FrontendStagingProbe : IDisposable
             """
             <Project>
                 <Import Project="$(PluginFrontendFixtureTargetsFile)" />
-                <Target Name="ReportStaging" DependsOnTargets="PrunePluginFrontendFixtureStaging">
+                <Target Name="ReportStaging" DependsOnTargets="PrunePluginFixtureStaging">
                     <WriteLinesToFile
                         File="$(PluginFrontendFixtureStagingReportFile)"
                         Overwrite="true"
-                        Lines="stale=$(PluginFrontendFixtureStale);fingerprint=$(PluginFrontendFixtureFingerprint);inputs=$(PluginFrontendFixtureInputPaths)"
+                        Lines="stale=$(PluginStagedFixtureStale);fingerprint=$(PluginStagedFixtureFingerprint);inputs=$(PluginStagedFixtureInputPaths)"
                     />
                 </Target>
             </Project>
@@ -254,6 +254,9 @@ public class Given_the_frontend_fixture_staging_rules
         "plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.DmsContributor/DmsContributorPlugin.cs",
         "plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.RealHelpers/Acme.RealHelpers.csproj",
         "plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.RealHelpers/RealHelpersPlugin.cs",
+        "plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.ConfigContributor/Acme.ConfigContributor.csproj",
+        "plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.ConfigContributor/ConfigContributorPlugin.cs",
+        "plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Support/AcmeFixtureContracts/Acme.FixtureContracts.csproj",
         "plugins/EdFi.Api.Plugins/EdFi.Api.Plugins.csproj",
         "plugins/EdFi.Api.Plugins.Hosting/EdFi.Api.Plugins.Hosting.csproj",
         "plugins/Directory.Build.props",
@@ -370,11 +373,11 @@ public class Given_the_frontend_fixture_staging_rules
     }
 
     /// <summary>
-    /// Both fixtures are staged, so a rule that watched only the first would leave the second's
-    /// directory unaccounted for.
+    /// Every fixture is staged, so a rule that watched only the first would leave the others'
+    /// directories unaccounted for.
     /// </summary>
     [Test]
-    public void It_stages_both_fixtures()
+    public void It_stages_every_fixture()
     {
         using FrontendStagingProbe probe = FrontendStagingProbe.Create();
 
@@ -382,6 +385,7 @@ public class Given_the_frontend_fixture_staging_rules
 
         report.Fingerprint.Should().Contain("Acme.DmsContributor");
         report.Fingerprint.Should().Contain("Acme.RealHelpers");
+        report.Fingerprint.Should().Contain("Acme.ConfigContributor");
     }
 
     [Test]

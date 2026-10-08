@@ -200,7 +200,7 @@ are matched case-insensitively:
 | Request-body property names | Yes |
 | Resource endpoint names in the URL path | No |
 | Query parameter names | No |
-| Reserved query parameters (`limit`, `offset`, `totalCount`) | No |
+| Reserved query parameters (`limit`, `offset`, `totalCount`, `pageToken`, `pageSize`, `minChangeVersion`, `maxChangeVersion`, and `number` on `/partitions`) | No |
 | Descriptor URI values | No |
 
 For example, `GET /ed-fi/SCHOOLS?LiMiT=2` is equivalent to

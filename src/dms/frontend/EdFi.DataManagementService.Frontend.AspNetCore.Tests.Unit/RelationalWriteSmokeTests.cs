@@ -349,9 +349,71 @@ public class Given_A_Host_Using_The_Relational_Backend
         flattener.Inputs.Should().BeEmpty();
     }
 
+    /// <summary>
+    /// Profile data the Configuration Service cannot supply must reach the client as the 503 from
+    /// CoreExceptionLoggingMiddleware through every pipeline that resolves profiles. This pins the
+    /// composition: a step between that middleware and profile resolution that wrapped next() in a
+    /// catch would turn the 503 into its own response, which the unit tests of each piece cannot see.
+    /// </summary>
+    [TestCase("POST")]
+    [TestCase("PUT")]
+    [TestCase("GET-by-id")]
+    [TestCase("GET-many")]
+    [TestCase("token-info")]
+    public async Task It_answers_503_when_profile_data_is_unavailable(string request)
+    {
+        var profileCmsProvider = A.Fake<IProfileCmsProvider>();
+        A.CallTo(() => profileCmsProvider.GetApplicationProfileInfoAsync(A<long>._, A<string?>._))
+            .ThrowsAsync(new ProfileDataUnavailableException("CMS answered 500"));
+        await _factory.DisposeAsync();
+        _factory = CreateFactory(
+            new WidgetMappingSetProvider(RelationalWriteSmokeSupport.CreateWidgetMappingSet),
+            _writeExecutor,
+            profileCmsProvider
+        );
+
+        using var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "smoke-token");
+        const string WidgetBody = """{"widgetId":101,"widgetName":"Smoke Widget"}""";
+        const string WidgetPath = "/data/testproject/widgets";
+        const string WidgetIdPath = $"{WidgetPath}/03655d05-8dc5-40cc-8b81-eb60d3b46626";
+
+        using HttpResponseMessage response = request switch
+        {
+            "POST" => await client.PostAsync(
+                WidgetPath,
+                new StringContent(WidgetBody, Encoding.UTF8, "application/json")
+            ),
+            "PUT" => await client.PutAsync(
+                WidgetIdPath,
+                new StringContent(
+                    """{"id":"03655d05-8dc5-40cc-8b81-eb60d3b46626","widgetId":101,"widgetName":"Smoke Widget"}""",
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            ),
+            "GET-by-id" => await client.GetAsync(WidgetIdPath),
+            "GET-many" => await client.GetAsync(WidgetPath),
+            _ => await client.PostAsync(
+                "/oauth/token_info",
+                new StringContent("""{"token":"smoke-token"}""", Encoding.UTF8, "application/json")
+            ),
+        };
+        string responseBody = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, responseBody);
+        JsonNode.Parse(responseBody)!["type"]!
+            .GetValue<string>()
+            .Should()
+            .Be("urn:ed-fi:api:service-unavailable");
+        _writeExecutor.Requests.Should().BeEmpty();
+        A.CallTo(() => profileCmsProvider.GetApplicationProfileInfoAsync(1, null)).MustHaveHappened();
+    }
+
     private WebApplicationFactory<Program> CreateFactory(
         IMappingSetProvider mappingSetProvider,
-        CapturingRelationalWriteExecutor writeExecutor
+        CapturingRelationalWriteExecutor writeExecutor,
+        IProfileCmsProvider? profileCmsProviderOverride = null
     )
     {
         var claimSetProvider = new AllowAllWidgetClaimSetProvider();
@@ -425,11 +487,19 @@ public class Given_A_Host_Using_The_Relational_Backend
                     )
                 );
                 A.CallTo(() =>
-                        applicationContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null)
+                        applicationContextProvider.GetApplicationByClientIdAsync(
+                            A<string>._,
+                            tenant: null,
+                            A<CancellationToken>._
+                        )
                     )
                     .Returns(applicationContextResult);
                 A.CallTo(() =>
-                        applicationContextProvider.ReloadApplicationByClientIdAsync(A<string>._, tenant: null)
+                        applicationContextProvider.ReloadApplicationByClientIdAsync(
+                            A<string>._,
+                            tenant: null,
+                            A<CancellationToken>._
+                        )
                     )
                     .Returns(applicationContextResult);
 
@@ -446,7 +516,18 @@ public class Given_A_Host_Using_The_Relational_Backend
                     )
                     .Returns(new ResourceKeyValidationResult.ValidationSuccess());
 
+                // The host has no Configuration Service, and profiles are outside this smoke path
+                // unless a test supplies its own provider.
+                IProfileCmsProvider profileCmsProvider =
+                    profileCmsProviderOverride ?? A.Fake<IProfileCmsProvider>();
+                if (profileCmsProviderOverride is null)
+                {
+                    A.CallTo(() => profileCmsProvider.GetApplicationProfileInfoAsync(A<long>._, A<string?>._))
+                        .Returns(Task.FromResult<ApplicationProfileInfo?>(null));
+                }
+
                 services.RemoveAll<IJwtValidationService>();
+                services.RemoveAll<IProfileCmsProvider>();
                 services.RemoveAll<IClaimSetProvider>();
                 services.RemoveAll<IApplicationContextProvider>();
                 services.RemoveAll<IDocumentStoreRepository>();
@@ -463,6 +544,7 @@ public class Given_A_Host_Using_The_Relational_Backend
                 services.RemoveAll<IRelationalWriteSessionFactory>();
 
                 services.AddSingleton(jwtValidationService);
+                services.AddSingleton(profileCmsProvider);
                 services.AddSingleton<IClaimSetProvider>(claimSetProvider);
                 services.AddSingleton(applicationContextProvider);
                 services.AddSingleton<RelationalEdOrgAuthorizationElementResolutionCache>();
@@ -656,7 +738,10 @@ public class Given_A_Host_Using_The_Relational_Backend
 
     private sealed class AllowAllWidgetClaimSetProvider : IClaimSetProvider
     {
-        public Task<IList<ClaimSet>> GetAllClaimSets(string? tenant = null)
+        public Task<IList<ClaimSet>> GetAllClaimSets(
+            string? tenant = null,
+            CancellationToken cancellationToken = default
+        )
         {
             return Task.FromResult<IList<ClaimSet>>([
                 new ClaimSet(
@@ -933,7 +1018,8 @@ public class Given_A_Host_Using_The_Relational_Backend
     private sealed class ThrowingDescriptorWriteHandler : IDescriptorWriteHandler
     {
         public Task<UpsertResult> HandlePostAsync(
-            DescriptorWriteRequest request,
+            DescriptorWriteRequest postRequest,
+            UpsertActionAuthorization actionAuthorization,
             CancellationToken cancellationToken = default
         ) => throw new AssertionException("Descriptor POST was not expected.");
 

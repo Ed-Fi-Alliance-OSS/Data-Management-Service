@@ -4,12 +4,14 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Linq;
+using EdFi.Api.Plugins.Hosting;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Utilities;
+using EdFi.DataManagementService.Frontend.AspNetCore;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using Microsoft.AspNetCore.Http.Features;
@@ -34,6 +36,31 @@ var bootstrapStartupStatusSignal = new FileStartupStatusSignal(
 bool enableAspNetCompression = false;
 bool useReverseProxyHeaders = false;
 
+// Before ConfigureServices, because AddServices reads configuration and composes against what this
+// returns, and after the status signal above, so a loader fatal has somewhere to record itself. A
+// deployment that allowlisted nothing gets LoadedPlugins.Empty without the loader touching the
+// filesystem, which is what keeps a plugin-free boot on exactly the path it took before.
+//
+// The configuration phase runs in the same bootstrap phase, as soon as loading returns, because
+// AddServices is the first reader of a value a plugin can supply: its first line configures logging
+// from the Serilog section. builder.Configuration is each plugin's bootstrap configuration, and the
+// loader inserts what each plugin added into it as one source.
+LoadedPlugins loadedPlugins = RunBootstrapPhaseWithResult(
+    DmsStartupPhases.LoadPlugins,
+    "Loading plugins named in Plugins:Allowed and running their configuration hooks.",
+    "Loaded plugins named in Plugins:Allowed and ran their configuration hooks.",
+    "Loading plugins or running their configuration hooks failed before DMS services were configured.",
+    () =>
+    {
+        LoadedPlugins loaded = PluginLoader.Load(
+            builder.Configuration,
+            DmsPluginContracts.Registry.ContractAssemblyNames
+        );
+        loaded.ContributeConfiguration(builder.Configuration);
+        return loaded;
+    }
+);
+
 RunBootstrapPhase(
     DmsStartupPhases.ConfigureServices,
     "Configuring DMS services and shared HTTP infrastructure.",
@@ -42,7 +69,7 @@ RunBootstrapPhase(
     () =>
     {
         builder.Services.AddHttpClient();
-        builder.AddServices();
+        builder.AddServices(loadedPlugins);
         builder.Services.ConfigureHttpJsonOptions(options =>
         {
             options.SerializerOptions.Encoder = EdFi.DataManagementService
@@ -114,6 +141,16 @@ RunBootstrapPhase(
                 policy =>
                 {
                     policy.WithOrigins(swaggerUiOrigin).AllowAnyHeader().AllowAnyMethod();
+
+                    // Any query can be answered with the ignored-parameter warning, so it is always
+                    // readable. The identity surface's async 202 and incomplete results 200 carry a
+                    // Location the Swagger UI must read; with the surface off, Location is not exposed.
+                    List<string> exposedHeaders = ["X-EdFi-Warning"];
+                    if (builder.Configuration.GetValue<bool>("AppSettings:EnableIdentityManagement"))
+                    {
+                        exposedHeaders.Add("Location");
+                    }
+                    policy.WithExposedHeaders([.. exposedHeaders]);
                 }
             );
         });
@@ -132,6 +169,13 @@ app.Logger.LogInformation(
     "DMS startup status file path: {StartupStatusFilePath}",
     startupPhaseExecutor.StatusFilePath
 );
+
+// Here and nowhere later. The logger exists from the line above, and no startup task has run: the
+// executor is not entered until the RunFatalAsync calls further down, so the inventory reaches an
+// operator before any check that can abort startup naming a type and not the plugin that supplied
+// it. The per-file loaded flags are read at this moment rather than carried from loading, because an
+// assembly first touched inside a contribution hook loaded after that phase returned.
+PluginInventoryLog.Emit(app.Logger, app.Services.GetRequiredService<PluginAuditInput>());
 
 var pathBase = app.Configuration.GetValue<string>("AppSettings:PathBase");
 if (!string.IsNullOrEmpty(pathBase))
@@ -168,6 +212,13 @@ if (invalidConfigurationException is null)
         () => InitializeApiSchemas(app)
     );
     await startupPhaseExecutor.RunFatalAsync(
+        DmsStartupPhases.ValidatePluginRegistrations,
+        "Validating custom validator and plugin service registrations.",
+        "Custom validator and plugin service registration validation completed successfully.",
+        "Custom validator or plugin registration validation failed. DMS cannot start with invalid custom validator or plugin service registrations.",
+        () => ValidatePluginRegistrations(app)
+    );
+    await startupPhaseExecutor.RunFatalAsync(
         DmsStartupPhases.InitializeBackendMappings,
         "Compiling backend mappings from initialized effective schemas.",
         "Backend mapping initialization completed successfully.",
@@ -197,9 +248,11 @@ if (invalidConfigurationException is null)
 
         app.UseRouting();
 
+        app.UseMiddleware<IdentityResponseCachePolicyMiddleware>();
+
         if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
         {
-            app.UseRateLimiter();
+            app.UseMiddleware<GlobalRateLimitingMiddleware>();
         }
 
         app.UseCors("AllowSwaggerUI");
@@ -214,17 +267,16 @@ if (invalidConfigurationException is null)
             context.Response.StatusCode = 404;
             context.Response.ContentType = "application/problem+json";
 
-            var traceId = context.Request.Headers.TryGetValue(
-                app.Configuration.GetValue<string>("AppSettings:CorrelationIdHeader") ?? "correlationid",
-                out var correlationId
-            )
-                ? correlationId.ToString()
-                : context.TraceIdentifier;
-
-            var response = FailureResponse.ForNotFound(
-                "The specified data could not be found.",
-                new TraceId(traceId)
+            // Routed through the same ingestion point as every other path so the correlation ID
+            // is normalized identically. This also drops a hardcoded "correlationid" fallback
+            // header name that used to honor client-supplied values on unmatched routes even
+            // when the host had left AppSettings:CorrelationIdHeader empty to disable them.
+            TraceId traceId = AspNetCoreFrontend.ExtractTraceIdFrom(
+                context.Request,
+                context.RequestServices.GetRequiredService<IOptions<AppSettings>>()
             );
+
+            var response = FailureResponse.ForNotFound("The specified data could not be found.", traceId);
             return context.Response.WriteAsJsonAsync(response);
         });
     }
@@ -322,6 +374,20 @@ async Task InitializeApiSchemas(WebApplication app)
     );
 }
 
+async Task ValidatePluginRegistrations(WebApplication app)
+{
+    app.Logger.LogInformation("Validating custom validator and plugin service registrations at startup");
+    var orchestrator = app.Services.GetRequiredService<DmsStartupOrchestrator>();
+    await orchestrator.RunByOrderRangeAsync(
+        DmsStartupTaskOrderRanges.PluginRegistrationValidationMinimum,
+        DmsStartupTaskOrderRanges.PluginRegistrationValidationMaximum,
+        CancellationToken.None
+    );
+    app.Logger.LogInformation(
+        "Custom validator and plugin service registration validation completed successfully"
+    );
+}
+
 async Task InitializeBackendMappings(WebApplication app)
 {
     app.Logger.LogInformation("Initializing backend mappings at startup");
@@ -388,7 +454,7 @@ async Task InitializeDataStoresForMultiTenancy(WebApplication app, IDataStorePro
     {
         app.Logger.LogInformation(
             "Loading data stores for tenant: {TenantName}",
-            LoggingSanitizer.SanitizeForLogging(tenant)
+            LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
         );
 
         IList<DataStore> instances = await dataStoreProvider.LoadDataStores(tenant);
@@ -397,7 +463,7 @@ async Task InitializeDataStoresForMultiTenancy(WebApplication app, IDataStorePro
         app.Logger.LogInformation(
             "Loaded {InstanceCount} data stores for tenant {TenantName}",
             instances.Count,
-            LoggingSanitizer.SanitizeForLogging(tenant)
+            LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
         );
 
         LogInstanceDetails(app, instances);

@@ -127,7 +127,7 @@ suite rows are documented in its own
 | Standard | SQL Server | self-contained  | DS 6.1 `@StandardVersion-6_1`          | `run-e2e-tests-mssql-ds61`                   |
 | Standard | PostgreSQL | keycloak        | any                                    | _(locally runnable; not a required PR lane)_ |
 | Standard | SQL Server | self-contained  | DS 5.2 full                            | _(locally runnable; not a required PR lane)_ |
-| Instance | PostgreSQL / SQL Server | self-contained | `@instance-management-ci-shard-1/2` | `run-instance-management-e2e-tests` / `run-instance-management-e2e-tests-mssql` |
+| Instance | PostgreSQL / SQL Server | self-contained | `@instance-management-ci-shard-1/2` | `run-instance-management-e2e-tests` / `run-instance-management-e2e-tests-mssql`; the PostgreSQL-only identity plugin slice (`@instance-management-identity-plugin`) runs in `run-instance-management-identity-plugin-e2e-tests` |
 
 `e2e-summary` aggregates the four standard DMS E2E lanes and, with the other required jobs,
 feeds the single required `dms-ci-gate` status check. The scheduled full DS 6.1 and smoke

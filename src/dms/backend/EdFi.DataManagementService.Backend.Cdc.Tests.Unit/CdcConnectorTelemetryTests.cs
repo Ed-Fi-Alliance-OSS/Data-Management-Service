@@ -125,6 +125,71 @@ public sealed class Given_CdcConnectorTelemetry(CdcProvider provider)
     {
         _metrics = _metrics.Replace(Metric("current", "5"), Metric("current", value));
         await AssertUnavailable();
+        _pass.IsValid.Should().BeFalse();
+        _pass.CurrentLagUnavailable.Should().Be(value == "-1");
+    }
+
+    [Test]
+    public async Task It_discards_negative_one_lag_after_identity_brackets_and_recovery_overrides_its_reason()
+    {
+        _metrics = _metrics.Replace(Metric("current", "5"), Metric("current", "-1"));
+        await AssertUnavailable();
+        _trace.Should().Equal("worker", "status", "scrape", "status", "worker");
+        _pass.CurrentLagUnavailable.Should().BeTrue();
+        _pass.Invalidate();
+        _pass.CurrentLagUnavailable.Should().BeFalse();
+        _pass.InvalidateForUnavailableCurrentLag();
+        _pass.CurrentLagUnavailable.Should().BeFalse();
+    }
+
+    [TestCase("worker")]
+    [TestCase("task")]
+    [TestCase("expired")]
+    [TestCase("exporter")]
+    [TestCase("duplicate")]
+    public async Task It_does_not_classify_negative_one_as_the_only_failure_when_other_evidence_is_invalid(
+        string failure
+    )
+    {
+        _metrics = _metrics.Replace(Metric("current", "5"), Metric("current", "-1"));
+        int calls = 0;
+        if (failure == "worker")
+        {
+            A.CallTo(() => _worker.InspectAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+                .ReturnsLazily(() =>
+                    Task.FromResult<CdcTransportResult<CdcWorkerInspection>>(
+                        new CdcTransportResult<CdcWorkerInspection>.Observed(
+                            Worker(++calls == 1 ? "" : "process")
+                        )
+                    )
+                );
+        }
+        if (failure is "task" or "expired")
+        {
+            A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+                .ReturnsLazily(() =>
+                {
+                    if (++calls == 2 && failure == "expired")
+                    {
+                        _clock.Advance(_request.Timing.MaximumObservationAge + TimeSpan.FromSeconds(1));
+                    }
+                    return Task.FromResult<CdcTransportResult<CdcConnectStatus>>(
+                        new CdcTransportResult<CdcConnectStatus>.Observed(
+                            Status(calls == 2 && failure == "task" ? "task-restarting" : "")
+                        )
+                    );
+                });
+        }
+        if (failure == "exporter")
+        {
+            _metrics = _metrics.Replace("jmx_scrape_error 0", "jmx_scrape_error 1");
+        }
+        if (failure == "duplicate")
+        {
+            _metrics += Metric("current", "-1").Split('\n')[1] + "\n";
+        }
+        await AssertUnavailable();
+        _pass.CurrentLagUnavailable.Should().BeFalse();
     }
 
     [TestCase("missing")]

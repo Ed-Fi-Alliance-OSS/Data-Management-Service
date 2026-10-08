@@ -108,7 +108,8 @@ public class PgsqlSchemaIntrospector : SchemaIntrospectorBase
             n.nspname AS schema_name,
             t.relname AS table_name,
             i.relname AS index_name,
-            ix.indisunique AS is_unique
+            ix.indisunique AS is_unique,
+            pg_get_expr(ix.indpred, ix.indrelid) AS filter_definition
         FROM pg_catalog.pg_index ix
         JOIN pg_catalog.pg_class i ON i.oid = ix.indexrelid
         JOIN pg_catalog.pg_class t ON t.oid = ix.indrelid

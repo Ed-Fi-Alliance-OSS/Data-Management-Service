@@ -80,7 +80,7 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : DatabaseProvisionerBase(
 
         Logger.LogInformation(
             "Checking if database exists: {DatabaseName}",
-            LoggingSanitizer.SanitizeForLogging(targetDatabase)
+            LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)
         );
 
         // Connect to the admin database to create the target database
@@ -101,7 +101,7 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : DatabaseProvisionerBase(
         {
             Logger.LogInformation(
                 "Database already exists: {DatabaseName}",
-                LoggingSanitizer.SanitizeForLogging(targetDatabase)
+                LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)
             );
             return false;
         }
@@ -111,7 +111,7 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : DatabaseProvisionerBase(
         // Use a quoted identifier to safely handle the database name.
         Logger.LogInformation(
             "Creating database: {DatabaseName}",
-            LoggingSanitizer.SanitizeForLogging(targetDatabase)
+            LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)
         );
 
         using var createCommand = connection.CreateCommand();
@@ -129,14 +129,14 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : DatabaseProvisionerBase(
             Logger.LogInformation(
                 ex,
                 "Database was created concurrently by another process: {DatabaseName}",
-                LoggingSanitizer.SanitizeForLogging(targetDatabase)
+                LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)
             );
             return false;
         }
 
         Logger.LogInformation(
             "Database created successfully: {DatabaseName}",
-            LoggingSanitizer.SanitizeForLogging(targetDatabase)
+            LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)
         );
 
         return true;
@@ -152,7 +152,7 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : DatabaseProvisionerBase(
 
         Logger.LogInformation(
             "Executing DDL in transaction against database: {DatabaseName}",
-            LoggingSanitizer.SanitizeForLogging(targetDatabase)
+            LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)
         );
 
         using var connection = new NpgsqlConnection(connectionString);
@@ -173,7 +173,7 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : DatabaseProvisionerBase(
 
             Logger.LogInformation(
                 "DDL executed successfully against database: {DatabaseName}",
-                LoggingSanitizer.SanitizeForLogging(targetDatabase)
+                LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)
             );
         }
         catch
@@ -187,7 +187,7 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : DatabaseProvisionerBase(
                 Logger.LogError(
                     rollbackEx,
                     "Failed to roll back transaction for database: {DatabaseName}",
-                    LoggingSanitizer.SanitizeForLogging(targetDatabase)
+                    LoggingSanitizer.SanitizeInternalValueForLogging(targetDatabase)
                 );
             }
 

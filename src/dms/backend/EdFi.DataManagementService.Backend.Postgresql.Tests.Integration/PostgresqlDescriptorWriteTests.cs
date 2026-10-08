@@ -78,112 +78,9 @@ public class Given_PostgresqlDescriptorWriteHandler
             """
         );
 
-        var result = await handler.HandlePostAsync(request);
+        var result = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result.Should().BeOfType<UpsertResult.InsertSuccess>();
-    }
-
-    [Test]
-    public async Task It_inserts_a_new_descriptor_via_post_under_wildcard_if_none_match()
-    {
-        var handler = ResolveHandler();
-        var request = CreatePostRequest(
-            _database.Fixture.SchoolTypeDescriptorResource,
-            """
-            {
-                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
-                "codeValue": "GuardedCreate",
-                "shortDescription": "Guarded Create"
-            }
-            """
-        ) with
-        {
-            WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
-        };
-
-        var result = await handler.HandlePostAsync(request);
-
-        result.Should().BeOfType<UpsertResult.InsertSuccess>();
-    }
-
-    [Test]
-    public async Task It_returns_precondition_failed_for_existing_descriptor_post_under_wildcard_if_none_match()
-    {
-        var handler = ResolveHandler();
-        var resource = _database.Fixture.SchoolTypeDescriptorResource;
-        const string body = """
-            {
-                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
-                "codeValue": "GuardedExistingPost",
-                "shortDescription": "Guarded Existing Post"
-            }
-            """;
-        var createResult = await handler.HandlePostAsync(CreatePostRequest(resource, body));
-        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
-        var request = CreatePostRequest(resource, body) with
-        {
-            WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
-        };
-
-        var result = await handler.HandlePostAsync(request);
-
-        result
-            .Should()
-            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>()
-            .Which.Reason.Should()
-            .Be(ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch);
-    }
-
-    [Test]
-    public async Task It_returns_precondition_failed_for_existing_descriptor_put_under_wildcard_if_none_match()
-    {
-        var handler = ResolveHandler();
-        var resource = _database.Fixture.SchoolTypeDescriptorResource;
-        const string body = """
-            {
-                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
-                "codeValue": "GuardedExistingPut",
-                "shortDescription": "Guarded Existing Put"
-            }
-            """;
-        var createResult = await handler.HandlePostAsync(CreatePostRequest(resource, body));
-        var documentUuid = ((UpsertResult.InsertSuccess)createResult).NewDocumentUuid;
-        var request = CreatePutRequest(resource, documentUuid, body) with
-        {
-            WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
-        };
-
-        var result = await handler.HandlePutAsync(request);
-
-        result
-            .Should()
-            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
-            .Which.Reason.Should()
-            .Be(ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch);
-    }
-
-    [Test]
-    public async Task It_returns_not_exists_for_missing_descriptor_put_under_wildcard_if_none_match()
-    {
-        var handler = ResolveHandler();
-        var request = CreatePutRequest(
-            _database.Fixture.SchoolTypeDescriptorResource,
-            new DocumentUuid(Guid.NewGuid()),
-            """
-            {
-                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
-                "codeValue": "GuardedMissingPut",
-                "shortDescription": "Guarded Missing Put"
-            }
-            """
-        ) with
-        {
-            WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
-        };
-
-        var result = await handler.HandlePutAsync(request);
-
-        result.Should().BeOfType<UpdateResult.UpdateFailureNotExists>();
     }
 
     [Test]
@@ -202,7 +99,7 @@ public class Given_PostgresqlDescriptorWriteHandler
             }
             """
         );
-        var createResult = await handler.HandlePostAsync(createRequest);
+        var createResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
 
         // Second POST with same identity upserts (updates)
@@ -216,7 +113,7 @@ public class Given_PostgresqlDescriptorWriteHandler
             }
             """
         );
-        var upsertResult = await handler.HandlePostAsync(upsertRequest);
+        var upsertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(upsertRequest);
 
         upsertResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
     }
@@ -237,7 +134,7 @@ public class Given_PostgresqlDescriptorWriteHandler
             }
             """
         );
-        var insertResult = await handler.HandlePostAsync(createRequest);
+        var insertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
 
         // PUT with updated description
@@ -275,7 +172,7 @@ public class Given_PostgresqlDescriptorWriteHandler
             }
             """
         );
-        var createResult = await writeHandler.HandlePostAsync(createRequest);
+        var createResult = await writeHandler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)createResult).NewDocumentUuid;
 
         RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(
@@ -298,7 +195,7 @@ public class Given_PostgresqlDescriptorWriteHandler
             }
             """
         );
-        var upsertResult = await writeHandler.HandlePostAsync(upsertRequest);
+        var upsertResult = await writeHandler.HandlePostWithSamePolicyForCreateAndUpdateAsync(upsertRequest);
 
         RelationalGetIntegrationTestHelper.AssertWriteResultEtagParity(
             upsertResult,
@@ -355,7 +252,7 @@ public class Given_PostgresqlDescriptorWriteHandler
             """,
             profileName
         );
-        var createResult = await writeHandler.HandlePostAsync(createRequest);
+        var createResult = await writeHandler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)createResult).NewDocumentUuid;
 
         // The profiled POST etag matches a follow-up profiled GET of the same representation.
@@ -408,7 +305,7 @@ public class Given_PostgresqlDescriptorWriteHandler
             }
             """
         );
-        var insertResult = await handler.HandlePostAsync(createRequest);
+        var insertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
 
         // PUT with identical values
@@ -444,7 +341,7 @@ public class Given_PostgresqlDescriptorWriteHandler
             }
             """
         );
-        var insertResult = await handler.HandlePostAsync(createRequest);
+        var insertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
 
         // PUT with changed CodeValue (identity change)
@@ -480,7 +377,7 @@ public class Given_PostgresqlDescriptorWriteHandler
             }
             """
         );
-        var insertResult = await handler.HandlePostAsync(createRequest);
+        var insertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
 
         // Delete
@@ -522,7 +419,7 @@ public class Given_PostgresqlDescriptorWriteHandler
             }
             """
         );
-        var insertResult = await handler.HandlePostAsync(createRequest);
+        var insertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
 
         // Attempt to delete it via the AcademicSubjectDescriptor resource endpoint —
@@ -557,7 +454,7 @@ public class Given_PostgresqlDescriptorWriteHandler
             }
             """
         );
-        var insertResult = await handler.HandlePostAsync(createRequest);
+        var insertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var success = (UpsertResult.InsertSuccess)insertResult;
         success.ETag.Should().NotBeNull();
 
@@ -586,7 +483,7 @@ public class Given_PostgresqlDescriptorWriteHandler
             }
             """
         );
-        var insertResult = await handler.HandlePostAsync(createRequest);
+        var insertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
 
         var result = await handler.HandleDeleteAsync(
@@ -645,7 +542,7 @@ public class Given_PostgresqlDescriptorWriteHandler
             }
             """
         );
-        var insertResult = await handler.HandlePostAsync(createRequest);
+        var insertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
 
         var stampsAfterInsert = await ReadTrackingStampsAsync(documentUuid);
@@ -687,7 +584,7 @@ public class Given_PostgresqlDescriptorWriteHandler
             }
             """
         );
-        var insertResult = await handler.HandlePostAsync(createRequest);
+        var insertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
 
         var stampsAfterInsert = await ReadTrackingStampsAsync(documentUuid);
@@ -728,7 +625,7 @@ public class Given_PostgresqlDescriptorWriteHandler
             }
             """
         );
-        var insertResult = await handler.HandlePostAsync(createRequest);
+        var insertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
 
         // PUT with changed Namespace (identity change)
@@ -776,7 +673,7 @@ public class Given_PostgresqlDescriptorWriteHandler
             ),
         };
 
-        var result = await handler.HandlePostAsync(request);
+        var result = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result.Should().BeOfType<UpsertResult.InsertSuccess>();
         (await ReadStoredOwnershipTokenAsync(request.DocumentUuid)).Should().Be((short)42);
@@ -805,7 +702,7 @@ public class Given_PostgresqlDescriptorWriteHandler
             ),
         };
 
-        var result = await handler.HandlePostAsync(request);
+        var result = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result.Should().BeOfType<UpsertResult.InsertSuccess>();
         (await ReadStoredOwnershipTokenAsync(request.DocumentUuid)).Should().BeNull();
@@ -844,7 +741,9 @@ public class Given_PostgresqlDescriptorWriteHandler
                 ownershipTokenIds: []
             ),
         };
-        (await handler.HandlePostAsync(createRequest)).Should().BeOfType<UpsertResult.InsertSuccess>();
+        (await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest))
+            .Should()
+            .BeOfType<UpsertResult.InsertSuccess>();
 
         var upsertRequest = CreatePostRequest(resource, UpsertBody) with
         {
@@ -855,7 +754,9 @@ public class Given_PostgresqlDescriptorWriteHandler
                 ownershipTokenIds: []
             ),
         };
-        (await handler.HandlePostAsync(upsertRequest)).Should().BeOfType<UpsertResult.UpdateSuccess>();
+        (await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(upsertRequest))
+            .Should()
+            .BeOfType<UpsertResult.UpdateSuccess>();
 
         (await ReadStoredOwnershipTokenAsync(createRequest.DocumentUuid)).Should().Be((short)42);
     }

@@ -459,9 +459,11 @@ public sealed partial class CdcKafkaAdminAdapter
             topic.Name,
             cancellationToken
         );
+        // Successful creation can precede metadata visibility. Preserve the caller's bounded
+        // read-back wait without treating the acknowledgement as live completion evidence.
         return after is CdcTransportResult<CdcKafkaTopicEvidence>.Absent
             ? Failure<CdcKafkaTopicEvidence>(
-                attempt.Diagnostics.FirstOrDefault()?.Failure ?? CdcDeploymentFailure.ValidationFailed
+                attempt.Diagnostics.FirstOrDefault()?.Failure ?? CdcDeploymentFailure.Unavailable
             )
             : after;
     }

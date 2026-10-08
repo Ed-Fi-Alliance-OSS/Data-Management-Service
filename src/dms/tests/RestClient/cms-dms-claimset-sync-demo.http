@@ -197,7 +197,7 @@ Authorization: bearer {{configToken}}
 
 ### 2. Verify minimal claimset in CMS
 # @name cmsTestClaimsetAfterUpload
-GET http://localhost:{{configPort}}/config/v3/authorizationMetadata?claimSetName=E2E-RelationshipsWithEdOrgsOnlyClaimSet
+GET http://localhost:{{configPort}}/config/v3/authorizationMetadata?claimSetName=TestMinimalClaimSet
 Authorization: bearer {{configToken}}
 
 

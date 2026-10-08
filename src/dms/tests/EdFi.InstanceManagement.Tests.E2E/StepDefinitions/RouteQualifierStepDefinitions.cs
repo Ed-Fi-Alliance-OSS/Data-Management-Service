@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
 using System.Text.Json;
 using EdFi.InstanceManagement.Tests.E2E.Management;
 using FluentAssertions;
@@ -34,7 +35,7 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
 
         var tokenUrl = await ResolveDmsTokenUrlAsync(context.CurrentTenant);
 
-        context.DmsToken = await TokenHelper.GetDmsTokenAsync(
+        context.DmsToken = await TokenHelper.GetReusableDmsTokenAsync(
             tokenUrl,
             context.ClientKey!,
             context.ClientSecret!
@@ -59,7 +60,7 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
 
         var tokenUrl = await ResolveDmsTokenUrlAsync(tenantName);
 
-        context.DmsToken = await TokenHelper.GetDmsTokenAsync(tokenUrl, key, secret);
+        context.DmsToken = await TokenHelper.GetReusableDmsTokenAsync(tokenUrl, key, secret);
 
         // Set current tenant for the DMS client
         context.CurrentTenant = tenantName;
@@ -298,18 +299,69 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
         context.LastResponse.Should().NotBeNull("Discovery response must be available");
 
         var responseBody = await context.LastResponse!.Content.ReadAsStringAsync();
-        var responseDoc = JsonDocument.Parse(responseBody);
+        using var responseDoc = JsonDocument.Parse(responseBody);
         var oauthUrl = responseDoc.RootElement.GetProperty("urls").GetProperty("oauth").GetString();
 
         oauthUrl.Should().NotBeNullOrWhiteSpace("Discovery must advertise an oauth url");
         context.ClientKey.Should().NotBeNullOrEmpty("Application must be created first");
         context.ClientSecret.Should().NotBeNullOrEmpty("Application must be created first");
 
+        // Exercise the advertised endpoint even when another scenario has cached a token.
         context.DmsToken = await TokenHelper.GetDmsTokenAsync(
             oauthUrl!,
             context.ClientKey!,
             context.ClientSecret!
         );
+    }
+
+    [Then("the discovery metadata urls should resolve")]
+    public async Task ThenTheDiscoveryMetadataUrlsShouldResolve()
+    {
+        context.LastResponse.Should().NotBeNull("Discovery response must be available");
+
+        var responseBody = await context.LastResponse!.Content.ReadAsStringAsync();
+        using var responseDoc = JsonDocument.Parse(responseBody);
+        var urls = responseDoc.RootElement.GetProperty("urls");
+        string[] metadataUrlKeys = ["dependencies", "openApiMetadata", "xsdMetadata"];
+
+        using var metadataClient = new DmsApiClient(TestConfiguration.DmsApiUrl, "");
+
+        foreach (string metadataUrlKey in metadataUrlKeys)
+        {
+            urls.TryGetProperty(metadataUrlKey, out var metadataUrlProperty)
+                .Should()
+                .BeTrue($"Discovery response should include urls.{metadataUrlKey}");
+
+            metadataUrlProperty.ValueKind.Should().Be(JsonValueKind.String);
+            var metadataUrl = metadataUrlProperty.GetString();
+            metadataUrl
+                .Should()
+                .NotBeNullOrWhiteSpace($"Discovery response should include a usable urls.{metadataUrlKey}");
+
+            context.LastResponse = await metadataClient.GetByLocationAsync(metadataUrl!);
+            context
+                .LastResponse.StatusCode.Should()
+                .Be(HttpStatusCode.OK, $"Discovery-advertised {metadataUrlKey} URL should resolve");
+        }
+    }
+
+    [When("a GET request is made to metadata path {string}")]
+    public async Task WhenAGetRequestIsMadeToMetadataPath(string metadataPath)
+    {
+        using var metadataClient = new DmsApiClient(TestConfiguration.DmsApiUrl, "");
+
+        Console.WriteLine($"GET metadata path: '{metadataPath}'");
+
+        context.LastResponse = await metadataClient.GetDiscoveryWithRouteAsync(metadataPath.TrimStart('/'));
+
+        Console.WriteLine(
+            $"Response: {(int)context.LastResponse.StatusCode} ({context.LastResponse.StatusCode})"
+        );
+        if (!context.LastResponse.IsSuccessStatusCode)
+        {
+            var responseBody = await context.LastResponse.Content.ReadAsStringAsync();
+            Console.WriteLine($"Response body: {responseBody}");
+        }
     }
 
     private async Task<string> ResolveDmsTokenUrlAsync(string? tenantName)

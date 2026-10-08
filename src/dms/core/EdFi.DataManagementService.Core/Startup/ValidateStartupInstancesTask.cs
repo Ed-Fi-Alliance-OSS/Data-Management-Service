@@ -72,8 +72,8 @@ internal sealed class ValidateStartupInstancesTask(
                             + "Requests routed to this instance will receive 503. "
                             + "Check the instance configuration in the DMS Configuration Service",
                         instance.Id,
-                        LoggingSanitizer.SanitizeForLogging(instance.Name),
-                        LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)")
+                        LoggingSanitizer.SanitizeInternalValueForLogging(instance.Name),
+                        LoggingSanitizer.SanitizeInternalValueForLogging(tenant ?? "(default)")
                     );
                     totalFailed++;
                     continue;
@@ -124,8 +124,8 @@ internal sealed class ValidateStartupInstancesTask(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        string sanitizedName = LoggingSanitizer.SanitizeForLogging(instance.Name);
-        string sanitizedTenant = LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)");
+        string sanitizedName = LoggingSanitizer.SanitizeInternalValueForLogging(instance.Name);
+        string sanitizedTenant = LoggingSanitizer.SanitizeInternalValueForLogging(tenant ?? "(default)");
 
         // Startup validates the parent data store's own database and nothing else. Derivatives are
         // optional and may be intentionally offline between extraction windows, so none is enumerated,
@@ -179,8 +179,8 @@ internal sealed class ValidateStartupInstancesTask(
                     instance.Id,
                     sanitizedName,
                     sanitizedTenant,
-                    LoggingSanitizer.SanitizeForLogging(fingerprint.EffectiveSchemaHash),
-                    LoggingSanitizer.SanitizeForLogging(effectiveSchema.EffectiveSchemaHash)
+                    LoggingSanitizer.SanitizeInternalValueForLogging(fingerprint.EffectiveSchemaHash),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(effectiveSchema.EffectiveSchemaHash)
                 );
                 return false;
             }

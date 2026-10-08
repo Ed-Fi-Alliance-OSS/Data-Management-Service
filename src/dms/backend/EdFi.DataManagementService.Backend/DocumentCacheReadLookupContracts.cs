@@ -572,7 +572,7 @@ internal static class DocumentCacheReadLookupDiagnosticText
 
     public static string Sanitize(string? message)
     {
-        string sanitized = LogSanitizer.SanitizeForLog(
+        string sanitized = LogSanitizer.SanitizeInternalValueForLog(
             string.IsNullOrWhiteSpace(message) ? GenericInvariantDiagnosticMessage : message
         );
         return sanitized.Length <= MaximumLength ? sanitized : sanitized[..MaximumLength];

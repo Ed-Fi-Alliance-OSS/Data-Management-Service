@@ -64,6 +64,7 @@ COPY frontend/EdFi.DataManagementService.Frontend.AspNetCore/*.csproj frontend/E
 COPY core/EdFi.DataManagementService.Core/*.csproj core/EdFi.DataManagementService.Core/packages.lock.json ./core/EdFi.DataManagementService.Core/
 COPY core/EdFi.DataManagementService.Core.External/*.csproj core/EdFi.DataManagementService.Core.External/packages.lock.json ./core/EdFi.DataManagementService.Core.External/
 COPY core/EdFi.DataManagementService.CustomValidation/*.csproj core/EdFi.DataManagementService.CustomValidation/packages.lock.json ./core/EdFi.DataManagementService.CustomValidation/
+COPY core/EdFi.DataManagementService.Identity/*.csproj core/EdFi.DataManagementService.Identity/packages.lock.json ./core/EdFi.DataManagementService.Identity/
 COPY backend/EdFi.DataManagementService.Backend/*.csproj backend/EdFi.DataManagementService.Backend/packages.lock.json ./backend/EdFi.DataManagementService.Backend/
 COPY backend/EdFi.DataManagementService.Backend.External/*.csproj backend/EdFi.DataManagementService.Backend.External/packages.lock.json ./backend/EdFi.DataManagementService.Backend.External/
 COPY backend/EdFi.DataManagementService.Backend.Ddl/*.csproj backend/EdFi.DataManagementService.Backend.Ddl/packages.lock.json ./backend/EdFi.DataManagementService.Backend.Ddl/
@@ -90,6 +91,7 @@ COPY frontend/EdFi.DataManagementService.Frontend.AspNetCore/ ./frontend/EdFi.Da
 COPY core/EdFi.DataManagementService.Core/ ./core/EdFi.DataManagementService.Core/
 COPY core/EdFi.DataManagementService.Core.External/ ./core/EdFi.DataManagementService.Core.External/
 COPY core/EdFi.DataManagementService.CustomValidation/ ./core/EdFi.DataManagementService.CustomValidation/
+COPY core/EdFi.DataManagementService.Identity/ ./core/EdFi.DataManagementService.Identity/
 COPY backend/EdFi.DataManagementService.Backend/ ./backend/EdFi.DataManagementService.Backend/
 COPY backend/EdFi.DataManagementService.Backend.External/ ./backend/EdFi.DataManagementService.Backend.External/
 COPY backend/EdFi.DataManagementService.Backend.Ddl/ ./backend/EdFi.DataManagementService.Backend.Ddl/
@@ -109,16 +111,22 @@ COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/ ./clis/EdFi.DataManage
 COPY --from=pluginsource /plugins/ /source/plugins/
 
 ARG VERSION=""
-ARG ASSEMBLY_VERSION=""
 
 # Version-stamp arguments are accumulated as positional parameters so the expansion below
 # stays quoted ("$@" preserves one argument per parameter; ShellCheck SC2086).
+#
+# Version and InformationalVersion only. AssemblyVersion and FileVersion are deliberately not
+# passed, and nothing replaces them. They are global properties, so they reach every project
+# reference: a contract assembly that declares its own version in src/plugins/Directory.Build.props
+# would otherwise ship carrying the DMS release version inside a locally built image. The plugin
+# loader's newer-plugin-on-older-host preflight compares exactly that value, so a contract has to
+# carry the same version in an image as it does in its published package. The consequence is
+# accepted: a locally built image's DMS assemblies carry whatever src/dms/Directory.Build.props
+# declares, which nothing reads out of a development image, while the release lane still stamps
+# them through BuildAndPublish.
 RUN set -- ; \
     if [ -n "$VERSION" ]; then \
         set -- "$@" "/p:Version=$VERSION" "/p:InformationalVersion=$VERSION"; \
-    fi; \
-    if [ -n "$ASSEMBLY_VERSION" ]; then \
-        set -- "$@" "/p:AssemblyVersion=$ASSEMBLY_VERSION" "/p:FileVersion=$ASSEMBLY_VERSION"; \
     fi; \
     dotnet publish frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj \
     -c Release --no-restore --self-contained false -o /app/Frontend "$@" && \

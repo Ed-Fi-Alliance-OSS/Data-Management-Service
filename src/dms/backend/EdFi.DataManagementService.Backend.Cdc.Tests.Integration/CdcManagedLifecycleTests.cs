@@ -23,7 +23,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [Category("DatabaseIntegration")]
 [Category("CdcAuthorizationDisabledLocal")]
 [NonParallelizable]
-public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
+public sealed partial class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
 {
     private CdcProviderAdmissionFixture _fixture = null!;
     private CancellationTokenSource _timeout = null!;
@@ -35,8 +35,13 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
     public async Task Setup()
     {
         _evidence.Clear();
+        _retirementCommandRuntime = null!;
         _timeout = new(TimeSpan.FromMinutes(10));
-        _fixture = await CdcProviderAdmissionFixture.StartAsync(provider, Token);
+        _fixture = await CdcProviderAdmissionFixture.StartAsync(
+            provider,
+            Token,
+            schemaFiles: RetirementSchemaFiles()
+        );
         await _fixture.RegisterAsync(Token);
         Observed(
             await _fixture.Controllers.Admission.PreparePublicationAsync(
@@ -47,6 +52,10 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
             )
         );
         await _fixture.ReopenRuntimeAsync(Token);
+        if (IsRetirementCase)
+        {
+            await PrepareRetirementRunbookAsync();
+        }
     }
 
     [TearDown]
@@ -66,6 +75,10 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
         if (_fixture is not null)
         {
             await _fixture.DisposeAsync();
+        }
+        if (_retirementCommandRuntime is not null)
+        {
+            await _retirementCommandRuntime.DisposeAsync();
         }
         _timeout.Dispose();
     }
@@ -135,121 +148,14 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
         intact.State.Incident.Should().BeNull();
     }
 
-    [TestCase(false)]
-    [TestCase(true)]
-    public async Task It_waits_for_retained_projection_work_in_the_single_start_invocation(bool persistent)
+    [TestCase(CdcManagedLifecycleOperation.Restart)]
+    [TestCase(CdcManagedLifecycleOperation.Resume)]
+    public async Task It_restarts_an_intact_running_connector_with_fresh_ready_evidence(
+        CdcManagedLifecycleOperation operation
+    )
     {
-        (await ExecuteAsync(CdcManagedLifecycleOperation.Stop)).TargetShutdownVerified.Should().BeTrue();
-        // A canonical resource write leaves real coalesced projection work while processing is offline.
-        await _fixture.ExecuteAsync(
-            provider == CdcProvider.Postgresql
-                ? "INSERT INTO dms.\"Document\" (\"DocumentUuid\", \"ResourceKeyId\") SELECT gen_random_uuid(), \"ResourceKeyId\" FROM dms.\"ResourceKey\" WHERE \"ResourceName\" = 'Widget'; INSERT INTO testproject.\"Widget\" (\"DocumentId\", \"WidgetId\", \"WidgetName\") SELECT \"DocumentId\", 1, 'queued' FROM dms.\"Document\";"
-                : "INSERT INTO dms.Document (DocumentUuid, ResourceKeyId) SELECT NEWID(), ResourceKeyId FROM dms.ResourceKey WHERE ResourceName = 'Widget'; INSERT INTO testproject.Widget (DocumentId, WidgetId, WidgetName) SELECT DocumentId, 1, 'queued' FROM dms.Document;",
-            Token
-        );
-        string work =
-            provider == CdcProvider.Postgresql
-                ? "dms.\"DocumentProjectionWork\""
-                : "dms.DocumentProjectionWork";
-        (await _fixture.ScalarAsync<int>($"SELECT CAST(COUNT(*) AS int) FROM {work}", Token)).Should().Be(1);
-        await using System.Data.Common.DbConnection connection =
-            provider == CdcProvider.Postgresql
-                ? new NpgsqlConnection(_fixture.ConnectionString)
-                : new SqlConnection(_fixture.ConnectionString);
-        await connection.OpenAsync(Token);
-        await using var transaction = await connection.BeginTransactionAsync(Token);
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText =
-            provider == CdcProvider.Postgresql
-                ? $"SELECT * FROM {work} FOR UPDATE"
-                : $"SELECT * FROM {work} WITH (UPDLOCK, ROWLOCK)";
-        await command.ExecuteNonQueryAsync(Token);
-        int resumes = 0;
-        int postResumePasses = 0;
-        bool released = false;
-        _fixture.Infrastructure.BeforeConnectCall = method =>
-        {
-            if (method == nameof(ICdcConnectTransport.ResumeAsync))
-            {
-                resumes++;
-            }
-        };
-        _fixture.BeforeRuntimeCall = method =>
-        {
-            if (method == nameof(ICdcProjectionRuntime.ObserveAsync) && resumes > 0)
-            {
-                postResumePasses++;
-                if (postResumePasses == 4 && !persistent)
-                {
-                    transaction.Commit();
-                    released = true;
-                }
-            }
-        };
-        // SQL Server's live preflight is slower; leave time for completed resume and catch-up
-        // observations within this one deadline, as in the fixture's provider-specific defaults.
-        var wait = TimeSpan.FromSeconds(provider == CdcProvider.SqlServer ? 60 : 20);
-        var request = persistent
-            ? _fixture.WithTiming(new(wait / 2, wait, TimeSpan.FromMilliseconds(250)))
-            : _fixture.Request;
-        var elapsed = System.Diagnostics.Stopwatch.StartNew();
-        try
-        {
-            var result = await _fixture.Controllers.Lifecycle.ExecuteAsync(
-                new(request, _fixture.Runtime, 60_000),
-                CdcManagedLifecycleOperation.Start,
-                Token
-            );
-            _evidence.Add(
-                new
-                {
-                    Result = result,
-                    PostResumePasses = postResumePasses,
-                    Resumes = resumes,
-                    Elapsed = elapsed.Elapsed,
-                }
-            );
-            result.Succeeded.Should().Be(!persistent, "{0}", JsonSerializer.Serialize(result));
-            result.Ready.Should().Be(!persistent);
-            resumes.Should().Be(1);
-            postResumePasses.Should().BeGreaterThan(3);
-            (await _fixture.JournalAsync(Token)).Operations.Last().Completions.Should().ContainSingle();
-            if (persistent)
-            {
-                elapsed
-                    .Elapsed.Should()
-                    .BeGreaterThanOrEqualTo(request.Timing.WaitTimeout - TimeSpan.FromMilliseconds(50))
-                    .And.BeLessThan(request.Timing.WaitTimeout + TimeSpan.FromSeconds(15));
-                result.Diagnostics.Should().Contain(d => d.Failure == CdcDeploymentFailure.Timeout);
-                // Expiry may interrupt a new observation. Do not require stale backlog diagnostics
-                // from the preceding pass; verify that the actual queue remains blocked instead.
-                (await _fixture.ScalarAsync<int>($"SELECT CAST(COUNT(*) AS int) FROM {work}", Token))
-                    .Should()
-                    .Be(1);
-            }
-            else
-            {
-                result.Observation.Status.Projection.State.Should().Be(CoreCdc.CdcComponentState.Satisfied);
-                result.Diagnostics.Should().BeEmpty();
-            }
-        }
-        finally
-        {
-            _fixture.BeforeRuntimeCall = _ => { };
-            _fixture.Infrastructure.BeforeConnectCall = _ => { };
-            if (!released)
-            {
-                await transaction.RollbackAsync(Token);
-            }
-        }
-    }
-
-    [Test]
-    public async Task It_restarts_an_intact_running_connector_with_fresh_ready_evidence()
-    {
-        await _fixture.Runtime.StartProcessingAsync(Token);
-        var result = await ExecuteAsync(CdcManagedLifecycleOperation.Restart);
+        // Setup deliberately reopens an unstarted runtime, as each packaged CLI invocation does.
+        var result = await ExecuteAsync(operation);
         result.Succeeded.Should().BeTrue("{0}", string.Join(", ", result.Diagnostics));
         result.Ready.Should().BeTrue();
         (await _fixture.JournalAsync(Token))
@@ -482,9 +388,11 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
     }
 
     [Test]
+    [Category("CdcRunbookRetirement")]
     public async Task It_resumes_interrupted_retirement_and_preserves_shared_artifacts_and_source_history()
     {
         var request = _fixture.Request;
+        await AssertRetirementGuardsAndHandoffsAsync();
         var incident = await LatchIncidentAsync();
         var peers = CoreCdc
             .CdcArtifactNameGenerator.Render(
@@ -549,9 +457,7 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
         (await _fixture.Infrastructure.Bindings.ExactMatchBindingAsync(request.Binding, Token))
             .State!.Incident.Should()
             .BeEquivalentTo(incident);
-        var complete = await retirement.RetireAsync(request, request.Binding.Generation, true, Token);
-        _evidence.Add(new { At = DateTimeOffset.UtcNow, Retirement = complete });
-        complete.Succeeded.Should().BeTrue("{0}", string.Join(", ", complete.Diagnostics));
+        await AssertMarkedRetirementCompleteAsync();
         (await _fixture.Infrastructure.Bindings.ExactMatchBindingAsync(request.Binding, Token))
             .Status.Should()
             .Be(CoreCdc.CdcControlPlaneOperationStatus.BindingMissing);
@@ -638,9 +544,18 @@ public sealed class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
         (await _fixture.Controllers.Activation.ActivateAsync(request, _fixture.Runtime, Token))
             .State.Should()
             .Be(CdcTransportEvidenceState.Unavailable);
-        (await retirement.RetireAsync(request, request.Binding.Generation, true, Token))
-            .Succeeded.Should()
-            .BeTrue();
+        await AssertMarkedRetirementCompleteAsync();
+        _evidence.Add(
+            new
+            {
+                SourceHistory = "Historical",
+                InitialEligibilityRestored = false,
+                PeerTopicPreserved = true,
+                SharedOffsetStorePreserved = true,
+                GovernedArtifactsAbsent = true,
+                PlatformPurgeProven = false,
+            }
+        );
     }
 
     [Test]

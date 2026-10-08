@@ -11,6 +11,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   | schoolId       | nameOfInstitution   | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 255901901      | Authorized school   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
                   | 25590190200000 | Authorized school 2 | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901901, 25590190200000"
               And the system has these "students"
                   | studentUniqueId | firstName            | lastSurname | birthDate  |
                   | "S91111"        | Authorized student   | student-ln  | 2008-01-01 |
@@ -19,6 +20,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   | contactUniqueId | firstName          | lastSurname |
                   | "C91111"        | Authorized contact | contact-ln  |
                   | "C91112"        | Authorized contact | contact-ln  |
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901901, 25590190200000"
               And the system has these "studentSchoolAssociations"
                   | schoolReference                | studentReference                | entryGradeLevelDescriptor                          | entryDate  |
                   | { "schoolId": 255901901 }      | { "studentUniqueId": "S91111" } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
@@ -359,6 +361,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   """
              Then it should respond with 201
 
+        @reset-data-before-scenario
         @e2e-ci-shard-1
         Scenario: 12 Ensure client can not retrieve a contact with out student contact association
              When a POST request is made to "/ed-fi/contacts" with
@@ -386,6 +389,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                      }
                   """
 
+        @reset-data-before-scenario
         @e2e-ci-shard-1
         Scenario: 13 Ensure client can not update a contact when it's unassociated
             Given a POST request is made to "/ed-fi/contacts/" with
@@ -451,6 +455,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
              When a DELETE request is made to "/ed-fi/contacts/{id}"
              Then it should respond with 204
 
+        @reset-data-before-scenario
         @e2e-ci-shard-1
         Scenario: 15 Ensure client can not delete a contact when it's associated with a student
              When a POST request is made to "/ed-fi/contacts" with
@@ -579,6 +584,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   """
 
 
+        @reset-data-before-scenario
         @e2e-ci-shard-1
         Scenario: 18 Ensure client can update a contact When it's associated
             Given a POST request is made to "/ed-fi/contacts/" with
@@ -808,9 +814,11 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 255901904 | Authorized school | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
 
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901904"
               And the system has these "students"
                   | studentUniqueId | firstName            | lastSurname | birthDate  |
                   | "S91114"        | Unauthorized student | student-ln  | 2008-01-01 |
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901904"
 
               And the system has these "studentSchoolAssociations"
                   | schoolReference           | studentReference                | entryGradeLevelDescriptor                          | entryDate  |

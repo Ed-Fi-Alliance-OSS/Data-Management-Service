@@ -35,7 +35,12 @@ public class ApiServiceOpenApiTests
 
     private static IMemoryCache CreateMemoryCache() => new MemoryCache(new MemoryCacheOptions());
 
-    private static ApiService CreateApiService(
+    /// <summary>
+    /// Builds an ApiService over the supplied schema nodes. Internal rather than private so the
+    /// package-backed served-document fixtures build the service exactly the way these fixtures do;
+    /// two constructions that drifted apart would quietly test two different services.
+    /// </summary>
+    internal static ApiService CreateApiService(
         ApiSchemaDocumentNodes apiSchemaDocumentNodes,
         IProfileService? profileService = null,
         AppSettings? appSettings = null
@@ -49,6 +54,7 @@ public class ApiServiceOpenApiTests
             A.Fake<IConfigurationServiceClaimSetProvider>(),
             CreateMemoryCache(),
             new CacheSettings(),
+            TimeProvider.System,
             NullLogger<CachedClaimSetProvider>.Instance
         );
 
@@ -83,7 +89,8 @@ public class ApiServiceOpenApiTests
             cachedClaimSetProvider,
             A.Fake<IResourceDependencyGraphMLFactory>(),
             profileService ?? A.Fake<IProfileService>(),
-            new CircuitBreakerSettings()
+            new CircuitBreakerSettings(),
+            TestHelper.CreateNoOpIdentityTenantSnapshot()
         );
     }
 

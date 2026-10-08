@@ -6,7 +6,6 @@
 using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
-using EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 using EdFi.DataManagementService.Backend.Ddl;
 using FluentAssertions;
 using NUnit.Framework;
@@ -127,10 +126,15 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             text => CdcTelemetryQualification.HasCurrentLag(text, peerName),
             token
         );
-        string initial = await metrics.GetStringAsync("/metrics", token);
+        string initial = await InspectRunbookMetricsAsync(
+            request.ConnectorName.Value,
+            "initial",
+            true,
+            token
+        );
         CdcTelemetryQualification.AssertStreamingMetrics(initial, Provider, request.ConnectorName.Value);
         CdcTelemetryQualification.AssertStreamingMetrics(initial, Provider, peerName);
-        string processIdentity = await QualifyWorkerDeploymentAsync(metrics, initial, token);
+        string processIdentity = await QualifyWorkerDeploymentAsync(request, metrics, token);
         double start = CdcTelemetryQualification.Scalar(initial, "edfi_cdc_worker_start_time_seconds");
         start.Should().BeGreaterThan(0);
         CdcTelemetryQualification.Scalar(initial, "edfi_cdc_worker_heap_max_bytes").Should().BeGreaterThan(0);
@@ -146,6 +150,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             text => !CdcTelemetryQualification.HasConnector(text, request.ConnectorName.Value),
             token
         );
+        await InspectRunbookMetricsAsync(request.ConnectorName.Value, "stopped-task", false, token);
         CdcTelemetryQualification.AssertStreamingMetrics(
             await metrics.GetStringAsync("/metrics", token),
             Provider,
@@ -158,7 +163,12 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         );
         resumed.EnsureSuccessStatusCode();
         await AssertHeartbeatAndCommittedOffsetProgressAsync(request, token);
-        string restartedTask = await metrics.GetStringAsync("/metrics", token);
+        string restartedTask = await InspectRunbookMetricsAsync(
+            request.ConnectorName.Value,
+            "restarted-task",
+            true,
+            token
+        );
         CdcTelemetryQualification.AssertStreamingMetrics(
             restartedTask,
             Provider,
@@ -181,14 +191,19 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             text => CdcTelemetryQualification.HasCurrentLag(text, peerName),
             token
         );
-        string restartedWorker = await restartedMetrics.GetStringAsync("/metrics", token);
+        string restartedWorker = await InspectRunbookMetricsAsync(
+            request.ConnectorName.Value,
+            "restarted-worker",
+            true,
+            token
+        );
         CdcTelemetryQualification.AssertStreamingMetrics(
             restartedWorker,
             Provider,
             request.ConnectorName.Value
         );
         CdcTelemetryQualification.AssertStreamingMetrics(restartedWorker, Provider, peerName);
-        (await QualifyWorkerDeploymentAsync(restartedMetrics, restartedWorker, token))
+        (await QualifyWorkerDeploymentAsync(request, restartedMetrics, token))
             .Should()
             .NotBe(processIdentity);
         CdcTelemetryQualification
@@ -198,25 +213,14 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
     }
 
     private async Task<string> QualifyWorkerDeploymentAsync(
+        CdcConnectorTemplateRequest template,
         HttpClient metrics,
-        string text,
         CancellationToken token
     )
     {
         string digest = _settings.ConnectImage[(_settings.ConnectImage.IndexOf('@') + 1)..];
-        var request = CdcDeploymentRequestTestData.Request(
-            Provider,
-            endpoint: _httpClient.BaseAddress!.AbsoluteUri,
-            metricsEndpoint: new Uri(metrics.BaseAddress!, "/metrics").AbsoluteUri,
-            worker: CdcDeploymentRequestTestData.Worker(
-                heapBytes: checked(
-                    (long)CdcTelemetryQualification.Scalar(text, "edfi_cdc_worker_heap_max_bytes")
-                ),
-                digest: digest,
-                offsetTopic: _resourcePrefix + ".connect.offsets",
-                workerKey: _resourcePrefix
-            )
-        );
+        // Inspection and telemetry correlation must describe this live connector and broker.
+        var request = await CreateControllerSmokeObservationRequestAsync(template, token);
         var inspector = new CdcWorkerDeployment(
             _resourcePrefix,
             "kafka-cdc-worker",

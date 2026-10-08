@@ -52,7 +52,12 @@ public sealed partial class Given_Cdc_Controller_Record_Size_Increase(CdcProvide
         _effects.Clear();
         _confirmations = 0;
         _timeout = new(TimeSpan.FromMinutes(10));
-        _fixture = await CdcProviderAdmissionFixture.StartAsync(provider, Token);
+        _fixture = await CdcProviderAdmissionFixture.StartAsync(
+            provider,
+            Token,
+            composeKafka: IsRunbookCase,
+            schemaFiles: RunbookSchemaFiles()
+        );
         DateTimeOffset projectionStarted = default;
         _fixture.BeforeRuntimeCall = name =>
         {
@@ -108,7 +113,9 @@ public sealed partial class Given_Cdc_Controller_Record_Size_Increase(CdcProvide
                     servers,
                     _fixture.Request.ConnectorPolicy.KafkaBootstrapServers
                 ),
-                new BrokerDeployment(_fixture.Infrastructure.Resources)
+                IsRunbookCase
+                    ? _fixture.Infrastructure.Resources.ComposeBrokerSizes
+                    : new BrokerDeployment(_fixture.Infrastructure.Resources)
             )
         );
         _fixture.Infrastructure.BeforeConnectCall = name =>
@@ -136,11 +143,20 @@ public sealed partial class Given_Cdc_Controller_Record_Size_Increase(CdcProvide
         );
         _topicIds = await TopicIdsAsync();
         await CaptureLimitsAsync("baseline");
+        if (IsRunbookCase)
+        {
+            await PrepareRunbookAsync();
+        }
     }
 
     [TearDown]
     public async Task TearDown()
     {
+        if (_commandRuntime is not null)
+        {
+            await _commandRuntime.DisposeAsync();
+            _commandRuntime = null!;
+        }
         if (_fixture is not null)
         {
             _fixture.Hooks.OnBoundary = _ => { };
@@ -192,7 +208,7 @@ public sealed partial class Given_Cdc_Controller_Record_Size_Increase(CdcProvide
         after
             .Brokers.Brokers.Should()
             .OnlyContain(b =>
-                b.SocketRequestMaxBytes >= Ceiling
+                b.SocketRequestMaxBytes >= CdcDeploymentKafkaPolicy.MinimumBrokerRequestBytes(Ceiling)
                 && b.ReplicaFetchMaxBytes >= Ceiling
                 && b.ReplicaFetchResponseMaxBytes >= Ceiling
             );
@@ -432,9 +448,32 @@ public sealed partial class Given_Cdc_Controller_Record_Size_Increase(CdcProvide
     private Task<CdcRecordSizeIncreaseResult> IncreaseAsync(
         Func<CdcRecordSizeIncreaseConfirmation, CdcRecordSizeIncreaseConfirmation> change = null!,
         CancellationToken token = default,
-        bool consumers = false
+        bool consumers = false,
+        TimeSpan waitTimeout = default
     )
     {
+        var request =
+            waitTimeout == default
+                ? _fixture.Request
+                : _fixture.WithTiming(
+                    new(
+                        _fixture.Request.Timing.CallTimeout,
+                        waitTimeout,
+                        _fixture.Request.Timing.PollInterval,
+                        _fixture.Request.Timing.MaximumObservationAge
+                    )
+                );
+        if (IsRunbookCase)
+        {
+            request = _fixture.WithTiming(
+                new(
+                    TimeSpan.FromMinutes(3),
+                    TimeSpan.FromMinutes(5),
+                    TimeSpan.FromMilliseconds(250),
+                    TimeSpan.FromMinutes(1)
+                )
+            );
+        }
         return _fixture
             .Controllers.RecordSize(
                 new ObservedSizes(
@@ -447,7 +486,7 @@ public sealed partial class Given_Cdc_Controller_Record_Size_Increase(CdcProvide
                 )
             )
             .IncreaseAsync(
-                Target(_fixture.Request),
+                Target(request),
                 _scope,
                 Buffer,
                 (invocation, _) =>

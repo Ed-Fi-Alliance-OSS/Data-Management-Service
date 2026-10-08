@@ -22,6 +22,55 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
     {
         private readonly string _connectionString = databaseOptions.Value.DatabaseConnection;
 
+        /// <summary>
+        /// How long a token grant waits for another grant's row lock on the same client before
+        /// failing. Matches the shipped default of <c>ApplicationLockOptions.AcquireTimeout</c>,
+        /// so the two lock paths bound their waits alike out of the box. This one is a constant:
+        /// it does not follow an operator override of <c>ApplicationLockSettings:AcquireTimeout</c>.
+        /// </summary>
+        private const string LockTimeoutMilliseconds = "5000";
+
+        private const string SetLockTimeoutSql = $"SET LOCK_TIMEOUT {LockTimeoutMilliseconds}";
+
+        /// <summary>
+        /// "Lock request time out period exceeded", the error SQL Server raises when a statement
+        /// waits longer than <c>SET LOCK_TIMEOUT</c> allows.
+        /// </summary>
+        private const int LockRequestTimeoutErrorNumber = 1222;
+
+        /// <summary>
+        /// "Transaction was deadlocked ... Rerun the transaction". The active-token count reads
+        /// IX_OpenIddictToken_ApplicationId and then looks each row up in the clustered index,
+        /// while the expired-token sweep's delete locks the clustered row first and the same row's
+        /// ApplicationId key second, so under locking read committed a grant counting over rows
+        /// the sweep is deleting can deadlock with it.
+        /// </summary>
+        private const int DeadlockVictimErrorNumber = 1205;
+
+        private const string LockApplicationSql =
+            "SELECT Id FROM dmscs.OpenIddictApplication WITH (UPDLOCK, HOLDLOCK) WHERE Id = @ApplicationId";
+
+        /// <summary>
+        /// Inserts the token only while the client holds fewer than @MaxActiveTokens active access
+        /// tokens, where active means not revoked and not yet expired. The count is scoped to
+        /// access tokens so that another token type stored in this table cannot consume the budget
+        /// this setting describes. Counting and inserting in one statement leaves no window between
+        /// the two.
+        /// </summary>
+        private const string ConditionalInsertSql =
+            @"
+                INSERT INTO dmscs.OpenIddictToken
+                (Id, ApplicationId, Subject, Type, CreationDate, ExpirationDate, Status, ReferenceId)
+                SELECT @Id, @ApplicationId, @Subject, @Type, @CreationDate, @ExpirationDate, @Status, @ReferenceId
+                WHERE (
+                    SELECT COUNT(*)
+                    FROM dmscs.OpenIddictToken
+                    WHERE ApplicationId = @ApplicationId
+                      AND Type = 'access_token'
+                      AND Status = 'valid'
+                      AND ExpirationDate > @ActiveAsOf
+                ) < @MaxActiveTokens";
+
         public async Task<T> ExecuteInTransactionAsync<T>(
             Func<IDbConnection, IDbTransaction, Task<T>> operation
         )
@@ -302,7 +351,14 @@ UPDATE dmscs.OpenIddictApplication
         {
             string applicationSql = $"""
                 SELECT a.Id, a.ClientId, a.ClientSecret, a.DisplayName, a.RedirectUris, a.PostLogoutRedirectUris,
-                       a.Permissions, a.Requirements, a.Type, a.CreatedAt, a.ProtocolMappers
+                       a.Permissions, a.Requirements, a.Type, a.CreatedAt, a.ProtocolMappers,
+                       CAST(COALESCE((SELECT MIN(CAST(ac.IsApproved AS INT))
+                                      FROM dmscs.ApiClient ac
+                                      WHERE ac.ClientId = a.ClientId), 1) AS BIT) AS IsApproved,
+                       CAST(CASE WHEN EXISTS (SELECT 1
+                                              FROM dmscs.ApiClient ac
+                                              WHERE ac.ClientId = a.ClientId)
+                                 THEN 0 ELSE 1 END AS BIT) AS HasNoApiClientRow
                 FROM dmscs.OpenIddictApplication a
                 WHERE {predicate}
                 """;
@@ -340,16 +396,6 @@ UPDATE dmscs.OpenIddictApplication
                 transaction
             );
 
-            bool isApproved = await connection.ExecuteScalarAsync<bool>(
-                """
-                SELECT CAST(COALESCE(MIN(CAST(ac.IsApproved AS INT)), 1) AS BIT)
-                FROM dmscs.ApiClient ac
-                WHERE ac.ClientId = @ClientId
-                """,
-                new { row.ClientId },
-                transaction
-            );
-
             return new ApplicationInfo
             {
                 Id = row.Id,
@@ -365,7 +411,8 @@ UPDATE dmscs.OpenIddictApplication
                 Scopes = scopes.Distinct().ToArray(),
                 DataStoreIds = dataStoreIds.ToArray(),
                 ProtocolMappers = row.ProtocolMappers ?? string.Empty,
-                IsApproved = isApproved,
+                IsApproved = row.IsApproved,
+                HasNoApiClientRow = row.HasNoApiClientRow,
             };
         }
 
@@ -391,11 +438,12 @@ UPDATE dmscs.OpenIddictApplication
             return await connection.QuerySingleOrDefaultAsync<TokenInfo>(sql, new { Id = tokenId });
         }
 
-        public async Task StoreTokenAsync(
+        public async Task<TokenStoreOutcome> StoreTokenAsync(
             Guid tokenId,
             Guid applicationId,
             string subject,
-            DateTimeOffset expiration
+            DateTimeOffset expiration,
+            int maxActiveTokens
         )
         {
             await using var connection = new SqlConnection(_connectionString);
@@ -417,26 +465,113 @@ UPDATE dmscs.OpenIddictApplication
             parameters.Add("Status", "valid");
             parameters.Add("ReferenceId", tokenId.ToString("N"));
 
-            await connection.ExecuteAsync(insertSql, parameters);
+            // Enforcement disabled: the unconditional insert that ran before the limit existed,
+            // with no transaction and no lock.
+            if (maxActiveTokens < 1)
+            {
+                await connection.ExecuteAsync(insertSql, parameters);
+                return TokenStoreOutcome.Stored;
+            }
+
+            // Bound the same way ExpirationDate already is, so the count compares two DATETIME2
+            // values that took the identical conversion path.
+            parameters.Add("ActiveAsOf", DateTime.UtcNow, DbType.DateTime2);
+            parameters.Add("MaxActiveTokens", maxActiveTokens);
+
+            // Grants for one client serialize on that client's OpenIddictApplication row, which
+            // makes the limit a strict ceiling rather than a best-effort one. The lock lives and
+            // dies with this transaction, so every path below releases it.
+            await using var transaction = await connection.BeginTransactionAsync();
+
+            try
+            {
+                await connection.ExecuteAsync(SetLockTimeoutSql, transaction: transaction);
+
+                Guid? lockedApplicationId = await connection.QuerySingleOrDefaultAsync<Guid?>(
+                    LockApplicationSql,
+                    new { ApplicationId = applicationId },
+                    transaction
+                );
+
+                // Without this guard a client deleted mid-request would receive a freshly minted,
+                // storable token that stays usable until it expires: GetApplicationByClientIdAsync
+                // ran on a different connection, and OpenIddictToken has no foreign key to
+                // OpenIddictApplication.
+                if (lockedApplicationId is null)
+                {
+                    await transaction.RollbackAsync();
+                    return TokenStoreOutcome.ClientNotFound;
+                }
+
+                int rowsAffected = await connection.ExecuteAsync(
+                    ConditionalInsertSql,
+                    parameters,
+                    transaction
+                );
+
+                await transaction.CommitAsync();
+
+                // Zero rows can only mean the count predicate was false. Any fault throws from the
+                // statements above and is never reported here as a limit rejection; only the
+                // lock-wait timeout and the deadlock below are answered as an outcome.
+                return rowsAffected > 0 ? TokenStoreOutcome.Stored : TokenStoreOutcome.LimitExceeded;
+            }
+            catch (SqlException exception)
+                when (exception.Number is LockRequestTimeoutErrorNumber or DeadlockVictimErrorNumber)
+            {
+                // Waiting out SetLockTimeoutSql, or being chosen as a deadlock victim, is
+                // contention, not a fault, and not a limit rejection either - the client may hold
+                // no tokens at all. Reported as its own outcome so the caller can answer it as
+                // retriable rather than as a server error. A deadlock victim's transaction is
+                // already rolled back by the server; otherwise its disposal rolls it back.
+                return TokenStoreOutcome.LockTimeout;
+            }
         }
 
         public async Task<string?> GetTokenStatusAsync(Guid tokenId)
         {
             await using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync();
+            await OpenForTokenStatusAsync(connection);
             return await connection.QuerySingleOrDefaultAsync<string>(
                 "SELECT Status FROM dmscs.OpenIddictToken WHERE Id = @Id",
                 new { Id = tokenId }
             );
         }
 
-        public async Task<bool> RevokeTokenAsync(Guid tokenId)
+        /// <summary>
+        /// Opens the connection for the per-request token-status read. SqlClient reports a pooled-open timeout (every
+        /// pooled connection stayed leased for the whole connect timeout) as an <see cref="InvalidOperationException"/>,
+        /// not a <see cref="SqlException"/>, so the token manager's store-failure filter would miss it and answer the
+        /// request as an invalid token. Only this open is translated: on a new connection it is the pool, or an unusable
+        /// connection string, that fails, and either way the status was not read (DMS-1556 D-7). Exceptions from the
+        /// query itself are left to the manager.
+        /// </summary>
+        private static async Task OpenForTokenStatusAsync(SqlConnection connection)
+        {
+            try
+            {
+                await connection.OpenAsync();
+            }
+            catch (InvalidOperationException exception)
+            {
+                throw new AuthenticationDependencyUnavailableException(
+                    AuthenticationDependencyCategory.TokenStatusStore,
+                    "The token status store could not be read.",
+                    exception
+                );
+            }
+        }
+
+        public async Task<bool> RevokeTokenAsync(Guid tokenId, Guid applicationId)
         {
             await using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync();
+            // Ownership and status are predicates of the single statement rather than a prior read,
+            // so no interleaving can revoke another application's token, and a repeat changes no
+            // row and keeps the original RedemptionDate.
             var result = await connection.ExecuteAsync(
-                "UPDATE dmscs.OpenIddictToken SET Status = 'revoked', RedemptionDate = SYSUTCDATETIME() WHERE Id = @Id",
-                new { Id = tokenId }
+                "UPDATE dmscs.OpenIddictToken SET Status = 'revoked', RedemptionDate = SYSUTCDATETIME() WHERE Id = @Id AND ApplicationId = @ApplicationId AND Status <> 'revoked'",
+                new { Id = tokenId, ApplicationId = applicationId }
             );
             return result > 0;
         }
@@ -476,12 +611,22 @@ UPDATE dmscs.OpenIddictApplication
             return keyRecord;
         }
 
-        public async Task<IEnumerable<(string KeyId, byte[] PublicKey)>> GetActivePublicKeysInternalAsync()
+        public Task<IEnumerable<(string KeyId, byte[] PublicKey)>> GetActivePublicKeysInternalAsync()
+        {
+            return GetActivePublicKeysInternalAsync(CancellationToken.None);
+        }
+
+        public async Task<IEnumerable<(string KeyId, byte[] PublicKey)>> GetActivePublicKeysInternalAsync(
+            CancellationToken cancellationToken
+        )
         {
             await using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
             return await connection.QueryAsync<(string KeyId, byte[] PublicKey)>(
-                "SELECT KeyId, PublicKey FROM dmscs.OpenIddictKey WHERE IsActive = 1"
+                new CommandDefinition(
+                    "SELECT KeyId, PublicKey FROM dmscs.OpenIddictKey WHERE IsActive = 1",
+                    cancellationToken: cancellationToken
+                )
             );
         }
 
@@ -496,7 +641,9 @@ UPDATE dmscs.OpenIddictApplication
             string? Requirements,
             string? Type,
             DateTime CreatedAt,
-            string? ProtocolMappers
+            string? ProtocolMappers,
+            bool IsApproved,
+            bool HasNoApiClientRow
         );
 
         private static string[] DeserializeStringArray(string? json) =>

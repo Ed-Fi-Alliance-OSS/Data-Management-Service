@@ -11,12 +11,14 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
+using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
+using FluentValidation.Results;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 
@@ -24,6 +26,15 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
 public class ApiClientModule : IEndpointModule
 {
+    private const string DuplicateNameError =
+        "An API client with this name already exists for the application.";
+
+    private static IResult DuplicateName(HttpContext httpContext) =>
+        FailureResults.DataValidation(
+            [new ValidationFailure("Name", DuplicateNameError)],
+            httpContext.TraceIdentifier
+        );
+
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints
@@ -194,6 +205,21 @@ public class ApiClientModule : IEndpointModule
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
 
+        if (
+            await CheckNameAvailableAsync(
+                apiClientRepository,
+                command.ApplicationId,
+                command.Name,
+                excludedApiClientId: null,
+                httpContext,
+                logger
+            ) is
+            { } nameFailure
+        )
+        {
+            return nameFailure;
+        }
+
         var clientId = Guid.NewGuid().ToString();
         var clientSecret = ClientSecretValidation.GenerateSecretWithMinimumLength(
             clientSecretValidationOptionsAccessor.Value
@@ -217,7 +243,10 @@ public class ApiClientModule : IEndpointModule
         switch (clientCreateResult)
         {
             case ClientCreateResult.FailureUnknown failure:
-                logger.LogError("Failure creating client {Failure}", failure);
+                logger.LogError(
+                    "Failure creating client: {FailureMessage}",
+                    SanitizeForLog(failure.FailureMessage)
+                );
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
             case ClientCreateResult.FailureIdentityProvider failureIdentityProvider:
                 logger.LogError(
@@ -262,7 +291,7 @@ public class ApiClientModule : IEndpointModule
                     }
                 );
             case ApiClientInsertResult.FailureApplicationNotFound:
-                await clientRepository.DeleteClientAsync(clientUuid.ToString());
+                await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
                 return Results.Json(
                     FailureResponse.ForUnresolvedReference(
                         $"Application with ID {command.ApplicationId} not found.",
@@ -272,7 +301,7 @@ public class ApiClientModule : IEndpointModule
                     statusCode: (int)HttpStatusCode.Conflict
                 );
             case ApiClientInsertResult.FailureDataStoreNotFound:
-                await clientRepository.DeleteClientAsync(clientUuid.ToString());
+                await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
                 return Results.Json(
                     FailureResponse.ForUnresolvedReference(
                         "Data store does not exist.",
@@ -281,14 +310,130 @@ public class ApiClientModule : IEndpointModule
                     contentType: "application/problem+json",
                     statusCode: (int)HttpStatusCode.Conflict
                 );
+            case ApiClientInsertResult.FailureDuplicateName:
+                await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
+                return DuplicateName(httpContext);
             case ApiClientInsertResult.FailureUnknown failure:
-                logger.LogError("Failure creating client {Failure}", failure);
-                await clientRepository.DeleteClientAsync(clientUuid.ToString());
+                logger.LogError(
+                    "Failure inserting the API client row: {FailureMessage}",
+                    SanitizeForLog(failure.FailureMessage)
+                );
+                await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
 
         logger.LogError("Failure creating client");
         return FailureResults.Unknown(httpContext.TraceIdentifier);
+    }
+
+    /// <summary>
+    /// Rejects a name another client of the application already has, before the identity provider
+    /// is touched, so a duplicate the caller can correct never provisions or changes a provider
+    /// client. The comparison is ordinal, so it never rejects a name the database would accept;
+    /// SQL Server case and trailing-space variants, and a concurrent writer taking the name after
+    /// this read, are still rejected by UX_ApiClient_ApplicationId_Name through the repository's
+    /// duplicate result. Returns null when the name is available.
+    /// </summary>
+    private static async Task<IResult?> CheckNameAvailableAsync(
+        IApiClientRepository apiClientRepository,
+        int applicationId,
+        string name,
+        int? excludedApiClientId,
+        HttpContext httpContext,
+        ILogger logger
+    )
+    {
+        switch (
+            await apiClientRepository.QueryApiClient(new ApiClientQuery { ApplicationId = applicationId })
+        )
+        {
+            case ApiClientQueryResult.Success success:
+                return success.ApiClientResponses.Exists(client =>
+                    client.Id != excludedApiClientId
+                    && string.Equals(client.Name, name, StringComparison.Ordinal)
+                )
+                    ? DuplicateName(httpContext)
+                    : null;
+            case ApiClientQueryResult.FailureUnknown failure:
+                logger.LogError(
+                    "Error checking API client name availability: {Message}",
+                    SanitizeForLog(failure.FailureMessage)
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+            default:
+                logger.LogError("Error checking API client name availability");
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
+    }
+
+    /// <summary>
+    /// Removes the identity-provider client this request provisioned once the database insert has
+    /// failed, and reports what became of it. The caller's response stays the one the database
+    /// outcome dictates: the reference they have to correct is the actionable information, and a
+    /// cleanup an operator must finish by hand does not change it. A client that may remain is
+    /// therefore reported at Error with the identifiers needed to find it.
+    /// </summary>
+    private static async Task CleanUpProvisionedClientAsync(
+        IIdentityProviderRepository clientRepository,
+        Guid clientUuid,
+        string clientId,
+        ILogger logger
+    )
+    {
+        ClientDeleteResult cleanupResult;
+        try
+        {
+            cleanupResult = await clientRepository.DeleteClientAsync(clientUuid.ToString());
+        }
+        catch (Exception ex)
+        {
+            LogUnconfirmedCleanup(ex.GetType().Name, ex);
+            return;
+        }
+
+        switch (cleanupResult)
+        {
+            case ClientDeleteResult.Success:
+                logger.LogDebug(
+                    "Deleted provider client {ClientUuid} (client {ClientId}) after the database insert failed",
+                    clientUuid,
+                    SanitizeForLog(clientId)
+                );
+                return;
+
+            case ClientDeleteResult.FailureClientNotFound:
+                logger.LogWarning(
+                    "Provider client {ClientUuid} (client {ClientId}) was already absent when the database insert failed",
+                    clientUuid,
+                    SanitizeForLog(clientId)
+                );
+                return;
+
+            case ClientDeleteResult.FailureIdentityProvider failureIdentityProvider:
+                LogUnconfirmedCleanup(
+                    $"{nameof(ClientDeleteResult.FailureIdentityProvider)}: {SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)}"
+                );
+                return;
+
+            case ClientDeleteResult.FailureUnknown failureUnknown:
+                LogUnconfirmedCleanup(
+                    $"{nameof(ClientDeleteResult.FailureUnknown)}: {SanitizeForLog(failureUnknown.FailureMessage)}"
+                );
+                return;
+
+            default:
+                LogUnconfirmedCleanup(cleanupResult.GetType().Name);
+                return;
+        }
+
+        void LogUnconfirmedCleanup(string outcome, Exception? exception = null) =>
+            logger.LogError(
+                exception,
+                "Could not confirm deletion of provider client {ClientUuid} (client {ClientId}) after the database insert failed; cleanup outcome {Outcome}; the client may remain and must be reviewed manually",
+                clientUuid,
+                SanitizeForLog(clientId),
+                outcome
+            );
     }
 
     private static async Task<IResult> GetAll(
@@ -390,8 +535,8 @@ public class ApiClientModule : IEndpointModule
 
         await validator.GuardAsync(command);
 
-        // A parent move must hold both aggregate locks; the helper acquires them in ascending
-        // application id order and rereads the client under the locks.
+        // A parent move must hold both aggregate locks; the helper takes them as one lock set
+        // on one session, in ascending application id order, and rereads the client under them.
         var (lockFailure, lockedApiClient, heldLocks) = await AcquireApiClientLocksAsync(
             id,
             command.ApplicationId,
@@ -477,6 +622,21 @@ public class ApiClientModule : IEndpointModule
                     application.VendorId
                 );
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
+            }
+
+            if (
+                await CheckNameAvailableAsync(
+                    apiClientRepository,
+                    command.ApplicationId,
+                    command.Name,
+                    excludedApiClientId: id,
+                    httpContext,
+                    logger
+                ) is
+                { } nameFailure
+            )
+            {
+                return nameFailure;
             }
 
             // A failed repository update is compensated from the client's current parent
@@ -810,6 +970,13 @@ public class ApiClientModule : IEndpointModule
                                 contentType: "application/problem+json",
                                 statusCode: (int)HttpStatusCode.Conflict
                             );
+                        case ApiClientUpdateResult.FailureDuplicateName:
+                            if (!await TryCompensateAsync())
+                            {
+                                return FailureResults.Unknown(httpContext.TraceIdentifier);
+                            }
+
+                            return DuplicateName(httpContext);
                         case ApiClientUpdateResult.FailureUnknown updateFailure:
                             logger.LogError(
                                 "Repository update failed for ApiClient {Id}: {Message}",
@@ -833,10 +1000,10 @@ public class ApiClientModule : IEndpointModule
 
     /// <summary>
     /// Acquires the aggregate lock for an ApiClient workflow: the client's current parent
-    /// application and, when an update moves the client, the target application, always in
-    /// ascending application id order. The client is reread under the held locks, and the
-    /// acquisition retries when the parent changed while waiting; a persistent change is a
-    /// retriable concurrency conflict.
+    /// application and, when an update moves the client, the target application, as one lock set
+    /// on one session, in ascending application id order. The client is reread under the held
+    /// locks, and the acquisition retries when the parent changed while waiting; a persistent
+    /// change is a retriable concurrency conflict.
     /// </summary>
     private static async Task<(
         IResult? Failure,
@@ -891,20 +1058,25 @@ public class ApiClientModule : IEndpointModule
             List<IAsyncDisposable> heldLocks = [];
             try
             {
-                foreach (int applicationIdToLock in applicationIdsToLock)
+                // One set acquisition, not one call per application. Taking a move's two locks
+                // separately made each attempt hold its first lock session while waiting for a
+                // second from the bounded lock pool, so concurrent moves over disjoint
+                // application pairs could starve that pool (hold-and-wait) until the driver's
+                // connect timeout broke the wait and failed the requests. Ascending id order
+                // does not prevent that, because the contended resource is the pool, not the
+                // locks. The set is acquired on one session, so a move holds one connection.
+                ApplicationLockResult lockResult = await lockManager.AcquireAllAsync(
+                    applicationIdsToLock,
+                    httpContext.RequestAborted
+                );
+                if (LockFailureResult(lockResult, httpContext, logger) is { } lockFailure)
                 {
-                    var lockResult = await lockManager.AcquireAsync(
-                        applicationIdToLock,
-                        httpContext.RequestAborted
-                    );
-                    if (LockFailureResult(lockResult, httpContext, logger) is { } lockFailure)
-                    {
-                        await DisposeLocksAsync(heldLocks);
-                        return (lockFailure, null, []);
-                    }
-
-                    heldLocks.Add(((ApplicationLockResult.Acquired)lockResult).Handle);
+                    // A partially acquired set is released by the manager before it reports the
+                    // failure, so there is nothing held here to give back.
+                    return (lockFailure, null, []);
                 }
+
+                heldLocks.Add(((ApplicationLockResult.Acquired)lockResult).Handle);
 
                 var underLock = await apiClientRepository.GetApiClientById(id);
                 if (underLock is ApiClientGetResult.FailureUnknown underLockFailure)

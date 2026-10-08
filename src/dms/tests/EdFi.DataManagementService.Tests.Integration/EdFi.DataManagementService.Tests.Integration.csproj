@@ -19,6 +19,7 @@
         <PackageReference Include="Microsoft.Extensions.Configuration" />
         <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
         <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+        <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" />
         <PackageReference Include="Npgsql" />
         <PackageReference Include="NUnit" />
@@ -27,6 +28,14 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
         <PackageReference Include="NUnit3TestAdapter" />
+        <!--
+            The plugin inventory cases assert on Serilog's own LogEvent properties rather than on a
+            rendered string, because the criterion is that the named properties arrive structured. A
+            capturing sink is added to the host through the test's logging hook, which runs after
+            AddServices has cleared the providers the application configured.
+        -->
+        <PackageReference Include="Serilog" />
+        <PackageReference Include="Serilog.Extensions.Logging" />
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\..\frontend\EdFi.DataManagementService.Frontend.AspNetCore\EdFi.DataManagementService.Frontend.AspNetCore.csproj" />
@@ -37,6 +46,25 @@
     <ItemGroup>
         <Using Include="NUnit.Framework" />
     </ItemGroup>
+    <ItemGroup>
+        <!--
+            Linked rather than referenced: the identity cases judge the served OpenAPI document with the
+            same rewrite the Core conformance tests use, and that class lives in a test assembly.
+        -->
+        <Compile Include="..\..\core\EdFi.DataManagementService.Core.Tests.Unit\OpenApi\OpenApiSchemaNormalizer.cs" Link="Shared\OpenApiSchemaNormalizer.cs" />
+    </ItemGroup>
+    <!--
+        Publishes the fixture plugin directories the host-integration plugin cases load. See the targets
+        file for why staging lives here rather than in the tree the fixture sources sit in.
+    -->
+    <Import Project="PluginIntegrationFixtures.targets" />
+    <!--
+        Packs the plugin, custom-validation and identity contracts into a local folder feed and
+        publishes the packed contract fixture plugins against it, into a stage root of their own.
+        Separate from the file above because that one's shared machinery publishes every fixture
+        with one fixed command and no package feed; see the targets file for the whole reason.
+    -->
+    <Import Project="PackedContractFixturePlugins.targets" />
     <ItemGroup>
         <InternalsVisibleTo Include="EdFi.DataManagementService.Performance.Harness" />
     </ItemGroup>

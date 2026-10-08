@@ -412,32 +412,29 @@ With stored representation stamps:
     `schemaEpoch` (amended 2026-07-04: `profileCode` is excluded, so a cross-profile `If-Match` no
     longer yields `412` on profile alone);
   - if mismatched on any retained component, return `412 Precondition Failed`.
-- POST/PUT `If-None-Match` uses RFC 9110 §8.8.3.2 weak comparison over the same state-significant
-  projection used by `If-Match`. A matching tag returns `412`; a non-matching tag proceeds so
-  representation-only differences never flip a write precondition.
+- `If-None-Match` is a conditional-read (GET) validator only (DMS-1576). POST, PUT, and DELETE ignore
+  it and proceed as if it were absent; the handlers log the ignored header at `Debug`. There is no
+  write create-guard, matching the legacy ODS/API.
 - A bare, unquoted `If-Match: *` is an RFC 9110 §13.1.1 wildcard existence precondition, not an opaque
   tag (amended 2026-07-05): it is satisfied whenever a current representation of the target
   `DocumentId` exists (any `ContentVersion`, no projection comparison) and returns `412` when it
   does not. For PUT and DELETE this is the one case where a missing target returns `412` instead of
   `404`; a POST upsert that resolves to an insert (no current representation) likewise returns
   `412`. A quoted `"*"` is treated as an ordinary opaque tag.
-- A bare, unquoted `If-None-Match: *` is the inverse RFC 9110 §13.1.2 existence precondition: it
-  returns `412` when the POST/PUT target exists and permits creation when it does not. A quoted `"*"`
-  remains an ordinary opaque tag.
+- On GET, a bare, unquoted `If-None-Match: *` is the inverse RFC 9110 §13.1.2 existence precondition
+  (`304` when the target exists). A quoted `"*"` remains an ordinary opaque tag. It has no effect on a
+  write.
 - On input the server accepts an unquoted `If-Match` value as equivalent to the same value quoted
   (amended 2026-07-05, for legacy ODS/API compatibility); emitted `ETag`/`If-Match` headers stay
-  quoted and `W/` weak tags remain rejected by `If-Match`. `If-None-Match` accepts `W/` input for
-  weak comparison.
-- `If-Match` takes precedence when both headers are present, as required by RFC 9110 §13.2.2.
+  quoted and `W/` weak tags remain rejected by `If-Match`. Conditional-GET `If-None-Match` accepts
+  `W/` input for weak comparison.
 - A no-op decision made before the write batch is only provisional. Before short-circuiting, the backend MUST verify
   that the `ContentVersion` observed during comparison is still current for that `DocumentId`.
   - If the observed `ContentVersion` is still current, the backend may commit a successful no-op without DML.
   - If the observed `ContentVersion` is no longer current and the request supplied a specific-tag
     `If-Match`, return `412 Precondition Failed`.
-  - If the observed `ContentVersion` is no longer current under wildcard `If-Match`, any
-    `If-None-Match`, or no precondition, abandon the no-op fast path and retry / re-evaluate against
-    current state. A specific `If-None-Match` can return `412` only after its tag is re-evaluated
-    against that current state.
+  - If the observed `ContentVersion` is no longer current under wildcard `If-Match` or no
+    precondition, abandon the no-op fast path and retry / re-evaluate against current state.
 
 Because FK cascades update referrers’ rows and triggers bump their representation stamps, indirect changes correctly cause `If-Match` failures on subsequently stale clients.
 
@@ -726,7 +723,7 @@ remains best effort and never fails an otherwise successful relational response.
    [projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#cache-backed-reads-and-domain-lifecycle).
 4. Rely on FK constraints from referencing resource tables to prevent deleting referenced records.
 
-Steps 2 and 3 execute in this order within the same transaction. The reverse order (deleting `dms.Document` first and relying on `ON DELETE CASCADE` to remove the resource row) would silently lose `/deletes` tombstones because the resource row’s `AFTER DELETE` stamping trigger would fire after `dms.Document` was already gone, causing its `INNER JOIN dms.Document` to match no rows. See `change-queries.md` §"Cascade-ordering requirement for deletes" and DMS-1180 (`epics/10-update-tracking-change-queries/17-delete-by-id-tombstone-ordering.md`) for the rationale.
+Steps 2 and 3 execute in this order within the same transaction. The reverse order (deleting `dms.Document` first) is rejected by the resource row’s `ON DELETE RESTRICT` (`NO ACTION` on SQL Server) foreign key. When that key still cascaded, the reverse order silently lost `/deletes` tombstones because the resource row’s `AFTER DELETE` stamping trigger fired after `dms.Document` was already gone, causing its `INNER JOIN dms.Document` to match no rows. See `change-queries.md` §"Cascade-ordering requirement for deletes" and DMS-1180 (`epics/10-update-tracking-change-queries/17-delete-by-id-tombstone-ordering.md`) for the rationale.
 
 Error reporting:
 - SQL Server and PostgreSQL will report FK constraint violations. DMS should map the violated constraint name back to the referencing resource (deterministic FK naming) to produce a conflict response comparable to today’s `DeleteFailureReference`.

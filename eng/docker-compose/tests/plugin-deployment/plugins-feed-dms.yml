@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# Test-owned. Serves the harness's packed plugin package over HTTP so that the committed
+# plugins-fetch-dms.yml can be run exactly as written.
+#
+# Every other packaged path in this work consumes a nupkg from a local folder feed, and Recipe 2
+# cannot: fetch-plugins mounts only the output volume, its BusyBox wget speaks http, https and ftp,
+# and PLUGIN_PACKAGE_URL is a PackageBaseAddress address rather than a path. So the harness lays the
+# package out as <id>/<version>/<id>.<version>.nupkg in lower case and this file serves that
+# directory. What the deployment supplies is a feed address, a digest and a plugin name, which is the
+# deployment's side of the recipe in a real deployment too.
+#
+# Pinned by digest, like every third-party image in eng/docker-compose. busybox:1.37.0-musl, whose
+# httpd is the whole of the server; the alpine image the fetch step uses has no httpd applet.
+services:
+  plugin-feed:
+    image: busybox@sha256:fc6dddc4c44b1bfe37f41cae8e67d1693828e8f42a91862816d7953e2c9d3f23
+    command: httpd -f -v -p 8080 -h /feed
+    volumes:
+      - ${PLUGIN_FEED_SOURCE:?set the host path holding the PackageBaseAddress layout}:/feed:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-5}"
+  # fetch-plugins is declared by the committed plugins-fetch-dms.yml, which knows nothing about a
+  # feed. Ordering it after the server is this file's business, not that file's.
+  fetch-plugins:
+    depends_on:
+      plugin-feed:
+        condition: service_started

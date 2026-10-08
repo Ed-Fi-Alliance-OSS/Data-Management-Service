@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 using EdFi.DataManagementService.Backend.Ddl;
 using FluentAssertions;
 using FluentAssertions.Execution;
@@ -409,6 +410,57 @@ public sealed class Given_PinnedImageConnectorProviderOffsetRetentionComparison
             .BeFalse("negative SQL Server event_serial_no string values fail closed");
     }
 
+    [TestCase("NULL", 0, "00000027:00000758:0005", "NULL", 0, 0)]
+    [TestCase("NULL", 0, "00000027:00000758:0006", "NULL", 0, 1)]
+    [TestCase("NULL", 0, "00000027:00000758:0004", "NULL", 0, -1)]
+    [TestCase("NULL", 0, "00000027:00000758:0005", "00000027:00000758:0004", 2, 1)]
+    [TestCase("00000027:00000758:0004", 2, "00000027:00000758:0005", "NULL", 0, -1)]
+    [TestCase("00000027:00000758:0004", 2, "00000027:00000758:0006", "NULL", 0, 1)]
+    [TestCase("00000027:00000758:0004", 2, "00000027:00000758:0004", "NULL", 0, -1)]
+    [TestCase("NULL", 0, "00000027:00000758:0004", "00000027:00000758:0004", 2, -1)]
+    public void It_orders_idle_commit_boundaries_before_rows_in_the_same_commit(
+        string startingChange,
+        long startingSerial,
+        string observedCommit,
+        string observedChange,
+        long observedSerial,
+        int comparison
+    )
+    {
+        string starting = SqlServerOffset("00000027:00000758:0005", startingChange, startingSerial);
+        string observed = SqlServerOffset(observedCommit, observedChange, observedSerial);
+
+        using var _ = new AssertionScope();
+        RetainsOrAdvances(CdcProvider.SqlServer, starting, observed).Should().Be(comparison >= 0);
+        Advances(CdcProvider.SqlServer, starting, observed).Should().Be(comparison > 0);
+    }
+
+    [TestCase("00000027:00000758:0005", "NULL", 1, "false")]
+    [TestCase("00000027:00000758:0005", "NULL", 2, "false")]
+    [TestCase("00000027:00000758:0005", "NULL", -1, "false")]
+    [TestCase("00000027:00000758:0005", "null", 0, "false")]
+    [TestCase("00000027:00000758:0005", "invalid", 0, "false")]
+    [TestCase("NULL", "NULL", 0, "false")]
+    [TestCase("00000000:00000000:0000", "NULL", 0, "false")]
+    [TestCase("0000027:00000758:0005", "NULL", 0, "false")]
+    [TestCase("00000027:00000758:0005", "NULL", 0, "true")]
+    public void It_rejects_initial_or_malformed_idle_markers_in_either_comparison_operand(
+        string commit,
+        string change,
+        long serial,
+        string snapshot
+    )
+    {
+        string valid = SqlServerOffset("00000027:00000758:0005", "NULL", 0);
+        string rejected = SqlServerOffset(commit, change, serial, snapshot);
+
+        using var _ = new AssertionScope();
+        RetainsOrAdvances(CdcProvider.SqlServer, valid, rejected).Should().BeFalse();
+        RetainsOrAdvances(CdcProvider.SqlServer, rejected, valid).Should().BeFalse();
+        Advances(CdcProvider.SqlServer, valid, rejected).Should().BeFalse();
+        Advances(CdcProvider.SqlServer, rejected, valid).Should().BeFalse();
+    }
+
     private static bool RetainsOrAdvances(CdcProvider provider, string minimum, string observed) =>
         CdcConnectorTemplatePinnedImageFixture.CommittedSourceOffsetRetainsOrAdvances(
             provider,
@@ -439,10 +491,10 @@ public sealed class Given_PinnedImageConnectorCommittedSourceOffsetSelection
     [Test]
     public void It_rejects_duplicate_matching_source_partitions_before_offset_validation()
     {
-        CdcConnectorTemplateRequest request = BuildPostgresqlRequest();
+        CdcConnectorTemplateRequest request = BuildRequest(CdcProvider.Postgresql);
         using JsonDocument document = JsonDocument.Parse(
             """
-            [
+            {"offsets":[
               {
                 "partition": { "server": "dms-binding-g7" },
                 "offset": { "snapshot": "false", "lsn_proc": 100 }
@@ -451,12 +503,12 @@ public sealed class Given_PinnedImageConnectorCommittedSourceOffsetSelection
                 "partition": { "server": "dms-binding-g7" },
                 "offset": { "snapshot": "true", "lsn_proc": 101 }
               }
-            ]
+            ]}
             """
         );
 
         Action act = () =>
-            CdcConnectorTemplatePinnedImageFixture.TrySelectCommittedSourceOffset(
+            CdcConnectorTemplatePinnedImageFixture.TryReadCommittedSourceOffset(
                 request,
                 document.RootElement
             );
@@ -470,13 +522,99 @@ public sealed class Given_PinnedImageConnectorCommittedSourceOffsetSelection
         exception.Diagnostic.ObservedValue.Should().Be("2");
     }
 
-    private static CdcConnectorTemplateRequest BuildPostgresqlRequest()
+    [TestCase(100L, "0/64", 100UL)]
+    [TestCase(long.MinValue, "80000000/0", 0x8000000000000000UL)]
+    [TestCase(-1L, "FFFFFFFF/FFFFFFFF", ulong.MaxValue)]
+    public void It_preserves_the_response_and_uses_production_wal_interpretation(
+        long lsnProc,
+        string wal,
+        ulong expectedPosition
+    )
     {
+        var request = BuildRequest(CdcProvider.Postgresql);
+        using JsonDocument document = JsonDocument.Parse(
+            $$$"""
+            {"offsets":[{"partition":{"server":"dms-binding-g7"},"offset":{"lsn_proc":{{{lsnProc}}}}}]}
+            """
+        );
+        var snapshot = CdcConnectorTemplatePinnedImageFixture.TryReadCommittedSourceOffset(
+            request,
+            document.RootElement
+        );
+        snapshot.Should().NotBeNull();
+        snapshot!.OffsetsResponse.GetRawText().Should().Be(document.RootElement.GetRawText());
+
+        using var admission = new MessageContractAdmissionFixture(
+            request.Binding.Provider,
+            request.Binding,
+            request.ArtifactInventory,
+            "edfi_datastore"
+        );
+        DateTimeOffset firstAt = DateTimeOffset.UtcNow.AddSeconds(-2);
+        var input = admission.ObserveLiveProgress(
+            snapshot.OffsetsResponse,
+            "RUNNING",
+            ["RUNNING"],
+            CoreCdc.CdcProviderBarrierCaptureResult.PostgresqlSuccess(wal, firstAt.AddSeconds(1)),
+            firstAt
+        );
+        input.ProviderBarrier!.CommittedPosition.Should().Be(wal);
+        CoreCdc
+            .CdcInitialAdmissionEvaluator.Evaluate(input)
+            .AdmissionState.Should()
+            .Be(CoreCdc.CdcAdmissionState.Admitted);
+
+        // The snapshot position also drives the live PostgreSQL fence. It must preserve all 64 WAL bits.
+        snapshot
+            .ProviderPosition.Should()
+            .BeOfType<CdcConnectorTemplatePinnedImageFixture.PostgresqlConnectorOffsetPosition>()
+            .Which.LsnProc.Should()
+            .Be(expectedPosition);
+    }
+
+    [Test]
+    public void It_rejects_an_unexpected_partition_in_live_admission_observations()
+    {
+        var request = BuildRequest(CdcProvider.Postgresql);
+        using JsonDocument document = JsonDocument.Parse(
+            """
+            {"offsets":[
+              {"partition":{"server":"dms-binding-g7"},"offset":{"lsn_proc":100}},
+              {"partition":{"server":"unexpected"},"offset":{"lsn_proc":101}}
+            ]}
+            """
+        );
+        using var admission = new MessageContractAdmissionFixture(
+            request.Binding.Provider,
+            request.Binding,
+            request.ArtifactInventory,
+            "edfi_datastore"
+        );
+        DateTimeOffset firstAt = DateTimeOffset.UtcNow.AddSeconds(-2);
+        var input = admission.ObserveLiveProgress(
+            document.RootElement,
+            "RUNNING",
+            ["RUNNING"],
+            CoreCdc.CdcProviderBarrierCaptureResult.PostgresqlSuccess("0/64", firstAt.AddSeconds(1)),
+            firstAt
+        );
+        CoreCdc
+            .CdcInitialAdmissionEvaluator.Evaluate(input)
+            .AdmissionState.Should()
+            .NotBe(CoreCdc.CdcAdmissionState.Admitted);
+    }
+
+    internal static CdcConnectorTemplateRequest BuildRequest(CdcProvider provider)
+    {
+        CoreCdc.CdcProvider coreProvider =
+            provider == CdcProvider.Postgresql
+                ? CoreCdc.CdcProvider.Postgresql
+                : CoreCdc.CdcProvider.SqlServer;
         CdcSourceFingerprint sourceFingerprint = CdcConnectorTemplatePinnedImageTestData.SourceFingerprint(
-            CdcProvider.Postgresql
+            provider
         );
         var providerSetupResult = new CdcProviderSetupResult(
-            CdcProvider.Postgresql,
+            provider,
             CdcProviderSetupMode.InitialCreateOrExactMatch,
             CdcProviderSetupOutcome.CreatedOrMatched,
             sourceFingerprint,
@@ -493,13 +631,7 @@ public sealed class Given_PinnedImageConnectorCommittedSourceOffsetSelection
 
         CoreCdc.CdcArtifactInventory artifactInventory = CoreCdc
             .CdcArtifactNameGenerator.Render(
-                new CoreCdc.CdcArtifactNameInput(
-                    "dms",
-                    "edfi.documents",
-                    "binding",
-                    7,
-                    CoreCdc.CdcProvider.Postgresql
-                )
+                new CoreCdc.CdcArtifactNameInput("dms", "edfi.documents", "binding", 7, coreProvider)
             )
             .Inventory!;
         var binding = new CoreCdc.CdcBinding(
@@ -509,7 +641,7 @@ public sealed class Given_PinnedImageConnectorCommittedSourceOffsetSelection
             "1",
             "binding",
             7,
-            CoreCdc.CdcProvider.Postgresql,
+            coreProvider,
             sourceFingerprint.Value,
             artifactInventory.ConnectorName,
             artifactInventory.TopicName,
@@ -523,11 +655,147 @@ public sealed class Given_PinnedImageConnectorCommittedSourceOffsetSelection
             new CdcConnectorProviderSetupEvidence(bindingGeneration: 7, providerSetupResult),
             new CdcConnectorTemplateDeploymentPolicy("localhost:9092", maxRecordBytes: 33_554_432),
             new CdcProviderConnectionProperties(
-                CdcProvider.Postgresql,
-                new Dictionary<string, string> { ["database.dbname"] = "edfi_datastore" }
+                provider,
+                new Dictionary<string, string>
+                {
+                    [provider == CdcProvider.Postgresql ? "database.dbname" : "database.names"] =
+                        "edfi_datastore",
+                }
             ),
             CdcKafkaClientSecurityProperties.Empty
         );
+    }
+}
+
+[TestFixtureSource(nameof(Cases))]
+[Parallelizable]
+public sealed class Given_PinnedImageConnectorCommittedSourcePartitionShape(
+    CdcProvider provider,
+    string partitionJson,
+    bool expectedMatch
+)
+{
+    private bool _matches;
+    private Action _readMultiplePartitions = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        CdcConnectorTemplateRequest request =
+            Given_PinnedImageConnectorCommittedSourceOffsetSelection.BuildRequest(provider);
+        string validPartition =
+            provider == CdcProvider.Postgresql
+                ? """{"server":"dms-binding-g7"}"""
+                : """{"server":"dms-binding-g7","database":"edfi_datastore"}""";
+        string offset =
+            provider == CdcProvider.Postgresql
+                ? """{"lsn_proc":100}"""
+                : """{"change_lsn":"00000027:00000ac0:0001","commit_lsn":"00000027:00000ac0:0002","event_serial_no":1}""";
+        string candidate =
+            partitionJson.Length == 0
+                ? $$"""{"offset":{{offset}}}"""
+                : $$"""{"partition":{{partitionJson}},"offset":{{offset}}}""";
+        string valid = $$"""{"partition":{{validPartition}},"offset":{{offset}}}""";
+        using JsonDocument candidateDocument = JsonDocument.Parse($$"""{"offsets":[{{candidate}}]}""");
+        _matches =
+            CdcConnectorTemplatePinnedImageFixture.TryReadCommittedSourceOffset(
+                request,
+                candidateDocument.RootElement
+            )
+                is not null;
+
+        // Every second entry is invalid evidence, even when one exact partition is present.
+        using JsonDocument mixedDocument = JsonDocument.Parse($$"""{"offsets":[{{candidate}},{{valid}}]}""");
+        JsonElement response = mixedDocument.RootElement.Clone();
+        _readMultiplePartitions = () =>
+            CdcConnectorTemplatePinnedImageFixture.TryReadCommittedSourceOffset(request, response);
+    }
+
+    [Test]
+    public void It_matches_only_the_exact_provider_partition() => _matches.Should().Be(expectedMatch);
+
+    [Test]
+    public void It_rejects_multiple_entries_even_with_a_valid_partition() =>
+        _readMultiplePartitions.Should().Throw<CdcConnectorTemplatePinnedImageSmokeAssertionException>();
+
+    private static IEnumerable<TestFixtureData> Cases()
+    {
+        CdcProvider[] providers = [CdcProvider.Postgresql, CdcProvider.SqlServer];
+        string[] nonStringValues = ["null", "42", "true", "[]", "{}"];
+        foreach (CdcProvider provider in providers)
+        {
+            string database =
+                provider == CdcProvider.SqlServer ? ", \"database\":\"edfi_datastore\"" : string.Empty;
+            yield return Case("valid", $$"""{"server":"dms-binding-g7"{{database}}}""", true);
+            yield return Case(
+                "extra-field",
+                $$"""{"server":"dms-binding-g7"{{database}},"extra":"unexpected"}"""
+            );
+            yield return Case(
+                "duplicate-server",
+                $$"""{"server":"dms-binding-g7","server":"dms-binding-g7"{{database}}}"""
+            );
+            yield return Case("missing-server", "{" + database.TrimStart(',', ' ') + "}");
+            yield return Case("wrong-field", $$"""{"other":"dms-binding-g7"{{database}}}""");
+            yield return Case("nonmatching-server", $$"""{"server":"other-connector"{{database}}}""");
+            yield return Case("server-case", $$"""{"server":"DMS-binding-g7"{{database}}}""");
+            foreach (string value in nonStringValues)
+            {
+                yield return Case("non-string-server-" + value, $$"""{"server":{{value}}{{database}}}""");
+                if (value != "{}")
+                {
+                    yield return Case("non-object-" + value, value);
+                }
+            }
+            yield return Case("non-object-string", "\"partition\"");
+            yield return Case("empty-object", "{}");
+            yield return Case("missing-partition", string.Empty);
+            if (provider == CdcProvider.Postgresql)
+            {
+                yield return Case(
+                    "unexpected-database",
+                    """{"server":"dms-binding-g7","database":"edfi_datastore"}"""
+                );
+            }
+            else
+            {
+                yield return Case(
+                    "reordered-valid",
+                    """{"database":"edfi_datastore","server":"dms-binding-g7"}""",
+                    true
+                );
+                yield return Case("missing-database", """{"server":"dms-binding-g7"}""");
+                yield return Case(
+                    "wrong-database-field",
+                    """{"server":"dms-binding-g7","catalog":"edfi_datastore"}"""
+                );
+                yield return Case(
+                    "nonmatching-database",
+                    """{"server":"dms-binding-g7","database":"other_datastore"}"""
+                );
+                yield return Case(
+                    "database-case",
+                    """{"server":"dms-binding-g7","database":"EdFi_datastore"}"""
+                );
+                yield return Case(
+                    "duplicate-database",
+                    """{"server":"dms-binding-g7","database":"edfi_datastore","database":"edfi_datastore"}"""
+                );
+                foreach (string value in nonStringValues)
+                {
+                    yield return Case(
+                        "non-string-database-" + value,
+                        $$"""{"server":"dms-binding-g7","database":{{value}}}"""
+                    );
+                }
+            }
+
+            TestFixtureData Case(string name, string partition, bool matches = false) =>
+                new(provider, partition, matches)
+                {
+                    TestName = $"Given_PinnedImageConnectorCommittedSourcePartitionShape({provider},{name})",
+                };
+        }
     }
 }
 

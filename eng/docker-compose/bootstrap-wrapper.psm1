@@ -527,7 +527,8 @@ function Invoke-BootstrapWrapper {
         # Shared E2E composition preserves its already selected package surface and prepares
         # its separate snapshot before admission. Ordinary bootstrap keeps its defaults.
         [switch]$UseEnvironmentFileSchemaSettings,
-        [switch]$RebuildLocalImages,
+        [Alias("RebuildLocalImages")]
+        [switch]$Rebuild,
         [scriptblock]$BeforeCdcAdmission,
         [string]$OriginalEnvironmentFile,
 
@@ -536,6 +537,11 @@ function Invoke-BootstrapWrapper {
         [Switch]$EnableConfig,
 
         [Switch]$AddExtensionSecurityMetadata,
+
+        # Test-only: stage the test-owned E2E claim sets. Forwarded to prepare-dms-claims.ps1, which
+        # then always runs in the staging phase so a workspace staged without them is rejected before
+        # infrastructure starts. Only the Kafka CDC E2E setup passes this.
+        [Switch]$IncludeE2EClaimSets,
 
         [Switch]$NoDataStore,
 
@@ -1135,10 +1141,16 @@ function Invoke-BootstrapWrapper {
                 }
             }
 
+            # -IncludeE2EClaimSets always reruns claims staging: a complete workspace staged without the
+            # E2E claim sets would otherwise be reused silently, and its guarded rerun rejects it here.
             if ((Test-Path -LiteralPath $prepareClaimsScript) -and
-                (-not $stagedManifestPresent -or -not (Test-WrapperManifestClaimsStaged -ManifestPath $stagedManifestPath))) {
+                ($IncludeE2EClaimSets -or -not $stagedManifestPresent -or -not (Test-WrapperManifestClaimsStaged -ManifestPath $stagedManifestPath))) {
                 $global:LASTEXITCODE = 0
-                & $prepareClaimsScript
+                $prepareClaimsArgs = @{}
+                if ($IncludeE2EClaimSets) {
+                    $prepareClaimsArgs["IncludeE2EClaimSets"] = $true
+                }
+                & $prepareClaimsScript @prepareClaimsArgs
                 if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
                     throw "prepare-dms-claims.ps1 failed with exit code $LASTEXITCODE."
                 }
@@ -1173,25 +1185,23 @@ function Invoke-BootstrapWrapper {
                 IdentityProvider = $resolvedIdentityProvider
                 InfraOnly = $true
                 EnableConfig = $true
+                SuppressWriterGuidance = $true
             }
             if ($EnableKafkaUI -and -not $EnableKafkaCdc) { $startArgs.EnableKafkaUI = $true }
-            if ($EnableKafkaCdc) { $startArgs.CdcDatabaseInfrastructure = $true; $startArgs.SuppressWriterGuidance = $true }
+            if ($EnableKafkaCdc) { $startArgs.CdcDatabaseInfrastructure = $true }
             if ($EnableSwaggerUI) { $startArgs.EnableSwaggerUI = $true }
             if ($AddExtensionSecurityMetadata) { $startArgs.AddExtensionSecurityMetadata = $true }
             $startArgs.DatabaseEngine = $DatabaseEngine
             if ($SeparateConfigDatabase) { $startArgs.SeparateConfigDatabase = $true }
             $startArgs.EnvironmentFile = $effectiveEnvFile
-            # This invocation is -InfraOnly without -DmsBaseUrl, so the start script reaches its terminal
-            # guidance and would print its own "run a fresh bootstrap-local-dms.ps1" hint. It cannot build a
-            # correct one here: the -EnvironmentFile above is already derived, and -DataStandardVersion is
-            # deliberately not forwarded (it would recompose the shared data-standard overlay over this run's
-            # bootstrap-scoped one). This run owns that hint and prints it from $callerEnvFile and its own
-            # $DataStandardVersion, so the start script's copy is suppressed rather than left to contradict
-            # it. Guarded on the start script that has the parameter: only start-local-dms.ps1 emits the
-            # hint, and start-published-dms.ps1 does not declare the switch.
+            # The wrapper owns every step after this initial infrastructure invocation, including configure,
+            # provision, DMS startup or final IDE guidance. Suppress the start script's terminal phase guidance
+            # for every wrapper shape so it never tells the operator to run steps the wrapper is about to run.
+            # The local script's separate fresh-wrapper hint is also suppressed below because this run owns the
+            # caller environment and data-standard values needed to print it correctly after provisioning.
             if ($StartScriptName -eq "start-local-dms.ps1") {
                 $startArgs.SuppressWrapperContinuationGuidance = $true
-                if ($RebuildLocalImages) { $startArgs.r = $true }
+                if ($Rebuild) { $startArgs.r = $true }
             }
 
             # Reset the native exit-code sentinel so the check below reflects only this start invocation and
@@ -1367,7 +1377,7 @@ function Invoke-BootstrapWrapper {
                 Write-Information "  bootstrap-local-dms.ps1 -InfraOnly -DmsBaseUrl <url> $continuationArgument [-LoadSeedData ...]" -InformationAction Continue
                 Write-Information "  Note: -NoDataStore supports exactly one route-unqualified data store. If this run used" -InformationAction Continue
                 Write-Information "  -SchoolYearRange (or created route-qualified data stores), do NOT re-run the wrapper:" -InformationAction Continue
-                Write-Information "  re-supplying -SchoolYearRange creates a NEW set of data stores instead of selecting these." -InformationAction Continue
+                Write-Information "  re-supplying -SchoolYearRange tries to create these data stores again, and CMS rejects the repeated names with 400." -InformationAction Continue
                 Write-Information "  Seed the data stores this run created directly once your IDE-hosted DMS is healthy:" -InformationAction Continue
                 Write-Information "    load-dms-seed-data.ps1 -DmsBaseUrl <url> -SchoolYear <years...> [...]" -InformationAction Continue
                 return

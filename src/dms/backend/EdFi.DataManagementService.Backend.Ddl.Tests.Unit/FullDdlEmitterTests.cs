@@ -108,6 +108,58 @@ public class Given_JoinSegments_With_Single_Segment
 
 [TestFixture(SqlDialect.Pgsql)]
 [TestFixture(SqlDialect.Mssql)]
+public class Given_FullDdlEmitter_Script_Prologue(SqlDialect dialect)
+{
+    private const string Phase0Banner =
+        "-- ==========================================================\n-- Phase 0: Bounded Provisioning Guards\n";
+
+    private string _sql = default!;
+
+    [OneTimeSetUp]
+    public void Setup()
+    {
+        var effectiveSchemaSet = SmallFixtureEffectiveSchemaSetLoader.Load("minimal");
+        (_, _sql) = DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSet, dialect, strict: false);
+    }
+
+    /// <summary>
+    /// SQL Server opens with the SET options the filtered index needs, as one batch ahead of everything
+    /// else, so the settings captured into every trigger the script creates are right whatever the
+    /// applying client's defaults are. PostgreSQL has no such dependency and opens with Phase 0 directly.
+    /// </summary>
+    [Test]
+    public void It_should_open_with_the_dialect_prologue_then_phase_0()
+    {
+        string expectedOpening =
+            dialect == SqlDialect.Mssql
+                ? "SET ANSI_NULLS ON;\n"
+                    + "SET QUOTED_IDENTIFIER ON;\n"
+                    + "SET ANSI_PADDING ON;\n"
+                    + "SET ANSI_WARNINGS ON;\n"
+                    + "SET CONCAT_NULL_YIELDS_NULL ON;\n"
+                    + "SET NUMERIC_ROUNDABORT OFF;\n"
+                    + "GO\n"
+                    + "\n"
+                    + Phase0Banner
+                : Phase0Banner;
+
+        _sql.Should().StartWith(expectedOpening);
+    }
+
+    [Test]
+    public void It_should_emit_the_prologue_exactly_once()
+    {
+        int expected = dialect == SqlDialect.Mssql ? 1 : 0;
+
+        Regex
+            .Matches(_sql, "^SET QUOTED_IDENTIFIER ON;$", RegexOptions.Multiline)
+            .Count.Should()
+            .Be(expected);
+    }
+}
+
+[TestFixture(SqlDialect.Pgsql)]
+[TestFixture(SqlDialect.Mssql)]
 public class Given_FullDdlEmitter_With_Bounded_Preflight_Guards(SqlDialect dialect)
 {
     private string _sql = default!;

@@ -62,14 +62,8 @@ internal static class EndpointRoleAuthorizer
     {
         if (authorizationHeader is null)
         {
-            logger.LogDebug(
-                "{Endpoint} authorization failed: missing Authorization header",
-                endpointName
-            );
-            return new(
-                EndpointRoleAuthorizationOutcome.Unauthorized,
-                MissingAuthorizationHeaderMessage
-            );
+            logger.LogDebug("{Endpoint} authorization failed: missing Authorization header", endpointName);
+            return new(EndpointRoleAuthorizationOutcome.Unauthorized, MissingAuthorizationHeaderMessage);
         }
 
         AuthorizationHeaderResult headerResult = AuthorizationHeaderParser.Parse(authorizationHeader);
@@ -90,19 +84,13 @@ internal static class EndpointRoleAuthorizer
 
         if (principal is null)
         {
-            logger.LogWarning(
-                "{Endpoint} authorization failed: token validation failed",
-                endpointName
-            );
+            logger.LogWarning("{Endpoint} authorization failed: token validation failed", endpointName);
             return new(EndpointRoleAuthorizationOutcome.Unauthorized, InvalidTokenMessage);
         }
 
         if (!EndpointRequiredRole.IsValid(requiredRole))
         {
-            logger.LogWarning(
-                "{Endpoint} authorization failed: RequiredRole is not valid",
-                endpointName
-            );
+            logger.LogWarning("{Endpoint} authorization failed: RequiredRole is not valid", endpointName);
             return new(EndpointRoleAuthorizationOutcome.RequiredRoleNotConfigured, null);
         }
 
@@ -111,7 +99,7 @@ internal static class EndpointRoleAuthorizer
             logger.LogWarning(
                 "{Endpoint} authorization failed: token missing exact required role claim under configured claim type {RoleClaimType}",
                 endpointName,
-                LoggingSanitizer.SanitizeForLogging(roleClaimType)
+                LoggingSanitizer.SanitizeInternalValueForLogging(roleClaimType)
             );
             return new(EndpointRoleAuthorizationOutcome.Forbidden, InsufficientPermissionsMessage);
         }

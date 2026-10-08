@@ -1,0 +1,1725 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+#Requires -Version 7
+
+<#
+.SYNOPSIS
+    Proves plugin loading end to end against a PULLED, published Ed-Fi API image.
+
+.DESCRIPTION
+    DESTRUCTIVE TO THE PUBLISHED LOCAL STACK, and it refuses to start rather than being destructive
+    to anything it did not create. It deploys under the ordinary published Compose project,
+    dms-published, whose compose files hard-code container names that no project name can move:
+    dms-postgresql, ed-fi-api-config-service, ed-fi-api-swagger-ui and dms-keycloak, and the
+    preflight also reserves ed-fi-api, the name local-dms.yml gives DMS. It also uses the
+    one shared eng/docker-compose/.bootstrap path. So the preflight refuses when any of those, or a
+    leftover container or volume of that project, or a foreign container on the shared external
+    network, or a required host port, is already in use. There is no override switch: when something
+    else is using the host, the only safe answer is to stop and say what.
+
+    The one thing this proves that Invoke-PluginDeploymentCheck.ps1 cannot is the word "stock". That
+    harness builds the image it deploys; this one pulls a published artifact named by
+    stock-image-pin.json and never builds an image at all. Building and packing the fixture plugin is
+    permitted and is not a build of DMS. The provisioning tool is the RELEASED SchemaTools package at
+    the pinned version rather than this worktree's build output, so the database the pinned runtime
+    validates is provisioned by that release's own tool.
+
+    In order:
+
+    0. Nothing may quietly decide what this runs against. Any governed key already set in the
+       process environment is refused, because Compose prefers a process variable over --env-file.
+       The pin is then validated in full; a pending or malformed pin stops here.
+
+    1. The registry is asked what the pinned tag currently resolves to, and it must be the pinned
+       digest. A tag and a digest are two claims and only a registry can say they are one artifact.
+
+    2. The host is inventoried and the preflight decides. A gathering command that FAILS is a
+       blocker, not an empty inventory.
+
+    3. Only now is anything created, and every resource is claimed before the operation that may
+       create it, so cleanup covers a compose up that came halfway.
+
+    4. Four deployments: both committed recipes as happy paths, a wrong digest, and a misspelled
+       allowlist. Each asserts through the decision helpers, which separate the outcome claimed from
+       the near miss that would otherwise pass for it.
+
+    Evidence is written under .ai-work/verification, which is excluded from the repository, with
+    credential-bearing values redacted.
+
+.PARAMETER PinFile
+    The published artifacts to run against. Defaults to the committed pin, which ships pending.
+
+.PARAMETER WorkspaceRoot
+    Where the fixture, its package and the generated environment file are written.
+
+.PARAMETER EvidenceRoot
+    Where the run's evidence and command log are written.
+#>
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'A verification harness with no interactive surface. Every state change is inside its own scratch workspace or its own Compose project, and the preflight refuses when either is already in use.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Read inside the functions below, which the rule does not follow.')]
+[CmdletBinding()]
+param(
+    [string]
+    $PinFile,
+
+    [string]
+    $WorkspaceRoot,
+
+    [string]
+    $EvidenceRoot,
+
+    # The environment file the deployment is composed from. The ports it declares are the ports the
+    # stack binds and therefore the ports the preflight guards, so naming a different one is how a
+    # caller runs this against a differently configured stack rather than a way around any check.
+    [string]
+    $BaseEnvironmentFile,
+
+    # Where this run records that it has something an outside caller may tear down. The default is
+    # a fixed path beside the workspace; a test supplies its own so a run cannot disturb a real one.
+    [string]
+    $CleanupReceiptPath,
+
+    # One file, read-only, and nothing else: the manifest the prepared-schema check reads. It exists
+    # so a test can supply a synthetic manifest without writing into the repository. It deliberately
+    # does NOT redefine the bootstrap workspace, because that path decides what the preflight
+    # inspects, what this run claims, and what cleanup may delete. An override is accepted only
+    # inside the run workspace this process created, and reaches nothing but the read below.
+    [string]
+    $BootstrapManifestPath
+)
+
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
+$composeRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$repositoryRoot = Split-Path -Parent (Split-Path -Parent $composeRoot)
+
+Import-Module (Join-Path $PSScriptRoot 'stock-image-proof.psm1') -Force
+Import-Module (Join-Path $composeRoot 'env-utility.psm1') -DisableNameChecking
+# Format-LogSafeText, for the container-supplied text that reaches the evidence.
+Import-Module (Join-Path $composeRoot 'bootstrap-manifest.psm1') -DisableNameChecking
+
+if ([string]::IsNullOrWhiteSpace($PinFile)) {
+    $PinFile = Join-Path $PSScriptRoot 'stock-image-pin.json'
+}
+
+if ([string]::IsNullOrWhiteSpace($WorkspaceRoot)) {
+    $WorkspaceRoot = Join-Path $repositoryRoot '.ai-work/stock-image-proof'
+}
+
+if ([string]::IsNullOrWhiteSpace($EvidenceRoot)) {
+    $EvidenceRoot = Join-Path $repositoryRoot '.ai-work/verification'
+}
+
+# Refused before normalization, not after. GetFullPath would turn a relative path into an absolute
+# one silently, and every check below would then be about a directory chosen by whatever the working
+# directory happened to be when the run started. The defaults above are already absolute, so this
+# only ever refuses a caller-supplied value.
+foreach ($candidate in @(
+        @{ Name = 'WorkspaceRoot'; Value = $WorkspaceRoot }
+        @{ Name = 'EvidenceRoot'; Value = $EvidenceRoot }
+    )) {
+    if (-not [IO.Path]::IsPathRooted($candidate.Value)) {
+        throw ("-$($candidate.Name) '$($candidate.Value)' is not absolute, so what it names depends on " +
+            'the working directory at the moment it is read. This run owns and removes these paths, ' +
+            'so it requires a rooted one.')
+    }
+}
+
+# Absolute before anything reads them: a "..\" segment names a different directory once the working
+# directory changes, and every safety check below is about a specific place on disk.
+$WorkspaceRoot = [IO.Path]::GetFullPath($WorkspaceRoot)
+$EvidenceRoot = [IO.Path]::GetFullPath($EvidenceRoot)
+
+$composeProject = 'dms-published'
+# The one thing an outside caller may act on after this process is gone.
+#
+# A caller that tears the compose project down unconditionally removes whatever is there, including
+# a stack this run refused to touch. So the receipt is the permission: it is written only after the
+# preflight has established the project is unoccupied and only immediately before the first
+# operation that can create it, it names the environment file that would tear that deployment down,
+# and it is removed when this run's own cleanup succeeds. Its absence means there is nothing an
+# outside caller may remove, and its presence means this run created something it did not get back.
+#
+# It sits beside the workspace rather than inside it, because cleanup removes the workspace and the
+# receipt has to survive a workspace removal that then fails.
+$cleanupReceiptPath = if ([string]::IsNullOrWhiteSpace($CleanupReceiptPath)) {
+    Join-Path $repositoryRoot '.ai-work/stock-image-proof-cleanup.json'
+}
+else {
+    [IO.Path]::GetFullPath($CleanupReceiptPath)
+}
+# Fixed, and not overridable by anything. bootstrap-published-dms.ps1 stages exactly here, and this
+# one value is what the host preflight inspects, what this run claims, and what cleanup is allowed
+# to remove. A caller-supplied value here would be a proof bypass and a destructive-path widening
+# at the same time.
+$bootstrapPath = Join-Path $composeRoot '.bootstrap'
+# $script:, not a bare name. Invoke-ProofScenario takes a -PluginName parameter, and
+# PowerShell resolves an unqualified name through the calling scope chain, so a scenario body
+# running inside that function reads its empty parameter instead of this value. That is how the
+# misspelled-allowlist assertion came to look for /app/plugins/1.
+$script:pluginName = 'Acme.CustomValidationProof'
+# Read from, never written to. The publish below runs against a copy in the run workspace, for
+# two reasons: this tree belongs to DMS-1436 and its integration tier, and its nuget.config binds
+# the two contract ids to a local folder feed that the stock proof must not resolve from.
+$fixtureSourceDirectory = Join-Path $repositoryRoot "eng/fixtures/plugins/$script:pluginName"
+
+if ([string]::IsNullOrWhiteSpace($BaseEnvironmentFile)) {
+    $BaseEnvironmentFile = Join-Path $composeRoot '.env.e2e'
+}
+
+$BaseEnvironmentFile = [IO.Path]::GetFullPath($BaseEnvironmentFile)
+
+# The ports this run's stack actually binds, read from the environment file it runs from rather
+# than written out a second time here. The composer governs no port key - DMS_HTTP_PORTS publishes
+# the container's own listening port as well as the host's - so what the base declares is what the
+# deployment takes, and the preflight has to guard exactly those.
+$baseEnvironment = ReadValuesFromEnvFile $BaseEnvironmentFile
+$portKey = @('DMS_HTTP_PORTS', 'DMS_CONFIG_ASPNETCORE_HTTP_PORTS', 'POSTGRES_PORT')
+$portVerdict = Test-ProofPort -EnvironmentValue $baseEnvironment -Key $portKey
+
+if (-not $portVerdict.Valid) {
+    throw ("The environment file does not declare usable ports:" + [Environment]::NewLine +
+        (($portVerdict.Blocker | ForEach-Object { "  - $_" }) -join [Environment]::NewLine))
+}
+
+$dmsPort = $portVerdict.Port['DMS_HTTP_PORTS']
+$configurationServicePort = $portVerdict.Port['DMS_CONFIG_ASPNETCORE_HTTP_PORTS']
+$requiredPort = @($portKey | ForEach-Object { $portVerdict.Port[$_] })
+
+# The path base the stack serves under, so the addresses this run requests are the ones it exposes
+# rather than a bare root assumed here. UsePathBase serves every route at both the prefix and the
+# root, so an empty value is correct and is not a missing one.
+$pathBase = if ($baseEnvironment.ContainsKey('PATH_BASE')) { [string]$baseEnvironment['PATH_BASE'] } else { '' }
+$pathPrefix = if ([string]::IsNullOrWhiteSpace($pathBase)) { '' } else { '/' + $pathBase.Trim('/') }
+
+$script:commandLog = [System.Collections.Generic.List[string]]::new()
+$script:ownership = Get-StockProofOwnership
+$script:secret = @()
+$script:teardownFailed = $false
+$script:cleanupError = [System.Collections.Generic.List[string]]::new()
+# Set at the end of the scenario work, and only there. A finally that runs without it is a run that
+# stopped somewhere, whether or not anything was rethrown.
+$script:requiredWorkCompleted = $false
+# The first thing that went wrong, sanitized, kept so a later cleanup error joins it rather than
+# replacing it.
+$script:primaryFailure = ''
+
+function Write-Phase([string]$text) {
+    Write-Information '' -InformationAction Continue
+    Write-Information "=== $text ===" -InformationAction Continue
+}
+
+function Write-Detail([string]$text) {
+    Write-Information "  $text" -InformationAction Continue
+}
+
+# One ordered record of what this run did, in sequence, with ownership claims interleaved among the
+# commands. The ordering is the evidence that a resource was claimed BEFORE the operation that could
+# create it, which a separate list of claims could not show.
+function Write-ProofLog([string]$entry) {
+    $script:commandLog.Add((Protect-StockProofText -Text $entry -Secret $script:secret))
+}
+
+function Add-ProofOwnership([string]$Kind, [string]$Name) {
+    Write-ProofLog "own $Kind $Name"
+    Add-OwnedResource -Ownership $script:ownership -Kind $Kind -Name $Name | Out-Null
+}
+
+# Every external process this run launches. Recorded before it runs, so a command that never
+# returned is still in the log, and so the no-build guard reads what was attempted rather than what
+# succeeded.
+function Invoke-Recorded {
+    param(
+        [Parameter(Mandatory)] [string] $FilePath,
+        [Parameter(Mandatory)] [string[]] $ArgumentList,
+        [switch] $AllowFailure
+    )
+
+    Write-ProofLog "$FilePath $($ArgumentList -join ' ')"
+
+    $output = & $FilePath @ArgumentList 2>&1
+    $exitCode = $LASTEXITCODE
+
+    if (-not $AllowFailure -and $exitCode -ne 0) {
+        throw "$FilePath $($ArgumentList -join ' ') failed with exit code $exitCode. $(Protect-StockProofText -Text ($output | Out-String) -Secret $script:secret)"
+    }
+
+    return [pscustomobject]@{
+        ExitCode = $exitCode
+        Output   = ($output | Out-String)
+    }
+}
+
+function Invoke-Docker {
+    param([Parameter(Mandatory)] [string[]] $ArgumentList, [switch] $AllowFailure)
+
+    return Invoke-Recorded -FilePath 'docker' -ArgumentList $ArgumentList -AllowFailure:$AllowFailure
+}
+
+# An inventory and whether it could be taken at all. The two are returned together because the
+# caller must not be able to read a failure as an empty list.
+function Get-Inventory {
+    param([Parameter(Mandatory)] [string] $What, [Parameter(Mandatory)] [string[]] $ArgumentList)
+
+    $result = Invoke-Docker -ArgumentList $ArgumentList -AllowFailure
+
+    if ($result.ExitCode -ne 0) {
+        return [pscustomobject]@{ Item = @(); Failure = "$What (docker $($ArgumentList -join ' ') exited $($result.ExitCode))" }
+    }
+
+    $item = @($result.Output -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+
+    return [pscustomobject]@{ Item = $item; Failure = $null }
+}
+
+function Write-Evidence {
+    param([Parameter(Mandatory)] $Result)
+
+    New-Item -ItemType Directory -Path $EvidenceRoot -Force | Out-Null
+    $path = Join-Path $EvidenceRoot 'stock-image-plugin-proof.json'
+
+    $Result | Add-Member -NotePropertyName commandLog -NotePropertyValue @($script:commandLog) -Force
+    $Result | Add-Member -NotePropertyName completedUtc -NotePropertyValue ([DateTimeOffset]::UtcNow.ToString('o')) -Force
+
+    # Redacted value by value and then serialized, never the other way round: a rule run over the
+    # serialized text can reach past the end of the value it matched and break the document.
+    $json = Protect-StockProofValue -Value $Result -Secret $script:secret | ConvertTo-Json -Depth 10
+    Set-Content -LiteralPath $path -Value $json -Encoding utf8
+    Write-Detail "wrote $path"
+}
+
+# Only what this run claimed, and only ever that. A run that refused at the preflight claimed
+# nothing, so this removes nothing - which is what stops a caller's always() teardown from removing
+# a stack somebody else is using. Pulled images are deliberately not removed: they are a shared
+# cache this run did not create.
+# Recursive removal, permitted only inside something this run claimed. The path is resolved first,
+# so a "..\" segment cannot walk out of the owned tree and then be approved by its spelling.
+# Resolve-Path normalizes segments and does not follow links; link ancestry is refused where the
+# paths are first checked, by Test-ProofPathSafety.
+function Remove-OwnedTree {
+    param([Parameter(Mandatory)] [string] $Path, [string[]] $AlsoOwned = @())
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    $full = (Resolve-Path -LiteralPath $Path).Path
+    $owned = @(Get-CleanupPlan -Ownership $script:ownership | Where-Object { $_.Kind -eq 'Directory' } | ForEach-Object { $_.Name }) + $AlsoOwned
+
+    if (-not (Test-OwnedDeletionPath -Path $full -OwnedDirectory $owned)) {
+        throw "Refusing to remove '$full': this run did not create it."
+    }
+
+    Remove-Item -LiteralPath $full -Recurse -Force
+}
+
+# A directory this run created that the stack may still have bind-mounted. The staged bootstrap
+# workspace, the published plugin root, the package feed and the generated environment file are all
+# mounted into containers, so removing any of them under a surviving stack leaves that stack reading
+# files that are no longer there. When teardown failed, all of them are kept.
+function Remove-MountedRunDirectory {
+    param([Parameter(Mandatory)] [string] $Path, [string[]] $AlsoOwned = @())
+
+    if ($script:teardownFailed) {
+        Write-Detail "keeping ${Path}: the stack did not come down, and this run's directories are still mounted into it"
+        return
+    }
+
+    Remove-OwnedTree -Path $Path -AlsoOwned $AlsoOwned
+}
+
+# Written before the operation it covers, never after. Rewritten per deployment, because each one
+# composes its own environment file and the last one written is the one that could still be up.
+function Write-CleanupReceipt {
+    param(
+        [Parameter(Mandatory)] [ValidateSet('workspace', 'deployment')] [string] $State,
+        [string] $EnvironmentFile = ''
+    )
+
+    if ($State -ceq 'deployment' -and [string]::IsNullOrWhiteSpace($EnvironmentFile)) {
+        throw 'A deployment receipt names the environment file that would tear that deployment down.'
+    }
+
+    New-Item -ItemType Directory -Path (Split-Path -Parent $cleanupReceiptPath) -Force | Out-Null
+
+    $receipt = [ordered]@{
+        state           = $State
+        composeProject  = $composeProject
+        composeRoot     = $composeRoot
+        environmentFile = $EnvironmentFile
+        workspaceRoot   = $WorkspaceRoot
+        evidenceRoot    = $EvidenceRoot
+        writtenUtc      = [DateTimeOffset]::UtcNow.ToString('o')
+    }
+
+    Set-Content -LiteralPath $cleanupReceiptPath -Encoding utf8 -Value ($receipt | ConvertTo-Json -Depth 4)
+    Write-ProofLog "receipt $State $cleanupReceiptPath"
+}
+
+# Removed only when this run put everything back itself. A teardown that failed, or a process that
+# died before reaching here, leaves it, which is exactly when an outside caller has work to do.
+function Remove-CleanupReceipt {
+    if (-not (Test-Path -LiteralPath $cleanupReceiptPath)) {
+        return
+    }
+
+    Remove-Item -LiteralPath $cleanupReceiptPath -Force
+    Write-Detail 'removed the cleanup receipt, because this run put back what it created'
+}
+
+function Invoke-OwnedCleanup {
+    # Wrapped: a function returning an empty collection hands back nothing, and under StrictMode
+    # reading .Count off that would throw here in the finally, replacing whatever failure brought
+    # the run to cleanup with an error about cleanup.
+    $plan = @(Get-CleanupPlan -Ownership $script:ownership)
+
+    if ($plan.Count -eq 0) {
+        Write-Detail 'nothing was claimed by this run, so nothing is torn down'
+        return
+    }
+
+    foreach ($resource in $plan) {
+        try {
+            switch ($resource.Kind) {
+                'ComposeProject' {
+                    # The same checked teardown the scenarios use. Calling the wrapper here with
+                    # -AllowFailure and discarding the result was how a final teardown could fail
+                    # and still leave the run reporting success.
+                    if ($null -ne $script:environmentFile) {
+                        Stop-ProofDeployment -EnvironmentFile $script:environmentFile
+                    }
+                }
+                'Bootstrap' {
+                    Remove-MountedRunDirectory -Path $resource.Name -AlsoOwned @($bootstrapPath)
+                }
+                'Directory' {
+                    Remove-MountedRunDirectory -Path $resource.Name
+                }
+            }
+        }
+        catch {
+            # Collected, not swallowed: a run that could not put the host back is not a passing run,
+            # and the remaining resources are still attempted so as much is released as can be.
+            $script:cleanupError.Add("$($resource.Kind) $($resource.Name): $(Protect-StockProofText -Text $_.Exception.Message -Secret $script:secret)")
+        }
+    }
+
+    # The only spend, and only once everything this run claimed is back: the stack, the bootstrap
+    # workspace and every owned directory. Spending it after a scenario teardown instead left the
+    # run-owned workspace standing with nothing recording that it may be removed, and the next run
+    # then refuses at its own path check. A receipt naming an already-downed deployment costs
+    # nothing, because a down against an absent project is a successful no-op.
+    if (-not $script:teardownFailed -and $script:cleanupError.Count -eq 0) {
+        Remove-CleanupReceipt
+    }
+}
+
+# -------------------------------------------------------------------------------------------------
+# Phase 0: nothing may quietly decide what this runs against
+# -------------------------------------------------------------------------------------------------
+
+function Assert-NoAmbientOverride {
+    Write-Phase 'Phase 0a: the process environment'
+
+    $processEnvironment = @{}
+    foreach ($entry in [System.Environment]::GetEnvironmentVariables().GetEnumerator()) {
+        $processEnvironment[[string]$entry.Key] = [string]$entry.Value
+    }
+
+    $override = @(Get-AmbientOverride -ProcessEnvironment $processEnvironment)
+
+    if ($override.Count -gt 0) {
+        throw ("The process environment already sets $($override -join ', '). Docker Compose prefers a " +
+            'process variable over the same key in an --env-file, so these would decide what this proof runs ' +
+            'against and the pin would describe something else. Unset them and run again. Their values are withheld.')
+    }
+
+    Write-Detail 'no governed key is set ambiently'
+}
+
+function Assert-PathsSafeToOwn {
+    Write-Phase 'Phase 0b: the paths this run would own'
+
+    $verdict = Test-ProofPathSafety -WorkspacePath $WorkspaceRoot -EvidencePath $EvidenceRoot `
+        -RepositoryRoot $repositoryRoot -ComposeRoot $composeRoot `
+        -WorkspaceExists (Test-Path -LiteralPath $WorkspaceRoot)
+
+    if (-not $verdict.Safe) {
+        throw ("These paths are not ones this run may own:" + [Environment]::NewLine +
+            (($verdict.Blocker | ForEach-Object { "  - $_" }) -join [Environment]::NewLine))
+    }
+
+    # Fail here rather than four phases in, and check it again at the read, because the file does
+    # not exist yet and only the later check can follow a link that appears in between.
+    Get-BootstrapManifestPath | Out-Null
+
+    Write-Detail "workspace: $WorkspaceRoot"
+    Write-Detail "evidence:  $EvidenceRoot"
+}
+
+function Get-ValidatedPin {
+    Write-Phase 'Phase 0c: the pin'
+
+    # The same validator the scheduled lane runs, in its deliberate form: a pending or malformed pin
+    # throws here rather than reporting a skip, because somebody asked for this proof.
+    & (Join-Path $repositoryRoot 'eng/ci/Test-StockImagePinReadiness.ps1') `
+        -PinFile $PinFile -EventName 'workflow_dispatch' -OutputPath '' |
+        ForEach-Object { Write-Detail $_ }
+
+    $pin = Get-Content -LiteralPath $PinFile -Raw | ConvertFrom-Json
+    Write-Detail "pinned $($pin.edFiApi.repository):$($pin.edFiApi.tag) at $($pin.edFiApi.digest)"
+
+    return $pin
+}
+
+# -------------------------------------------------------------------------------------------------
+# Phase 1: what the tag points at, according to the registry
+# -------------------------------------------------------------------------------------------------
+
+function Assert-RemoteDescriptor {
+    param([Parameter(Mandatory)] $Pin)
+
+    Write-Phase 'Phase 1: the registry descriptor'
+
+    $reference = "$($Pin.edFiApi.repository):$($Pin.edFiApi.tag)"
+    $inspect = Invoke-Docker -AllowFailure -ArgumentList @(
+        'buildx', 'imagetools', 'inspect', $reference, '--format', '{{json .Manifest}}'
+    )
+
+    $available = $inspect.ExitCode -eq 0
+    $resolved = if ($available) { Get-RemoteImageDigest -ImagetoolsOutput $inspect.Output } else { '' }
+
+    $verdict = Test-RemoteImageDescriptor -Tag $Pin.edFiApi.tag -PinnedDigest $Pin.edFiApi.digest `
+        -ResolvedDigest $resolved -ImagetoolsAvailable $available
+
+    if (-not $verdict.Verified) {
+        throw "Remote descriptor verification failed: $($verdict.Reason)"
+    }
+
+    Write-Detail $verdict.Reason
+
+    return [ordered]@{ reference = $reference; resolvedDigest = $resolved }
+}
+
+# -------------------------------------------------------------------------------------------------
+# Phase 2: the host, and whether this run may touch it
+# -------------------------------------------------------------------------------------------------
+
+function Assert-HostAvailable {
+    Write-Phase 'Phase 2: the host'
+
+    $container = Get-Inventory -What 'the container list' -ArgumentList @('ps', '-a', '--format', '{{.Names}}')
+    $projectContainer = Get-Inventory -What "the $composeProject project's containers" -ArgumentList @(
+        'ps', '-a', '--filter', "label=com.docker.compose.project=$composeProject", '--format', '{{.Names}}'
+    )
+    $projectVolume = Get-Inventory -What "the $composeProject project's volumes" -ArgumentList @(
+        'volume', 'ls', '--filter', "label=com.docker.compose.project=$composeProject", '--format', '{{.Name}}'
+    )
+    # Absence established by a successful enumeration, not inferred from a failed inspect. A daemon
+    # that is down or a permission error fails the inspect too, and reading that as "no neighbours"
+    # is how a run starts on a host it was never allowed to see.
+    $networkList = Get-Inventory -What 'the network list' -ArgumentList @('network', 'ls', '--format', '{{.Name}}')
+    $networkInspect = Get-Inventory -What 'the shared external network' -ArgumentList @(
+        'network', 'inspect', 'dms', '--format', '{{range .Containers}}{{println .Name}}{{end}}'
+    )
+
+    $attachment = Get-NetworkAttachmentInventory -NetworkName 'dms' `
+        -ListExitCode ($null -eq $networkList.Failure ? 0 : 1) -ListedNetwork $networkList.Item `
+        -InspectExitCode ($null -eq $networkInspect.Failure ? 0 : 1) -InspectedAttachment $networkInspect.Item
+
+    $port = Get-Inventory -What 'the published host ports' -ArgumentList @('ps', '--format', '{{.Ports}}')
+
+    $boundPort = @(
+        foreach ($row in $port.Item) {
+            foreach ($match in [regex]::Matches($row, ':(\d+)->')) {
+                [int]$match.Groups[1].Value
+            }
+        }
+    )
+
+    # Docker only knows about its own publications. A port held by anything else is invisible to
+    # that list and would fail at compose up instead, so each required port is actually bound here.
+    $boundPort += @($requiredPort | Where-Object { -not (Test-LocalPortAvailable -Port $_) })
+
+    $failure = @(
+        $container.Failure
+        $projectContainer.Failure
+        $projectVolume.Failure
+        $attachment.Failure
+        $port.Failure
+    ) | Where-Object { $null -ne $_ }
+
+    $result = Get-OccupiedHostResource `
+        -ExistingContainerName $container.Item `
+        -ProjectContainer $projectContainer.Item `
+        -ProjectVolume $projectVolume.Item `
+        -NetworkAttachment $attachment.Attachment `
+        -BootstrapPresent (Test-Path -LiteralPath $bootstrapPath) `
+        -BoundPort $boundPort `
+        -RequiredPort $requiredPort `
+        -InventoryFailure $failure
+
+    if (-not $result.Available) {
+        throw ("This host is not available for the stock-image proof:" + [Environment]::NewLine +
+            (($result.Blocker | ForEach-Object { "  - $_" }) -join [Environment]::NewLine) + [Environment]::NewLine +
+            'Clear these yourself and run again. This harness does not remove anything it did not create.')
+    }
+
+    Write-Detail 'the host is clear'
+}
+
+# -------------------------------------------------------------------------------------------------
+# Phase 3: everything from here creates something, so everything from here is claimed first
+# -------------------------------------------------------------------------------------------------
+
+function New-ProofWorkspace {
+    Write-Phase 'Phase 3: the workspace'
+
+    # Claimed before it is created, so a failure part way through still tears it down. Nothing is
+    # cleared here: an existing workspace was refused by the safety gate, because naming a directory
+    # does not make its contents this run's to delete.
+    Add-ProofOwnership -Kind 'Directory' -Name $WorkspaceRoot
+
+    # Written before the directory exists, for the same reason the claim is: from here until this
+    # run's own cleanup removes it, there is host state that belongs to this run, and the receipt is
+    # the only thing that gives an outside caller permission to remove it. It names no environment
+    # file yet, because no deployment has started and there is nothing to bring down.
+    Write-CleanupReceipt -State 'workspace'
+
+    New-Item -ItemType Directory -Path $WorkspaceRoot | Out-Null
+}
+
+function Install-ReleasedSchemaTool {
+    param([Parameter(Mandatory)] $Pin)
+
+    Write-Phase 'Phase 3a: the released provisioning tool'
+
+    $toolPath = Join-Path $WorkspaceRoot 'schema-tools'
+    Add-ProofOwnership -Kind 'Directory' -Name $toolPath
+
+    $feed = $Pin.provisioning.schemaToolsFeedUrl
+
+    Invoke-Recorded -FilePath 'dotnet' -ArgumentList (Get-SchemaToolInstallArgument `
+            -Version $Pin.provisioning.schemaToolsPackageVersion -ToolPath $toolPath -FeedUrl $feed) | Out-Null
+
+    # What was installed, before looking for it. `dotnet tool list --tool-path` reports the version
+    # actually present, and an argument alone is a restatement of the request rather than evidence
+    # that the request was honoured.
+    $listed = Invoke-Recorded -FilePath 'dotnet' -AllowFailure -ArgumentList @('tool', 'list', '--tool-path', $toolPath)
+
+    if ($listed.ExitCode -ne 0) {
+        throw "The installed tools under $toolPath could not be listed, so the SchemaTools version actually present is unknown."
+    }
+
+    $installedVersion = ''
+    foreach ($row in ($listed.Output -split "`r?`n")) {
+        $column = @($row -split '\s{2,}' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        if ($column.Count -ge 2 -and $column[0] -ieq 'edfi.api.schematools') {
+            $installedVersion = $column[1]
+        }
+    }
+
+    $toolVerdict = Test-RestoredPackageVersion -PackageId 'EdFi.Api.SchemaTools' `
+        -ExpectedVersion $Pin.provisioning.schemaToolsPackageVersion -RestoredVersion $installedVersion
+
+    if (-not $toolVerdict.Verified) {
+        throw "The released provisioning tool is not the pinned one: $($toolVerdict.Reason)"
+    }
+
+    Write-Detail $toolVerdict.Reason
+
+    $executable = @(Get-ChildItem -LiteralPath $toolPath -Filter 'api-schema-tools*' -File -ErrorAction SilentlyContinue) |
+        Select-Object -First 1
+
+    if ($null -eq $executable) {
+        throw "The released EdFi.Api.SchemaTools $($Pin.provisioning.schemaToolsPackageVersion) reports as installed but produced no api-schema-tools executable under $toolPath."
+    }
+
+    # Resolve-DmsSchemaTool honours this ahead of every path that would otherwise find this
+    # worktree's build output, which is the whole point of installing the released tool.
+    $env:DMS_SCHEMA_TOOL_PATH = $executable.FullName
+    Write-Detail "provisioning with the released tool at $($executable.FullName)"
+
+    return $executable.FullName
+}
+
+function Build-ProofFixture {
+    param([Parameter(Mandatory)] $Pin)
+
+    Write-Phase 'Phase 3b: the fixture, against the published contracts'
+
+    $publishRoot = Join-Path $WorkspaceRoot 'plugins'
+    $publishTarget = Join-Path $publishRoot $script:pluginName
+    $nugetCache = Join-Path $WorkspaceRoot 'nuget-cache'
+    $fixtureSourceCopy = Join-Path $WorkspaceRoot "fixture-src/$script:pluginName"
+    $intermediatePath = Join-Path $WorkspaceRoot 'fixture-obj'
+    $outputPath = Join-Path $WorkspaceRoot 'fixture-bin'
+
+    Add-ProofOwnership -Kind 'Directory' -Name $publishRoot
+    Add-ProofOwnership -Kind 'Directory' -Name $nugetCache
+    Add-ProofOwnership -Kind 'Directory' -Name (Join-Path $WorkspaceRoot 'fixture-src')
+    Add-ProofOwnership -Kind 'Directory' -Name $intermediatePath
+    Add-ProofOwnership -Kind 'Directory' -Name $outputPath
+    New-Item -ItemType Directory -Path $publishTarget -Force | Out-Null
+    New-Item -ItemType Directory -Path $nugetCache -Force | Out-Null
+
+    # The sources, copied rather than built in place. bin/ and obj/ are excluded so a developer's
+    # previous build cannot travel into this run, and the copy is what carries any state the build
+    # produces.
+    New-Item -ItemType Directory -Path $fixtureSourceCopy -Force | Out-Null
+    Get-ChildItem -LiteralPath $fixtureSourceDirectory -Force |
+        Where-Object { $_.Name -notin @('bin', 'obj') } |
+        ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $fixtureSourceCopy -Recurse -Force }
+
+    # The run's own NuGet configuration, replacing the copied one. The committed file declares
+    # <clear /> and then binds EdFi.Api.Plugins and EdFi.Api.CustomValidation exclusively to a local
+    # folder feed at ../.local-feed, which the integration tier fills by packing this worktree. The
+    # stock proof must consume the PUBLISHED packages the pin names instead, so a restore against
+    # that mapping would either fail or resolve a stale local nupkg - the version skew the pin
+    # exists to prevent.
+    # The contracts' own feed, never a schema package's. Escaped for XML as well as validated by the
+    # readiness gate, because this is the one place the value becomes markup.
+    $feedUrl = [Security.SecurityElement]::Escape([string]$Pin.contracts.feedUrl)
+    Set-Content -LiteralPath (Join-Path $fixtureSourceCopy 'nuget.config') -Encoding utf8 -Value @"
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+    <packageSources>
+        <clear />
+        <add key="published-edfi" value="$feedUrl" />
+        <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+    </packageSources>
+    <packageSourceMapping>
+        <packageSource key="published-edfi">
+            <package pattern="EdFi.Api.Plugins" />
+            <package pattern="EdFi.Api.CustomValidation" />
+        </packageSource>
+        <packageSource key="nuget.org">
+            <package pattern="*" />
+        </packageSource>
+    </packageSourceMapping>
+</configuration>
+"@
+
+    $fixtureProject = Join-Path $fixtureSourceCopy "$script:pluginName.csproj"
+
+    # BARE identities, not bracketed. Acme.CustomValidationProof.csproj already writes
+    # Version="[$(PluginsPackageVersion)]" for both contracts, so passing a bracketed value here
+    # would produce [[1.0.0]] and fail the restore. The project supplies the exactness; the
+    # verification below establishes that it worked.
+    $pluginsVersion = $Pin.contracts.pluginsPackageVersion
+    $customValidationVersion = $Pin.contracts.customValidationPackageVersion
+
+    $previousCache = $env:NUGET_PACKAGES
+    $cacheWasSet = Test-Path -LiteralPath 'Env:NUGET_PACKAGES'
+
+    try {
+        # A throwaway global-packages folder: that folder is consulted before any source, so an
+        # already-extracted package of the same version would silently satisfy this restore.
+        $env:NUGET_PACKAGES = $nugetCache
+
+        # BaseIntermediateOutputPath and BaseOutputPath are given explicitly as well as the sources
+        # being a copy, so obj/ and bin/ land in run-owned space by instruction and not only by
+        # location. Both end in a separator, which MSBuild requires of a base path.
+        Invoke-Recorded -FilePath 'dotnet' -ArgumentList @(
+            'publish', $fixtureProject
+            '--configuration', 'Release'
+            '--no-self-contained'
+            '--force'
+            '--output', $publishTarget
+            "-p:PluginsPackageVersion=$pluginsVersion"
+            "-p:CustomValidationPackageVersion=$customValidationVersion"
+            "-p:BaseIntermediateOutputPath=$intermediatePath$([IO.Path]::DirectorySeparatorChar)"
+            "-p:BaseOutputPath=$outputPath$([IO.Path]::DirectorySeparatorChar)"
+            '--nologo'
+        ) | Out-Null
+    }
+    finally {
+        if ($cacheWasSet) { $env:NUGET_PACKAGES = $previousCache }
+        elseif (Test-Path -LiteralPath 'Env:NUGET_PACKAGES') { Remove-Item -LiteralPath 'Env:NUGET_PACKAGES' }
+    }
+
+    # What the restore actually RESOLVED, read from the project's own assets file. A directory in
+    # the package cache says a version was extracted at some point, not that this project resolved
+    # it; project.assets.json is the record of what the build was given.
+    $assetsFile = Join-Path $intermediatePath 'project.assets.json'
+
+    if (-not (Test-Path -LiteralPath $assetsFile)) {
+        throw "The fixture publish produced no $assetsFile, so what its contract restore resolved is unknown."
+    }
+
+    $assets = Get-Content -LiteralPath $assetsFile -Raw | ConvertFrom-Json
+
+    foreach ($contract in @(
+            @{ Id = 'EdFi.Api.Plugins'; Expected = $Pin.contracts.pluginsPackageVersion }
+            @{ Id = 'EdFi.Api.CustomValidation'; Expected = $Pin.contracts.customValidationPackageVersion }
+        )) {
+        $resolved = @(
+            foreach ($framework in $assets.libraries.PSObject.Properties.Name) {
+                $split = $framework -split '/', 2
+                if ($split[0] -ceq $contract.Id) { $split[1] }
+            }
+        )
+
+        $verdict = Test-RestoredPackageVersion -PackageId $contract.Id -ExpectedVersion $contract.Expected `
+            -RestoredVersion (@($resolved) -join ',')
+
+        if (-not $verdict.Verified) {
+            throw "The fixture's contract restore did not produce what the pin names: $($verdict.Reason)"
+        }
+
+        Write-Detail $verdict.Reason
+    }
+
+    $digest = [ordered]@{}
+    foreach ($file in Get-ChildItem -LiteralPath $publishTarget -File) {
+        $digest[$file.Name] = (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant()
+    }
+
+    return [pscustomobject]@{
+        PublishRoot       = $publishRoot
+        PublishedDirectory = $publishTarget
+        FileDigest        = $digest
+        EntryAssembly     = [System.Reflection.AssemblyName]::GetAssemblyName((Join-Path $publishTarget "$script:pluginName.dll")).Version.ToString()
+    }
+}
+
+# The asset-only package Recipe 2 fetches, laid out as the PackageBaseAddress form the committed
+# recipe's URL is an address for.
+function Build-ProofPackage {
+    param([Parameter(Mandatory)] $Fixture, [string] $Version = '1.0.0')
+
+    Write-Phase 'Phase 3c: the plugin package'
+
+    $stage = Join-Path $WorkspaceRoot 'package-stage'
+    $feedRoot = Join-Path $WorkspaceRoot 'feed'
+    Add-ProofOwnership -Kind 'Directory' -Name $stage
+    Add-ProofOwnership -Kind 'Directory' -Name $feedRoot
+
+    $contentRoot = Join-Path $stage "contentFiles/any/any/$script:pluginName"
+    New-Item -ItemType Directory -Path $contentRoot -Force | Out-Null
+    Copy-Item -Path (Join-Path $Fixture.PublishedDirectory '*') -Destination $contentRoot -Recurse -Force
+
+    Set-Content -LiteralPath (Join-Path $stage "$script:pluginName.nuspec") -Encoding utf8 -Value @"
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata>
+    <id>$script:pluginName</id>
+    <version>$Version</version>
+    <authors>Ed-Fi Alliance, LLC and contributors</authors>
+    <description>Test fixture plugin for the DMS stock image plugin proof. Asset-only.</description>
+  </metadata>
+</package>
+"@
+    Set-Content -LiteralPath (Join-Path $stage '[Content_Types].xml') -Encoding utf8 -Value @"
+<?xml version="1.0" encoding="utf-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="dll" ContentType="application/octet-stream" />
+  <Default Extension="json" ContentType="application/json" />
+  <Default Extension="pdb" ContentType="application/octet-stream" />
+  <Default Extension="xml" ContentType="application/xml" />
+  <Default Extension="nuspec" ContentType="application/octet-stream" />
+</Types>
+"@
+
+    $lowerId = $script:pluginName.ToLowerInvariant()
+    $packageDirectory = Join-Path $feedRoot "$lowerId/$Version"
+    New-Item -ItemType Directory -Path $packageDirectory -Force | Out-Null
+    $packagePath = Join-Path $packageDirectory "$lowerId.$Version.nupkg"
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::CreateFromDirectory($stage, $packagePath)
+
+    return [pscustomobject]@{
+        FeedRoot = $feedRoot
+        Path     = $packagePath
+        Version  = $Version
+        Sha256   = (Get-FileHash -Algorithm SHA256 -LiteralPath $packagePath).Hash.ToLowerInvariant()
+        Url      = "http://plugin-feed:8080/$lowerId/$Version/$lowerId.$Version.nupkg"
+    }
+}
+
+# -------------------------------------------------------------------------------------------------
+# Phase 4: the deployments
+# -------------------------------------------------------------------------------------------------
+
+function Get-ComposeContainerName([string]$service) {
+    $result = Invoke-Docker -AllowFailure -ArgumentList @(
+        'ps', '-a'
+        '--filter', "label=com.docker.compose.project=$composeProject"
+        '--filter', "label=com.docker.compose.service=$service"
+        '--format', '{{.Names}}'
+    )
+
+    if ($result.ExitCode -ne 0) {
+        return [pscustomobject]@{ Name = $null; EnumerationSucceeded = $false }
+    }
+
+    $name = @($result.Output -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ }) | Select-Object -First 1
+
+    return [pscustomobject]@{ Name = $name; EnumerationSucceeded = $true }
+}
+
+function Get-ContainerFact([string]$name) {
+    if ([string]::IsNullOrWhiteSpace($name)) {
+        # No inspect was attempted, so it did not succeed. Reporting success here made an
+        # unattempted look indistinguishable from a look that found a stopped container.
+        return [pscustomobject]@{ Status = ''; StartedAtRaw = ''; ExitCode = $null; ImageId = ''; Restarting = $false; InspectSucceeded = $false; Absent = $true }
+    }
+
+    $result = Invoke-Docker -AllowFailure -ArgumentList @(
+        'inspect', $name, '--format', '{{.State.Status}}|{{.State.StartedAt}}|{{.State.ExitCode}}|{{.Image}}|{{.State.Restarting}}'
+    )
+
+    # A failed inspect is kept distinct from an absent container. They are different facts, and
+    # collapsing them reports a container that exists but could not be read as one that never was.
+    if ($result.ExitCode -ne 0) {
+        return [pscustomobject]@{ Status = ''; StartedAtRaw = ''; ExitCode = $null; ImageId = ''; Restarting = $false; InspectSucceeded = $false; Absent = $false }
+    }
+
+    $part = ($result.Output.Trim() -split '\|', 5)
+
+    return [pscustomobject]@{
+        Status           = $part[0]
+        StartedAtRaw     = $part[1]
+        ExitCode         = [int]$part[2]
+        ImageId          = $part[3]
+        Restarting       = ($part[4] -ceq 'true')
+        InspectSucceeded = $true
+        Absent           = $false
+    }
+}
+
+# A container that has stopped and stayed stopped, of its own accord. published-dms.yml carries
+# restart: unless-stopped, so a DMS that refuses to start would otherwise be restarted for as long
+# as the stack is up and an exit code read once could be any attempt's. The test-owned pin overlay
+# sets restart: "no" for the DMS service, which is what lets the first failure be the final state.
+#
+# Nothing here stops the container. A harness-induced exit and the startup failure under test would
+# be indistinguishable afterwards, so the refusal has to be the thing that ended the process.
+function Wait-ForRecordedStartupFailure {
+    param([Parameter(Mandatory)] [string] $Container, [Parameter(Mandatory)] [string] $ExpectedPhase, [int] $TimeoutSeconds = 300)
+
+    $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $lastSeen = 'nothing'
+
+    while ([datetime]::UtcNow -lt $deadline) {
+        $fact = Get-ContainerFact $Container
+
+        if (-not $fact.InspectSucceeded) {
+            throw 'The DMS container could not be inspected, so whether it stopped is unknown.'
+        }
+
+        if ($fact.Restarting -or $fact.Status -ceq 'running') {
+            # Still moving. Not-Ready is not failed, and a container that is up may yet reach Ready.
+            $lastSeen = $fact.Status
+            Start-Sleep -Seconds 5
+            continue
+        }
+
+        if ($fact.Status -ceq 'exited') {
+            $status = Get-StartupStatusDocument $Container -FromStoppedContainer
+
+            if ($null -eq $status) {
+                throw 'The DMS container exited but wrote no readable startup status, so the refusal it should have recorded cannot be asserted.'
+            }
+
+            if ($status.Phase -cne $ExpectedPhase -or $status.State -ceq 'Ready') {
+                throw "The DMS container exited recording phase '$($status.Phase)' state '$($status.State)', not a failed $ExpectedPhase."
+            }
+
+            return [pscustomobject]@{ Status = $status; Fact = $fact }
+        }
+
+        $lastSeen = $fact.Status
+        Start-Sleep -Seconds 5
+    }
+
+    throw "DMS did not settle into a failed $ExpectedPhase within $TimeoutSeconds seconds; its last observed status was '$lastSeen'."
+}
+
+function Start-ProofDeployment {
+    param([Parameter(Mandatory)] [string] $EnvironmentFile, [switch] $AllowFailure)
+
+    # Both claimed before the up. bootstrap-published-dms.ps1 stages eng/docker-compose/.bootstrap
+    # on its way to starting the stack, so a run that fails during startup has already created it.
+    Add-ProofOwnership -Kind 'ComposeProject' -Name $composeProject
+    Add-ProofOwnership -Kind 'Bootstrap' -Name $bootstrapPath
+    $script:environmentFile = $EnvironmentFile
+
+    # Before the up, for the same reason the ownership claims are: a process killed between the two
+    # would leave a stack nobody has permission to remove.
+    Write-CleanupReceipt -State 'deployment' -EnvironmentFile $EnvironmentFile
+
+    Push-Location $composeRoot
+    try {
+        return Invoke-Recorded -FilePath 'pwsh' -AllowFailure:$AllowFailure -ArgumentList @(
+            '-NoProfile', '-File', (Join-Path $composeRoot 'bootstrap-published-dms.ps1')
+            '-EnvironmentFile', $EnvironmentFile
+        )
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+# The schema packages this deployment's bootstrap actually staged, checked against the pin.
+#
+# Per deployment, never once for the run: each scenario tears down with -d -v and the next one
+# restages the workspace from scratch, so an observation from an earlier deployment says nothing
+# about this one. The expected-negative scenarios are checked too - the prepare phase stages the
+# manifest before the stack is started, so a wrong schema set there would otherwise be invisible
+# behind the failure the scenario is looking for.
+# The manifest file to read, and the only place the override is honoured. It is never passed to
+# ownership, to the host preflight, or to cleanup.
+#
+# Two separate refusals, because either alone is bypassable. Containment is about the spelling, and
+# a "..\" segment is normalized away before it is asked. Reparse ancestry is about where that
+# spelling actually leads: resolving a provider path does not follow a junction or a symbolic link
+# to its target, so a junction under the workspace could otherwise point at an external directory
+# holding a matching manifest and the proof would validate a file this run's deployment never
+# staged.
+#
+# Called at preflight and again at the read. The first call is what keeps a bad override from
+# costing a deployment; the second is the one that matters, because nothing on this path exists yet
+# at preflight and a link can appear in between.
+function Get-BootstrapManifestPath {
+    if ([string]::IsNullOrWhiteSpace($BootstrapManifestPath)) {
+        return Join-Path $bootstrapPath 'bootstrap-manifest.json'
+    }
+
+    $resolved = [IO.Path]::GetFullPath($BootstrapManifestPath)
+
+    if (-not (Test-OwnedDeletionPath -Path $resolved -OwnedDirectory @($WorkspaceRoot))) {
+        throw ("The bootstrap manifest override '$BootstrapManifestPath' resolves to '$resolved', " +
+            "which is outside the run workspace '$WorkspaceRoot'. This override reads one file and " +
+            'may only name a file this run created.')
+    }
+
+    $link = Get-ReparsePointAncestor -Path $resolved
+
+    if ($null -ne $link) {
+        throw ("The bootstrap manifest override '$resolved' passes through '$link', which is a link " +
+            'or junction, so the file it reaches is not the file its name was checked against.')
+    }
+
+    return $resolved
+}
+
+function Assert-PreparedSchemaIdentity {
+    param([Parameter(Mandatory)] $Pin, [Parameter(Mandatory)] [string] $ScenarioName)
+
+    $manifestPath = Get-BootstrapManifestPath
+
+    if (-not (Test-Path -LiteralPath $manifestPath)) {
+        throw "The $ScenarioName deployment staged no $manifestPath, so the schema packages it prepared are unknown."
+    }
+
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+
+    # Read through Get-JsonMember, not $manifest.schema.selectedPackages. Two PowerShell behaviours
+    # would corrupt this read: an if-expression enumerates its output, so a one-package manifest
+    # would arrive here as a bare string and be refused as malformed; and .PSObject.Properties.Name
+    # throws under StrictMode when the object has no properties at all, which is what "{}" parses
+    # to. @() around the result would be just as wrong, since it turns a truncated scalar into a
+    # well-formed one-package set, the exact shape this check exists to catch.
+    $prepared = Get-JsonMember -Object (Get-JsonMember -Object $manifest -Name 'schema') -Name 'selectedPackages'
+
+    $verdict = Test-PreparedSchemaIdentity -Prepared $prepared -PinnedPackage $Pin.provisioning.schemaPackages
+
+    if (-not $verdict.Verified) {
+        throw "The $ScenarioName deployment prepared schema packages the pin does not name: $($verdict.Reason)"
+    }
+
+    Write-Detail "$ScenarioName staged $($verdict.Observed -join ', ')"
+
+    return [ordered]@{
+        observed = @($verdict.Observed)
+        missing  = @($verdict.Missing)
+        extra    = @($verdict.Extra)
+    }
+}
+
+function Stop-ProofDeployment {
+    param([Parameter(Mandatory)] [string] $EnvironmentFile)
+
+    Push-Location $composeRoot
+    try {
+        $down = Invoke-Recorded -FilePath 'pwsh' -AllowFailure -ArgumentList @(
+            '-NoProfile', '-File', (Join-Path $composeRoot 'bootstrap-published-dms.ps1')
+            '-d', '-v', '-EnvironmentFile', $EnvironmentFile
+        )
+    }
+    finally {
+        Pop-Location
+    }
+
+    # A teardown that failed leaves a stack running under the ordinary published project name, with
+    # the next scenario's assertions about to be answered by it. Ignoring the exit code here is how
+    # a scenario passes against the previous scenario's containers.
+    if ($down.ExitCode -ne 0) {
+        $script:teardownFailed = $true
+        throw "Tearing down the $composeProject stack failed with exit code $($down.ExitCode). The stack is still up; nothing further can be trusted and the staged bootstrap workspace is being kept because it is still mounted."
+    }
+}
+
+function Get-StartupStatusDocument([string]$container, [switch]$FromStoppedContainer) {
+    if ([string]::IsNullOrWhiteSpace($container)) {
+        return $null
+    }
+
+    if ($FromStoppedContainer) {
+        # docker cp, not exec: the misspelled-allowlist scenario asserts that DMS exited, and exec
+        # cannot reach a container that is no longer running.
+        $destination = Join-Path $WorkspaceRoot 'dms-startup-status.json'
+        $copy = Invoke-Docker -AllowFailure -ArgumentList @('cp', "${container}:/tmp/dms-startup-status.json", $destination)
+
+        if ($copy.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $destination)) {
+            return $null
+        }
+
+        return (ConvertFrom-StartupStatusText (Get-Content -LiteralPath $destination -Raw))
+    }
+
+    $read = Invoke-Docker -AllowFailure -ArgumentList @('exec', $container, 'cat', '/tmp/dms-startup-status.json')
+
+    if ($read.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($read.Output)) {
+        return $null
+    }
+
+    return (ConvertFrom-StartupStatusText $read.Output)
+}
+
+# DMS rewrites the status file in place rather than replacing it, so a read can land on a partly
+# written document. That is a read that saw nothing yet, not a failed run: the caller polls again.
+function ConvertFrom-StartupStatusText([string]$text) {
+    try {
+        return ($text | ConvertFrom-Json -ErrorAction Stop)
+    }
+    catch {
+        return $null
+    }
+}
+
+function Wait-ForDmsReady {
+    param([Parameter(Mandatory)] [string] $Container, [int] $TimeoutSeconds = 600)
+
+    $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+
+    while ([datetime]::UtcNow -lt $deadline) {
+        $status = Get-StartupStatusDocument $Container
+
+        if ($null -ne $status -and $status.State -ceq 'Ready') {
+            return $status
+        }
+
+        if ($null -ne $status -and $status.State -ceq 'Failed') {
+            throw "DMS startup failed in phase $($status.Phase): $($status.Summary) $($status.ErrorMessage)"
+        }
+
+        Start-Sleep -Seconds 5
+    }
+
+    $final = Get-StartupStatusDocument $Container
+    $phase = if ($null -ne $final) { $final.Phase } else { 'unknown' }
+    throw "DMS did not reach Ready within $TimeoutSeconds seconds; the startup status last recorded phase '$phase'."
+}
+
+function Assert-PluginRootReadOnly {
+    param([Parameter(Mandatory)] [string] $Container)
+
+    $mount = Invoke-Docker -AllowFailure -ArgumentList @('exec', $Container, 'sh', '-c', 'cat /proc/mounts')
+    $write = Invoke-Docker -AllowFailure -ArgumentList @('exec', $Container, 'sh', '-c', 'touch /app/plugins/.stock-proof-write-probe 2>&1')
+
+    $verdict = Test-PluginMountReadOnly -MountTable $mount.Output -MountTableExitCode $mount.ExitCode `
+        -WriteExitCode $write.ExitCode -WriteOutput $write.Output
+
+    if (-not $verdict.Verified) {
+        throw "The plugin root is not provably read-only from inside the container: $($verdict.Reason)"
+    }
+
+    Write-Detail 'the plugin root is read-only, observed from inside the container'
+}
+
+# The smoke-test client the configure phase creates, exchanged for a token at the DMS token
+# endpoint with HTTP Basic auth.
+function Get-DmsAccessToken {
+    param([Parameter(Mandatory)] [string] $BaseUrl, [Parameter(Mandatory)] $SmokeClient)
+
+    $script:secret += @($SmokeClient.Secret)
+    $basic = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("$($SmokeClient.Key):$($SmokeClient.Secret)"))
+
+    Write-ProofLog "POST $BaseUrl/oauth/token"
+
+    $response = Invoke-RestMethod -Uri "$BaseUrl/oauth/token" -Method Post `
+        -Headers @{ Authorization = "Basic $basic" } `
+        -ContentType 'application/x-www-form-urlencoded' -Body 'grant_type=client_credentials'
+
+    $script:secret += @($response.access_token)
+
+    return $response.access_token
+}
+
+function Invoke-StudentPost {
+    param(
+        [Parameter(Mandatory)] [string] $BaseUrl,
+        [Parameter(Mandatory)] [string] $Token,
+        [Parameter(Mandatory)] [string] $UniqueId,
+        [string] $LastSurname = 'Proof'
+    )
+
+    $body = [ordered]@{
+        studentUniqueId = $UniqueId
+        birthDate       = '2010-01-01'
+        firstName       = 'Stock'
+        lastSurname     = $LastSurname
+    } | ConvertTo-Json -Depth 4
+
+    Write-ProofLog "POST $BaseUrl/data/ed-fi/students ($UniqueId)"
+
+    try {
+        $response = Invoke-WebRequest -Uri "$BaseUrl/data/ed-fi/students" -Method Post `
+            -Headers @{ Authorization = "Bearer $Token" } -ContentType 'application/json' `
+            -Body $body -SkipHttpErrorCheck
+
+        return [pscustomobject]@{ StatusCode = [int]$response.StatusCode; Body = [string]$response.Content }
+    }
+    catch {
+        return [pscustomobject]@{ StatusCode = $null; Body = $_.Exception.Message }
+    }
+}
+
+# The fixture's two reserved tokens and their exact messages, taken from the fixture itself.
+$script:rejectOnPathToken = 'custom-validation-proof-reject-path'
+$script:rejectOnResourceToken = 'custom-validation-proof-reject-resource'
+$script:pathArmMessage = "This value is the custom-validation proof fixture's reserved rejection token."
+$script:resourceArmMessage = 'This document carries the custom-validation proof fixture''s reserved document-level rejection token.'
+
+function Assert-FixtureRejection {
+    param([Parameter(Mandatory)] [string] $BaseUrl, [Parameter(Mandatory)] $SmokeClient)
+
+    $token = Get-DmsAccessToken -BaseUrl $BaseUrl -SmokeClient $SmokeClient
+
+    # The control first. A rejection means nothing unless an otherwise identical document succeeds:
+    # without this, a broken write path would look exactly like a working rule.
+    $control = Invoke-StudentPost -BaseUrl $BaseUrl -Token $token -UniqueId "stock-proof-control-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
+
+    if ($control.StatusCode -ne 201) {
+        throw "The passing control POST returned HTTP $($control.StatusCode) rather than 201, so a rejection below would prove nothing: $($control.Body)"
+    }
+
+    $path = Invoke-StudentPost -BaseUrl $BaseUrl -Token $token `
+        -UniqueId "stock-proof-path-$([guid]::NewGuid().ToString('N').Substring(0, 8))" -LastSurname $script:rejectOnPathToken
+
+    $pathVerdict = Test-FixtureValidationFailure -StatusCode $path.StatusCode -Body $path.Body `
+        -ExpectedMessage $script:pathArmMessage -ExpectedPath '$.lastSurname' -Arm 'Path'
+
+    if (-not $pathVerdict.Verified) {
+        throw "The path-arm rejection is not the fixture's: $($pathVerdict.Reason)"
+    }
+
+    $resource = Invoke-StudentPost -BaseUrl $BaseUrl -Token $token `
+        -UniqueId "stock-proof-resource-$([guid]::NewGuid().ToString('N').Substring(0, 8))" -LastSurname $script:rejectOnResourceToken
+
+    $resourceVerdict = Test-FixtureValidationFailure -StatusCode $resource.StatusCode -Body $resource.Body `
+        -ExpectedMessage $script:resourceArmMessage -Arm 'Resource'
+
+    if (-not $resourceVerdict.Verified) {
+        throw "The resource-arm rejection is not the fixture's: $($resourceVerdict.Reason)"
+    }
+
+    Write-Detail 'both arms of the fixture rejection returned over HTTP, with an otherwise identical control accepted'
+
+    return [ordered]@{
+        controlStatus  = $control.StatusCode
+        pathStatus     = $path.StatusCode
+        resourceStatus = $resource.StatusCode
+    }
+}
+
+# One deployment: compose its environment file, start, run the scenario body, and tear down whether
+# the body held or not. Each scenario gets a fresh deployment because the two recipes both end at the
+# single /app/plugins mount target and cannot share one.
+#
+# There is no teardown before the start, deliberately. The first deployment starts clean because the
+# host preflight refused to begin at all unless the project was unoccupied, and every later one
+# starts clean because the preceding scenario's teardown is checked and a failure there fails the
+# run. A down issued here would remove whatever was there instead, which is the thing the preflight
+# exists to refuse.
+# One value out of a composed env file, as Compose would read it: the last assignment wins.
+function Get-EnvFileValue {
+    param([Parameter(Mandatory)] [string] $Path, [Parameter(Mandatory)] [string] $Name)
+
+    $value = ''
+
+    foreach ($line in @(Get-Content -LiteralPath $Path)) {
+        if ($line -cmatch "^\s*$([regex]::Escape($Name))=(.*)$") {
+            $value = $Matches[1].Trim()
+        }
+    }
+
+    return $value
+}
+
+function Invoke-ProofScenario {
+    param(
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] $Pin,
+        [Parameter(Mandatory)] [string] $BaseContent,
+        [Parameter(Mandatory)] [string] $PluginComposeFiles,
+        [Parameter(Mandatory)] [scriptblock] $Scenario,
+        [string] $PluginMountSource,
+        [string] $PluginFeedSource,
+        [string] $PluginPackageUrl,
+        [string] $PluginPackageSha256,
+        [string] $PluginName,
+        [string] $AllowedPlugins = '',
+        [switch] $ExpectStartFailure
+    )
+
+    Write-Phase "Deployment: $Name"
+
+    $environmentFile = Join-Path $WorkspaceRoot "$Name.env"
+    Set-Content -LiteralPath $environmentFile -Encoding utf8 -Value (
+        Get-StockProofEnvironmentContent -Pin $Pin -BaseContent $BaseContent `
+            -PluginComposeFiles $PluginComposeFiles -PluginMountSource $PluginMountSource `
+            -PluginFeedSource $PluginFeedSource -PluginPackageUrl $PluginPackageUrl `
+            -PluginPackageSha256 $PluginPackageSha256 -PluginName $PluginName `
+            -AllowedPlugins $AllowedPlugins)
+
+    $record = $null
+    $failure = $null
+
+    try {
+        $start = Start-ProofDeployment -EnvironmentFile $environmentFile -AllowFailure:$ExpectStartFailure
+
+        if ($ExpectStartFailure -and $start.ExitCode -eq 0) {
+            throw "The $Name deployment was expected to fail to come up and did not."
+        }
+
+        # Before the scenario body, and for the expected-negative scenarios as well: the bootstrap
+        # has had its chance to stage the manifest by now, and a scenario cannot be accepted on a
+        # workspace prepared from a schema set the pin does not name.
+        $preparedSchema = Assert-PreparedSchemaIdentity -Pin $Pin -ScenarioName $Name
+
+        $record = & $Scenario $environmentFile
+
+        if ($record -is [System.Collections.IDictionary]) {
+            $record['preparedSchemaPackages'] = $preparedSchema
+            # The acquisition path this deployment actually composed, read back out of the file it
+            # was given rather than from the argument, so the evidence shows which committed
+            # overlays were in play and that none of them was a copy.
+            $record['pluginComposeFiles'] = (Get-EnvFileValue -Path $environmentFile -Name 'DMS_PLUGINS_COMPOSE_FILES')
+            $record['dmsImage'] = (Get-EnvFileValue -Path $environmentFile -Name 'DMS_STOCK_IMAGE_REFERENCE')
+        }
+    }
+    catch {
+        $failure = $_
+    }
+    finally {
+        try {
+            Stop-ProofDeployment -EnvironmentFile $environmentFile
+
+        }
+        catch {
+            if ($null -eq $failure) { throw }
+            Write-Detail "teardown after the failure above also failed: $($_.Exception.Message)"
+        }
+    }
+
+    if ($null -ne $failure) {
+        throw $failure
+    }
+
+    return $record
+}
+
+# The client this proof posts with, and the one data store it is bound to.
+#
+# Created here rather than read from disk. configure-local-data-store.ps1's
+# -AddSmokeTestCredentials calls Get-SmokeTestCredential and pipes the result to Out-Null: the key
+# and secret are RETURNED to the caller and never written to a file, so there is nothing on disk for
+# this harness to read. Calling the same module directly is how a caller obtains them.
+#
+# The data store is chosen, not taken. Get-SmokeTestCredential with no -DataStoreIds falls back to
+# the first store the Configuration Service lists, which in a stack holding more than one binds the
+# client to whichever CMS happened to return first. This run's own stack holds exactly one
+# route-unqualified store, so anything else means the state is not what the proof assumes, and the
+# selector refuses rather than picking a survivor.
+function New-ProofSmokeClient {
+    param(
+        [Parameter(Mandatory)] [string] $ConfigurationServiceUrl,
+        [Parameter(Mandatory)] [string] $EnvironmentFile
+    )
+
+    # SmokeTest.psm1 imports Dms-Management.psm1, which is where Get-CmsToken and Get-DataStore come
+    # from. One import, and the same helper the configure phase uses.
+    Import-Module (Join-Path $repositoryRoot 'eng/smoke_test/modules/SmokeTest.psm1') -Force
+
+    # The env file this deployment actually ran with, so the admin client is the one CMS was
+    # started with rather than the module default.
+    $envValues = ReadValuesFromEnvFile -EnvironmentFile $EnvironmentFile
+    $admin = Resolve-BootstrapAdminClient -EnvValues $envValues
+
+    # Registered before the call that could fail with it in a message.
+    $script:secret += @($admin.ClientSecret)
+
+    Write-ProofLog "Get-CmsToken $ConfigurationServiceUrl"
+    $configToken = Get-CmsToken -CmsUrl $ConfigurationServiceUrl `
+        -ClientId $admin.ClientId -ClientSecret $admin.ClientSecret
+
+    if ([string]::IsNullOrWhiteSpace($configToken)) {
+        throw 'The Configuration Service returned no admin access token, so the data stores this run created cannot be read.'
+    }
+
+    $script:secret += @($configToken)
+
+    Write-ProofLog "Get-DataStore $ConfigurationServiceUrl"
+    $store = @(Get-DataStore -CmsUrl $ConfigurationServiceUrl -AccessToken $configToken)
+
+    $verdict = Select-RouteUnqualifiedDataStore -DataStore $store
+
+    if (-not $verdict.Selected) {
+        throw "This run's Configuration Service does not offer one data store to bind a client to: $($verdict.Reason)"
+    }
+
+    Write-Detail $verdict.Reason
+
+    # The id is passed explicitly. Without it the helper takes the first store.
+    Write-ProofLog "Get-SmokeTestCredential $ConfigurationServiceUrl dataStoreIds=$($verdict.Id)"
+    $client = Get-SmokeTestCredential -ConfigServiceUrl $ConfigurationServiceUrl -DataStoreIds @([long]$verdict.Id)
+
+    if ($null -eq $client -or [string]::IsNullOrWhiteSpace($client.Key) -or [string]::IsNullOrWhiteSpace($client.Secret)) {
+        throw 'The Configuration Service returned no usable client key and secret for the proof application.'
+    }
+
+    $script:secret += @($client.Secret)
+
+    # A client the Configuration Service just created is not yet one its token endpoint will
+    # accept; the first exchange can 401. New-SeedLoaderCredentials waits for the same reason.
+    Write-ProofLog "Wait-CmsClientAvailable $ConfigurationServiceUrl"
+    Wait-CmsClientAvailable -CmsUrl $ConfigurationServiceUrl -ClientId $client.Key -ClientSecret $client.Secret
+
+    return [pscustomobject]@{ Client = $client; DataStoreId = $verdict.Id }
+}
+
+# The run-time half of the no-build claim, for every deployment rather than for the two that
+# serve. A fetch that failed on a checksum and a host that refused a misspelled allowlist entry are
+# both outcomes an image other than the pinned one can produce, so the scenarios that assert them
+# have to establish the same identity the happy path does. Without this, dropping the pin overlay
+# from a composed file list would leave both negative deployments passing against whatever image
+# the base file names, with the intended reference still recorded in the evidence.
+function Assert-PinnedRuntimeImage {
+    param(
+        [Parameter(Mandatory)] $Pin,
+        [Parameter(Mandatory)] $Fact,
+        [Parameter(Mandatory)] [string] $ScenarioName
+    )
+
+    # The fact has to be one a successful inspect produced. An unattempted or failed inspect
+    # reports an empty image id, which would otherwise be compared against a real one and fail for
+    # the wrong reason, or worse, match another empty value.
+    if (-not $Fact.InspectSucceeded) {
+        throw "The $ScenarioName deployment's DMS container could not be inspected, so the image it ran is unknown."
+    }
+
+    $expected = Invoke-Docker -AllowFailure -ArgumentList @(
+        'image', 'inspect', "$($Pin.edFiApi.repository)@$($Pin.edFiApi.digest)", '--format', '{{.Id}}'
+    )
+
+    if ($expected.ExitCode -ne 0) {
+        throw "The $ScenarioName deployment could not resolve the pinned digest to a local image id, so what the container ran cannot be compared against it."
+    }
+
+    $expectedId = $expected.Output.Trim()
+
+    if ($Fact.ImageId -cne $expectedId) {
+        throw "The $ScenarioName deployment ran image $($Fact.ImageId), not the pinned digest's image $expectedId."
+    }
+
+    Write-Detail "$ScenarioName ran the pinned digest's image"
+
+    return $Fact.ImageId
+}
+
+function Invoke-HappyPath {
+    param(
+        [Parameter(Mandatory)] [string] $BaseUrl,
+        [Parameter(Mandatory)] [string] $ConfigurationServiceUrl,
+        [Parameter(Mandatory)] [string] $EnvironmentFile,
+        [Parameter(Mandatory)] $Pin
+    )
+
+    $dms = Get-ComposeContainerName 'dms'
+
+    if (-not $dms.EnumerationSucceeded -or [string]::IsNullOrWhiteSpace($dms.Name)) {
+        throw 'The DMS container could not be located in the compose project.'
+    }
+
+    $status = Wait-ForDmsReady -Container $dms.Name
+    $facts = Get-ContainerFact $dms.Name
+
+    $dmsImageId = Assert-PinnedRuntimeImage -Pin $Pin -Fact $facts -ScenarioName 'recipe'
+
+    Assert-PluginRootReadOnly -Container $dms.Name
+
+    $smoke = New-ProofSmokeClient -ConfigurationServiceUrl $ConfigurationServiceUrl -EnvironmentFile $EnvironmentFile
+
+    $http = Assert-FixtureRejection -BaseUrl $BaseUrl -SmokeClient $smoke.Client
+
+    return [ordered]@{
+        readyState  = $status.State
+        dmsImageId  = $dmsImageId
+        pluginRootReadOnly = $true
+        dataStoreId = $smoke.DataStoreId
+        http        = $http
+    }
+}
+
+function Invoke-WrongDigestCheck {
+    param([Parameter(Mandatory)] $Pin)
+
+    $fetch = Get-ComposeContainerName 'fetch-plugins'
+    $fetchFacts = Get-ContainerFact $fetch.Name
+    $fetchLog = if ([string]::IsNullOrWhiteSpace($fetch.Name)) { '' } else { (Invoke-Docker -AllowFailure -ArgumentList @('logs', $fetch.Name)).Output }
+
+    $checksum = Test-FetchFailedOnChecksum -ExitCode $fetchFacts.ExitCode -Log $fetchLog
+
+    if (-not $checksum.Verified) {
+        throw "The wrong-digest deployment did not fail on the digest comparison: $($checksum.Reason)"
+    }
+
+    $dms = Get-ComposeContainerName 'dms'
+    $dmsFacts = Get-ContainerFact $dms.Name
+
+    # Three facts, passed separately. A container that exists but could not be inspected is not one
+    # that never started, a project that returned no DMS container proves nothing about one that
+    # refused to start, and the earlier successful ps says nothing about this inspect.
+    $neverStarted = Test-DmsNeverStarted -Status $dmsFacts.Status -StartedAtRaw $dmsFacts.StartedAtRaw `
+        -ExitCode $dmsFacts.ExitCode `
+        -EnumerationSucceeded $dms.EnumerationSucceeded `
+        -ContainerLocated (-not [string]::IsNullOrWhiteSpace($dms.Name)) `
+        -InspectSucceeded $dmsFacts.InspectSucceeded
+
+    if (-not $neverStarted.Verified) {
+        throw "The wrong-digest deployment started DMS: $($neverStarted.Reason)"
+    }
+
+    # The container was created and never started, so its image was resolved at create time and is
+    # exactly as comparable as a running one's.
+    $dmsImageId = Assert-PinnedRuntimeImage -Pin $Pin -Fact $dmsFacts -ScenarioName 'wrong-digest'
+
+    Write-Detail 'the fetch failed on the checksum and DMS never started'
+
+    # The observations the two verdicts were reached from, not only the verdicts. A later reader
+    # asking "how was this established" has to be able to answer it from the artifact.
+    return [ordered]@{
+        dmsImageId              = $dmsImageId
+        fetchExitCode           = $fetchFacts.ExitCode
+        checksumVerified        = $checksum.Verified
+        fetchLogExcerpt         = (Format-LogSafeText ((($fetchLog -split "`r?`n") | Where-Object { $_ -match 'did NOT match|FAILED' } | Select-Object -First 1)))
+        dmsEnumerationSucceeded = $dms.EnumerationSucceeded
+        dmsContainerLocated     = (-not [string]::IsNullOrWhiteSpace($dms.Name))
+        dmsInspectSucceeded     = $dmsFacts.InspectSucceeded
+        dmsStatus               = $dmsFacts.Status
+        dmsStartedAtRaw         = $dmsFacts.StartedAtRaw
+        dmsNeverStarted         = $true
+        dmsNeverStartedReason   = $neverStarted.Reason
+    }
+}
+
+function Invoke-MisspelledAllowlistCheck {
+    param([Parameter(Mandatory)] $Pin)
+
+    $dms = Get-ComposeContainerName 'dms'
+
+    if (-not $dms.EnumerationSucceeded -or [string]::IsNullOrWhiteSpace($dms.Name)) {
+        throw 'The DMS container could not be located, so the refusal it should have recorded cannot be read.'
+    }
+
+    $settled = Wait-ForRecordedStartupFailure -Container $dms.Name -ExpectedPhase 'LoadPlugins'
+
+    $expectedPath = "/app/plugins/${script:pluginName}1"
+
+    $verdict = Test-LoadPluginsFailure -StatusDocument $settled.Status `
+        -ExpectedPath $expectedPath -ExitCode $settled.Fact.ExitCode
+
+    if (-not $verdict.Verified) {
+        throw "The misspelled allowlist did not produce the expected refusal: $($verdict.Reason)"
+    }
+
+    Write-Detail 'DMS refused to start, recording a failed LoadPlugins phase naming the expected path'
+
+    # The path asserted against and what the host actually said, both in the record. Without them
+    # the artifact says a refusal happened but not that it was about the misspelled entry.
+    return [ordered]@{
+        dmsImageId   = (Assert-PinnedRuntimeImage -Pin $Pin -Fact $settled.Fact -ScenarioName 'misspelled-allowlist')
+        dmsExitCode  = $settled.Fact.ExitCode
+        dmsStatus    = $settled.Fact.Status
+        phase        = $settled.Status.Phase
+        state        = $settled.Status.State
+        expectedPath = $expectedPath
+        refusal      = (Format-LogSafeText (@(
+                    (Get-JsonMember -Object $settled.Status -Name 'Summary')
+                    (Get-JsonMember -Object $settled.Status -Name 'ErrorMessage')
+                ) -join ' '))
+    }
+}
+
+Write-Phase 'Stock image plugin proof'
+Write-Detail "pin:      $PinFile"
+Write-Detail "evidence: $EvidenceRoot"
+
+$script:environmentFile = $null
+$result = [ordered]@{}
+
+# Before the try, so a refusal here cannot reach a finally that would then write evidence into the
+# very path the refusal was about.
+Assert-NoAmbientOverride
+Assert-PathsSafeToOwn
+
+try {
+    $pin = Get-ValidatedPin
+    $result.pin = [ordered]@{
+        edFiApi              = "$($pin.edFiApi.repository):$($pin.edFiApi.tag)@$($pin.edFiApi.digest)"
+        configurationService = "$($pin.configurationService.repository)@$($pin.configurationService.digest)"
+        release              = $pin.release.githubRelease
+        sourceCommit         = $pin.release.sourceCommit
+    }
+
+    $result.remoteDescriptor = Assert-RemoteDescriptor -Pin $pin
+    Assert-HostAvailable
+
+    New-ProofWorkspace
+    $result.schemaTool = Install-ReleasedSchemaTool -Pin $pin
+
+    $fixture = Build-ProofFixture -Pin $pin
+    $result.fixture = [ordered]@{
+        entryAssemblyVersion = $fixture.EntryAssembly
+        fileDigest           = $fixture.FileDigest
+    }
+
+    $package = Build-ProofPackage -Fixture $fixture
+    $result.package = [ordered]@{ version = $package.Version; sha256 = $package.Sha256; url = $package.Url }
+
+    $baseContent = Get-Content -Raw -LiteralPath $BaseEnvironmentFile
+    $allowedOverlay = 'tests/plugin-deployment/plugins-allowed-dms.yml'
+    $feedOverlay = 'tests/plugin-deployment/plugins-feed-dms.yml'
+    $pinOverlay = 'tests/plugin-deployment/stock-image-pin-dms.yml'
+    # The same values the preflight refused on, so the guarded ports and the addresses requests go
+    # to cannot drift apart.
+    $baseUrl = "http://localhost:$dmsPort$pathPrefix"
+    $configurationServiceUrl = "http://localhost:$configurationServicePort"
+
+    # Recipe 1: the committed plugins-dms.yml, run unedited, with the plugin bind-mounted.
+    $result.recipe1 = Invoke-ProofScenario -Name 'recipe1' -Pin $pin -BaseContent $baseContent `
+        -PluginComposeFiles "plugins-dms.yml;$pinOverlay;$allowedOverlay" `
+        -PluginMountSource $fixture.PublishRoot -AllowedPlugins $script:pluginName `
+        -Scenario { param($environmentFile) Invoke-HappyPath -BaseUrl $baseUrl -ConfigurationServiceUrl $configurationServiceUrl -EnvironmentFile $environmentFile -Pin $pin }
+
+    # Recipe 2: the committed plugins-fetch-dms.yml, run unedited, fetching over HTTP from the
+    # digest-pinned static-file container in the test-owned feed overlay.
+    $result.recipe2 = Invoke-ProofScenario -Name 'recipe2' -Pin $pin -BaseContent $baseContent `
+        -PluginComposeFiles "plugins-fetch-dms.yml;$feedOverlay;$pinOverlay;$allowedOverlay" `
+        -PluginFeedSource $package.FeedRoot -PluginPackageUrl $package.Url `
+        -PluginPackageSha256 $package.Sha256 -PluginName $script:pluginName -AllowedPlugins $script:pluginName `
+        -Scenario { param($environmentFile) Invoke-HappyPath -BaseUrl $baseUrl -ConfigurationServiceUrl $configurationServiceUrl -EnvironmentFile $environmentFile -Pin $pin }
+
+    # A digest that does not match the served package: the fetch must fail on the comparison
+    # specifically, and DMS must never start.
+    $result.wrongDigest = Invoke-ProofScenario -Name 'wrong-digest' -Pin $pin -BaseContent $baseContent `
+        -PluginComposeFiles "plugins-fetch-dms.yml;$feedOverlay;$pinOverlay;$allowedOverlay" `
+        -PluginFeedSource $package.FeedRoot -PluginPackageUrl $package.Url `
+        -PluginPackageSha256 ('0' * 64) -PluginName $script:pluginName -AllowedPlugins $script:pluginName `
+        -ExpectStartFailure -Scenario { param($environmentFile) Invoke-WrongDigestCheck -Pin $pin }
+
+    # One allowlisted name misspelled: DMS must exit with a failed LoadPlugins phase naming the path
+    # it looked for.
+    $result.misspelledAllowlist = Invoke-ProofScenario -Name 'misspelled-allowlist' -Pin $pin -BaseContent $baseContent `
+        -PluginComposeFiles "plugins-dms.yml;$pinOverlay;$allowedOverlay" `
+        -PluginMountSource $fixture.PublishRoot -AllowedPlugins "${script:pluginName}1" `
+        -ExpectStartFailure -Scenario { param($environmentFile) Invoke-MisspelledAllowlistCheck -Pin $pin }
+
+    $script:requiredWorkCompleted = $true
+
+    Write-Phase 'Result'
+    Write-Detail 'the pulled stock image ran third-party code and returned the fixture''s custom-validation 400'
+}
+catch {
+    # Caught rather than left to propagate through the finally below, for two reasons: a throw in a
+    # finally replaces whatever was in flight, and evidence written without this says a run stopped
+    # without saying why. The message only, sanitized; an exception record carries a stack and
+    # whatever objects were bound to it.
+    $script:primaryFailure = Protect-StockProofText -Text "$($_.Exception.GetType().Name): $($_.Exception.Message)" -Secret $script:secret
+}
+finally {
+    # Cleanup first, then evidence: the record has to include the teardown commands and any failure
+    # they hit, and writing it beforehand omits exactly the part a failed run needs.
+    #
+    # Attempted whenever this run claimed anything. A run that refused at the preflight claimed
+    # nothing, and the plan is then empty, which is a successful no-op rather than a skip.
+    $ownedRunStarted = @($script:ownership.Resource).Count -gt 0
+    $cleanupAttempted = $false
+
+    try {
+        $cleanupAttempted = $true
+        Invoke-OwnedCleanup
+    }
+    catch {
+        $script:cleanupError.Add((Protect-StockProofText -Text $_.Exception.Message -Secret $script:secret))
+    }
+
+    # The structured verdict, kept whole. Recording it and exiting zero is the defect this replaces.
+    $noBuild = Test-BuildCommandAbsent -Command @($script:commandLog)
+
+    $verdict = Get-ProofOutcome `
+        -RequiredWorkCompleted $script:requiredWorkCompleted `
+        -PrimaryFailure $script:primaryFailure `
+        -NoBuildVerdict $noBuild `
+        -OwnedRunStarted $ownedRunStarted `
+        -CleanupAttempted $cleanupAttempted `
+        -TeardownFailed $script:teardownFailed `
+        -CleanupError @($script:cleanupError)
+
+    $result.outcome = $verdict.Outcome
+    $result.primaryFailure = $script:primaryFailure
+    $result.buildCommandAbsent = $noBuild
+    $result.cleanup = [ordered]@{
+        ownedRunStarted = $ownedRunStarted
+        attempted       = $cleanupAttempted
+        succeeded       = (-not $script:teardownFailed -and $script:cleanupError.Count -eq 0)
+        teardownFailed  = $script:teardownFailed
+        error           = @($script:cleanupError)
+    }
+    $result.failure = @($verdict.Failure)
+
+    # Attempted after cleanup so the record includes it. Evidence cannot describe its own write
+    # failing, so that one reason is added to the aggregate below rather than to the artifact: a
+    # lane reporting success without a readable artifact would be claiming a proof nobody can check.
+    $evidenceFailure = ''
+
+    try {
+        Write-Evidence -Result ([pscustomobject]$result)
+    }
+    catch {
+        $evidenceFailure = Protect-StockProofText -Text $_.Exception.Message -Secret $script:secret
+    }
+
+    $reported = Get-ProofOutcome `
+        -RequiredWorkCompleted $script:requiredWorkCompleted `
+        -PrimaryFailure $script:primaryFailure `
+        -NoBuildVerdict $noBuild `
+        -OwnedRunStarted $ownedRunStarted `
+        -CleanupAttempted $cleanupAttempted `
+        -TeardownFailed $script:teardownFailed `
+        -CleanupError @($script:cleanupError) `
+        -EvidenceFailure $evidenceFailure
+
+    if ($reported.Outcome -cne 'passed') {
+        throw ("This stock-image proof did not pass:" + [Environment]::NewLine +
+            (($reported.Failure | ForEach-Object { "  - $_" }) -join [Environment]::NewLine))
+    }
+}

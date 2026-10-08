@@ -50,6 +50,16 @@ public interface ISqlDialect
     string OrdinalColumnType { get; }
 
     /// <summary>
+    /// Returns the batch that opens a full generated script, or an empty string when the dialect needs
+    /// none. SQL Server returns the SET options a filtered index requires for every write to its table:
+    /// <c>QUOTED_IDENTIFIER</c> and <c>ANSI_NULLS</c> are captured into each trigger the script creates,
+    /// so the applying session's settings outlive the session, and the prologue makes them correct
+    /// regardless of the client's defaults. PostgreSQL has no such dependency and returns an empty string.
+    /// </summary>
+    /// <returns>The leading batch, terminated by the dialect's batch separator, or an empty string.</returns>
+    string RenderScriptPrologue();
+
+    /// <summary>
     /// Returns the CREATE SCHEMA statement with IF NOT EXISTS semantics.
     /// </summary>
     /// <param name="schema">The schema name.</param>
@@ -94,13 +104,19 @@ public interface ISqlDialect
     /// <param name="columns">The columns to include in the index.</param>
     /// <param name="isUnique">Whether the index should enforce uniqueness.</param>
     /// <param name="includeColumns">Optional non-key columns for the INCLUDE clause.</param>
+    /// <param name="notNullFilterColumn">
+    /// Optional single column to filter the index on. When provided, the statement appends
+    /// <c>WHERE &lt;quoted column&gt; IS NOT NULL</c> after the INCLUDE clause. No raw SQL
+    /// fragment is accepted; only a single column's IS NOT NULL predicate is supported.
+    /// </param>
     /// <returns>The idempotent CREATE INDEX statement.</returns>
     string CreateIndexIfNotExists(
         DbTableName table,
         string indexName,
         IReadOnlyList<DbColumnName> columns,
         bool isUnique = false,
-        IReadOnlyList<DbColumnName>? includeColumns = null
+        IReadOnlyList<DbColumnName>? includeColumns = null,
+        DbColumnName? notNullFilterColumn = null
     );
 
     /// <summary>

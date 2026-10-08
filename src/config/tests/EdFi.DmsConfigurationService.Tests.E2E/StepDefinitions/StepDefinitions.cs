@@ -16,10 +16,23 @@ using static EdFi.DmsConfigurationService.Tests.E2E.Management.JsonComparer;
 namespace EdFi.DmsConfigurationService.Tests.E2E.StepDefinitions;
 
 [Binding]
-public partial class StepDefinitions(PlaywrightContext playwrightContext, ScenarioContext scenarioContext)
+public partial class StepDefinitions(
+    PlaywrightContext playwrightContext,
+    ScenarioContext scenarioContext,
+    FeatureContext featureContext
+)
 {
+    /// <summary>The Configuration Service's own client, whose credentials "valid credentials" uses.</summary>
+    public const string SystemClientId = "DmsConfigurationService";
+
     private IAPIResponse _apiResponse = null!;
     private string _token = string.Empty;
+
+    // The client_id/client_secret last used to obtain _token, so a step revoking "the current
+    // token" can authenticate to /connect/revoke with client credentials (RFC 7009 §2.1), not
+    // the bearer token itself.
+    private string _lastClientId = string.Empty;
+    private string _lastClientSecret = string.Empty;
     private string _location = string.Empty;
     private readonly Dictionary<string, string> _ids = new();
     private string _applicationKey = string.Empty;
@@ -54,7 +67,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     public async Task GivenValidCredentials()
     {
         await GetClientAccessToken(
-            "DmsConfigurationService",
+            SystemClientId,
             "ValidClientSecret1234567890!Abcd",
             "edfi_admin_api/full_access"
         );
@@ -68,6 +81,9 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
 
     private async Task GetClientAccessToken(string key, string secret, string scope)
     {
+        _lastClientId = key;
+        _lastClientSecret = secret;
+
         var urlEncodedData = new Dictionary<string, string>
         {
             { "client_id", key },
@@ -186,6 +202,13 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     public async Task WhenASecurityGetRequestIsMadeToWithHeader(string url, string header, string value) =>
         await WhenAGETRequestIsMadeToWithHeader(url, header, value);
 
+    [When("an unauthenticated GET request is made to {string}")]
+    public async Task WhenAnUnauthenticatedGetRequestIsMadeTo(string url)
+    {
+        url = await ReplaceIdsAsync(url);
+        _apiResponse = await playwrightContext.ApiRequestContext?.GetAsync(url)!;
+    }
+
     [When("an {string} request is made to {string} with headers")]
     public async Task WhenAnRequestIsMadeToWithHeaders(string method, string url, DataTable headersTable)
     {
@@ -273,12 +296,24 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     [Given("a POST request is made to {string} with")]
     public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
     {
+        url = await ReplaceIdsAsync(url);
         APIRequestContextOptions? options = new()
         {
             Headers = _authHeaders,
             Data = await ReplaceIdsAsync(body),
         };
         _apiResponse = await playwrightContext.ApiRequestContext?.PostAsync(url, options)!;
+        await ExtractIdFromHeader(_apiResponse);
+    }
+
+    [When("a POST request is made to {string} with no body")]
+    public async Task WhenSendingAPOSTRequestToWithNoBody(string url)
+    {
+        url = await ReplaceIdsAsync(url);
+        _apiResponse = await playwrightContext.ApiRequestContext?.PostAsync(
+            url,
+            new() { Headers = _authHeaders }
+        )!;
         await ExtractIdFromHeader(_apiResponse);
     }
 
@@ -363,11 +398,16 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     public async Task WhenTheCurrentTokenIsRevoked()
     {
         var content = new FormUrlEncodedContent(new Dictionary<string, string> { { "token", _token } });
+        // /connect/revoke authenticates the caller with client credentials (RFC 7009 §2.1), not
+        // the bearer token being revoked, and only revokes tokens carrying the caller's own
+        // client_id. Here the caller authenticates as the same client that owns _token, so
+        // revocation proceeds.
         APIRequestContextOptions options = new()
         {
             Headers = new Dictionary<string, string>
             {
                 { "Content-Type", "application/x-www-form-urlencoded" },
+                { "Authorization", BasicAuthorization(_lastClientId, _lastClientSecret) },
             },
             Data = await content.ReadAsStringAsync(),
         };
@@ -512,6 +552,53 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         content.Should().NotContain(text);
     }
 
+    [Then("the response body contains a non-empty authorization strategy override")]
+    public async Task ThenTheResponseBodyContainsANonEmptyAuthorizationStrategyOverride()
+    {
+        string content = await _apiResponse.TextAsync();
+        JsonNode? response = JsonNode.Parse(content);
+        response.Should().NotBeNull("response body should be JSON");
+        ContainsNonEmptyArray(response!, "authorizationStrategyOverrides").Should().BeTrue();
+    }
+
+    [Then("the response body contains no non-empty authorization strategy overrides")]
+    public async Task ThenTheResponseBodyContainsNoNonEmptyAuthorizationStrategyOverrides()
+    {
+        string content = await _apiResponse.TextAsync();
+        JsonNode? response = JsonNode.Parse(content);
+        response.Should().NotBeNull("response body should be JSON");
+        ContainsNonEmptyArray(response!, "authorizationStrategyOverrides").Should().BeFalse();
+    }
+
+    private static bool ContainsNonEmptyArray(JsonNode node, string propertyName)
+    {
+        if (node is JsonObject jsonObject)
+        {
+            foreach (KeyValuePair<string, JsonNode?> property in jsonObject)
+            {
+                if (
+                    property.Key.Equals(propertyName, StringComparison.OrdinalIgnoreCase)
+                    && property.Value is JsonArray array
+                    && array.Count > 0
+                )
+                {
+                    return true;
+                }
+
+                if (property.Value is not null && ContainsNonEmptyArray(property.Value, propertyName))
+                {
+                    return true;
+                }
+            }
+        }
+        else if (node is JsonArray jsonArray)
+        {
+            return jsonArray.Any(item => item is not null && ContainsNonEmptyArray(item, propertyName));
+        }
+
+        return false;
+    }
+
     [Then(@"the response body is an array with more than one object where each object")]
     public async Task ThenTheResponseBodyIsAnArrayWithMoreThanOneObjectWhere(Table table)
     {
@@ -628,6 +715,84 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         _ids[identifier] = responseJson["id"]!.ToString();
     }
 
+    /// <summary>
+    /// Captures any scalar property of the current response under a caller-chosen name, so a
+    /// scenario can record a value it will later compare against or substitute into a URL. The
+    /// captured name joins the same pool the id captures use.
+    /// </summary>
+    [Then("the response body property {string} is captured as {string}")]
+    [Given("the response body property {string} is captured as {string}")]
+    public async Task ThenTheResponseBodyPropertyIsCapturedAs(string property, string identifier)
+    {
+        JsonNode responseJson = JsonNode.Parse(await _apiResponse.TextAsync())!;
+        responseJson[property]
+            .Should()
+            .NotBeNull($"the previous response should include a '{property}' property");
+        _ids[identifier] = responseJson[property]!.ToString();
+    }
+
+    /// <summary>
+    /// Asserts that a property of the current response still holds a previously captured value.
+    /// This is how a scenario proves an identifier survived an operation rather than being
+    /// replaced by it.
+    /// </summary>
+    [Then("the response body property {string} equals the value captured as {string}")]
+    public async Task ThenTheResponseBodyPropertyEqualsTheValueCapturedAs(string property, string identifier)
+    {
+        _ids.Should().ContainKey(identifier, $"a value should have been captured as '{identifier}'");
+        JsonNode responseJson = JsonNode.Parse(await _apiResponse.TextAsync())!;
+        responseJson[property]
+            .Should()
+            .NotBeNull($"the current response should include a '{property}' property");
+        responseJson[property]!
+            .ToString()
+            .Should()
+            .Be(_ids[identifier], $"'{property}' should still be the value captured as '{identifier}'");
+    }
+
+    /// <summary>
+    /// Reads the namespacePrefixes claim of the access token in the current response. The
+    /// existing namespace step issues its own token from the last application's credentials,
+    /// which cannot check a specific client among several.
+    /// </summary>
+    [Then("the token carries {string} in the namespacePrefixes claim")]
+    public async Task ThenTheTokenCarriesTheNamespacePrefix(string namespacePrefix)
+    {
+        JsonNode responseJson = JsonNode.Parse(await _apiResponse.TextAsync())!;
+        responseJson["access_token"].Should().NotBeNull("response should include an access_token");
+        string accessToken = responseJson["access_token"]!.GetValue<string>();
+
+        JwtTokenValidator
+            .ValidateNamespace(accessToken, namespacePrefix)
+            .Should()
+            .BeTrue($"the token should carry '{namespacePrefix}' in its namespacePrefixes claim");
+    }
+
+    [Then("the token has an empty namespacePrefixes claim")]
+    public async Task ThenTheTokenHasAnEmptyNamespacePrefixesClaim()
+    {
+        JsonNode responseJson = JsonNode.Parse(await _apiResponse.TextAsync())!;
+        responseJson["access_token"].Should().NotBeNull("response should include an access_token");
+        string accessToken = responseJson["access_token"]!.GetValue<string>();
+
+        string payload = accessToken.Split('.')[1].Replace('-', '+').Replace('_', '/');
+        payload = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
+        using JsonDocument tokenPayload = JsonDocument.Parse(Convert.FromBase64String(payload));
+        JsonElement payloadRoot = tokenPayload.RootElement;
+
+        JsonProperty namespacePrefixes = payloadRoot
+            .EnumerateObject()
+            .Where(property => property.NameEquals("namespacePrefixes"))
+            .Should()
+            .ContainSingle(
+                $"the token should contain exactly one namespacePrefixes claim; payload: {payloadRoot}"
+            )
+            .Which;
+        JsonElement namespacePrefixValue = namespacePrefixes.Value;
+        namespacePrefixValue.ValueKind.Should().Be(JsonValueKind.String);
+        namespacePrefixValue.GetString().Should().BeEmpty();
+    }
+
     [Then("the response body credentials are captured as {string}")]
     [Given("the response body credentials are captured as {string}")]
     public async Task ThenTheResponseBodyCredentialsAreCapturedAs(string slot)
@@ -685,6 +850,34 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
             .Should()
             .BeTrue("the token should carry a dataStoreIds claim");
         dataStoreIds.Should().BeEmpty("a client with no datastore assignment has no datastore ids");
+    }
+
+    /// <summary>
+    /// Reads the role claim of the access token in the current response and compares it against
+    /// the role and claim type the running stack was configured with. A token that was merely
+    /// issued proves nothing here: the claim has to be present and carry the configured role,
+    /// which is what a client's authorization actually depends on.
+    /// </summary>
+    [Then("the token carries the configured client role claim")]
+    public async Task ThenTheTokenCarriesTheConfiguredClientRoleClaim()
+    {
+        JsonNode responseJson = JsonNode.Parse(await _apiResponse.TextAsync())!;
+        responseJson["access_token"].Should().NotBeNull("response should include an access_token");
+        string accessToken = responseJson["access_token"]!.GetValue<string>();
+
+        string claimType = RoleClaimConfiguration.ExpectedRoleClaimType();
+        string expectedRole = RoleClaimConfiguration.ExpectedClientRole();
+
+        JwtTokenValidator
+            .TryGetClaimValues(accessToken, claimType, out IReadOnlyList<string> roles)
+            .Should()
+            .BeTrue($"the token should carry a '{claimType}' claim ({RoleClaimConfiguration.Describe()})");
+        roles
+            .Should()
+            .Contain(
+                expectedRole,
+                $"the client's token should carry the configured role ({RoleClaimConfiguration.Describe()})"
+            );
     }
 
     [When("a token request is attempted with the captured application credentials")]
@@ -1127,6 +1320,31 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         string content = await _apiResponse.TextAsync();
         var jsonArray = JsonNode.Parse(content)?.AsArray();
         jsonArray.Should().NotBeNull("response body should be a JSON array");
+    }
+
+    [Then("the response body lists tenant names including")]
+    public async Task ThenTheResponseBodyListsTenantNamesIncluding(Table table)
+    {
+        string content = await _apiResponse.TextAsync();
+        var parsed = JsonNode.Parse(content);
+        parsed.Should().BeOfType<JsonObject>("response body should be a JSON object");
+        var body = parsed!.AsObject();
+        body.Select(property => property.Key).Should().Equal(["tenants"], "the body carries names only");
+
+        var tenants = body["tenants"]!.AsArray();
+        tenants
+            .Should()
+            .OnlyContain(
+                element => element != null && element.GetValueKind() == JsonValueKind.String,
+                "every tenant is listed by name alone"
+            );
+
+        // Containment, not equality: tenants created by other scenarios persist between runs.
+        var names = tenants.Select(element => element!.GetValue<string>()).ToList();
+        foreach (var row in table.Rows)
+        {
+            names.Should().Contain(await ReplaceIdsAsync(row["Name"]));
+        }
     }
 
     [Then("the response body has property {string}")]

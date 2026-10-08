@@ -63,6 +63,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
     public Action<string> BeforeRuntimeCall { get; set; } = _ => { };
     public Action<string> AfterRuntimeCall { get; set; } = _ => { };
     public string ConnectionString { get; private set; } = null!;
+    public IReadOnlyList<string> SchemaFiles { get; private set; } =
+    [Path.Combine(TestContext.CurrentContext.TestDirectory, "Fixtures", "minimal-api-schema.json")];
     public string Database { get; } = "admission_" + Guid.NewGuid().ToString("N");
     private ServiceProvider _services = null!;
     private bool _disposed;
@@ -75,6 +77,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
     public List<string> Preparation { get; } = [];
     private readonly ConcurrentQueue<ValidationFailure> _validationFailures = new();
     private readonly ConcurrentQueue<DatabaseFailure> _databaseFailures = new();
+    private readonly ConcurrentQueue<TelemetryFailure> _telemetryFailures = new();
     private readonly EventHandler<FirstChanceExceptionEventArgs> _observeValidationFailure;
 
     private CdcProviderAdmissionFixture(CdcProvider provider)
@@ -82,7 +85,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         _provider = provider;
         _observeValidationFailure = (sender, args) =>
         {
-            if (args.Exception is not (CdcWorkflowStateException or DbException))
+            if (args.Exception is not (CdcWorkflowStateException or DbException or InvalidDataException))
             {
                 return;
             }
@@ -104,6 +107,24 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                     $"{frame.GetMethod()!.DeclaringType!.FullName}.{frame.GetMethod()!.Name}:{frame.GetFileLineNumber()}"
                 )
                 .ToArray();
+            if (
+                args.Exception is InvalidDataException
+                && Array.Exists(
+                    locations,
+                    location =>
+                        location.StartsWith(
+                            "EdFi.DataManagementService.Backend.Cdc.CdcConnectorTelemetry",
+                            StringComparison.Ordinal
+                        )
+                )
+            )
+            {
+                _telemetryFailures.Enqueue(new(DateTimeOffset.UtcNow, locations));
+                while (_telemetryFailures.Count > 128)
+                {
+                    _telemetryFailures.TryDequeue(out _);
+                }
+            }
             if (args.Exception is CdcWorkflowStateException failure)
             {
                 _validationFailures.Enqueue(new(DateTimeOffset.UtcNow, failure.Failure, locations));
@@ -146,6 +167,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         string[] Locations
     );
 
+    private sealed record TelemetryFailure(DateTimeOffset ObservedAt, string[] Locations);
+
     private CoreCdc.CdcProvider CoreProvider =>
         _provider == CdcProvider.Postgresql ? CoreCdc.CdcProvider.Postgresql : CoreCdc.CdcProvider.SqlServer;
     private string ProviderToken => _provider == CdcProvider.Postgresql ? "postgresql" : "mssql";
@@ -155,10 +178,15 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         CdcProvider provider,
         CancellationToken cancellationToken,
         bool composeKafka = false,
-        bool offlineKafka = false
+        bool offlineKafka = false,
+        IReadOnlyList<string> schemaFiles = null!
     )
     {
         var suite = new CdcProviderAdmissionFixture(provider);
+        if (schemaFiles is not null)
+        {
+            suite.SchemaFiles = schemaFiles;
+        }
         try
         {
             suite.Infrastructure = await CdcControllerFixture.StartAsync(
@@ -177,8 +205,9 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                     }
                     catch (Exception exception)
                     {
-                        Assert.Fail(
-                            $"Owned admission preparation failed ({exception.GetType().Name}). Stack: {exception.StackTrace}"
+                        throw new AssertionException(
+                            $"Owned admission preparation failed ({exception.GetType().Name}).",
+                            exception
                         );
                     }
                 },
@@ -224,10 +253,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
             NullLogger<ApiSchemaFileLoader>.Instance
         );
         _schema = (ApiSchemaFileLoadResult.SuccessResult)
-            loader.Load(
-                Path.Combine(TestContext.CurrentContext.TestDirectory, "Fixtures", "minimal-api-schema.json"),
-                []
-            );
+            loader.Load(SchemaFiles[0], SchemaFiles.Skip(1).ToArray());
         var schemaSet = new EffectiveSchemaSetBuilder(
             new EffectiveSchemaHashProvider(NullLogger<EffectiveSchemaHashProvider>.Instance),
             new ResourceKeySeedProvider(NullLogger<ResourceKeySeedProvider>.Instance)
@@ -252,7 +278,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         await ExecuteAsync(
             _provider == CdcProvider.Postgresql
                 ? "CREATE ROLE dms_connector LOGIN REPLICATION PASSWORD 'EdFi_Dms1!'"
-                : "CREATE LOGIN dms_connector WITH PASSWORD = 'EdFi_Dms1!', CHECK_POLICY = OFF; CREATE USER dms_connector FOR LOGIN dms_connector;",
+                : "CREATE LOGIN dms_connector WITH PASSWORD = 'EdFi_Dms1!', CHECK_POLICY = OFF;",
             cancellationToken
         );
         _configuration = new ConfigurationBuilder()
@@ -501,7 +527,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
     public CdcKafkaProvisioning KafkaProvisioning() =>
         new(
             Infrastructure.StateRoot,
-            Kafka,
+            Hooks.Decorate<ICdcKafkaAdminAdapter>(Kafka, _ => CdcControllerBoundary.Observation),
             Runtime,
             new CdcKafkaProducerInspection(Infrastructure.Connect, Infrastructure.Worker)
         );
@@ -855,10 +881,23 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                             o.Effect,
                             o.IntendedAt,
                             Completions = o.Completions.Length,
+                            RetirementSteps = o
+                                .Retirement.SelectMany(retirement => retirement.Steps)
+                                .Select(step => new
+                                {
+                                    step.Kind,
+                                    step.IntendedAt,
+                                    step.VerifiedAt,
+                                }),
                         }),
                         Preparation,
                         ValidationFailures = _validationFailures.ToArray(),
                         DatabaseFailures = _databaseFailures.ToArray(),
+                        TelemetryFailures = _telemetryFailures.ToArray(),
+                        MetricsResponses = Infrastructure.MetricsEvidence.Observations,
+                        OffsetResponses = Infrastructure.OffsetEvidence.Observations,
+                        OffsetObservations = Hooks.OffsetObservations,
+                        KafkaTopics = Hooks.KafkaTopics,
                         ConnectObservations = Hooks.ConnectObservations,
                         ProviderModes,
                         ProviderResults = ProviderResults.Select(r => new
@@ -1105,7 +1144,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                             cancellationToken
                         ),
                         await owner.ScalarAsync<bool>(
-                            "SELECT active AND wal_status IN ('reserved', 'extended') AND invalidation_reason IS NULL FROM pg_replication_slots WHERE database = current_database()",
+                            // PostgreSQL 16 lacks invalidation_reason; follow the production provider's JSON lookup.
+                            "SELECT active AND wal_status IN ('reserved', 'extended') AND (to_jsonb(slot)->>'invalidation_reason') IS NULL FROM pg_replication_slots AS slot WHERE database = current_database()",
                             cancellationToken
                         )
                     )
@@ -1148,6 +1188,16 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
             modes.Add(request.Mode);
             var result = await inner.SetupAsync(request, cancellationToken);
             results.Add(result);
+            if (result.Outcome == CdcProviderSetupOutcome.Failed)
+            {
+                await TestContext.Out.WriteLineAsync(
+                    "Provider rejection: "
+                        + string.Join(
+                            ", ",
+                            result.Diagnostics.Select(d => d.Code + ":" + d.ProviderErrorCode)
+                        )
+                );
+            }
             return result;
         }
     }

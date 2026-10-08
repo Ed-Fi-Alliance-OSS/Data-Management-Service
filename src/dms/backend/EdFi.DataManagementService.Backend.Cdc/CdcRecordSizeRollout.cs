@@ -73,7 +73,7 @@ internal sealed class CdcRecordSizeRollout(
         Require(
             evidence.Brokers.All(b =>
                 b.BrokerId >= 0
-                && b.SocketRequestMaxBytes >= ceiling
+                && b.SocketRequestMaxBytes >= CdcDeploymentKafkaPolicy.MinimumBrokerRequestBytes(ceiling)
                 && b.ReplicaFetchMaxBytes >= ceiling
                 && b.ReplicaFetchResponseMaxBytes >= ceiling
             )

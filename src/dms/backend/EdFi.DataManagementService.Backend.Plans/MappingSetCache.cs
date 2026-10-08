@@ -60,7 +60,7 @@ public sealed class MappingSetCache(
         {
             _logger.LogDebug(
                 "Mapping set cache hit for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}",
-                SanitizeForLog(key.EffectiveSchemaHash),
+                SanitizeInternalValueForLog(key.EffectiveSchemaHash),
                 key.Dialect
             );
         }

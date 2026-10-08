@@ -3,8 +3,19 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
+using Dapper;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositories;
+using EdFi.DmsConfigurationService.Secrets;
+using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
 
@@ -12,7 +23,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 {
     protected static async Task<Guid> RegisterApplicationAsync(
         OpenIddictDataRepository repository,
-        string clientId
+        string clientId,
+        params string[] scopes
     )
     {
         var applicationId = Guid.NewGuid();
@@ -25,17 +37,540 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     clientId,
                     "hashed-secret",
                     "Integration Test Client",
-                    ["token", "authorization"],
+                    scopes.Length > 0 ? scopes : ["token", "authorization"],
                     ["require_pkce"],
                     "confidential",
                     """[{"claim.name":"namespacePrefixes","claim.value":"uri://ed-fi.org","jsonType.label":"String"}]""",
                     connection,
                     transaction
                 );
+                foreach (string scope in scopes)
+                {
+                    Guid scopeId;
+                    if (
+                        await repository.FindScopeIdByNameAsync(scope, connection, transaction) is
+                        { } existingId
+                    )
+                    {
+                        scopeId = existingId;
+                    }
+                    else
+                    {
+                        scopeId = Guid.NewGuid();
+                        await repository.InsertScopeAsync(scopeId, scope, connection, transaction);
+                    }
+                    await repository.InsertApplicationScopeAsync(
+                        applicationId,
+                        scopeId,
+                        connection,
+                        transaction
+                    );
+                }
             }
         );
 
         return applicationId;
+    }
+
+    protected static Task AddApiClientRowAsync(
+        OpenIddictDataRepository repository,
+        string clientId,
+        bool isApproved = true
+    ) =>
+        repository.ExecuteInTransactionAsync(
+            async (connection, transaction) =>
+            {
+                int vendorId = await connection.ExecuteScalarAsync<int>(
+                    """INSERT INTO "dmscs"."Vendor" ("Company") VALUES (@Company) RETURNING "Id" """,
+                    new { Company = $"token-limit-{Guid.NewGuid():N}" },
+                    transaction
+                );
+                int applicationId = await connection.ExecuteScalarAsync<int>(
+                    """
+                    INSERT INTO "dmscs"."Application" ("ApplicationName", "VendorId", "ClaimSetName")
+                    VALUES ('Token limit test', @VendorId, 'Test claim set') RETURNING "Id"
+                    """,
+                    new { VendorId = vendorId },
+                    transaction
+                );
+                await connection.ExecuteAsync(
+                    """
+                    INSERT INTO "dmscs"."ApiClient" ("ApplicationId", "ClientId", "ClientUuid", "Name", "IsApproved")
+                    VALUES (@ApplicationId, @ClientId, @ClientUuid, 'Token limit test', @IsApproved)
+                    """,
+                    new
+                    {
+                        ApplicationId = applicationId,
+                        ClientId = clientId,
+                        ClientUuid = Guid.NewGuid(),
+                        IsApproved = isApproved,
+                    },
+                    transaction
+                );
+            }
+        );
+
+    protected static OpenIddictTokenManager CreateTokenManager(
+        OpenIddictDataRepository dataRepository,
+        IdentityOptions options
+    )
+    {
+        // All lookup and storage operations use the real dialect repository. Only the signing
+        // key read is replaced so these grant tests do not depend on key rotation/encryption.
+        IOpenIddictDataRepository signingRepository = A.Fake<IOpenIddictDataRepository>(configuration =>
+            configuration.Wrapping(dataRepository)
+        );
+        using System.Security.Cryptography.RSA rsa = System.Security.Cryptography.RSA.Create(2048);
+        A.CallTo(() => signingRepository.GetActivePrivateKeyInternalAsync("integration-signing-key"))
+            .Returns((Convert.ToBase64String(rsa.ExportPkcs8PrivateKey()), "integration-key"));
+
+        IClientSecretHasher secretHasher = A.Fake<IClientSecretHasher>();
+        A.CallTo(() => secretHasher.VerifySecretAsync("plain-secret", "hashed-secret")).Returns(true);
+        options.EncryptionKey = "integration-signing-key";
+        return new OpenIddictTokenManager(
+            Options.Create(options),
+            NullLogger<OpenIddictTokenManager>.Instance,
+            secretHasher,
+            new OpenIddictTokenRepository(signingRepository),
+            A.Fake<ISigningKeySnapshotProvider>(),
+            new DevelopmentCertificateStore(
+                Options.Create(options),
+                NullLogger<DevelopmentCertificateStore>.Instance
+            )
+        );
+    }
+
+    protected static Task<TokenResult> RequestGrantAsync(OpenIddictTokenManager manager, string clientId) =>
+        manager.GetAccessTokenAsync([new("client_id", clientId), new("client_secret", "plain-secret")]);
+
+    [TestFixture(true)]
+    [TestFixture(false)]
+    public class Given_Application_Lookups_With_And_Without_Api_Client_Rows(bool isApproved)
+        : OpenIddictDataRepositoryTests
+    {
+        private ApplicationInfo _apiClientByClientId = null!;
+        private ApplicationInfo _apiClientById = null!;
+        private ApplicationInfo _noRowByClientId = null!;
+        private ApplicationInfo _noRowById = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(Configuration.DatabaseOptions);
+            string apiClientId = Guid.NewGuid().ToString();
+            string noRowClientId = Guid.NewGuid().ToString();
+            Guid apiApplicationId = await RegisterApplicationAsync(
+                repository,
+                apiClientId,
+                "edfi_admin_api/readonly_access"
+            );
+            Guid noRowApplicationId = await RegisterApplicationAsync(
+                repository,
+                noRowClientId,
+                "edfi_admin_api/readonly_access"
+            );
+            await AddApiClientRowAsync(repository, apiClientId, isApproved);
+            _apiClientByClientId =
+                await repository.GetApplicationByClientIdAsync(apiClientId)
+                ?? throw new InvalidOperationException("Seeded API application was not found.");
+            _noRowByClientId =
+                await repository.GetApplicationByClientIdAsync(noRowClientId)
+                ?? throw new InvalidOperationException("Seeded no-row application was not found.");
+            using var connection = await repository.CreateConnectionAsync();
+            _apiClientById =
+                await repository.GetApplicationByIdAsync(apiApplicationId, connection)
+                ?? throw new InvalidOperationException("Seeded API application was not found.");
+            _noRowById =
+                await repository.GetApplicationByIdAsync(noRowApplicationId, connection)
+                ?? throw new InvalidOperationException("Seeded no-row application was not found.");
+        }
+
+        [Test]
+        public void It_limits_row_backed_clients_looked_up_by_client_id() =>
+            _apiClientByClientId.IsTokenLimitExempt.Should().BeFalse();
+
+        [Test]
+        public void It_limits_row_backed_clients_looked_up_by_application_id() =>
+            _apiClientById.IsTokenLimitExempt.Should().BeFalse();
+
+        [Test]
+        public void It_exempts_admin_only_no_row_clients_looked_up_by_client_id() =>
+            _noRowByClientId.IsTokenLimitExempt.Should().BeTrue();
+
+        [Test]
+        public void It_exempts_admin_only_no_row_clients_looked_up_by_application_id() =>
+            _noRowById.IsTokenLimitExempt.Should().BeTrue();
+
+        [Test]
+        public void It_reports_api_client_row_presence_in_both_lookups()
+        {
+            _apiClientByClientId.HasNoApiClientRow.Should().BeFalse();
+            _apiClientById.HasNoApiClientRow.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_reports_api_client_row_absence_in_both_lookups()
+        {
+            _noRowByClientId.HasNoApiClientRow.Should().BeTrue();
+            _noRowById.HasNoApiClientRow.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_preserves_api_client_approval_in_both_lookups()
+        {
+            _apiClientByClientId.IsApproved.Should().Be(isApproved);
+            _apiClientById.IsApproved.Should().Be(isApproved);
+        }
+
+        [Test]
+        public void It_preserves_default_approval_for_no_row_clients_in_both_lookups()
+        {
+            _noRowByClientId.IsApproved.Should().BeTrue();
+            _noRowById.IsApproved.Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Api_Client_Grants_Through_The_Manager_With_Default_Options
+        : OpenIddictDataRepositoryTests
+    {
+        private Guid _applicationId;
+        private TokenResult[] _admittedGrants = [];
+        private TokenResult _sixteenthGrant = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(Configuration.DatabaseOptions);
+            string clientId = Guid.NewGuid().ToString();
+            _applicationId = await RegisterApplicationAsync(repository, clientId);
+            await AddApiClientRowAsync(repository, clientId);
+            OpenIddictTokenManager manager = CreateTokenManager(repository, new IdentityOptions());
+            List<TokenResult> admittedGrants = [];
+            for (int i = 0; i < 15; i++)
+            {
+                admittedGrants.Add(await RequestGrantAsync(manager, clientId));
+            }
+            _admittedGrants = admittedGrants.ToArray();
+            _sixteenthGrant = await RequestGrantAsync(manager, clientId);
+        }
+
+        [Test]
+        public void It_admits_the_first_fifteen_grants() =>
+            _admittedGrants.Should().AllBeOfType<TokenResult.Success>();
+
+        [Test]
+        public void It_refuses_the_sixteenth_grant_with_the_default_limit() =>
+            _sixteenthGrant.Should().BeEquivalentTo(new TokenResult.FailureTokenLimitExceeded(15));
+
+        [Test]
+        public async Task It_stores_exactly_fifteen_tokens() =>
+            (await TokenRowCountAsync(_applicationId)).Should().Be(15);
+    }
+
+    [TestFixture(false, 1)]
+    [TestFixture(true, -1)]
+    [TestFixture(true, 0)]
+    public class Given_Manager_Grants_That_Bypass_Enforcement(bool hasApiClientRow, int configuredLimit)
+        : OpenIddictDataRepositoryTests
+    {
+        private Guid _applicationId;
+        private TokenResult[] _grants = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(Configuration.DatabaseOptions);
+            string clientId = Guid.NewGuid().ToString();
+            _applicationId = await RegisterApplicationAsync(
+                repository,
+                clientId,
+                hasApiClientRow ? "EdFiSandbox" : "edfi_admin_api/readonly_access"
+            );
+            if (hasApiClientRow)
+            {
+                await AddApiClientRowAsync(repository, clientId);
+            }
+            OpenIddictTokenManager manager = CreateTokenManager(
+                repository,
+                new IdentityOptions { BearerTokenPerClientLimit = configuredLimit }
+            );
+            _grants =
+            [
+                await RequestGrantAsync(manager, clientId),
+                await RequestGrantAsync(manager, clientId),
+                await RequestGrantAsync(manager, clientId),
+            ];
+        }
+
+        [Test]
+        public void It_admits_all_three_grants() => _grants.Should().AllBeOfType<TokenResult.Success>();
+
+        [Test]
+        public async Task It_stores_all_three_tokens() =>
+            (await TokenRowCountAsync(_applicationId)).Should().Be(3);
+    }
+
+    [TestFixture("EdFiSandbox")]
+    [TestFixture("edfi_admin_api/sis")]
+    public class Given_No_Api_Client_Row_With_Non_Admin_Scopes(string registeredScope)
+        : OpenIddictDataRepositoryTests
+    {
+        private Guid _applicationId;
+        private ApplicationInfo _application = null!;
+        private TokenResult _firstGrant = null!;
+        private TokenResult _secondGrant = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(Configuration.DatabaseOptions);
+            string clientId = Guid.NewGuid().ToString();
+            _applicationId = await RegisterApplicationAsync(repository, clientId, registeredScope);
+            _application =
+                await repository.GetApplicationByClientIdAsync(clientId)
+                ?? throw new InvalidOperationException("Seeded no-row application was not found.");
+            OpenIddictTokenManager manager = CreateTokenManager(
+                repository,
+                new IdentityOptions { BearerTokenPerClientLimit = 1 }
+            );
+            _firstGrant = await RequestGrantAsync(manager, clientId);
+            _secondGrant = await RequestGrantAsync(manager, clientId);
+        }
+
+        [Test]
+        public void It_reports_no_api_client_row() => _application.HasNoApiClientRow.Should().BeTrue();
+
+        [Test]
+        public void It_does_not_exempt_the_application() =>
+            _application.IsTokenLimitExempt.Should().BeFalse();
+
+        [Test]
+        public void It_retains_the_registered_scope() =>
+            _application.Scopes.Should().BeEquivalentTo(registeredScope);
+
+        [Test]
+        public void It_admits_the_first_grant() => _firstGrant.Should().BeOfType<TokenResult.Success>();
+
+        [Test]
+        public void It_refuses_the_second_grant_with_the_configured_limit() =>
+            _secondGrant.Should().BeEquivalentTo(new TokenResult.FailureTokenLimitExceeded(1));
+
+        [Test]
+        public async Task It_stores_exactly_one_token() =>
+            (await TokenRowCountAsync(_applicationId)).Should().Be(1);
+    }
+
+    /// <summary>
+    /// Any value below 1 turns enforcement off, which is what seeding and the sweep fixtures want.
+    /// </summary>
+    protected const int EnforcementDisabled = 0;
+
+    /// <summary>
+    /// Far enough out that no test's runtime can expire it, and far enough from "now" that the
+    /// comparison never depends on sub-second precision.
+    /// </summary>
+    protected static DateTimeOffset FarFuture => DateTimeOffset.UtcNow.AddDays(1);
+
+    protected static DateTimeOffset FarPast => DateTimeOffset.UtcNow.AddDays(-1);
+
+    /// <summary>
+    /// Stores <paramref name="count"/> active tokens with enforcement off, so seeding a client up
+    /// to or past its limit is never itself refused.
+    /// </summary>
+    protected static async Task SeedActiveTokensAsync(
+        OpenIddictDataRepository repository,
+        Guid applicationId,
+        int count
+    )
+    {
+        for (int i = 0; i < count; i++)
+        {
+            TokenStoreOutcome outcome = await repository.StoreTokenAsync(
+                Guid.NewGuid(),
+                applicationId,
+                $"seed-subject-{i}",
+                FarFuture,
+                EnforcementDisabled
+            );
+
+            outcome.Should().Be(TokenStoreOutcome.Stored);
+        }
+    }
+
+    protected async Task<int> TokenRowCountAsync(Guid applicationId)
+    {
+        await using NpgsqlConnection connection = await DataSource!.OpenConnectionAsync();
+        return await connection.ExecuteScalarAsync<int>(
+            @"SELECT COUNT(*) FROM ""dmscs"".""OpenIddictToken"" WHERE ""ApplicationId"" = @ApplicationId",
+            new { ApplicationId = applicationId }
+        );
+    }
+
+    protected async Task<int> ActiveTokenCountAsync(Guid applicationId)
+    {
+        await using NpgsqlConnection connection = await DataSource!.OpenConnectionAsync();
+        return await connection.ExecuteScalarAsync<int>(
+            @"SELECT COUNT(*)
+              FROM ""dmscs"".""OpenIddictToken""
+              WHERE ""ApplicationId"" = @ApplicationId
+                AND ""Status"" = 'valid'
+                AND ""ExpirationDate"" > now()",
+            new { ApplicationId = applicationId }
+        );
+    }
+
+    protected async Task<DateTime?> RedemptionDateAsync(Guid tokenId)
+    {
+        await using NpgsqlConnection connection = await DataSource!.OpenConnectionAsync();
+        return await connection.ExecuteScalarAsync<DateTime?>(
+            @"SELECT ""RedemptionDate"" FROM ""dmscs"".""OpenIddictToken"" WHERE ""Id"" = @Id",
+            new { Id = tokenId }
+        );
+    }
+
+    protected async Task SetRedemptionDateAsync(Guid tokenId, DateTime redemptionDate)
+    {
+        await using NpgsqlConnection connection = await DataSource!.OpenConnectionAsync();
+        await connection.ExecuteAsync(
+            @"UPDATE ""dmscs"".""OpenIddictToken"" SET ""RedemptionDate"" = @RedemptionDate WHERE ""Id"" = @Id",
+            new { Id = tokenId, RedemptionDate = redemptionDate }
+        );
+    }
+
+    /// <summary>
+    /// Writes active token rows of an arbitrary type directly. <c>StoreTokenAsync</c> cannot seed
+    /// these: it always writes <c>access_token</c>.
+    /// </summary>
+    protected async Task SeedTokenOfTypeAsync(Guid applicationId, string type, int count)
+    {
+        await using NpgsqlConnection connection = await DataSource!.OpenConnectionAsync();
+        for (int i = 0; i < count; i++)
+        {
+            Guid tokenId = Guid.NewGuid();
+            await connection.ExecuteAsync(
+                @"INSERT INTO ""dmscs"".""OpenIddictToken""
+                  (""Id"", ""ApplicationId"", ""Subject"", ""Type"", ""CreationDate"", ""ExpirationDate"", ""Status"", ""ReferenceId"")
+                  VALUES (@Id, @ApplicationId, @Subject, @Type, @CreationDate, @ExpirationDate, 'valid', @ReferenceId)",
+                new
+                {
+                    Id = tokenId,
+                    ApplicationId = applicationId,
+                    Subject = $"{type}-{i}",
+                    Type = type,
+                    CreationDate = DateTimeOffset.UtcNow,
+                    ExpirationDate = FarFuture,
+                    ReferenceId = tokenId.ToString("N"),
+                }
+            );
+        }
+    }
+
+    protected async Task DeleteApplicationRowAsync(Guid applicationId)
+    {
+        await using NpgsqlConnection connection = await DataSource!.OpenConnectionAsync();
+        await connection.ExecuteAsync(
+            @"DELETE FROM ""dmscs"".""OpenIddictApplication"" WHERE ""Id"" = @Id",
+            new { Id = applicationId }
+        );
+    }
+
+    /// <summary>
+    /// A second session holding the client's <c>OpenIddictApplication</c> row lock, which is what
+    /// a competing grant has to wait on.
+    /// </summary>
+    protected sealed class RowLockHolder : IAsyncDisposable
+    {
+        private readonly NpgsqlConnection _connection;
+        private readonly NpgsqlTransaction _transaction;
+
+        private RowLockHolder(NpgsqlConnection connection, NpgsqlTransaction transaction, int backendPid)
+        {
+            _connection = connection;
+            _transaction = transaction;
+            BackendPid = backendPid;
+        }
+
+        public int BackendPid { get; }
+
+        public static async Task<RowLockHolder> TakeAsync(NpgsqlDataSource dataSource, Guid applicationId)
+        {
+            NpgsqlConnection connection = await dataSource.OpenConnectionAsync();
+            NpgsqlTransaction transaction = await connection.BeginTransactionAsync();
+
+            await connection.ExecuteAsync(
+                @"SELECT 1 FROM ""dmscs"".""OpenIddictApplication"" WHERE ""Id"" = @Id FOR UPDATE",
+                new { Id = applicationId },
+                transaction
+            );
+
+            int backendPid = await connection.ExecuteScalarAsync<int>(
+                "SELECT pg_backend_pid()",
+                transaction: transaction
+            );
+
+            return new RowLockHolder(connection, transaction, backendPid);
+        }
+
+        public async Task ReleaseAsync() => await _transaction.RollbackAsync();
+
+        public async ValueTask DisposeAsync()
+        {
+            await _transaction.DisposeAsync();
+            await _connection.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// Polls <c>pg_locks</c> until some other backend is waiting on a lock this holder owns, which
+    /// is the only evidence that establishes the grant is blocked <em>on the lock</em>. "The call
+    /// has not returned yet" is not evidence: an unfinished call may simply be waiting on the
+    /// thread pool or on a connection, and accepting that would let broken locking pass.
+    /// </summary>
+    protected async Task WaitUntilABackendIsBlockedBy(int holderBackendPid, TimeSpan timeout)
+    {
+        const string BlockedByHolderSql = """
+            SELECT COUNT(*)
+            FROM pg_locks waiter
+            JOIN pg_locks holder
+              ON waiter.locktype = holder.locktype
+             AND waiter.database IS NOT DISTINCT FROM holder.database
+             AND waiter.relation IS NOT DISTINCT FROM holder.relation
+             AND waiter.page IS NOT DISTINCT FROM holder.page
+             AND waiter.tuple IS NOT DISTINCT FROM holder.tuple
+             AND waiter.virtualxid IS NOT DISTINCT FROM holder.virtualxid
+             AND waiter.transactionid IS NOT DISTINCT FROM holder.transactionid
+             AND waiter.classid IS NOT DISTINCT FROM holder.classid
+             AND waiter.objid IS NOT DISTINCT FROM holder.objid
+             AND waiter.objsubid IS NOT DISTINCT FROM holder.objsubid
+            WHERE holder.pid = @HolderPid
+              AND holder.granted
+              AND NOT waiter.granted
+              AND waiter.pid <> holder.pid
+            """;
+
+        await using NpgsqlConnection connection = await DataSource!.OpenConnectionAsync();
+        Stopwatch elapsed = Stopwatch.StartNew();
+
+        while (elapsed.Elapsed < timeout)
+        {
+            int waiters = await connection.ExecuteScalarAsync<int>(
+                BlockedByHolderSql,
+                new { HolderPid = holderBackendPid }
+            );
+
+            if (waiters > 0)
+            {
+                return;
+            }
+
+            await Task.Delay(50);
+        }
+
+        Assert.Fail(
+            $"No backend was observed waiting on the row lock held by pid {holderBackendPid} "
+                + $"within {timeout.TotalSeconds:0.#}s, so the grant was never proven to be blocked on it."
+        );
     }
 
     [TestFixture]
@@ -62,20 +597,29 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             var past = DateTimeOffset.UtcNow.AddDays(-1);
             var future = DateTimeOffset.UtcNow.AddDays(1);
 
+            // EnforcementDisabled: these fixtures are about the cleanup sweep, not the limit.
             await _repository.StoreTokenAsync(
                 _expiredValidTokenId,
                 applicationId,
                 "subject-expired-valid",
-                past
+                past,
+                EnforcementDisabled
             );
             await _repository.StoreTokenAsync(
                 _expiredRevokedTokenId,
                 applicationId,
                 "subject-expired-revoked",
-                past
+                past,
+                EnforcementDisabled
             );
-            await _repository.RevokeTokenAsync(_expiredRevokedTokenId);
-            await _repository.StoreTokenAsync(_unexpiredTokenId, applicationId, "subject-unexpired", future);
+            await _repository.RevokeTokenAsync(_expiredRevokedTokenId, applicationId);
+            await _repository.StoreTokenAsync(
+                _unexpiredTokenId,
+                applicationId,
+                "subject-unexpired",
+                future,
+                EnforcementDisabled
+            );
         }
 
         [Test]
@@ -113,7 +657,13 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             var now = DateTimeOffset.UtcNow;
             _boundary = now.AddTicks(-(now.Ticks % 10));
 
-            await _repository.StoreTokenAsync(_tokenId, applicationId, "subject-boundary", _boundary);
+            await _repository.StoreTokenAsync(
+                _tokenId,
+                applicationId,
+                "subject-boundary",
+                _boundary,
+                EnforcementDisabled
+            );
         }
 
         [Test]
@@ -124,5 +674,1088 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             deletedCount.Should().Be(1);
             (await _repository.GetTokenStatusAsync(_tokenId)).Should().BeNull();
         }
+
+        // RFC 6749: "Unless otherwise noted, all the protocol parameter names and values are case
+        // sensitive." client_id is one of those values, so a mis-cased id must not resolve. This is
+        // pinned deliberately rather than left as an accident of the SQL, because an earlier revision
+        // of this branch made the lookup case-insensitive and that was reversed on purpose.
+        [TestFixture]
+        public class Given_A_Client_Looked_Up_With_Different_Casing : OpenIddictDataRepositoryTests
+        {
+            private OpenIddictDataRepository _repository = null!;
+            private string _registeredClientId = null!;
+
+            [SetUp]
+            public async Task Setup()
+            {
+                _repository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
+                _registeredClientId = $"Casing-Client-{Guid.NewGuid():N}";
+                await RegisterApplicationAsync(_repository, _registeredClientId);
+            }
+
+            [Test]
+            public async Task It_resolves_the_client_on_an_exact_match()
+            {
+                var found = await _repository.GetApplicationByClientIdAsync(_registeredClientId);
+
+                found!.ClientId.Should().Be(_registeredClientId);
+            }
+
+            [Test]
+            public async Task It_does_not_resolve_the_client_when_the_casing_differs()
+            {
+                var found = await _repository.GetApplicationByClientIdAsync(
+                    _registeredClientId.ToLowerInvariant()
+                );
+
+                found.Should().BeNull();
+            }
+        }
+    }
+
+    // DMS-1327 D-08: revocation is one UPDATE constrained by token id, the stored ApplicationId,
+    // and an unrevoked status. These fixtures pin each predicate against the real engine.
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_By_The_Owning_Application : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _tokenId;
+        private DateTime? _redemptionDateBefore;
+        private bool _result;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
+            Guid applicationId = await RegisterApplicationAsync(
+                _repository,
+                $"revoke-owner-{Guid.NewGuid():N}"
+            );
+            _tokenId = Guid.NewGuid();
+            await _repository.StoreTokenAsync(
+                _tokenId,
+                applicationId,
+                "revoke-owner-subject",
+                FarFuture,
+                EnforcementDisabled
+            );
+            _redemptionDateBefore = await RedemptionDateAsync(_tokenId);
+
+            _result = await _repository.RevokeTokenAsync(_tokenId, applicationId);
+        }
+
+        [Test]
+        public void It_reports_that_a_row_changed() => _result.Should().BeTrue();
+
+        [Test]
+        public async Task It_marks_the_token_revoked() =>
+            (await _repository.GetTokenStatusAsync(_tokenId)).Should().Be("revoked");
+
+        [Test]
+        public async Task It_sets_the_redemption_date()
+        {
+            _redemptionDateBefore.Should().BeNull();
+            (await RedemptionDateAsync(_tokenId)).Should().NotBeNull();
+        }
+    }
+
+    // The other application is a real registered row, so the only thing keeping the UPDATE off the
+    // token is the ApplicationId predicate. Remove it and this token is revoked.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_By_Another_Application : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _tokenId;
+        private bool _result;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
+            Guid ownerApplicationId = await RegisterApplicationAsync(
+                _repository,
+                $"revoke-victim-{Guid.NewGuid():N}"
+            );
+            Guid otherApplicationId = await RegisterApplicationAsync(
+                _repository,
+                $"revoke-other-{Guid.NewGuid():N}"
+            );
+            _tokenId = Guid.NewGuid();
+            await _repository.StoreTokenAsync(
+                _tokenId,
+                ownerApplicationId,
+                "revoke-victim-subject",
+                FarFuture,
+                EnforcementDisabled
+            );
+
+            _result = await _repository.RevokeTokenAsync(_tokenId, otherApplicationId);
+        }
+
+        [Test]
+        public void It_reports_that_no_row_changed() => _result.Should().BeFalse();
+
+        [Test]
+        public async Task It_leaves_the_token_valid() =>
+            (await _repository.GetTokenStatusAsync(_tokenId)).Should().Be("valid");
+
+        [Test]
+        public async Task It_leaves_the_redemption_date_unset() =>
+            (await RedemptionDateAsync(_tokenId)).Should().BeNull();
+    }
+
+    // The first redemption date is replaced with a fixed, distinctive value before the repeat, so
+    // the assertion does not depend on the clock advancing between two statements: without the
+    // status predicate the repeat overwrites it with the current time.
+    [TestFixture]
+    public class Given_RevokeTokenAsync_Repeated_For_A_Revoked_Token : OpenIddictDataRepositoryTests
+    {
+        private static readonly DateTime _originalRedemptionDate = new(
+            2001,
+            2,
+            3,
+            4,
+            5,
+            6,
+            DateTimeKind.Unspecified
+        );
+
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _tokenId;
+        private bool _firstResult;
+        private bool _repeatResult;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
+            Guid applicationId = await RegisterApplicationAsync(
+                _repository,
+                $"revoke-repeat-{Guid.NewGuid():N}"
+            );
+            _tokenId = Guid.NewGuid();
+            await _repository.StoreTokenAsync(
+                _tokenId,
+                applicationId,
+                "revoke-repeat-subject",
+                FarFuture,
+                EnforcementDisabled
+            );
+            _firstResult = await _repository.RevokeTokenAsync(_tokenId, applicationId);
+            await SetRedemptionDateAsync(_tokenId, _originalRedemptionDate);
+
+            _repeatResult = await _repository.RevokeTokenAsync(_tokenId, applicationId);
+        }
+
+        [Test]
+        public void It_revoked_the_token_the_first_time() => _firstResult.Should().BeTrue();
+
+        [Test]
+        public void It_reports_that_the_repeat_changed_no_row() => _repeatResult.Should().BeFalse();
+
+        [Test]
+        public async Task It_keeps_the_token_revoked() =>
+            (await _repository.GetTokenStatusAsync(_tokenId)).Should().Be("revoked");
+
+        [Test]
+        public async Task It_preserves_the_original_redemption_date() =>
+            (await RedemptionDateAsync(_tokenId)).Should().Be(_originalRedemptionDate);
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokenAsync_For_An_Unknown_Token : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _storedTokenId;
+        private bool _result;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
+            Guid applicationId = await RegisterApplicationAsync(
+                _repository,
+                $"revoke-unknown-{Guid.NewGuid():N}"
+            );
+            _storedTokenId = Guid.NewGuid();
+            await _repository.StoreTokenAsync(
+                _storedTokenId,
+                applicationId,
+                "revoke-unknown-subject",
+                FarFuture,
+                EnforcementDisabled
+            );
+
+            _result = await _repository.RevokeTokenAsync(Guid.NewGuid(), applicationId);
+        }
+
+        [Test]
+        public void It_reports_that_no_row_changed() => _result.Should().BeFalse();
+
+        [Test]
+        public async Task It_leaves_the_applications_stored_token_valid() =>
+            (await _repository.GetTokenStatusAsync(_storedTokenId)).Should().Be("valid");
+    }
+
+    /// <summary>
+    /// The manager reaches the UPDATE through <c>OpenIddictTokenRepository</c>; a wrapper that
+    /// dropped or swapped the application id would break ownership with every data-repository
+    /// fixture above still green.
+    /// </summary>
+    [TestFixture]
+    public class Given_RevokeTokenAsync_Through_The_Token_Repository_Wrapper : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _dataRepository = null!;
+        private Guid _ownedTokenId;
+        private Guid _foreignTokenId;
+        private bool _ownedResult;
+        private bool _foreignResult;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _dataRepository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
+            IOpenIddictTokenRepository tokenRepository = new OpenIddictTokenRepository(_dataRepository);
+            Guid callerApplicationId = await RegisterApplicationAsync(
+                _dataRepository,
+                $"revoke-wrapper-caller-{Guid.NewGuid():N}"
+            );
+            Guid otherApplicationId = await RegisterApplicationAsync(
+                _dataRepository,
+                $"revoke-wrapper-other-{Guid.NewGuid():N}"
+            );
+            _ownedTokenId = Guid.NewGuid();
+            _foreignTokenId = Guid.NewGuid();
+            await _dataRepository.StoreTokenAsync(
+                _ownedTokenId,
+                callerApplicationId,
+                "revoke-wrapper-owned",
+                FarFuture,
+                EnforcementDisabled
+            );
+            await _dataRepository.StoreTokenAsync(
+                _foreignTokenId,
+                otherApplicationId,
+                "revoke-wrapper-foreign",
+                FarFuture,
+                EnforcementDisabled
+            );
+
+            _ownedResult = await tokenRepository.RevokeTokenAsync(_ownedTokenId, callerApplicationId);
+            _foreignResult = await tokenRepository.RevokeTokenAsync(_foreignTokenId, callerApplicationId);
+        }
+
+        [Test]
+        public async Task It_revokes_the_callers_token()
+        {
+            _ownedResult.Should().BeTrue();
+            (await _dataRepository.GetTokenStatusAsync(_ownedTokenId)).Should().Be("revoked");
+        }
+
+        [Test]
+        public async Task It_leaves_another_applications_token_valid()
+        {
+            _foreignResult.Should().BeFalse();
+            (await _dataRepository.GetTokenStatusAsync(_foreignTokenId)).Should().Be("valid");
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Client_Below_Its_Token_Limit : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _applicationId;
+        private TokenStoreOutcome _outcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
+            _applicationId = await RegisterApplicationAsync(_repository, $"under-limit-{Guid.NewGuid():N}");
+            await SeedActiveTokensAsync(_repository, _applicationId, 2);
+
+            _outcome = await _repository.StoreTokenAsync(
+                Guid.NewGuid(),
+                _applicationId,
+                "subject-under-limit",
+                FarFuture,
+                3
+            );
+        }
+
+        [Test]
+        public void It_stores_the_token() => _outcome.Should().Be(TokenStoreOutcome.Stored);
+
+        [Test]
+        public async Task It_writes_the_row() => (await TokenRowCountAsync(_applicationId)).Should().Be(3);
+    }
+
+    [TestFixture]
+    public class Given_A_Client_Exactly_At_Its_Token_Limit : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _applicationId;
+        private TokenStoreOutcome _outcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
+            _applicationId = await RegisterApplicationAsync(_repository, $"at-limit-{Guid.NewGuid():N}");
+            await SeedActiveTokensAsync(_repository, _applicationId, 3);
+
+            _outcome = await _repository.StoreTokenAsync(
+                Guid.NewGuid(),
+                _applicationId,
+                "subject-at-limit",
+                FarFuture,
+                3
+            );
+        }
+
+        [Test]
+        public void It_refuses_the_grant() => _outcome.Should().Be(TokenStoreOutcome.LimitExceeded);
+
+        // The return value alone would also be satisfied by a store that wrote the row and then
+        // reported a refusal.
+        [Test]
+        public async Task It_inserts_no_row() => (await TokenRowCountAsync(_applicationId)).Should().Be(3);
+    }
+
+    [TestFixture]
+    public class Given_A_Client_Above_Its_Token_Limit : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _applicationId;
+        private TokenStoreOutcome _outcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
+            _applicationId = await RegisterApplicationAsync(_repository, $"over-limit-{Guid.NewGuid():N}");
+            await SeedActiveTokensAsync(_repository, _applicationId, 6);
+
+            _outcome = await _repository.StoreTokenAsync(
+                Guid.NewGuid(),
+                _applicationId,
+                "subject-over-limit",
+                FarFuture,
+                3
+            );
+        }
+
+        [Test]
+        public void It_refuses_the_grant() => _outcome.Should().Be(TokenStoreOutcome.LimitExceeded);
+
+        [Test]
+        public async Task It_inserts_no_row() => (await TokenRowCountAsync(_applicationId)).Should().Be(6);
+    }
+
+    /// <summary>
+    /// Everything the count must ignore. Each case seeds the client past its limit with rows that
+    /// do not qualify as active, so a grant that is refused here means the predicate is wrong.
+    /// </summary>
+    [TestFixture]
+    public class Given_Rows_That_Do_Not_Count_Toward_The_Limit : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+
+        [SetUp]
+        public void Setup() => _repository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
+
+        private async Task<TokenStoreOutcome> GrantAfter(
+            Func<Guid, Task> seed,
+            string clientId,
+            int maxActiveTokens = 1
+        )
+        {
+            Guid applicationId = await RegisterApplicationAsync(
+                _repository,
+                $"{clientId}-{Guid.NewGuid():N}"
+            );
+            await seed(applicationId);
+
+            return await _repository.StoreTokenAsync(
+                Guid.NewGuid(),
+                applicationId,
+                "subject-grant",
+                FarFuture,
+                maxActiveTokens
+            );
+        }
+
+        [Test]
+        public async Task It_ignores_expired_rows()
+        {
+            TokenStoreOutcome outcome = await GrantAfter(
+                async applicationId =>
+                {
+                    for (int i = 0; i < 3; i++)
+                    {
+                        await _repository.StoreTokenAsync(
+                            Guid.NewGuid(),
+                            applicationId,
+                            $"expired-{i}",
+                            FarPast,
+                            EnforcementDisabled
+                        );
+                    }
+                },
+                "expired-rows"
+            );
+
+            outcome.Should().Be(TokenStoreOutcome.Stored);
+        }
+
+        [Test]
+        public async Task It_ignores_revoked_rows()
+        {
+            TokenStoreOutcome outcome = await GrantAfter(
+                async applicationId =>
+                {
+                    for (int i = 0; i < 3; i++)
+                    {
+                        Guid tokenId = Guid.NewGuid();
+                        await _repository.StoreTokenAsync(
+                            tokenId,
+                            applicationId,
+                            $"revoked-{i}",
+                            FarFuture,
+                            EnforcementDisabled
+                        );
+                        await _repository.RevokeTokenAsync(tokenId, applicationId);
+                    }
+                },
+                "revoked-rows"
+            );
+
+            outcome.Should().Be(TokenStoreOutcome.Stored);
+        }
+
+        // Nothing writes a non-access token today, so the row has to be seeded directly. Revert the
+        // Type predicate in ConditionalInsertSql and this grant is refused instead of stored.
+        [Test]
+        public async Task It_ignores_rows_of_another_token_type()
+        {
+            TokenStoreOutcome outcome = await GrantAfter(
+                applicationId => SeedTokenOfTypeAsync(applicationId, "refresh_token", 3),
+                "other-token-type"
+            );
+
+            outcome.Should().Be(TokenStoreOutcome.Stored);
+        }
+
+        // Multi-second margins on either side of "now": the repository computes its own UtcNow
+        // inside the statement, and PostgreSQL stores microseconds, so a tick-wide margin would be
+        // unrepresentable as well as unpinnable.
+        [Test]
+        public async Task It_counts_a_row_expiring_two_minutes_from_now()
+        {
+            TokenStoreOutcome outcome = await GrantAfter(
+                async applicationId =>
+                    await _repository.StoreTokenAsync(
+                        Guid.NewGuid(),
+                        applicationId,
+                        "expiring-soon",
+                        DateTimeOffset.UtcNow.AddMinutes(2),
+                        EnforcementDisabled
+                    ),
+                "future-boundary"
+            );
+
+            outcome.Should().Be(TokenStoreOutcome.LimitExceeded);
+        }
+
+        [Test]
+        public async Task It_does_not_count_a_row_that_expired_two_minutes_ago()
+        {
+            TokenStoreOutcome outcome = await GrantAfter(
+                async applicationId =>
+                    await _repository.StoreTokenAsync(
+                        Guid.NewGuid(),
+                        applicationId,
+                        "just-expired",
+                        DateTimeOffset.UtcNow.AddMinutes(-2),
+                        EnforcementDisabled
+                    ),
+                "past-boundary"
+            );
+
+            outcome.Should().Be(TokenStoreOutcome.Stored);
+        }
+
+        [Test]
+        public async Task It_ignores_another_clients_active_tokens()
+        {
+            Guid otherApplicationId = await RegisterApplicationAsync(
+                _repository,
+                $"other-client-{Guid.NewGuid():N}"
+            );
+            await SeedActiveTokensAsync(_repository, otherApplicationId, 5);
+
+            TokenStoreOutcome outcome = await GrantAfter(_ => Task.CompletedTask, "isolated-count");
+
+            outcome.Should().Be(TokenStoreOutcome.Stored);
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Limit_Of_One : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _applicationId;
+        private TokenStoreOutcome _first;
+        private TokenStoreOutcome _second;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
+            _applicationId = await RegisterApplicationAsync(_repository, $"limit-one-{Guid.NewGuid():N}");
+
+            _first = await _repository.StoreTokenAsync(
+                Guid.NewGuid(),
+                _applicationId,
+                "subject-first",
+                FarFuture,
+                1
+            );
+            _second = await _repository.StoreTokenAsync(
+                Guid.NewGuid(),
+                _applicationId,
+                "subject-second",
+                FarFuture,
+                1
+            );
+        }
+
+        [Test]
+        public void It_admits_the_first_grant() => _first.Should().Be(TokenStoreOutcome.Stored);
+
+        [Test]
+        public void It_refuses_the_second_grant() => _second.Should().Be(TokenStoreOutcome.LimitExceeded);
+
+        [Test]
+        public async Task It_stores_exactly_one_row() =>
+            (await TokenRowCountAsync(_applicationId)).Should().Be(1);
+    }
+
+    /// <summary>
+    /// The limit travelling the production path rather than a direct repository call. Every other
+    /// fixture here calls <c>OpenIddictDataRepository</c> itself, but the token manager reaches it
+    /// through <c>OpenIddictTokenRepository</c>, and nothing else exercises that wrapper against a
+    /// real database: it carries @MaxActiveTokens down and the TokenStoreOutcome back, so a wrapper
+    /// that dropped either would break enforcement with every existing test still green.
+    /// </summary>
+    [TestFixture]
+    public class Given_Grants_Through_The_Token_Repository_Wrapper : OpenIddictDataRepositoryTests
+    {
+        private const int Limit = 2;
+
+        private IOpenIddictTokenRepository _tokenRepository = null!;
+        private Guid _applicationId;
+        private TokenStoreOutcome _firstOutcome;
+        private TokenStoreOutcome _secondOutcome;
+        private TokenStoreOutcome _thirdOutcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository dataRepository = new(Configuration.DatabaseOptions);
+            _tokenRepository = new OpenIddictTokenRepository(dataRepository);
+            _applicationId = await RegisterApplicationAsync(
+                dataRepository,
+                $"wrapper-limit-{Guid.NewGuid():N}"
+            );
+
+            _firstOutcome = await GrantAsync();
+            _secondOutcome = await GrantAsync();
+            _thirdOutcome = await GrantAsync();
+        }
+
+        private async Task<TokenStoreOutcome> GrantAsync() =>
+            await _tokenRepository.StoreTokenAsync(
+                Guid.NewGuid(),
+                _applicationId,
+                "wrapper-subject",
+                FarFuture,
+                Limit
+            );
+
+        [Test]
+        public void It_admits_grants_up_to_the_limit()
+        {
+            _firstOutcome.Should().Be(TokenStoreOutcome.Stored);
+            _secondOutcome.Should().Be(TokenStoreOutcome.Stored);
+        }
+
+        [Test]
+        public void It_refuses_the_grant_that_would_exceed_the_limit() =>
+            _thirdOutcome.Should().Be(TokenStoreOutcome.LimitExceeded);
+
+        [Test]
+        public async Task It_stores_exactly_the_limit() =>
+            (await TokenRowCountAsync(_applicationId)).Should().Be(Limit);
+    }
+
+    /// <summary>
+    /// The opt-out an operator configures with a value below 1. It stores unconditionally however
+    /// many active tokens the client already holds.
+    /// </summary>
+    [TestFixture]
+    public class Given_Enforcement_Is_Disabled : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+
+        [SetUp]
+        public void Setup() => _repository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
+
+        [TestCase(0)]
+        [TestCase(-1)]
+        public async Task It_stores_regardless_of_how_many_active_tokens_exist(int maxActiveTokens)
+        {
+            Guid applicationId = await RegisterApplicationAsync(
+                _repository,
+                $"disabled-{maxActiveTokens}-{Guid.NewGuid():N}"
+            );
+            await SeedActiveTokensAsync(_repository, applicationId, 20);
+
+            TokenStoreOutcome outcome = await _repository.StoreTokenAsync(
+                Guid.NewGuid(),
+                applicationId,
+                "subject-disabled",
+                FarFuture,
+                maxActiveTokens
+            );
+
+            outcome.Should().Be(TokenStoreOutcome.Stored);
+            (await TokenRowCountAsync(applicationId)).Should().Be(21);
+        }
+
+        /// <summary>
+        /// The zero-cost property operators opt into: the disabled path takes no row lock, so a
+        /// grant completes even while another session holds that client's application row.
+        /// </summary>
+        [TestCase(0)]
+        [TestCase(-1)]
+        public async Task It_stores_without_taking_the_application_row_lock(int maxActiveTokens)
+        {
+            Guid applicationId = await RegisterApplicationAsync(
+                _repository,
+                $"disabled-nolock-{maxActiveTokens}-{Guid.NewGuid():N}"
+            );
+
+            await using RowLockHolder holder = await RowLockHolder.TakeAsync(DataSource!, applicationId);
+
+            Task<TokenStoreOutcome> grant = Task.Run(() =>
+                _repository.StoreTokenAsync(
+                    Guid.NewGuid(),
+                    applicationId,
+                    "subject-disabled-nolock",
+                    FarFuture,
+                    maxActiveTokens
+                )
+            );
+
+            Task completed = await Task.WhenAny(grant, Task.Delay(TimeSpan.FromSeconds(10)));
+            completed.Should().BeSameAs(grant, "the disabled path must not wait on the row lock");
+            (await grant).Should().Be(TokenStoreOutcome.Stored);
+
+            await holder.ReleaseAsync();
+        }
+    }
+
+    /// <summary>
+    /// Tier 1 of the concurrency coverage: cheap, and loud when enforcement is badly broken. It is
+    /// NOT proof of serialization - the thread pool can serialize these calls on its own - which is
+    /// what <see cref="Given_A_Held_Application_Row_Lock"/> exists to establish.
+    /// </summary>
+    [TestFixture]
+    public class Given_Competing_Grants_For_One_Remaining_Slot : OpenIddictDataRepositoryTests
+    {
+        private const int Limit = 3;
+        private const int Competitors = 8;
+
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _applicationId;
+        private TokenStoreOutcome[] _outcomes = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
+            _applicationId = await RegisterApplicationAsync(_repository, $"race-{Guid.NewGuid():N}");
+            await SeedActiveTokensAsync(_repository, _applicationId, Limit - 1);
+
+            _outcomes = await Task.WhenAll(
+                Enumerable
+                    .Range(0, Competitors)
+                    .Select(i =>
+                        Task.Run(() =>
+                            _repository.StoreTokenAsync(
+                                Guid.NewGuid(),
+                                _applicationId,
+                                $"race-subject-{i}",
+                                FarFuture,
+                                Limit
+                            )
+                        )
+                    )
+            );
+        }
+
+        [Test]
+        public void It_admits_exactly_one_grant() =>
+            _outcomes.Count(outcome => outcome == TokenStoreOutcome.Stored).Should().Be(1);
+
+        [Test]
+        public void It_refuses_every_other_grant() =>
+            _outcomes
+                .Count(outcome => outcome == TokenStoreOutcome.LimitExceeded)
+                .Should()
+                .Be(Competitors - 1);
+
+        [Test]
+        public async Task It_leaves_the_active_token_count_exactly_at_the_limit() =>
+            (await ActiveTokenCountAsync(_applicationId)).Should().Be(Limit);
+    }
+
+    /// <summary>
+    /// Tier 2: the proof the strict ceiling actually rests on. A second session holds the client's
+    /// application row, and the grant is shown to be waiting on that specific lock in
+    /// <c>pg_locks</c> before the holder is released.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Held_Application_Row_Lock : OpenIddictDataRepositoryTests
+    {
+        /// <summary>
+        /// How long these fixtures wait to observe the grant blocked on the holder's lock. It has
+        /// to stay comfortably under the repository's own lock timeout - 5000 ms, in
+        /// <c>OpenIddictDataRepository.LockTimeoutMilliseconds</c> - because once that elapses the
+        /// grant stops waiting and completes with <see cref="TokenStoreOutcome.LockTimeout"/>.
+        /// The "still blocked" assertions below would then fail naming the lock, which is not what
+        /// went wrong. Lowering the repository constant means lowering this one too.
+        /// </summary>
+        private static readonly TimeSpan _blockedObservationTimeout = TimeSpan.FromSeconds(4);
+
+        private OpenIddictDataRepository _repository = null!;
+
+        [SetUp]
+        public void Setup() => _repository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
+
+        [Test]
+        public async Task It_blocks_a_grant_for_that_client_until_the_lock_is_released()
+        {
+            Guid applicationId = await RegisterApplicationAsync(
+                _repository,
+                $"serialized-{Guid.NewGuid():N}"
+            );
+
+            RowLockHolder holder = await RowLockHolder.TakeAsync(DataSource!, applicationId);
+            try
+            {
+                Task<TokenStoreOutcome> grant = Task.Run(() =>
+                    _repository.StoreTokenAsync(
+                        Guid.NewGuid(),
+                        applicationId,
+                        "subject-serialized",
+                        FarFuture,
+                        5
+                    )
+                );
+
+                await WaitUntilABackendIsBlockedBy(holder.BackendPid, _blockedObservationTimeout);
+
+                grant.IsCompleted.Should().BeFalse("the grant is waiting on the row lock the holder owns");
+
+                await holder.ReleaseAsync();
+
+                (await grant).Should().Be(TokenStoreOutcome.Stored);
+            }
+            finally
+            {
+                await holder.DisposeAsync();
+            }
+        }
+
+        /// <summary>
+        /// The lock is per application, not a global serialization point. "Both eventually
+        /// succeed" would prove nothing; client B completing <em>while A is still blocked</em> is
+        /// the whole assertion.
+        /// </summary>
+        [Test]
+        public async Task It_does_not_block_a_grant_for_a_different_client()
+        {
+            Guid blockedApplicationId = await RegisterApplicationAsync(
+                _repository,
+                $"client-a-{Guid.NewGuid():N}"
+            );
+            Guid otherApplicationId = await RegisterApplicationAsync(
+                _repository,
+                $"client-b-{Guid.NewGuid():N}"
+            );
+
+            RowLockHolder holder = await RowLockHolder.TakeAsync(DataSource!, blockedApplicationId);
+            try
+            {
+                Task<TokenStoreOutcome> blockedGrant = Task.Run(() =>
+                    _repository.StoreTokenAsync(
+                        Guid.NewGuid(),
+                        blockedApplicationId,
+                        "subject-a",
+                        FarFuture,
+                        5
+                    )
+                );
+
+                await WaitUntilABackendIsBlockedBy(holder.BackendPid, _blockedObservationTimeout);
+
+                TokenStoreOutcome otherOutcome = await _repository.StoreTokenAsync(
+                    Guid.NewGuid(),
+                    otherApplicationId,
+                    "subject-b",
+                    FarFuture,
+                    5
+                );
+
+                otherOutcome.Should().Be(TokenStoreOutcome.Stored);
+                blockedGrant
+                    .IsCompleted.Should()
+                    .BeFalse("client B's grant must not have waited for client A's lock");
+
+                await holder.ReleaseAsync();
+                (await blockedGrant).Should().Be(TokenStoreOutcome.Stored);
+            }
+            finally
+            {
+                await holder.DisposeAsync();
+            }
+        }
+
+        /// <summary>
+        /// Contention is not a limit rejection. Held past the repository's lock_timeout, the grant
+        /// reports <see cref="TokenStoreOutcome.LockTimeout"/>, which reaches the caller as a
+        /// retriable 409 rather than as "Too Many Tokens" or as a server error.
+        /// </summary>
+        [Test]
+        public async Task It_reports_a_lock_timeout_rather_than_a_limit_rejection_when_the_wait_times_out()
+        {
+            Guid applicationId = await RegisterApplicationAsync(
+                _repository,
+                $"lock-timeout-{Guid.NewGuid():N}"
+            );
+
+            RowLockHolder holder = await RowLockHolder.TakeAsync(DataSource!, applicationId);
+            try
+            {
+                // The limit is 5 and the client holds nothing, so a LimitExceeded here could only
+                // come from the timeout being mistaken for one.
+                TokenStoreOutcome outcome = await _repository.StoreTokenAsync(
+                    Guid.NewGuid(),
+                    applicationId,
+                    "subject-lock-timeout",
+                    FarFuture,
+                    5
+                );
+
+                outcome.Should().Be(TokenStoreOutcome.LockTimeout);
+
+                (await TokenRowCountAsync(applicationId)).Should().Be(0);
+            }
+            finally
+            {
+                await holder.ReleaseAsync();
+                await holder.DisposeAsync();
+            }
+        }
+    }
+
+    /// <summary>
+    /// The missing-row guard. A client deleted between the application lookup and the store must
+    /// be reported as gone, never as over its limit, and must not receive a stored token.
+    /// </summary>
+    [TestFixture]
+    public class Given_The_Application_Row_Was_Deleted : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+
+        [SetUp]
+        public void Setup() => _repository = new OpenIddictDataRepository(Configuration.DatabaseOptions);
+
+        [Test]
+        public async Task It_reports_the_client_as_not_found_and_stores_nothing()
+        {
+            Guid applicationId = await RegisterApplicationAsync(
+                _repository,
+                $"deleted-client-{Guid.NewGuid():N}"
+            );
+            await DeleteApplicationRowAsync(applicationId);
+
+            TokenStoreOutcome outcome = await _repository.StoreTokenAsync(
+                Guid.NewGuid(),
+                applicationId,
+                "subject-deleted",
+                FarFuture,
+                5
+            );
+
+            outcome.Should().Be(TokenStoreOutcome.ClientNotFound);
+            outcome.Should().NotBe(TokenStoreOutcome.LimitExceeded);
+            (await TokenRowCountAsync(applicationId)).Should().Be(0);
+        }
+
+        /// <summary>
+        /// The concurrent form, which is where the PostgreSQL bypass lived: a <c>FOR UPDATE</c>
+        /// matching no row takes no lock at all, so without the guard these grants would run an
+        /// unserialized count-and-insert and could exceed the cap.
+        /// </summary>
+        [Test]
+        public async Task It_does_not_let_competing_grants_exceed_the_cap_once_the_row_is_gone()
+        {
+            Guid applicationId = await RegisterApplicationAsync(
+                _repository,
+                $"deleted-race-{Guid.NewGuid():N}"
+            );
+            await DeleteApplicationRowAsync(applicationId);
+
+            TokenStoreOutcome[] outcomes = await Task.WhenAll(
+                Enumerable
+                    .Range(0, 8)
+                    .Select(i =>
+                        Task.Run(() =>
+                            _repository.StoreTokenAsync(
+                                Guid.NewGuid(),
+                                applicationId,
+                                $"deleted-race-subject-{i}",
+                                FarFuture,
+                                3
+                            )
+                        )
+                    )
+            );
+
+            outcomes.Should().AllBeEquivalentTo(TokenStoreOutcome.ClientNotFound);
+            (await TokenRowCountAsync(applicationId)).Should().Be(0);
+        }
+    }
+
+    /// <summary>
+    /// DMS-1430. The repository binds expirations and the cleanup bound as instants, and the column
+    /// stores instants, so neither the stored value nor the sweep may depend on the PostgreSQL
+    /// session time zone. This fixture runs the real repository against a connection whose session
+    /// zone observes DST, and picks two instants that a wall-clock column provably cannot tell
+    /// apart, so the assertions fail if either binding or the column type regresses.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_DST_Observing_PostgreSQL_Session_Time_Zone : OpenIddictDataRepositoryTests
+    {
+        private const string DstSessionTimeZone = "America/New_York";
+
+        // America/New_York leaves DST at 2026-11-01 06:00Z, where 01:59:59 EDT (-04) is followed by
+        // 01:00:00 EST (-05). Both instants below therefore land on local wall clock 01:30 despite
+        // being an hour apart, which is exactly the collision a timestamp without time zone column
+        // cannot represent. Fixed instants, so the fixture never depends on the current date.
+        private static readonly DateTimeOffset EarlierExpiration = new(2026, 11, 1, 5, 30, 0, TimeSpan.Zero);
+        private static readonly DateTimeOffset LaterExpiration = new(2026, 11, 1, 6, 30, 0, TimeSpan.Zero);
+
+        // The bound the cleanup service would sweep with at 06:00Z, namely UTC now minus the
+        // validator's five-minute clock skew. The earlier expiration sits 25 minutes past this
+        // bound and must be deleted, while the later one is still 35 minutes away and must survive.
+        private static readonly DateTimeOffset SweepBound = new(2026, 11, 1, 5, 55, 0, TimeSpan.Zero);
+
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _earlierTokenId;
+        private Guid _laterTokenId;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(DstSessionDatabaseOptions());
+            var applicationId = await RegisterApplicationAsync(
+                _repository,
+                $"dst-session-client-{Guid.NewGuid():N}"
+            );
+
+            _earlierTokenId = Guid.NewGuid();
+            _laterTokenId = Guid.NewGuid();
+
+            await _repository.StoreTokenAsync(
+                _earlierTokenId,
+                applicationId,
+                "subject-earlier",
+                EarlierExpiration,
+                EnforcementDisabled
+            );
+            await _repository.StoreTokenAsync(
+                _laterTokenId,
+                applicationId,
+                "subject-later",
+                LaterExpiration,
+                EnforcementDisabled
+            );
+        }
+
+        [Test]
+        public async Task It_stores_each_expiration_as_a_distinct_instant()
+        {
+            (await StoredExpirationAsync(_earlierTokenId)).Should().Be(EarlierExpiration.UtcDateTime);
+            (await StoredExpirationAsync(_laterTokenId)).Should().Be(LaterExpiration.UtcDateTime);
+        }
+
+        [Test]
+        public async Task It_deletes_only_the_token_that_is_truly_expired()
+        {
+            var deletedCount = await _repository.DeleteExpiredTokensAsync(SweepBound);
+
+            deletedCount.Should().Be(1);
+            (await _repository.GetTokenStatusAsync(_earlierTokenId)).Should().BeNull();
+            (await _repository.GetTokenStatusAsync(_laterTokenId)).Should().Be("valid");
+        }
+
+        /// <summary>
+        /// Narrow read-path check: the sweep is the safety-critical path, but the same column feeds
+        /// TokenInfo, so this pins that the stored instant also comes back out unchanged rather than
+        /// being reinterpreted through the session zone on the way.
+        /// </summary>
+        [Test]
+        public async Task It_reads_the_expiration_back_as_the_same_instant()
+        {
+            var token = await _repository.GetTokenByIdAsync(_laterTokenId);
+
+            token.Should().NotBeNull();
+            token!.ExpirationDate.Should().Be(LaterExpiration);
+        }
+
+        /// <summary>
+        /// Reads the raw column through a connection using the same DST session zone, so a value
+        /// that only looks correct because it was read back under UTC cannot pass.
+        /// </summary>
+        private static async Task<DateTime> StoredExpirationAsync(Guid tokenId)
+        {
+            await using NpgsqlConnection connection = new(DstSessionConnectionString());
+            await connection.OpenAsync();
+
+            return await connection.QuerySingleAsync<DateTime>(
+                "SELECT \"ExpirationDate\" FROM \"dmscs\".\"OpenIddictToken\" WHERE \"Id\" = @Id",
+                new { Id = tokenId }
+            );
+        }
+
+        private static string DstSessionConnectionString() =>
+            new NpgsqlConnectionStringBuilder(Configuration.DatabaseOptions.Value.DatabaseConnection)
+            {
+                Timezone = DstSessionTimeZone,
+            }.ConnectionString;
+
+        private static IOptions<DatabaseOptions> DstSessionDatabaseOptions() =>
+            Options.Create(
+                new DatabaseOptions
+                {
+                    DatabaseConnection = DstSessionConnectionString(),
+                    EncryptionKey = Configuration.DatabaseOptions.Value.EncryptionKey,
+                }
+            );
     }
 }

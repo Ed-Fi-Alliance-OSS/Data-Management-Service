@@ -145,14 +145,34 @@ public static class LoggingConfigurator
             typeof(FileLoggerConfigurationExtensions).Assembly
         );
 
-        var loggerConfiguration = new LoggerConfiguration()
-            .ReadFrom.Configuration(configuration, configurationReaderOptions)
-            .Enrich.FromLogContext();
+        var loggerConfiguration = ApplyLogContextAndIdentityRedaction(
+            new LoggerConfiguration().ReadFrom.Configuration(configuration, configurationReaderOptions)
+        );
 
         ApplyOtlpSink(loggerConfiguration, BindOtlpLoggingOptions(configuration));
 
         return loggerConfiguration.CreateLogger();
     }
+
+    /// <summary>
+    /// Adds log-context enrichment followed by the identity identifier redaction stage. Shared with
+    /// the unit tests so their capture pipeline runs exactly this stage.
+    /// </summary>
+    internal static LoggerConfiguration ApplyLogContextAndIdentityRedaction(
+        LoggerConfiguration loggerConfiguration
+    ) =>
+        loggerConfiguration
+            .Enrich.FromLogContext()
+            // The framework's request log scope stamps the raw request path, as RequestPath, onto
+            // every event logged during the request, so this rewrites it to the redacted form for
+            // an identity get-by-id or results-poll route. It must follow FromLogContext so it sees
+            // the property.
+            .Enrich.With<IdentityRequestPathRedactingEnricher>()
+            // The framework's own hosting-diagnostics request-start and request-finish events, and
+            // the routing matcher's Debug-level candidate events, also embed the raw request path
+            // in their Path property and rendered message, so this drops exactly those events for
+            // an identity get-by-id or results-poll route; every other route keeps them.
+            .Filter.ByExcluding(IdentityHostingDiagnosticsFilter.Matches);
 
     /// <summary>
     /// Writes a startup warning to stderr when a Serilog:WriteTo entry names the OTLP sink, which

@@ -20,11 +20,14 @@
           runs the API in an isolated Docker environment and executes API Calls.
         * InstanceE2ETest: executes instance management E2E tests in
           EdFi.InstanceManagement.Tests.E2E, which require special setup with route
-          qualifiers and multiple databases.
+          qualifiers and multiple databases. Without -TestFilter the run excludes the
+          identity plugin slice (Category!=instance-management-identity-plugin), which
+          needs a plugin mounted into the DMS container; to run it, see the "Identity
+          plugin slice" section of src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md.
         * IntegrationTest: executes NUnit test in projects named `*.IntegrationTests`,
           which connect to a database.
         * BuildAndPublish: build and publish with `dotnet publish`
-        * Package: builds NuGet packages. The DMS API application, SchemaTools, and DocumentCacheAdmin packages are published by the release workflows; the custom-validation abstractions and plugin contract packages are built and verified only, and are deliberately not published yet. Use -PackageTarget to build only one package.
+        * Package: builds NuGet packages. The DMS API application, SchemaTools, and DocumentCacheAdmin packages are packed at -DMSVersion; the custom-validation, plugin contract, and identity contract packages are packed at the version each declares in its own project and ignore -DMSVersion. The identity contract package is built and verified only, and is deliberately not published yet. Use -PackageTarget to build only one package.
         * Push: uploads a NuGet package to the NuGet feed.
         * DockerBuild: builds a Docker image from source code
         * DockerRun: runs the Docker image that was built from source code
@@ -45,7 +48,9 @@
         .\build-dms.ps1 InstanceE2ETest -Configuration Release
 
         Starts Docker environment with route qualifiers, configures test databases,
-        and runs instance management E2E tests.
+        and runs instance management E2E tests. With no -TestFilter the identity plugin
+        slice is excluded; see the "Identity plugin slice" section of
+        src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md to run it.
 
     .EXAMPLE
         .\build-dms.ps1 push -NuGetApiKey $env:nuget_key -PackageFile .\EdFi.Api.8.0.0.nupkg
@@ -71,7 +76,7 @@ param(
 
     # Selects which NuGet package(s) the Package command builds.
     [string]
-    [ValidateSet("All", "Api", "SchemaTools", "CustomValidation", "DocumentCacheAdmin", "Plugins")]
+    [ValidateSet("All", "Api", "SchemaTools", "CustomValidation", "DocumentCacheAdmin", "Plugins", "Identity")]
     $PackageTarget = "All",
 
     # When set, `dotnet restore` runs with `--locked-mode`, failing the build if a committed
@@ -221,6 +226,11 @@ $customValidationProjectName = "EdFi.DataManagementService.CustomValidation"
 $pluginsPackageName = "EdFi.Api.Plugins"
 $pluginsProjectName = "EdFi.Api.Plugins"
 $pluginsRoot = "$PSScriptRoot/src/plugins"
+$identityPackageName = "EdFi.Api.Identity"
+# The InstanceE2ETest slice that needs a plugin mounted into the DMS container. An unfiltered
+# InstanceE2ETest run excludes it, because its first step fails without the plugin environment file.
+$instanceIdentityPluginExcludedFilter = "Category!=instance-management-identity-plugin"
+$identityProjectName = "EdFi.DataManagementService.Identity"
 $documentCacheAdminPackageName = "EdFi.Api.DocumentCacheAdmin"
 $testResults = "$PSScriptRoot/TestResults"
 #Coverage
@@ -889,24 +899,91 @@ function IntegrationTests {
     Invoke-Execute { RunTests -Filter "*.Tests.Integration" }
 }
 
+function Invoke-WithE2EIdentityEnvironment {
+    param(
+        [Parameter(Mandatory)]
+        [string] $EnvironmentFile,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("keycloak", "self-contained")]
+        [string] $IdentityProvider,
+
+        [Parameter(Mandatory)]
+        [scriptblock] $Action
+    )
+
+    Import-Module -Name "$PSScriptRoot/eng/docker-compose/env-utility.psm1" -Force
+    $environmentValues = ReadValuesFromEnvFile $EnvironmentFile
+    $prefix = if ($IdentityProvider -eq "keycloak") { "KEYCLOAK" } else { "SELF_CONTAINED" }
+    # Keycloak's issuer (DMS_JWT_AUTHORITY) differs from the in-network URL the Configuration
+    # Service calls; self-contained uses one value for both.
+    $configAuthorityKey = if ($IdentityProvider -eq "keycloak") { "DMS_CONFIG_IDENTITY_AUTHORITY" } else { "DMS_JWT_AUTHORITY" }
+    foreach ($key in 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY', 'DMS_JWT_METADATA_ADDRESS', $configAuthorityKey | Select-Object -Unique) {
+        $sourceKey = "${prefix}_$key"
+        if ([string]::IsNullOrWhiteSpace($environmentValues[$sourceKey])) {
+            throw "Required identity setting '$sourceKey' is missing or blank in '$EnvironmentFile' for provider '$IdentityProvider'."
+        }
+    }
+    # Match startup's provider-specific endpoint selection. Startup restores its temporary values;
+    # tests that recreate DMS with Compose must receive the selected identity settings explicitly.
+    $identityEnvironment = @{
+        DMS_CONFIG_IDENTITY_PROVIDER = $IdentityProvider
+        OAUTH_TOKEN_ENDPOINT = $environmentValues["${prefix}_OAUTH_TOKEN_ENDPOINT"]
+        DMS_JWT_AUTHORITY = $environmentValues["${prefix}_DMS_JWT_AUTHORITY"]
+        DMS_JWT_METADATA_ADDRESS = $environmentValues["${prefix}_DMS_JWT_METADATA_ADDRESS"]
+        DMS_CONFIG_IDENTITY_AUTHORITY = $environmentValues["${prefix}_$configAuthorityKey"]
+    }
+    $previousEnvironment = @{}
+    foreach ($name in $identityEnvironment.Keys) {
+        $previousEnvironment[$name] = @{
+            Exists = Test-Path -LiteralPath "Env:$name"
+            Value = [Environment]::GetEnvironmentVariable($name)
+        }
+    }
+
+    try {
+        foreach ($name in $identityEnvironment.Keys) {
+            Set-Item -LiteralPath "Env:$name" -Value $identityEnvironment[$name]
+        }
+        & $Action
+    }
+    finally {
+        foreach ($name in $identityEnvironment.Keys) {
+            $previous = $previousEnvironment[$name]
+            if ($previous.Exists) {
+                Set-Item -LiteralPath "Env:$name" -Value $previous.Value
+            }
+            else {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+
 function RunE2E {
     param(
         [string]
         $TestFilter,
 
         [pscustomobject]
-        $E2ETestSettings
+        $E2ETestSettings,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("keycloak", "self-contained")]
+        [string] $IdentityProvider
     )
 
     # Run only the standard E2E tests, excluding instance management tests
     # Instance management tests require special setup (route qualifiers, additional databases)
     # and should be run separately using the instance management test scripts
-    Invoke-WithE2ETestProcessContext -E2ETestSettings $E2ETestSettings -Action {
-        Invoke-Execute {
-            RunTests `
-                -Filter "EdFi.DataManagementService.Tests.E2E" `
-                -TestFilter $TestFilter `
-                -ResultNameSuffix $E2ETestSettings.TestResultSuffix
+    Invoke-WithE2EIdentityEnvironment -EnvironmentFile $E2ETestSettings.EnvironmentFile -IdentityProvider $IdentityProvider -Action {
+        Invoke-WithE2ETestProcessContext -E2ETestSettings $E2ETestSettings -Action {
+            Invoke-Execute {
+                RunTests `
+                    -Filter "EdFi.DataManagementService.Tests.E2E" `
+                    -TestFilter $TestFilter `
+                    -ResultNameSuffix $E2ETestSettings.TestResultSuffix
+            }
         }
     }
 }
@@ -1414,7 +1491,7 @@ function E2ETests {
                 -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild `
                 -Configuration $Configuration -UsePrebuiltTools:$UsePrebuiltOutput -IdentityProvider $IdentityProvider
         }
-        Invoke-Step { RunE2E -TestFilter $TestFilter -E2ETestSettings $e2eTestSettings }
+        Invoke-Step { RunE2E -TestFilter $TestFilter -E2ETestSettings $e2eTestSettings -IdentityProvider $IdentityProvider }
         return
     }
     if ($CdcSettingsPath -or $CdcBindingStatePath) { throw 'CDC settings/state parameters require -EnableKafkaCdc.' }
@@ -1450,7 +1527,7 @@ function E2ETests {
             -StartDmsAfterProvisioning:$deferDmsStart
     }
 
-    Invoke-Step { RunE2E -TestFilter $TestFilter -E2ETestSettings $e2eTestSettings }
+    Invoke-Step { RunE2E -TestFilter $TestFilter -E2ETestSettings $e2eTestSettings -IdentityProvider $IdentityProvider }
 }
 
 function Wait-ForConfigServiceAndClientRegistration {
@@ -1739,8 +1816,8 @@ function Register-InstanceE2EFixture {
         foreach ($tenantName in $tenantOrder) {
             Add-Tenant -CmsUrl $cmsUrl -AccessToken $accessToken -TenantName $tenantName | Out-Null
 
-            # Vendor Company is globally unique in CMS (UX_Vendor_Company), so each canonical fixture
-            # tenant must register a distinct, deterministic company name.
+            # Vendor Company is unique only within a tenant in CMS; each canonical fixture tenant
+            # still registers a distinct, deterministic company name so the fixtures read clearly.
             $vendorId = Add-Vendor `
                 -CmsUrl $cmsUrl `
                 -AccessToken $accessToken `
@@ -1916,6 +1993,9 @@ function RunInstanceE2E {
 
     # Run only the instance management E2E tests
     $testProject = "$solutionRoot/tests/EdFi.InstanceManagement.Tests.E2E/EdFi.InstanceManagement.Tests.E2E.csproj"
+    if ([string]::IsNullOrWhiteSpace($TestFilter)) {
+        $TestFilter = $instanceIdentityPluginExcludedFilter
+    }
     $normalizedTestFilter = ConvertTo-NormalizedTestFilter -TestFilter $TestFilter
     $resultNameSuffix =
         if ($normalizedTestFilter -match '(?i)\b(?:TestCategory|Category)\s*=\s*instance-management-ci-shard-(\d+)\b') {
@@ -2135,21 +2215,33 @@ function BuildSchemaToolsPackage {
 
 function BuildCustomValidationPackage {
     $projectPath = "$coreRoot/$customValidationProjectName/$customValidationProjectName.csproj"
-    $expectedPackagePath = "$PSScriptRoot/$customValidationPackageName.$DMSVersion.nupkg"
 
-    Write-Info "Building $customValidationPackageName package"
+    # Deliberately NOT $DMSVersion, for the reason its sibling below records: the plugin loader's
+    # newer-plugin-on-older-host preflight compares AssemblyVersions across contract packages, so a
+    # contract's version must move with its public surface and only with it. The csproj declares
+    # Version, AssemblyVersion and FileVersion, and this reads the same declaration the compiler does.
+    $packageVersion = Get-CustomValidationContractVersion
+    $expectedPackagePath = "$PSScriptRoot/$customValidationPackageName.$packageVersion.nupkg"
+
+    Write-Info "Building $customValidationPackageName package version $packageVersion"
 
     Invoke-Execute {
+        # The contract version is fixed for the life of a surface rather than moving with every
+        # build, so a stale nupkg of the very same version is the normal state of a developer's
+        # working copy rather than a rare collision, and the verification lane downstream would
+        # happily assert against it.
         if (Test-Path $expectedPackagePath) {
             Remove-Item -LiteralPath $expectedPackagePath -ErrorAction Stop
         }
 
+        # No -p:PackageVersion. A command-line global property overrides the csproj, so passing one
+        # here would put the release version back on the package and make the existence check below
+        # a restatement of an argument just passed in rather than an assertion.
         dotnet pack $projectPath `
             -c $Configuration `
             --no-build `
             --no-restore `
-            --output $PSScriptRoot `
-            -p:PackageVersion=$DMSVersion
+            --output $PSScriptRoot
 
         if (-not (Test-Path $expectedPackagePath)) {
             throw "Expected custom-validation package was not created: $expectedPackagePath"
@@ -2196,6 +2288,42 @@ function BuildPluginsPackage {
     }
 }
 
+function BuildIdentityPackage {
+    $projectPath = "$coreRoot/$identityProjectName/$identityProjectName.csproj"
+
+    # Deliberately NOT $DMSVersion, same reasoning as BuildPluginsPackage above: this contract is
+    # versioned on its own public surface independently of the DMS release, so the pack passes no
+    # -p:PackageVersion and the project's own declared version decides.
+    $packageVersion = Get-IdentityContractVersion -ProjectPath $projectPath
+    $expectedPackagePath = "$PSScriptRoot/$identityPackageName.$packageVersion.nupkg"
+
+    Write-Info "Building $identityPackageName package version $packageVersion"
+
+    Invoke-Execute {
+        # Removing the exact expected path, not a wildcard sweep, and doing it before packing. The
+        # contract version is fixed for the life of a surface rather than moving with every build,
+        # so a stale nupkg of the very same version is the normal state of a developer's working
+        # copy rather than a rare collision, and the verification lane downstream would happily
+        # assert against it.
+        if (Test-Path $expectedPackagePath) {
+            Remove-Item -LiteralPath $expectedPackagePath -ErrorAction Stop
+        }
+
+        # No -p:PackageVersion. The project's own declared version decides, which is what makes the
+        # existence check below a real assertion rather than a restatement of an argument just
+        # passed in: if the project ever produced a different version, nothing would be at this path.
+        dotnet pack $projectPath `
+            -c $Configuration `
+            --no-build `
+            --no-restore `
+            --output $PSScriptRoot
+
+        if (-not (Test-Path $expectedPackagePath)) {
+            throw "Expected identity contract package was not created: $expectedPackagePath"
+        }
+    }
+}
+
 function BuildDocumentCacheAdminPackage {
     $projectPath = "$clisRoot/$documentCacheAdminProjectName/$documentCacheAdminProjectName.csproj"
     $expectedPackagePath = "$PSScriptRoot/$documentCacheAdminPackageName.$DMSVersion.nupkg"
@@ -2232,6 +2360,7 @@ function BuildPackage {
             BuildCustomValidationPackage
             BuildDocumentCacheAdminPackage
             BuildPluginsPackage
+            BuildIdentityPackage
         }
         "Api" {
             BuildApiPackage
@@ -2247,6 +2376,9 @@ function BuildPackage {
         }
         "Plugins" {
             BuildPluginsPackage
+        }
+        "Identity" {
+            BuildIdentityPackage
         }
         default {
             throw "PackageTarget '$PackageTarget' is not recognized"
@@ -2371,13 +2503,13 @@ function DockerBuild {
     $versionArgs = @()
     if (-not [string]::IsNullOrEmpty($DMSVersion))
     {
-        # AssemblyVersion/FileVersion must be strictly numeric, so derive a numeric
-        # assembly version from the (possibly prerelease) package version.
-        $assemblyVersion = Convert-ToAssemblyVersion $DMSVersion
+        # VERSION only. The image build deliberately does not stamp AssemblyVersion or FileVersion,
+        # and nothing replaces that stamping; see the note above the publish step in src/dms/Dockerfile.
+        # SetDMSAssemblyInfo is deliberately not called from here either: it regenerates the tracked
+        # src/dms/Directory.Build.props, and this command is reached from E2ETest and StartEnvironment
+        # on every local run that does not pass -SkipDockerBuild.
         $versionArgs += "--build-arg"
         $versionArgs += "VERSION=$DMSVersion"
-        $versionArgs += "--build-arg"
-        $versionArgs += "ASSEMBLY_VERSION=$assemblyVersion"
     }
 
     Push-Location src/dms/

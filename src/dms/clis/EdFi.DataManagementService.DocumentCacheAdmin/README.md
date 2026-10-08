@@ -45,6 +45,41 @@ The tool package includes the default Ed-Fi ApiSchema workspace and uses it when
 and `AppSettings:ApiSchemaPath=<workspace>` only when the run must use an external
 bootstrap workspace with `bootstrap-api-schema-manifest.json`.
 
+For history-gated offline administration, add this **fragment to the complete settings**;
+it is not a standalone DMS configuration. Replace the state path with the original
+protected controller root and the deployment key with its original namespace. Keep normal
+CMS/target/provider/schema settings intact. The root must contain the original managed
+CREATE receipt, workflow and source history; creating an empty directory or choosing a
+new key does not establish ownership or internal-only history.
+
+Locate the original provisioning `--managed-state-path` and `--deployment-key` using
+the [recovery procedure](../../../../reference/document-cache-documentation/operations-runbook.md#recovery-procedure).
+Map those values to `StatePath` and `DeploymentKey` below. Ordinary managed creation
+with `source-history-only` can supply these records without enabling Kafka CDC.
+
+```json
+{
+  "Cdc": {
+    "PublicationHistory": {
+      "StatePath": "/absolute/original/controller-state",
+      "DeploymentKey": "original-deployment-key",
+      "LockTimeout": "00:00:30"
+    }
+  }
+}
+```
+
+`LockTimeout` defaults to 30 seconds and must be positive and at most ten minutes.
+Normal environment variables override the settings (for example,
+`Cdc__PublicationHistory__StatePath`); this CLI does not use SchemaTools' `DMS_CDC__`
+prefix. The reader derives its provider from the selected relational runtime. Keep
+state owner-only and preserve it as described by the
+[CDC state inventory](../../../../reference/cdc-documentation/operations-runbook.md#deployment-state).
+The [production history handoff](../../../../reference/cdc-documentation/operations-runbook.md#projection-handoff)
+explains admitted and rejected cases for all three internal-only commands; the
+[DocumentCache runbook](../../../../reference/document-cache-documentation/operations-runbook.md)
+remains the owner of their offline procedures.
+
 Every invocation targets exactly one DocumentCache target:
 
 ```bash
@@ -93,9 +128,13 @@ dms-document-cache status --request-json status-target.json --settings ./appsett
 Current packaged production behavior intentionally rejects `activate-offline`,
 `deactivate-offline`, and `recover-cache-ahead` unless a trusted downstream
 publication-history provider reports `internalOnly` for the same target and
-physical-source fingerprint. The default provider reports `unknown` because durable CDC
-binding/history evidence is not available in this product scope. Treat
-`downstreamHistoryPresentOrUnknown` as expected in that default state.
+physical-source fingerprint. With `Cdc:PublicationHistory` configured, the shipped
+production reader checks original managed creation/source history while holding the
+controller lock through administration. Without that configuration, the default provider
+reports `unknown`; missing, unreadable, invalid or mismatched evidence also fails closed.
+See the [CDC history decision and examples](../../../../reference/cdc-documentation/operations-runbook.md#projection-handoff).
+Binding absence, connector stop, runtime-target removal and retirement do not establish
+internal-only eligibility.
 
 All commands support `--json`. In JSON mode, stdout contains exactly one shared contract
 document and no prose. Logs, warnings, progress, and sanitized diagnostics go to stderr or
@@ -165,9 +204,13 @@ Activate a new empty target:
 dms-document-cache activate-new-empty --data-store-id 1 --confirm newEmptyActivation --settings ./appsettings.Production.json --environment Production --json
 ```
 
-Activate while writers are closed and drained. In the default packaged production state,
-this command rejects with `downstreamHistoryPresentOrUnknown` because internal-only proof
-is unavailable:
+Activate an existing `Disabled` target after following the runbook's
+[activation procedure](../../../../reference/document-cache-documentation/operations-runbook.md#activation)
+and [history decisions](../../../../reference/document-cache-documentation/operations-runbook.md#history-decisions-for-offline-administration).
+With the [history reader configured](#configuration), matching internal-only history can
+admit this command once writers are closed and drained and the remaining guards pass.
+Without that configuration, history is `unknown` and the command rejects with
+`downstreamHistoryPresentOrUnknown`:
 
 ```bash
 dms-document-cache activate-offline --data-store-id 1 --confirm offlineActivation --offline-writer-admission closedAndDrained --settings ./appsettings.Production.json --environment Production --json
@@ -185,20 +228,29 @@ Run an explicit integrity scrub:
 dms-document-cache scrub --data-store-id 1 --confirm integrityScrub --settings ./appsettings.Production.json --environment Production --json
 ```
 
-Deactivate while writers are closed and drained. In the default packaged production
-state, this command rejects with `downstreamHistoryPresentOrUnknown` because
-internal-only proof is unavailable:
+Deactivate after following the runbook's
+[deactivation procedure](../../../../reference/document-cache-documentation/operations-runbook.md#deactivation)
+and [history decisions](../../../../reference/document-cache-documentation/operations-runbook.md#history-decisions-for-offline-administration).
+With the [history reader configured](#configuration), matching internal-only history can
+admit this command once writers are closed and drained and the remaining guards pass.
+Without that configuration, history is `unknown` and the command rejects with
+`downstreamHistoryPresentOrUnknown`:
 
 ```bash
 dms-document-cache deactivate-offline --data-store-id 1 --confirm offlineDeactivation --offline-writer-admission closedAndDrained --settings ./appsettings.Production.json --environment Production --json
 ```
 
-Recover cache-ahead state only after trusted internal-only evidence exists. In the
-default packaged production state, this command rejects with
-`downstreamHistoryPresentOrUnknown` because internal-only proof is unavailable:
+Recover cache-ahead state after following the runbook's
+[recovery procedure](../../../../reference/document-cache-documentation/operations-runbook.md#recovery-procedure)
+and [history decisions](../../../../reference/document-cache-documentation/operations-runbook.md#history-decisions-for-offline-administration).
+With the [history reader configured](#configuration), matching internal-only history can
+admit recovery once writers are closed and drained and the remaining guards pass.
+Without that configuration, history is `unknown` and the command rejects with
+`downstreamHistoryPresentOrUnknown`. Replace the illustrative fingerprint with the
+current value for the selected target, as described in the procedure:
 
 ```bash
-dms-document-cache recover-cache-ahead --data-store-id 1 --confirm internalCacheAheadRecovery --offline-writer-admission closedAndDrained --settings ./appsettings.Production.json --environment Production --json
+dms-document-cache recover-cache-ahead --data-store-id 1 --confirm internalCacheAheadRecovery --offline-writer-admission closedAndDrained --expected-physical-source-fingerprint sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --settings ./appsettings.Production.json --environment Production --json
 ```
 
 Mutating request JSON uses the shared administrative DTO shape:
@@ -230,6 +282,12 @@ Writer-fenced JSON requests carry the same offline writer admission token used b
 ```
 
 ## Representation Restamp
+
+For CDC-enabled targets, start with the
+[compatible restamp handoff](../../../../reference/cdc-documentation/operations-runbook.md#representation-restamp)
+for connector containment and post-restamp observation under the
+[contract-change owner](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
+This section owns offline preview, execution and verification.
 
 Use representation restamp only for an offline correction that changes composed API or
 stream representation bytes without changing domain fields, keys, or deletion history.
@@ -382,8 +440,11 @@ state through its normal baseline procedure.
 
 If corrected bytes remove or mask sensitive information previously published to Kafka,
 do not treat a higher-version replacement, tombstone, compaction, or successful restamp as
-purge evidence. Follow the E19 sensitive-data containment and destructive binding-
-generation retirement procedure linked below before restoring CDC access.
+purge evidence. Follow the
+[sensitive-data disclosure response](../../../../reference/cdc-documentation/operations-runbook.md#sensitive-data-response)
+and [guarded generation retirement](../../../../reference/cdc-documentation/operations-runbook.md#generation-retirement)
+under the [contract-change owner](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations)
+before restoring CDC access.
 
 ## Exit Codes
 
@@ -431,7 +492,10 @@ not reconnect under presumed mutex ownership after cancellation or session loss.
 - Kafka connector setup, connector teardown, source replacement, binding retirement, topic
   management, CDC bootstrap orchestration, and downstream publication containment are E19
   concerns. Start with
-  [Add CDC Setup, Monitoring, Recovery, and Security Runbooks](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md).
+  [CDC operator reference](../../../../reference/cdc-documentation/README.md) and its
+  [projection/history handoff](../../../../reference/cdc-documentation/operations-runbook.md#projection-handoff).
+  Physical-source replacement remains a
+  [v1 deferral](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral).
 - The CLI story boundary and package verification evidence are in
   [Add a DocumentCache Administration CLI](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/epics/18-document-cache/09-documentcache-administration-cli.md);
   cross-feature DocumentCache runbook evidence is tracked by

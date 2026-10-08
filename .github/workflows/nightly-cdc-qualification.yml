@@ -19,7 +19,7 @@ on:
         description: "Suite (select Postgresql or Mssql for a specific suite)"
         type: choice
         default: All
-        options: [All, Admission, Lifecycle, Recovery, RecordSize, Telemetry, History]
+        options: [All, Admission, Lifecycle, Recovery, RecordSize, Telemetry, History, MessageContract, ApiE2E]
 
 permissions:
   contents: read
@@ -27,9 +27,13 @@ permissions:
 jobs:
   select-suites:
     name: Select CDC qualification suites
+    # Scheduled runs only in Ed-Fi-Alliance-OSS: a fork inherits the schedule but not the Slack
+    # webhook or the Ed-Fi resources the run acts on. workflow_dispatch still runs anywhere.
+    if: (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.select.outputs.matrix }}
+      suite-count: ${{ steps.select.outputs.suite-count }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,12 +47,15 @@ jobs:
         run: |
           $matrix = ./eng/ci/Get-CdcQualificationMatrix.ps1 -Lane $env:SELECTED_LANE -Suite $env:SELECTED_SUITE
           "matrix=$matrix" >> $env:GITHUB_OUTPUT
+          "suite-count=$(@(($matrix | ConvertFrom-Json).include).Count)" >> $env:GITHUB_OUTPUT
 
   run-cdc-qualification:
     name: CDC Qualification (${{ matrix.lane }} / ${{ matrix.suite }})
     needs: select-suites
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # ApiE2E reserves 30m setup/build + 60m test + 15m cleanup + 2m export
+    # inside the runner, leaving 23m for workflow prerequisites, pulls and upload.
+    timeout-minutes: 130
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select-suites.outputs.matrix) }}
@@ -56,8 +63,8 @@ jobs:
       run:
         shell: pwsh
     env:
-      CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE }}
       CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE }}
+      CDC_RUNBOOK_OWNED_STACK: '1'
       CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE }}
       CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE }}
     steps:
@@ -68,6 +75,34 @@ jobs:
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: "10.0.x"
+
+      - name: Set up Docker Buildx
+        if: matrix.suite == 'ApiE2E'
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Configure qualified Connect image
+        run: |
+          $qualified = Get-Content 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json' -Raw | ConvertFrom-Json
+          "CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE=$($qualified.image)" >> $env:GITHUB_ENV
+
+      - name: Install live runbook test dependency
+        if: (matrix.lane == 'Postgresql' || matrix.lane == 'Mssql') && (matrix.suite == 'Admission' || matrix.suite == 'Lifecycle')
+        run: Install-Module Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser
+
+      - name: Install bounded telemetry inspection clients
+        if: matrix.suite == 'Telemetry'
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y curl postgresql-client
+
+      - name: Install SQL Server bounded inspection client
+        if: matrix.suite == 'Telemetry' && matrix.lane == 'Mssql'
+        shell: bash
+        run: |
+          curl --fail --location --output "$RUNNER_TEMP/sqlcmd.tar.bz2" https://github.com/microsoft/go-sqlcmd/releases/download/v1.10.0/sqlcmd-linux-amd64.tar.bz2
+          echo "92516d98c63d99b0994de5b61350c91f6915f9b76f139a59039fbcb225c2e987  $RUNNER_TEMP/sqlcmd.tar.bz2" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/sqlcmd"
+          tar -xjf "$RUNNER_TEMP/sqlcmd.tar.bz2" -C "$RUNNER_TEMP/sqlcmd"
+          echo "$RUNNER_TEMP/sqlcmd" >> "$GITHUB_PATH"
 
       # History suites use packaged CLIs and isolated admin servers. Other suites
       # provision and clean up their own per-test containers through the runner.
@@ -97,15 +132,18 @@ jobs:
           host-port: "14339"
 
       - name: Run story-owned CDC qualification
-        run: ./eng/ci/Invoke-CdcQualification.ps1 -Lane '${{ matrix.lane }}' -Suite '${{ matrix.suite }}' -ResultsDirectory TestResults/cdc-qualification -PullImages
+        # ApiE2E builds current SchemaTools/DMS/CMS, prepares private credentials
+        # and schema assets, and admits self-contained auth through the runner.
+        # Its finally path owns teardown and sanitized export, including failures.
+        run: ./eng/ci/Invoke-CdcQualification.ps1 -Lane '${{ matrix.lane }}' -Suite '${{ matrix.suite }}' -ResultsDirectory "$env:RUNNER_TEMP/cdc-qualification" -PullImages
 
       - name: Record unavailable qualification environment
         if: failure()
         run: |
-          if (-not (Test-Path TestResults/cdc-qualification/qualification.json)) {
-            New-Item -ItemType Directory -Force TestResults/cdc-qualification | Out-Null
+          if (-not (Test-Path "$env:RUNNER_TEMP/cdc-qualification/qualification.json")) {
+            New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/cdc-qualification" | Out-Null
             @(@{ Name = 'environment-setup'; Status = 'EnvironmentUnavailable'; Total = 0; Passed = 0; Failed = 0; Skipped = 0 }) |
-              ConvertTo-Json -AsArray | Set-Content TestResults/cdc-qualification/qualification.json
+              ConvertTo-Json -AsArray | Set-Content "$env:RUNNER_TEMP/cdc-qualification/qualification.json"
           }
 
       - name: Upload structured CDC qualification evidence
@@ -113,7 +151,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cdc-qualification-${{ matrix.lane }}-${{ matrix.suite }}-${{ github.run_attempt }}
-          path: TestResults/cdc-qualification/**
+          path: ${{ runner.temp }}/cdc-qualification/**
           if-no-files-found: error
           retention-days: 14
 
@@ -127,14 +165,14 @@ jobs:
     name: Notify Results
     runs-on: ubuntu-latest
     needs: [select-suites, run-cdc-qualification]
-    if: always() && github.event_name == 'schedule'
+    if: always() && github.event_name == 'schedule' && github.repository_owner == 'Ed-Fi-Alliance-OSS'
     steps:
       - name: Notify Slack on success
         if: needs.select-suites.result == 'success' && needs.run-cdc-qualification.result == 'success'
         uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d # v2.0.0
         with:
           payload: |
-            {"text":":heavy_check_mark: DMS CI nightly CDC qualification passed, all 13 live suites verified"}
+            {"text":":heavy_check_mark: DMS CI nightly CDC qualification passed, all ${{ needs.select-suites.outputs.suite-count }} live suites verified"}
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
 

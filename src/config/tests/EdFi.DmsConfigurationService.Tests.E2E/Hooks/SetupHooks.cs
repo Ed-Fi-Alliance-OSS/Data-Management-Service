@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Tests.E2E.Keycloak;
 using EdFi.DmsConfigurationService.Tests.E2E.Management;
 using Microsoft.Data.SqlClient;
 using Npgsql;
@@ -32,6 +33,15 @@ public static class SetupHooks
     private static string EnvOrDefault(string name, string fallback) =>
         Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : fallback;
 
+    /// <summary>
+    /// The database the cleanup hooks delete from, without credentials, so an isolated run can check
+    /// before it starts that cleanup and the deployment it targets are the same.
+    /// </summary>
+    internal static string CleanupDatabaseTarget =>
+        UseMssql
+            ? $"mssql localhost:{MssqlDbPortExternal}/{DatabaseName}"
+            : $"postgresql localhost:{DbPortExternal}/{DatabaseName}";
+
     private static bool UseMssql =>
         string.Equals(
             Environment.GetEnvironmentVariable("DMS_CONFIG_DATASTORE"),
@@ -57,6 +67,46 @@ public static class SetupHooks
         }
     }
 
+    // Keycloak-specific behavior (for example a public client, which only Keycloak has) is scoped
+    // with @KeycloakOnly. Unlike @SelfContainedOnly, an unset provider means "not Keycloak".
+    [BeforeScenario("KeycloakOnly")]
+    public static void SkipUnlessKeycloakIdentityProvider()
+    {
+        if (!KeycloakCharacterizationEnvironment.IsKeycloakProvider)
+        {
+            var identityProvider = Environment.GetEnvironmentVariable("DMS_CONFIG_IDENTITY_PROVIDER");
+            Assert.Ignore(
+                $"Requires the keycloak identity provider; current provider is '{identityProvider ?? "unset"}'."
+            );
+        }
+    }
+
+    /// <summary>
+    /// A feature tagged @KeycloakRevocationObserver observes Keycloak token state through a dedicated
+    /// confidential observer client (DMS-1327 D-16), provisioned through the Keycloak admin API for the
+    /// feature run and only under the keycloak provider. The audience scope is attached to the
+    /// Configuration Service client, whose tokens the feature's Background obtains.
+    /// </summary>
+    [BeforeFeature("KeycloakRevocationObserver")]
+    public static async Task ProvisionKeycloakRevocationObserver(FeatureContext featureContext)
+    {
+        if (KeycloakCharacterizationEnvironment.IsKeycloakProvider)
+        {
+            featureContext.Set(
+                await KeycloakRevocationObserver.CreateAsync([StepDefinitions.StepDefinitions.SystemClientId])
+            );
+        }
+    }
+
+    [AfterFeature("KeycloakRevocationObserver")]
+    public static async Task RemoveKeycloakRevocationObserver(FeatureContext featureContext)
+    {
+        if (featureContext.TryGetValue(out KeycloakRevocationObserver observer))
+        {
+            await observer.DisposeAsync();
+        }
+    }
+
     // Tenant endpoints are only mapped when multi-tenancy is enabled, so scenarios
     // tagged @MultitenantOnly would get 404s against a single-tenant stack. Skip them
     // unless the environment explicitly enables multi-tenancy.
@@ -70,6 +120,18 @@ public static class SetupHooks
                 "Requires a multi-tenant CMS (tenant endpoints are only mapped when multi-tenancy is enabled); "
                     + $"DMS_CONFIG_MULTI_TENANCY is '{multiTenancy ?? "unset"}'."
             );
+        }
+    }
+
+    // Single-tenant expectations, such as an exact empty tenant list, don't hold on a
+    // multi-tenant stack. Skip scenarios tagged @SingleTenantOnly when multi-tenancy is enabled.
+    [BeforeScenario("SingleTenantOnly")]
+    public static void SkipIfMultiTenancyEnabled()
+    {
+        var multiTenancy = Environment.GetEnvironmentVariable("DMS_CONFIG_MULTI_TENANCY");
+        if (string.Equals(multiTenancy, "true", StringComparison.OrdinalIgnoreCase))
+        {
+            Assert.Ignore($"Requires a single-tenant CMS; DMS_CONFIG_MULTI_TENANCY is '{multiTenancy}'.");
         }
     }
 

@@ -243,7 +243,11 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
             Headers: [],
             TraceId: new TraceId("pg-29d-seed-sponsor"),
             DocumentUuid: SponsorDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
@@ -283,7 +287,11 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
             Headers: [],
             TraceId: new TraceId("pg-29d-seed-parentresource"),
             DocumentUuid: ParentResourceDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()

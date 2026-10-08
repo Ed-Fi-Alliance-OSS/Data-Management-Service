@@ -252,7 +252,11 @@ public class Given_A_Mssql_ParentResource_With_Collection_Aligned_Extension_Spon
             Headers: [],
             TraceId: new TraceId("mssql-29d-seed-sponsor"),
             DocumentUuid: SponsorDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
@@ -292,7 +296,11 @@ public class Given_A_Mssql_ParentResource_With_Collection_Aligned_Extension_Spon
             Headers: [],
             TraceId: new TraceId("mssql-29d-seed-parentresource"),
             DocumentUuid: ParentResourceDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()

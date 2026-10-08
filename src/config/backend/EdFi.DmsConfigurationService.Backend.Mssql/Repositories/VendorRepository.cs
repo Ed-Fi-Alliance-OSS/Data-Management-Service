@@ -34,71 +34,26 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
             await using var transaction = await connection.BeginTransactionAsync();
             try
             {
-                int id = 0;
-                bool isNewVendor = false;
-                // Check for existing vendor by Company (and TenantId if multi-tenancy is enabled)
-                var sql =
-                    $"SELECT Id FROM dmscs.Vendor WHERE Company = @Company AND {TenantContext.TenantWhereClause()}";
+                // Create-only: a company that already exists in the caller's tenant violates
+                // UX_Vendor_TenantId_Company, caught below, and nothing is written.
+                var sql = """
+                    INSERT INTO dmscs.Vendor (Company, ContactName, ContactEmailAddress, CreatedBy, TenantId)
+                    OUTPUT INSERTED.Id
+                    VALUES (@Company, @ContactName, @ContactEmailAddress, @CreatedBy, @TenantId);
+                    """;
 
-                var existingVendorId = await connection.ExecuteScalarAsync<int?>(
+                int id = await connection.ExecuteScalarAsync<int>(
                     sql,
-                    new { command.Company, TenantId },
+                    new
+                    {
+                        command.Company,
+                        command.ContactName,
+                        command.ContactEmailAddress,
+                        CreatedBy = auditContext.GetCurrentUser(),
+                        TenantId,
+                    },
                     transaction
                 );
-
-                if (existingVendorId.HasValue)
-                {
-                    sql = $"""
-                        UPDATE dmscs.Vendor
-                        SET ContactName=@ContactName, ContactEmailAddress=@ContactEmailAddress,
-                            LastModifiedAt=@LastModifiedAt, ModifiedBy=@ModifiedBy
-                        WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
-                        """;
-
-                    await connection.ExecuteAsync(
-                        sql,
-                        new
-                        {
-                            command.ContactName,
-                            command.ContactEmailAddress,
-                            Id = existingVendorId.Value,
-                            LastModifiedAt = auditContext.GetCurrentTimestamp(),
-                            ModifiedBy = auditContext.GetCurrentUser(),
-                            TenantId,
-                        },
-                        transaction
-                    );
-
-                    sql = "DELETE FROM dmscs.VendorNamespacePrefix WHERE VendorId = @VendorId";
-                    await connection.ExecuteAsync(
-                        sql,
-                        new { VendorId = existingVendorId.Value },
-                        transaction
-                    );
-                    id = existingVendorId.Value;
-                }
-                else
-                {
-                    sql = """
-                        INSERT INTO dmscs.Vendor (Company, ContactName, ContactEmailAddress, CreatedBy, TenantId)
-                        OUTPUT INSERTED.Id
-                        VALUES (@Company, @ContactName, @ContactEmailAddress, @CreatedBy, @TenantId);
-                        """;
-
-                    id = await connection.ExecuteScalarAsync<int>(
-                        sql,
-                        new
-                        {
-                            command.Company,
-                            command.ContactName,
-                            command.ContactEmailAddress,
-                            CreatedBy = auditContext.GetCurrentUser(),
-                            TenantId,
-                        },
-                        transaction
-                    );
-                    isNewVendor = true;
-                }
 
                 sql = """
                     INSERT INTO dmscs.VendorNamespacePrefix (VendorId, NamespacePrefix, CreatedBy)
@@ -121,9 +76,9 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
                 await connection.ExecuteAsync(sql, namespacePrefixes, transaction);
                 await transaction.CommitAsync();
 
-                return new VendorInsertResult.Success(id, isNewVendor);
+                return new VendorInsertResult.Success(id);
             }
-            catch (SqlException ex) when (ex.IsUniqueViolation("UX_Vendor_Company"))
+            catch (SqlException ex) when (ex.IsUniqueViolation("UX_Vendor_TenantId_Company"))
             {
                 logger.LogWarning(ex, "Company Name must be unique");
                 await transaction.RollbackAsync();
@@ -297,7 +252,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
 
             await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
             await connection.OpenAsync();
-            await using var transaction = await connection.BeginTransactionAsync();
+            await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
             try
             {
                 var affectedRows = await connection.ExecuteAsync(
@@ -344,25 +299,112 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
                 await connection.ExecuteAsync(sql, namespacePrefixes, transaction);
                 await transaction.CommitAsync();
 
-                var apiClientSql = """
-                    SELECT c.ClientUuid
-                    FROM dmscs.ApiClient c
-                        INNER JOIN dmscs.Application a ON a.Id = c.ApplicationId
-                        INNER JOIN dmscs.Vendor v ON v.Id = a.VendorId
-                    WHERE v.Id = @VendorId
-                    """;
-
-                var apiClientUuids = await connection.QueryAsync<Guid>(
-                    apiClientSql,
-                    param: new { VendorId = command.Id }
-                );
-                return new VendorUpdateResult.Success(apiClientUuids.ToList());
+                return new VendorUpdateResult.Success();
+            }
+            catch (SqlException ex) when (ex.IsUniqueViolation("UX_Vendor_TenantId_Company"))
+            {
+                logger.LogWarning(ex, "Company Name must be unique");
+                await RollbackSafelyAsync(transaction);
+                return new VendorUpdateResult.FailureDuplicateCompanyName();
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Update vendor failure");
-                await transaction.RollbackAsync();
+                await RollbackSafelyAsync(transaction);
                 return new VendorUpdateResult.FailureUnknown(ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Reads the vendor's update-relevant state and every ApiClient it owns in one
+        /// transaction that row-locks the Vendor row, so the snapshot waits out any in-flight
+        /// vendor update and the client list belongs to that same snapshot. Applications and
+        /// clients are reached only through the tenant-scoped vendor row, so they need no
+        /// further tenant predicate. Namespace prefixes are ordered deterministically because
+        /// the table records no insertion order.
+        /// </summary>
+        public async Task<VendorUpdateStateResult> GetVendorUpdateState(int vendorId)
+        {
+            await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
+            await connection.OpenAsync();
+            await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+            try
+            {
+                var vendorSql = $"""
+                    SELECT v.Company, v.ContactName, v.ContactEmailAddress
+                    FROM dmscs.Vendor v WITH (UPDLOCK, HOLDLOCK)
+                    WHERE v.Id = @Id AND {TenantContext.TenantWhereClause("v")};
+                    """;
+                var vendor = await connection.QuerySingleOrDefaultAsync<(
+                    string Company,
+                    string? ContactName,
+                    string? ContactEmailAddress
+                )?>(vendorSql, new { Id = vendorId, TenantId }, transaction);
+
+                if (vendor is null)
+                {
+                    await transaction.CommitAsync();
+                    return new VendorUpdateStateResult.FailureNotExists();
+                }
+
+                var namespacePrefixes = await connection.QueryAsync<string>(
+                    """
+                    SELECT NamespacePrefix FROM dmscs.VendorNamespacePrefix
+                    WHERE VendorId = @VendorId
+                    ORDER BY NamespacePrefix;
+                    """,
+                    new { VendorId = vendorId },
+                    transaction
+                );
+
+                VendorApiClient[] clients =
+                [
+                    .. await connection.QueryAsync<VendorApiClient>(
+                        """
+                        SELECT ac.Id, ac.ClientId, ac.ClientUuid, ac.ApplicationId
+                        FROM dmscs.ApiClient ac
+                        JOIN dmscs.Application a ON a.Id = ac.ApplicationId
+                        WHERE a.VendorId = @VendorId
+                        ORDER BY ac.ApplicationId, ac.Id;
+                        """,
+                        new { VendorId = vendorId },
+                        transaction
+                    ),
+                ];
+
+                await transaction.CommitAsync();
+
+                return new VendorUpdateStateResult.Success(
+                    new VendorUpdateState(
+                        vendor.Value.Company,
+                        vendor.Value.ContactName,
+                        vendor.Value.ContactEmailAddress,
+                        string.Join(',', namespacePrefixes),
+                        clients
+                    )
+                );
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Get vendor update state failure");
+                await RollbackSafelyAsync(transaction);
+                return new VendorUpdateStateResult.FailureUnknown(ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Rolls the transaction back without letting a rollback failure replace the intended
+        /// failure result; the disposal of the transaction remains the backstop.
+        /// </summary>
+        private async Task RollbackSafelyAsync(SqlTransaction transaction)
+        {
+            try
+            {
+                await transaction.RollbackAsync();
+            }
+            catch (Exception rollbackException)
+            {
+                logger.LogError(rollbackException, "Transaction rollback failed");
             }
         }
 

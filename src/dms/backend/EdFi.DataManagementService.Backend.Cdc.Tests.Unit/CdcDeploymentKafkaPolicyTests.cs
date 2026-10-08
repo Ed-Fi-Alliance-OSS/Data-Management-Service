@@ -347,19 +347,25 @@ public class Given_CdcDeploymentKafkaPolicy
     }
 
     [TestCase("request")]
+    [TestCase("request-without-headroom")]
     [TestCase("replica")]
     [TestCase("response")]
     public void It_checks_each_broker_capacity_including_nonleaders(string field)
     {
         CdcKafkaBrokerCapacity broker = new(
             3,
-            _plan.MaxRecordBytes,
+            CdcDeploymentKafkaPolicy.MinimumBrokerRequestBytes(_plan.MaxRecordBytes),
             _plan.MaxRecordBytes,
             _plan.MaxRecordBytes
         );
         broker = field switch
         {
-            "request" => broker with { SocketRequestMaxBytes = _plan.MaxRecordBytes - 1 },
+            "request" => broker with
+            {
+                SocketRequestMaxBytes =
+                    CdcDeploymentKafkaPolicy.MinimumBrokerRequestBytes(_plan.MaxRecordBytes) - 1,
+            },
+            "request-without-headroom" => broker with { SocketRequestMaxBytes = _plan.MaxRecordBytes },
             "replica" => broker with { ReplicaFetchMaxBytes = _plan.MaxRecordBytes - 1 },
             _ => broker with { ReplicaFetchResponseMaxBytes = _plan.MaxRecordBytes - 1 },
         };
@@ -841,7 +847,7 @@ public class Given_CdcDeploymentKafkaPolicy
                         .Range(0, 4)
                         .Select(id => new CdcKafkaBrokerCapacity(
                             id,
-                            plan.MaxRecordBytes,
+                            CdcDeploymentKafkaPolicy.MinimumBrokerRequestBytes(plan.MaxRecordBytes),
                             plan.MaxRecordBytes,
                             plan.MaxRecordBytes
                         ))

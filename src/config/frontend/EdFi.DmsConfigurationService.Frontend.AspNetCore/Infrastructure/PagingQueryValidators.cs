@@ -288,3 +288,33 @@ public class ResourceClaimActionAuthStrategyPagingQueryValidator
     public ResourceClaimActionAuthStrategyPagingQueryValidator()
         : base(AllowedFields) { }
 }
+
+public class ActionPagingQueryValidator : PagingQueryValidator<FrontendActionQuery>
+{
+    private static readonly IReadOnlySet<string> AllowedFields = new HashSet<string>(
+        StringComparer.OrdinalIgnoreCase
+    )
+    {
+        "id",
+        "name",
+    };
+
+    public ActionPagingQueryValidator()
+        : base(AllowedFields) { }
+}
+
+public class AuthorizationStrategyPagingQueryValidator
+    : PagingQueryValidator<FrontendAuthorizationStrategyQuery>
+{
+    private static readonly IReadOnlySet<string> AllowedFields = new HashSet<string>(
+        StringComparer.OrdinalIgnoreCase
+    )
+    {
+        "id",
+        "name",
+        "displayName",
+    };
+
+    public AuthorizationStrategyPagingQueryValidator()
+        : base(AllowedFields) { }
+}

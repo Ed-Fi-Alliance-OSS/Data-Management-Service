@@ -656,7 +656,11 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
             Headers: [],
             TraceId: new TraceId("pg-authoritative-ds52-contact-create"),
             DocumentUuid: ContactDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()

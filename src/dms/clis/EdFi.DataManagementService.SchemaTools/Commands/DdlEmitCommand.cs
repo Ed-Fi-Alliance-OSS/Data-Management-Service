@@ -98,7 +98,7 @@ public static class DdlEmitCommand
 
         logger.LogInformation(
             "Loading schemas: core={CorePath}, extensions={ExtensionCount}",
-            LoggingSanitizer.SanitizeForLogging(corePath),
+            LoggingSanitizer.SanitizeInternalValueForLogging(corePath),
             extensionPaths.Count
         );
 
@@ -121,7 +121,7 @@ public static class DdlEmitCommand
                 {
                     logger.LogError(
                         "Output directory is not empty: {OutputDir}",
-                        LoggingSanitizer.SanitizeForLogging(outputDir)
+                        LoggingSanitizer.SanitizeInternalValueForLogging(outputDir)
                     );
                     Console.Error.WriteLine(
                         $"Error: Output directory is not empty: {LoggingSanitizer.SanitizeForConsole(outputDir)}"

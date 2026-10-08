@@ -115,7 +115,7 @@ public class ConfigurationServiceDataStoreProvider(
                     instance.DataStoreType
                 );
             }
-            string sanitizedTenant = LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)");
+            string sanitizedTenant = LoggingSanitizer.SanitizeInternalValueForLogging(tenant ?? "(default)");
             logger.LogInformation(
                 "Data store cache updated successfully for tenant {Tenant}",
                 sanitizedTenant
@@ -188,7 +188,7 @@ public class ConfigurationServiceDataStoreProvider(
             {
                 return;
             }
-            string sanitizedTenant = LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)");
+            string sanitizedTenant = LoggingSanitizer.SanitizeInternalValueForLogging(tenant ?? "(default)");
             logger.LogInformation(
                 "Data store cache expired for tenant {Tenant} after {TtlSeconds}s, refreshing configuration from Configuration Service",
                 sanitizedTenant,
@@ -272,9 +272,9 @@ public class ConfigurationServiceDataStoreProvider(
 #pragma warning disable S6667
                     logger.LogWarning(
                         "Ownership reconciler {Reconciler} failed with {ExceptionType} for tenant {Tenant} at ownership version {Version}. Configuration was published; the next publication will deliver the complete snapshot again",
-                        LoggingSanitizer.SanitizeForLogging(reconciler.GetType().Name),
-                        LoggingSanitizer.SanitizeForLogging(exception.GetType().Name),
-                        LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)"),
+                        LoggingSanitizer.SanitizeInternalValueForLogging(reconciler.GetType().Name),
+                        LoggingSanitizer.SanitizeInternalValueForLogging(exception.GetType().Name),
+                        LoggingSanitizer.SanitizeInternalValueForLogging(tenant ?? "(default)"),
                         snapshot.Version
                     );
 #pragma warning restore S6667
@@ -351,7 +351,7 @@ public class ConfigurationServiceDataStoreProvider(
     public IReadOnlyList<string> GetLoadedTenantKeys() => _instancesByTenant.Keys.ToList().AsReadOnly();
 
     /// <inheritdoc />
-    public async Task<IList<string>> LoadTenants()
+    public async Task<IList<string>> LoadTenants(CancellationToken cancellationToken = default)
     {
         logger.LogInformation(
             "Requesting authentication token from Configuration Service at {BaseUrl}",
@@ -364,18 +364,22 @@ public class ConfigurationServiceDataStoreProvider(
             string? configurationServiceToken = await configurationServiceTokenHandler.GetTokenAsync(
                 configurationServiceContext.clientId,
                 configurationServiceContext.clientSecret,
-                configurationServiceContext.scope
+                configurationServiceContext.scope,
+                cancellationToken
             );
 
             logger.LogInformation("Fetching tenants from Configuration Service");
 
-            IList<string> tenants = await FetchTenants(configurationServiceToken);
+            IList<string> tenants = await FetchTenants(configurationServiceToken, cancellationToken);
 
             logger.LogInformation("Successfully fetched {TenantCount} tenants", tenants.Count);
 
             foreach (string tenant in tenants)
             {
-                logger.LogDebug("Found tenant: {TenantName}", LoggingSanitizer.SanitizeForLogging(tenant));
+                logger.LogDebug(
+                    "Found tenant: {TenantName}",
+                    LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
+                );
             }
 
             return tenants;
@@ -411,7 +415,10 @@ public class ConfigurationServiceDataStoreProvider(
     /// <summary>
     /// Fetches tenant names from the Configuration Service API
     /// </summary>
-    private async Task<IList<string>> FetchTenants(string configurationServiceToken)
+    private async Task<IList<string>> FetchTenants(
+        string configurationServiceToken,
+        CancellationToken cancellationToken
+    )
     {
         const string TenantsEndpoint = "v3/tenants/";
 
@@ -420,7 +427,10 @@ public class ConfigurationServiceDataStoreProvider(
         using var request = new HttpRequestMessage(HttpMethod.Get, TenantsEndpoint);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", configurationServiceToken);
         // No tenant header needed for tenants endpoint
-        HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(request);
+        using HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(
+            request,
+            cancellationToken
+        );
 
         if (!response.IsSuccessStatusCode)
         {
@@ -432,7 +442,7 @@ public class ConfigurationServiceDataStoreProvider(
 
         response.EnsureSuccessStatusCode();
 
-        string tenantsJson = await response.Content.ReadAsStringAsync();
+        string tenantsJson = await response.Content.ReadAsStringAsync(cancellationToken);
 
         logger.LogDebug(
             "Received response from Configuration Service, deserializing {ByteCount} bytes",
@@ -446,8 +456,19 @@ public class ConfigurationServiceDataStoreProvider(
 
         if (tenantResponses == null)
         {
-            logger.LogWarning("Deserialization returned null - treating as empty tenant list");
-            return [];
+            throw new JsonException(
+                $"Configuration Service {TenantsEndpoint} response deserialized to null."
+            );
+        }
+
+        foreach (TenantResponse? tenantResponse in tenantResponses)
+        {
+            if (tenantResponse == null || string.IsNullOrWhiteSpace(tenantResponse.Name))
+            {
+                throw new JsonException(
+                    $"Configuration Service {TenantsEndpoint} response contained a null entry or a tenant with a null or blank name."
+                );
+            }
         }
 
         return tenantResponses.Select(t => t.Name).ToList();
@@ -548,7 +569,7 @@ public class ConfigurationServiceDataStoreProvider(
     )
     {
         List<KeyValuePair<DataStoreDerivativeType, string>> derivatives = [];
-        string sanitizedTenant = LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)");
+        string sanitizedTenant = LoggingSanitizer.SanitizeInternalValueForLogging(tenant ?? "(default)");
 
 #pragma warning disable S3267 // Loops should be simplified with "LINQ" expressions - False positive: this loop has several early exits, per-item logging, and duplicate detection against what it has already accepted
         foreach (DataStoreDerivativeItem derivative in response.DataStoreDerivatives)
@@ -563,7 +584,7 @@ public class ConfigurationServiceDataStoreProvider(
             {
                 logger.LogError(
                     "Ignoring a data store derivative with unrecognized type '{DerivativeType}' for tenant {Tenant}, parent data store {DataStoreId}",
-                    LoggingSanitizer.SanitizeForLogging(derivative.DerivativeType ?? "(none)"),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(derivative.DerivativeType ?? "(none)"),
                     sanitizedTenant,
                     response.Id
                 );

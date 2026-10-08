@@ -6,7 +6,9 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.Claims;
@@ -62,11 +64,29 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
                 baseClaims.Count
             );
 
-            // Apply each fragment transformation
+            // Apply each fragment transformation, collecting the claim sets the fragments define
+            List<string> definedClaimSetNames = [];
             foreach (string fragmentFile in fragmentFiles)
             {
                 logger.LogInformation("Applying fragment: {FragmentFile}", fragmentFile);
-                baseClaims = ApplyFragmentTransformation(fragmentFile, baseClaims) ?? [];
+                string? definedClaimSetName = ApplyFragmentTransformation(fragmentFile, baseClaims);
+                if (definedClaimSetName is not null)
+                {
+                    // An invalid name is not registered, but the composition continues: failing it
+                    // would make Hybrid mode fall back to the base claims and drop every fragment
+                    if (IsValidClaimSetName(definedClaimSetName))
+                    {
+                        definedClaimSetNames.Add(definedClaimSetName);
+                    }
+                    else
+                    {
+                        logger.LogError(
+                            "Fragment {FragmentFile} defines a claim set name that is empty, longer than {MaxLength} characters, or contains white space; the claim set is not registered",
+                            fragmentFile,
+                            ValidationConstants.ClaimSetNameMaxLength
+                        );
+                    }
+                }
                 logger.LogDebug(
                     "After applying {FragmentFile}: {ClaimsCount} claims",
                     fragmentFile,
@@ -96,7 +116,10 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
                 transformedHierarchy = JsonNode.Parse("[]")!;
             }
 
-            JsonNode claimSetsNode = baseClaimsNodes.ClaimSetsNode ?? JsonNode.Parse("[]")!;
+            JsonNode claimSetsNode = WithDefinedClaimSets(
+                baseClaimsNodes.ClaimSetsNode,
+                definedClaimSetNames
+            );
             ClaimsDocument composedNodes = new ClaimsDocument(claimSetsNode, transformedHierarchy);
 
             logger.LogInformation(
@@ -229,9 +252,45 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
     }
 
     /// <summary>
-    /// Applies fragment transformation to existing claims (ported from CmsHierarchy.TransformClaims)
+    /// Applies the Management API claim set name rules, because a registered name becomes a claim set row
     /// </summary>
-    private List<TransformationClaim> ApplyFragmentTransformation(
+    private static bool IsValidClaimSetName(string claimSetName) =>
+        claimSetName.Length is > 0 and <= ValidationConstants.ClaimSetNameMaxLength
+        && Regex.IsMatch(claimSetName, ValidationConstants.ClaimSetNameNoWhiteSpaceRegex);
+
+    /// <summary>
+    /// Copies the base claim sets and appends, as system-reserved, each fragment-defined claim set
+    /// that the base does not already declare
+    /// </summary>
+    private JsonNode WithDefinedClaimSets(JsonNode? baseClaimSetsNode, List<string> definedClaimSetNames)
+    {
+        // Re-parse so the composed document never shares nodes with the base document
+        JsonArray claimSets = JsonNode.Parse(baseClaimSetsNode?.ToJsonString() ?? "[]")!.AsArray();
+
+        HashSet<string> declaredClaimSetNames = new(
+            claimSets.Select(claimSet => claimSet?["claimSetName"]?.GetValue<string>()).OfType<string>(),
+            StringComparer.OrdinalIgnoreCase
+        );
+
+        foreach (string claimSetName in definedClaimSetNames.Where(declaredClaimSetNames.Add))
+        {
+            claimSets.Add(new JsonObject { ["claimSetName"] = claimSetName, ["isSystemReserved"] = true });
+            logger.LogInformation(
+                "Registered claim set {ClaimSetName} defined by a claims fragment",
+                claimSetName
+            );
+        }
+
+        return claimSets;
+    }
+
+    /// <summary>
+    /// Applies fragment transformation to existing claims (ported from CmsHierarchy.TransformClaims).
+    /// Returns the claim set name the fragment defines, or null when it defines none. A fragment
+    /// defines its top-level name (or file name) as a claim set when it has a non-parent resource
+    /// claim, because those grants are attached under that name.
+    /// </summary>
+    private string? ApplyFragmentTransformation(
         string fragmentFilePath,
         List<TransformationClaim> existingClaims
     )
@@ -246,9 +305,10 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
         if (claimSetData?.ResourceClaims == null)
         {
             logger.LogWarning("Fragment file {FilePath} has no resource claims", fragmentFilePath);
-            return existingClaims;
+            return null;
         }
 
+        bool definesClaimSet = false;
         foreach (ResourceClaim resourceClaim in claimSetData.ResourceClaims)
         {
             if (resourceClaim.IsParent)
@@ -258,10 +318,11 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
             else
             {
                 ApplyChildResourceClaim(resourceClaim, existingClaims, claimSetName);
+                definesClaimSet = true;
             }
         }
 
-        return existingClaims;
+        return definesClaimSet ? claimSetName : null;
     }
 
     /// <summary>

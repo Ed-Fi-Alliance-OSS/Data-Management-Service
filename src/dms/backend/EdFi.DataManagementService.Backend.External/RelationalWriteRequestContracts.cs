@@ -34,33 +34,46 @@ public interface IWriteRequest : IRequestWithMappingSet
     BackendProfileWriteContext? BackendProfileWriteContext { get; }
 
     /// <summary>
-    /// Effective authorization strategy evaluators for the current write action.
-    /// </summary>
-    AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; }
-
-    /// <summary>
     /// Typed request-scoped authorization inputs for relational write planning/execution.
     /// </summary>
     RelationalAuthorizationContext AuthorizationContext { get; }
 }
 
 /// <summary>
-/// Relational upsert request.
+/// Relational upsert request. Carries a Create and an Update policy rather than one evaluator list,
+/// because which action a POST performs is known only once the write observes its target.
 /// </summary>
-public interface IUpsertRequest : IUpdateRequest;
+public interface IUpsertRequest : IDocumentWriteRequest
+{
+    /// <summary>
+    /// The policies for the create and update branches of this POST.
+    /// </summary>
+    UpsertActionAuthorization ActionAuthorization { get; }
+}
 
 /// <summary>
 /// Relational update request.
 /// </summary>
-public interface IUpdateRequest : IWriteRequest
+public interface IUpdateRequest : IDocumentWriteRequest
 {
     /// <summary>
-    /// The ResourceInfo of the document to update.
+    /// Effective authorization strategy evaluators for the Update action.
+    /// </summary>
+    AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators { get; }
+}
+
+/// <summary>
+/// The members shared by the relational requests that write a whole document.
+/// </summary>
+public interface IDocumentWriteRequest : IWriteRequest
+{
+    /// <summary>
+    /// The ResourceInfo of the document to write.
     /// </summary>
     ResourceInfo ResourceInfo { get; }
 
     /// <summary>
-    /// The DocumentInfo of the document to update.
+    /// The DocumentInfo of the document to write.
     /// </summary>
     DocumentInfo DocumentInfo { get; }
 

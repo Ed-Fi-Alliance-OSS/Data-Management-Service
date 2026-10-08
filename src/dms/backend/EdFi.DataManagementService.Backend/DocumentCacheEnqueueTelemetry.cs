@@ -746,7 +746,7 @@ internal static class DocumentCacheEnqueueTelemetryText
 
     public static string Sanitize(string value)
     {
-        string sanitized = LoggingSanitizer.SanitizeForLogging(value);
+        string sanitized = LoggingSanitizer.SanitizeInternalValueForLogging(value);
         if (sanitized.Length == 0)
         {
             return "DocumentCache enqueue telemetry.";

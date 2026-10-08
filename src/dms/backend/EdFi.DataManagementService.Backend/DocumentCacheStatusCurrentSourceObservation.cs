@@ -338,7 +338,7 @@ internal static class DocumentCacheStatusCurrentSourceObservationText
 
     public static string Sanitize(string? message)
     {
-        string sanitized = LoggingSanitizer.SanitizeForLogging(message);
+        string sanitized = LoggingSanitizer.SanitizeInternalValueForLogging(message);
         return sanitized.Length <= MaximumLength ? sanitized : sanitized[..MaximumLength];
     }
 }

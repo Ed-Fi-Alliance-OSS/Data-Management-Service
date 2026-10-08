@@ -18,13 +18,17 @@ file.
 | BypassTypeCoercion               | Type coercion attempts to coerce schema-guided request values to their proper type on `POST` and `PUT` requests. This includes boolean strings such as `"true"`, numeric strings such as `"100"`, and boolean numeric aliases such as `1` and `"0"`. This setting bypasses all request value type coercion for performance. |
 | AllowIdentityUpdateOverrides     | Comma separated list of resource names that allow identity updates, overriding the default behavior to reject identity updates.                                                                           |
 | MaskRequestBodyInLogs            | Controls whether to mask HTTP request bodies in log statements to avoid potentially logging PII. This setting only applies to `DEBUG` logging where requests are logged.                                  |
+| CorrelationIdHeader              | Name of the request header a client-supplied correlation ID is read from. When this setting is non-empty and the named header is present with a value that still has content after normalization, that value identifies the request in logs and in the `correlationId` of error responses; otherwise — header absent, sent empty, or normalizing to nothing but whitespace, as a value made up only of removed characters or only of whitespace does — the server-generated trace identifier is used. Client-supplied values are normalized — a logging-safe character allowlist, which removes control characters (`Cc`), format characters (`Cf` — bidirectional overrides, zero-width characters, soft hyphen, BOM) and the Unicode line/paragraph separators, and `CorrelationIdMaxLength` are applied — before use; see [Logging Policy](./LOGGING.md#correlation-id-normalization). Leave empty to disable client-supplied correlation IDs entirely: no header name is honored on any path, including the catch-all `404` for an unmatched route. Environment override: `AppSettings__CorrelationIdHeader`. Default: empty |
+| CorrelationIdMaxLength           | Maximum number of UTF-16 code units retained from a correlation ID, client-supplied or server-generated, before it is used in a log event or an error response body; longer values are truncated rather than rejected. The cut is made on a code unit rather than on a user-perceived character, which is why a non-BMP character costs two. Truncation happens before disallowed characters are removed, so an over-length value can end up shorter than this limit — either because it also contains characters the allowlist removes, which are removed after the cut, or because the cut landed inside a surrogate pair, which costs one further code unit even when there is nothing to remove. Must be between `64` and `1024` inclusive - the floor keeps the cap above every common correlation ID scheme, including the 22-character server-generated trace identifier, and the ceiling bounds how much client-controlled text one request can reflect into logs and error bodies; see [the ADR](../reference/adr-correlation-id-normalization.md#bounds-on-the-length-cap). An out-of-range value does **not** prevent the process from starting: the host starts, logs the validation failure at `Critical` once at startup, and short-circuits every request — including `/health` — with the generic Ed-Fi `500` problem-details body, carrying the same `correlationId` the request is logged under, until the setting is corrected and the service is restarted. See [Logging Policy](./LOGGING.md#correlation-id-normalization). Environment override: `AppSettings__CorrelationIdMaxLength`. Default: `255` |
 | UseApiSchemaPath                 | When set to `true`, the application loads core data standard and extension artifacts from the manifest-backed workspace at `ApiSchemaPath`. When `false`, it loads the bundled manifest-backed ApiSchema workspace from the application output. Loose no-manifest `ApiSchema*.json` folders are not a runtime loading contract. |
 | ApiSchemaPath                    | Specifies the runtime ApiSchema workspace directory containing `bootstrap-api-schema-manifest.json` and the manifest-declared core and extension schema files. The ApiSchemaDownloader CLI can be used to download and extract the published ApiSchema packages before the root manifest is materialized. |
 | DomainsExcludedFromOpenApi       | Comma separated list of domain names to exclude from OpenAPI documentation generation. Domains listed here will not appear in the generated OpenAPI specifications. Case insensitive. |
 | IdentityProvider                 | Specifies the authentication provider. Valid values are `keycloak` (to use Keycloak's authentication) and `self-contained` (to use self-contained authentication). When using `self-contained`, you must also provide a value for `IdentitySettings:EncryptionKey`. Default: self-contained |
-| RouteQualifierSegments           | Comma separated list of route qualifier context segments as defined by `dataStoreContexts` in Configuration Service. Example: "districtId,schoolYear" |
+| RouteQualifierSegments           | Comma separated list of route qualifier context segments as defined by `dataStoreContexts` in Configuration Service. Example: "districtId,schoolYear". The names `__identityId` and `__identityToken` are reserved, and names that are equal under case-insensitive comparison are rejected, whether or not identity management is enabled. As with `CorrelationIdMaxLength`, a rejected value does not stop the process: the host starts, logs the validation failure at `Critical`, and answers every request, including `/health`, with the generic Ed-Fi `500` until the setting is corrected and the service is restarted. |
 | MultiTenancy                     | When `true`, enables multi-tenancy mode where the tenant identifier is extracted from the URL route. Default: `false` |
-| ManagementEndpoints:RequiredRole | Single literal role token a bearer must carry, under `JwtAuthentication:RoleClaimType`, to reach `reload-claimsets` and `view-claimsets`. Empty by default, which leaves those endpoints unmapped. Environment override: `AppSettings__ManagementEndpoints__RequiredRole`. Recommended: `dms-management-operator` |
+| EnableManagementEndpoints       | When `true`, allows the DMS claimset management endpoint surface to be registered. When `false`, `/management/reload-claimsets` and `/management/view-claimsets` are not mapped. Environment override: `AppSettings__EnableManagementEndpoints`. Default: `false` |
+| EnableIdentityManagement        | When `true`, maps the DMS-owned `/identity/v2/identities` routes and serves the identity OpenAPI document, its metadata listing entry, and the `identity` Discovery URL. When `false`, none of them exist and the identity routes fall through to the catch-all `404`. The operations themselves are performed by an identity provider plugin; with none registered, a request that passes authentication, tenant, client-binding and identity-claim checks answers `404` with `urn:ed-fi:api:identities:operation-not-supported`. Environment override: `AppSettings__EnableIdentityManagement`. Default: `false` |
+| ManagementEndpoints:RequiredRole | Single literal role token a bearer must carry, under `JwtAuthentication:RoleClaimType`, to reach `reload-claimsets` and `view-claimsets`. Empty by default, which leaves those endpoints unmapped. Environment override: `AppSettings__ManagementEndpoints__RequiredRole`. Recommended: `cms-client` |
 | MaximumPageSize                  | Upper bound for the `limit` and `pageSize` query parameters on GET-many requests, and the page size applied when neither is supplied. Also the `default` and `maximum` published for those parameters in the OpenAPI specification. Must be greater than `0`; the service refuses to start otherwise. Environment override: `AppSettings__MaximumPageSize`. Default: `500` |
 | DefaultPartitionCount            | Number of partitions returned by a resource or descriptor `/partitions` request that omits the `number` query parameter. Also the `default` published for `numberOfPartitions` in the OpenAPI specification. Must be between `1` and `200`, the same range accepted for `number`; the service refuses to start otherwise. Environment override: `AppSettings__DefaultPartitionCount`. See [Cursor Paging](./CURSOR-PAGING.md). Default: `10` |
 | UseLegacyDocumentIdOrderingForChangeQueries | When `true`, restores unconditional `DocumentId` ordering and anchoring for change-version-filtered collection reads, disabling the conditional `ContentVersion` ordering and anchoring used for bounded and max-only change-version windows, and for any change-version-filtered read served from a snapshot. Governs all three paging shapes of a GET-many collection: `limit`/`offset` page selection, `pageToken` cursor pages, and `/partitions` boundary calculation. **Changing this setting invalidates the cursor and partition tokens already issued for the shapes whose anchor it governs**: those issued for a max-bearing window, and those issued for any change-version-filtered read served from a snapshot. Those tokens are `ContentVersion`-anchored while the setting is `false` and `DocumentId`-anchored while it is `true`, which is why a flip in either direction invalidates them. A client replaying one is answered with the invalid-page-token response and must restart its walk, so expect in-flight walks and distributed partition tokens of those shapes to fail after a flip in either direction. Tokens anchored on `DocumentId` — every unfiltered walk, and every min-only walk against current data — resolve that same anchor under either setting and keep working across a flip. Deployment-wide rollback switch for incident response; not per-client. See [Cursor Paging](./CURSOR-PAGING.md). Default: `false` |
@@ -33,12 +37,16 @@ file.
 | ReverseProxy:KnownNetworks       | Comma-separated list of trusted reverse-proxy networks in CIDR notation whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.0/8,172.16.0.0/12` |
 | EnableApplicationResetEndpoint   | When `true`, enables the `/v3/applications/{id}/reset-credential` endpoint in the Configuration Service, allowing application credentials to be reset via API. When `false`, the endpoint is not registered and will return a 404 (Not Found) response. <br>**Recommended:** Set to `false` if you need to support multiple API clients per application, as enabling this endpoint may interfere with multi-client scenarios. Default: `false` |
 
-`ManagementEndpoints:RequiredRole` must be one untrimmed token no longer than 256 characters. Values
-containing ASCII whitespace, commas, semicolons, quotes, brackets, braces, or control characters are
+Claimset management endpoints use three separate controls. `EnableManagementEndpoints` is the
+global exposure switch; when it is `false`, the claimset management routes are not mapped.
+When it is `true`, `ManagementEndpoints:RequiredRole` must be one untrimmed token no longer
+than 256 characters, and `JwtAuthentication:RoleClaimType` must be present. Values containing
+ASCII whitespace, commas, semicolons, quotes, brackets, braces, or control characters are
 invalid and leave the claimset management endpoints unmapped, as does a missing or blank
 `JwtAuthentication:RoleClaimType`. A request to a mapped endpoint without a valid bearer token
-receives `401`; a valid token whose claims do not include this exact role under the configured role
-claim type receives `403`.
+receives `401`; a valid token whose claims do not include this exact role under the configured
+role claim type receives `403`. `EnableClaimsetReload` is checked later by the claimset
+operation handlers; it does not control route registration.
 
 ## MappingPacks
 
@@ -78,6 +86,9 @@ and
 [configuration and projection target selection](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#configuration-and-projection-target-selection).
 For operational workflows, use the
 [DocumentCache operations runbook](../reference/document-cache-documentation/operations-runbook.md).
+For connector setup, publication history and CDC operations, use the
+[CDC operator reference](../reference/cdc-documentation/README.md) and its
+[projection/history handoff](../reference/cdc-documentation/operations-runbook.md#projection-handoff).
 
 | Parameter                               | Description                                                                                                                                                  |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -92,7 +103,7 @@ For operational workflows, use the
 | Administration:WorkflowTimeout          | Positive timeout for cache administrative workflows. Default: `1.00:00:00`.                                                                                   |
 | Status:StatusObservationTimeout         | Positive per-target timeout for observing durable DocumentCache status facts. Default: `00:00:05`.                                                           |
 | Status:EndpointTimeout                  | Positive timeout budget for the `GET /health/document-cache` status endpoint. Default: `00:00:30`.                                                           |
-| Status:RequiredRole                     | Single literal role token required to map and authorize `GET /health/document-cache`. Empty by default, leaving the endpoint unmapped. Recommended: `dms-document-cache-operator`. |
+| Status:RequiredRole                     | Single literal role token required to map and authorize `GET /health/document-cache`. Empty by default, leaving the endpoint unmapped. Recommended: `dms-client`. |
 
 Direct fill uses the shared cache materializer/writer with purpose `DirectFill`; it does
 not build cache rows from the shaped API response and it does not replace the response
@@ -103,6 +114,24 @@ available.
 `Status:RequiredRole` must be one untrimmed token no longer than 256 characters. Values
 containing ASCII whitespace, commas, semicolons, quotes, brackets, braces, or control
 characters are invalid and leave the DocumentCache status endpoint unmapped.
+
+## CDC deployment configuration
+
+The [SchemaTools CDC reference](../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands)
+owns the `Cdc` settings catalog and command output. The
+[PostgreSQL](../reference/cdc-documentation/operations-runbook.md#postgresql-setup)
+and [SQL Server](../reference/cdc-documentation/operations-runbook.md#sql-server-setup)
+procedures prepare complete DMS settings plus deployment configuration. Direct
+`api-schema-tools cdc` calls accept `DMS_CDC__` overrides; bootstrap wrappers reject
+those overrides and snapshot protected input settings for subsequent commands.
+
+Configuring `DocumentCache:Targets` is not connector registration. The deployment
+controller owns registration and combined readiness under the
+[configuration/target-selection](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#configuration-and-projection-target-selection)
+and [initial-enablement](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence)
+contracts. The [supported deployment scope](../reference/cdc-documentation/README.md#supported-deployment)
+describes the local CLI profile and prerequisites for other deployments; settings alone
+do not supply production authority or ACL isolation.
 
 ## Configuration Service AppSettings
 
@@ -119,6 +148,44 @@ The following parameters apply to the DMS Configuration Service (`appsettings.js
 | ReverseProxy:UseForwardedHeaders | When `true`, the application respects reverse proxy `X-Forwarded-*` headers for URL generation, but only from trusted sources configured in `ReverseProxy`. Default: `false`. See [Reverse Proxy and Forwarded Headers](#reverse-proxy-and-forwarded-headers). |
 | ReverseProxy:KnownProxies    | Comma-separated list of exact trusted reverse-proxy IP addresses (IPv4 or IPv6) whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.5,10.0.0.6`                                                  |
 | ReverseProxy:KnownNetworks   | Comma-separated list of trusted reverse-proxy networks in CIDR notation whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.0/8,172.16.0.0/12`                                                  |
+
+## JobSettings
+
+The Configuration Service runs durable background jobs: a worker that claims and runs jobs, a dispatcher that turns recurring schedules into jobs, and a retention sweep that deletes old finished jobs. These settings control them (`appsettings.json` section `JobSettings`; in the provided Docker Compose files, `JobSettings__<Parameter>` is set from `DMS_CONFIG_JOBS_<PARAMETER>`, for example `DMS_CONFIG_JOBS_POLL_INTERVAL`). Durations use the `[d.]hh:mm:ss` format. The service validates every value at startup and refuses to start, naming `JobSettings:<Parameter>` and the accepted range, when one is out of bounds.
+
+For how jobs run, recover, and are observed, see [Configuration Service Background Jobs](./CMS-BACKGROUND-JOBS.md).
+
+| Parameter            | Description                                                                                                                                              | Default      | Accepted range                   |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | -------------------------------- |
+| WorkerEnabled        | Runs the worker on this instance.                                                                                                                        | `true`       | `true`, `false`                  |
+| SchedulerEnabled     | Runs the schedule dispatcher on this instance.                                                                                                           | `true`       | `true`, `false`                  |
+| RetentionEnabled     | Runs the retention sweep on this instance.                                                                                                               | `true`       | `true`, `false`                  |
+| PollInterval         | How often an idle worker or dispatcher checks for work.                                                                                                  | `00:00:05`   | 1 s – 5 min                      |
+| LeaseDuration        | How long a running job is owned before another instance may take it over. A crashed instance's job is picked up again at most this long after its last renewal. | `00:05:00`   | 30 s – 1 h                       |
+| RenewalInterval      | How often a running job renews its lease. Half of it is the time limit for one renewal or outcome write.                                                  | `00:01:00`   | 12 s – `LeaseDuration` / 3       |
+| FenceTimeout         | The longest a job's fenced database write may take.                                                                                                      | `00:00:10`   | 1 s – 1 min                      |
+| MaxAttempts          | Executions a job may start before it fails for good.                                                                                                     | `5`          | 1 – 20                           |
+| RetryBackoffBase     | The wait before the first retry; each later retry doubles it.                                                                                            | `00:00:30`   | 1 s – 1 h                        |
+| RetryBackoffMaximum  | The longest wait between retries.                                                                                                                        | `00:15:00`   | `RetryBackoffBase` – 24 h        |
+| MaxConcurrentJobs    | Jobs one instance runs at the same time.                                                                                                                 | `2`          | 1 – 32                           |
+| FinishedJobRetention | How long a completed or failed job is kept.                                                                                                              | `7.00:00:00` | 1 h – 365 d                      |
+| RetentionInterval    | How often the retention sweep runs.                                                                                                                      | `01:00:00`   | 1 min – 24 h                     |
+| RetentionBatchSize   | Jobs one retention batch deletes.                                                                                                                        | `500`        | 1 – 2000                         |
+
+The lease must also leave room for a late renewal. Startup also requires `RenewalInterval + 2 × 6 s + FenceTimeout + 5 s + RenewalInterval / 2 + SafetyMargin <= LeaseDuration`. The 2 × 6 s term is the fixed fence acquisition timeout, which a fence can use twice while a renewal waits for it: once to open its connection and transaction, and once to lock and check the job row. The 5 s term is the fixed lock wait of a renewal. It already falls within `RenewalInterval / 2` and is counted again as extra allowance. `SafetyMargin` is the larger of 10 s and `LeaseDuration / 6`. With the defaults this is 60 + 12 + 10 + 5 + 30 + 50 = 167 s, within 300 s. When it fails, the startup message lists each term's value.
+
+## SecretsSettings
+
+A stored data store or derivative connection string may name a secret instead of carrying it, as a `${secret:<name>}` token inside a value, for example `Password=${secret:prod/dms/ds-2026}`. When the Configuration Service reads the row, it asks the `ISecretResolver` a Configuration Service plugin registers for each token's value. These settings control how often it asks and how long it waits (`appsettings.json` section `SecretsSettings`; in the provided Docker Compose files, `SecretsSettings__<Parameter>` is set from `DMS_CONFIG_SECRETS_<PARAMETER>`, for example `DMS_CONFIG_SECRETS_CACHE_EXPIRATION_SECONDS`). The service validates both values at startup and refuses to start, naming `SecretsSettings:<Parameter>` and the accepted range, when one is out of bounds.
+
+| Parameter              | Description                                                                                                                                                                                                                       | Default | Accepted range  |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | --------------- |
+| CacheExpirationSeconds | How long a resolved value is reused, per tenant and secret name, before the resolver is asked again. The expiration is absolute from when the value was fetched; reads do not extend it. It is measured on the system clock, so a step back in that clock lengthens it by the size of the step. `0` disables caching, so every read that needs a value asks the resolver; reads that ask for the same value at the same moment still share one call. | `300`   | `0` or greater  |
+| ResolveTimeoutSeconds  | How long one read may spend waiting on the resolver, across all the calls it makes, before the reference it is waiting for fails. It covers each whole call, including any work the resolver does before it returns, and it counts from the first reference the read resolves, so a store that answers each call slowly costs one allowance per read, not one per secret name. Once it has passed, the rest of that read uses only values already cached and does not ask the resolver again. A reference the read can no longer ask for is unresolved: a data store that holds one fails the whole read with an HTTP 500, collection or single row, and a derivative read as part of its data store is returned with a null connection string. A call the read stopped waiting for keeps running until its own deadline, which is this value counted from when the call started, and caches a value it returns by then, so with caching on a later read finds it and recovers. For the first reference a read resolves the two deadlines coincide, to within timer resolution, so a value that call returns after the read stopped waiting is dropped. With `CacheExpirationSeconds` at `0` nothing is kept, not even within one read: every reference on every row the read returns is its own call, one after another, including a name already resolved for an earlier row or keyword. A collection read of twenty data stores that share one secret makes twenty calls, so a store whose calls for one read take longer than this value in total fails that read every time. Size this value for the slowest whole read, counting every reference on every row, not the slowest call, or leave caching on. A read that joins a call another read started stops waiting when that call reaches its own deadline, which can come before the joining read's allowance is spent; that reference is unresolved, and the read keeps the time it has left for the references after it. A data store read includes one derivative read, so it waits at most twice this value however many rows it returns. DMS fetches a tenant's data stores with a 100-second HTTP client timeout, so keep twice this value well under 100 seconds. | `10`    | `1` – `4294967` |
+
+**Writing a connection string can direct any secret the plugin can reach.** Nothing restricts which name a reference uses, and the value of every string keyword is resolved, not only `Password`; a typed keyword such as `Port` refuses a reference when the value is written. A client allowed to create or update data stores or derivatives (`edfi_admin_api/full_access`), in any existing tenant, since a request names its tenant in the `Tenant` header, can therefore store a connection string such as `Host=<a server it controls>;Username=${secret:<any name>}`. CMS resolves it, and DMS sends the resolved value to that server when it connects, which it does at startup for every data store it loads, whether or not an application is bound to it; nothing checks the host. Without secret resolution, that client could replace a stored password but never read one. A value resolved into a keyword other than `Password`, such as a username or database name, can also appear in DMS's own error logs, because the database driver repeats it in a failed-login or unknown-database message and DMS logs that exception; CMS's logs never carry a resolved value, but DMS's are outside that rule. Grant write access to data stores accordingly, and scope the vault identity the plugin uses to the secrets CMS is meant to serve; that narrows what such a client can reach but does not close the path.
+
+**A rotation reaches DMS within the sum of two windows.** A secret rotated in the store is seen by the Configuration Service within `CacheExpirationSeconds`, and by a running DMS within its own `CacheSettings:DataStoreCacheExpirationSeconds` after that (see [CacheSettings](#cachesettings)). On the defaults that is up to 300 + 600 seconds, about fifteen minutes. For that whole window DMS keeps using the previous value, so write the new credential first and revoke the old one only after the window has elapsed. Both windows are measured on the system clock, so allow longer if a host's clock may have been stepped back during it. Nothing pushes a rotation sooner; to apply one immediately, restart both the Configuration Service and DMS. When DMS's `DataStoreCacheRefreshEnabled` is `false` or its `DataStoreCacheExpirationSeconds` is not positive, DMS keeps the value it loaded until it restarts.
 
 ## Reverse Proxy and Forwarded Headers
 
@@ -193,7 +260,7 @@ These settings configure how the DMS API connects to the Configuration Service t
 | ClientId               | The client identifier (client ID) used to access the Configuration Service endpoints.                                                                                    |
 | ClientSecret           | The client secret associated with the client ID for accessing the Configuration Service endpoints. Set via the `CONFIG_SERVICE_CLIENT_SECRET` environment variable. Must satisfy the CMS client-secret rules described in [IdentitySettings.ClientSecretValidation](#identitysettingsclientsecretvalidation). |
 | EncryptionKey         | Key used to encrypt and decrypt Configuration Service connection strings. Set via the `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` environment variable and must match CMS `DatabaseSettings:EncryptionKey`. Used by `provision-dms-schema.ps1` to decrypt protected CMS datastore connection strings. DMS requires only a non-empty value; CMS rejects its `DatabaseSettings:EncryptionKey` at startup unless the value is at least 32 characters, ASCII, and does not derive the same key as the former shipped `appsettings.json` default. See the note below for valid-value semantics. |
-| Scope                  | The authorization scope required for accessing the Configuration Service endpoints. Example: `edfi_admin_api/authMetadata_readonly_access`                               |
+| Scope                  | The authorization scope required for accessing the Configuration Service endpoints. Example: `edfi_admin_api/authMetadata_readonly_access`. With multi-tenancy enabled, use `edfi_admin_api/readonly_access`: DMS also reads `/v3/tenants`, which the limited scope does not grant (see [ROLES-SCOPES.md](ROLES-SCOPES.md)). |
 
 > [!NOTE]
 > **Shared key.** In the provided Docker Compose files, a single
@@ -233,18 +300,39 @@ These settings configure how the DMS API connects to the Configuration Service t
 > Configuration Service were encrypted with the previous key and are not
 > re-encrypted automatically. After setting a new key, re-submit each data store
 > and data store derivative connection string through the Admin API; an update
-> stores the value encrypted under the currently configured key. Until a
-> connection string has been re-submitted, DMS cannot decrypt it and reports a
-> decryption failure.
+> stores the value encrypted under the currently configured key. The
+> Configuration Service decrypts every stored connection string when it is read,
+> so until a connection string has been re-submitted:
+> - A data store still under the previous key fails every data store read that
+>   includes it, the collection as well as the single row, with an HTTP 500 whose
+>   log entry says the stored connection string could not be decrypted. DMS
+>   therefore cannot load that tenant's data stores. The stored format is not
+>   authenticated, so about one value in 256 decrypts under the wrong key into
+>   unreadable text instead of failing; that read succeeds, and returns a
+>   connection string DMS cannot use.
+> - A derivative still under the previous key fails the data store derivative
+>   reads the same way. Read as part of its data store, it is returned with a null
+>   connection string, which DMS treats as not configured, and the data store and
+>   its other derivatives are unaffected.
+>
+> Re-submitting a value is a write, which does not decrypt the stored one, so the
+> procedure works while reads fail. The update replaces the other fields too, and
+> needs their values: a data store's `id`, `dataStoreType` and `name` (`provider`
+> is kept when omitted), and a derivative's `id`, `dataStoreId` and
+> `derivativeType`. While reads fail the Admin API cannot supply them, so record
+> them before changing the key, or read them from the data store and derivative
+> tables, where only `ConnectionString` is encrypted: `dmscs.DataStore` and
+> `dmscs.DataStoreDerivative` on SQL Server, `"dmscs"."DataStore"` and
+> `"dmscs"."DataStoreDerivative"` on PostgreSQL, where the quotes are required.
 >
 > This applies to local Docker Compose stacks as well, where the environment
 > files under `eng/docker-compose/` supply the key. Picking up an updated
 > environment file changes the derived key, so a database volume created before
 > the change still holds connection strings encrypted under the previous one.
-> `provision-dms-schema.ps1` then fails with a decryption error even though CMS
-> and DMS agree on the new value — the mismatch is with the stored data, not
-> between the services. Recreate the database volume, or apply the re-submission
-> procedure above.
+> `provision-dms-schema.ps1` then fails when it lists the data stores, with the
+> Configuration Service's HTTP 500, even though CMS and DMS agree on the new
+> value — the mismatch is with the stored data, not between the services.
+> Recreate the database volume, or apply the re-submission procedure above.
 
 ## CacheSettings
 
@@ -328,6 +416,231 @@ These settings configure the allowed client-secret length range used by CMS regi
 > run `teardown-local-dms.ps1` and set up again, or drop the Keycloak realm / `dmscs` OpenIddict
 > tables — then start with the new secret.
 
+## Plugins
+
+Plugins are directories of already-published assemblies that DMS loads at startup and
+lets contribute to its configuration and its service composition. This section is the
+**only** configuration surface for them: it says what may load, and nothing about
+where the bytes came from. DMS ships no fetcher; getting a plugin directory under the
+root is a deployment step that happens before the process starts. See
+[Plugins](./OPERATIONS.md#plugins) for the two acquisition recipes, the trust model,
+and what a startup failure means, and
+[eng/docker-compose/README.md](../eng/docker-compose/README.md) for running them
+against a local development stack.
+
+A plugin is built against up to three published contract packages, on the Ed-Fi
+Azure Artifacts feed at
+`https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json`:
+
+| Package                     | What it declares                                                                                                   |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `EdFi.Api.Plugins`          | `EdFiApiPlugin`, the base class a plugin implements.                                                               |
+| `EdFi.Api.CustomValidation` | `ICustomResourceValidator`, for a plugin that registers a validator.                                               |
+| `EdFi.Api.Secrets`          | `ISecretResolver` and `IClientSecretHasher`, for a [Configuration Service plugin](#configuration-service-plugins). |
+
+None carries a Data Management Service or Configuration Service release version.
+Each declares its own semantic version, in its own source, and moves it only when
+its public surface, its XML documentation or its declared dependencies change,
+because the loader compares contract assembly versions when it decides whether a
+plugin may run. Which contract versions a Data Management Service release carries
+is stated in the host assembly manifest attached to that release. A Configuration
+Service release has no such manifest; the versions it carries, `EdFi.Api.Secrets`
+included, are the ones declared in source at that release's tag. None of this is
+configuration: it is what a vendor compiles against before the directory this
+section governs ever exists.
+
+| Parameter | Description                                                                                                                                                                                                                  |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Directory | The plugin root. Defaults to `/app/plugins`, and a relative value is resolved against the application's base directory. A root that does not exist is not an error when `Allowed` is empty.                                   |
+| Allowed   | A comma-delimited, ordered list of plugin directory names under `Directory`. **Ships empty**, which loads nothing. Each name must be a single path segment; a repeated name, including one that repeats only after trimming, fails startup. |
+
+`appsettings.json` ships `"Plugins": { "Directory": "/app/plugins", "Allowed": "" }`,
+so a deployment that adopts no plugin boots exactly as it did before the mechanism
+existed.
+
+`Allowed` is the only switch. A plugin runs if and only if its directory name
+appears here, and there is no per-feature switch of any kind. A directory present
+under the root but absent from `Allowed` is never opened. When `Allowed` names at
+least one plugin, those directories produce **one aggregate warning** listing all of
+them, not one warning each; where the root cannot be listed at all, a different
+warning says so instead. An empty `Allowed` asks for nothing and does not inspect
+the root, so it produces neither. See
+[When a plugin does not load](./OPERATIONS.md#when-a-plugin-does-not-load-dms-does-not-start)
+for how to read the two.
+
+**The value is split on commas once, and each entry is trimmed.** Whitespace around
+a name is removed before the name is used for anything, an empty entry is dropped
+rather than rejected, and what is left must be a single path segment. Duplicate
+detection is the one comparison that folds case: two entries differing only in case
+would name one directory on a case-insensitive filesystem and two on the Linux
+image, so the allowlist is treated as ambiguous and startup fails. Every other
+comparison the loader makes on a name is ordinal.
+
+Loading runs before the logging pipeline exists, so the loader writes its own lines
+to standard error. Its warnings are also replayed through the configured application
+logger once one exists, as `Plugin loader warning` events, so a deployment that
+collects application logs rather than container output still sees them.
+
+The order written is the invocation order, so it is what decides the order in which
+plugins contribute, and, where two plugins supply the same configuration key, which
+one wins: the later one. See [Configuration precedence](#configuration-precedence).
+
+Both keys bind from environment variables in the standard way, which is how a
+container deployment sets them:
+
+```text
+Plugins__Directory=/app/plugins
+Plugins__Allowed=Sea.Dms.StudentIdValidator,Acme.Dms.Identity
+```
+
+### Configuration precedence
+
+For a key read **after** DMS has registered its services, the sources rank as
+follows, highest first:
+
+| Rank | Source | Notes |
+| ---- | ------ | ----- |
+| 1 | Unprefixed environment variables | The unprefixed environment source DMS appends itself, above the one ASP.NET Core's builder installs. See below for why this outranks the command line. |
+| 2 | Command-line arguments | Installed only when the host is started with arguments, which the stock container is not. |
+| 3 | Plugin-contributed configuration sources, in `Allowed` order | A later plugin in `Allowed` outranks an earlier one. |
+| 4 | `appsettings.json` and the other JSON sources | Including `appsettings.{Environment}.json`. |
+| 5 | `ASPNETCORE_` and `DOTNET_` prefixed environment variables | Installed by ASP.NET Core's builder below the JSON sources, and read with the prefix removed, so `ASPNETCORE_AppSettings__MaximumPageSize` supplies `AppSettings:MaximumPageSize`. These are not the operator override that ranks 1 and 2 describe. |
+
+**Plugin sources land at rank 3 once the loader has placed them.** A plugin contributes
+configuration sources from its `ContributeConfiguration` hook, which DMS runs for
+each allowlisted plugin, in `Allowed` order, as soon as the plugins have loaded. After
+each hook the loader loads the sources that plugin added, once, and inserts them into
+the host's configuration as a single source immediately below the unprefixed
+environment source ASP.NET Core's builder installs, keeping their order within it.
+The effects:
+
+- A plugin value outranks every JSON source, including an empty string that
+  `appsettings.json` ships for the same key, such as
+  `ConfigurationServiceSettings:EncryptionKey`.
+- A plugin value also outranks the `ASPNETCORE_` and `DOTNET_` prefixed environment
+  sources, which sit below the JSON sources. An operator who sets
+  `ASPNETCORE_AppSettings__MaximumPageSize` does not override a plugin that supplies
+  `AppSettings:MaximumPageSize`; the unprefixed `AppSettings__MaximumPageSize` does.
+- A value the operator sets as an unprefixed environment variable or on the command
+  line outranks every plugin source added through `ContributeConfiguration`. An
+  operator who wants a plugin to supply a value does not also set it there. This rests on the plugin
+  keeping to its contract: a plugin's `ContributeServices` hook, like the rest of its
+  code, receives the live configuration, and one that adds a source there skips
+  placement and can outrank the operator. DMS does not detect that; it is part of
+  the full process trust a loaded plugin runs with (see
+  [Trust](./OPERATIONS.md#trust)).
+- Among plugins, the later one in `Allowed` wins, so the order of `Allowed` is part of
+  the configuration and not only a list of what may run.
+
+**Why unprefixed environment variables outrank the command line.** ASP.NET Core's own builder
+installs the command-line source above the unprefixed environment source, so on its
+own the command line would win. DMS then appends one more environment source of its
+own, with the `AddEnvironmentVariables()` call in `AddServices`
+([`Infrastructure/WebApplicationBuilderExtensions.cs`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/WebApplicationBuilderExtensions.cs)),
+and an appended source outranks everything already installed.
+
+**That appended source carries a qualifier, and the qualifier is not cosmetic: it
+outranks the command line only for keys read after that `AddEnvironmentVariables()`
+call.** Two reads happen before it, and for those two the command line wins:
+
+- **Serilog's configuration.** `AddServices` calls `ConfigureLogging()`, which reads
+  `webAppBuilder.Configuration`, before it calls `AddEnvironmentVariables()`, so the
+  `Serilog` section is resolved without the appended source. Plugin sources are
+  already in place by then, so for this section the order is command line,
+  unprefixed environment, plugins, JSON, then the prefixed environment sources.
+- **The whole `Plugins` section, not just `Allowed`.** The plugin-loading bootstrap
+  phase binds the section in one go, `Allowed` and `Directory` alike, and it runs
+  before the phase that calls `AddServices` at all. That ordering is deliberate for
+  `Allowed`: the allowlist decides what may execute, so it is resolved from the
+  host's own sources rather than from any source a plugin could contribute.
+  `Directory` comes from the same bind and is resolved there whenever the allowlist
+  names anything, so it is a bootstrap read too. A deployment that sets
+  `Plugins__Directory` in the environment and also passes `--Plugins:Directory` on
+  the command line loads from the **command-line** root, which is not necessarily the
+  one it provisioned.
+
+**In the shipped container this is narrow, because there is no command-line source
+to lose to.** `src/dms/run.sh` starts the application as
+`dotnet EdFi.DataManagementService.Frontend.AspNetCore.dll` with nothing after it,
+so the builder installs no command-line source and ranks 1 and 2 collapse to rank 1.
+Only a deployment that starts the host with arguments of its own is affected by the
+qualifier above.
+
+> [!IMPORTANT]
+> **Some values cannot come from a plugin source**, because each is read before any
+> plugin's `ContributeConfiguration` hook has run:
+>
+> - `AppSettings:StartupStatusFilePath`, read immediately after the builder is
+>   created and before plugins are loaded, because the startup status file is how a
+>   plugin loading failure is reported and it cannot depend on anything a plugin
+>   supplied.
+> - The `Plugins` section, `Allowed` and `Directory` alike, which decides which
+>   plugins load at all.
+> - The values `src/dms/run.sh`, the container entry point, reads from the
+>   environment before the .NET process starts:
+>   - `AppSettings__Datastore`, which decides whether it waits for PostgreSQL. It
+>     defaults to `postgresql` when unset, so a plugin that supplies `mssql` while
+>     the environment leaves it unset still gets the PostgreSQL wait, which does not
+>     end.
+>   - `DATABASE_CONNECTION_STRING_ADMIN`, which that wait connects with.
+>   - `AppSettings__UseApiSchemaPath` and `AppSettings__ApiSchemaPath`, which decide
+>     whether and where it downloads the schema packages. A plugin that supplies
+>     either sends .NET to read a directory the script did not fill.
+>
+> The first two are bootstrap exceptions and **not** exceptions to the
+> unprefixed-environment-versus-command-line rule above: the builder's unprefixed
+> environment source and the command-line source both exist when they are read, so for them the command line wins when a deployment
+> supplies one. The `run.sh` values are not read as .NET configuration there at all,
+> only from the container's environment, so a deployment on the stock image sets
+> them in the environment even when a plugin also supplies them.
+
+### Configuration Service plugins
+
+The Configuration Service loads plugins with the same loader and the same `Plugins`
+section, bound the same way, against its own plugin root and its own allowlist. Its
+`appsettings.json` ships `"Plugins": { "Directory": "/app/plugins", "Allowed": "" }`.
+Everything above about `Directory`, `Allowed` and how the value is parsed applies
+unchanged, with these points stated for the Configuration Service itself:
+
+- **`Allowed` ships empty and is the only switch.** A plugin runs in the
+  Configuration Service if and only if its directory name appears in the
+  Configuration Service's `Allowed`; allowlisting it for DMS does not.
+- **The order of `Allowed` is the invocation order, and for `ContributeConfiguration`
+  it is contractual.** Where two plugins supply the same key, the later one wins.
+  Every plugin source ranks below the unprefixed environment variables and the
+  command line and above the JSON sources, as in
+  [Configuration precedence](#configuration-precedence), which applies unchanged:
+  the Configuration Service's `AddServices`
+  ([`Infrastructure/WebApplicationBuilderExtensions.cs`](../src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/Infrastructure/WebApplicationBuilderExtensions.cs))
+  also configures logging from the `Serilog` section first and then appends its own
+  unprefixed `AddEnvironmentVariables()` source. `src/config/run.sh` starts the
+  application with no arguments, so the stock container has no command-line source.
+- **`PluginLoader.Load` binds `Plugins:Directory` and `Plugins:Allowed` before any
+  `ContributeConfiguration` hook runs**, so no plugin source can change what loads.
+  A plugin source can still supply either key, and a later read of the section
+  sees that value, but the loader has already acted on the one it bound.
+
+**Values a plugin source cannot usefully supply in the Configuration Service:**
+
+- The `Plugins` section, for the reason above.
+- The values `src/config/run.sh`, the container entry point, reads from the
+  environment before the .NET process starts, to wait for the database:
+  - `AppSettings__Datastore`, which decides whether the script waits for PostgreSQL
+    or for a SQL Server TCP endpoint. It defaults to `postgresql` when unset.
+  - `DatabaseSettings__DatabaseConnection`, from which it parses the host and port
+    it waits on.
+
+  A plugin that supplies either changes what .NET then uses, but not what the script
+  already waited for: the wait still targets the engine and host the environment
+  named, and may never end if that is not the database the deployment runs. On the
+  stock image, set both in the environment.
+
+There is no `AppSettings:StartupStatusFilePath` equivalent in the Configuration
+Service. A plugin loading or composition failure is written to standard error and
+stops host creation before any request is served; there is no status file to read
+it from. The DMS schema-download settings above do not apply to the Configuration
+Service.
+
 ## RateLimit
 
 Basic rate limiting can be applied by supplying a `RateLimit` object in the
@@ -385,7 +698,9 @@ retry-after metadata, and the body is served either way. The
 `correlationId` is taken from the request header named by
 `AppSettings:CorrelationIdHeader` when that setting and header are
 present, otherwise from the server-generated trace identifier — the same
-selection the API's other error responses use.
+selection, and the same
+[normalization](./LOGGING.md#correlation-id-normalization), the API's other
+error responses use.
 
 ```json
 {
@@ -563,18 +878,130 @@ relevant environment variables or appsettings to set `IdentityProvider` to
 | Parameter        | Description                                                      | Example (Keycloak)                                   | Example (Self-contained)                      |
 |------------------|------------------------------------------------------------------|------------------------------------------------------|-----------------------------------------------|
 | `AppSettings.IdentityProvider` | Selects the identity provider                                    | `keycloak`                                           | `self-contained`                              |
-| `IdentitySettings.Authority`        | URL of the identity provider's authority (issuer)                | `http://dms-keycloak:8080/realms/edfi`              | `http://ed-fi-api-config:8081`              |
+| `IdentitySettings.Authority`        | Identity provider issuer. In self-contained mode, also the base URL for every advertised discovery endpoint: omit `AppSettings.PathBase` from this value, and keep DMS `JwtAuthentication.MetadataAddress` on the same origin (scheme, host, and port). DMS `JwtAuthentication.Authority` must exactly match the issuer. | `http://dms-keycloak:8080/realms/edfi` | `http://ed-fi-api-config:8081` |
 | `IdentitySettings.EncryptionKey`    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
 | `IdentitySettings.TokenCleanupEnabled` | Enables the background sweep that deletes expired OpenIddict access tokens (self-contained only) | _(not used)_                                         | `true`              |
 | `IdentitySettings.TokenCleanupIntervalMinutes` | Interval, in minutes, between expired-token cleanup sweeps (self-contained only)           | _(not used)_                                         | `30`              |
+| `IdentitySettings.BearerTokenPerClientLimit` | Maximum number of active (unexpired, unrevoked) access tokens a limited client may hold (self-contained only; default `15`). Exemption requires no live `dmscs.ApiClient` row and a nonempty set of registered scopes consisting only of recognized CMS admin scopes. Ed-Fi API clients remain limited. A grant beyond the limit is rejected with HTTP 429 and a `Too Many Tokens` problem response of type `urn:ed-fi:api:security:authentication:too-many-tokens`; the client should reuse its existing token until it expires. Any value below 1, conventionally `-1`, disables enforcement globally. | _(not used)_ | `15` |
+| `IdentitySettings.ClientSecretHashingIterations` | Number of PBKDF2-SHA256 iterations used to hash and verify client secrets (self-contained only). Must be greater than zero; startup fails otherwise. Default: `210000`. Set in Docker Compose through `DMS_CONFIG_IDENTITY_HASHING_ITERATIONS`, which also sets the count `setup-openiddict.ps1` hashes bootstrap client secrets with. | _(not used)_ | `210000` |
+
+> **Before upgrading an existing deployment:** a positive limit takes effect immediately, so an Ed-Fi API client
+> already holding at least `BearerTokenPerClientLimit` active tokens starts receiving 429s on its
+> next grant. Non-API clients, including DMS's Configuration Service credential and CMS
+> admin/bootstrap clients, are exempt when they have no live `dmscs.ApiClient` row and
+> their nonempty registered scopes consist only of recognized CMS admin scopes.
+> Leave `TokenCleanupEnabled` on as well: a limited client's grant counts its active tokens, and
+> expired tokens the sweep has not yet removed still sit in the table it counts over, so a
+> deployment that has run with cleanup disabled makes each grant read through that whole backlog.
+
+Exemption requires both absence of a live `dmscs.ApiClient` row and nonempty registered
+scopes consisting only of the recognized CMS admin scopes: `edfi_admin_api/full_access`,
+`edfi_admin_api/readonly_access`, and `edfi_admin_api/authMetadata_readonly_access`
+(case-sensitive). Request-supplied scopes cannot select the exemption. Clients with an
+`ApiClient` row, empty scopes, or any other scope remain limited. The default permits
+15 active tokens per limited client, so its 16th concurrent grant receives 429. Explicit
+operator values override the default; a value below 1 disables enforcement for every client.
+
+For self-contained deployments running the Ed-Fi Smoke Test Utility, temporarily set
+`DMS_CONFIG_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` in the stack's `.env` before
+starting or recreating it: the utility requests a new token for each resource GET and
+exceeds the default limit of 15. Restore the configured limit and recreate the stack
+after the smoke run. The tracked `.env.smoke` and `.env.smoke.ds61` profiles show 15;
+the smoke workflow supplies the `-1` override through the stack-start step's environment.
+
+Waiting for a token to expire is not the only remedy. A caller that still holds a token it no
+longer needs can revoke it at `POST /connect/revoke`, the `revocation_endpoint` advertised in the
+Configuration Service's OpenID configuration; a revoked token stops counting toward the limit
+straight away, which frees a slot for the next grant. A client that genuinely needs distinct
+tokens should revoke each one as it finishes with it rather than letting it sit until it expires.
+This only helps a caller that still has the token string — one that has lost track of its tokens,
+after a crash loop for instance, has to wait for them to expire.
+
+DMS `/oauth/token` retains the canonical HTTP 429 contract for limited clients: type
+`urn:ed-fi:api:security:authentication:too-many-tokens`, title `Too Many Tokens`, and message
+`Too many access tokens have been requested (limit is {n}). Access tokens should be reused until they expire.`
+DMS parses the Configuration Service response and rebuilds its external response as before.
+
+> **Changing `ClientSecretHashingIterations` invalidates existing client secrets.** The iteration
+> count is not stored with a hashed secret, so verification always derives at the currently
+> configured count. Raising (or lowering) the value makes every client secret hashed at the old
+> count fail verification; the remedy is to re-issue those client secrets.
+
+### Signing-key settings (Configuration Service, self-contained only)
+
+In `self-contained` mode the Configuration Service keeps the public signing keys it validates
+tokens with in an in-memory snapshot, shared by every request. The snapshot is loaded at startup
+and reloaded in the background. In steady state a request does not read the key table. A load
+runs on a request's behalf in these cases only:
+
+- **No snapshot, or an expired one.** The request starts a load, or joins the one already
+  running, and waits for it. The load is bounded by `SigningKeyLoadTimeoutSeconds`. The request
+  is refused at once, without a key read, during a retry backoff and while a load that outlived
+  its deadline is still finishing.
+- **An overdue snapshot.** The request is served from it and starts a background load. It does
+  not wait for that load.
+- **An unknown key id.** The token's key id is not in the snapshot. The request may start a
+  load, subject to the cooldown and backoff, or join one already running, and waits for it.
+
+These settings control
+the snapshot. They are `IdentitySettings` keys, set in the environment as, for example,
+`IdentitySettings__SigningKeyRefreshIntervalSeconds`. The provided Docker Compose files do not map
+them, so the defaults apply unless you add them.
+
+| Parameter | Default | Accepted values | Meaning |
+| --- | --- | --- | --- |
+| `IdentitySettings.SigningKeyRefreshIntervalSeconds` | `300` | 30–43,200 | Time between scheduled reloads. Each reload is due when the snapshot's age reaches this interval ±10 %. Bounds how long a healthy instance takes to see a key-table change. |
+| `IdentitySettings.SigningKeyMaxStalenessSeconds` | `3600` | from 2 × the refresh interval to 86,400 | How long after its last successful load a snapshot can still be used while reloads fail. After that, every authenticated request answers 503. Also bounds how long a key retired during a key-store outage can still be accepted. The snapshot's age is the larger of its wall-clock age and the elapsed (monotonic) time, so setting the system clock back does not extend this bound. |
+| `IdentitySettings.SigningKeyUnknownKeyRefreshCooldownSeconds` | `30` | 1–3,600 | Minimum elapsed time after the last completed load before a token with an unknown key id may trigger a reload. It is measured on the monotonic clock, so a system clock change neither shortens nor extends it. It applies to the whole instance, not to each caller, and protects the key store's database from reads driven by made-up key ids. One exception per instance: when the first successful load finds no key, one reload may start inside the cooldown, so a fresh store's first key, inserted after startup, is accepted promptly. |
+| `IdentitySettings.SigningKeyLoadTimeoutSeconds` | `10` | 1–60, and less than the refresh interval | How long one load may run before it is canceled and counted as failed. |
+| `IdentitySettings.KeyFormatCacheSize` | `100` | any | **Ignored.** The key-format cache it sized was removed. The setting still binds, so existing configuration keeps working, but it has no effect. |
+
+The Configuration Service checks these values at startup and refuses to start when one is out of
+range. It reports every failing rule, and each message names the `IdentitySettings:` key, its
+accepted range, and the configured value. The check runs only in `self-contained` mode.
+Keycloak mode registers none of these components, so there the settings are neither validated
+nor used.
+
+The defaults were not changed by the work that introduced the snapshot (DMS-1556). The rules
+that relate settings to each other are policy:
+
+- A maximum staleness of at least twice the refresh interval lets a snapshot survive one failed
+  scheduled reload while retries run. It does not guarantee that an instance stays available
+  through a longer outage.
+- A load timeout shorter than the refresh interval keeps each load well inside one interval.
+  Overlapping loads are already prevented: an instance runs one load at a time.
+
+[Signing keys in self-contained mode](../reference/design/configuration-service/CS-AUTH.md#signing-keys-in-self-contained-mode)
+describes refresh, backoff, staleness, key rotation and retirement, and which failures answer
+401 or 503. These settings bound each Configuration Service instance's own snapshot only.
+DMS and other JWKS consumers keep their own cached key set, and a consumer drops a retired
+key only after it successfully re-fetches JWKS or is restarted. Before you rely on a key
+change, follow
+[Rotating and retiring a database signing key](../reference/design/configuration-service/CS-AUTH.md#rotating-and-retiring-a-database-signing-key):
+it covers verifying the change on every instance and refreshing each consumer.
+
+> [!NOTE]
+> **Connection capacity.** The snapshot removes key reads from the steady-state request path
+> (the exceptions are listed above). Bearer authentication and introspection still read the
+> status of every token that passes verification with a valid `jti` from the database,
+> uncached. Most endpoints then read their own data, so request concurrency still drives
+> database connections. In local
+> stress testing (256 requests at 128 concurrent), the Configuration Service's default Npgsql
+> `Max Pool Size` (100) equalled PostgreSQL's `max_connections` (100) on a server that DMS also
+> used. Some requests were then refused by PostgreSQL with `53300: sorry, too many clients
+> already`. They answered 503 at authentication (token-status store) or 500 afterwards. The
+> catalog-shaped workloads that motivated the change (87 concurrent profile reads) were not
+> affected. No pool size, `max_connections` or concurrency default was changed. This is a
+> connection-capacity limitation, separate from signing keys. When you size a deployment,
+> account for every client that shares the database server's connection limit.
 
 ### JwtAuthentication parameters in `appsettings.json` (DMS API Service)
 
 | Parameter         | Description                                         | Example (Keycloak)                                   | Example (Self-contained)                      |
 |-------------------|-----------------------------------------------------|------------------------------------------------------|-----------------------------------------------|
 | `AppSettings.AuthenticationService`       | URL of the identity provider's authority (issuer)   | `http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token`              | `http://ed-fi-api-config:8081/connect/token`              |
-| `JwtAuthentication.Authority`       | URL of the identity provider's authority (issuer)   | `http://dms-keycloak:8080/realms/edfi`              | `http://ed-fi-api-config:8081`              |
-| `JwtAuthentication.MetadataAddress` | OpenID Connect metadata endpoint                    | `http://dms-keycloak:8080/realms/edfi/.well-known/openid-configuration` | `http://ed-fi-api-config:8081/.well-known/openid-configuration` |
+| `JwtAuthentication.Authority`       | URL of the identity provider's authority (issuer). It must equal the `issuer` in the metadata document exactly; DMS will not start otherwise, and a mismatch that appears later makes DMS reject tokens (401) until it re-fetches metadata that matches. DMS retries at most once per `RefreshIntervalMinutes` (default 60), so recovery can lag the fix by up to that long; restarting DMS recovers immediately. The first rejected request is logged as an error and repeats at debug level | `http://localhost:8045/realms/edfi`              | `http://ed-fi-api-config:8081`              |
+| `JwtAuthentication.MetadataAddress` | OpenID Connect metadata endpoint. DMS fetches signing keys only from this address's origin (scheme, host and port): a metadata document whose `jwks_uri` names another origin is refused, which stops DMS from starting, or keeps the last good metadata on a later refresh. DMS then retries until a fetch succeeds (once the automatic refresh is due, on every request), logging the first refusal as an error and repeats at debug level. DMS does not follow redirects for these fetches. For Keycloak reached over an internal hostname, set `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true`; Keycloak's default makes `jwks_uri` name the public host | `http://dms-keycloak:8080/realms/edfi/.well-known/openid-configuration` | `http://ed-fi-api-config:8081/.well-known/openid-configuration` |
 | `JwtAuthentication.RoleClaimType` | Exact inbound claim type used by endpoints that require a specifically configured role | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` |
 
 Refer to the API service's `appsettings.json` for additional options and defaults.

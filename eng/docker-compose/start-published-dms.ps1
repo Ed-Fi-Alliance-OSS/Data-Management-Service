@@ -52,6 +52,8 @@ param (
 
     [switch]$SuppressWriterGuidance,
     [string]$CdcDmsComposeFile,
+    # Private E2E rollout; accepted only inside the admitted lifecycle invocation.
+    [switch]$CdcApiE2E,
 
     [string]$CdcBindingStatePath,
     [string]$CdcSettingsPath,
@@ -114,8 +116,9 @@ param (
 
     # Transitional non-bootstrap helper: when no bootstrap manifest is present,
     # passing this switch sets DMS_CONFIG_CLAIMS_SOURCE=Hybrid and DMS_CONFIG_CLAIMS_DIRECTORY=/app/additional-claims
-    # so that extension claimset fragments (e.g. Sample, Homograph) are loaded from the AdditionalClaimsets
-    # directory that is already mounted at /app/additional-claims by published-config.yml.
+    # and stages the AdditionalClaimsets fragments plus the test-owned E2E fragments into
+    # eng/docker-compose/.e2e-claims, which published-config.yml mounts at /app/additional-claims. Extension
+    # claimset fragments (e.g. Sample, Homograph) and the E2E claim sets are therefore both loaded.
     # This flag is intentionally kept as a transitional helper for non-bootstrap extension E2E setups.
     [Switch]
     $AddExtensionSecurityMetadata,
@@ -150,6 +153,11 @@ param (
 )
 
 Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
+if ($CdcApiE2E -and (-not (Test-CdcInfrastructureInvocation) -or -not $DmsOnly -or
+    -not $CdcDmsComposeFile -or -not $CdcBindingStatePath -or $d)) {
+    throw 'CDC API E2E rollout requires the admitted DMS-only setup path.'
+}
+
 if (-not (Test-CdcInfrastructureInvocation)) {
     if (Test-CdcDeployment -Project 'dms-published') {
         Invoke-CdcDeploymentLifecycle -Project 'dms-published' -StartScript $PSCommandPath -Parameters (@{} + $PSBoundParameters)
@@ -258,10 +266,16 @@ if (-not $databaseOnlyStartup) {
     Write-Output "Identity Provider $IdentityProvider"
     if($IdentityProvider -eq "keycloak")
     {
+        # A .env seeded before this key existed would otherwise hand the Configuration Service
+        # DMS's public issuer through the env file's DMS_CONFIG_IDENTITY_AUTHORITY fallback.
+        # Teardown starts no Configuration Service, so it must not be blocked on the key.
+        if (-not $d -and [string]::IsNullOrWhiteSpace($envValues.KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY)) {
+            throw "KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY is missing in '$EnvironmentFile'. Add KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY=http://dms-keycloak:8080/realms/edfi and set KEYCLOAK_DMS_JWT_AUTHORITY=http://localhost:8045/realms/edfi (see .env.example)."
+        }
         $env:OAUTH_TOKEN_ENDPOINT = $envValues.KEYCLOAK_OAUTH_TOKEN_ENDPOINT
         $env:DMS_JWT_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
         $env:DMS_JWT_METADATA_ADDRESS = $envValues.KEYCLOAK_DMS_JWT_METADATA_ADDRESS
-        $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
+        $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY
     }
     elseif ($IdentityProvider -eq "self-contained") {
         $env:OAUTH_TOKEN_ENDPOINT = $envValues.SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT
@@ -409,6 +423,15 @@ if ($usePostgresqlTmpfs -and $DatabaseEngine -eq "postgresql") {
 if (-not $databaseOnlyStartup) {
     $files += @("-f", "published-dms.yml")
 
+    # The same hook, the same resolver and the same diagnostics as the local launcher. The committed
+    # acquisition overlays describe a deployment, not a build, so they have to reach a stack running
+    # a published image as well as one running a locally built image; without this the recipes
+    # eng/docker-compose/README.md publishes cannot be run against a stock image at all.
+    foreach ($resolvedPluginComposeFile in (Resolve-PluginComposeFile -EnvValues $envValues -ScriptRoot $PSScriptRoot)) {
+        Write-Output "Using plugin Docker Compose file '$resolvedPluginComposeFile'."
+        $files += @("-f", $resolvedPluginComposeFile)
+    }
+
     if ($CdcDatabaseInfrastructure) {
         if (-not $InfraOnly -or $d -or $EnableKafka -or $EnableKafkaUI -or $CdcKafkaInfrastructure) {
             throw "CDC database preparation requires -InfraOnly without Kafka startup or teardown flags."
@@ -510,8 +533,9 @@ if ($d) {
     }
 }
 else {
-    $existingNetwork = docker network ls --filter name="dms" -q
-    if (! $existingNetwork) {
+    # Matched by exact name: a name filter on network ls matches substrings, and network inspect also
+    # accepts an ID prefix.
+    if (@(docker network ls --format '{{.Name}}') -cnotcontains 'dms') {
         docker network create dms
     }
 
@@ -630,6 +654,11 @@ else {
     }
 
     if ($DmsOnly) {
+        if ($CdcApiE2E) {
+            Import-Module (Join-Path $PSScriptRoot 'e2e-cdc.psm1')
+            $cdcHttpConfiguration = Invoke-E2ECdcHttpPreparation -ComposeFiles $files -EnvironmentFile $EnvironmentFile -Project dms-published
+            $dmsUrl = Resolve-E2ECdcHttpBaseUrl -Configuration $cdcHttpConfiguration
+        }
         Write-Output "Starting published DMS service only..."
         $dmsServices = @("dms")
         if ($EnableSwaggerUI) {
@@ -643,6 +672,10 @@ else {
 
         Wait-HttpEndpointHealthy -Url "$($dmsUrl.TrimEnd('/'))/health" -Name "DMS"
         Write-Output "DMS service is healthy."
+        if ($CdcApiE2E) {
+            $null = Write-E2ECdcApiHandoff -Project dms-published -StatePath $CdcBindingStatePath `
+                -HttpComposePath $CdcDmsComposeFile -EffectiveConfiguration $cdcHttpConfiguration
+        }
 
         return
     }
@@ -836,7 +869,9 @@ else {
             Write-Information "Claims gate: no bootstrap manifest present; skipping claims-ready check on no-bootstrap run." -InformationAction Continue
         }
 
-        Write-Output "Infrastructure phase complete. DMS service was not started."
+        if (-not $SuppressWriterGuidance) {
+            Write-Output "Infrastructure phase complete. DMS service was not started."
+        }
         return
     }
 

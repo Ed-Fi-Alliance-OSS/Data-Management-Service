@@ -7,6 +7,9 @@
 #   /e2e start                       # dedicated edfi schema in edfi_datamanagementservice_e2e
 #   /e2e status                      # confirm ed-fi-api is healthy
 #
+# Requires the E2E setup (-AddExtensionSecurityMetadata): the application below uses
+# E2E-NoFurtherAuthRequiredClaimSet, which only the test-owned E2E claimset fragments define.
+#
 # End-to-end self-contained: section 1 mints the Config-Service + DMS tokens so no manual
 # token paste is needed. Execute from top to bottom with the VS Code REST Client extension.
 

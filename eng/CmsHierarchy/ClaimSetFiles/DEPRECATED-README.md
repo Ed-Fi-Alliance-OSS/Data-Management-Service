@@ -24,7 +24,7 @@ These files are retained **only for legacy reference purposes** and are no longe
 For information about the current claims loading system, see:
 - `/docs/CLAIMS-LOADING-GUIDE.md` - Comprehensive guide to the new system
 - `/src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/` - Runtime claims services
-- `/src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/` - Fragment-based claimsets
+- `/src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/` - Fragment-based extension claimsets (the E2E-only fragments live under `/src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments/`)
 
 ---
 *Created as part of DMS-777 migration from static to runtime claims loading*

@@ -252,7 +252,11 @@ public class Given_A_Postgresql_Profiled_Put_With_Storage_Collapsed_Sibling_Iden
             Headers: [],
             TraceId: new TraceId("pgsql-storage-collapsed-seed"),
             DocumentUuid: SchoolDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);

@@ -36,11 +36,35 @@
         "resolved": "1.0.335",
         "contentHash": "cEJOD63KUG7BrIVN8Eq44hsougfJErhb9/fd5NIuJG2TZid0vAK5gNLgC/U040GexpGTVF5N3JxohFdXBMmkxQ=="
       },
+      "EdFi.DataStandard52.Homograph.ApiSchema": {
+        "type": "Direct",
+        "requested": "[1.0.335, )",
+        "resolved": "1.0.335",
+        "contentHash": "bi6R0tZ+kUodpKJ1mchwvZMWyRoC5yZgEfpktfIzh9VTjyAKYp/pvKw9RiXZEiQXYQp1BtS4/GLw7Mvy80EdqA=="
+      },
+      "EdFi.DataStandard52.Sample.ApiSchema": {
+        "type": "Direct",
+        "requested": "[1.0.335, )",
+        "resolved": "1.0.335",
+        "contentHash": "rzX23/Vsk/JATQlxttp+Pn4cPo8L/pMqKrdqxNaoLG5DLKxb2FhT/kRwxJElMV63id7Os42XG5US7kPQPFv8lQ=="
+      },
       "EdFi.DataStandard61.ApiSchema": {
         "type": "Direct",
         "requested": "[1.0.335, )",
         "resolved": "1.0.335",
         "contentHash": "8+oVpyyrX6+51NbBpKTpSh1LzoY5IgxNdzF14q/EewUTT7EoWoPLaEskF7kAAfBQasnaLfmANzTRYk/trwlIDQ=="
+      },
+      "EdFi.DataStandard61.Homograph.ApiSchema": {
+        "type": "Direct",
+        "requested": "[1.0.335, )",
+        "resolved": "1.0.335",
+        "contentHash": "silHo0dhMCooCjeeetG9mKUI2DPhZlCwfMQrjOslM8kCNi6RX9AdrUQMD5+ZkcdW4ZqTC0zdr4GBYYosXu4VRA=="
+      },
+      "EdFi.DataStandard61.Sample.ApiSchema": {
+        "type": "Direct",
+        "requested": "[1.0.335, )",
+        "resolved": "1.0.335",
+        "contentHash": "GD8XkX7B+1mEd57qQnzHZFQnQz2KeQW0SeK5eY1u9VLHnXsAXHTR77bZSZSstGYECRa0l/9vyAks/+u8XW0qGQ=="
       },
       "FakeItEasy": {
         "type": "Direct",
@@ -595,6 +619,9 @@
       "EdFi.Api.CustomValidation": {
         "type": "Project"
       },
+      "EdFi.Api.Identity": {
+        "type": "Project"
+      },
       "edfi.api.plugins": {
         "type": "Project",
         "dependencies": {
@@ -605,8 +632,10 @@
       "edfi.api.plugins.hosting": {
         "type": "Project",
         "dependencies": {
-          "EdFi.Api.Plugins": "[1.0.0, )",
+          "EdFi.Api.Plugins": "[1.1.0, )",
+          "Microsoft.Extensions.Configuration": "[10.0.1, )",
           "Microsoft.Extensions.Configuration.Binder": "[10.0.1, )",
+          "Microsoft.Extensions.Configuration.EnvironmentVariables": "[10.0.1, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )"
         }
@@ -694,6 +723,7 @@
         "dependencies": {
           "Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic": "[4.0.0, )",
           "EdFi.Api.CustomValidation": "[1.0.0, )",
+          "EdFi.Api.Identity": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
           "EdFi.DataManagementService.Core.External": "[1.0.0, )",
           "FastGuid": "[1.4.1, )",
@@ -703,6 +733,7 @@
           "Microsoft.Extensions.Caching.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Caching.Hybrid": "[9.5.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Http": "[10.0.1, )",
           "Microsoft.Extensions.Logging": "[10.0.1, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
@@ -734,7 +765,7 @@
         "type": "Project",
         "dependencies": {
           "AspNetCore.HealthChecks.NpgSql": "[8.0.2, )",
-          "EdFi.Api.Plugins.Hosting": "[1.0.0, )",
+          "EdFi.Api.Plugins.Hosting": "[1.1.0, )",
           "EdFi.DataManagementService.Backend.Mssql": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Postgresql": "[1.0.0, )",
           "EdFi.DataManagementService.Core": "[1.0.0, )",
@@ -750,6 +781,13 @@
           "Serilog.Sinks.Console": "[6.0.0, )",
           "Serilog.Sinks.File": "[6.0.0, )",
           "Serilog.Sinks.OpenTelemetry": "[4.2.0, )"
+        }
+      },
+      "edfi.dmsconfigurationservice.datamodel": {
+        "type": "Project",
+        "dependencies": {
+          "FluentValidation": "[11.11.0, )",
+          "Microsoft.Extensions.Options": "[10.0.1, )"
         }
       },
       "AspNetCore.HealthChecks.NpgSql": {
@@ -779,6 +817,12 @@
         "requested": "[1.4.1, )",
         "resolved": "1.4.1",
         "contentHash": "aYodIyihe8YqrPVmqW8chz/BukxSlSnDIMqIrYfbsmyg4HH4Eg5mhxyQUcu9IW5bXVX6OwRHLGGlLKESxh+acA=="
+      },
+      "FluentValidation": {
+        "type": "CentralTransitive",
+        "requested": "[11.11.0, )",
+        "resolved": "11.11.0",
+        "contentHash": "cyIVdQBwSipxWG8MA3Rqox7iNbUNUTK5bfJi9tIdm4CAfH71Oo5ABLP4/QyrUwuakqpUEPGtE43BDddvEehuYw=="
       },
       "JsonPath.Net": {
         "type": "CentralTransitive",

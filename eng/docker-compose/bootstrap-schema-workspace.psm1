@@ -62,12 +62,12 @@ function Resolve-StagedApiSchemaPath {
 
     $normalizedPath = $RelativePath.Replace("\", "/")
     if ([System.IO.Path]::IsPathRooted($RelativePath) -or $normalizedPath.StartsWith("/")) {
-        throw "ApiSchema manifest field '$(Format-LogSafeText $ManifestField)' must be relative to the staged ApiSchema workspace: $(Format-LogSafeText $RelativePath)"
+        throw "ApiSchema manifest field '$(Format-LogSafeText $ManifestField)' must be relative to the staged ApiSchema workspace: $(Format-LogSafePath $RelativePath)"
     }
 
     $pathSegments = @($normalizedPath -split "/")
     if ($pathSegments | Where-Object { [string]::IsNullOrWhiteSpace($_) -or $_ -eq "." -or $_ -eq ".." }) {
-        throw "ApiSchema manifest field '$(Format-LogSafeText $ManifestField)' must not contain empty, current, or parent path segments: $(Format-LogSafeText $RelativePath)"
+        throw "ApiSchema manifest field '$(Format-LogSafeText $ManifestField)' must not contain empty, current, or parent path segments: $(Format-LogSafePath $RelativePath)"
     }
 
     $resolvedPath = [System.IO.Path]::GetFullPath((Join-Path $ApiSchemaManifestDirectory $normalizedPath))
@@ -77,7 +77,7 @@ function Resolve-StagedApiSchemaPath {
     if ($relativeToRoot.StartsWith("../", [System.StringComparison]::Ordinal) -or
         $relativeToRoot.Equals("..", [System.StringComparison]::Ordinal) -or
         [System.IO.Path]::IsPathRooted($relativeToRoot)) {
-        throw "ApiSchema manifest field '$(Format-LogSafeText $ManifestField)' escapes the staged ApiSchema workspace: $(Format-LogSafeText $RelativePath)"
+        throw "ApiSchema manifest field '$(Format-LogSafeText $ManifestField)' escapes the staged ApiSchema workspace: $(Format-LogSafePath $RelativePath)"
     }
 
     return $resolvedPath
@@ -102,7 +102,7 @@ function Resolve-BootstrapSchemaWorkspace {
     }
 
     if (-not (Test-Path -LiteralPath $BootstrapManifestPath -PathType Leaf)) {
-        throw "Bootstrap manifest not found at $(Format-LogSafeText $BootstrapManifestPath). Run prepare-dms-schema.ps1 before invoking schema provisioning."
+        throw "Bootstrap manifest not found at $(Format-LogSafePath $BootstrapManifestPath). Run prepare-dms-schema.ps1 before invoking schema provisioning."
     }
 
     $manifest = Read-BootstrapManifest -Path $BootstrapManifestPath
@@ -122,14 +122,14 @@ function Resolve-BootstrapSchemaWorkspace {
     $apiSchemaManifestPath = [System.IO.Path]::GetFullPath((Join-Path $bootstrapRoot $apiSchemaManifestRelativePath))
 
     if (-not (Test-Path -LiteralPath $apiSchemaManifestPath -PathType Leaf)) {
-        throw "Bootstrap ApiSchema manifest is missing: $(Format-LogSafeText $apiSchemaManifestPath). Run prepare-dms-schema.ps1 before invoking schema provisioning."
+        throw "Bootstrap ApiSchema manifest is missing: $(Format-LogSafePath $apiSchemaManifestPath). Run prepare-dms-schema.ps1 before invoking schema provisioning."
     }
 
     try {
         $apiSchemaManifest = Get-Content -LiteralPath $apiSchemaManifestPath -Raw | ConvertFrom-Json -AsHashtable
     }
     catch {
-        throw "Bootstrap ApiSchema manifest '$(Format-LogSafeText $apiSchemaManifestPath)' contains malformed JSON. $(Format-LogSafeText ($_.Exception.Message))"
+        throw "Bootstrap ApiSchema manifest '$(Format-LogSafePath $apiSchemaManifestPath)' contains malformed JSON. $(Format-LogSafeText ($_.Exception.Message))"
     }
 
     $projects = $null
@@ -175,7 +175,7 @@ function Resolve-BootstrapSchemaWorkspace {
         -ManifestField "projects[].schemaPath"
 
     if (-not (Test-Path -LiteralPath $coreSchemaPath -PathType Leaf)) {
-        throw "Staged core schema file is missing: $(Format-LogSafeText $coreSchemaPath). Run prepare-dms-schema.ps1 before invoking schema provisioning."
+        throw "Staged core schema file is missing: $(Format-LogSafePath $coreSchemaPath). Run prepare-dms-schema.ps1 before invoking schema provisioning."
     }
 
     $extensionSchemaPaths = [System.Collections.ArrayList]::new()
@@ -188,7 +188,7 @@ function Resolve-BootstrapSchemaWorkspace {
             -ManifestField "projects[].schemaPath"
 
         if (-not (Test-Path -LiteralPath $extensionSchemaPath -PathType Leaf)) {
-            throw "Staged extension schema file is missing: $(Format-LogSafeText $extensionSchemaPath). Run prepare-dms-schema.ps1 before invoking schema provisioning."
+            throw "Staged extension schema file is missing: $(Format-LogSafePath $extensionSchemaPath). Run prepare-dms-schema.ps1 before invoking schema provisioning."
         }
 
         $null = $extensionSchemaPaths.Add($extensionSchemaPath)

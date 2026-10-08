@@ -133,10 +133,12 @@ public class StartupStatusTests
         startupPhases
             .Should()
             .BeEquivalentTo(
+                DmsStartupPhases.LoadPlugins,
                 DmsStartupPhases.ConfigureServices,
                 DmsStartupPhases.BuildApplication,
                 DmsStartupPhases.LoadDataStores,
                 DmsStartupPhases.InitializeApiSchemas,
+                DmsStartupPhases.ValidatePluginRegistrations,
                 DmsStartupPhases.InitializeBackendMappings,
                 DmsStartupPhases.InitializeAuthMetadata,
                 DmsStartupPhases.ConfigureEndpoints,

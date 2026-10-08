@@ -55,7 +55,9 @@ param(
     $DmsCSVersion = "8.0.0",
 
     # Normalized four-part assembly version (Major.Minor.Patch.Height, e.g. "0.7.1.83").
-    # When non-empty, forwarded to MSBuild as /p:AssemblyVersion and /p:FileVersion.
+    # When non-empty, forwarded to MSBuild as /p:AssemblyVersion and /p:FileVersion by the Compile
+    # and PublishApi steps. DockerBuild deliberately ignores it (see src/config/Dockerfile), and the
+    # EdFi.Api.Secrets contract keeps its own declared version either way.
     # Derived from $DmsCSVersion by the CI pipeline for prerelease builds.
     [string]
     $DmsCSAssemblyVersion = "",
@@ -303,10 +305,10 @@ function E2ETests {
         try {
             Push-Location eng/docker-compose/
             if ($SkipDockerBuild) {
-                ./start-local-config.ps1 -EnvironmentFile $EnvironmentFile -IdentityProvider $IdentityProvider
+                ./start-local-config.ps1 -EnvironmentFile $EnvironmentFile -IdentityProvider $IdentityProvider -AddE2EClaimSets
             }
             else {
-                ./start-local-config.ps1 -EnvironmentFile $EnvironmentFile -r -IdentityProvider $IdentityProvider
+                ./start-local-config.ps1 -EnvironmentFile $EnvironmentFile -r -IdentityProvider $IdentityProvider -AddE2EClaimSets
             }
 
             Import-Module ./env-utility.psm1 -Force
@@ -327,12 +329,66 @@ function E2ETests {
             $env:POSTGRES_DB_NAME = $envValues["POSTGRES_DB_NAME"]
             $env:MSSQL_SA_PASSWORD = $envValues["MSSQL_SA_PASSWORD"]
             $env:MSSQL_PORT = $envValues["MSSQL_PORT"]
+            # Opt-in isolation (see start-local-config.ps1): the Configuration Service container the
+            # role-claim read inspects, and the URL the suite calls. Unset, each keeps its default;
+            # assigned unconditionally so a value left by an earlier run cannot leak into this one.
+            $script:ConfigContainerName = if ($envValues["CMS_CONFIG_CONTAINER"]) { $envValues["CMS_CONFIG_CONTAINER"] } else { "ed-fi-api-config-service" }
+            $env:CMS_E2E_API_URL = $envValues["CMS_E2E_API_URL"]
         }
         finally {
             Pop-Location
         }
     }
+    Invoke-Execute { PublishEffectiveRoleClaimSettings }
     Invoke-Step { RunE2E }
+}
+
+<#
+.SYNOPSIS
+    Publishes the role settings the running Configuration Service actually received, for the
+    role-claim E2E scenario to compare a token's claim against.
+.DESCRIPTION
+    Read back from the container rather than from the environment file. Compose resolves a
+    shell-provided value ahead of the file, so copying file values would make the scenario expect
+    a role the container was never given; and a key the compose files never forward to the
+    container would otherwise change the expectation without changing the provider. Only the four
+    settings the scenario depends on are read, so no unrelated container value is exported.
+#>
+function PublishEffectiveRoleClaimSettings {
+    $settingNames = @(
+        "AppSettings__IdentityProvider",
+        "IdentitySettings__RoleClaimType",
+        "IdentitySettings__ClientRole",
+        "Authentication__RoleClaimAttribute"
+    )
+
+    $configContainerName = if ($script:ConfigContainerName) { $script:ConfigContainerName } else { "ed-fi-api-config-service" }
+    $containerEnvironment = docker inspect $configContainerName `
+        --format '{{range .Config.Env}}{{println .}}{{end}}'
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not read the Configuration Service container environment; the role-claim scenario would otherwise compare a token against values the running stack may not have."
+    }
+
+    $effective = @{}
+    foreach ($line in $containerEnvironment) {
+        $pair = $line -split "=", 2
+        if ($pair.Count -eq 2 -and $settingNames -contains $pair[0]) {
+            $effective[$pair[0]] = $pair[1]
+        }
+    }
+
+    if (-not $effective.ContainsKey("AppSettings__IdentityProvider")) {
+        throw "The Configuration Service container reports no AppSettings__IdentityProvider; cannot determine which provider the role-claim scenario is running against."
+    }
+
+    # Published under test-only names that neither Compose nor the application reads, so the
+    # expectations never become configuration for a later run in the same shell. Assigned
+    # unconditionally so a setting the container does not carry clears a stale expectation
+    # instead of leaving the scenario comparing against an earlier lane.
+    $env:CMS_E2E_EXPECTED_IDENTITY_PROVIDER = $effective["AppSettings__IdentityProvider"]
+    $env:CMS_E2E_EXPECTED_ROLE_CLAIM_TYPE = $effective["IdentitySettings__RoleClaimType"]
+    $env:CMS_E2E_EXPECTED_CLIENT_ROLE = $effective["IdentitySettings__ClientRole"]
+    $env:CMS_E2E_EXPECTED_SELF_CONTAINED_ROLE_CLAIM_TYPE = $effective["Authentication__RoleClaimAttribute"]
 }
 
 function RunNuGetPack {
@@ -460,15 +516,19 @@ function DockerBuild {
         $versionArgs += "--build-arg"
         $versionArgs += "VERSION=$DmsCSVersion"
     }
-    if (-not [string]::IsNullOrEmpty($DmsCSAssemblyVersion))
-    {
-        $versionArgs += "--build-arg"
-        $versionArgs += "ASSEMBLY_VERSION=$DmsCSAssemblyVersion"
-    }
 
+    # --load: under a docker-container buildx builder (as in CI) the result otherwise stays only in the
+    # build cache, and DockerRun and the image version proof both need the tagged local image.
     Push-Location src/config/
-    &docker buildx build -t $dockerTagDMS -f Dockerfile . --build-context parentdir=../ @versionArgs
-    Pop-Location
+    try {
+        &docker buildx build --load -t $dockerTagDMS -f Dockerfile . --build-context parentdir=../ @versionArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "docker buildx build failed with exit code $LASTEXITCODE."
+        }
+    }
+    finally {
+        Pop-Location
+    }
 }
 
 function DockerRun {

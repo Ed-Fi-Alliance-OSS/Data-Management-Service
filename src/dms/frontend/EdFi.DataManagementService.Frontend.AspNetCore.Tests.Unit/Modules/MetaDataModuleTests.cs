@@ -8,19 +8,24 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
+using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Content;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.Routing.Patterns;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
+using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -28,6 +33,801 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 [NonParallelizable]
 public class MetadataModuleTests
 {
+    internal static DefaultHttpContext CreateHttpContext(string path, string pathBase = "")
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Scheme = "http";
+        httpContext.Request.Host = new HostString("localhost");
+        httpContext.Request.Path = path;
+        httpContext.Request.PathBase = pathBase;
+        httpContext.Response.Body = new MemoryStream();
+        return httpContext;
+    }
+
+    internal static async Task<JsonNode?> ReadJsonResponseAsync(HttpContext httpContext)
+    {
+        httpContext.Response.Body.Position = 0;
+        var content = await new StreamReader(httpContext.Response.Body).ReadToEndAsync();
+        return JsonNode.Parse(content);
+    }
+
+    internal static IOptions<FrontendAppSettings> FrontendOptions(
+        Action<FrontendAppSettings>? configure = null
+    )
+    {
+        var options = new FrontendAppSettings
+        {
+            AuthenticationService = "http://localhost/oauth",
+            CorrelationIdHeader = "X-Correlation-Id",
+            Datastore = "postgresql",
+        };
+        configure?.Invoke(options);
+        return Options.Create(options);
+    }
+
+    [TestFixture]
+    public class Given_OpenApi_documents_with_internal_authentication_urls
+    {
+        [TestCase("section", false, "http://localhost/dms-api/oauth/token")]
+        [TestCase("profileName", false, "http://localhost/dms-api/oauth/token")]
+        [TestCase("section", true, "http://localhost/dms-api/255901/oauth/token")]
+        [TestCase("profileName", true, "http://localhost/dms-api/255901/oauth/token")]
+        public async Task It_distinguishes_mapped_endpoint_parameters_from_route_qualifiers(
+            string qualifierName,
+            bool qualified,
+            string expectedTokenUrl
+        )
+        {
+            bool discovery = qualifierName is "section";
+            string endpointPattern = discovery
+                ? "/metadata/specifications/{section}-spec.json"
+                : "/metadata/specifications/profiles/{profileName}/resources-spec.json";
+            if (qualified)
+            {
+                endpointPattern = "/{__metadataRouteQualifier0}" + endpointPattern;
+            }
+            var context = CreateHttpContext("/metadata/specifications", "/dms-api");
+            context.SetEndpoint(
+                new RouteEndpoint(
+                    _ => Task.CompletedTask,
+                    RoutePatternFactory.Parse(endpointPattern),
+                    0,
+                    EndpointMetadataCollection.Empty,
+                    "Metadata"
+                )
+            );
+            context.Request.RouteValues[qualifierName] = discovery ? "discovery" : "StudentProfile";
+            if (qualified)
+            {
+                context.Request.RouteValues["__metadataRouteQualifier0"] = "255901";
+            }
+
+            var options = FrontendOptions(settings => settings.RouteQualifierSegments = qualifierName);
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            JsonNode document = JsonNode.Parse(
+                """
+                {
+                  "openapi": "3.0.0",
+                  "components": {
+                    "securitySchemes": {
+                      "oauth2_client_credentials": {
+                        "type": "oauth2",
+                        "flows": {
+                          "clientCredentials": {
+                            "tokenUrl": "https://internal-auth.example/oauth/token",
+                            "scopes": {}
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                """
+            )!;
+            if (discovery)
+            {
+                var contentProvider = A.Fake<IContentProvider>();
+                A.CallTo(() => contentProvider.LoadJsonContent("discovery", A<string>._, A<string>._))
+                    .Returns(document);
+                await MetadataEndpointModule.GetSectionMetadata(
+                    context,
+                    contentProvider,
+                    options,
+                    dataStoreProvider
+                );
+            }
+            else
+            {
+                var apiService = A.Fake<IApiService>();
+                A.CallTo(() =>
+                        apiService.GetProfileOpenApiSpecificationAsync(
+                            "StudentProfile",
+                            A<string?>._,
+                            A<JsonArray>._
+                        )
+                    )
+                    .Returns(Task.FromResult<JsonNode?>(document));
+                await MetadataEndpointModule.GetProfileResourceOpenApiSpec(
+                    context,
+                    "StudentProfile",
+                    dataStoreProvider,
+                    apiService,
+                    options
+                );
+            }
+
+            JsonNode response = (await ReadJsonResponseAsync(context))!;
+            response["components"]!["securitySchemes"]!["oauth2_client_credentials"]!["flows"]![
+                "clientCredentials"
+            ]!["tokenUrl"]!
+                .GetValue<string>()
+                .Should()
+                .Be(expectedTokenUrl);
+        }
+
+        [TestCase("resources")]
+        [TestCase("descriptors")]
+        [TestCase("changeQueries")]
+        [TestCase("profiles")]
+        [TestCase("discovery")]
+        public async Task It_advertises_the_request_proxy_for_each_openapi_document(string section)
+        {
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.GetResourceOpenApiSpecification(A<JsonArray>._))
+                .ReturnsLazily(CreateOpenApiDocument);
+            A.CallTo(() => apiService.GetDescriptorOpenApiSpecification(A<JsonArray>._))
+                .ReturnsLazily(CreateOpenApiDocument);
+            A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
+                .ReturnsLazily(CreateOpenApiDocument);
+            A.CallTo(() =>
+                    apiService.GetProfileOpenApiSpecificationAsync(A<string>._, A<string?>._, A<JsonArray>._)
+                )
+                .ReturnsLazily(() => Task.FromResult<JsonNode?>(CreateOpenApiDocument()));
+            var contentProvider = A.Fake<IContentProvider>();
+            A.CallTo(() => contentProvider.LoadJsonContent("discovery", A<string>._, A<string>._))
+                .ReturnsLazily(CreateOpenApiDocument);
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+
+            foreach (
+                (bool routeContextsConfigured, bool qualified) in new[]
+                {
+                    (false, false),
+                    (true, true),
+                    (true, false),
+                }
+            )
+            {
+                var context = CreateHttpContext("/metadata/specifications", qualified ? "/dms-api" : "");
+                context.Request.Scheme = "https";
+                context.Request.Host = new HostString("api.example.org", 8443);
+                context.Request.RouteValues["section"] = "discovery";
+                var options = FrontendOptions(settings =>
+                {
+                    settings.MultiTenancy = routeContextsConfigured;
+                    settings.RouteQualifierSegments = routeContextsConfigured ? "districtId,schoolYear" : "";
+                });
+                if (qualified)
+                {
+                    context.Request.RouteValues["tenant"] = "tenant-a";
+                    context.Request.RouteValues["__metadataRouteQualifier0"] = "255901";
+                    context.Request.RouteValues["__metadataRouteQualifier1"] = "2026";
+                }
+
+                await (
+                    section switch
+                    {
+                        "resources" => MetadataEndpointModule.GetResourceOpenApiSpec(
+                            context,
+                            apiService,
+                            dataStoreProvider,
+                            options
+                        ),
+                        "descriptors" => MetadataEndpointModule.GetDescriptorOpenApiSpec(
+                            context,
+                            apiService,
+                            dataStoreProvider,
+                            options
+                        ),
+                        "changeQueries" => MetadataEndpointModule.GetChangeQueriesOpenApiSpec(
+                            context,
+                            apiService,
+                            dataStoreProvider,
+                            options
+                        ),
+                        "profiles" => MetadataEndpointModule.GetProfileResourceOpenApiSpec(
+                            context,
+                            "StudentProfile",
+                            dataStoreProvider,
+                            apiService,
+                            options
+                        ),
+                        _ => MetadataEndpointModule.GetSectionMetadata(
+                            context,
+                            contentProvider,
+                            options,
+                            dataStoreProvider
+                        ),
+                    }
+                );
+                JsonNode response = (await ReadJsonResponseAsync(context))!;
+                response["components"]!["securitySchemes"]!["oauth2_client_credentials"]!["flows"]![
+                    "clientCredentials"
+                ]!["tokenUrl"]!
+                    .GetValue<string>()
+                    .Should()
+                    .Be(
+                        qualified
+                            ? "https://api.example.org:8443/dms-api/tenant-a/255901/2026/oauth/token"
+                            : "https://api.example.org:8443/oauth/token"
+                    );
+                response["security"]!.AsArray().Should().ContainSingle();
+            }
+
+            static JsonNode CreateOpenApiDocument() =>
+                JsonNode.Parse(
+                    """
+                    {
+                      "openapi": "3.0.0",
+                      "components": {
+                        "securitySchemes": {
+                          "oauth2_client_credentials": {
+                            "type": "oauth2",
+                            "flows": {
+                              "clientCredentials": {
+                                "tokenUrl": "https://internal-auth.example/oauth/token",
+                                "scopes": {}
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "security": [{ "oauth2_client_credentials": [] }]
+                    }
+                    """
+                )!;
+        }
+
+        [TestCase(false, "http://localhost/oauth/token")]
+        [TestCase(true, "http://localhost/dms-api/tenant-a/255901/2026/oauth/token")]
+        public async Task It_supplies_the_public_proxy_url_to_file_backed_discovery(
+            bool qualified,
+            string expectedTokenUrl
+        )
+        {
+            string workspaceRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+            try
+            {
+                FileModeWorkspaceBuilder.BuildWorkspace(workspaceRoot);
+                var (provider, _) = FileModeWorkspaceBuilder.BuildProvider(workspaceRoot);
+                var context = CreateHttpContext(
+                    "/metadata/specifications/discovery-spec.json",
+                    qualified ? "/dms-api" : ""
+                );
+                context.Request.RouteValues["section"] = "discovery";
+                context.Request.RouteValues["tenant"] = "tenant-a";
+                context.Request.RouteValues["__metadataRouteQualifier0"] = "255901";
+                context.Request.RouteValues["__metadataRouteQualifier1"] = "2026";
+
+                await MetadataEndpointModule.GetSectionMetadata(
+                    context,
+                    provider,
+                    FrontendOptions(settings =>
+                    {
+                        settings.MultiTenancy = qualified;
+                        settings.RouteQualifierSegments = qualified ? "districtId,schoolYear" : "";
+                    }),
+                    A.Fake<IDataStoreProvider>()
+                );
+
+                JsonNode response = (await ReadJsonResponseAsync(context))!;
+                response["token"]!.GetValue<string>().Should().Be(expectedTokenUrl);
+            }
+            finally
+            {
+                Directory.Delete(workspaceRoot, recursive: true);
+            }
+        }
+    }
+
+    [TestFixture]
+    public class When_Requesting_Tenant_Only_Metadata_With_Required_Route_Qualifiers
+    {
+        [TestCase("/tenant1/metadata")]
+        [TestCase("/tenant1/metadata/dependencies")]
+        [TestCase("/tenant1/metadata/specifications")]
+        public async Task It_returns_not_found_instead_of_matching_discovery(string requestPath)
+        {
+            // Arrange
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.Configure<FrontendAppSettings>(options =>
+                    {
+                        options.MultiTenancy = true;
+                        options.RouteQualifierSegments = "districtId,schoolYear";
+                    });
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync(requestPath);
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+    }
+
+    [TestFixture]
+    public class When_Mapping_Qualified_Metadata_Routes
+    {
+        private sealed class RejectingMetadataRouteValidator : IMetadataRouteValidator
+        {
+            public int CallCount { get; private set; }
+
+            public Task<bool> ValidateAsync(
+                HttpContext httpContext,
+                CancellationToken cancellationToken = default
+            )
+            {
+                CallCount++;
+                httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
+                return Task.FromResult(false);
+            }
+        }
+
+        [TestCase("/tenant1/255901/2024/metadata")]
+        [TestCase("/tenant1/255901/2024/metadata/dependencies")]
+        [TestCase("/tenant1/255901/2024/metadata/specifications")]
+        [TestCase("/tenant1/255901/2024/metadata/specifications/resources-spec.json")]
+        [TestCase("/tenant1/255901/2024/metadata/specifications/descriptors-spec.json")]
+        [TestCase("/tenant1/255901/2024/metadata/changequeries/v1/swagger.json")]
+        [TestCase("/tenant1/255901/2024/metadata/specifications/discovery-spec.json")]
+        [TestCase("/tenant1/255901/2024/metadata/specifications/profiles/StudentProfile/resources-spec.json")]
+        public async Task It_short_circuits_invalid_qualified_metadata_requests(string requestPath)
+        {
+            // Arrange
+            var metadataRouteValidator = new RejectingMetadataRouteValidator();
+            var apiService = A.Fake<IApiService>();
+            var contentProvider = A.Fake<IContentProvider>();
+
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(_ => apiService);
+                    collection.AddTransient(_ => contentProvider);
+                    collection.AddTransient<IMetadataRouteValidator>(_ => metadataRouteValidator);
+                    collection.Configure<FrontendAppSettings>(options =>
+                    {
+                        options.MultiTenancy = true;
+                        options.RouteQualifierSegments = "districtId,schoolYear";
+                    });
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync(requestPath);
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            metadataRouteValidator.CallCount.Should().Be(1);
+        }
+
+        [Test]
+        public async Task It_preserves_the_unqualified_metadata_root_without_route_validation()
+        {
+            // Arrange
+            var metadataRouteValidator = new RejectingMetadataRouteValidator();
+            var apiService = A.Fake<IApiService>();
+
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(_ => apiService);
+                    collection.AddTransient<IMetadataRouteValidator>(_ => metadataRouteValidator);
+                    collection.Configure<FrontendAppSettings>(options =>
+                    {
+                        options.MultiTenancy = true;
+                        options.RouteQualifierSegments = "districtId,schoolYear";
+                    });
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync("/metadata");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            metadataRouteValidator.CallCount.Should().Be(0);
+        }
+
+        [Test]
+        public async Task It_maps_qualified_metadata_routes_when_qualifier_names_collide_with_metadata_parameters()
+        {
+            // Arrange
+            var metadataRouteValidator = A.Fake<IMetadataRouteValidator>();
+            A.CallTo(() => metadataRouteValidator.ValidateAsync(A<HttpContext>._, A<CancellationToken>._))
+                .Returns(true);
+
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(_ => metadataRouteValidator);
+                    collection.Configure<FrontendAppSettings>(options =>
+                    {
+                        options.MultiTenancy = true;
+                        options.RouteQualifierSegments = "section,profileName,fileName";
+                    });
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync("/tenant1/ed-fi/StudentProfile/Ed-Fi-Core/metadata");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            A.CallTo(() => metadataRouteValidator.ValidateAsync(A<HttpContext>._, A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    [TestFixture]
+    public class When_Validating_Qualified_Metadata_Routes
+    {
+        private static IOptions<FrontendAppSettings> RouteOptions(params string[] routeQualifierSegments)
+        {
+            return Options.Create(
+                new FrontendAppSettings
+                {
+                    AuthenticationService = "http://localhost/oauth",
+                    CorrelationIdHeader = "X-Correlation-Id",
+                    Datastore = "postgresql",
+                    RouteQualifierSegments = string.Join(',', routeQualifierSegments),
+                }
+            );
+        }
+
+        private static DataStore DataStoreWithRouteContext(
+            long id,
+            params (string Key, string Value)[] routeContext
+        )
+        {
+            return new DataStore(
+                id,
+                "Test",
+                $"TestInstance{id}",
+                "test-connection-string",
+                routeContext.ToDictionary(
+                    item => new RouteQualifierName(item.Key),
+                    item => new RouteQualifierValue(item.Value)
+                )
+            );
+        }
+
+        [Test]
+        public async Task It_allows_unqualified_metadata_requests()
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            var tenantValidator = A.Fake<ITenantValidator>();
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider, RouteOptions());
+
+            // Act
+            bool result = await validator.ValidateAsync(httpContext);
+
+            // Assert
+            result.Should().BeTrue();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestCase("tenant", "")]
+        [TestCase("tenant", " ")]
+        [TestCase("tenant", null)]
+        [TestCase("districtId", "")]
+        [TestCase("districtId", " ")]
+        [TestCase("districtId", null)]
+        public async Task It_rejects_present_but_blank_route_values(string key, string? value)
+        {
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues[key] = value;
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>._)).Returns(true);
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            var validator = new MetadataRouteValidator(
+                tenantValidator,
+                dataStoreProvider,
+                RouteOptions(key == "tenant" ? [] : ["districtId"])
+            );
+
+            bool result = await validator.ValidateAsync(httpContext);
+
+            result.Should().BeFalse();
+            httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
+        }
+
+        [TestCase("tenant")]
+        [TestCase("districtId")]
+        [TestCase("schoolYear")]
+        public async Task It_rejects_incomplete_qualified_contexts(string missingKey)
+        {
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["tenant"] = "Tenant_255901";
+            httpContext.Request.RouteValues["districtId"] = "255901";
+            httpContext.Request.RouteValues["schoolYear"] = "2024";
+            httpContext.Request.RouteValues.Remove(missingKey);
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>._)).Returns(true);
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            var options = RouteOptions("districtId", "schoolYear");
+            options.Value.MultiTenancy = true;
+            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider, options);
+
+            bool result = await validator.ValidateAsync(httpContext);
+
+            result.Should().BeFalse();
+            httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public async Task It_allows_unqualified_metadata_with_dynamic_values_and_configured_qualifiers()
+        {
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["section"] = "ed-fi";
+            httpContext.Request.RouteValues["fileName"] = "Ed-Fi-Core";
+            var options = RouteOptions("districtId", "schoolYear");
+            options.Value.MultiTenancy = true;
+            var validator = new MetadataRouteValidator(
+                A.Fake<ITenantValidator>(),
+                A.Fake<IDataStoreProvider>(),
+                options
+            );
+
+            bool result = await validator.ValidateAsync(httpContext);
+
+            result.Should().BeTrue();
+        }
+
+        [Test]
+        public async Task It_does_not_read_tenant_only_xsd_values_as_route_qualifiers()
+        {
+            var httpContext = new DefaultHttpContext();
+            httpContext.SetEndpoint(
+                new RouteEndpoint(
+                    _ => Task.CompletedTask,
+                    RoutePatternFactory.Parse("/{tenant}/metadata/xsd/{section}/{fileName}.xsd"),
+                    0,
+                    EndpointMetadataCollection.Empty,
+                    "XSD metadata file"
+                )
+            );
+            httpContext.Request.RouteValues["tenant"] = "Tenant_255901";
+            httpContext.Request.RouteValues["section"] = "ed-fi";
+            httpContext.Request.RouteValues["fileName"] = "Ed-Fi-Core";
+
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("Tenant_255901")).Returns(true);
+
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            var options = RouteOptions("section", "fileName");
+            options.Value.MultiTenancy = true;
+            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider, options);
+
+            bool result = await validator.ValidateAsync(httpContext);
+
+            result.Should().BeTrue();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("Tenant_255901"))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() =>
+                    dataStoreProvider.RefreshInstancesIfExpiredAsync(A<string?>._, A<CancellationToken>._)
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() => dataStoreProvider.GetAll(A<string?>._)).MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_allows_matching_tenant_and_route_context()
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["tenant"] = "Tenant_255901";
+            httpContext.Request.RouteValues["districtId"] = "255901";
+            httpContext.Request.RouteValues["schoolYear"] = "2024";
+
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("Tenant_255901")).Returns(true);
+
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => dataStoreProvider.GetAll("Tenant_255901"))
+                .Returns([DataStoreWithRouteContext(1, ("districtId", "255901"), ("schoolYear", "2024"))]);
+
+            var validator = new MetadataRouteValidator(
+                tenantValidator,
+                dataStoreProvider,
+                RouteOptions("districtId", "schoolYear")
+            );
+
+            // Act
+            bool result = await validator.ValidateAsync(httpContext);
+
+            // Assert
+            result.Should().BeTrue();
+        }
+
+        [Test]
+        public async Task It_rejects_route_context_when_the_cached_tenant_has_no_match()
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["tenant"] = "Tenant_255901";
+            httpContext.Request.RouteValues["districtId"] = "255901";
+            httpContext.Request.RouteValues["schoolYear"] = "2024";
+
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("Tenant_255901")).Returns(true);
+
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => dataStoreProvider.GetAll("Tenant_255901")).Returns([]);
+
+            var validator = new MetadataRouteValidator(
+                tenantValidator,
+                dataStoreProvider,
+                RouteOptions("districtId", "schoolYear")
+            );
+
+            // Act
+            bool result = await validator.ValidateAsync(httpContext);
+
+            // Assert
+            result.Should().BeFalse();
+            httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
+            A.CallTo(() =>
+                    dataStoreProvider.RefreshInstancesIfExpiredAsync("Tenant_255901", A<CancellationToken>._)
+                )
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => dataStoreProvider.LoadDataStores("Tenant_255901", A<CancellationToken>._))
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_rejects_unknown_tenant()
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["tenant"] = "UnknownTenant";
+
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("UnknownTenant")).Returns(false);
+
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider, RouteOptions());
+
+            // Act
+            bool result = await validator.ValidateAsync(httpContext);
+
+            // Assert
+            result.Should().BeFalse();
+            httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public async Task It_rejects_non_matching_route_context()
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["tenant"] = "Tenant_255901";
+            httpContext.Request.RouteValues["districtId"] = "999999";
+            httpContext.Request.RouteValues["schoolYear"] = "2024";
+
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("Tenant_255901")).Returns(true);
+
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => dataStoreProvider.GetAll("Tenant_255901"))
+                .Returns([DataStoreWithRouteContext(1, ("districtId", "255901"), ("schoolYear", "2024"))]);
+
+            var validator = new MetadataRouteValidator(
+                tenantValidator,
+                dataStoreProvider,
+                RouteOptions("districtId", "schoolYear")
+            );
+
+            // Act
+            bool result = await validator.ValidateAsync(httpContext);
+
+            // Assert
+            result.Should().BeFalse();
+            httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
+        }
+
+        [TestCase("section", "discovery")]
+        [TestCase("profileName", "StudentProfile")]
+        public async Task It_ignores_dynamic_metadata_route_values(
+            string dynamicRouteValueName,
+            string dynamicRouteValue
+        )
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["tenant"] = "Tenant_255901";
+            httpContext.Request.RouteValues["districtId"] = "255901";
+            httpContext.Request.RouteValues["schoolYear"] = "2024";
+            httpContext.Request.RouteValues[dynamicRouteValueName] = dynamicRouteValue;
+
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("Tenant_255901")).Returns(true);
+
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => dataStoreProvider.GetAll("Tenant_255901"))
+                .Returns([DataStoreWithRouteContext(1, ("districtId", "255901"), ("schoolYear", "2024"))]);
+
+            var validator = new MetadataRouteValidator(
+                tenantValidator,
+                dataStoreProvider,
+                RouteOptions("districtId", "schoolYear")
+            );
+
+            // Act
+            bool result = await validator.ValidateAsync(httpContext);
+
+            // Assert
+            result.Should().BeTrue();
+        }
+
+        [Test]
+        public async Task It_maps_internal_metadata_route_values_back_to_configured_qualifier_names()
+        {
+            // Arrange
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.RouteValues["tenant"] = "Tenant_255901";
+            httpContext.Request.RouteValues["__metadataRouteQualifier0"] = "ed-fi";
+            httpContext.Request.RouteValues["__metadataRouteQualifier1"] = "StudentProfile";
+            httpContext.Request.RouteValues["__metadataRouteQualifier2"] = "Ed-Fi-Core";
+            httpContext.Request.RouteValues["section"] = "dynamic-section";
+            httpContext.Request.RouteValues["profileName"] = "DynamicProfile";
+            httpContext.Request.RouteValues["fileName"] = "DynamicFile";
+
+            var tenantValidator = A.Fake<ITenantValidator>();
+            A.CallTo(() => tenantValidator.ValidateTenantAsync("Tenant_255901")).Returns(true);
+
+            var dataStoreProvider = A.Fake<IDataStoreProvider>();
+            A.CallTo(() => dataStoreProvider.GetAll("Tenant_255901"))
+                .Returns([
+                    DataStoreWithRouteContext(
+                        1,
+                        ("section", "ed-fi"),
+                        ("profileName", "StudentProfile"),
+                        ("fileName", "Ed-Fi-Core")
+                    ),
+                ]);
+
+            var options = RouteOptions("section", "profileName", "fileName");
+            options.Value.MultiTenancy = true;
+            var validator = new MetadataRouteValidator(tenantValidator, dataStoreProvider, options);
+
+            // Act
+            bool result = await validator.ValidateAsync(httpContext);
+
+            // Assert
+            result.Should().BeTrue();
+        }
+    }
+
     [TestFixture]
     public class When_Getting_Profiles_Endpoint
     {
@@ -39,29 +839,18 @@ public class MetadataModuleTests
             A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(false);
             A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
                 .Returns(Task.FromResult<IReadOnlyList<string>>(["StudentProfile", "SchoolProfile"]));
-
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => apiService);
-                });
-            });
-            using var client = factory.CreateClient();
+            var httpContext = CreateHttpContext("/metadata/specifications");
 
             // Act
-            var response = await client.GetAsync("/metadata/specifications");
-            var content = await response.Content.ReadAsStringAsync();
-            var jsonArray = JsonNode.Parse(content) as JsonArray;
+            await MetadataEndpointModule.GetSections(httpContext, apiService, FrontendOptions());
+            var jsonArray = await ReadJsonResponseAsync(httpContext) as JsonArray;
 
             var profilesArray = jsonArray!
                 .Where(x => x!["prefix"]!.GetValue<string>() == "Profiles")
                 .ToArray();
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
             jsonArray.Should().NotBeNull();
             profilesArray.Should().HaveCount(2);
             profilesArray[0]!["name"]!.GetValue<string>().Should().Be("StudentProfile");
@@ -76,29 +865,18 @@ public class MetadataModuleTests
             A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(false);
             A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
                 .Returns(Task.FromResult<IReadOnlyList<string>>([]));
-
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => apiService);
-                });
-            });
-            using var client = factory.CreateClient();
+            var httpContext = CreateHttpContext("/metadata/specifications");
 
             // Act
-            var response = await client.GetAsync("/metadata/specifications");
-            var content = await response.Content.ReadAsStringAsync();
-            var jsonArray = JsonNode.Parse(content) as JsonArray;
+            await MetadataEndpointModule.GetSections(httpContext, apiService, FrontendOptions());
+            var jsonArray = await ReadJsonResponseAsync(httpContext) as JsonArray;
 
             var profilesArray = jsonArray!
                 .Where(x => x!["prefix"]!.GetValue<string>() == "Profiles")
                 .ToArray();
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
             jsonArray.Should().NotBeNull();
             profilesArray!.Should().HaveCount(0);
         }
@@ -132,27 +910,22 @@ public class MetadataModuleTests
                         )
                     )
                 );
-
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => apiService);
-                });
-            });
-            using var client = factory.CreateClient();
-
-            // Act
-            var response = await client.GetAsync(
+            var httpContext = CreateHttpContext(
                 "/metadata/specifications/profiles/StudentProfile/resources-spec.json"
             );
-            var content = await response.Content.ReadAsStringAsync();
-            var jsonContent = JsonNode.Parse(content);
+
+            // Act
+            await MetadataEndpointModule.GetProfileResourceOpenApiSpec(
+                httpContext,
+                "StudentProfile",
+                A.Fake<IDataStoreProvider>(),
+                apiService,
+                FrontendOptions()
+            );
+            var jsonContent = await ReadJsonResponseAsync(httpContext);
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
             jsonContent.Should().NotBeNull();
             jsonContent!["openapi"]!.GetValue<string>().Should().Be("3.0.0");
             jsonContent["info"]!["title"]!.GetValue<string>().Should().Be("StudentProfile Resources");
@@ -171,23 +944,21 @@ public class MetadataModuleTests
                     )
                 )
                 .Returns(Task.FromResult<JsonNode?>(null));
-
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => apiService);
-                });
-            });
-            using var client = factory.CreateClient();
+            var httpContext = CreateHttpContext(
+                "/metadata/specifications/profiles/NonExistentProfile/resources-spec.json"
+            );
 
             // Act
-            var response = await client.GetAsync("/metadata/profiles/NonExistentProfile/resources-spec.json");
+            await MetadataEndpointModule.GetProfileResourceOpenApiSpec(
+                httpContext,
+                "NonExistentProfile",
+                A.Fake<IDataStoreProvider>(),
+                apiService,
+                FrontendOptions()
+            );
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
         }
 
         [Test]
@@ -199,25 +970,21 @@ public class MetadataModuleTests
                     apiService.GetProfileOpenApiSpecificationAsync(A<string>._, A<string?>._, A<JsonArray>._)
                 )
                 .Returns(Task.FromResult<JsonNode?>(JsonNode.Parse("""{"openapi": "3.0.0"}""")));
-
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => apiService);
-                });
-            });
-            using var client = factory.CreateClient();
-
-            // Act
-            var response = await client.GetAsync(
+            var httpContext = CreateHttpContext(
                 "/metadata/specifications/profiles/studentprofile/resources-spec.json"
             );
 
+            // Act
+            await MetadataEndpointModule.GetProfileResourceOpenApiSpec(
+                httpContext,
+                "studentprofile",
+                A.Fake<IDataStoreProvider>(),
+                apiService,
+                FrontendOptions()
+            );
+
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
             A.CallTo(() =>
                     apiService.GetProfileOpenApiSpecificationAsync(
                         "studentprofile",
@@ -229,47 +996,131 @@ public class MetadataModuleTests
         }
     }
 
+    private const string ProfileTraceId = "profile-trace-id";
+
+    /// <summary>
+    /// A request context that carries the correlation id the 503 body must echo.
+    /// </summary>
+    private static DefaultHttpContext CreateProfileMetadataHttpContext(string path)
+    {
+        DefaultHttpContext httpContext = CreateHttpContext(path);
+        httpContext.Request.Headers["X-Correlation-Id"] = ProfileTraceId;
+        return httpContext;
+    }
+
+    private static void AssertProfileDataUnavailable(HttpContext httpContext, JsonNode? body)
+    {
+        httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.ServiceUnavailable);
+        httpContext.Response.ContentType.Should().Be("application/problem+json");
+        body!["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:service-unavailable");
+        body["status"]!.GetValue<int>().Should().Be(503);
+        body["correlationId"]!.GetValue<string>().Should().Be(ProfileTraceId);
+    }
+
+    /// <summary>
+    /// The specifications listing must not be published without its profile sections when the
+    /// profile catalog is unavailable, since that would be a partial catalog.
+    /// </summary>
+    [TestFixture]
+    public class Given_The_Profile_Catalog_Is_Unavailable_For_The_Specifications_List
+    {
+        private DefaultHttpContext _httpContext = null!;
+        private JsonNode? _body;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(false);
+            A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
+                .ThrowsAsync(new ProfileDataUnavailableException("The profile catalog is unavailable"));
+            _httpContext = CreateProfileMetadataHttpContext("/metadata/specifications");
+
+            await MetadataEndpointModule.GetSections(_httpContext, apiService, FrontendOptions());
+            _body = await ReadJsonResponseAsync(_httpContext);
+        }
+
+        [Test]
+        public void It_returns_503_service_unavailable_problem_details()
+        {
+            AssertProfileDataUnavailable(_httpContext, _body);
+        }
+
+        [Test]
+        public void It_writes_no_partial_listing()
+        {
+            _body.Should().BeOfType<JsonObject>();
+            _body!.ToJsonString().Should().NotContain("resources-spec.json");
+        }
+    }
+
+    [TestFixture]
+    public class Given_The_Profile_Catalog_Is_Unavailable_For_A_Profile_Spec
+    {
+        private DefaultHttpContext _httpContext = null!;
+        private JsonNode? _body;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() =>
+                    apiService.GetProfileOpenApiSpecificationAsync(
+                        "StudentProfile",
+                        A<string?>._,
+                        A<JsonArray>._
+                    )
+                )
+                .ThrowsAsync(new ProfileDataUnavailableException("The profile catalog is unavailable"));
+            _httpContext = CreateProfileMetadataHttpContext(
+                "/metadata/specifications/profiles/StudentProfile/resources-spec.json"
+            );
+
+            await MetadataEndpointModule.GetProfileResourceOpenApiSpec(
+                _httpContext,
+                "StudentProfile",
+                A.Fake<IDataStoreProvider>(),
+                apiService,
+                FrontendOptions()
+            );
+            _body = await ReadJsonResponseAsync(_httpContext);
+        }
+
+        [Test]
+        public void It_returns_503_service_unavailable_problem_details()
+        {
+            AssertProfileDataUnavailable(_httpContext, _body);
+        }
+
+        [Test]
+        public void It_does_not_disclose_the_internal_message()
+        {
+            _body!.ToJsonString().Should().NotContain("The profile catalog is unavailable");
+        }
+    }
+
     [TestFixture]
     public class When_Getting_The_Base_Metadata_Endpoint
     {
         private JsonNode? _jsonContent;
-        private HttpResponseMessage? _response;
+        private DefaultHttpContext _httpContext = null!;
 
         [SetUp]
-        public void SetUp()
+        public async Task SetUp()
         {
             // Arrange
-            var apiService = A.Fake<IApiService>();
-
-            using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        TestMockHelper.AddEssentialMocks(collection);
-                        collection.AddTransient((x) => apiService);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
+            _httpContext = CreateHttpContext("/metadata");
 
             // Act
-            _response = client.GetAsync("/metadata").GetAwaiter().GetResult();
-            var content = _response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-            _jsonContent = JsonNode.Parse(content) ?? throw new Exception("JSON parsing failed");
-        }
-
-        [TearDownAttribute]
-        public void TearDownAttribute()
-        {
-            _response?.Dispose();
+            await MetadataEndpointModule.GetMetadata(_httpContext);
+            _jsonContent =
+                await ReadJsonResponseAsync(_httpContext) ?? throw new Exception("JSON parsing failed");
         }
 
         [Test]
         public void Then_it_responds_with_status_OK()
         {
-            _response!.StatusCode.Should().Be(HttpStatusCode.OK);
+            _httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         }
 
         [Test]
@@ -591,7 +1442,7 @@ public class MetadataModuleTests
             );
             A.CallTo(() => dataStoreProvider.LoadDataStores(A<string?>.Ignored, A<CancellationToken>._))
                 .Returns([tenantADataStore, tenantBDataStore]);
-            A.CallTo(() => dataStoreProvider.LoadTenants())
+            A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
                 .Returns(new List<string> { "tenantA", "tenantB" });
             A.CallTo(() => dataStoreProvider.GetById(A<long>.Ignored, A<string?>.Ignored))
                 .Returns(tenantADataStore);
@@ -709,25 +1560,19 @@ public class MetadataModuleTests
                         """
                     )
                 );
-
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => apiService);
-                });
-            });
-            using var client = factory.CreateClient();
+            var httpContext = CreateHttpContext("/metadata/changequeries/v1/swagger.json");
 
             // Act
-            var response = await client.GetAsync("/metadata/changequeries/v1/swagger.json");
-            var content = await response.Content.ReadAsStringAsync();
-            var jsonContent = JsonNode.Parse(content);
+            await MetadataEndpointModule.GetChangeQueriesOpenApiSpec(
+                httpContext,
+                apiService,
+                A.Fake<IDataStoreProvider>(),
+                FrontendOptions()
+            );
+            var jsonContent = await ReadJsonResponseAsync(httpContext);
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
             jsonContent.Should().NotBeNull();
             jsonContent!["openapi"]!.GetValue<string>().Should().Be("3.0.0");
             jsonContent["info"]!["title"]!.GetValue<string>().Should().Be("Ed-Fi Change Queries API");
@@ -743,23 +1588,18 @@ public class MetadataModuleTests
             var apiService = A.Fake<IApiService>();
             A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
                 .Returns((JsonNode?)null);
-
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => apiService);
-                });
-            });
-            using var client = factory.CreateClient();
+            var httpContext = CreateHttpContext("/metadata/changequeries/v1/swagger.json");
 
             // Act
-            var response = await client.GetAsync("/metadata/changequeries/v1/swagger.json");
+            await MetadataEndpointModule.GetChangeQueriesOpenApiSpec(
+                httpContext,
+                apiService,
+                A.Fake<IDataStoreProvider>(),
+                FrontendOptions()
+            );
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            httpContext.Response.StatusCode.Should().Be((int)HttpStatusCode.NotFound);
             A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
                 .MustHaveHappenedOnceExactly();
         }
@@ -776,28 +1616,17 @@ public class MetadataModuleTests
             A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(true);
             A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
                 .Returns(Task.FromResult<IReadOnlyList<string>>([]));
-
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => apiService);
-                });
-            });
-            using var client = factory.CreateClient();
+            var httpContext = CreateHttpContext("/metadata/specifications");
 
             // Act
-            var response = await client.GetAsync("/metadata/specifications");
-            var content = await response.Content.ReadAsStringAsync();
-            var jsonArray = JsonNode.Parse(content) as JsonArray;
+            await MetadataEndpointModule.GetSections(httpContext, apiService, FrontendOptions());
+            var jsonArray = await ReadJsonResponseAsync(httpContext) as JsonArray;
             var changeQueries = jsonArray!.SingleOrDefault(node =>
                 node!["name"]!.GetValue<string>() == "Change-Queries"
             );
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
             changeQueries.Should().NotBeNull();
             changeQueries!["prefix"]!.GetValue<string>().Should().Be("Other");
             changeQueries["endpointUri"]!
@@ -809,6 +1638,52 @@ public class MetadataModuleTests
                 .MustNotHaveHappened();
         }
 
+        [TestCase("/tenant1/255901/2024/metadata/specifications", "", "/tenant1/255901/2024/metadata")]
+        [TestCase(
+            "/tenant1/255901/2024/MeTaDaTa/SpEcIfIcAtIoNs/",
+            "/dms",
+            "/dms/tenant1/255901/2024/MeTaDaTa"
+        )]
+        [TestCase("/metadata/SPECIFICATIONS/", "", "/metadata")]
+        [TestCase("/metadata/specifications", "/dms", "/dms/metadata")]
+        [TestCase("", "", "/metadata")]
+        [TestCase("/", "/dms", "/dms/metadata")]
+        [TestCase("/other", "/dms", "/dms/metadata")]
+        public async Task It_preserves_the_metadata_prefix_for_Change_Queries(
+            string path,
+            string pathBase,
+            string expectedPrefix
+        )
+        {
+            // Arrange
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(true);
+            A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
+                .Returns(Task.FromResult<IReadOnlyList<string>>([]));
+
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.Scheme = "http";
+            httpContext.Request.Host = new HostString("localhost");
+            httpContext.Request.Path = path;
+            httpContext.Request.PathBase = pathBase;
+            httpContext.Response.Body = new MemoryStream();
+
+            // Act
+            await MetadataEndpointModule.GetSections(httpContext, apiService, FrontendOptions());
+            httpContext.Response.Body.Position = 0;
+            var content = await new StreamReader(httpContext.Response.Body).ReadToEndAsync();
+            var jsonArray = JsonNode.Parse(content) as JsonArray;
+            var changeQueries = jsonArray!.Single(node =>
+                node!["name"]!.GetValue<string>() == "Change-Queries"
+            );
+
+            // Assert
+            changeQueries!["endpointUri"]!
+                .GetValue<string>()
+                .Should()
+                .Be($"http://localhost{expectedPrefix}/changequeries/v1/swagger.json");
+        }
+
         [Test]
         public async Task It_omits_Change_Queries_when_the_standalone_document_is_absent()
         {
@@ -817,28 +1692,17 @@ public class MetadataModuleTests
             A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(false);
             A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
                 .Returns(Task.FromResult<IReadOnlyList<string>>([]));
-
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => apiService);
-                });
-            });
-            using var client = factory.CreateClient();
+            var httpContext = CreateHttpContext("/metadata/specifications");
 
             // Act
-            var response = await client.GetAsync("/metadata/specifications");
-            var content = await response.Content.ReadAsStringAsync();
-            var jsonArray = JsonNode.Parse(content) as JsonArray;
+            await MetadataEndpointModule.GetSections(httpContext, apiService, FrontendOptions());
+            var jsonArray = await ReadJsonResponseAsync(httpContext) as JsonArray;
             var changeQueries = jsonArray!.SingleOrDefault(node =>
                 node!["name"]!.GetValue<string>() == "Change-Queries"
             );
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
             changeQueries.Should().BeNull();
             A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).MustHaveHappenedOnceExactly();
             A.CallTo(() => apiService.GetChangeQueriesOpenApiSpecification(A<JsonArray>._))
@@ -871,8 +1735,6 @@ public class MetadataModuleTests
     public async Task Metadata_Returns_Descriptors_Content()
     {
         // Arrange
-        var contentProvider = A.Fake<IContentProvider>();
-
         var apiService = A.Fake<IApiService>();
         A.CallTo(() => apiService.GetDescriptorOpenApiSpecification(A<JsonArray>._))
             .Returns(
@@ -892,31 +1754,21 @@ public class MetadataModuleTests
                     """
                 )!
             );
-
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient((x) => contentProvider);
-                    collection.AddTransient((x) => apiService);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
+        var httpContext = CreateHttpContext("/metadata/specifications/descriptors-spec.json");
 
         // Act
-        var response = await client.GetAsync("/metadata/specifications/descriptors-spec.json");
-        var content = await response.Content.ReadAsStringAsync();
-
-        var jsonContent = JsonNode.Parse(content);
+        await MetadataEndpointModule.GetDescriptorOpenApiSpec(
+            httpContext,
+            apiService,
+            A.Fake<IDataStoreProvider>(),
+            FrontendOptions()
+        );
+        var jsonContent = await ReadJsonResponseAsync(httpContext);
         var openapiVersion = jsonContent?["openapi"]?.GetValue<string>();
         var paths = jsonContent?["paths"]?.AsObject();
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         jsonContent.Should().NotBeNull();
         openapiVersion.Should().Be("3.0.0");
         paths.Should().NotBeNull();
@@ -950,8 +1802,6 @@ public class MetadataModuleTests
     public async Task Metadata_Returns_Dependencies()
     {
         // Arrange
-        var httpContext = A.Fake<HttpContext>();
-
         var apiService = A.Fake<IApiService>();
         var dependenciesJson = JsonNode
             .Parse(
@@ -966,29 +1816,14 @@ public class MetadataModuleTests
             )!
             .AsArray();
         A.CallTo(() => apiService.GetDependencies()).Returns(dependenciesJson);
-
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    TestMockHelper.AddEssentialMocks(collection);
-                    collection.AddTransient(x => httpContext);
-                    collection.AddTransient((x) => apiService);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
+        var requestContext = CreateHttpContext("/metadata/dependencies");
 
         // Act
-        var response = await client.GetAsync("/metadata/dependencies");
-        var content = await response.Content.ReadAsStringAsync();
-
-        var jsonContent = JsonNode.Parse(content);
+        await MetadataEndpointModule.GetDependencies(requestContext, apiService);
+        var jsonContent = await ReadJsonResponseAsync(requestContext);
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        requestContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         jsonContent.Should().NotBeNull();
         jsonContent
             ?[0]!["resource"]
@@ -1033,27 +1868,20 @@ public class Given_file_mode_discovery_spec_route
     [Test]
     public async Task It_returns_200_with_replaced_urls_for_discovery_spec()
     {
-        var fileModeContentProvider = _fileModeContentProvider;
+        var httpContext = MetadataModuleTests.CreateHttpContext(
+            "/specifications/metadata/specifications/discovery-spec.json"
+        );
+        httpContext.Request.RouteValues["section"] = "discovery";
 
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(collection =>
-            {
-                TestMockHelper.AddEssentialMocks(collection);
-                var apiService = A.Fake<IApiService>();
-                collection.AddTransient(x => apiService);
-                // Inject the pre-built file-mode ContentProvider; no AppSettings change.
-                collection.AddTransient(x => fileModeContentProvider);
-            });
-        });
-        using var client = factory.CreateClient();
+        await MetadataEndpointModule.GetSectionMetadata(
+            httpContext,
+            _fileModeContentProvider,
+            MetadataModuleTests.FrontendOptions(),
+            A.Fake<IDataStoreProvider>()
+        );
+        var json = await MetadataModuleTests.ReadJsonResponseAsync(httpContext);
 
-        var response = await client.GetAsync("/metadata/specifications/discovery-spec.json");
-        var content = await response.Content.ReadAsStringAsync();
-        var json = JsonNode.Parse(content);
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
         json.Should().NotBeNull();
         // HOST_URL placeholders in the staged file should be replaced with the request base URL
         // The "host" field originally contains "HOST_URL/data/v3"

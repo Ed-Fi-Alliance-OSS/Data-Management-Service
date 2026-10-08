@@ -20,13 +20,33 @@ public interface IOpenIddictTokenRepository
     Task<TokenInfo?> GetTokenByIdAsync(Guid tokenId);
 
     /// <summary>
-    /// Stores a new token in the repository.
+    /// Stores a new token in the repository, unless the application already holds the maximum
+    /// number of active tokens.
     /// </summary>
     /// <param name="tokenId">The unique identifier for the token.</param>
     /// <param name="applicationId">The application ID associated with the token.</param>
     /// <param name="subject">The subject of the token.</param>
     /// <param name="expiration">The token expiration date.</param>
-    Task StoreTokenAsync(Guid tokenId, Guid applicationId, string subject, DateTimeOffset expiration);
+    /// <param name="maxActiveTokens">
+    /// The maximum number of simultaneously active tokens the application may hold. Any value
+    /// below 1 disables enforcement and the token is always stored.
+    /// </param>
+    /// <returns>
+    /// <see cref="TokenStoreOutcome.Stored"/> when the token was written,
+    /// <see cref="TokenStoreOutcome.LimitExceeded"/> when the application already holds at least
+    /// <paramref name="maxActiveTokens"/> active tokens,
+    /// <see cref="TokenStoreOutcome.ClientNotFound"/> when the application no longer exists, or
+    /// <see cref="TokenStoreOutcome.LockTimeout"/> when a database lock wait during the store ran
+    /// out, whether behind a competing grant for this application or another writer such as the
+    /// expired-token sweep, or the store was chosen as a deadlock victim of such a writer.
+    /// </returns>
+    Task<TokenStoreOutcome> StoreTokenAsync(
+        Guid tokenId,
+        Guid applicationId,
+        string subject,
+        DateTimeOffset expiration,
+        int maxActiveTokens
+    );
 
     /// <summary>
     /// Gets the status of a token by its ID.
@@ -36,11 +56,17 @@ public interface IOpenIddictTokenRepository
     Task<string?> GetTokenStatusAsync(Guid tokenId);
 
     /// <summary>
-    /// Revokes a token by its ID.
+    /// Revokes a token by its ID, provided it is stored for the given application and not already
+    /// revoked. The ownership and status conditions are part of the UPDATE, so no other
+    /// application's token can change and a repeated revocation keeps the original redemption date.
     /// </summary>
     /// <param name="tokenId">The token ID to revoke.</param>
-    /// <returns>True if the token was successfully revoked, false otherwise.</returns>
-    Task<bool> RevokeTokenAsync(Guid tokenId);
+    /// <param name="applicationId">The stored Id of the authenticated application.</param>
+    /// <returns>
+    /// True if a row changed; false if the token is unknown, already revoked, or stored for a
+    /// different application.
+    /// </returns>
+    Task<bool> RevokeTokenAsync(Guid tokenId, Guid applicationId);
 
     /// <summary>
     /// Deletes tokens that expired before the given UTC bound, regardless of status.
@@ -61,6 +87,12 @@ public interface IOpenIddictTokenRepository
     /// </summary>
     /// <returns>Collection of public key information.</returns>
     Task<IEnumerable<PublicKeyInfo>> GetActivePublicKeysAsync();
+
+    /// <summary>
+    /// Gets all active public keys; <paramref name="cancellationToken"/> cancels both the connection open and the query.
+    /// </summary>
+    /// <returns>Collection of public key information.</returns>
+    Task<IEnumerable<PublicKeyInfo>> GetActivePublicKeysAsync(CancellationToken cancellationToken);
 
     /// <summary>
     /// Gets application information by client ID.

@@ -25,11 +25,11 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
 {
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
-        // TraceId is client-supplied whenever AppSettings:CorrelationIdHeader is configured, so it
-        // is sanitized before it reaches any log template here, per the repository's logging rule.
-        // Only the log records are sanitized: the trace id handed to a validator, and the one that
-        // becomes the 400 body's correlationId, must stay the client's real value.
-        string sanitizedTraceId = LoggingSanitizer.SanitizeForLogging(
+        // See LoggingSanitizer.SanitizeCorrelationId for the rule this follows. Specific to this
+        // file: it reads the trace id three ways - sanitizedTraceId for its log records, the raw
+        // .Value handed to a third-party validator, and the TraceId handed to FailureResponse -
+        // which all now carry the identical value, so the distinction is historical, not semantic.
+        string sanitizedTraceId = LoggingSanitizer.SanitizeCorrelationId(
             requestInfo.FrontendRequest.TraceId.Value
         );
 
@@ -109,7 +109,9 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
 
             // The validator's own type name is implementer-authored, so it is routed through the
             // sanitizer before it reaches a log template, for the same reason the trace id is.
-            string sanitizedValidatorTypeName = LoggingSanitizer.SanitizeForLogging(validator.GetType().Name);
+            string sanitizedValidatorTypeName = LoggingSanitizer.SanitizeInternalValueForLogging(
+                validator.GetType().Name
+            );
             long validatorStartTimestamp = Stopwatch.GetTimestamp();
 
             IReadOnlyList<CustomValidationFailure> failures;
@@ -283,7 +285,7 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
         IReadOnlyList<ValidatedResource> appliesTo =
             validator.AppliesTo
             ?? throw new InvalidOperationException(
-                $"{LoggingSanitizer.SanitizeForLogging(validator.GetType().Name)}.AppliesTo returned "
+                $"{LoggingSanitizer.SanitizeInternalValueForLogging(validator.GetType().Name)}.AppliesTo returned "
                     + "null. A null is not a substitute for an empty list and is treated as a hard "
                     + "failure."
             );
@@ -293,7 +295,7 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
         if (appliesTo.Any(entry => entry is null))
         {
             throw new InvalidOperationException(
-                $"{LoggingSanitizer.SanitizeForLogging(validator.GetType().Name)}.AppliesTo contains "
+                $"{LoggingSanitizer.SanitizeInternalValueForLogging(validator.GetType().Name)}.AppliesTo contains "
                     + "a null entry."
             );
         }

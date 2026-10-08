@@ -178,7 +178,8 @@ public class PipelineOrderingTests
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
                 A.Fake<IProfileService>(),
-                new CircuitBreakerSettings()
+                new CircuitBreakerSettings(),
+                TestHelper.CreateNoOpIdentityTenantSnapshot()
             );
 
             _stepTypes = GetStepTypes(apiService, "CreateQueryPipeline");
@@ -469,28 +470,11 @@ public class PipelineOrderingTests
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
                 A.Fake<IProfileService>(),
-                new CircuitBreakerSettings()
+                new CircuitBreakerSettings(),
+                TestHelper.CreateNoOpIdentityTenantSnapshot()
             );
 
             _stepTypes = GetStepTypes(apiService, "CreateGetTrackedChangesPipeline");
-        }
-
-        [Test]
-        public void It_places_tracked_change_query_validation_after_query_validation()
-        {
-            var queryValidationIndex = _stepTypes.IndexOf(typeof(ValidateQueryMiddleware));
-            var trackedQueryValidationIndex = _stepTypes.IndexOf(
-                typeof(ValidateTrackedChangeQueryMiddleware)
-            );
-
-            queryValidationIndex.Should().BeGreaterThanOrEqualTo(0);
-            trackedQueryValidationIndex.Should().BeGreaterThanOrEqualTo(0);
-            trackedQueryValidationIndex
-                .Should()
-                .BeGreaterThan(
-                    queryValidationIndex,
-                    "ValidateTrackedChangeQueryMiddleware must reject parsed resource query filters"
-                );
         }
 
         [Test]
@@ -531,20 +515,18 @@ public class PipelineOrderingTests
         }
 
         [Test]
-        public void It_places_tracked_change_query_validation_before_the_handler()
+        public void It_places_query_validation_before_the_handler()
         {
-            var trackedQueryValidationIndex = _stepTypes.IndexOf(
-                typeof(ValidateTrackedChangeQueryMiddleware)
-            );
+            var queryValidationIndex = _stepTypes.IndexOf(typeof(ValidateQueryMiddleware));
             var handlerIndex = _stepTypes.IndexOf(typeof(TrackedChangeQueryRequestHandler));
 
-            trackedQueryValidationIndex.Should().BeGreaterThanOrEqualTo(0);
+            queryValidationIndex.Should().BeGreaterThanOrEqualTo(0);
             handlerIndex.Should().BeGreaterThanOrEqualTo(0);
-            trackedQueryValidationIndex
+            queryValidationIndex
                 .Should()
                 .BeLessThan(
                     handlerIndex,
-                    "resource query filters must be rejected before repository request construction"
+                    "query parameters must be validated before repository request construction"
                 );
         }
     }
@@ -642,7 +624,8 @@ public class PipelineOrderingTests
             A.Fake<CachedClaimSetProvider>(),
             A.Fake<IResourceDependencyGraphMLFactory>(),
             A.Fake<IProfileService>(),
-            new CircuitBreakerSettings()
+            new CircuitBreakerSettings(),
+            TestHelper.CreateNoOpIdentityTenantSnapshot()
         );
     }
 
@@ -1374,7 +1357,8 @@ public class PipelineOrderingTests
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
                 profileService,
-                new CircuitBreakerSettings()
+                new CircuitBreakerSettings(),
+                TestHelper.CreateNoOpIdentityTenantSnapshot()
             );
 
             _stepTypes = GetStepTypes(apiService, "CreateGetTokenInfoPipeline");
@@ -1547,7 +1531,8 @@ public class PipelineOrderingTests
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
                 A.Fake<IProfileService>(),
-                circuitBreakerSettings
+                circuitBreakerSettings,
+                TestHelper.CreateNoOpIdentityTenantSnapshot()
             );
 
             return apiService;
@@ -1677,6 +1662,141 @@ public class PipelineOrderingTests
 
             requestInfo.FrontendResponse.StatusCode.Should().Be(503);
             requestInfo.FrontendResponse.Headers.Should().Contain("Retry-After", "7");
+        }
+    }
+
+    /// <summary>
+    /// The two identity pipelines. Neither reaches a physical data store or
+    /// parses a resource path, so this fixture registers only what the identity-specific steps resolve
+    /// from the request scope: JwtAuthenticationMiddleware and its IJwtValidationService.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Identity_Pipelines : PipelineOrderingTests
+    {
+        /// <summary>
+        /// The JSON-body identity pipeline's exact step order: the eight shared steps,
+        /// then content-type, body parsing, duplicate-property checking, and the terminal handler.
+        /// </summary>
+        private static readonly Type[] _expectedJsonBodyStepTypes =
+        [
+            typeof(RequestResponseLoggingMiddleware),
+            typeof(CoreExceptionLoggingMiddleware),
+            typeof(TenantValidationMiddleware),
+            typeof(JwtAuthenticationMiddleware),
+            typeof(ValidateTenantExistsMiddleware),
+            typeof(ValidateClientTenantBindingMiddleware),
+            typeof(ServiceClaimAuthorizationMiddleware),
+            typeof(IdentityOperationCapabilityMiddleware),
+            typeof(ValidateContentTypeMiddleware),
+            typeof(ParseBodyMiddleware),
+            typeof(DuplicatePropertiesMiddleware),
+            typeof(IdentityHandler),
+        ];
+
+        /// <summary>
+        /// The body-less identity pipeline's exact step order: the same first eight
+        /// steps as the JSON-body pipeline, then directly the terminal handler.
+        /// </summary>
+        private static readonly Type[] _expectedBodylessStepTypes =
+        [
+            typeof(RequestResponseLoggingMiddleware),
+            typeof(CoreExceptionLoggingMiddleware),
+            typeof(TenantValidationMiddleware),
+            typeof(JwtAuthenticationMiddleware),
+            typeof(ValidateTenantExistsMiddleware),
+            typeof(ValidateClientTenantBindingMiddleware),
+            typeof(ServiceClaimAuthorizationMiddleware),
+            typeof(IdentityOperationCapabilityMiddleware),
+            typeof(IdentityHandler),
+        ];
+
+        /// <summary>
+        /// Steps that must never appear on either identity pipeline: the identity operations are
+        /// datastore-independent and resolve no ApiSchema-derived endpoint.
+        /// </summary>
+        private static readonly Type[] _forbiddenStepTypes =
+        [
+            typeof(ResolveDataStoreMiddleware),
+            typeof(ParsePathMiddleware),
+            typeof(SelectEffectiveDataStoreTargetMiddleware),
+        ];
+
+        private static ApiService BuildApiService()
+        {
+            var services = new ServiceCollection();
+
+            services.AddTransient<JwtAuthenticationMiddleware>();
+            services.AddTransient<IJwtValidationService>(_ => A.Fake<IJwtValidationService>());
+            services.AddTransient<ILogger<JwtAuthenticationMiddleware>>(_ =>
+                NullLogger<JwtAuthenticationMiddleware>.Instance
+            );
+
+            var appSettingsOptions = Options.Create(
+                new AppSettings { AllowIdentityUpdateOverrides = "", MaskRequestBodyInLogs = false }
+            );
+            services.AddSingleton(appSettingsOptions);
+
+            var serviceProvider = services.BuildServiceProvider();
+
+            return new ApiService(
+                A.Fake<IApiSchemaProvider>(),
+                A.Fake<IEffectiveApiSchemaProvider>(),
+                A.Fake<IClaimSetProvider>(),
+                A.Fake<IDocumentValidator>(),
+                A.Fake<IMatchingDocumentUuidsValidator>(),
+                A.Fake<IEqualityConstraintValidator>(),
+                A.Fake<IDecimalValidator>(),
+                NullLogger<ApiService>.Instance,
+                NullLoggerFactory.Instance,
+                appSettingsOptions,
+                ResiliencePipeline.Empty,
+                A.Fake<ResourceLoadOrderCalculator>(),
+                serviceProvider,
+                A.Fake<IServiceScopeFactory>(),
+                A.Fake<CachedClaimSetProvider>(),
+                A.Fake<IResourceDependencyGraphMLFactory>(),
+                A.Fake<IProfileService>(),
+                new CircuitBreakerSettings(),
+                TestHelper.CreateNoOpIdentityTenantSnapshot()
+            );
+        }
+
+        [Test]
+        public void It_builds_the_JSON_body_pipeline_in_the_exact_documented_order()
+        {
+            GetStepTypes(BuildApiService(), "CreateIdentityJsonBodyPipeline")
+                .Should()
+                .Equal(_expectedJsonBodyStepTypes);
+        }
+
+        [Test]
+        public void It_builds_the_bodyless_pipeline_in_the_exact_documented_order()
+        {
+            GetStepTypes(BuildApiService(), "CreateIdentityBodylessPipeline")
+                .Should()
+                .Equal(_expectedBodylessStepTypes);
+        }
+
+        [TestCase("CreateIdentityJsonBodyPipeline")]
+        [TestCase("CreateIdentityBodylessPipeline")]
+        public void It_contains_none_of_the_forbidden_datastore_or_path_steps(string factoryMethodName)
+        {
+            var stepTypes = GetStepTypes(BuildApiService(), factoryMethodName);
+
+            foreach (Type forbidden in _forbiddenStepTypes)
+            {
+                stepTypes.Should().NotContain(forbidden);
+            }
+        }
+
+        [TestCase("CreateIdentityJsonBodyPipeline")]
+        [TestCase("CreateIdentityBodylessPipeline")]
+        public void It_contains_no_ApiSchema_derived_step(string factoryMethodName)
+        {
+            var stepTypes = GetStepTypes(BuildApiService(), factoryMethodName);
+
+            stepTypes.Should().NotContain(type => type.Name.Contains("ApiSchema", StringComparison.Ordinal));
         }
     }
 }

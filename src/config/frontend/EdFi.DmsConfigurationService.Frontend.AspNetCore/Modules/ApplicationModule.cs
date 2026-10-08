@@ -26,7 +26,9 @@ public class ApplicationModule : IEndpointModule
     {
         endpoints.MapSecuredPost("/v3/applications/", InsertApplication);
         endpoints.MapSecuredGet("/v3/applications/", GetAll).Produces<List<ApplicationResponse>>(200);
-        endpoints.MapSecuredGet($"/v3/applications/{{id}}", GetById).Produces<ApplicationResponse>(200);
+        // Limited access: DMS reads an application's profile assignments through this endpoint, so the
+        // limited scope its service account uses for its other reads must cover it too.
+        endpoints.MapLimitedAccess($"/v3/applications/{{id}}", GetById).Produces<ApplicationResponse>(200);
         endpoints.MapSecuredPut($"/v3/applications/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v3/applications/{{id}}", Delete);
 
@@ -112,7 +114,10 @@ public class ApplicationModule : IEndpointModule
         switch (clientCreateResult)
         {
             case ClientCreateResult.FailureUnknown failure:
-                logger.LogError("Failure creating client {Failure}", failure);
+                logger.LogError(
+                    "Failure creating client: {FailureMessage}",
+                    SanitizeForLog(failure.FailureMessage)
+                );
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
             case ClientCreateResult.FailureIdentityProvider failureIdentityProvider:
                 logger.LogError(
@@ -148,7 +153,12 @@ public class ApplicationModule : IEndpointModule
                             }
                         );
                     case ApplicationInsertResult.FailureVendorNotFound:
-                        await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
+                        await CleanUpProvisionedClientAsync(
+                            clientRepository,
+                            clientSuccess.ClientUuid,
+                            clientId,
+                            logger
+                        );
                         return Results.Json(
                             FailureResponse.ForUnresolvedReference(
                                 "Reference 'VendorId' does not exist.",
@@ -158,7 +168,12 @@ public class ApplicationModule : IEndpointModule
                             statusCode: (int)HttpStatusCode.Conflict
                         );
                     case ApplicationInsertResult.FailureDataStoreNotFound:
-                        await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
+                        await CleanUpProvisionedClientAsync(
+                            clientRepository,
+                            clientSuccess.ClientUuid,
+                            clientId,
+                            logger
+                        );
                         return Results.Json(
                             FailureResponse.ForUnresolvedReference(
                                 "Data store does not exist.",
@@ -168,7 +183,12 @@ public class ApplicationModule : IEndpointModule
                             statusCode: (int)HttpStatusCode.Conflict
                         );
                     case ApplicationInsertResult.FailureProfileNotFound:
-                        await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
+                        await CleanUpProvisionedClientAsync(
+                            clientRepository,
+                            clientSuccess.ClientUuid,
+                            clientId,
+                            logger
+                        );
                         return Results.Json(
                             FailureResponse.ForUnresolvedReference(
                                 "Profile does not exist.",
@@ -178,7 +198,12 @@ public class ApplicationModule : IEndpointModule
                             statusCode: (int)HttpStatusCode.Conflict
                         );
                     case ApplicationInsertResult.FailureDuplicateApplication duplicateApp:
-                        await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
+                        await CleanUpProvisionedClientAsync(
+                            clientRepository,
+                            clientSuccess.ClientUuid,
+                            clientId,
+                            logger
+                        );
                         throw new ValidationException([
                             new ValidationFailure(
                                 "ApplicationName",
@@ -186,8 +211,16 @@ public class ApplicationModule : IEndpointModule
                             ),
                         ]);
                     case ApplicationInsertResult.FailureUnknown failure:
-                        logger.LogError("Failure creating client {Failure}", failure);
-                        await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
+                        logger.LogError(
+                            "Failure inserting the application row: {FailureMessage}",
+                            SanitizeForLog(failure.FailureMessage)
+                        );
+                        await CleanUpProvisionedClientAsync(
+                            clientRepository,
+                            clientSuccess.ClientUuid,
+                            clientId,
+                            logger
+                        );
                         return FailureResults.Unknown(httpContext.TraceIdentifier);
                 }
 
@@ -196,6 +229,76 @@ public class ApplicationModule : IEndpointModule
 
         logger.LogError("Failure creating client");
         return FailureResults.Unknown(httpContext.TraceIdentifier);
+    }
+
+    /// <summary>
+    /// Removes the identity-provider client this request provisioned once the database insert has
+    /// failed, and reports what became of it. The caller's response stays the one the database
+    /// outcome dictates: the reference or name they have to correct is the actionable
+    /// information, and a cleanup an operator must finish by hand does not change it. A client
+    /// that may remain is therefore reported at Error with the identifiers needed to find it.
+    /// </summary>
+    private static async Task CleanUpProvisionedClientAsync(
+        IIdentityProviderRepository clientRepository,
+        Guid clientUuid,
+        string clientId,
+        ILogger logger
+    )
+    {
+        ClientDeleteResult cleanupResult;
+        try
+        {
+            cleanupResult = await clientRepository.DeleteClientAsync(clientUuid.ToString());
+        }
+        catch (Exception ex)
+        {
+            LogUnconfirmedCleanup(ex.GetType().Name, ex);
+            return;
+        }
+
+        switch (cleanupResult)
+        {
+            case ClientDeleteResult.Success:
+                logger.LogDebug(
+                    "Deleted provider client {ClientUuid} (client {ClientId}) after the database insert failed",
+                    clientUuid,
+                    SanitizeForLog(clientId)
+                );
+                return;
+
+            case ClientDeleteResult.FailureClientNotFound:
+                logger.LogWarning(
+                    "Provider client {ClientUuid} (client {ClientId}) was already absent when the database insert failed",
+                    clientUuid,
+                    SanitizeForLog(clientId)
+                );
+                return;
+
+            case ClientDeleteResult.FailureIdentityProvider failureIdentityProvider:
+                LogUnconfirmedCleanup(
+                    $"{nameof(ClientDeleteResult.FailureIdentityProvider)}: {SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)}"
+                );
+                return;
+
+            case ClientDeleteResult.FailureUnknown failureUnknown:
+                LogUnconfirmedCleanup(
+                    $"{nameof(ClientDeleteResult.FailureUnknown)}: {SanitizeForLog(failureUnknown.FailureMessage)}"
+                );
+                return;
+
+            default:
+                LogUnconfirmedCleanup(cleanupResult.GetType().Name);
+                return;
+        }
+
+        void LogUnconfirmedCleanup(string outcome, Exception? exception = null) =>
+            logger.LogError(
+                exception,
+                "Could not confirm deletion of provider client {ClientUuid} (client {ClientId}) after the database insert failed; cleanup outcome {Outcome}; the client may remain and must be reviewed manually",
+                clientUuid,
+                SanitizeForLog(clientId),
+                outcome
+            );
     }
 
     private static async Task<IResult> GetAll(
@@ -283,8 +386,8 @@ public class ApplicationModule : IEndpointModule
     /// <summary>
     /// Validates that every requested profile id exists. Throws a ValidationException
     /// when one is missing, returns a failure result for infrastructure errors, and
-    /// returns null when the request is valid. Profiles are not tenant-scoped, so this
-    /// existence check mirrors the repository's foreign-key validation exactly.
+    /// returns null when the request is valid. The profile lookup is tenant-scoped, so a profile
+    /// created in another tenant is reported exactly like a missing one.
     /// </summary>
     private static async Task<IResult?> ValidateProfileIdsExist(
         int[] profileIds,

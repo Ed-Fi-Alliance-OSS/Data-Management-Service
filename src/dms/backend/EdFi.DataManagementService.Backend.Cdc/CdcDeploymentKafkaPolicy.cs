@@ -18,6 +18,10 @@ public static class CdcDeploymentKafkaPolicy
 {
     public const long MinimumPublicDeleteRetentionMilliseconds = 604_800_000;
 
+    // Operational request headroom, not a Kafka wire-size calculation. Deployment qualification
+    // must establish whether batching/protocol overhead requires a larger broker request limit.
+    internal static long MinimumBrokerRequestBytes(int maxRecordBytes) => (long)maxRecordBytes + 1_048_576;
+
     public static CdcDeploymentKafkaPolicyPlan Build(CdcDeploymentRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -376,7 +380,7 @@ public static class CdcDeploymentKafkaPolicy
                     Array.TrueForAll(ids, id => id >= 0)
                     && ids.Distinct().Count() == ids.Length
                     && brokers.Value.Brokers.All(broker =>
-                        broker.SocketRequestMaxBytes >= plan.MaxRecordBytes
+                        broker.SocketRequestMaxBytes >= MinimumBrokerRequestBytes(plan.MaxRecordBytes)
                         && broker.ReplicaFetchMaxBytes >= plan.MaxRecordBytes
                         && broker.ReplicaFetchResponseMaxBytes >= plan.MaxRecordBytes
                     );

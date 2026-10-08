@@ -37,8 +37,8 @@ internal abstract class CdcReadinessTestBase(Ddl.CdcProvider provider) : CdcRegi
         _projectionReads = _barriers = _disposals = 0;
         _backlog = _wrongSource = false;
         _lag = 1;
-        _telemetryClock = new();
-        var services = new ServiceCollection().AddLogging();
+        _telemetryClock = new(ObservationTime);
+        var services = new ServiceCollection().AddSingleton(ObservationTime).AddLogging();
         if (Provider == Ddl.CdcProvider.Postgresql)
         {
             services.AddPostgresqlDmsCdcControlPlane();
@@ -76,11 +76,11 @@ internal abstract class CdcReadinessTestBase(Ddl.CdcProvider provider) : CdcRegi
                 _barriers++;
                 Trace("barrier");
                 return Provider == Ddl.CdcProvider.Postgresql
-                    ? CdcProviderBarrierCaptureResult.PostgresqlSuccess("0/10", DateTimeOffset.UtcNow)
+                    ? CdcProviderBarrierCaptureResult.PostgresqlSuccess("0/10", ObservationTime.GetUtcNow())
                     : CdcProviderBarrierCaptureResult.SqlServerSuccess(
                         "00000001:00000002:0003",
                         "00000001:00000002:0003",
-                        DateTimeOffset.UtcNow
+                        ObservationTime.GetUtcNow()
                     );
             });
         A.CallTo(() => _connect.ReadOffsetEvidenceAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
@@ -189,7 +189,7 @@ internal abstract class CdcReadinessTestBase(Ddl.CdcProvider provider) : CdcRegi
                 (CdcDeploymentRequest request, CdcTelemetryObservationPass pass, CancellationToken _) =>
                 {
                     Trace("metrics");
-                    var now = DateTimeOffset.UtcNow;
+                    var now = ObservationTime.GetUtcNow();
                     return Observed(
                         new CdcConnectorTelemetryObservation(
                             pass,
@@ -275,16 +275,20 @@ internal abstract class CdcReadinessTestBase(Ddl.CdcProvider provider) : CdcRegi
             _worker,
             _metrics,
             _positions,
-            TimeProvider.System
+            ObservationTime
         );
 
     protected Task<CdcTransportResult<CdcWriterPublicationResult>> ReadyAsync(
         CancellationToken token = default
     ) => _readiness.PreparePublicationAsync(_request, _runtime, 1000, token);
 
-    protected DocumentCacheStatusResponse Projection()
+    protected DocumentCacheStatusResponse Projection(
+        TimeSpan databaseClockSkew = default,
+        TimeSpan processClockSkew = default,
+        bool missingDurableObservation = false
+    )
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = ObservationTime.GetUtcNow();
         DocumentCacheStatusInventoryComponent valid = new(
             DocumentCacheStatusInventoryStatus.Valid,
             DocumentCacheStatusInventoryReason.None,
@@ -301,8 +305,8 @@ internal abstract class CdcReadinessTestBase(Ddl.CdcProvider provider) : CdcRegi
                 new(
                     new(Target.TenantKey, long.Parse(Target.DataStoreId)),
                     1,
-                    now,
-                    now,
+                    now + processClockSkew,
+                    missingDurableObservation ? null : now + databaseClockSkew,
                     Provider == Ddl.CdcProvider.Postgresql ? "postgresql" : "sqlserver",
                     _wrongSource
                         ? "sha256:" + new string('f', 64)
@@ -372,12 +376,12 @@ internal abstract class CdcReadinessTestBase(Ddl.CdcProvider provider) : CdcRegi
         );
     }
 
-    protected sealed class TelemetryClock : TimeProvider
+    protected sealed class TelemetryClock(TimeProvider time) : TimeProvider
     {
         private long _extra;
-        public override long TimestampFrequency => TimeProvider.System.TimestampFrequency;
+        public override long TimestampFrequency => time.TimestampFrequency;
 
-        public override long GetTimestamp() => TimeProvider.System.GetTimestamp() + _extra;
+        public override long GetTimestamp() => time.GetTimestamp() + _extra;
 
         public void Advance(TimeSpan elapsed) => _extra += (long)(elapsed.TotalSeconds * TimestampFrequency);
     }

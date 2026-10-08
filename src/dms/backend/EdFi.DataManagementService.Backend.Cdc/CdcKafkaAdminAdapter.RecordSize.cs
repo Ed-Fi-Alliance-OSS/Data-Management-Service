@@ -55,14 +55,17 @@ public sealed partial class CdcKafkaAdminAdapter : ICdcKafkaRecordSizeAdministra
                 int ceiling = desired.ConnectorPolicy.MaxRecordBytes;
                 var changes = before
                     .Brokers.Where(b =>
-                        b.SocketRequestMaxBytes < ceiling
+                        b.SocketRequestMaxBytes < CdcDeploymentKafkaPolicy.MinimumBrokerRequestBytes(ceiling)
                         || b.ReplicaFetchMaxBytes < ceiling
                         || b.ReplicaFetchResponseMaxBytes < ceiling
                     )
                     .Select(b =>
                         b with
                         {
-                            SocketRequestMaxBytes = Math.Max(b.SocketRequestMaxBytes, ceiling),
+                            SocketRequestMaxBytes = Math.Max(
+                                b.SocketRequestMaxBytes,
+                                CdcDeploymentKafkaPolicy.MinimumBrokerRequestBytes(ceiling)
+                            ),
                             ReplicaFetchMaxBytes = Math.Max(b.ReplicaFetchMaxBytes, ceiling),
                             ReplicaFetchResponseMaxBytes = Math.Max(b.ReplicaFetchResponseMaxBytes, ceiling),
                         }

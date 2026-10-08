@@ -312,7 +312,7 @@ Tenant: {{tenant1Name}}
 {
     "vendorId": {{vendor1Id}},
     "applicationName": "District A SIS",
-    "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+    "claimSetName": "EdFiSandbox",
     "educationOrganizationIds": [255901],
     "dataStoreIds": [{{dataStore1_2024_Id}}, {{dataStore1_2025_Id}}]
 }
@@ -362,7 +362,7 @@ Tenant: {{tenant2Name}}
 {
     "vendorId": {{vendor2Id}},
     "applicationName": "District B SIS",
-    "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+    "claimSetName": "EdFiSandbox",
     "educationOrganizationIds": [255902],
     "dataStoreIds": [{{dataStore2_2024_Id}}, {{dataStore2_2025_Id}}]
 }

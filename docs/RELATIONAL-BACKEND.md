@@ -100,6 +100,12 @@ api-schema-tools ddl provision \
 bounds DDL execution. For SQL Server, provisioning configures Read Committed Snapshot
 Isolation (and `ALLOW_SNAPSHOT_ISOLATION`) on newly created databases.
 
+`IX_Document_CreatedByOwnershipTokenId` is a filtered index, so SQL Server requires the indexed-view SET option set (`ANSI_NULLS`, `ANSI_PADDING`, `ANSI_WARNINGS`, `ARITHABORT`, `CONCAT_NULL_YIELDS_NULL`, `QUOTED_IDENTIFIER` ON; `NUMERIC_ROUNDABORT` OFF) for the session that creates it and for every write to `dms.Document`, and it captures `QUOTED_IDENTIFIER` and `ANSI_NULLS` into each stamp trigger the script creates.
+The generated SQL Server script therefore opens with one `SET` batch that puts the session in that state, so applying it with any client, including ODBC `sqlcmd` without `-I`, provisions the index and bakes the right settings into the triggers.
+The filter applies to newly provisioned databases only: both engines guard index creation by name, so a database provisioned before this change keeps its unfiltered index, with no startup-validation signal (generated DDL is not an input to the effective schema hash), until it is deliberately reprovisioned.
+Sessions that write `dms.Document` directly still need `QUOTED_IDENTIFIER` ON: `Microsoft.Data.SqlClient` and go-sqlcmd default it ON, ODBC `sqlcmd` needs `-I`, and a write without it fails with `Msg 1934` while a read raises nothing and silently stops using the index.
+(`ARITHABORT` needs no attention: at compatibility level 90 or above `ANSI_WARNINGS` ON implies it for this purpose, which is why `SqlClient` sessions, which open with it OFF, are fine.)
+
 ### Always-provisioned DocumentCache inventory
 
 Full relational provisioning always creates the fixed `dms` inventory needed by the
@@ -132,6 +138,18 @@ operator workflows are in
 [`reference/document-cache-documentation/operations-runbook.md`](../reference/document-cache-documentation/operations-runbook.md);
 and the `CDC-INV-02` / `CDC-INV-03` traceability rows live under
 [`Contract-to-Evidence Traceability`](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-to-evidence-traceability).
+
+Relational connector registration is available through the explicit managed opt-in in
+the [CDC operator reference](../reference/cdc-documentation/README.md). Use its
+[PostgreSQL](../reference/cdc-documentation/operations-runbook.md#postgresql-setup)
+or [SQL Server](../reference/cdc-documentation/operations-runbook.md#sql-server-setup)
+procedure and [SchemaTools command/configuration catalog](../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands).
+Provisioning the fixed tables alone is not CDC admission; the
+[enablement owner](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence)
+defines the managed setup boundary. Existing deployments use
+[state preservation](../reference/cdc-documentation/operations-runbook.md#deployment-state)
+and [managed lifecycle](../reference/cdc-documentation/operations-runbook.md#managed-lifecycle),
+governed by the [state-continuity contract](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-deployment-state-continuity-and-adoption-deferral).
 
 ### Cache-backed read acceleration
 
@@ -180,7 +198,9 @@ PostgreSQL provisioning creates or safely reuses a locked-down `NOLOGIN`
 `edfi_dms_enqueue_owner` role and gives the authenticated provisioning principal only the
 direct membership needed to own and refresh the enqueue functions. That owner is not a
 runtime DMS credential; production still uses the deployment-supplied data-store
-credential, while later CDC work owns separate CDC principals and grants.
+credential. Separate CDC principals and grants belong to the
+[provider setup contract](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#connector-topology-and-provider-setup);
+see the [security checklist](../reference/cdc-documentation/operations-runbook.md#security-consumer-evidence).
 
 SQL Server uses the existing same-owner ownership chain for the enqueue trigger and
 referenced `dms` tables. The generated trigger has no `EXECUTE AS`, enqueue user, or

@@ -12,20 +12,20 @@ Feature: ClaimSets endpoints
                   """
                   [
                       {
-                          "id": {claimSetId:E2E-NameSpaceBasedClaimSet},
-                          "claimSetName": "E2E-NameSpaceBasedClaimSet",
+                          "id": {claimSetId:SISVendor},
+                          "claimSetName": "SISVendor",
                           "_isSystemReserved": true,
                           "_applications": []
                       },
                       {
-                          "id": {claimSetId:E2E-NoFurtherAuthRequiredClaimSet},
-                          "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+                          "id": {claimSetId:EdFiSandbox},
+                          "claimSetName": "EdFiSandbox",
                           "_isSystemReserved": true,
                           "_applications": []
                       },
                       {
-                          "id": {claimSetId:E2E-RelationshipsWithEdOrgsOnlyClaimSet},
-                          "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+                          "id": {claimSetId:RosterVendor},
+                          "claimSetName": "RosterVendor",
                           "_isSystemReserved": true,
                           "_applications": []
                       }
@@ -39,8 +39,8 @@ Feature: ClaimSets endpoints
                   """
                   [
                       {
-                          "id": {claimSetId:E2E-NoFurtherAuthRequiredClaimSet},
-                          "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+                          "id": {claimSetId:EdFiSandbox},
+                          "claimSetName": "EdFiSandbox",
                           "_isSystemReserved": true,
                           "_applications": []
                       }
@@ -123,18 +123,20 @@ Feature: ClaimSets endpoints
                       "claimSetName": "DuplicateTestClaimSet"
                   }
                   """
-             Then it should respond with 409
+             Then it should respond with 400
               And the response body is
                   """
                   {
-                      "detail": "The identifying value(s) of the item are the same as another item that already exists.",
-                      "type": "urn:ed-fi:api:conflict:non-unique-identity",
-                      "title": "Identifying Values Are Not Unique",
-                      "status": 409,
-                      "validationErrors": {},
-                      "errors": [
-                          "A claim set with this name already exists."
-                      ]
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "validationErrors": {
+                          "Name": [
+                              "A claim set with this name already exists."
+                          ]
+                      },
+                      "errors": []
                   }
                   """
 
@@ -285,3 +287,284 @@ Feature: ClaimSets endpoints
                       "errors": []
                   }
                   """
+        Scenario: 12 Verify copy rejects a claim set name with white space the same way insert does
+             When a POST request is made to "/v3/claimSets/copy" with
+                  """
+                  {
+                      "originalId": {claimSetId:E2E-NoFurtherAuthRequiredClaimSet},
+                      "claimSetName": "DistrictHostedSISVendor (copy)"
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "validationErrors": {
+                          "Name": [
+                              "Claim set name must not contain white spaces."
+                          ]
+                      },
+                      "errors": []
+                  }
+                  """
+             When a POST request is made to "/v3/claimSets" with
+                  """
+                  {
+                      "claimSetName": "DistrictHostedSISVendor (copy)"
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "validationErrors": {
+                          "Name": [
+                              "Claim set name must not contain white spaces."
+                          ]
+                      },
+                      "errors": []
+                  }
+                  """
+
+        Scenario: 13 Ensure clients can copy a claim set with a valid name and keep its resource claims
+             When a POST request is made to "/v3/claimSets/import" with
+                  """
+                  {
+                      "claimSetName": "CopySourceClaimSet",
+                      "resourceClaims": [
+                          {
+                              "name": "systemDescriptors",
+                              "claimName": "http://ed-fi.org/identity/claims/domains/systemDescriptors",
+                              "actions": [
+                                 { "name": "Create", "enabled": true }
+                              ]
+                          },
+                          {
+                              "name": "academicHonorCategoryDescriptor",
+                              "claimName": "http://ed-fi.org/identity/claims/ed-fi/academicHonorCategoryDescriptor",
+                              "parentClaimName": "http://ed-fi.org/identity/claims/domains/systemDescriptors",
+                              "actions": [
+                                  { "name": "Create", "enabled": true },
+                                  { "name": "Read", "enabled": true }
+                              ]
+                          }
+                      ]
+                  }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "sourceClaimSetId"
+             When a GET request is made to "/v3/claimSets/{sourceClaimSetId}"
+             Then it should respond with 200
+              And the response body property "resourceClaims" is captured as "sourceResourceClaims"
+             When a POST request is made to "/v3/claimSets/copy" with
+                  """
+                  {
+                      "originalId": {sourceClaimSetId},
+                      "claimSetName": "CopySourceClaimSet-Copy"
+                  }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "copiedClaimSetId"
+             When a GET request is made to "/v3/claimSets/{copiedClaimSetId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                      "id": {copiedClaimSetId},
+                      "claimSetName": "CopySourceClaimSet-Copy",
+                      "_isSystemReserved": false,
+                      "_applications": [],
+                      "resourceClaims": "{*}"
+                  }
+              """
+              And the response body property "resourceClaims" equals the value captured as "sourceResourceClaims"
+
+        Scenario: 14 Ensure clients can grant selected resource claim actions
+             When a POST request is made to "/v3/claimSets" with
+                  """
+                  {
+                      "claimSetName": "DMS-853ResourceActionGrant{scenarioRunId}"
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 233,
+                      "resourceClaimActions": [
+                          { "name": "Read", "enabled": true },
+                          { "name": "Update", "enabled": false }
+                      ]
+                  }
+                  """
+             Then it should respond with 201
+
+        Scenario: 15 Ensure clients can override a resource claim action authorization strategy
+             When a POST request is made to "/v3/claimSets" with
+                  """
+                  {
+                      "claimSetName": "DMS-853AuthorizationStrategyOverride{scenarioRunId}"
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 233,
+                      "resourceClaimActions": [
+                          { "name": "Read", "enabled": true }
+                      ]
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions/233/overrideAuthorizationStrategy" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 233,
+                      "actionName": "Read",
+                      "authStrategyIds": [1],
+                      "authorizationStrategies": ["NoFurtherAuthorizationRequired"]
+                  }
+                  """
+             Then it should respond with 200
+
+        Scenario: 16 Ensure clients can reset resource claim action authorization strategies
+             When a POST request is made to "/v3/claimSets" with
+                  """
+                  {
+                      "claimSetName": "DMS-853AuthorizationStrategyReset{scenarioRunId}"
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 233,
+                      "resourceClaimActions": [
+                          { "name": "Read", "enabled": true }
+                      ]
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions/233/overrideAuthorizationStrategy" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 233,
+                      "actionName": "Read",
+                      "authStrategyIds": [1],
+                      "authorizationStrategies": ["NoFurtherAuthorizationRequired"]
+                  }
+                  """
+             Then it should respond with 200
+             When a GET request is made to "/v3/claimSets/{claimSetId}"
+             Then it should respond with 200
+              And the response body contains a non-empty authorization strategy override
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions/233/resetAuthorizationStrategies" with no body
+             Then it should respond with 200
+             When a GET request is made to "/v3/claimSets/{claimSetId}"
+             Then it should respond with 200
+              And the response body contains no non-empty authorization strategy overrides
+
+        Scenario: Ensure clients can add resource claim actions through PUT
+             When a POST request is made to "/v3/claimSets" with
+                  """
+                  {
+                      "claimSetName": "DMS-853-resource-action-put-add-{scenarioRunId}"
+                  }
+                  """
+             Then it should respond with 201
+             When a PUT request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions/233" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 233,
+                      "resourceClaimActions": [
+                          { "name": "Read", "enabled": true }
+                      ]
+                  }
+                  """
+             Then it should respond with 204
+             When a GET request is made to "/v3/claimSets/{claimSetId}"
+             Then it should respond with 200
+
+        Scenario: Ensure clients can modify and revoke resource claim actions
+             When a POST request is made to "/v3/claimSets" with
+                  """
+                  {
+                      "claimSetName": "DMS-853-resource-action-modify-revoke-{scenarioRunId}"
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 233,
+                      "resourceClaimActions": [
+                          { "name": "Read", "enabled": true }
+                      ]
+                  }
+                  """
+             Then it should respond with 201
+             When a PUT request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions/233" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 233,
+                      "resourceClaimActions": [
+                          { "name": "Read", "enabled": true },
+                          { "name": "Create", "enabled": false }
+                      ]
+                  }
+                  """
+             Then it should respond with 204
+             When a GET request is made to "/v3/claimSets/{claimSetId}"
+             Then it should respond with 200
+             When a DELETE request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions/233"
+             Then it should respond with 204
+             When a GET request is made to "/v3/claimSets/{claimSetId}"
+             Then it should respond with 200
+
+        Scenario: Ensure resource claim action routes reject mismatched body IDs
+             When a POST request is made to "/v3/claimSets" with
+                  """
+                  {
+                      "claimSetName": "DMS-853-resource-action-mismatch-{scenarioRunId}"
+                  }
+                  """
+             Then it should respond with 201
+             When a PUT request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions/233" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 234,
+                      "resourceClaimActions": [
+                          { "name": "Read", "enabled": true }
+                      ]
+                  }
+                  """
+             Then it should respond with 400
+             When a POST request is made to "/v3/claimSets/{claimSetId}/resourceClaimActions/233/overrideAuthorizationStrategy" with
+                  """
+                  {
+                      "claimSetId": {claimSetId},
+                      "resourceClaimId": 234,
+                      "actionName": "Read",
+                      "authStrategyIds": [1],
+                      "authorizationStrategies": ["NoFurtherAuthorizationRequired"]
+                  }
+                  """
+             Then it should respond with 400

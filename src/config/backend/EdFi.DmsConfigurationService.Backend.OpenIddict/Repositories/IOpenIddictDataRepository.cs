@@ -117,11 +117,37 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         // Token operations
         Task<TokenInfo?> GetTokenByIdAsync(Guid tokenId);
 
-        Task StoreTokenAsync(Guid tokenId, Guid applicationId, string subject, DateTimeOffset expiration);
+        /// <summary>
+        /// Stores a new token, unless the application already holds the maximum number of active
+        /// tokens. When <paramref name="maxActiveTokens"/> is below 1, enforcement is disabled and
+        /// the token is always stored.
+        /// </summary>
+        /// <returns>
+        /// <see cref="TokenStoreOutcome.Stored"/> when the token was written,
+        /// <see cref="TokenStoreOutcome.LimitExceeded"/> when the application already holds at
+        /// least <paramref name="maxActiveTokens"/> active tokens,
+        /// <see cref="TokenStoreOutcome.ClientNotFound"/> when the application no longer exists, or
+        /// <see cref="TokenStoreOutcome.LockTimeout"/> when a database lock wait during the store ran
+        /// out, whether behind a competing grant for this application or another writer such as the
+        /// expired-token sweep, or the store was chosen as a deadlock victim of such a writer.
+        /// </returns>
+        Task<TokenStoreOutcome> StoreTokenAsync(
+            Guid tokenId,
+            Guid applicationId,
+            string subject,
+            DateTimeOffset expiration,
+            int maxActiveTokens
+        );
 
         Task<string?> GetTokenStatusAsync(Guid tokenId);
 
-        Task<bool> RevokeTokenAsync(Guid tokenId);
+        /// <summary>
+        /// Marks the token revoked only when it is still unrevoked and stored for
+        /// <paramref name="applicationId"/>; both conditions are enforced by the UPDATE itself, so a
+        /// repeated revocation keeps the original redemption timestamp.
+        /// </summary>
+        /// <returns>True if a row changed; false for an unknown, already revoked, or foreign token.</returns>
+        Task<bool> RevokeTokenAsync(Guid tokenId, Guid applicationId);
 
         Task<int> DeleteExpiredTokensAsync(DateTimeOffset expiredBefore);
 
@@ -129,6 +155,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         Task<(string PrivateKey, string KeyId)?> GetActivePrivateKeyInternalAsync(string encryptionKey);
 
         Task<IEnumerable<(string KeyId, byte[] PublicKey)>> GetActivePublicKeysInternalAsync();
+
+        // Cancellable overload: the token reaches the connection open and the query.
+        Task<IEnumerable<(string KeyId, byte[] PublicKey)>> GetActivePublicKeysInternalAsync(
+            CancellationToken cancellationToken
+        );
 
         // Application info operations
         Task<ApplicationInfo?> GetApplicationByClientIdAsync(string clientId);

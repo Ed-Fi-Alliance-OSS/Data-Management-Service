@@ -86,13 +86,13 @@ Authorization: bearer {{configToken}}
 {
     "vendorId": {{vendorId}},
     "applicationName": "For ed orgs",
-    "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+    "claimSetName": "EdFiSandbox",
     "educationOrganizationIds": [ 255, 255901 ],
     "dataStoreIds": [{{dataStoreId}}]
 }
 
 ###
-GET http://localhost:{{configPort}}/v3/authorizationMetadata?claimSetName=E2E-RelationshipsWithEdOrgsOnlyClaimSet
+GET http://localhost:{{configPort}}/v3/authorizationMetadata?claimSetName=EdFiSandbox
 Authorization: bearer {{configToken}}
 
 ###
@@ -169,13 +169,14 @@ Authorization: bearer {{edOrgToken}}
 Content-Type: application/json
 
 
-### Another useful claimset: E2E-NoFurtherAuthRequiredClaimSet
-GET http://localhost:{{configPort}}/v3/authorizationMetadata?claimSetName=E2E-NoFurtherAuthRequiredClaimSet
+### Another out-of-the-box claimset: SISVendor
+GET http://localhost:{{configPort}}/v3/authorizationMetadata?claimSetName=SISVendor
 Authorization: bearer {{configToken}}
 
 # What happens when you try to access a resource type that is not covered by the
 # claimset? Assuming you have an otherwise valid token, you will get a 403
-# Forbidden response.
+# Forbidden response. `EdFiSandbox` covers students, so this request succeeds;
+# a client whose claimset does not cover students receives the 403.
 
 ###
 POST {{dataApi}}/ed-fi/students

@@ -34,6 +34,7 @@ public class Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer
     private string _database = null!;
     private string _connection = null!;
     private string _root = null!;
+    private string _connectorLogin = null!;
     private int _originalNestedTriggers;
     private static readonly DocumentCacheTargetKey Target = DocumentCacheTargetKey.Create("", 42);
 
@@ -52,6 +53,7 @@ public class Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer
         _originalNestedTriggers = Scalar(
             "SELECT CONVERT(int, value_in_use) FROM sys.configurations WHERE name = 'nested triggers'"
         );
+        _connectorLogin = "cdc_prerequisite_" + Guid.NewGuid().ToString("N");
         _database = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
         _connection = MssqlTestDatabaseHelper.BuildConnectionString(_database);
         _root = Path.Combine(Path.GetTempPath(), "cdc-prerequisites-" + Guid.NewGuid().ToString("N"));
@@ -67,6 +69,7 @@ public class Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer
         if (_database is not null)
         {
             MssqlTestDatabaseHelper.DropDatabaseIfExists(_database);
+            Execute($"IF SUSER_ID(N'{_connectorLogin}') IS NOT NULL DROP LOGIN [{_connectorLogin}];");
             Execute($"EXEC sys.sp_configure N'nested triggers', {_originalNestedTriggers}; RECONFIGURE;");
         }
         if (_root is not null && Directory.Exists(_root))
@@ -171,31 +174,36 @@ public class Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer
             .Be(0);
     }
 
-    [TestCase("nested triggers")]
-    [TestCase("rcsi")]
-    public async Task It_rejects_drift_on_retry_and_E18_initialization_without_repair(string setting)
+    [TestCase("nested triggers", DocumentCacheLifecycleState.Disabled)]
+    [TestCase("rcsi", DocumentCacheLifecycleState.Disabled)]
+    [TestCase("nested triggers", DocumentCacheLifecycleState.Tracking)]
+    [TestCase("rcsi", DocumentCacheLifecycleState.Tracking)]
+    [TestCase("nested triggers", DocumentCacheLifecycleState.Resetting)]
+    [TestCase("rcsi", DocumentCacheLifecycleState.Resetting)]
+    [TestCase("nested triggers", DocumentCacheLifecycleState.Rebuilding)]
+    [TestCase("rcsi", DocumentCacheLifecycleState.Rebuilding)]
+    public async Task It_rejects_drift_on_retry_and_E18_initialization_without_repair(
+        string setting,
+        DocumentCacheLifecycleState lifecycle
+    )
     {
         Provision().ExitCode.Should().Be(0);
-        if (setting == "nested triggers")
-        {
-            Execute("EXEC sys.sp_configure N'nested triggers', 0; RECONFIGURE;");
-        }
-        else
-        {
-            SqlConnection.ClearAllPools();
-            Execute($"ALTER DATABASE [{_database}] SET READ_COMMITTED_SNAPSHOT OFF;");
-        }
+        Execute($"UPDATE dms.DocumentCacheState SET ProjectionLifecycleState = N'{lifecycle}';", _connection);
+        SetPrerequisite(setting, enabled: false);
         var retry = Provision();
         retry.ExitCode.Should().Be(1);
-        await using var runtime = CreateRuntime();
-        await DocumentCacheRuntimeInitializer.InitializeAsync(runtime);
-        var registry = runtime.GetRequiredService<IDocumentCacheTargetRegistry>();
-        var snapshot = await registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
-        snapshot
-            .Targets.Single()
-            .Diagnostics.Should()
-            .Contain(d => d.Category == DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed);
-        registry.CurrentRuntimeSnapshot.GetExecutionContext(Target).Should().BeNull();
+        await using (var runtime = CreateRuntime())
+        {
+            await DocumentCacheRuntimeInitializer.InitializeAsync(runtime);
+            var registry = runtime.GetRequiredService<IDocumentCacheTargetRegistry>();
+            var snapshot = await registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+            var expected =
+                lifecycle is DocumentCacheLifecycleState.Disabled
+                    ? DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed
+                    : DocumentCacheTargetDiagnosticCategory.UnsupportedPrerequisiteIncident;
+            snapshot.Targets.Single().Diagnostics.Should().Contain(d => d.Category == expected);
+            registry.CurrentRuntimeSnapshot.GetExecutionContext(Target).Should().BeNull();
+        }
         var validator = new MssqlDocumentCacheProviderPrerequisiteValidator(
             NullLogger<MssqlDocumentCacheProviderPrerequisiteValidator>.Instance
         );
@@ -203,6 +211,30 @@ public class Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer
         Scalar("SELECT CONVERT(int, is_cdc_enabled) FROM sys.databases WHERE name = DB_NAME()", _connection)
             .Should()
             .Be(0);
+        if (lifecycle is DocumentCacheLifecycleState.Disabled)
+        {
+            SetPrerequisite(setting, enabled: true);
+            await using var restartedRuntime = CreateRuntime();
+            await DocumentCacheRuntimeInitializer.InitializeAsync(restartedRuntime);
+            var restartedRegistry = restartedRuntime.GetRequiredService<IDocumentCacheTargetRegistry>();
+            await restartedRegistry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+            restartedRegistry.CurrentRuntimeSnapshot.GetExecutionContext(Target).Should().NotBeNull();
+            (await validator.ValidateActivationPreflightAsync(_connection)).IsSatisfied.Should().BeTrue();
+        }
+        // Other lifecycles deliberately have no correction/recovery or renewed-readiness assertion.
+    }
+
+    private void SetPrerequisite(string setting, bool enabled)
+    {
+        SqlConnection.ClearAllPools();
+        if (setting == "nested triggers")
+        {
+            Execute($"EXEC sys.sp_configure N'nested triggers', {(enabled ? 1 : 0)}; RECONFIGURE;");
+        }
+        else
+        {
+            Execute($"ALTER DATABASE [{_database}] SET READ_COMMITTED_SNAPSHOT {(enabled ? "ON" : "OFF")};");
+        }
     }
 
     [Test]
@@ -252,7 +284,11 @@ public class Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer
         );
         try
         {
-            var connection = new SqlConnectionStringBuilder(_connection) { UserID = login };
+            var connection = new SqlConnectionStringBuilder(_connection)
+            {
+                UserID = login,
+                Password = "EdFi_Dms1!",
+            };
             var result = Provision(connectionOverride: connection.ConnectionString);
             result.ExitCode.Should().Be(1);
             result.Output.Should().BeEmpty();
@@ -364,8 +400,8 @@ public class Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer
 
     private async Task EnableCaptureAsync()
     {
-        // Database user without server login keeps this fixture's principal cleanup database-scoped.
-        Execute("CREATE USER [cdc_prerequisite_reader] WITHOUT LOGIN;", _connection);
+        // Deployment supplies only a restricted login; production setup maps the database user.
+        Execute($"CREATE LOGIN [{_connectorLogin}] WITH PASSWORD = '{Guid.NewGuid():N}Aa1!';");
         await using var connection = new SqlConnection(_connection);
         await connection.OpenAsync();
         var emission = CdcSchemaToolsTestMetadata.BuildMinimalDdlEmission(SqlDialect.Mssql);
@@ -382,7 +418,7 @@ public class Given_CdcProjectionPrerequisite_On_An_Isolated_SqlServer
                     fingerprint.Fingerprint!.Value
                 ),
                 new CdcSetupPrincipalContext(new CdcSafeName("sa")),
-                new CdcConnectorPrincipal(new CdcSafeName("cdc_prerequisite_reader")),
+                new CdcConnectorPrincipal(new CdcSafeName(_connectorLogin)),
                 CdcProviderArtifactNames.ForSqlServer(
                     new CdcSafeName("cdc_prerequisite_gate"),
                     new Dictionary<CdcSourceTableKind, CdcSafeName>

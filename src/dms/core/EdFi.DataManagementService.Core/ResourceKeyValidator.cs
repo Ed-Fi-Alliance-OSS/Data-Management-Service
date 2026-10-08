@@ -196,7 +196,7 @@ internal sealed class ResourceKeyValidator(
     private static string FormatRowTuple(ResourceKeyRow row) =>
         $"({row.ResourceKeyId}, {Sanitize(row.ProjectName)}, {Sanitize(row.ResourceName)}, {Sanitize(row.ResourceVersion)})";
 
-    private static string Sanitize(string? input) => LoggingSanitizer.SanitizeForLogging(input);
+    private static string Sanitize(string? input) => LoggingSanitizer.SanitizeInternalValueForLogging(input);
 
     private static string? FormatDiffReport(
         IReadOnlyList<string> missingKeys,

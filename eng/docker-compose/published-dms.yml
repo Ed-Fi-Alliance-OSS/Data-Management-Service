@@ -32,6 +32,7 @@ services:
       AppSettings__StartupStatusFilePath: ${DMS_STARTUP_STATUS_FILE_PATH:-/tmp/dms-startup-status.json}
       # The default correlation id header is deliberately blank on the following line
       AppSettings__CorrelationIdHeader: ${CORRELATION_ID_HEADER:-}
+      AppSettings__CorrelationIdMaxLength: ${CORRELATION_ID_MAX_LENGTH:-255}
       AppSettings__Datastore: ${DMS_DATASTORE:-postgresql}
       DatabaseOptions__IsolationLevel: ${DATABASE_ISOLATION_LEVEL:-RepeatableRead}
       # "DATABASE_CONNECTION_STRING_ADMIN" can have alternate credentials with elevated permissions for creating database objects
@@ -52,6 +53,7 @@ services:
       AppSettings__UseApiSchemaPath: ${USE_API_SCHEMA_PATH:-false}
       AppSettings__ApiSchemaPath: ${API_SCHEMA_PATH:-}
       Cors__SwaggerUIOrigin: ${DMS_SWAGGER_UI_URL:-http://localhost:8082}
+      AppSettings__EnableIdentityManagement: ${DMS_ENABLE_IDENTITY_MANAGEMENT:-false}
       AppSettings__EnableManagementEndpoints: ${DMS_ENABLE_MANAGEMENT_ENDPOINTS:-false}
       AppSettings__EnableClaimsetReload: ${DMS_ENABLE_CLAIMSET_RELOAD:-false}
       AppSettings__ManagementEndpoints__RequiredRole: ${DMS_MANAGEMENT_REQUIRED_ROLE:-}

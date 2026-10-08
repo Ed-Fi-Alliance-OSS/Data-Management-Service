@@ -717,7 +717,8 @@ actual: {requestInfo.FrontendResponse.Body}
         private sealed class ThrowingDescriptorWriteHandler : IDescriptorWriteHandler
         {
             public Task<UpsertResult> HandlePostAsync(
-                DescriptorWriteRequest request,
+                DescriptorWriteRequest postRequest,
+                UpsertActionAuthorization actionAuthorization,
                 CancellationToken cancellationToken = default
             ) => throw new AssertionException("Descriptor POST was not expected.");
 
@@ -831,7 +832,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 RouteQualifiers: []
             );
 
-            return new RequestInfo(frontendRequest, method, _serviceProvider)
+            var requestInfo = new RequestInfo(frontendRequest, method, _serviceProvider)
             {
                 ResourceInfo = _resourceInfo,
                 DocumentInfo = documentInfo,
@@ -844,6 +845,13 @@ actual: {requestInfo.FrontendResponse.Body}
                     Operation: new ResourcePathOperation.ById(documentUuid)
                 ),
             };
+
+            if (method == RequestMethod.POST)
+            {
+                SetUpsertActionPolicies(requestInfo, NoFurtherAuthorizationRequiredUpsertActionPolicies);
+            }
+
+            return requestInfo;
         }
     }
 

@@ -9,6 +9,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -41,7 +42,7 @@ public class Given_Descriptor_Write_Preconditions
             WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
         };
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         // The advisory target re-resolves as CreateNew, so there is no current representation to
         // satisfy If-Match against, and the reason is TargetDoesNotExist rather than Concurrency.
@@ -88,7 +89,7 @@ public class Given_Descriptor_Write_Preconditions
             WritePrecondition = new WritePrecondition.IfMatch(currentEtag),
         };
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result
             .Should()
@@ -126,7 +127,7 @@ public class Given_Descriptor_Write_Preconditions
             WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
         };
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         // The target exists but its current etag does not match the specific-tag If-Match precondition,
         // so the reason is Concurrency rather than TargetDoesNotExist.
@@ -205,7 +206,7 @@ public class Given_Descriptor_Write_Preconditions
         var sut = CreateSut(targetLookupService, sessionFactory);
         request = request with { WritePrecondition = new WritePrecondition.IfMatch(currentEtag) };
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, currentEtag));
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
@@ -235,7 +236,7 @@ public class Given_Descriptor_Write_Preconditions
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
         var currentEtag = ExpectedComposedDescriptorEtag(44L);
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result.Should().BeEquivalentTo(new UpsertResult.UpdateSuccess(documentUuid, currentEtag));
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
@@ -293,7 +294,7 @@ public class Given_Descriptor_Write_Preconditions
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid);
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result
             .Should()
@@ -356,7 +357,7 @@ public class Given_Descriptor_Write_Preconditions
             description: "Updated Description"
         );
 
-        var result = await sut.HandlePostAsync(request);
+        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
 
         result.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
         sessionFactory.CreateAsyncCallCount.Should().Be(1);
@@ -937,423 +938,6 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
         A.CallTo(() => resolver.TryResolveReferencingResource(A<DerivedRelationalModelSet>._, constraintName))
             .MustHaveHappenedOnceExactly();
-    }
-
-    // ── If-None-Match create-guard parity (Task B8) ──────────────────────────
-
-    [Test]
-    public async Task It_inserts_descriptor_post_create_under_a_wildcard_if_none_match()
-    {
-        // POST → INSERT (CreateNew): If-None-Match: * is the create-only success case, so the insert
-        // proceeds inside the locked resolve session. The in-session POST lookup misses (empty result
-        // set → CreateNew), then the INSERT surfaces its ContentVersion.
-        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([]);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(50L)]);
-        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory);
-        var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
-        {
-            WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
-        };
-
-        var result = await sut.HandlePostAsync(request);
-
-        result
-            .Should()
-            .BeEquivalentTo(
-                new UpsertResult.InsertSuccess(documentUuid, ExpectedComposedDescriptorEtag(50L))
-            );
-        sessionFactory.CreateAsyncCallCount.Should().Be(1);
-        sessionFactory.Session.CommitCallCount.Should().Be(1);
-        sessionFactory.Session.RollbackCallCount.Should().Be(0);
-        sessionFactory.Session.DisposeCallCount.Should().Be(1);
-        sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
-        sessionFactory
-            .Session.Executor.Commands[0]
-            .CommandText.Should()
-            .Contain("FROM dms.\"ReferentialIdentity\"");
-        sessionFactory
-            .Session.Executor.Commands[1]
-            .CommandText.Should()
-            .Contain("INSERT INTO dms.\"Document\"");
-        sessionFactory.Session.ScalarCommands.Should().BeEmpty();
-    }
-
-    [Test]
-    public async Task It_returns_a_retryable_write_conflict_for_a_document_uuid_unique_failure_under_IfNoneMatch_wildcard()
-    {
-        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([]);
-        sessionFactory.Session.Executor.CommandExceptionFactory = command =>
-            command.CommandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
-                ? new StubDbException("unique constraint UX_Document_DocumentUuid")
-                : null;
-        var classifier = A.Fake<IRelationalWriteExceptionClassifier>();
-        A.CallTo(() => classifier.IsUniqueConstraintViolation(A<DbException>._)).Returns(true);
-        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory, classifier);
-        var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
-        {
-            WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
-        };
-
-        var result = await sut.HandlePostAsync(request);
-
-        result.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
-        sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
-        sessionFactory.Session.CommitCallCount.Should().Be(0);
-        sessionFactory.Session.RollbackCallCount.Should().Be(1);
-        sessionFactory.Session.DisposeCallCount.Should().Be(1);
-        A.CallTo(() => classifier.IsUniqueConstraintViolation(A<DbException>._))
-            .MustHaveHappenedOnceExactly();
-    }
-
-    [Test]
-    public async Task It_retains_write_conflict_for_a_descriptor_unique_failure_under_a_specific_IfNoneMatch()
-    {
-        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([]);
-        sessionFactory.Session.Executor.CommandExceptionFactory = command =>
-            command.CommandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
-                ? new StubDbException("descriptor unique violation")
-                : null;
-        var classifier = A.Fake<IRelationalWriteExceptionClassifier>();
-        A.CallTo(() => classifier.IsUniqueConstraintViolation(A<DbException>._)).Returns(true);
-        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory, classifier);
-        var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
-        {
-            WritePrecondition = new WritePrecondition.IfNoneMatch("\"specific-tag\""),
-        };
-
-        var result = await sut.HandlePostAsync(request);
-
-        result.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
-        sessionFactory.Session.CommitCallCount.Should().Be(0);
-        sessionFactory.Session.RollbackCallCount.Should().Be(1);
-        sessionFactory.Session.DisposeCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_inserts_descriptor_post_create_under_a_specific_if_none_match_tag()
-    {
-        // POST → INSERT (CreateNew): a specific If-None-Match tag against no current representation is
-        // still the create-only success case, so the insert proceeds.
-        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([]);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(50L)]);
-        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory);
-        var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
-        {
-            WritePrecondition = new WritePrecondition.IfNoneMatch("\"any-specific-tag\""),
-        };
-
-        var result = await sut.HandlePostAsync(request);
-
-        result
-            .Should()
-            .BeEquivalentTo(
-                new UpsertResult.InsertSuccess(documentUuid, ExpectedComposedDescriptorEtag(50L))
-            );
-        sessionFactory.Session.CommitCallCount.Should().Be(1);
-        sessionFactory.Session.RollbackCallCount.Should().Be(0);
-        sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
-        sessionFactory
-            .Session.Executor.Commands[1]
-            .CommandText.Should()
-            .Contain("INSERT INTO dms.\"Document\"");
-    }
-
-    [Test]
-    public async Task It_returns_precondition_failed_for_descriptor_post_as_update_under_a_wildcard_if_none_match()
-    {
-        // POST → EXISTING (post-as-update): If-None-Match: * against an existing target is the
-        // create-only guard failing, so it yields 412 rather than updating.
-        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var targetLookupService = new StubRelationalWriteTargetLookupService
-        {
-            PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
-        };
-        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
-        sessionFactory.Session.ScalarResults.Enqueue(44L);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
-        var sut = CreateSut(targetLookupService, sessionFactory);
-        var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
-        {
-            WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
-        };
-
-        var result = await sut.HandlePostAsync(request);
-
-        result
-            .Should()
-            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>()
-            .Which.Reason.Should()
-            .Be(ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch);
-        sessionFactory.Session.CommitCallCount.Should().Be(0);
-        sessionFactory.Session.RollbackCallCount.Should().Be(1);
-        sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
-        sessionFactory
-            .Session.Executor.Commands.Should()
-            .NotContain(command =>
-                command.CommandText.Contains("UPDATE dms.\"Descriptor\"", StringComparison.Ordinal)
-            );
-        sessionFactory.Session.ScalarCommands.Should().ContainSingle();
-        sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
-    }
-
-    [Test]
-    public async Task It_returns_precondition_failed_for_descriptor_post_as_update_when_if_none_match_projection_matches()
-    {
-        // POST → EXISTING (post-as-update): a specific If-None-Match tag whose projection matches the
-        // current etag is the create-only guard failing, so it yields 412.
-        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var targetLookupService = new StubRelationalWriteTargetLookupService
-        {
-            PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
-        };
-        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
-        sessionFactory.Session.ScalarResults.Enqueue(44L);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
-        var sut = CreateSut(targetLookupService, sessionFactory);
-        var request = CreatePostRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
-        {
-            WritePrecondition = new WritePrecondition.IfNoneMatch(ExpectedComposedDescriptorEtag(44L)),
-        };
-
-        var result = await sut.HandlePostAsync(request);
-
-        result
-            .Should()
-            .BeOfType<UpsertResult.UpsertFailureETagMisMatch>()
-            .Which.Reason.Should()
-            .Be(ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch);
-        sessionFactory.Session.CommitCallCount.Should().Be(0);
-        sessionFactory.Session.RollbackCallCount.Should().Be(1);
-        sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
-        sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
-    }
-
-    [Test]
-    public async Task It_updates_descriptor_post_as_update_when_if_none_match_projection_differs()
-    {
-        // POST → EXISTING (post-as-update): a non-matching If-None-Match projection satisfies the
-        // precondition, so the post-as-update proceeds.
-        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var targetLookupService = new StubRelationalWriteTargetLookupService
-        {
-            PostResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
-        };
-        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
-        sessionFactory.Session.ScalarResults.Enqueue(44L);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([
-            CreatePersistedDescriptorRow(description: "Current Charter"),
-        ]);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(45L)]);
-        var sut = CreateSut(targetLookupService, sessionFactory);
-        var request = CreatePostRequest(
-            CreateMappingSet(SqlDialect.Pgsql),
-            documentUuid,
-            description: "Updated Charter"
-        ) with
-        {
-            WritePrecondition = new WritePrecondition.IfNoneMatch("\"stale-etag\""),
-        };
-
-        var result = await sut.HandlePostAsync(request);
-
-        result
-            .Should()
-            .BeEquivalentTo(
-                new UpsertResult.UpdateSuccess(documentUuid, ExpectedComposedDescriptorEtag(45L))
-            );
-        sessionFactory.Session.CommitCallCount.Should().Be(1);
-        sessionFactory.Session.RollbackCallCount.Should().Be(0);
-        sessionFactory.Session.Executor.Commands.Should().HaveCount(3);
-        sessionFactory.Session.Executor.Commands[2].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
-    }
-
-    [Test]
-    public async Task It_returns_precondition_failed_for_descriptor_put_under_a_wildcard_if_none_match()
-    {
-        // PUT existing: If-None-Match: * against an existing target fails the create-only guard → 412.
-        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var targetLookupService = new StubRelationalWriteTargetLookupService
-        {
-            PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
-        };
-        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
-        sessionFactory.Session.ScalarResults.Enqueue(44L);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
-        var sut = CreateSut(targetLookupService, sessionFactory);
-        var request = CreatePutRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
-        {
-            WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
-        };
-
-        var result = await sut.HandlePutAsync(request);
-
-        result
-            .Should()
-            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
-            .Which.Reason.Should()
-            .Be(ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch);
-        sessionFactory.Session.CommitCallCount.Should().Be(0);
-        sessionFactory.Session.RollbackCallCount.Should().Be(1);
-        sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
-        sessionFactory
-            .Session.Executor.Commands.Should()
-            .NotContain(command =>
-                command.CommandText.Contains("UPDATE dms.\"Descriptor\"", StringComparison.Ordinal)
-            );
-        sessionFactory.Session.ScalarCommands[0].CommandText.Should().Contain("FOR UPDATE");
-    }
-
-    [Test]
-    public async Task It_returns_precondition_failed_for_descriptor_put_when_if_none_match_projection_matches()
-    {
-        // PUT existing: a specific If-None-Match tag matching the current etag projection → 412.
-        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var targetLookupService = new StubRelationalWriteTargetLookupService
-        {
-            PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
-        };
-        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
-        sessionFactory.Session.ScalarResults.Enqueue(44L);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
-        var sut = CreateSut(targetLookupService, sessionFactory);
-        var request = CreatePutRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
-        {
-            WritePrecondition = new WritePrecondition.IfNoneMatch(ExpectedComposedDescriptorEtag(44L)),
-        };
-
-        var result = await sut.HandlePutAsync(request);
-
-        result
-            .Should()
-            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
-            .Which.Reason.Should()
-            .Be(ETagPreconditionFailureReason.CurrentRepresentationMatchesIfNoneMatch);
-        sessionFactory.Session.CommitCallCount.Should().Be(0);
-        sessionFactory.Session.RollbackCallCount.Should().Be(1);
-        sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
-    }
-
-    [Test]
-    public async Task It_updates_descriptor_put_when_if_none_match_projection_differs()
-    {
-        // PUT existing: a non-matching If-None-Match projection satisfies the precondition → update.
-        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var targetLookupService = new StubRelationalWriteTargetLookupService
-        {
-            PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
-        };
-        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
-        sessionFactory.Session.ScalarResults.Enqueue(44L);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([
-            CreatePersistedDescriptorRow(description: "Current Charter"),
-        ]);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow(45L)]);
-        var sut = CreateSut(targetLookupService, sessionFactory);
-        var request = CreatePutRequest(
-            CreateMappingSet(SqlDialect.Pgsql),
-            documentUuid,
-            description: "Updated Charter"
-        ) with
-        {
-            WritePrecondition = new WritePrecondition.IfNoneMatch("\"stale-etag\""),
-        };
-
-        var result = await sut.HandlePutAsync(request);
-
-        result
-            .Should()
-            .BeEquivalentTo(
-                new UpdateResult.UpdateSuccess(documentUuid, ExpectedComposedDescriptorEtag(45L))
-            );
-        sessionFactory.Session.CommitCallCount.Should().Be(1);
-        sessionFactory.Session.RollbackCallCount.Should().Be(0);
-        sessionFactory.Session.Executor.Commands.Should().HaveCount(3);
-        sessionFactory.Session.Executor.Commands[2].CommandText.Should().Contain("UPDATE dms.\"Descriptor\"");
-    }
-
-    [Test]
-    public async Task It_returns_not_exists_for_descriptor_put_when_the_target_is_missing_under_a_wildcard_if_none_match()
-    {
-        // PUT missing target: unlike a wildcard If-Match (which yields 412), a wildcard If-None-Match
-        // against a missing PUT target is the success case, so it falls through to 404 (not exists).
-        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory);
-        var request = CreatePutRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
-        {
-            WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
-        };
-
-        var result = await sut.HandlePutAsync(request);
-
-        result.Should().BeOfType<UpdateResult.UpdateFailureNotExists>();
-        sessionFactory.CreateAsyncCallCount.Should().Be(1);
-        sessionFactory.Session.CommitCallCount.Should().Be(0);
-        sessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_returns_not_exists_for_descriptor_put_when_the_target_is_missing_under_a_specific_if_none_match()
-    {
-        // PUT missing target: a specific If-None-Match against a missing PUT target also yields 404.
-        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory);
-        var request = CreatePutRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
-        {
-            WritePrecondition = new WritePrecondition.IfNoneMatch("\"current-etag\""),
-        };
-
-        var result = await sut.HandlePutAsync(request);
-
-        result.Should().BeOfType<UpdateResult.UpdateFailureNotExists>();
-        sessionFactory.Session.CommitCallCount.Should().Be(0);
-        sessionFactory.Session.RollbackCallCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_ignores_if_none_match_on_descriptor_delete_and_deletes_normally()
-    {
-        // DELETE: If-None-Match is not a delete precondition; the delete proceeds normally with no
-        // precondition lock, mirroring an unconditional delete.
-        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([
-            InMemoryRelationalResultSet.Create(new Dictionary<string, object?> { ["DocumentId"] = 345L }),
-        ]);
-        var sut = CreateSut(new StubRelationalWriteTargetLookupService(), sessionFactory);
-        var request = CreateDeleteRequest(CreateMappingSet(SqlDialect.Pgsql), documentUuid) with
-        {
-            WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
-        };
-
-        var result = await sut.HandleDeleteAsync(request);
-
-        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
-        sessionFactory.CreateAsyncCallCount.Should().Be(1);
-        sessionFactory.Session.CommitCallCount.Should().Be(1);
-        sessionFactory.Session.RollbackCallCount.Should().Be(0);
-        // No FOR UPDATE precondition lock: If-None-Match is ignored on DELETE.
-        sessionFactory.Session.ScalarCommands.Should().BeEmpty();
-        sessionFactory.Session.Executor.Commands.Should().ContainSingle();
-        sessionFactory
-            .Session.Executor.Commands[0]
-            .CommandText.Should()
-            .Contain("DELETE FROM dms.\"Document\"");
     }
 
     private static string ExpectedComposedDescriptorEtag(long contentVersion) =>

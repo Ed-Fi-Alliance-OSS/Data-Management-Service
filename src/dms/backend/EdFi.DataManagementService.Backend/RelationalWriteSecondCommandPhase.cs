@@ -243,6 +243,32 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             );
         }
 
+        if (
+            request.TargetContext is RelationalWriteTargetContext.CreateNew
+            && request.DeferredCreateOwnershipFailureResult is { } deferredCreateOwnershipFailureResult
+        )
+        {
+            // The ownership slot of a create. The verdict was decided in C# from the application context,
+            // so no statement carries it: the proposed custom views and the namespace check run as commands
+            // of their own and keep their precedence, and the relationship check never runs, because
+            // ownership AND-composes ahead of the relationship OR-group. Nothing else is sent — no reserved
+            // collection key and no data-modifying statement — so a denied create leaves no row.
+            var precedingDenial = await RunProposedFiltersOnlyAsync(
+                    request,
+                    customViewPlan,
+                    namespacePlan,
+                    writeSession,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            return new RelationalWriteSecondCommandResolution(
+                mergeResult,
+                null,
+                precedingDenial ?? deferredCreateOwnershipFailureResult
+            );
+        }
+
         var relationshipPlan = PlanRelationship(request, mergeResult);
         mergeResult = relationshipPlan.MergeResult;
 

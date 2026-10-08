@@ -2174,10 +2174,10 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 // is absent from the visible-stored ancestor list).
                 throw new InvalidOperationException(
                     "Cannot canonicalize descriptor-URI ancestor identity for scope "
-                        + $"'{LogSanitizer.SanitizeForLog(ancestorTablePlan.TableModel.JsonScope.Canonical)}': "
-                        + $"stored URI '{LogSanitizer.SanitizeForLog(uri)}' for column "
-                        + $"'{LogSanitizer.SanitizeForLog(binding.ColumnName.Value)}' on table "
-                        + $"'{LogSanitizer.SanitizeForLog(ProfileBindingClassificationCore.FormatTable(ancestorTablePlan))}' "
+                        + $"'{LogSanitizer.SanitizeInternalValueForLog(ancestorTablePlan.TableModel.JsonScope.Canonical)}': "
+                        + $"stored URI '{LogSanitizer.SanitizeInternalValueForLog(uri)}' for column "
+                        + $"'{LogSanitizer.SanitizeInternalValueForLog(binding.ColumnName.Value)}' on table "
+                        + $"'{LogSanitizer.SanitizeInternalValueForLog(ProfileBindingClassificationCore.FormatTable(ancestorTablePlan))}' "
                         + "is absent from the request-cycle resolver cache, scalar-match yielded "
                         + "no unique row, and count-equal positional pairing cannot resolve. "
                         + $"Ancestor visible-stored rows count: {ancestorVisibleStoredRows.Length}, "
@@ -2330,11 +2330,11 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             {
                 throw new InvalidOperationException(
                     "Cannot canonicalize document-reference ancestor identity for scope "
-                        + $"'{LogSanitizer.SanitizeForLog(ancestorJsonScope)}': natural-key parts "
-                        + $"{LogSanitizer.SanitizeForLog(FormatIdentity(identity))} could not be "
+                        + $"'{LogSanitizer.SanitizeInternalValueForLog(ancestorJsonScope)}': natural-key parts "
+                        + $"{LogSanitizer.SanitizeInternalValueForLog(FormatIdentity(identity))} could not be "
                         + "uniquely resolved against the target parent partition's current rows "
-                        + $"for FK column '{LogSanitizer.SanitizeForLog(documentIdentityPart.Binding.FkColumn.Value)}' "
-                        + $"on table '{LogSanitizer.SanitizeForLog(ProfileBindingClassificationCore.FormatTable(ancestorTablePlan))}'. "
+                        + $"for FK column '{LogSanitizer.SanitizeInternalValueForLog(documentIdentityPart.Binding.FkColumn.Value)}' "
+                        + $"on table '{LogSanitizer.SanitizeInternalValueForLog(ProfileBindingClassificationCore.FormatTable(ancestorTablePlan))}'. "
                         + "Ancestor document-reference canonicalization fails closed here to avoid "
                         + "lookup misses caused by mixed canonical and natural-key identity forms. "
                         + "This typically indicates either partition coverage is incomplete for "
@@ -2429,7 +2429,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
     /// <summary>
     /// Formats <paramref name="identity"/> for fail-closed exception messages. The output is
-    /// passed through <see cref="LogSanitizer.SanitizeForLog"/> at the call site to prevent
+    /// passed through <see cref="LogSanitizer.SanitizeInternalValueForLog"/> at the call site to prevent
     /// log forging via schema-sourced control characters.
     /// </summary>
     private static string FormatIdentity(ImmutableArray<SemanticIdentityPart> identity) =>
@@ -2972,9 +2972,9 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             {
                 throw new InvalidOperationException(
                     "descriptor URI not resolvable at merge boundary: stored descriptor URI "
-                        + $"'{LogSanitizer.SanitizeForLog(uri)}' for column "
-                        + $"'{LogSanitizer.SanitizeForLog(column.ColumnName.Value)}' "
-                        + $"(path '{LogSanitizer.SanitizeForLog(wildcardPath)}') "
+                        + $"'{LogSanitizer.SanitizeInternalValueForLog(uri)}' for column "
+                        + $"'{LogSanitizer.SanitizeInternalValueForLog(column.ColumnName.Value)}' "
+                        + $"(path '{LogSanitizer.SanitizeInternalValueForLog(wildcardPath)}') "
                         + "was not found in the request-cycle descriptor resolution cache and could not "
                         + "be matched against current rows. "
                         + "This can happen when scalar matching is ambiguous or absent (or the identity is "

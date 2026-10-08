@@ -561,6 +561,111 @@ public class Given_MssqlDialect_Create_Index_If_Not_Exists
 }
 
 [TestFixture]
+public class Given_MssqlDialect_Script_Prologue
+{
+    private string _prologue = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _prologue = new MssqlDialect(new MssqlDialectRules()).RenderScriptPrologue();
+    }
+
+    [Test]
+    public void It_should_render_the_indexed_view_set_option_batch_terminated_by_go()
+    {
+        _prologue
+            .Should()
+            .Be(
+                "SET ANSI_NULLS ON;\n"
+                    + "SET QUOTED_IDENTIFIER ON;\n"
+                    + "SET ANSI_PADDING ON;\n"
+                    + "SET ANSI_WARNINGS ON;\n"
+                    + "SET CONCAT_NULL_YIELDS_NULL ON;\n"
+                    + "SET NUMERIC_ROUNDABORT OFF;\n"
+                    + "GO\n"
+                    + "\n"
+            );
+    }
+}
+
+[TestFixture]
+public class Given_MssqlDialect_Create_Filtered_Index_If_Not_Exists
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new MssqlDialect(new MssqlDialectRules());
+        var table = new DbTableName(new DbSchemaName("dms"), "Document");
+        var columns = new[] { new DbColumnName("CreatedByOwnershipTokenId") };
+        _ddl = dialect.CreateIndexIfNotExists(
+            table,
+            "IX_Document_CreatedByOwnershipTokenId",
+            columns,
+            notNullFilterColumn: new DbColumnName("CreatedByOwnershipTokenId")
+        );
+    }
+
+    [Test]
+    public void It_should_render_the_filtered_index_statement()
+    {
+        _ddl.Should()
+            .Be(
+                """
+                IF NOT EXISTS (
+                    SELECT 1 FROM sys.indexes i
+                    JOIN sys.tables t ON i.object_id = t.object_id
+                    JOIN sys.schemas s ON t.schema_id = s.schema_id
+                    WHERE s.name = N'dms' AND t.name = N'Document' AND i.name = N'IX_Document_CreatedByOwnershipTokenId'
+                )
+                CREATE INDEX [IX_Document_CreatedByOwnershipTokenId] ON [dms].[Document] ([CreatedByOwnershipTokenId]) WHERE [CreatedByOwnershipTokenId] IS NOT NULL;
+                """
+            );
+    }
+}
+
+[TestFixture]
+public class Given_MssqlDialect_Create_Index_With_Include_Columns_And_Filter
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new MssqlDialect(new MssqlDialectRules());
+        var table = new DbTableName(new DbSchemaName("edfi"), "School");
+        var columns = new[] { new DbColumnName("SchoolId") };
+        var includeColumns = new[] { new DbColumnName("LocalEducationAgencyId") };
+        _ddl = dialect.CreateIndexIfNotExists(
+            table,
+            "IX_School_SchoolId",
+            columns,
+            includeColumns: includeColumns,
+            notNullFilterColumn: new DbColumnName("IsActive")
+        );
+    }
+
+    [Test]
+    public void It_should_render_include_before_where_in_that_order()
+    {
+        _ddl.Should()
+            .Be(
+                """
+                IF NOT EXISTS (
+                    SELECT 1 FROM sys.indexes i
+                    JOIN sys.tables t ON i.object_id = t.object_id
+                    JOIN sys.schemas s ON t.schema_id = s.schema_id
+                    WHERE s.name = N'edfi' AND t.name = N'School' AND i.name = N'IX_School_SchoolId'
+                )
+                CREATE INDEX [IX_School_SchoolId] ON [edfi].[School] ([SchoolId]) INCLUDE ([LocalEducationAgencyId]) WHERE [IsActive] IS NOT NULL;
+                """
+            );
+    }
+}
+
+[TestFixture]
 public class Given_MssqlDialect_Create_Unique_Index_If_Not_Exists
 {
     private string _ddl = default!;
@@ -847,6 +952,53 @@ public class Given_MssqlDialect_Render_Referential_Actions
     public void It_should_render_cascade()
     {
         _dialect.RenderReferentialAction(ReferentialAction.Cascade).Should().Be("CASCADE");
+    }
+
+    /// <summary>
+    /// SQL Server has no RESTRICT keyword; its NO ACTION is already an immediate single-probe check
+    /// compiled into the parent DELETE plan, so the logical Restrict action renders as NO ACTION.
+    /// </summary>
+    [Test]
+    public void It_should_render_restrict_as_no_action()
+    {
+        _dialect.RenderReferentialAction(ReferentialAction.Restrict).Should().Be("NO ACTION");
+    }
+}
+
+[TestFixture]
+public class Given_MssqlDialect_Add_Foreign_Key_Constraint_With_Restrict_Delete_Action
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new MssqlDialect(new MssqlDialectRules());
+        var table = new DbTableName(new DbSchemaName("edfi"), "School");
+        var targetTable = new DbTableName(new DbSchemaName("dms"), "Document");
+        var columns = new[] { new DbColumnName("DocumentId") };
+        var targetColumns = new[] { new DbColumnName("DocumentId") };
+        _ddl = dialect.AddForeignKeyConstraint(
+            table,
+            "FK_School_Document",
+            columns,
+            targetTable,
+            targetColumns,
+            ReferentialAction.Restrict,
+            ReferentialAction.NoAction
+        );
+    }
+
+    [Test]
+    public void It_should_emit_on_delete_no_action()
+    {
+        _ddl.Should().Contain("ON DELETE NO ACTION");
+    }
+
+    [Test]
+    public void It_should_not_emit_the_restrict_keyword()
+    {
+        _ddl.Should().NotContain("RESTRICT");
     }
 }
 

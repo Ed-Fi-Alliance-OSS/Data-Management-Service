@@ -59,7 +59,7 @@ public class JsonCharsetValidationTests
     {
         _vendorRepository = A.Fake<IVendorRepository>();
         A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
-            .Returns(new VendorInsertResult.Success(1, IsNewVendor: true));
+            .Returns(new VendorInsertResult.Success(1));
 
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {

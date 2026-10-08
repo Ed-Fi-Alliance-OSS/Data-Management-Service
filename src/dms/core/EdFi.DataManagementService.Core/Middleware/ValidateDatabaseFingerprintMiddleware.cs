@@ -119,7 +119,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
                 "Malformed dms.EffectiveSchema fingerprint for {TargetKind} target of data store {DataStoreId} ({Name}). {Remediation} TraceId: {TraceId}",
                 target.Kind,
                 selectedInstance.Id,
-                LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
+                LoggingSanitizer.SanitizeInternalValueForLogging(selectedInstance.Name),
                 target.Kind == EffectiveTargetKind.Primary
                     ? MalformedPrimaryRemediation
                     : MalformedDerivativeRemediation,
@@ -163,7 +163,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
                 ex.FailureDescription,
                 ex.TargetKind,
                 selectedInstance.Id,
-                LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
+                LoggingSanitizer.SanitizeInternalValueForLogging(selectedInstance.Name),
                 requestInfo.FrontendRequest.TraceId.Value
             );
 #pragma warning restore S6667
@@ -196,7 +196,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
                     + "This is a transient error and will be retried on the next request. TraceId: {TraceId}",
                 ex.GetType().Name,
                 selectedInstance.Id,
-                LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
+                LoggingSanitizer.SanitizeInternalValueForLogging(selectedInstance.Name),
                 requestInfo.FrontendRequest.TraceId.Value
             );
 #pragma warning restore S6667
@@ -222,7 +222,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
 
             logger.LogWarning(
                 "Database not provisioned (no dms.EffectiveSchema row) for data store {Name} - TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
+                LoggingSanitizer.SanitizeInternalValueForLogging(selectedInstance.Name),
                 requestInfo.FrontendRequest.TraceId.Value
             );
             requestInfo.FrontendResponse = new FrontendResponse(
@@ -247,9 +247,9 @@ internal class ValidateDatabaseFingerprintMiddleware(
                 "EffectiveSchemaHash mismatch for data store {DataStoreId} ({Name}): "
                     + "database has {DbHash}, process expects {ExpectedHash}. TraceId: {TraceId}",
                 selectedInstance.Id,
-                LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
-                LoggingSanitizer.SanitizeForLogging(fingerprint.EffectiveSchemaHash),
-                LoggingSanitizer.SanitizeForLogging(expectedHash),
+                LoggingSanitizer.SanitizeInternalValueForLogging(selectedInstance.Name),
+                LoggingSanitizer.SanitizeInternalValueForLogging(fingerprint.EffectiveSchemaHash),
+                LoggingSanitizer.SanitizeInternalValueForLogging(expectedHash),
                 requestInfo.FrontendRequest.TraceId.Value
             );
 

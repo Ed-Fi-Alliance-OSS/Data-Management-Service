@@ -15,6 +15,7 @@ using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.Model;
 using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
@@ -48,7 +49,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 : expectedAuthStrategies;
 
         var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
             .Returns([
                 new ClaimSet(
                     Name: "SIS-Vendor",
@@ -72,7 +73,7 @@ public class ResourceActionAuthorizationMiddlewareTests
     internal static IPipelineStep MiddlewareCoreReadChanges(string action, params string[] strategies)
     {
         var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
             .Returns([
                 new ClaimSet(
                     Name: "SIS-Vendor",
@@ -197,14 +198,15 @@ public class ResourceActionAuthorizationMiddlewareTests
     private static IPipelineStep MiddlewareWithClaimSetsCore(params ClaimSet[] claimSets)
     {
         var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored)).Returns(claimSets.ToList());
+        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
+            .Returns(claimSets.ToList());
         return new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance);
     }
 
     internal static IPipelineStep NoAuthStrategyMiddleware(string action = "Create", ILogger? logger = null)
     {
         var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
             .Returns([
                 new ClaimSet(
                     Name: "SIS-Vendor",
@@ -364,6 +366,99 @@ public class ResourceActionAuthorizationMiddlewareTests
                 _requestInfo.FrontendResponse,
                 SecurityConfigurationFailureMessages.MissingSecurityMetadata
             );
+        }
+    }
+
+    /// <summary>
+    /// AGENTS.md Logging: the token-scope claim-set name must be sanitized before reaching a log
+    /// line - the "Claim set name from token scope" information log fires unconditionally, and the
+    /// "No ClaimSet matching Scope" log fires because no configured claim set matches the injected
+    /// name.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_No_Matching_ClaimSet_With_Control_Characters_In_The_Scope
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        private const string InjectedClaimSetName = "Bad\r\nInjected";
+        private RecordingLogger _logger = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new RecordingLogger();
+            var claimSetProvider = A.Fake<IClaimSetProvider>();
+            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+                .Returns([
+                    new ClaimSet(
+                        Name: "SIS-Vendor",
+                        ResourceClaims:
+                        [
+                            new ResourceClaim(
+                                $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school",
+                                "Create",
+                                [
+                                    new AuthorizationStrategy(
+                                        AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                                    ),
+                                ]
+                            ),
+                        ]
+                    ),
+                ]);
+            var middleware = new ResourceActionAuthorizationMiddleware(claimSetProvider, _logger);
+
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/schools",
+                Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
+            );
+
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
+            {
+                ClientAuthorizations = new ClientAuthorizations("", "", InjectedClaimSetName, [], [], []),
+                PathComponents = new PathComponents(
+                    ProjectEndpointName: new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
+                    EndpointName: new EndpointName("schools"),
+                    Operation: ResourcePathOperation.Collection.Instance
+                ),
+            };
+            _requestInfo.ProjectSchema = ApiSchemaDocument("School")
+                .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+                    ?? new JsonObject()
+            );
+
+            await middleware.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_logs_the_claim_set_name_from_token_scope_without_carriage_return_or_line_feed()
+        {
+            LogRecord record = _logger
+                .Records.Should()
+                .ContainSingle(record => record.Message.StartsWith("Claim set name from token scope"))
+                .Subject;
+
+            record.Level.Should().Be(LogLevel.Information);
+            record.Properties["ClaimSetName"].Should().Be("BadInjected");
+        }
+
+        [Test]
+        public void It_logs_the_no_matching_claim_set_scope_without_carriage_return_or_line_feed()
+        {
+            LogRecord record = _logger
+                .Records.Should()
+                .ContainSingle(record => record.Message.Contains("No ClaimSet matching Scope"))
+                .Subject;
+
+            record.Level.Should().Be(LogLevel.Information);
+            record.Properties["Scope"].Should().Be("BadInjected");
         }
     }
 
@@ -527,7 +622,7 @@ public class ResourceActionAuthorizationMiddlewareTests
         public async Task Setup()
         {
             var claimSetProvider = A.Fake<IClaimSetProvider>();
-            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
                 .Returns([
                     new ClaimSet(Name: "SIS-Vendor", ResourceClaims: [new ResourceClaim("schools", "", [])]),
                 ]);
@@ -656,34 +751,33 @@ public class ResourceActionAuthorizationMiddlewareTests
             await NoAuthStrategyMiddleware().Execute(_requestInfo, NullNext);
         }
 
+        // A POST resolves to an update when its target exists, so a Create grant with no strategies is answered
+        // only once the target is known; the evidence keeps what that 500 renders.
         [Test]
-        public void It_has_a_response()
+        public void It_leaves_the_response_to_the_selected_action()
         {
-            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
 
         [Test]
-        public void It_returns_security_configuration_problem_details()
+        public void It_keeps_the_create_no_strategies_evidence()
         {
-            AssertExpectedSecurityConfigurationResponse(
-                _requestInfo.FrontendResponse,
-                $"No authorization strategies were defined for the requested action 'Create' against resource URIs ['{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school'] matched by the caller's claim '{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school'."
-            );
+            string schoolResourceClaimUri = $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school";
+            var noStrategies = _requestInfo
+                .UpsertActionPolicies!.Create.Should()
+                .BeOfType<UpsertActionPolicyEvidence.NoStrategies>()
+                .Subject;
+            noStrategies.ActionName.Should().Be("Create");
+            noStrategies.MatchedResourceClaimUris.Should().Equal(schoolResourceClaimUri);
+            noStrategies.MatchedResourceClaimName.Should().Be(schoolResourceClaimUri);
         }
 
         [Test]
-        public void It_returns_the_matched_resource_claim_uri()
+        public void It_keeps_the_ungranted_update_as_denied()
         {
-            string response = JsonSerializer.Serialize(
-                _requestInfo.FrontendResponse.Body,
-                UtilityService.SerializerOptions
-            );
-
-            response
-                .Should()
-                .Contain(
-                    $"\"errors\":[\"No authorization strategies were defined for the requested action 'Create' against resource URIs ['{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school'] matched by the caller's claim '{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school'.\"]"
-                );
+            _requestInfo
+                .UpsertActionPolicies!.Update.Should()
+                .Be(new UpsertActionPolicyEvidence.Denied("Update", "School", "SIS-Vendor"));
         }
     }
 
@@ -698,7 +792,7 @@ public class ResourceActionAuthorizationMiddlewareTests
         {
             var claimSetProvider = A.Fake<IClaimSetProvider>();
 
-            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
                 .Throws(new InvalidOperationException("simulated failure"));
 
             var middleware = new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance);
@@ -730,13 +824,84 @@ public class ResourceActionAuthorizationMiddlewareTests
         }
     }
 
+    /// <summary>
+    /// The request's own cancellation token must reach the claim set provider, and a cancellation
+    /// that the provider observes must propagate as OperationCanceledException rather than being
+    /// caught by the middleware's catch-all and turned into a 500.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Requests_Token_Is_Cancelled_During_Claim_Set_Retrieval
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        private IClaimSetProvider _claimSetProvider = null!;
+        private CancellationTokenSource _cts = null!;
+        private Func<Task> _act = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _cts = new CancellationTokenSource();
+            _cts.Cancel();
+            _claimSetProvider = A.Fake<IClaimSetProvider>();
+            A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
+                .Throws(() => new OperationCanceledException(_cts.Token));
+
+            var middleware = new ResourceActionAuthorizationMiddleware(
+                _claimSetProvider,
+                NullLogger.Instance
+            );
+
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/schools",
+                Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
+            );
+
+            _requestInfo = new RequestInfo(
+                frontEndRequest,
+                RequestMethod.POST,
+                No.ServiceProvider,
+                _cts.Token
+            )
+            {
+                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
+            };
+
+            _act = () => middleware.Execute(_requestInfo, NullNext);
+        }
+
+        [TearDown]
+        public void TearDown() => _cts.Dispose();
+
+        [Test]
+        public async Task It_passes_the_requests_cancellation_token_to_the_claim_set_provider()
+        {
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+
+            A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>.Ignored, _cts.Token))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public async Task It_propagates_operation_canceled_instead_of_a_response()
+        {
+            await _act.Should().ThrowAsync<OperationCanceledException>();
+
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_RelationshipsWithEdOrgsOnlyInverted_On_Non_Query_Request
         : ResourceActionAuthorizationMiddlewareTests
     {
         [TestCase("GET", "Read", "ed-fi/schools/11111111-1111-1111-1111-111111111111", true)]
-        [TestCase("POST", "Create", "ed-fi/schools", false)]
         [TestCase("PUT", "Update", "ed-fi/schools/11111111-1111-1111-1111-111111111111", true)]
         [TestCase("DELETE", "Delete", "ed-fi/schools/11111111-1111-1111-1111-111111111111", true)]
         public async Task It_allows_the_strategy_for_the_relational_authorization_pipeline(
@@ -756,6 +921,24 @@ public class ResourceActionAuthorizationMiddlewareTests
             _requestInfo
                 .ResourceActionAuthStrategies.Should()
                 .ContainSingle(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted);
+            _requestInfo.UpsertActionPolicies.Should().BeNull();
+        }
+
+        [Test]
+        public async Task It_allows_the_strategy_as_the_create_policy_for_a_post()
+        {
+            _requestInfo = CreateRequestInfo(RequestMethod.POST, "ed-fi/schools");
+
+            await Middleware("Create", AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted)
+                .Execute(_requestInfo, NullNext);
+
+            _requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
+            _requestInfo
+                .UpsertActionPolicies!.Create.Should()
+                .BeOfType<UpsertActionPolicyEvidence.Permitted>()
+                .Which.StrategyNames.Should()
+                .Equal(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted);
+            _requestInfo.ResourceActionAuthStrategies.Should().BeEmpty();
         }
     }
 
@@ -831,7 +1014,9 @@ public class ResourceActionAuthorizationMiddlewareTests
         {
             _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
             _requestInfo
-                .ResourceActionAuthStrategies.Should()
+                .UpsertActionPolicies!.Create.Should()
+                .BeOfType<UpsertActionPolicyEvidence.Permitted>()
+                .Which.StrategyNames.Should()
                 .Equal(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted);
         }
     }
@@ -862,11 +1047,184 @@ public class ResourceActionAuthorizationMiddlewareTests
         {
             _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
             _requestInfo
-                .ResourceActionAuthStrategies.Should()
+                .UpsertActionPolicies!.Create.Should()
+                .BeOfType<UpsertActionPolicyEvidence.Permitted>()
+                .Which.StrategyNames.Should()
                 .Equal(
                     AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
                     AuthorizationStrategyNameConstants.NamespaceBased
                 );
+        }
+    }
+
+    /// <summary>
+    /// How the claim set grants one action: not at all, with no strategies, or with strategies.
+    /// </summary>
+    public enum ActionGrant
+    {
+        NotGranted,
+        NoStrategies,
+        Strategies,
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Post_With_Independently_Granted_Create_And_Update
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        private static readonly string _schoolResourceClaimUri =
+            $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school";
+
+        private static IEnumerable<TestCaseData> GrantCombinations() =>
+            from create in Enum.GetValues<ActionGrant>()
+            from update in Enum.GetValues<ActionGrant>()
+            where !(create is ActionGrant.NotGranted && update is ActionGrant.NotGranted)
+            select new TestCaseData(create, update);
+
+        [TestCaseSource(nameof(GrantCombinations))]
+        public async Task It_records_each_actions_evidence_and_continues(
+            ActionGrant create,
+            ActionGrant update
+        )
+        {
+            var requestInfo = CreateRequestInfo(RequestMethod.POST, "ed-fi/schools");
+            bool nextCalled = false;
+
+            await MiddlewareWithGrants(create, update)
+                .Execute(
+                    requestInfo,
+                    () =>
+                    {
+                        nextCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+
+            nextCalled.Should().BeTrue();
+            requestInfo.FrontendResponse.Should().BeSameAs(No.FrontendResponse);
+            requestInfo.ResourceActionAuthStrategies.Should().BeEmpty();
+            AssertEvidence(requestInfo.UpsertActionPolicies!.Create, "Create", create, "CreateStrategy");
+            AssertEvidence(requestInfo.UpsertActionPolicies.Update, "Update", update, "UpdateStrategy");
+        }
+
+        [Test]
+        public async Task It_refuses_a_post_neither_action_permits_with_the_create_denial()
+        {
+            var requestInfo = CreateRequestInfo(RequestMethod.POST, "ed-fi/schools");
+            bool nextCalled = false;
+
+            await MiddlewareWithGrants(ActionGrant.NotGranted, ActionGrant.NotGranted)
+                .Execute(
+                    requestInfo,
+                    () =>
+                    {
+                        nextCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+
+            nextCalled.Should().BeFalse();
+            requestInfo.UpsertActionPolicies.Should().BeNull();
+            requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+            requestInfo.FrontendResponse.Headers.Should().BeEmpty();
+            requestInfo
+                .FrontendResponse.Body!.ToJsonString()
+                .Should()
+                .Be(
+                    FailureResponse
+                        .ForForbidden(
+                            traceId: new TraceId("traceId"),
+                            errors:
+                            [
+                                "The API client's assigned claim set (currently 'SIS-Vendor') must grant permission of the 'Create' action on one of the following resource claims: School",
+                            ],
+                            typeExtension: "access-denied:action"
+                        )
+                        .ToJsonString()
+                );
+        }
+
+        [Test]
+        public async Task It_keeps_a_put_on_its_single_update_action()
+        {
+            var requestInfo = CreateRequestInfo(
+                RequestMethod.PUT,
+                "ed-fi/schools/11111111-1111-1111-1111-111111111111",
+                hasDocumentUuidSegment: true
+            );
+
+            await MiddlewareWithGrants(ActionGrant.Strategies, ActionGrant.Strategies)
+                .Execute(requestInfo, NullNext);
+
+            requestInfo.ResourceActionAuthStrategies.Should().Equal("UpdateStrategy");
+            requestInfo.UpsertActionPolicies.Should().BeNull();
+        }
+
+        private static void AssertEvidence(
+            UpsertActionPolicyEvidence evidence,
+            string actionName,
+            ActionGrant grant,
+            string strategyName
+        )
+        {
+            evidence.ActionName.Should().Be(actionName);
+
+            switch (grant)
+            {
+                case ActionGrant.NotGranted:
+                    evidence
+                        .Should()
+                        .Be(new UpsertActionPolicyEvidence.Denied(actionName, "School", "SIS-Vendor"));
+                    break;
+                case ActionGrant.NoStrategies:
+                    var noStrategies = evidence
+                        .Should()
+                        .BeOfType<UpsertActionPolicyEvidence.NoStrategies>()
+                        .Subject;
+                    noStrategies.MatchedResourceClaimUris.Should().Equal(_schoolResourceClaimUri);
+                    noStrategies.MatchedResourceClaimName.Should().Be(_schoolResourceClaimUri);
+                    break;
+                default:
+                    evidence
+                        .Should()
+                        .BeOfType<UpsertActionPolicyEvidence.Permitted>()
+                        .Which.StrategyNames.Should()
+                        .Equal(strategyName);
+                    break;
+            }
+        }
+
+        private static IPipelineStep MiddlewareWithGrants(ActionGrant create, ActionGrant update)
+        {
+            // Read keeps the resource claimed even when neither Create nor Update is granted.
+            ResourceClaim[] resourceClaims =
+            [
+                .. Grant("Read", ActionGrant.Strategies, "ReadStrategy"),
+                .. Grant("Create", create, "CreateStrategy"),
+                .. Grant("Update", update, "UpdateStrategy"),
+            ];
+
+            var claimSetProvider = A.Fake<IClaimSetProvider>();
+            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+                .Returns([new ClaimSet(Name: "SIS-Vendor", ResourceClaims: [.. resourceClaims])]);
+
+            return new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance);
+
+            static IEnumerable<ResourceClaim> Grant(string action, ActionGrant grant, string strategyName) =>
+                grant switch
+                {
+                    ActionGrant.NotGranted => [],
+                    ActionGrant.NoStrategies => [new ResourceClaim(_schoolResourceClaimUri, action, [])],
+                    _ =>
+                    [
+                        new ResourceClaim(
+                            _schoolResourceClaimUri,
+                            action,
+                            [new AuthorizationStrategy(strategyName)]
+                        ),
+                    ],
+                };
         }
     }
 

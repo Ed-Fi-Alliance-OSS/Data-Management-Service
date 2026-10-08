@@ -5,6 +5,7 @@
 
 using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration.EnvironmentVariables;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EdFi.Api.Plugins.Hosting;
@@ -13,9 +14,9 @@ namespace EdFi.Api.Plugins.Hosting;
 /// Every plugin the loader returned, in allowlist order.
 /// </summary>
 /// <remarks>
-/// An aggregate rather than a bare list because the composition phases are added to it later: the
-/// service contribution phase by the story that invokes hooks, and the configuration phase by the
-/// secrets foundation story. Both need somewhere to live that a caller already holds.
+/// An aggregate rather than a bare list because the two composition phases live on it: the
+/// configuration phase, which a host runs as soon as loading returns, and the service phase, which it
+/// runs while its container is still open. Both need somewhere to live that a caller already holds.
 /// </remarks>
 public sealed class LoadedPlugins
 {
@@ -23,21 +24,392 @@ public sealed class LoadedPlugins
     /// Creates an aggregate over the given plugins, in allowlist order. Internal because the loader is
     /// the only thing that has plugins to put in one.
     /// </summary>
-    internal LoadedPlugins(IReadOnlyList<LoadedPlugin> plugins)
+    internal LoadedPlugins(IReadOnlyList<LoadedPlugin> plugins, IReadOnlyList<PluginLoadWarning> warnings)
     {
         Plugins = plugins;
+        Warnings = warnings;
     }
 
     /// <summary>
     /// The value returned when no plugin was asked for, which is the shipped default.
     /// </summary>
-    public static LoadedPlugins Empty { get; } = new([]);
+    public static LoadedPlugins Empty { get; } = new([], []);
 
     /// <summary>
     /// The loaded plugins, in the order the operator wrote them, which is the invocation order for
     /// both composition phases.
     /// </summary>
     public IReadOnlyList<LoadedPlugin> Plugins { get; }
+
+    /// <summary>
+    /// What the loader warned about, carried forward so the host can replay it through a real logger.
+    /// </summary>
+    /// <remarks>
+    /// The loader's own channel is <see cref="Console.Error"/>, because it runs before any logging
+    /// pipeline exists. A deployment collecting application logs rather than container stdout sees
+    /// nothing written there, so these travel as data to the point where a logger exists.
+    /// </remarks>
+    public IReadOnlyList<PluginLoadWarning> Warnings { get; }
+
+    /// <summary>
+    /// The type names of the sources each plugin's configuration hook added, for the plugins whose hook
+    /// added at least one source and passed the guard.
+    /// </summary>
+    /// <remarks>
+    /// Historical: a plugin stays here whatever happens to its sources afterwards. The service phase
+    /// copies the names into each plugin's contribution record, which is how the audit learns that a
+    /// plugin contributed configuration and how the inventory names what it contributed. Only the type
+    /// names are kept, never the sources, because a source can carry a path or a prefix and its data is
+    /// configuration values.
+    /// </remarks>
+    private readonly Dictionary<LoadedPlugin, IReadOnlyList<string>> _configurationSourceTypes = new(
+        ReferenceEqualityComparer.Instance
+    );
+
+    /// <summary>
+    /// Invokes every plugin's configuration contribution hook, in allowlist order, and places the
+    /// sources each one added below the operator's unprefixed environment and command-line sources.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Each hook is handed a staging builder as its builder and <paramref name="configuration"/> as its
+    /// bootstrap configuration. The staging builder starts with the host's sources, by reference, and
+    /// a copy of the host's builder properties, so a relative file path resolves as it would against the
+    /// host unless the hook sets a base path of its own, which its sources are then built with. Adding
+    /// to it loads nothing. The live manager is what lets a plugin read a value an earlier
+    /// plugin supplied.
+    /// </para>
+    /// <para>
+    /// The staging builder is what keeps each source loading once. A <see cref="ConfigurationManager"/>
+    /// rebuilds and reloads every source on every change to its source list, so adding a plugin's
+    /// sources to it one at a time, and then moving them, would reload the JSON files, every earlier
+    /// plugin's sources and the plugin's own once per change. A vault-backed source would be called
+    /// repeatedly on every startup, and a failure on a reload would escape without naming the plugin.
+    /// </para>
+    /// <para>
+    /// Contribution is additive only. The staging builder's sources are compared by reference after
+    /// the hook against the host's, and a hook that removed a source present before it began, or
+    /// changed the relative order of those sources, fails the composition naming the plugin. What the
+    /// comparison cannot see is a change to a pre-existing source object's own properties, or a change
+    /// made to the host's own list by casting the bootstrap configuration back to a builder, both of
+    /// which are trust assumptions rather than controls.
+    /// </para>
+    /// <para>
+    /// After a hook passes, the sources it added are built together, once, in the order the plugin
+    /// added them, and a failure there fails the composition naming the plugin. The result goes into
+    /// the host as one <see cref="ChainedConfigurationSource"/>, immediately below the last
+    /// <see cref="EnvironmentVariablesConfigurationSource"/> present when this phase began, which is
+    /// the one change this makes to the host's list for that plugin. That keeps every plugin source
+    /// above the JSON sources and the <c>ASPNETCORE_</c> and <c>DOTNET_</c> prefixed environment
+    /// sources below them, keeps it below the operator's unprefixed environment and command-line
+    /// sources, which were never moved, and puts each later plugin's sources above an earlier one's. The chained
+    /// source's own reload does not reload what it wraps, so a later plugin's insert does not call an
+    /// earlier plugin's sources again. A host with no environment source at all gets the plugin's
+    /// source on top of its list, above a command-line source if it has one; DMS, the one host that
+    /// runs this phase, is not shaped that way. The loader adds no source of its own.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="PluginCompositionException">
+    /// A hook removed or reordered a pre-existing source, or threw, or a source it added failed to
+    /// load.
+    /// </exception>
+    public void ContributeConfiguration(ConfigurationManager configuration) =>
+        ContributeConfiguration(configuration, Console.Error);
+
+    /// <summary>
+    /// The overload the public one calls with <see cref="Console.Error"/>, so a test can read the
+    /// channel without redirecting the process's own.
+    /// </summary>
+    internal void ContributeConfiguration(ConfigurationManager configuration, TextWriter diagnostics)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(diagnostics);
+
+        IConfigurationBuilder host = configuration;
+
+        // Found once, before any hook runs, and held by reference. A plugin may add environment sources
+        // of its own, and those are plugin sources to be placed rather than the operator's surface to
+        // place them under.
+        IConfigurationSource? operatorEnvironment = host.Sources.LastOrDefault(source =>
+            source is EnvironmentVariablesConfigurationSource
+        );
+
+        foreach (LoadedPlugin plugin in Plugins)
+        {
+            // Before the call, for the reason ContributeServices gives: a hook that never returns has to
+            // leave the plugin it entered as the last line on the channel.
+            diagnostics.WriteLine(
+                $"invoking ContributeConfiguration on {PluginDiagnosticText.Quote(plugin.Name)}"
+            );
+
+            ConfigurationBuilder staging = StagingBuilderFor(host);
+            List<IConfigurationSource> before = [.. host.Sources];
+
+            try
+            {
+                plugin.Instance.ContributeConfiguration(staging, configuration);
+            }
+            catch (Exception exception)
+            {
+                string message =
+                    $"plugin '{PluginDiagnosticText.Quote(plugin.Name)}' threw from ContributeConfiguration, "
+                    + "the configuration contribution phase: "
+                    + $"{PluginDiagnosticText.Quote(exception.GetType().FullName)}: "
+                    + PluginDiagnosticText.Quote(exception.Message);
+
+                throw Refuse(
+                    PluginCompositionFailure.ContributeConfigurationThrew,
+                    plugin,
+                    message,
+                    diagnostics,
+                    exception
+                );
+            }
+
+            List<int> additions = AdditionsOf(plugin, before, staging.Sources, diagnostics);
+
+            if (additions.Count == 0)
+            {
+                continue;
+            }
+
+            IConfigurationRoot contributed = Build(plugin, staging, additions, diagnostics);
+
+            _configurationSourceTypes[plugin] =
+            [
+                .. additions.Select(index => SourceTypeName(staging.Sources[index])),
+            ];
+
+            Place(host.Sources, contributed, operatorEnvironment);
+        }
+    }
+
+    /// <summary>
+    /// A builder holding the host's sources and properties, for one hook to add to.
+    /// </summary>
+    /// <remarks>
+    /// The properties are copied rather than shared, so a hook that sets its own base path changes
+    /// where its own relative paths resolve and not where the host's do.
+    /// </remarks>
+    private static ConfigurationBuilder StagingBuilderFor(IConfigurationBuilder host)
+    {
+        ConfigurationBuilder staging = new();
+
+        CopyProperties(host, staging);
+
+        foreach (IConfigurationSource source in host.Sources)
+        {
+            staging.Sources.Add(source);
+        }
+
+        return staging;
+    }
+
+    private static void CopyProperties(IConfigurationBuilder from, ConfigurationBuilder to)
+    {
+        foreach ((string key, object value) in from.Properties)
+        {
+            to.Properties[key] = value;
+        }
+    }
+
+    /// <summary>
+    /// Builds one hook's additions together, in list order, which is the only time they load here.
+    /// </summary>
+    /// <remarks>
+    /// The properties come from the hook's staging builder, not the host's, so a base path or file
+    /// provider the hook set there is the one its relative paths resolve against.
+    /// </remarks>
+    private static IConfigurationRoot Build(
+        LoadedPlugin plugin,
+        ConfigurationBuilder staging,
+        List<int> additions,
+        TextWriter diagnostics
+    )
+    {
+        ConfigurationBuilder contributed = new();
+
+        CopyProperties(staging, contributed);
+
+        foreach (int index in additions)
+        {
+            contributed.Sources.Add(staging.Sources[index]);
+        }
+
+        try
+        {
+            return contributed.Build();
+        }
+        catch (Exception exception)
+        {
+            string message =
+                $"plugin '{PluginDiagnosticText.Quote(plugin.Name)}' added a configuration source from "
+                + "ContributeConfiguration that failed to load: "
+                + $"{PluginDiagnosticText.Quote(exception.GetType().FullName)}: "
+                + PluginDiagnosticText.Quote(exception.Message);
+
+            throw Refuse(
+                PluginCompositionFailure.ConfigurationSourceLoadFailed,
+                plugin,
+                message,
+                diagnostics,
+                exception
+            );
+        }
+    }
+
+    /// <summary>
+    /// Compares the sources either side of one configuration hook and returns the positions of the
+    /// sources the hook added, in list order.
+    /// </summary>
+    /// <remarks>
+    /// The pre-existing sources are matched in order, by reference, as a subsequence of what is there
+    /// afterwards. Anything left unmatched is the plugin's own addition, wherever it put it: an insert
+    /// adds a source just as an append does, and placement moves it either way. If the subsequence does
+    /// not complete, a pre-existing source is either gone or out of order, and counting occurrences
+    /// tells the two apart.
+    /// </remarks>
+    private static List<int> AdditionsOf(
+        LoadedPlugin plugin,
+        List<IConfigurationSource> before,
+        IList<IConfigurationSource> after,
+        TextWriter diagnostics
+    )
+    {
+        List<int> additions = [];
+        int matched = 0;
+
+        for (int index = 0; index < after.Count; index++)
+        {
+            if (matched < before.Count && ReferenceEquals(after[index], before[matched]))
+            {
+                matched++;
+            }
+            else
+            {
+                additions.Add(index);
+            }
+        }
+
+        if (matched == before.Count)
+        {
+            return additions;
+        }
+
+        Dictionary<IConfigurationSource, int> remaining = new(ReferenceEqualityComparer.Instance);
+
+        foreach (IConfigurationSource source in after)
+        {
+            remaining[source] = remaining.TryGetValue(source, out int count) ? count + 1 : 1;
+        }
+
+        for (int position = 0; position < before.Count; position++)
+        {
+            IConfigurationSource source = before[position];
+
+            if (remaining.TryGetValue(source, out int count) && count > 0)
+            {
+                remaining[source] = count - 1;
+                continue;
+            }
+
+            throw Refuse(
+                PluginCompositionFailure.ConfigurationSourceRemoved,
+                plugin,
+                $"plugin '{PluginDiagnosticText.Quote(plugin.Name)}' removed configuration source "
+                    + $"{position} ({DescribeSource(source)}) from ContributeConfiguration. A plugin may "
+                    + "add configuration sources; it may not remove one that was present before its "
+                    + "hook ran.",
+                diagnostics
+            );
+        }
+
+        IConfigurationSource displaced = before[matched];
+
+        throw Refuse(
+            PluginCompositionFailure.ConfigurationSourceReordered,
+            plugin,
+            $"plugin '{PluginDiagnosticText.Quote(plugin.Name)}' moved configuration source {matched} "
+                + $"({DescribeSource(displaced)}) from ContributeConfiguration. A plugin may add "
+                + "configuration sources; it may not change the order of the ones present before its "
+                + "hook ran, because that order is the host's precedence.",
+            diagnostics
+        );
+    }
+
+    /// <summary>
+    /// Inserts one hook's built additions immediately below the operator's unprefixed environment
+    /// source, as one source.
+    /// </summary>
+    /// <remarks>
+    /// The chained source does not dispose what it wraps. The manager disposes and rebuilds every
+    /// provider on each change to its list, and a later plugin's insert is one, so a chained source
+    /// that disposed its configuration would be rebuilt over a disposed one. What it wraps lives as
+    /// long as the process, as the host's own configuration does.
+    /// </remarks>
+    private static void Place(
+        IList<IConfigurationSource> sources,
+        IConfigurationRoot contributed,
+        IConfigurationSource? operatorEnvironment
+    )
+    {
+        ChainedConfigurationSource source = new()
+        {
+            Configuration = contributed,
+            ShouldDisposeConfiguration = false,
+        };
+
+        if (operatorEnvironment is null)
+        {
+            sources.Add(source);
+            return;
+        }
+
+        sources.Insert(IndexOfReference(sources, operatorEnvironment), source);
+    }
+
+    private static int IndexOfReference(IList<IConfigurationSource> sources, IConfigurationSource source)
+    {
+        for (int index = 0; index < sources.Count; index++)
+        {
+            if (ReferenceEquals(sources[index], source))
+            {
+                return index;
+            }
+        }
+
+        // Unreachable unless a hook reached the host's own list by casting its bootstrap configuration
+        // back to a builder, which is outside the contract: hooks add to a staging builder, and nothing
+        // else in this phase removes a source.
+        throw new InvalidOperationException("The operator's environment configuration source is gone.");
+    }
+
+    /// <summary>
+    /// The source's type name and nothing else. A source's own properties can carry a path or a
+    /// prefix, and its data is configuration values, none of which belongs on a diagnostic channel.
+    /// </summary>
+    private static string DescribeSource(IConfigurationSource source) =>
+        PluginDiagnosticText.Quote(source.GetType().FullName);
+
+    /// <summary>
+    /// The source's type name, unquoted, as the contribution record keeps it. A consumer renders it
+    /// for its own channel.
+    /// </summary>
+    private static string SourceTypeName(IConfigurationSource source) =>
+        source.GetType().FullName ?? source.GetType().Name;
+
+    private static PluginCompositionException Refuse(
+        PluginCompositionFailure reason,
+        LoadedPlugin plugin,
+        string message,
+        TextWriter diagnostics,
+        Exception? innerException = null
+    )
+    {
+        diagnostics.WriteLine($"plugin configuration refused: {message}");
+
+        return new PluginCompositionException(reason, plugin.Name, message, innerException);
+    }
 
     /// <summary>
     /// Invokes every plugin's service contribution hook, in allowlist order, and returns what each one
@@ -108,10 +480,12 @@ public sealed class LoadedPlugins
 
             Invoke(plugin, services, configuration, diagnostics);
 
-            records.Add(RecordOf(plugin, before, services));
+            records.Add(
+                RecordOf(plugin, before, services, _configurationSourceTypes.GetValueOrDefault(plugin) ?? [])
+            );
         }
 
-        return new PluginAuditInput(registry, records, [.. services]);
+        return new PluginAuditInput(registry, records, [.. services], Warnings);
     }
 
     private static void Invoke(
@@ -196,7 +570,8 @@ public sealed class LoadedPlugins
     private static PluginContributionRecord RecordOf(
         LoadedPlugin plugin,
         List<ServiceDescriptor> before,
-        IServiceCollection after
+        IServiceCollection after,
+        IReadOnlyList<string> configurationSourceTypes
     )
     {
         List<ServiceDescriptor> additions = [];
@@ -228,7 +603,7 @@ public sealed class LoadedPlugins
                 removals.Add(
                     new PluginDescriptorDisplacement(
                         descriptor.ServiceType,
-                        ImplementationTypeOf(descriptor),
+                        PluginDescriptorFacts.ImplementationTypeOf(descriptor),
                         descriptor
                     )
                 );
@@ -247,7 +622,7 @@ public sealed class LoadedPlugins
                 .Distinct(),
         ];
 
-        return new PluginContributionRecord(plugin, additions, removals, replaced);
+        return new PluginContributionRecord(plugin, additions, removals, replaced, configurationSourceTypes);
     }
 
     private static Dictionary<ServiceDescriptor, int> OccurrencesOf(
@@ -265,9 +640,4 @@ public sealed class LoadedPlugins
 
         return occurrences;
     }
-
-    private static Type? ImplementationTypeOf(ServiceDescriptor descriptor) =>
-        descriptor.IsKeyedService
-            ? descriptor.KeyedImplementationType ?? descriptor.KeyedImplementationInstance?.GetType()
-            : descriptor.ImplementationType ?? descriptor.ImplementationInstance?.GetType();
 }

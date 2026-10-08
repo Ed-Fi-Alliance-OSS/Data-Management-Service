@@ -76,7 +76,7 @@ internal static class PluginFixtures
     /// <summary>Published portable over a package with runtime-identifier-specific managed assets.</summary>
     internal const string RuntimeTargets = "Acme.RuntimeTargets";
 
-    /// <summary>Compiled against the real production contract at 1.0.0, for the 1.0-on-1.1 proof.</summary>
+    /// <summary>Compiled against the real production contract at 1.1.0, for the 1.1-on-1.2 proof.</summary>
     internal const string OldContract = "Acme.OldContract";
 
     /// <summary>Ships a dependency the host does not carry, so its own copy is the one served.</summary>
@@ -121,6 +121,12 @@ internal static class PluginFixtures
     /// <summary>Resolves a private and a host-served assembly for the first time inside its hook.</summary>
     internal const string HookTouch = "Acme.HookTouch";
 
+    /// <summary>Contributes configuration sources, doing whatever its own Fixture key asks for.</summary>
+    internal const string ConfigContributor = "Acme.ConfigContributor";
+
+    /// <summary>The same configuration contributor under a second identity, for the ordering cases.</summary>
+    internal const string SecondConfigContributor = "Acme.SecondConfigContributor";
+
     /// <summary>Every fixture the staging target is expected to produce.</summary>
     internal static IReadOnlyList<string> All { get; } =
     [
@@ -157,6 +163,8 @@ internal static class PluginFixtures
         SecondContributor,
         HookThrows,
         HookTouch,
+        ConfigContributor,
+        SecondConfigContributor,
     ];
 
     /// <summary>
@@ -173,18 +181,18 @@ internal static class PluginFixtures
     /// <summary>The staged name of the fresh-process probe, which is not a plugin.</summary>
     internal const string NativeProbeHostName = "PluginNativeProbeHost";
 
-    /// <summary>The staged name of the 1.0-on-1.1 host, which is not a plugin either.</summary>
+    /// <summary>The staged name of the 1.1-on-1.2 host, which is not a plugin either.</summary>
     internal const string HostRunnerName = "PluginHostRunner";
 
-    /// <summary>The staged directory of the 1.0-on-1.1 host, which tests copy rather than run in place.</summary>
+    /// <summary>The staged directory of the 1.1-on-1.2 host, which tests copy rather than run in place.</summary>
     internal static string HostRunnerDirectory { get; } =
         Path.Combine(AppContext.BaseDirectory, "FixtureHosts", HostRunnerName);
 
     /// <summary>
-    /// The additive 1.1 contract assembly, staged beside the host runner it is substituted into.
+    /// The additive 1.2 contract assembly, staged beside the host runner it is substituted into.
     /// </summary>
-    internal static string Contract11Assembly { get; } =
-        Path.Combine(HostRunnerDirectory, "contract-1.1", "EdFi.Api.Plugins.dll");
+    internal static string Contract12Assembly { get; } =
+        Path.Combine(HostRunnerDirectory, "contract-1.2", "EdFi.Api.Plugins.dll");
 
     /// <summary>The fresh-process probe the native assertions run.</summary>
     internal static string NativeProbeHost { get; } =

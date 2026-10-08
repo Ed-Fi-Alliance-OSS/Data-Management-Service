@@ -221,7 +221,7 @@ public static class DdlProvisionCommand
 
         logger.LogInformation(
             "Loading schemas: core={CorePath}, extensions={ExtensionCount}",
-            LoggingSanitizer.SanitizeForLogging(corePath),
+            LoggingSanitizer.SanitizeInternalValueForLogging(corePath),
             extensionPaths.Count
         );
 

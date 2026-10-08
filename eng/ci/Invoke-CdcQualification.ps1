@@ -3,15 +3,15 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-#Requires -Version 7
+#Requires -Version 7.5
 
 [CmdletBinding()]
 param(
     [ValidateSet('All', 'Contract', 'Postgresql', 'Mssql', 'Kafka')]
     [string] $Lane = 'All',
-    [ValidateSet('All', 'Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History')]
+    [ValidateSet('All', 'Admission', 'Lifecycle', 'Recovery', 'RecordSize', 'Telemetry', 'History', 'MessageContract', 'ApiE2E')]
     [string] $Suite = 'All',
-    [string] $ResultsDirectory = 'TestResults/cdc-qualification',
+    [string] $ResultsDirectory = (Join-Path ([IO.Path]::GetTempPath()) ('cdc-results-' + [guid]::NewGuid().ToString('N'))),
     [ValidateSet('Debug', 'Release')]
     [string] $Configuration = 'Release',
     [switch] $PullImages
@@ -23,16 +23,40 @@ $PSNativeCommandUseErrorActionPreference = $false
 Import-Module (Join-Path $PSScriptRoot 'cdc-qualification.psm1') -Force
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $destination = [IO.Path]::GetFullPath($ResultsDirectory)
+$raw = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetTempPath()) ('cdc-qualification-' + [guid]::NewGuid().ToString('N'))))
+foreach ($path in @($destination, $raw)) {
+    if ($path.Equals($repo, [StringComparison]::OrdinalIgnoreCase) -or $path.StartsWith($repo + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Qualification diagnostics must be written outside the repository checkout.'
+    }
+}
 if (Test-Path -LiteralPath $destination) { throw 'Use a new results directory; previous evidence must not be overwritten.' }
 New-Item -ItemType Directory -Path $destination | Out-Null
-$raw = Join-Path ([IO.Path]::GetTempPath()) ('cdc-qualification-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $raw | Out-Null
 if (-not $IsWindows) { & chmod 700 $raw }
 $reports = [System.Collections.Generic.List[object]]::new()
+# Persist invocation/stages before prerequisite checks or fixture preparation.
+$apiReports = @{}
+if ($Suite -in @('All', 'ApiE2E')) {
+    foreach ($provider in @('Postgresql', 'Mssql')) {
+        if ($Lane -in @('All', $provider)) {
+            $apiReports[$provider] = New-CdcApiRunnerReport -Provider $provider
+            $reports.Add($apiReports[$provider])
+        }
+    }
+}
+$persistReports = {
+    $path = Join-Path $destination 'qualification.json'
+    $temporary = "$path.$([guid]::NewGuid().ToString('N')).tmp"
+    try {
+        ConvertTo-Json -InputObject @($reports.ToArray()) -Depth 10 | Set-Content -LiteralPath $temporary
+        [IO.File]::Move($temporary, $path, $true)
+    } finally { if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary } }
+}
+& $persistReports
 $script:qualificationConfiguration = $Configuration
 $oldLocation = Get-Location
 $savedEnvironment = @{}
-foreach ($name in @('CDC_CONNECTOR_TEMPLATE_FAIL_FAST', 'CDC_CONNECTOR_TEMPLATE_KEEP_CONTAINERS', 'CDC_ARTIFACT_CLEANUP_FAIL_FAST', 'CDC_CLEANUP_POSTGRESQL_ADMIN', 'CDC_CLEANUP_MSSQL_ADMIN', 'MSBUILDDISABLENODEREUSE', 'NODE_OPTIONS', 'TMPDIR')) {
+foreach ($name in @('CDC_CONNECTOR_TEMPLATE_FAIL_FAST', 'CDC_CONNECTOR_TEMPLATE_KEEP_CONTAINERS', 'CDC_ARTIFACT_CLEANUP_FAIL_FAST', 'CDC_CLEANUP_POSTGRESQL_ADMIN', 'CDC_CLEANUP_MSSQL_ADMIN', 'CDC_RUNBOOK_EVIDENCE_DIRECTORY', 'CDC_RUNBOOK_CONFIGURATION', 'MSBUILDDISABLENODEREUSE', 'NODE_OPTIONS', 'TMPDIR')) {
     $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
 }
 $env:CDC_CONNECTOR_TEMPLATE_FAIL_FAST = 'true'
@@ -51,11 +75,33 @@ function Invoke-QualificationSuite {
     $arguments = @('test', $Project, '-c', $script:qualificationConfiguration, '--nologo', '--results-directory', $suiteDirectory,
         '--logger', "trx;LogFileName=$Name.trx", '--logger', 'console;verbosity=quiet')
     if ($Filter) { $arguments += @('--filter', $Filter) }
+    # VSTest omits fixture-level attachments. Keep their original JSON under this suite's
+    # private directory so the existing allowlisted exporter can retain it as well.
+    $arguments += @('--', "NUnit.WorkDirectory=$suiteDirectory")
     & dotnet @arguments *> (Join-Path $suiteDirectory 'private.log')
     $report = Get-CdcQualificationReport -Path (Join-Path $suiteDirectory "$Name.trx") -ExitCode $LASTEXITCODE
     $report.Name = $Name
     $reports.Add($report)
+    & $persistReports
     Export-CdcQualificationEvidence -RawDirectory $suiteDirectory -Destination (Join-Path $destination $Name)
+    if ($report.Contains('ConnectReadinessFailures') -and (
+            $report.ConnectReadinessFailures -gt 0 -or $report.ConnectReadinessInjectedFailures -gt 0
+        )) {
+        $connectSummary = "$Name Connect readiness: $($report.ConnectReadinessFailures) observed timeouts; $($report.ConnectReadinessRecoveries) recovered; $($report.ConnectReadinessInjectedFailures) injected timeouts; $($report.ConnectReadinessInjectedRecoveries) injected recoveries."
+        Write-Output $connectSummary
+        if ($env:GITHUB_STEP_SUMMARY) { "- $connectSummary" >> $env:GITHUB_STEP_SUMMARY }
+    }
+    if ($report.Contains('SqlStartupFailures') -and (
+            $report.SqlStartupFailures -gt 0 -or
+            $report.SqlStartupRecoveries -gt 0 -or
+            $report.SqlStartupInjectedFailures -gt 0 -or
+            $report.SqlStartupInjectedRecoveries -gt 0
+        )) {
+        Write-Output "SQL startup: observed failures=$($report.SqlStartupFailures), recovered=$($report.SqlStartupRecoveries), injected failures=$($report.SqlStartupInjectedFailures), injected recoveries=$($report.SqlStartupInjectedRecoveries)"
+        if ($env:GITHUB_STEP_SUMMARY) {
+            "- $Name SQL startup: $($report.SqlStartupFailures) observed failures; $($report.SqlStartupRecoveries) recovered; $($report.SqlStartupInjectedRecoveries) injected recoveries." >> $env:GITHUB_STEP_SUMMARY
+        }
+    }
     Write-Output "$Name`: $($report.Status), total=$($report.Total), passed=$($report.Passed), failed=$($report.Failed), skipped=$($report.Skipped)"
 }
 
@@ -65,18 +111,48 @@ try {
     $lanes = if ($Lane -eq 'All') { @('Contract', 'Postgresql', 'Mssql', 'Kafka') } else { @($Lane) }
     if (@($lanes | Where-Object { $_ -ne 'Contract' }).Count -gt 0) {
         $required = @('CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE')
-        if ('Postgresql' -in $lanes -or 'Mssql' -in $lanes) { $required += 'CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE' }
+        if ($Suite -ne 'ApiE2E' -and ('Postgresql' -in $lanes -or 'Mssql' -in $lanes -or 'Kafka' -in $lanes)) { $required += 'CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE' }
+        if ('Kafka' -in $lanes) { $required += 'CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE' }
         if ('Postgresql' -in $lanes) {
             $required += 'CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE'
+            if ($Suite -in @('All', 'Admission', 'Lifecycle', 'ApiE2E') -and $env:CDC_RUNBOOK_OWNED_STACK -ne '1') {
+                throw 'EnvironmentUnavailable: PostgreSQL Admission/Lifecycle/ApiE2E requires CDC_RUNBOOK_OWNED_STACK=1 on an exclusively owned disposable local stack.'
+            }
             if ($Suite -in @('All', 'History')) { $required += 'ConnectionStrings__DatabaseConnection' }
         }
         if ('Mssql' -in $lanes) {
             $required += 'CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE'
+            if ($Suite -in @('All', 'Admission', 'Lifecycle', 'ApiE2E') -and $env:CDC_RUNBOOK_OWNED_STACK -ne '1') {
+                throw 'EnvironmentUnavailable: Mssql Admission/Lifecycle/ApiE2E requires CDC_RUNBOOK_OWNED_STACK=1 on an exclusively owned disposable local stack.'
+            }
             if ($Suite -in @('All', 'History')) { $required += 'ConnectionStrings__MssqlAdmin' }
         }
         foreach ($name in $required) {
             if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
                 throw "EnvironmentUnavailable: required $name is missing."
+            }
+        }
+        if ('Kafka' -in $lanes -and -not (Get-Command timeout -CommandType Application -ErrorAction SilentlyContinue)) {
+            throw 'EnvironmentUnavailable: Kafka runbook inspections require native timeout.'
+        }
+        if ($Suite -in @('All', 'Telemetry') -and @($lanes | Where-Object { $_ -in @('Postgresql', 'Mssql') }).Count -gt 0) {
+            $inspectionTools = @('curl', 'timeout')
+            if ('Mssql' -in $lanes) { $inspectionTools += 'sqlcmd' }
+            if ('Postgresql' -in $lanes) { $inspectionTools += @('psql') }
+            foreach ($tool in $inspectionTools) {
+                if (-not (Get-Command $tool -CommandType Application -ErrorAction SilentlyContinue)) {
+                    throw "EnvironmentUnavailable: required telemetry inspection client $tool is missing."
+                }
+            }
+            if ('Mssql' -in $lanes) {
+                $sqlcmdVersion = (& sqlcmd --version) -join "`n"
+                if ($LASTEXITCODE -ne 0 -or $sqlcmdVersion -notmatch 'Version: v1\.10\.0(?:\s|$)') {
+                    throw 'EnvironmentUnavailable: SQL Server telemetry inspection requires sqlcmd (Go) 1.10.0.'
+                }
+            }
+            $curlVersion = & curl --version
+            if ($LASTEXITCODE -ne 0 -or $curlVersion[0] -notmatch '^curl ([0-9]+\.[0-9]+\.[0-9]+)' -or [version]$Matches[1] -lt [version]'8.4.0') {
+                throw 'EnvironmentUnavailable: telemetry inspection requires native curl 8.4 or later.'
             }
         }
         $qualified = Get-Content 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json' -Raw | ConvertFrom-Json
@@ -88,15 +164,37 @@ try {
         if (-not $broker) { throw 'EnvironmentUnavailable: pinned Kafka image unavailable.' }
         & docker info --format '{{.ServerVersion}}' *> (Join-Path $raw 'docker.log')
         if ($LASTEXITCODE -ne 0) { throw 'EnvironmentUnavailable: Docker is unavailable.' }
+        $runtimeInputs = [ordered]@{
+            PowerShell = $PSVersionTable.PSVersion.ToString()
+            Images = @()
+        }
         $images = @($broker) + @($required | Where-Object { $_ -like '*_IMAGE' } | ForEach-Object { [Environment]::GetEnvironmentVariable($_) })
         foreach ($image in $images | Select-Object -Unique) {
             if ($PullImages) {
-                & docker pull $image *> (Join-Path $raw 'pull.log')
-                if ($LASTEXITCODE -ne 0) { throw 'EnvironmentUnavailable: required image pull failed.' }
+                Invoke-CdcQualificationImagePull -Image $image -RawDirectory $raw -Destination $destination
             }
-            & docker image inspect $image --format '{{.Id}}' *> (Join-Path $raw 'inspect.log')
+            $imageId = (& docker image inspect $image --format '{{.Id}}' 2> (Join-Path $raw 'inspect.log')) -join ''
             if ($LASTEXITCODE -ne 0) { throw 'EnvironmentUnavailable: required image is unavailable locally.' }
+            if ($imageId -cmatch '^sha256:[a-f0-9]{64}$') {
+                $identity = [ordered]@{ ImageId = $imageId }
+                if ($image -cmatch '@(sha256:[a-f0-9]{64})$') { $identity.RequestedDigest = $Matches[1] }
+                $runtimeInputs.Images += $identity
+            }
+            $runtimeInputs | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $destination 'runtime-inputs.json')
         }
+        foreach ($tool in @('dotnet', 'docker', 'compose')) {
+            $version = switch ($tool) {
+                dotnet { (& dotnet --version) -join '' }
+                docker { (& docker info --format '{{.ServerVersion}}') -join '' }
+                compose { (& docker compose version --short) -join '' }
+            }
+            if ($LASTEXITCODE -eq 0 -and $version -cmatch '^v?[0-9]+(?:[.][0-9]+){1,3}(?:[-+][a-zA-Z0-9.-]+)?$') { $runtimeInputs[$tool] = $version }
+        }
+        foreach ($name in @('ImageOS', 'ImageVersion')) {
+            $value = [Environment]::GetEnvironmentVariable($name)
+            if ($value -cmatch '^(?:ubuntu[0-9]+|[0-9]+[.][0-9]+[.][0-9]+)$') { $runtimeInputs[$name] = $value }
+        }
+        $runtimeInputs | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $destination 'runtime-inputs.json')
         $qualified | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $destination 'qualified-image.json')
     }
     $backend = 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj'
@@ -104,6 +202,8 @@ try {
         if ($selected -eq 'Contract') {
             Invoke-QualificationSuite -Name 'controller-unit' -Project 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/EdFi.DataManagementService.Backend.Cdc.Tests.Unit.csproj'
             Invoke-QualificationSuite -Name 'cli-unit' -Project 'src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/EdFi.DataManagementService.SchemaTools.Tests.Unit.csproj' -Filter 'FullyQualifiedName~Cdc'
+            $reports.Add((Get-CdcRunbookCliReport -Path (Join-Path $raw 'cli-unit/cli-unit.trx')))
+            Invoke-QualificationSuite -Name 'runbook-admin' -Project 'src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj' -Filter 'FullyQualifiedName~Given_Cdc_runbook_history_output'
             Invoke-QualificationSuite -Name 'controller-offline' -Project $backend -Filter 'Category!=DatabaseIntegration'
             Import-Module Pester -MinimumVersion 5.7.1
             $config = New-PesterConfiguration
@@ -112,6 +212,12 @@ try {
             $config.Output.Verbosity = 'Detailed'
             & { $script:qualificationPesterResult = Invoke-Pester -Configuration $config } *> (Join-Path $raw 'pester-private.log')
             $result = $script:qualificationPesterResult
+            $documentation = Get-CdcRunbookPesterReport -Tests @($result.Tests) -PesterResult $result
+            $reports.Add($documentation)
+            $wrapperDirectory = New-Item -ItemType Directory (Join-Path $raw 'wrappers')
+            Export-CdcRunbookReport -Report $documentation -RawDirectory $wrapperDirectory -Destination (Join-Path $destination 'wrappers') -FileName 'cdc-runbook-wrappers.json'
+            & $persistReports
+
             $success = $result.TotalCount -gt 0 -and $result.PassedCount -eq $result.TotalCount -and
                 $result.FailedContainersCount -eq 0 -and $result.FailedBlocksCount -eq 0
             $reports.Add([ordered]@{ Name = 'wrappers'; Status = $(if ($success) { 'Passed' } else { 'Failed' });
@@ -120,29 +226,77 @@ try {
         }
         elseif ($selected -eq 'Kafka') {
             Invoke-QualificationSuite -Name 'kafka-secured' -Project $backend -Filter 'Category=CdcControllerKafkaPolicy&Category=CdcAuthorizationEnabled'
+            $reports.Add((Get-CdcRunbookKafkaReport -Path (Join-Path $raw 'kafka-secured/kafka-secured.trx') -KafkaProfile Secured))
             Invoke-QualificationSuite -Name 'kafka-local' -Project $backend -Filter 'Category=CdcControllerKafkaPolicy&Category=CdcAuthorizationDisabledLocal'
+            $reports.Add((Get-CdcRunbookKafkaReport -Path (Join-Path $raw 'kafka-local/kafka-local.trx') -KafkaProfile Local))
         }
         else {
-            $categories = [ordered]@{
-                Admission = 'CdcControllerAdmission'; Lifecycle = 'CdcControllerManagedLifecycle'
-                Recovery = 'CdcControllerNativeRecovery'; RecordSize = 'CdcControllerRecordSize'
-                Telemetry = 'CdcConnectorTelemetryQualification'; History = 'CdcPublicationHistory'
-            }
-            foreach ($phase in $categories.Keys) {
+            $filters = Get-CdcQualificationProviderSuite -Provider $selected
+            foreach ($phase in $filters.Keys) {
                 if ($Suite -ne 'All' -and $Suite -ne $phase) { continue }
+                if ($phase -eq 'ApiE2E') {
+                    Invoke-CdcApiQualification -Repo $repo -RawDirectory $raw -Destination $destination -Configuration $Configuration `
+                        -Report $apiReports[$selected] -Persist $persistReports
+                    continue
+                }
                 $project = $backend
-                $name = "$selected-$($categories[$phase])"
+                $name = "$selected-$phase"
+                if ($phase -notin @('History', 'Telemetry', 'MessageContract')) {
+                    $name = "$selected-$(([regex]::Match($filters[$phase], '^Category=([^&]+)')).Groups[1].Value)"
+                }
                 if ($phase -eq 'Telemetry') { $name = "$selected-telemetry" }
                 if ($phase -eq 'History') {
                     $name = "$selected-history"
                     $project = 'src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj'
                 }
-                Invoke-QualificationSuite -Name $name -Project $project -Filter "Category=$($categories[$phase])&Category=$($selected)Integration"
+                Invoke-QualificationSuite -Name $name -Project $project -Filter $filters[$phase]
+                if ($phase -eq 'MessageContract' -and $selected -eq 'Postgresql') {
+                    $reports.Add((Get-CdcRunbookConsumerReport -Path (Join-Path $raw "$name/$name.trx")))
+                }
+                if ($phase -eq 'Telemetry') {
+                    $reports.Add((Get-CdcRunbookTelemetryReport -Path (Join-Path $raw "$name/$name.trx") -Provider $selected))
+                }
+                if ($phase -eq 'RecordSize') {
+                    $reports.Add((Get-CdcRunbookRecordSizeReport -Path (Join-Path $raw "$name/$name.trx")))
+                }
+                if ($phase -eq 'Recovery') {
+                    $reports.Add((Get-CdcRunbookRecoveryReport -Path (Join-Path $raw "$name/$name.trx")))
+                }
+                if ($phase -eq 'Lifecycle') {
+                    $reports.Add((Get-CdcRunbookLifecycleReport -Path (Join-Path $raw "$name/$name.trx")))
+                }
+                if ($phase -eq 'Admission' -or ($phase -eq 'Lifecycle')) {
+                    $procedure = if ($phase -eq 'Admission') { 'Setup' } else { 'Lifecycle' }
+                    $liveDirectory = Join-Path $raw "$selected-runbook-$($procedure.ToLowerInvariant())"
+                    New-Item -ItemType Directory -Path $liveDirectory | Out-Null
+                    $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY = $liveDirectory
+                    $env:CDC_RUNBOOK_CONFIGURATION = $Configuration
+                    # The shipped wrapper resolver prefers Debug when present. Refresh both it and
+                    # the selected direct-command build so a stale local binary cannot qualify.
+                    foreach ($toolConfiguration in @($Configuration, 'Debug') | Select-Object -Unique) {
+                        & dotnet build 'src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj' -c $toolConfiguration --nologo *> (Join-Path $liveDirectory "build-$toolConfiguration-private.log")
+                        if ($LASTEXITCODE -ne 0) { throw 'The live runbook command build failed; see private diagnostics.' }
+                    }
+                    Import-Module Pester -MinimumVersion 5.7.1
+                    $liveConfig = New-PesterConfiguration
+                    $liveConfig.Run.Container = New-PesterContainer -Path 'eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1' -Data @{ Provider = $selected; Procedure = $procedure }
+                    $liveConfig.Run.PassThru = $true
+                    $liveConfig.Output.Verbosity = 'Detailed'
+                    & { $script:liveRunbookResult = Invoke-Pester -Configuration $liveConfig } *> (Join-Path $liveDirectory 'pester-private.log')
+                    $liveReport = Get-CdcRunbookPesterReport -Tests @($script:liveRunbookResult.Tests) -QualificationProfile "$selected$procedure" -PesterResult $script:liveRunbookResult -ProgressPath (Join-Path $liveDirectory 'runbook-progress.json')
+                    if ($script:liveRunbookResult.FailedCount -gt 0 -or $script:liveRunbookResult.FailedBlocksCount -gt 0) { $liveReport.Status = 'Failed' }
+                    $reports.Add($liveReport)
+                    Export-CdcRunbookReport -Report $liveReport -RawDirectory $liveDirectory -Destination (Join-Path $destination "$selected-runbook-$($procedure.ToLowerInvariant())") -FileName "cdc-runbook-live-$($procedure.ToLowerInvariant()).json"
+                    & $persistReports
+                    Write-Output "$selected-runbook-$($procedure.ToLowerInvariant()): $($liveReport.Status), passed=$($liveReport.Passed), required=$($liveReport.Total)"
+                }
                 if ($phase -eq 'History') {
+                    $reports.Add((Get-CdcRunbookHistoryReport -Path (Join-Path $raw "$name/$name.trx")))
                     $env:CDC_ARTIFACT_CLEANUP_FAIL_FAST = 'true'
                     if ($selected -eq 'Postgresql') { $env:CDC_CLEANUP_POSTGRESQL_ADMIN = $env:ConnectionStrings__DatabaseConnection }
                     else { $env:CDC_CLEANUP_MSSQL_ADMIN = $env:ConnectionStrings__MssqlAdmin }
-                    Invoke-QualificationSuite -Name "$selected-provider-cleanup" -Project $backend -Filter "Category=CdcArtifactCleanup&Category=$($selected)Integration"
+                    Invoke-QualificationSuite -Name "$selected-provider-cleanup" -Project $backend -Filter "(Category=CdcArtifactCleanup|Category=CdcRunbookRetirement)&Category=$($selected)Integration"
+                    $reports.Add((Get-CdcRunbookHistoryReport -Path (Join-Path $raw "$selected-provider-cleanup/$selected-provider-cleanup.trx") -Selection Cleanup))
                 }
             }
         }
@@ -157,12 +311,26 @@ catch {
     Write-Output "CDC qualification: $status. $reason"
 }
 finally {
-    $reports | ConvertTo-Json -Depth 10 -AsArray | Set-Content (Join-Path $destination 'qualification.json')
-    foreach ($name in $savedEnvironment.Keys) {
-        if ($null -eq $savedEnvironment[$name]) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
-        else { [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name]) }
+    foreach ($api in $apiReports.Values) {
+        if ($api.Status -eq 'Running') {
+            $api.Status = 'EnvironmentUnavailable'; $api.Reason = 'PrerequisiteFailed'; $api.Stages.Setup = 'Failed'
+            try {
+                $api.Stages.Export = 'Passed'
+                $unstarted = Join-Path $raw $api.Name
+                $null = New-Item -ItemType Directory -Path $unstarted -Force
+                Export-CdcQualificationEvidence -RawDirectory $unstarted -Destination (Join-Path $destination $api.Name) -ApiRunner $api
+            } catch { $api.Stages.Export = 'Failed'; $api.ExportFailure = 'ExportFailed' }
+        }
     }
-    Set-Location $oldLocation
-    Write-Output "Private local diagnostic logs: $raw (never upload this directory)."
+    try { & $persistReports }
+    finally {
+        foreach ($name in $savedEnvironment.Keys) {
+            if ($null -eq $savedEnvironment[$name]) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
+            else { [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name]) }
+        }
+        Set-Location $oldLocation
+        Write-Output "Qualification results: $destination"
+        Write-Output "Private local diagnostic logs: $raw (never upload this directory)."
+    }
 }
 if ($reports.Count -eq 0 -or @($reports | Where-Object Status -ne 'Passed').Count -gt 0) { exit 1 }

@@ -631,7 +631,7 @@ internal sealed class ProfileCollectionWalker
             var leftoverCandidates = candidatesByScope[leftoverScope];
             var sample = leftoverCandidates[0];
             detailParts.Add(
-                $"scope '{LogSanitizer.SanitizeForLog(leftoverScope)}' "
+                $"scope '{LogSanitizer.SanitizeInternalValueForLog(leftoverScope)}' "
                     + $"({leftoverCandidates.Count} candidate(s); "
                     + $"sample table='{ProfileBindingClassificationCore.FormatTable(sample.TableWritePlan)}', "
                     + $"requestOrder={sample.RequestOrder})"
@@ -1206,7 +1206,7 @@ internal sealed class ProfileCollectionWalker
                 jsonScope: jsonScope,
                 invariantName: "VisibleRequestCollectionItem RequestJsonPath does not navigate the writable request body",
                 message: $"{entryKind} for scope '{jsonScope}' could not navigate "
-                    + $"the request body to item path '{LogSanitizer.SanitizeForLog(requestItem.RequestJsonPath)}'. "
+                    + $"the request body to item path '{LogSanitizer.SanitizeInternalValueForLog(requestItem.RequestJsonPath)}'. "
                     + "The visible request item must correspond to an existing array element. "
                     + "Walker invariant violated: VisibleRequestCollectionItem RequestJsonPath does not navigate the writable request body."
             );

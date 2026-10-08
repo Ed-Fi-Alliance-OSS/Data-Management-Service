@@ -88,7 +88,7 @@ public record UpsertResult
     public record UpsertFailureWriteConflict() : UpsertResult();
 
     /// <summary>
-    /// A failure because the request's If-Match or If-None-Match ETag precondition was not satisfied
+    /// A failure because the request's If-Match ETag precondition was not satisfied
     /// </summary>
     /// <param name="Reason">Machine-readable reason for the precondition failure</param>
     public record UpsertFailureETagMisMatch(
@@ -121,14 +121,15 @@ public record UpsertResult
         : UpsertResult();
 
     /// <summary>
-    /// A failure because stored ownership-based authorization denied the POST resolving to an
-    /// upsert-as-update. Carries the ownership failure metadata so Core can build the §2.13/§2.14
-    /// ProblemDetails response.
+    /// A failure because ownership-based authorization denied the POST. Carries the ownership failure metadata
+    /// so Core can build the §2.13/§2.14 ProblemDetails response.
     /// </summary>
     /// <remarks>
-    /// Only ever produced for a POST that resolved to an existing target. Ownership authorizes stored values,
-    /// and a create has none: <c>CreatorOwnershipTokenId</c> stamps the new row rather than authorizing it, so
-    /// a POST resolving to a create is never denied by this strategy.
+    /// For a POST resolving to an upsert-as-update the stored <c>CreatedByOwnershipTokenId</c> is checked
+    /// against the client's <c>OwnershipTokenIds</c>. For a POST resolving to a create there is no stored value
+    /// yet, so the row the create would stamp is judged instead: a client with no <c>CreatorOwnershipTokenId</c>
+    /// is refused as §2.14, and one whose creator token is not among its own <c>OwnershipTokenIds</c> as §2.13.
+    /// Either way the create is refused before any row is written.
     /// </remarks>
     public record UpsertFailureOwnershipNotAuthorized(OwnershipAuthorizationFailure OwnershipFailure)
         : UpsertResult();
@@ -148,7 +149,22 @@ public record UpsertResult
     public record UpsertFailureSecurityConfiguration(
         string[] Errors,
         SecurityConfigurationFailureDiagnostic[]? Diagnostics = null
-    ) : UpsertResult();
+    ) : UpsertResult()
+    {
+        /// <summary>
+        /// The action whose configuration failed, when the POST observed its target first; null when the
+        /// failure was decided before any target was observed.
+        /// </summary>
+        public UpsertTargetAction? TargetAction { get; init; }
+    }
+
+    /// <summary>
+    /// A failure because the API client's claim set does not permit the action the POST resolved to: Create
+    /// for a new document, Update for the document the natural key identifies. Core renders it from the
+    /// claim-set evidence it holds for that action.
+    /// </summary>
+    /// <param name="Action">The action the observed target required</param>
+    public record UpsertFailureTargetActionNotPermitted(UpsertTargetAction Action) : UpsertResult();
 
     /// <summary>
     /// A failure because the request body violated a write-path validation guard rail

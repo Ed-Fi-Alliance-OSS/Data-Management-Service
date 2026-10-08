@@ -101,8 +101,8 @@ public class ApiSchemaAssetManifestProvider(
             logger.LogError(
                 ex,
                 "Invalid ApiSchema manifest in workspace {WorkspaceRoot}: {Message}",
-                LoggingSanitizer.SanitizeForLogging(workspaceRoot),
-                LoggingSanitizer.SanitizeForLogging(ex.Message)
+                LoggingSanitizer.SanitizeInternalValueForLogging(workspaceRoot),
+                LoggingSanitizer.SanitizeInternalValueForLogging(ex.Message)
             );
 
             throw new InvalidOperationException(

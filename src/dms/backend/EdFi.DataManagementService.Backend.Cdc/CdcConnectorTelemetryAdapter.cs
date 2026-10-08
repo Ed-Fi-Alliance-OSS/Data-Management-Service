@@ -76,7 +76,6 @@ public sealed class CdcConnectorTelemetryAdapter(
             var startedAt = clock.GetUtcNow();
             string text = await CallAsync(request, token => ScrapeAsync(request, token), timeout.Token);
             var completedAt = clock.GetUtcNow();
-            var (observation, statistics) = CdcConnectorTelemetryMetrics.Parse(text, pass, startedAt);
 
             component = CdcDeploymentComponent.Connect;
             var afterStatus = Evidence(
@@ -97,6 +96,10 @@ public sealed class CdcConnectorTelemetryAdapter(
                     && first.HeapBytes == last.HeapBytes
             );
             timeout.Token.ThrowIfCancellationRequested();
+            component = CdcDeploymentComponent.Metrics;
+            var age = clock.GetElapsedTime(started);
+            Require(age >= TimeSpan.Zero && age <= request.Timing.MaximumObservationAge);
+            var (observation, statistics) = CdcConnectorTelemetryMetrics.Parse(text, pass, startedAt);
             var receipt = new CdcConnectorTelemetryObservation(
                 pass,
                 clock,
@@ -122,6 +125,13 @@ public sealed class CdcConnectorTelemetryAdapter(
         {
             pass.Invalidate();
             return Failure(exception.Component, exception.FailureKind);
+        }
+        catch (CdcCurrentLagUnavailableException)
+        {
+            // Both identity brackets completed. Discard this pass; it cannot prove readiness.
+            // A managed operation may collect a fresh pass within its original deadline.
+            pass.InvalidateForUnavailableCurrentLag();
+            return Failure(CdcDeploymentComponent.Metrics, CdcDeploymentFailure.ValidationFailed);
         }
         catch (InvalidDataException)
         {

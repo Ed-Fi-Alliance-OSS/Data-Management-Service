@@ -1105,6 +1105,87 @@ internal static class PackagedApiSchemaContract
     /// </summary>
     public static JsonObject LoadPackagedResourceSchemas(string packageRootMetadataKey)
     {
+        string apiSchemaPath = ResolvePackagedApiSchemaPath(packageRootMetadataKey);
+
+        if (
+            JsonNode.Parse(File.ReadAllText(apiSchemaPath))?["projectSchema"]?["resourceSchemas"]
+            is not JsonObject resourceSchemas
+        )
+        {
+            throw new InvalidOperationException(
+                $"Packaged ApiSchema is missing projectSchema.resourceSchemas: {apiSchemaPath}"
+            );
+        }
+
+        return resourceSchemas;
+    }
+
+    /// <summary>
+    /// Parses the entire packaged <c>ApiSchema.json</c> of the package whose restored root the build
+    /// recorded under <paramref name="packageRootMetadataKey"/>. Callers needing more than
+    /// <c>resourceSchemas</c> - the OpenAPI payloads, for one - read it through here, so exactly one
+    /// place knows the restored package layout.
+    /// </summary>
+    public static JsonNode LoadPackagedRootNode(string packageRootMetadataKey)
+    {
+        string apiSchemaPath = ResolvePackagedApiSchemaPath(packageRootMetadataKey);
+
+        return JsonNode.Parse(File.ReadAllText(apiSchemaPath))
+            ?? throw new InvalidOperationException($"Packaged ApiSchema parsed to null: {apiSchemaPath}");
+    }
+
+    /// <summary>
+    /// Parses the entire packaged <c>ApiSchema.json</c> of the extension package
+    /// <paramref name="extensionPackageId"/>, as the build staged it into this project's output under
+    /// <c>ApiSchema/SnapshotContractExtensions/{packageId}/</c>.
+    /// </summary>
+    /// <remarks>
+    /// The extension packages are not read from the NuGet packages folder the way the core packages
+    /// are. CI runs the unit tests on a runner that receives this project's build output and never
+    /// restores, with a NuGet cache keyed on <c>Directory.Packages.props</c>, so a package only this
+    /// project references is absent there. The build (<c>StageSnapshotContractExtensionApiSchemas</c>
+    /// in the project file) copies each packaged document, byte for byte, into the output that travels
+    /// with the tests. It is staged apart from <c>ApiSchema/Packages</c>, rather than through a
+    /// generated path property, because <c>Directory.Build.targets</c> treats a Data Standard 5.2
+    /// extension's path property as a request to bundle that package into the staged ApiSchema
+    /// workspace other fixtures load as the bundled set. The path is checked before it is read, so a
+    /// package the build did not stage fails here by name.
+    /// </remarks>
+    public static JsonNode LoadStagedExtensionRootNode(string extensionPackageId)
+    {
+        string apiSchemaPath = Path.Combine(
+            AppContext.BaseDirectory,
+            "ApiSchema",
+            "SnapshotContractExtensions",
+            extensionPackageId,
+            "ApiSchema.json"
+        );
+
+        if (!File.Exists(apiSchemaPath))
+        {
+            throw new FileNotFoundException(
+                $"Staged ApiSchema not found for '{extensionPackageId}': {apiSchemaPath}",
+                apiSchemaPath
+            );
+        }
+
+        return JsonNode.Parse(File.ReadAllText(apiSchemaPath))
+            ?? throw new InvalidOperationException($"Staged ApiSchema parsed to null: {apiSchemaPath}");
+    }
+
+    /// <summary>
+    /// Resolves the packaged <c>ApiSchema.json</c> path from the restored package root the build
+    /// recorded under <paramref name="packageRootMetadataKey"/>.
+    /// </summary>
+    private static string ResolvePackagedApiSchemaPath(string packageRootMetadataKey) =>
+        ResolvePackagedApiSchemaPath(ResolvePackageRoot(packageRootMetadataKey), packageRootMetadataKey);
+
+    /// <summary>
+    /// Reads the restored package root the build recorded under
+    /// <paramref name="packageRootMetadataKey"/>.
+    /// </summary>
+    private static string ResolvePackageRoot(string packageRootMetadataKey)
+    {
         string? packageRoot = typeof(PackagedApiSchemaContract)
             .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
             .SingleOrDefault(attribute =>
@@ -1120,6 +1201,15 @@ internal static class PackagedApiSchemaContract
             );
         }
 
+        return packageRoot;
+    }
+
+    /// <summary>
+    /// Resolves the packaged <c>ApiSchema.json</c> path under <paramref name="packageRoot"/>, naming
+    /// the package as <paramref name="packageDescription"/> when it is not there.
+    /// </summary>
+    private static string ResolvePackagedApiSchemaPath(string packageRoot, string packageDescription)
+    {
         string apiSchemaPath = Path.Combine(
             packageRoot,
             "contentFiles",
@@ -1132,22 +1222,12 @@ internal static class PackagedApiSchemaContract
         if (!File.Exists(apiSchemaPath))
         {
             throw new FileNotFoundException(
-                $"Packaged ApiSchema not found for '{packageRootMetadataKey}': {apiSchemaPath}",
+                $"Packaged ApiSchema not found for '{packageDescription}': {apiSchemaPath}",
                 apiSchemaPath
             );
         }
 
-        if (
-            JsonNode.Parse(File.ReadAllText(apiSchemaPath))?["projectSchema"]?["resourceSchemas"]
-            is not JsonObject resourceSchemas
-        )
-        {
-            throw new InvalidOperationException(
-                $"Packaged ApiSchema is missing projectSchema.resourceSchemas: {apiSchemaPath}"
-            );
-        }
-
-        return resourceSchemas;
+        return apiSchemaPath;
     }
 
     /// <summary>

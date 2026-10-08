@@ -30,7 +30,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 [NonParallelizable]
 public class Given_ManagementEndpointModule
 {
-    private const string ValidRequiredRole = "dms-management-operator";
+    private const string ValidRequiredRole = "cms-client";
     private const string RoleClaimType = "operator_role";
     private const string ValidBearerToken = "valid-token";
 
@@ -39,6 +39,7 @@ public class Given_ManagementEndpointModule
         string? requiredRole,
         bool multiTenancy = false,
         bool enableClaimsetReload = true,
+        bool enableManagementEndpoints = true,
         IJwtValidationService? jwtValidationService = null,
         string? roleClaimType = RoleClaimType,
         ITenantValidator? tenantValidator = null,
@@ -60,6 +61,9 @@ public class Given_ManagementEndpointModule
                     {
                         ["AppSettings:MultiTenancy"] = multiTenancy ? "true" : "false",
                         ["AppSettings:EnableClaimsetReload"] = enableClaimsetReload ? "true" : "false",
+                        ["AppSettings:EnableManagementEndpoints"] = enableManagementEndpoints
+                            ? "true"
+                            : "false",
                         ["JwtAuthentication:ClientRole"] = "legacy-service",
                     };
 
@@ -119,7 +123,11 @@ public class Given_ManagementEndpointModule
     [Test]
     public void It_maps_the_single_tenant_claimset_routes_when_the_role_is_usable()
     {
-        using WebApplicationFactory<Program> factory = CreateFactory(FakeApiService(), ValidRequiredRole);
+        using WebApplicationFactory<Program> factory = CreateFactory(
+            FakeApiService(),
+            ValidRequiredRole,
+            enableManagementEndpoints: true
+        );
 
         IEnumerable<string> patterns = MappedRoutePatterns(factory);
 
@@ -133,7 +141,8 @@ public class Given_ManagementEndpointModule
         using WebApplicationFactory<Program> factory = CreateFactory(
             FakeApiService(),
             ValidRequiredRole,
-            multiTenancy: true
+            multiTenancy: true,
+            enableManagementEndpoints: true
         );
 
         IEnumerable<string> patterns = MappedRoutePatterns(factory);
@@ -148,7 +157,8 @@ public class Given_ManagementEndpointModule
         using WebApplicationFactory<Program> factory = CreateFactory(
             FakeApiService(),
             ValidRequiredRole,
-            enableClaimsetReload: false
+            enableClaimsetReload: false,
+            enableManagementEndpoints: true
         );
 
         IEnumerable<string> patterns = MappedRoutePatterns(factory);
@@ -157,10 +167,43 @@ public class Given_ManagementEndpointModule
         patterns.Should().Contain("/management/view-claimsets");
     }
 
+    [Test]
+    public void It_does_not_map_the_single_tenant_claimset_routes_when_management_endpoints_are_disabled()
+    {
+        using WebApplicationFactory<Program> factory = CreateFactory(
+            FakeApiService(),
+            ValidRequiredRole,
+            enableManagementEndpoints: false
+        );
+
+        IEnumerable<string> patterns = MappedRoutePatterns(factory);
+
+        patterns.Should().NotContain("/management/reload-claimsets");
+        patterns.Should().NotContain("/management/view-claimsets");
+    }
+
+    [Test]
+    public void It_does_not_map_any_tenant_claimset_routes_when_management_endpoints_are_disabled()
+    {
+        using WebApplicationFactory<Program> factory = CreateFactory(
+            FakeApiService(),
+            ValidRequiredRole,
+            multiTenancy: true,
+            enableManagementEndpoints: false
+        );
+
+        IEnumerable<string> patterns = MappedRoutePatterns(factory);
+
+        patterns.Should().NotContain("/management/reload-claimsets");
+        patterns.Should().NotContain("/management/view-claimsets");
+        patterns.Should().NotContain("/management/{tenant}/reload-claimsets");
+        patterns.Should().NotContain("/management/{tenant}/view-claimsets");
+    }
+
     [TestCase(null)]
     [TestCase("")]
     [TestCase("   ")]
-    [TestCase("dms management operator")]
+    [TestCase("cms client")]
     public void It_does_not_map_the_single_tenant_claimset_routes_when_the_role_is_unusable(
         string? requiredRole
     )
@@ -183,7 +226,7 @@ public class Given_ManagementEndpointModule
 
     [TestCase(null)]
     [TestCase("")]
-    [TestCase("dms management operator")]
+    [TestCase("cms client")]
     public void It_does_not_map_the_tenant_scoped_claimset_routes_when_the_role_is_unusable(
         string? requiredRole
     )
@@ -305,7 +348,7 @@ public class Given_ManagementEndpointModule
         var loggerProvider = new RecordingLoggerProvider();
         using WebApplicationFactory<Program> factory = CreateFactory(
             FakeApiService(),
-            requiredRole: "dms management operator",
+            requiredRole: "cms client",
             enableClaimsetReload: true,
             loggerProvider: loggerProvider
         );
@@ -318,7 +361,8 @@ public class Given_ManagementEndpointModule
             )
             .Subject;
         warning.Message.Should().Contain("AppSettings:ManagementEndpoints:RequiredRole");
-        warning.Message.Should().NotContain("dms management operator");
+        warning.Message.Should().Contain("such as cms-client");
+        warning.Message.Should().NotContain("cms client");
     }
 
     [Test]
@@ -336,6 +380,25 @@ public class Given_ManagementEndpointModule
         loggerProvider
             .Entries.Should()
             .ContainSingle(entry =>
+                entry.Category == typeof(ManagementEndpointModule).FullName && entry.Level == LogLevel.Warning
+            );
+    }
+
+    [Test]
+    public void It_stays_silent_when_management_endpoints_are_disabled_even_when_the_role_is_unusable()
+    {
+        var loggerProvider = new RecordingLoggerProvider();
+        using WebApplicationFactory<Program> factory = CreateFactory(
+            FakeApiService(),
+            requiredRole: null,
+            enableManagementEndpoints: false,
+            loggerProvider: loggerProvider
+        );
+        _ = MappedRoutePatterns(factory);
+
+        loggerProvider
+            .Entries.Should()
+            .NotContain(entry =>
                 entry.Category == typeof(ManagementEndpointModule).FullName && entry.Level == LogLevel.Warning
             );
     }

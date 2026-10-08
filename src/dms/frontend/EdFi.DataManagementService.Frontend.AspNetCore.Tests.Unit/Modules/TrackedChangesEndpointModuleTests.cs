@@ -54,8 +54,8 @@ public class TrackedChangesEndpointModuleTests
     {
         var apiService = A.Fake<IApiService>();
         FrontendRequest? capturedRequest = null;
-        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._))
-            .Invokes((FrontendRequest request) => capturedRequest = request)
+        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._, A<CancellationToken>._))
+            .Invokes((FrontendRequest request, CancellationToken _) => capturedRequest = request)
             .Returns(Task.FromResult(FakeTrackedChangeResponse()));
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -81,7 +81,8 @@ public class TrackedChangesEndpointModuleTests
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         body.Should().ContainSingle();
-        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._)).MustHaveHappenedOnceExactly();
+        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
         capturedRequest.Should().NotBeNull();
         capturedRequest!.Path.Should().Be($"/ed-fi/schools/{trackedChangeSegment}");
         capturedRequest.Headers["X-Test-Header"].Should().Be("header-value");
@@ -92,7 +93,7 @@ public class TrackedChangesEndpointModuleTests
     public async Task It_passes_total_count_query_to_core_and_returns_core_header()
     {
         var apiService = A.Fake<IApiService>();
-        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._))
+        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._, A<CancellationToken>._))
             .Returns(Task.FromResult(FakeTrackedChangeResponse()));
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -114,7 +115,8 @@ public class TrackedChangesEndpointModuleTests
                 apiService.GetTrackedChanges(
                     A<FrontendRequest>.That.Matches(request =>
                         request.QueryParameters["totalCount"] == "true"
-                    )
+                    ),
+                    A<CancellationToken>._
                 )
             )
             .MustHaveHappenedOnceExactly();
@@ -126,8 +128,8 @@ public class TrackedChangesEndpointModuleTests
     {
         var apiService = A.Fake<IApiService>();
         FrontendRequest? capturedRequest = null;
-        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._))
-            .Invokes((FrontendRequest request) => capturedRequest = request)
+        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._, A<CancellationToken>._))
+            .Invokes((FrontendRequest request, CancellationToken _) => capturedRequest = request)
             .Returns(Task.FromResult(FakeTrackedChangeResponse()));
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -159,7 +161,8 @@ public class TrackedChangesEndpointModuleTests
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         body.Should().ContainSingle();
-        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._)).MustHaveHappenedOnceExactly();
+        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
         capturedRequest.Should().NotBeNull();
         capturedRequest!.Path.Should().Be("/ed-fi/schools/keyChanges");
         capturedRequest.Tenant.Should().Be("tenant1");
@@ -197,7 +200,8 @@ public class TrackedChangesEndpointModuleTests
         response.StatusCode.Should().Be(HttpStatusCode.Accepted);
         A.CallTo(() => apiService.Get(A<FrontendRequest>._, A<CancellationToken>._))
             .MustHaveHappenedOnceExactly();
-        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._)).MustNotHaveHappened();
+        A.CallTo(() => apiService.GetTrackedChanges(A<FrontendRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
     }
 
     [Test]

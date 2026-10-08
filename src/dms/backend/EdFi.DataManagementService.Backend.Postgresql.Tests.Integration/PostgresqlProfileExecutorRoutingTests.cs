@@ -256,7 +256,11 @@ public class Given_A_Profiled_Post_Create_Where_Root_Is_Not_Creatable
             TraceId: new TraceId("profile-non-creatable-post"),
             DocumentUuid: SchoolDocumentUuid,
             BackendProfileWriteContext: profileWriteContext
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);
@@ -394,7 +398,11 @@ public class Given_A_Profiled_Post_As_Update_With_Root_Extension_Scope
             Headers: [],
             TraceId: new TraceId("profile-post-as-update-seed"),
             DocumentUuid: ExistingDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);
@@ -432,7 +440,11 @@ public class Given_A_Profiled_Post_As_Update_With_Root_Extension_Scope
             TraceId: new TraceId("profile-post-as-update-profiled"),
             DocumentUuid: PostAsUpdateDocumentUuid,
             BackendProfileWriteContext: profileWriteContext
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);
@@ -566,7 +578,11 @@ public class Given_A_Profiled_Put_With_Root_Extension_Scope
             Headers: [],
             TraceId: new TraceId("profile-put-seed"),
             DocumentUuid: ExistingDocumentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
         return await repository.UpsertDocument(upsertRequest);

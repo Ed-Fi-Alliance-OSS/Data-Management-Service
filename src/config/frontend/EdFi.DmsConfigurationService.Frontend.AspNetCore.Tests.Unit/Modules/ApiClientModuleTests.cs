@@ -17,12 +17,15 @@ using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Middleware;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
@@ -41,6 +44,18 @@ public class ApiClientModuleTests
 
     public ApiClientModuleTests()
     {
+        A.CallTo(() =>
+                _lockManager.AcquireAllAsync(
+                    A<IReadOnlyCollection<int>>.Ignored,
+                    A<CancellationToken>.Ignored
+                )
+            )
+            .ReturnsLazily(_ =>
+                Task.FromResult<ApplicationLockResult>(
+                    new ApplicationLockResult.Acquired(A.Fake<IAsyncDisposable>())
+                )
+            );
+
         A.CallTo(() => _lockManager.AcquireAsync(A<int>.Ignored, A<CancellationToken>.Ignored))
             .ReturnsLazily(_ =>
                 Task.FromResult<ApplicationLockResult>(
@@ -55,12 +70,20 @@ public class ApiClientModuleTests
 
         A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
             .Returns(new ApiClientUuidReferenceResult.None());
+
+        // By default no other client of the application holds the requested name, so the insert
+        // and update name checks pass; fixtures that test a taken name override this.
+        A.CallTo(() => _apiClientRepository.QueryApiClient(A<ApiClientQuery>.Ignored))
+            .ReturnsLazily(() => new ApiClientQueryResult.Success([]));
     }
 
     [TearDown]
     public void DisposeWebApplicationFactories() => _factoryTracker.DisposeTrackedFactories();
 
-    private HttpClient SetUpClient(int? clientSecretMinimumLength = null)
+    private HttpClient SetUpClient(
+        int? clientSecretMinimumLength = null,
+        Action<IServiceCollection>? configureServices = null
+    )
     {
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -95,6 +118,10 @@ public class ApiClientModuleTests
                     .AddTransient((_) => _vendorRepository)
                     .AddTransient((_) => _dataStoreRepository)
                     .AddTransient((_) => _identityProviderRepository);
+
+                // Registered last so a fixture can replace a closed-generic service the host
+                // already provides, such as the module's logger.
+                configureServices?.Invoke(collection);
             });
         });
         _factoryTracker.Track(factory);
@@ -196,7 +223,11 @@ public class ApiClientModuleTests
                 )
                 .Returns(new ApiClientInsertResult.Success(1));
 
-            A.CallTo(() => _apiClientRepository.QueryApiClient(A<ApiClientQuery>.Ignored))
+            // Scoped to the paged list request, so the insert and update name checks keep the
+            // constructor default.
+            A.CallTo(() =>
+                    _apiClientRepository.QueryApiClient(A<ApiClientQuery>.That.Matches(q => q.Limit != null))
+                )
                 .Returns(
                     new ApiClientQueryResult.Success([
                         new ApiClientResponse
@@ -1053,7 +1084,11 @@ public class ApiClientModuleTests
                 )
                 .Returns(new ApiClientInsertResult.FailureUnknown("Database error"));
 
-            A.CallTo(() => _apiClientRepository.QueryApiClient(A<ApiClientQuery>.Ignored))
+            // Scoped to the paged list request, so the insert and update name checks keep the
+            // constructor default and reach the repository failures under test.
+            A.CallTo(() =>
+                    _apiClientRepository.QueryApiClient(A<ApiClientQuery>.That.Matches(q => q.Limit != null))
+                )
                 .Returns(new ApiClientQueryResult.FailureUnknown("Database error"));
 
             A.CallTo(() => _apiClientRepository.GetApiClientByClientId(A<string>.Ignored))
@@ -3137,14 +3172,26 @@ public class ApiClientModuleTests
     private sealed class RecordingLockManager : IApplicationLockManager
     {
         public List<RecordingLockHandle> Handles { get; } = [];
-        public List<int> AcquiredApplicationIds { get; } = [];
+
+        /// <summary>
+        /// One entry per acquisition, holding that acquisition's ids. Flattening the ids would
+        /// make one set of two indistinguishable from two single-application acquisitions.
+        /// </summary>
+        public List<int[]> Acquisitions { get; } = [];
+
+        public List<int> AcquiredApplicationIds => [.. Acquisitions.SelectMany(ids => ids)];
 
         public Task<ApplicationLockResult> AcquireAsync(
             int applicationId,
             CancellationToken cancellationToken
+        ) => AcquireAllAsync([applicationId], cancellationToken);
+
+        public Task<ApplicationLockResult> AcquireAllAsync(
+            IReadOnlyCollection<int> applicationIds,
+            CancellationToken cancellationToken
         )
         {
-            AcquiredApplicationIds.Add(applicationId);
+            Acquisitions.Add([.. applicationIds]);
             var handle = new RecordingLockHandle();
             Handles.Add(handle);
             return Task.FromResult<ApplicationLockResult>(new ApplicationLockResult.Acquired(handle));
@@ -3303,7 +3350,12 @@ public class ApiClientModuleTests
         {
             _dependencyCalls = [];
             _databaseUpdates = [];
-            A.CallTo(() => _lockManager.AcquireAsync(A<int>.Ignored, A<CancellationToken>.Ignored))
+            A.CallTo(() =>
+                    _lockManager.AcquireAllAsync(
+                        A<IReadOnlyCollection<int>>.Ignored,
+                        A<CancellationToken>.Ignored
+                    )
+                )
                 .Returns(new ApplicationLockResult.FailureTimeout());
             A.CallTo(_identityProviderRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
             A.CallTo(_applicationRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
@@ -3347,12 +3399,12 @@ public class ApiClientModuleTests
             _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         [Test]
-        public void It_acquires_both_locks_in_ascending_order() =>
-            _recordingLockManager.AcquiredApplicationIds.Should().Equal(1, 2);
+        public void It_acquires_one_lock_set_holding_both_applications_in_ascending_order() =>
+            _recordingLockManager.Acquisitions.Should().ContainSingle().Which.Should().Equal(1, 2);
 
         [Test]
-        public void It_releases_every_lock() =>
-            _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
+        public void It_releases_the_one_set_handle() =>
+            _recordingLockManager.Handles.Should().ContainSingle().Which.Disposed.Should().BeTrue();
     }
 
     [TestFixture]
@@ -3390,40 +3442,53 @@ public class ApiClientModuleTests
             _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
         [Test]
-        public void It_acquires_both_locks_in_ascending_order() =>
-            _recordingLockManager.AcquiredApplicationIds.Should().Equal(2, 5);
+        public void It_acquires_one_lock_set_holding_both_applications_in_ascending_order() =>
+            _recordingLockManager.Acquisitions.Should().ContainSingle().Which.Should().Equal(2, 5);
 
         [Test]
-        public void It_releases_every_lock() =>
-            _recordingLockManager.Handles.Should().OnlyContain(handle => handle.Disposed);
+        public void It_releases_the_one_set_handle() =>
+            _recordingLockManager.Handles.Should().ContainSingle().Which.Disposed.Should().BeTrue();
     }
 
+    /// <summary>
+    /// A move whose lock set cannot be taken. The workflow asks for both applications in one
+    /// acquisition — never a second one for the target while the source is held — and answers
+    /// the timeout as a retriable conflict. The manager releases any partially acquired set
+    /// itself, so the module retains no handle.
+    /// </summary>
     [TestFixture]
-    public class Given_an_api_client_update_whose_second_lock_times_out : UpdateUnderLockTestBase
+    public class Given_an_api_client_update_whose_move_lock_set_times_out : UpdateUnderLockTestBase
     {
-        private RecordingLockHandle _firstLockHandle = null!;
+        private List<int[]> _requestedSets = null!;
 
         [SetUp]
         public async Task Act()
         {
-            _firstLockHandle = new RecordingLockHandle();
-            A.CallTo(() => _lockManager.AcquireAsync(1, A<CancellationToken>.Ignored))
-                .Returns(new ApplicationLockResult.Acquired(_firstLockHandle));
-            A.CallTo(() => _lockManager.AcquireAsync(2, A<CancellationToken>.Ignored))
+            _requestedSets = [];
+            A.CallTo(() =>
+                    _lockManager.AcquireAllAsync(
+                        A<IReadOnlyCollection<int>>.Ignored,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .Invokes(call => _requestedSets.Add([.. call.GetArgument<IReadOnlyCollection<int>>(0)!]))
                 .Returns(new ApplicationLockResult.FailureTimeout());
 
             await ActUpdateAsync(applicationId: 2);
         }
-
-        [TearDown]
-        public async Task TearDownHandle() => await _firstLockHandle.DisposeAsync();
 
         [Test]
         public async Task It_returns_the_retriable_conflict_contract() =>
             await AssertLockConflictContract(_updateResponse);
 
         [Test]
-        public void It_releases_the_first_lock() => _firstLockHandle.Disposed.Should().BeTrue();
+        public void It_asks_for_both_applications_in_one_acquisition() =>
+            _requestedSets.Should().ContainSingle().Which.Should().Equal(1, 2);
+
+        [Test]
+        public void It_never_acquires_a_single_application_lock() =>
+            A.CallTo(() => _lockManager.AcquireAsync(A<int>.Ignored, A<CancellationToken>.Ignored))
+                .MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -3468,7 +3533,10 @@ public class ApiClientModuleTests
 
         [Test]
         public void It_retries_the_bounded_number_of_times() =>
-            _recordingLockManager.AcquiredApplicationIds.Should().Equal(1, 1, 1);
+            _recordingLockManager
+                .Acquisitions.Should()
+                .HaveCount(3)
+                .And.OnlyContain(acquisition => acquisition.SequenceEqual(new[] { 1 }));
 
         [Test]
         public void It_releases_every_lock() =>
@@ -3897,7 +3965,12 @@ public class ApiClientModuleTests
         public async Task Act()
         {
             _dependencyCalls = [];
-            A.CallTo(() => _lockManager.AcquireAsync(A<int>.Ignored, A<CancellationToken>.Ignored))
+            A.CallTo(() =>
+                    _lockManager.AcquireAllAsync(
+                        A<IReadOnlyCollection<int>>.Ignored,
+                        A<CancellationToken>.Ignored
+                    )
+                )
                 .Returns(new ApplicationLockResult.FailureTimeout());
             A.CallTo(_identityProviderRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
             A.CallTo(_applicationRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
@@ -3933,33 +4006,45 @@ public class ApiClientModuleTests
         public void It_calls_nothing_beyond_the_pre_read() => _dependencyCalls.Should().BeEmpty();
     }
 
+    /// <summary>
+    /// Cancellation during a move's lock-set acquisition propagates out of the manager, and the
+    /// workflow answers it with the server error it already returned for that case without
+    /// retaining a handle.
+    /// </summary>
     [TestFixture]
-    public class Given_an_api_client_update_whose_second_lock_acquisition_is_cancelled
+    public class Given_an_api_client_update_whose_move_lock_set_acquisition_is_cancelled
         : UpdateUnderLockTestBase
     {
-        private RecordingLockHandle _firstLockHandle = null!;
+        private List<int[]> _requestedSets = null!;
 
         [SetUp]
         public async Task Act()
         {
-            _firstLockHandle = new RecordingLockHandle();
-            A.CallTo(() => _lockManager.AcquireAsync(1, A<CancellationToken>.Ignored))
-                .Returns(new ApplicationLockResult.Acquired(_firstLockHandle));
-            A.CallTo(() => _lockManager.AcquireAsync(2, A<CancellationToken>.Ignored))
+            _requestedSets = [];
+            A.CallTo(() =>
+                    _lockManager.AcquireAllAsync(
+                        A<IReadOnlyCollection<int>>.Ignored,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .Invokes(call => _requestedSets.Add([.. call.GetArgument<IReadOnlyCollection<int>>(0)!]))
                 .Throws(new OperationCanceledException());
 
             await ActUpdateAsync(applicationId: 2);
         }
-
-        [TearDown]
-        public async Task TearDownHandle() => await _firstLockHandle.DisposeAsync();
 
         [Test]
         public void It_returns_a_server_error() =>
             _updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
 
         [Test]
-        public void It_releases_the_first_lock() => _firstLockHandle.Disposed.Should().BeTrue();
+        public void It_asks_for_both_applications_in_one_acquisition() =>
+            _requestedSets.Should().ContainSingle().Which.Should().Equal(1, 2);
+
+        [Test]
+        public void It_never_acquires_a_single_application_lock() =>
+            A.CallTo(() => _lockManager.AcquireAsync(A<int>.Ignored, A<CancellationToken>.Ignored))
+                .MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -5131,5 +5216,1012 @@ public class ApiClientModuleTests
         [Test]
         public async Task It_does_not_leak_the_repository_failure_message() =>
             (await _response.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+    }
+
+    /// <summary>
+    /// Shared arrangement for POST /v3/apiClients: a resolvable application, vendor and data
+    /// store, a provider that creates a client, and a recording module logger. Fixtures override
+    /// the one outcome under test.
+    /// </summary>
+    public abstract class InsertWorkflowTestBase : ApiClientModuleTests
+    {
+        /// <summary>
+        /// Appended to a sentinel so the sanitizer has something to remove. Only the sanitized
+        /// form may reach a log, and neither form may reach a response.
+        /// </summary>
+        protected const string RawSuffix = "\r\n<b>{raw}</b>";
+
+        protected const string SanitizedSuffix = "braw/b";
+
+        private const string RequestBody = """
+            {
+              "applicationId": 1,
+              "name": "Test Client",
+              "isApproved": false,
+              "dataStoreIds": [1]
+            }
+            """;
+
+        protected Guid _createdClientUuid;
+        protected string _createdClientId = null!;
+        protected string _createdClientSecret = null!;
+        protected string? _forwardedClientRole;
+        protected bool? _forwardedIsApproved;
+        protected List<string> _deletedClientUuids = null!;
+
+        // Internal because the recording logger type is: every fixture lives in this assembly.
+        internal TestLogger<ApiClientModule> _moduleLogger = null!;
+        protected HttpResponseMessage _insertResponse = null!;
+
+        [SetUp]
+        public void SetUpInsertWorkflow()
+        {
+            _createdClientUuid = Guid.NewGuid();
+            _deletedClientUuids = [];
+            _moduleLogger = new TestLogger<ApiClientModule>();
+
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse
+                        {
+                            Id = 1,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "TestClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1],
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
+                        {
+                            Company = "Test Company",
+                            ContactName = "Test Contact",
+                            ContactEmailAddress = "test@test.com",
+                            NamespacePrefixes = "uri://ed-fi.org",
+                        }
+                    )
+                );
+
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<int[]>.Ignored))
+                .Returns(new DataStoreIdsExistResult.Success([1]));
+
+            ArrangeProviderCreate(new ClientCreateResult.Success(_createdClientUuid));
+            ArrangeProviderCleanup(new ClientDeleteResult.Success());
+        }
+
+        [TearDown]
+        public void TearDownInsertResponse() => _insertResponse?.Dispose();
+
+        protected void ArrangeDatabaseInsert(ApiClientInsertResult result) =>
+            A.CallTo(() =>
+                    _apiClientRepository.InsertApiClient(
+                        A<ApiClientInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .Returns(result);
+
+        protected void ArrangeProviderCreate(ClientCreateResult result) =>
+            A.CallTo(() =>
+                    _identityProviderRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored
+                    )
+                )
+                .Invokes(call =>
+                {
+                    _createdClientId = call.GetArgument<string>(0)!;
+                    _createdClientSecret = call.GetArgument<string>(1)!;
+                    _forwardedClientRole = call.GetArgument<string>(2);
+                    _forwardedIsApproved = call.GetArgument<bool>(8);
+                })
+                .Returns(result);
+
+        protected void ArrangeProviderCleanup(ClientDeleteResult result) =>
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .Invokes(call => _deletedClientUuids.Add(call.GetArgument<string>(0)!))
+                .Returns(result);
+
+        protected async Task ActInsertAsync(string? clientRole = null)
+        {
+            using var client = SetUpClient(configureServices: collection =>
+            {
+                collection.AddSingleton<ILogger<ApiClientModule>>(_moduleLogger);
+                if (clientRole is not null)
+                {
+                    collection.Configure<IdentitySettings>(options => options.ClientRole = clientRole);
+                }
+            });
+
+            _insertResponse = await client.PostAsync(
+                "/v3/apiClients",
+                new StringContent(RequestBody, Encoding.UTF8, "application/json")
+            );
+        }
+
+        /// <summary>
+        /// Each recorded entry at this level, as its formatted message together with the text of
+        /// any exception logged beside it.
+        /// </summary>
+        protected IReadOnlyList<string> LoggedAt(LogLevel level) =>
+            [
+                .. _moduleLogger
+                    .Entries.Where(entry => entry.Level == level)
+                    .Select(entry => $"{entry.State} {entry.Exception}"),
+            ];
+
+        /// <summary>
+        /// Inherited by every insert fixture: no module log entry may carry the secret this
+        /// request generated, in its message or in the text of an exception logged beside it. The
+        /// captured secret is asserted non-empty first, so an arrangement that never reached the
+        /// provider cannot make the check vacuous.
+        /// </summary>
+        [Test]
+        public void It_logs_no_secret()
+        {
+            _createdClientSecret
+                .Should()
+                .NotBeNullOrEmpty("the module should have generated a secret for the provider");
+            _moduleLogger
+                .Entries.Select(entry => $"{entry.State} {entry.Exception}")
+                .Should()
+                .OnlyContain(entry => !entry.Contains(_createdClientSecret));
+        }
+
+        protected void AssertNoDatabaseInsert() =>
+            A.CallTo(() =>
+                    _apiClientRepository.InsertApiClient(
+                        A<ApiClientInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+
+        protected void AssertNoProviderCleanup() =>
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .MustNotHaveHappened();
+
+        /// <summary>
+        /// A failed request returns no credentials: neither member is present, and the secret the
+        /// module generated appears nowhere in the body.
+        /// </summary>
+        protected async Task AssertNoCredentialsInResponse()
+        {
+            string responseBody = await _insertResponse.Content.ReadAsStringAsync();
+            JsonNode actualResponse = JsonNode.Parse(responseBody)!;
+            actualResponse["key"].Should().BeNull();
+            actualResponse["secret"].Should().BeNull();
+            responseBody.Should().NotContain(_createdClientSecret);
+        }
+
+        protected void AssertCleanupReportedAsUnconfirmed(string outcome)
+        {
+            LoggedAt(LogLevel.Error)
+                .Should()
+                .Contain(entry =>
+                    entry.Contains("Could not confirm deletion of provider client")
+                    && entry.Contains(_createdClientUuid.ToString())
+                    && entry.Contains(_createdClientId)
+                    && entry.Contains(outcome)
+                );
+            AssertNoRawCharactersLogged();
+        }
+
+        protected void AssertNoRawCharactersLogged() =>
+            _moduleLogger
+                .Entries.Select(entry => $"{entry.State}")
+                .Should()
+                .OnlyContain(message =>
+                    !message.Contains('\r')
+                    && !message.Contains('\n')
+                    && !message.Contains('<')
+                    && !message.Contains('>')
+                );
+    }
+
+    /// <summary>
+    /// A provider failure during creation is answered with the structured bad-gateway contract,
+    /// and nothing is persisted. The module attempts no cleanup because a creation failure carries
+    /// no client identifier: whether a client was left behind, and its removal, belong to the
+    /// repository's own compensation.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_provider_creation_fails_at_the_identity_provider
+        : InsertWorkflowTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_INSERT_IDP_CREATE_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeProviderCreate(
+                new ClientCreateResult.FailureIdentityProvider(new IdentityProviderError(Sentinel))
+            );
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_bad_gateway_contract()
+        {
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+            _insertResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            string responseBody = await _insertResponse.Content.ReadAsStringAsync();
+            responseBody.Should().NotContain(Sentinel);
+            JsonNode actualResponse = JsonNode.Parse(responseBody)!;
+            string correlationId = actualResponse["correlationId"]!.GetValue<string>();
+            correlationId.Should().NotBeNullOrWhiteSpace();
+            JsonNode expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "The request could not be processed. See 'errors' for details.",
+                  "type": "urn:ed-fi:api:bad-gateway",
+                  "title": "Bad Gateway",
+                  "status": 502,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": ["The identity provider returned an unexpected response."]
+                }
+                """.Replace("{correlationId}", correlationId)
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_persists_no_api_client() => AssertNoDatabaseInsert();
+
+        [Test]
+        public void It_attempts_no_cleanup() => AssertNoProviderCleanup();
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_provider_creation_fails_unknown : InsertWorkflowTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_CREATE_UNKNOWN_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeProviderCreate(new ClientCreateResult.FailureUnknown(Sentinel + RawSuffix));
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_internal_server_error_contract() =>
+            await AssertContract(
+                _insertResponse,
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+
+        [Test]
+        public async Task It_does_not_leak_the_provider_failure_message() =>
+            (await _insertResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_persists_no_api_client() => AssertNoDatabaseInsert();
+
+        [Test]
+        public void It_attempts_no_cleanup() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_logs_the_sanitized_failure_message_and_not_the_result_record()
+        {
+            LoggedAt(LogLevel.Error).Should().Contain(entry => entry.Contains(Sentinel + SanitizedSuffix));
+            LoggedAt(LogLevel.Error).Should().NotContain(entry => entry.Contains("FailureUnknown {"));
+            AssertNoRawCharactersLogged();
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_cleanup_succeeds : InsertWorkflowTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureApplicationNotFound());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public void It_keeps_the_unresolved_reference_conflict() =>
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_deletes_the_client_it_created() =>
+            _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+
+        [Test]
+        public void It_records_the_deletion() =>
+            LoggedAt(LogLevel.Debug)
+                .Should()
+                .Contain(entry =>
+                    entry.Contains("Deleted provider client")
+                    && entry.Contains(_createdClientUuid.ToString())
+                    && entry.Contains(_createdClientId)
+                );
+
+        [Test]
+        public void It_reports_no_unconfirmed_cleanup() =>
+            LoggedAt(LogLevel.Error)
+                .Should()
+                .NotContain(entry => entry.Contains("Could not confirm deletion"));
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_cleanup_client_is_already_absent : InsertWorkflowTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureApplicationNotFound());
+            ArrangeProviderCleanup(new ClientDeleteResult.FailureClientNotFound("Client not found"));
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public void It_keeps_the_unresolved_reference_conflict() =>
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_records_the_absent_client_as_a_warning() =>
+            LoggedAt(LogLevel.Warning)
+                .Should()
+                .Contain(entry =>
+                    entry.Contains("was already absent")
+                    && entry.Contains(_createdClientUuid.ToString())
+                    && entry.Contains(_createdClientId)
+                );
+
+        [Test]
+        public void It_reports_no_unconfirmed_cleanup() =>
+            LoggedAt(LogLevel.Error)
+                .Should()
+                .NotContain(entry => entry.Contains("Could not confirm deletion"));
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_cleanup_fails_at_the_identity_provider
+        : InsertWorkflowTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_CLEANUP_IDP_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureApplicationNotFound());
+            ArrangeProviderCleanup(
+                new ClientDeleteResult.FailureIdentityProvider(
+                    new IdentityProviderError(Sentinel + RawSuffix)
+                )
+            );
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_keeps_the_unresolved_reference_conflict_response()
+        {
+            await AssertContract(
+                _insertResponse,
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict:unresolved-reference",
+                "Unresolved Reference",
+                "Application with ID 1 not found."
+            );
+            (await _insertResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public void It_deletes_the_client_it_created() =>
+            _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+
+        [Test]
+        public void It_reports_the_client_as_possibly_remaining()
+        {
+            AssertCleanupReportedAsUnconfirmed(nameof(ClientDeleteResult.FailureIdentityProvider));
+            LoggedAt(LogLevel.Error).Should().Contain(entry => entry.Contains(Sentinel + SanitizedSuffix));
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_cleanup_fails_unknown : InsertWorkflowTestBase
+    {
+        private const string DatabaseSentinel = "SENTINEL_APICLIENT_DB_UNKNOWN_must_not_leak";
+        private const string CleanupSentinel = "SENTINEL_APICLIENT_CLEANUP_UNKNOWN_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureUnknown(DatabaseSentinel + RawSuffix));
+            ArrangeProviderCleanup(new ClientDeleteResult.FailureUnknown(CleanupSentinel + RawSuffix));
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_internal_server_error_contract()
+        {
+            await AssertContract(
+                _insertResponse,
+                HttpStatusCode.InternalServerError,
+                "urn:ed-fi:api:internal-server-error",
+                "Internal Server Error",
+                ""
+            );
+            string responseBody = await _insertResponse.Content.ReadAsStringAsync();
+            responseBody.Should().NotContain(DatabaseSentinel);
+            responseBody.Should().NotContain(CleanupSentinel);
+        }
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_deletes_the_client_it_created() =>
+            _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+
+        [Test]
+        public void It_reports_both_failures_sanitized()
+        {
+            AssertCleanupReportedAsUnconfirmed(nameof(ClientDeleteResult.FailureUnknown));
+            LoggedAt(LogLevel.Error)
+                .Should()
+                .Contain(entry => entry.Contains(DatabaseSentinel + SanitizedSuffix))
+                .And.Contain(entry => entry.Contains(CleanupSentinel + SanitizedSuffix));
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_cleanup_returns_an_unrecognized_result
+        : InsertWorkflowTestBase
+    {
+        private sealed record UnrecognizedClientDeleteResult : ClientDeleteResult;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureApplicationNotFound());
+            ArrangeProviderCleanup(new UnrecognizedClientDeleteResult());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public void It_keeps_the_unresolved_reference_conflict() =>
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_reports_the_unrecognized_outcome() =>
+            AssertCleanupReportedAsUnconfirmed(nameof(UnrecognizedClientDeleteResult));
+    }
+
+    /// <summary>
+    /// A cleanup that throws used to reach the global handler and replace the caller's conflict
+    /// with a generic server error. The reference the caller has to correct survives it.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_cleanup_throws : InsertWorkflowTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_CLEANUP_THROWN_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureDataStoreNotFound());
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .Invokes(call => _deletedClientUuids.Add(call.GetArgument<string>(0)!))
+                .Throws(new InvalidOperationException(Sentinel));
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_keeps_the_unresolved_reference_conflict_response()
+        {
+            await AssertContract(
+                _insertResponse,
+                HttpStatusCode.Conflict,
+                "urn:ed-fi:api:conflict:unresolved-reference",
+                "Unresolved Reference",
+                "Data store does not exist."
+            );
+            (await _insertResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public void It_attempted_the_deletion() =>
+            _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+
+        [Test]
+        public void It_reports_the_thrown_cleanup_with_its_exception()
+        {
+            AssertCleanupReportedAsUnconfirmed(nameof(InvalidOperationException));
+            _moduleLogger
+                .Entries.Should()
+                .Contain(entry =>
+                    entry.Level == LogLevel.Error && entry.Exception is InvalidOperationException
+                );
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_successful_api_client_insert : InsertWorkflowTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.Success(11));
+
+            await ActInsertAsync(clientRole: "role-under-test");
+        }
+
+        [Test]
+        public void It_forwards_the_configured_client_role() =>
+            _forwardedClientRole.Should().Be("role-under-test");
+
+        [Test]
+        public void It_forwards_the_requested_approval_state() => _forwardedIsApproved.Should().BeFalse();
+
+        [Test]
+        public async Task It_returns_the_created_credentials()
+        {
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            JsonNode actualResponse = JsonNode.Parse(await _insertResponse.Content.ReadAsStringAsync())!;
+            actualResponse["id"]!.GetValue<int>().Should().Be(11);
+            actualResponse["applicationId"]!.GetValue<int>().Should().Be(1);
+            actualResponse["name"]!.GetValue<string>().Should().Be("Test Client");
+            actualResponse["key"]!.GetValue<string>().Should().Be(_createdClientId);
+            actualResponse["secret"]!.GetValue<string>().Should().Be(_createdClientSecret);
+        }
+
+        [Test]
+        public void It_reports_the_created_location() =>
+            _insertResponse.Headers.Location!.ToString().Should().EndWith("/v3/apiClients/11");
+
+        [Test]
+        public void It_performs_no_cleanup() => AssertNoProviderCleanup();
+    }
+
+    /// <summary>
+    /// The complete 400 body a duplicate API client name answers, on both create and update.
+    /// </summary>
+    protected static async Task AssertDuplicateApiClientNameContract(HttpResponseMessage response)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        JsonNode actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        JsonNode expectedResponse = JsonNode.Parse(
+            """
+            {
+              "detail": "Data validation failed. See 'validationErrors' for details.",
+              "type": "urn:ed-fi:api:bad-request:data",
+              "title": "Data Validation Failed",
+              "status": 400,
+              "correlationId": "{correlationId}",
+              "validationErrors": {
+                "Name": [
+                  "An API client with this name already exists for the application."
+                ]
+              },
+              "errors": []
+            }
+            """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
+        )!;
+        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// The name check finds another client of the application with the requested name, so the
+    /// request is rejected before any identity provider client is provisioned.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_insert_whose_name_is_already_taken : ApiClientModuleTests
+    {
+        private HttpResponseMessage _insertResponse = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse
+                        {
+                            Id = 1,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "TestClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1],
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
+                        {
+                            Company = "Test Company",
+                            ContactName = "Test Contact",
+                            ContactEmailAddress = "test@test.com",
+                            NamespacePrefixes = "uri://ed-fi.org",
+                        }
+                    )
+                );
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<int[]>.Ignored))
+                .Returns(new DataStoreIdsExistResult.Success([1]));
+            A.CallTo(() => _apiClientRepository.QueryApiClient(A<ApiClientQuery>.Ignored))
+                .ReturnsLazily(() =>
+                    new ApiClientQueryResult.Success([
+                        new ApiClientResponse
+                        {
+                            Id = 7,
+                            ApplicationId = 1,
+                            ClientId = "other-client",
+                            ClientUuid = Guid.NewGuid(),
+                            Name = "Test Client",
+                            IsApproved = true,
+                        },
+                    ])
+                );
+
+            using var client = SetUpClient();
+            _insertResponse = await client.PostAsync(
+                "/v3/apiClients",
+                new StringContent(
+                    """
+                    {
+                      "applicationId": 1,
+                      "name": "Test Client",
+                      "isApproved": true,
+                      "dataStoreIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+        }
+
+        [TearDown]
+        public void TearDownInsertResponse() => _insertResponse?.Dispose();
+
+        [Test]
+        public async Task It_returns_the_data_validation_contract() =>
+            await AssertDuplicateApiClientNameContract(_insertResponse);
+
+        [Test]
+        public void It_checks_the_names_of_the_target_application() =>
+            A.CallTo(() =>
+                    _apiClientRepository.QueryApiClient(
+                        A<ApiClientQuery>.That.Matches(q => q.ApplicationId == 1)
+                    )
+                )
+                .MustHaveHappened();
+
+        [Test]
+        public void It_provisions_no_provider_client() =>
+            A.CallTo(() =>
+                    _identityProviderRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_does_not_insert_the_row() =>
+            A.CallTo(() =>
+                    _apiClientRepository.InsertApiClient(
+                        A<ApiClientInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The name check passed, then a concurrent insert took the name before this row was written:
+    /// the unique constraint rejects it and the provisioned client is cleaned up.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_insert_with_a_duplicate_name : InsertWorkflowTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApiClientInsertResult.FailureDuplicateName());
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_data_validation_contract() =>
+            await AssertDuplicateApiClientNameContract(_insertResponse);
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_deletes_the_provisioned_client_exactly_once() =>
+            _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+    }
+
+    /// <summary>
+    /// The name check finds another client of the target application with the requested name, so
+    /// the update is rejected before the identity provider is changed.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_update_onto_a_name_taken_in_the_target_application
+        : UpdateUnderLockTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _apiClientRepository.QueryApiClient(A<ApiClientQuery>.Ignored))
+                .ReturnsLazily(() =>
+                    new ApiClientQueryResult.Success([
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 1,
+                            ClientId = "test-client",
+                            ClientUuid = _existingUuid,
+                            Name = "Test",
+                            IsApproved = true,
+                        },
+                        new ApiClientResponse
+                        {
+                            Id = 2,
+                            ApplicationId = 1,
+                            ClientId = "other-client",
+                            ClientUuid = Guid.NewGuid(),
+                            Name = "Updated",
+                            IsApproved = true,
+                        },
+                    ])
+                );
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_data_validation_contract() =>
+            await AssertDuplicateApiClientNameContract(_updateResponse);
+
+        [Test]
+        public void It_leaves_the_provider_client_untouched() =>
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_does_not_update_the_row() =>
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The client being updated already has the requested name; the name check must exclude the
+    /// client itself, or every update that keeps its name would be rejected.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_update_that_keeps_its_own_name : UpdateUnderLockTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<int>.Ignored))
+                .Returns(
+                    new ApiClientGetResult.Success(
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 1,
+                            ClientId = "test-client",
+                            ClientUuid = _existingUuid,
+                            Name = "Updated",
+                            IsApproved = true,
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+            A.CallTo(() => _apiClientRepository.QueryApiClient(A<ApiClientQuery>.Ignored))
+                .ReturnsLazily(() =>
+                    new ApiClientQueryResult.Success([
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 1,
+                            ClientId = "test-client",
+                            ClientUuid = _existingUuid,
+                            Name = "Updated",
+                            IsApproved = true,
+                        },
+                    ])
+                );
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_no_content() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_updates_the_row() =>
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .MustHaveHappened();
+    }
+
+    /// <summary>
+    /// The name check passed, then a concurrent insert took the name (inserts do not take the
+    /// aggregate lock). The unique violation proves the database update did not commit, so the
+    /// provider change is rolled back to the client's original values and the rejection is
+    /// returned without outcome resolution.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_update_with_a_duplicate_name : CompensationSyncTestBase
+    {
+        private List<(
+            string ClientUuid,
+            string DisplayName,
+            int[]? DataStoreIds,
+            bool IsApproved
+        )> _providerUpdates = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            // The fixture instance, and so its fakes, outlives each test, so the recorded calls
+            // below must cover only this test's request.
+            Fake.ClearRecordedCalls(_apiClientRepository);
+            _providerUpdates = [];
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call =>
+                    _providerUpdates.Add(
+                        (
+                            call.GetArgument<string>(0)!,
+                            call.GetArgument<string>(1)!,
+                            call.GetArgument<int[]?>(4),
+                            call.GetArgument<bool>(5)
+                        )
+                    )
+                )
+                .ReturnsNextFromSequence(
+                    new ClientUpdateResult.Success(_updatedUuid),
+                    new ClientUpdateResult.Success(_rollbackUuid)
+                );
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.FailureDuplicateName());
+            ArrangeSyncResult(new ApiClientUuidSyncResult.Success());
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_data_validation_contract() =>
+            await AssertDuplicateApiClientNameContract(_updateResponse);
+
+        [Test]
+        public void It_applies_the_requested_name_to_the_provider_first()
+        {
+            _providerUpdates.Should().HaveCount(2);
+            _providerUpdates[0].ClientUuid.Should().Be(_existingUuid.ToString());
+            _providerUpdates[0].DisplayName.Should().Be("Updated");
+        }
+
+        [Test]
+        public void It_rolls_the_provider_back_to_the_original_client()
+        {
+            _providerUpdates.Should().HaveCount(2);
+            _providerUpdates[1].ClientUuid.Should().Be(_updatedUuid.ToString());
+            _providerUpdates[1].DisplayName.Should().Be("Test");
+            _providerUpdates[1].DataStoreIds.Should().Equal(1);
+            _providerUpdates[1].IsApproved.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_persists_the_rolled_back_client_uuid() =>
+            A.CallTo(() => _apiClientRepository.SyncApiClientUuid(1, _existingUuid, _rollbackUuid))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_does_not_resolve_the_outcome() =>
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<int>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_deletes_no_provider_client() => _deletedClientIds.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The name check passed and a concurrent insert then took the name; the provider rollback
+    /// fails, so the request ends in a sanitized server error.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_update_with_a_duplicate_name_whose_rollback_fails
+        : CompensationSyncTestBase
+    {
+        private const string Sentinel = "SENTINEL_APICLIENT_DUPLICATE_ROLLBACK_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .ReturnsNextFromSequence(
+                    new ClientUpdateResult.Success(_updatedUuid),
+                    new ClientUpdateResult.FailureUnknown(Sentinel)
+                );
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.FailureDuplicateName());
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
     }
 }

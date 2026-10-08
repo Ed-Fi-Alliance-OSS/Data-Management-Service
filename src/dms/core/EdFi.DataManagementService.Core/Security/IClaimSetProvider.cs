@@ -16,5 +16,9 @@ public interface IClaimSetProvider
     /// Retrieves all claim sets with their associated resource claims and authorization strategies.
     /// </summary>
     /// <param name="tenant">Optional tenant identifier for multi-tenant scenarios. When null, operates in single-tenant mode.</param>
-    Task<IList<ClaimSet>> GetAllClaimSets(string? tenant = null);
+    /// <param name="cancellationToken">Cancellation token for the claim-set retrieval operation.</param>
+    Task<IList<ClaimSet>> GetAllClaimSets(
+        string? tenant = null,
+        CancellationToken cancellationToken = default
+    );
 }

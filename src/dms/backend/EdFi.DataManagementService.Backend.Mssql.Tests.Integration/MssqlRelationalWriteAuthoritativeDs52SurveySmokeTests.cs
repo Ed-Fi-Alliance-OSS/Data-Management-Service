@@ -447,7 +447,11 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid
-        );
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
 
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()

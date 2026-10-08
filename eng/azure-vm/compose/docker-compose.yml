@@ -61,6 +61,8 @@ x-dms-common-env: &dms-common-env
   # The staged ApiSchema workspace (.bootstrap/ApiSchema, produced by the official
   # prepare-dms-schema.ps1) is mounted read-only at /app/ApiSchema in each DMS service below,
   # so the image's effective-schema hash matches exactly what 'api-schema-tools ddl provision' wrote.
+  # Opt-in DMS-owned /identity/v2 surface (default off).
+  AppSettings__EnableIdentityManagement: "${DMS_ENABLE_IDENTITY_MANAGEMENT:-false}"
   # Opt-in for troubleshooting / claim-set iteration (default off).
   AppSettings__EnableManagementEndpoints: "${DMS_ENABLE_MANAGEMENT_ENDPOINTS:-false}"
   AppSettings__EnableClaimsetReload: "${DMS_ENABLE_CLAIMSET_RELOAD:-false}"
@@ -120,8 +122,8 @@ x-cms-common-env: &cms-common-env
   IdentitySettings__ClientSecretValidation__MaximumLength: "128"
   IdentitySettings__RequireHttpsMetadata: "false"
   IdentitySettings__RoleClaimType: "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
-  # Embedded claim sets include E2E-NoFurtherAuthRequiredClaimSet (full access),
-  # E2E-NameSpaceBasedClaimSet, and E2E-RelationshipsWithEdOrgsOnlyClaimSet (school/district-level).
+  # Embedded claim sets include EdFiSandbox (the bootstrap default: broad access, with
+  # relationship-based data scoped to the app's EdOrgs) and the other built-in claim sets.
   # Set DMS_CONFIG_CLAIMS_SOURCE=Hybrid to also load *-claimset.json fragments dropped into
   # ./claims (mounted below). Custom claim sets can also be created at runtime via
   # POST/import /v3/claimSets.

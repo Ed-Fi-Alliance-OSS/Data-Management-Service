@@ -12,8 +12,10 @@
 
     Extension schema packages (Sample, Homograph) are loaded through the file-based SCHEMA_PACKAGES path.
     The -AddExtensionSecurityMetadata switch activates Hybrid claims mode so extension
-    claimset fragments are loaded from the AdditionalClaimsets directory mounted at
-    /app/additional-claims. This is the non-bootstrap compatibility path; bootstrap mode
+    claimset fragments are loaded from /app/additional-claims. The switch stages the
+    AdditionalClaimsets fragments plus the test-owned E2E fragments into
+    eng/docker-compose/.e2e-claims and mounts that directory, so the E2E claim sets are
+    loaded too. This is the non-bootstrap compatibility path; bootstrap mode
     activates staged schema and claims automatically when a manifest is present.
 
     The script runs (with -DatabaseEngine forwarded to every engine-aware phase):
@@ -60,10 +62,25 @@ param(
     [string] $DatabaseEngine = "postgresql",
 
     [switch] $EnableKafkaCdc,
+    # Returns the private CDC_API_E2E_HANDOFF_PATH value after HTTP-only rollout.
+    [switch] $CdcApiE2E,
     [string] $CdcSettingsPath,
     [string] $CdcBindingStatePath,
     [switch] $SkipDockerBuild
 )
+
+function Write-SetupQualificationFailure {
+    param([object[]] $Records)
+    if (-not $env:CDC_RUNBOOK_CHILD_FAILURE_PATH) { return }
+    try {
+        . (Join-Path $PSScriptRoot '../../../../eng/ci/cdc-runbook-diagnostics.ps1')
+        Write-CdcRunbookChildFailure -Records $Records
+    } catch { # Diagnostic collection must not change the setup outcome.
+        return
+    }
+}
+
+if ($CdcApiE2E -and -not $EnableKafkaCdc) { throw '-CdcApiE2E requires -EnableKafkaCdc.' }
 
 function Get-DirectSetupTeardownCommand {
     # Builds a copyable teardown command that carries the same engine and environment file this setup
@@ -97,6 +114,7 @@ try {
     }
 }
 catch {
+    Write-SetupQualificationFailure -Records @($_)
     Write-Host ""
     Write-Error "Docker is not running or not installed. Please start Docker and try again."
     Write-Host ""
@@ -170,7 +188,7 @@ try {
     if ($EnableKafkaCdc) {
         Invoke-E2ECdcSetup -EnvironmentFile $resolvedEnvironmentFile -OriginalEnvironmentFile $baseEnvironmentFile `
             -DatabaseEngine $DatabaseEngine -DatabaseName $e2eDatabaseName -SnapshotDatabaseName $e2eSnapshotDatabaseName `
-            -CdcSettingsPath $CdcSettingsPath -CdcBindingStatePath $CdcBindingStatePath -SkipDockerBuild:$SkipDockerBuild
+            -CdcSettingsPath $CdcSettingsPath -CdcBindingStatePath $CdcBindingStatePath -SkipDockerBuild:$SkipDockerBuild -CdcApiE2E:$CdcApiE2E
         $teardownCommand = Get-DirectSetupTeardownCommand -DatabaseEngine $DatabaseEngine -EnvironmentFile $baseEnvironmentFile
         Write-Host "CDC E2E setup complete. Governed teardown: $teardownCommand" -ForegroundColor Green
         return
@@ -280,6 +298,10 @@ try {
     $teardownCommand = Get-DirectSetupTeardownCommand -DatabaseEngine $DatabaseEngine -EnvironmentFile $resolvedEnvironmentFile
     Write-Host "`nDMS E2E environment setup complete!" -ForegroundColor Green
     Write-Host "To tear down this environment, run: $teardownCommand" -ForegroundColor Cyan
+}
+catch {
+    Write-SetupQualificationFailure -Records @($_)
+    throw
 }
 finally {
     # Return to original location

@@ -1596,6 +1596,141 @@ public class ConfigurationServiceDataStoreProviderTests
     }
 
     [TestFixture]
+    public class Given_Tenants_Are_Loaded
+    {
+        private static ConfigurationServiceDataStoreProvider CreateProvider(TestHttpMessageHandler handler)
+        {
+            var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
+            return new ConfigurationServiceDataStoreProvider(
+                new ConfigurationServiceApiClient(httpClient),
+                new StaticTokenHandler(),
+                new ConfigurationServiceContext("clientId", "secret", "scope"),
+                NullLogger<ConfigurationServiceDataStoreProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey)
+            );
+        }
+
+        [Test]
+        public async Task It_throws_when_the_deserialized_body_is_null()
+        {
+            var handler = new TestHttpMessageHandler(HttpStatusCode.OK);
+            handler.SetRawResponse("v3/tenants/", "null");
+            var provider = CreateProvider(handler);
+
+            Func<Task> act = async () => await provider.LoadTenants();
+
+            await act.Should().ThrowAsync<InvalidOperationException>();
+        }
+
+        [Test]
+        public async Task It_throws_when_the_body_contains_a_null_entry()
+        {
+            var handler = new TestHttpMessageHandler(HttpStatusCode.OK);
+            handler.SetRawResponse("v3/tenants/", "[null]");
+            var provider = CreateProvider(handler);
+
+            Func<Task> act = async () => await provider.LoadTenants();
+
+            await act.Should().ThrowAsync<InvalidOperationException>();
+        }
+
+        [Test]
+        public async Task It_throws_when_a_tenant_name_is_blank()
+        {
+            var handler = new TestHttpMessageHandler(HttpStatusCode.OK);
+            handler.SetResponse("v3/tenants/", new[] { new { Id = 1L, Name = "" } });
+            var provider = CreateProvider(handler);
+
+            Func<Task> act = async () => await provider.LoadTenants();
+
+            await act.Should().ThrowAsync<InvalidOperationException>();
+        }
+
+        [Test]
+        public async Task It_returns_an_empty_list_for_an_empty_body()
+        {
+            var handler = new TestHttpMessageHandler(HttpStatusCode.OK);
+            handler.SetResponse("v3/tenants/", Array.Empty<object>());
+            var provider = CreateProvider(handler);
+
+            IList<string> tenants = await provider.LoadTenants();
+
+            tenants.Should().BeEmpty();
+        }
+
+        [Test]
+        public async Task It_returns_tenant_names()
+        {
+            var handler = new TestHttpMessageHandler(HttpStatusCode.OK);
+            handler.SetResponse("v3/tenants/", new[] { new { Id = 1L, Name = "North" } });
+            var provider = CreateProvider(handler);
+
+            IList<string> tenants = await provider.LoadTenants();
+
+            tenants.Should().Equal("North");
+        }
+
+        [Test]
+        public async Task It_propagates_cancellation_to_token_acquisition()
+        {
+            BlockingTokenHandler tokenHandler = new();
+            var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "[]");
+            using var httpClient = new HttpClient(handler)
+            {
+                BaseAddress = new Uri("https://api.example.com/"),
+            };
+            var provider = new ConfigurationServiceDataStoreProvider(
+                new ConfigurationServiceApiClient(httpClient),
+                tokenHandler,
+                new ConfigurationServiceContext("clientId", "secret", "scope"),
+                NullLogger<ConfigurationServiceDataStoreProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey)
+            );
+            using var cancellationTokenSource = new CancellationTokenSource();
+
+            Task<IList<string>> loadTask = provider.LoadTenants(cancellationTokenSource.Token);
+            CancellationToken observedToken = await tokenHandler.ObservedToken.Task.WaitAsync(
+                TimeSpan.FromSeconds(1)
+            );
+            await cancellationTokenSource.CancelAsync();
+            Func<Task> act = async () => await loadTask.WaitAsync(TimeSpan.FromSeconds(1));
+
+            observedToken.CanBeCanceled.Should().BeTrue();
+            await act.Should().ThrowAsync<OperationCanceledException>();
+            handler.GetRequestCount("v3/tenants/").Should().Be(0);
+        }
+
+        [Test]
+        public async Task It_propagates_cancellation_to_the_tenants_http_request()
+        {
+            var handler = new BlockingTenantsHttpMessageHandler();
+            using var httpClient = new HttpClient(handler)
+            {
+                BaseAddress = new Uri("https://api.example.com/"),
+            };
+            var provider = new ConfigurationServiceDataStoreProvider(
+                new ConfigurationServiceApiClient(httpClient),
+                new StaticTokenHandler(),
+                new ConfigurationServiceContext("clientId", "secret", "scope"),
+                NullLogger<ConfigurationServiceDataStoreProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey)
+            );
+            using var cancellationTokenSource = new CancellationTokenSource();
+
+            Task<IList<string>> loadTask = provider.LoadTenants(cancellationTokenSource.Token);
+            CancellationToken observedToken = await handler.ObservedRequestToken.Task.WaitAsync(
+                TimeSpan.FromSeconds(1)
+            );
+            await cancellationTokenSource.CancelAsync();
+            Func<Task> act = async () => await loadTask.WaitAsync(TimeSpan.FromSeconds(1));
+
+            observedToken.CanBeCanceled.Should().BeTrue();
+            await act.Should().ThrowAsync<OperationCanceledException>();
+            handler.RequestCount.Should().Be(1);
+        }
+    }
+
+    [TestFixture]
     public class Given_Cancellation_During_DataStore_Load
     {
         [Test]
@@ -1722,6 +1857,7 @@ public class ConfigurationServiceDataStoreProviderTests
         : HttpMessageHandler
     {
         private readonly Dictionary<string, object> _responses = new();
+        private readonly Dictionary<string, string> _rawResponses = new();
         private readonly Dictionary<string, int> _requestCounts = new();
 
         /// <summary>
@@ -1732,6 +1868,15 @@ public class ConfigurationServiceDataStoreProviderTests
         public void SetResponse(string path, object response)
         {
             _responses[path] = response;
+        }
+
+        /// <summary>
+        /// Sets the response body verbatim, bypassing serialization. Used for bodies that cannot be
+        /// expressed as a serializable object, such as a literal JSON `null` or a list containing one.
+        /// </summary>
+        public void SetRawResponse(string path, string rawJson)
+        {
+            _rawResponses[path] = rawJson;
         }
 
         public int GetRequestCount(string path) =>
@@ -1753,7 +1898,11 @@ public class ConfigurationServiceDataStoreProviderTests
 
             string content = defaultContent;
 
-            if (_responses.TryGetValue(path, out var response))
+            if (_rawResponses.TryGetValue(path, out var rawResponse))
+            {
+                content = rawResponse;
+            }
+            else if (_responses.TryGetValue(path, out var response))
             {
                 content = JsonSerializer.Serialize(response);
             }
@@ -1812,6 +1961,25 @@ public class ConfigurationServiceDataStoreProviderTests
             ObservedRequestToken.TrySetResult(cancellationToken);
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
             throw new AssertionException("Data-store request should be cancelled.");
+        }
+    }
+
+    private sealed class BlockingTenantsHttpMessageHandler : HttpMessageHandler
+    {
+        public TaskCompletionSource<CancellationToken> ObservedRequestToken { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int RequestCount { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        )
+        {
+            RequestCount++;
+            ObservedRequestToken.TrySetResult(cancellationToken);
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            throw new AssertionException("Tenants request should be cancelled.");
         }
     }
 

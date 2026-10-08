@@ -29,9 +29,11 @@
     removed one means a type in the shipped signatures no longer resolves for them. A check that
     only looked for surprises would pass on the second.
 
-    Only the per-PR lane calls this today, because the package is deliberately built and never
-    published. Whoever wires the publishing lane calls it there too: it is the check that decides
-    what the first published version contains, and once published that content cannot be taken back.
+    The per-PR lane calls this on a pull request that is not a draft and changed a DMS-relevant
+    path, and unconditionally in the merge queue, which is the recovery path for everything the
+    per-PR gates skip. The prerelease pack job calls it on the packed artifact before that artifact
+    is uploaded for publication: it is the check that decides what a published version contains, and
+    once published that content cannot be taken back.
 #>
 [CmdletBinding()]
 param(
@@ -150,6 +152,39 @@ foreach ($required in "description", "title", "projectUrl") {
 }
 if (-not (Test-Path -LiteralPath (Join-Path $ExtractTo $expectedReadme))) {
     throw "Package does not carry the readme file itself"
+}
+
+# The readme is the implementer guide, and it is the only documentation an implementer resolving this
+# package from a feed ever sees. The contract's first published version carried a stated placeholder
+# in its place, so "the readme is present" is not the assertion that matters.
+#
+# Checked in both directions, because neither half is sufficient. The absence of the word
+# "placeholder" is not evidence of a guide: a placeholder reworded to avoid the word would pass a
+# negative-only check. And the presence of a landmark is not evidence that no placeholder notice was
+# left behind above it. Both are matched case-insensitively.
+$readmeText = [System.IO.File]::ReadAllText((Join-Path $ExtractTo $expectedReadme))
+
+$forbiddenReadmeContent = @("placeholder")
+
+# Three facts an implementer cannot deliver a plugin without, each stated in only one place in the
+# guide: how to publish, what the package looks like, and where the compatibility surface is
+# published. A guide that lost one of these is not a guide they can act on.
+$requiredReadmeContent = @(
+    "dotnet publish --no-self-contained",
+    "contentFiles/any/any/",
+    "host assembly manifest"
+)
+
+foreach ($forbidden in $forbiddenReadmeContent) {
+    if ($readmeText -match [regex]::Escape($forbidden)) {
+        throw "Packed readme $expectedReadme still reads as a placeholder: it contains '$forbidden'. The package's readme is the implementer guide and is what an implementer sees on the feed."
+    }
+}
+
+foreach ($required in $requiredReadmeContent) {
+    if ($readmeText -notmatch [regex]::Escape($required)) {
+        throw "Packed readme $expectedReadme does not contain '$required'. The guide has to tell an implementer how to publish, what the package shape is, and where the compatibility surface is published."
+    }
 }
 
 # The whole point of the package is the assembly. Every other assertion here can pass on a package

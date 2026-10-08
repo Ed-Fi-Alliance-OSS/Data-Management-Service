@@ -497,7 +497,7 @@ internal sealed class DocumentCacheProjectionItemProcessor(
             exception,
             "DocumentCache projection recorded document-scoped failure for document {DocumentId} on target {TargetKey} after deterministic item processing failure.",
             workItem.DocumentId,
-            LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString())
+            LoggingSanitizer.SanitizeInternalValueForLogging(targetContext.TargetKey.ToString())
         );
 
         return DocumentCacheProjectionItemProcessResult.DocumentScopedFailure;
@@ -528,7 +528,7 @@ internal sealed class DocumentCacheProjectionItemProcessor(
         _logger.LogError(
             exception,
             "DocumentCache projection paused target {TargetKey} after deterministic item processing failure.",
-            LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString())
+            LoggingSanitizer.SanitizeInternalValueForLogging(targetContext.TargetKey.ToString())
         );
 
         if (targetContext.AdministrativeCommandContext is not null)
@@ -570,7 +570,7 @@ internal sealed class DocumentCacheProjectionItemProcessor(
         targetContext.SchedulingState.PauseTarget();
         _logger.LogError(
             "DocumentCache projection paused target {TargetKey} after unexpected cache writer outcome {Outcome}.",
-            LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString()),
+            LoggingSanitizer.SanitizeInternalValueForLogging(targetContext.TargetKey.ToString()),
             writerResult.Outcome
         );
 
@@ -607,7 +607,7 @@ internal sealed class DocumentCacheProjectionItemProcessor(
         _logger.LogError(
             exception,
             "DocumentCache projection target {TargetKey} hit a provider/runtime failure while processing an item; target backoff applies.",
-            LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString())
+            LoggingSanitizer.SanitizeInternalValueForLogging(targetContext.TargetKey.ToString())
         );
 
         if (targetContext.AdministrativeCommandContext is not null)
@@ -872,7 +872,7 @@ internal sealed class DocumentCacheProjectionItemProcessor(
         _logger.LogDebug(
             "DocumentCache projection observed cache writer outcome {Outcome} for target {TargetKey}; durable work remains visible when not acknowledged by the writer.",
             writerResult.Outcome,
-            LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString())
+            LoggingSanitizer.SanitizeInternalValueForLogging(targetContext.TargetKey.ToString())
         );
 
     private void LogContinuingMaterializerOutcome(
@@ -882,7 +882,7 @@ internal sealed class DocumentCacheProjectionItemProcessor(
         _logger.LogDebug(
             "DocumentCache projection observed materializer outcome {Outcome} for target {TargetKey}; no projector acknowledgement or repair was attempted.",
             materializationResult.GetType().Name,
-            LoggingSanitizer.SanitizeForLogging(targetContext.TargetKey.ToString())
+            LoggingSanitizer.SanitizeInternalValueForLogging(targetContext.TargetKey.ToString())
         );
 
     private void RecordWriterOutcome(

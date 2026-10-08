@@ -2,6 +2,15 @@
   "version": 2,
   "dependencies": {
     "net10.0": {
+      "Confluent.Kafka": {
+        "type": "Direct",
+        "requested": "[2.6.1, )",
+        "resolved": "2.6.1",
+        "contentHash": "DCap4xzbUzItoFVBCmBbng6q4XbaxfqLgR/b56b67L9S0iUTIwrSAvk3MPegyQNn56+1C/m3ytwy1YU+nAuqDA==",
+        "dependencies": {
+          "librdkafka.redist": "2.6.1"
+        }
+      },
       "coverlet.collector": {
         "type": "Direct",
         "requested": "[6.0.2, )",
@@ -706,6 +715,9 @@
           "System.CommandLine": "[2.0.0-rc.1.25451.107, )"
         }
       },
+      "EdFi.Api.Identity": {
+        "type": "Project"
+      },
       "edfi.datamanagementservice.backend": {
         "type": "Project",
         "dependencies": {
@@ -815,6 +827,7 @@
         "dependencies": {
           "Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic": "[4.0.0, )",
           "EdFi.Api.CustomValidation": "[1.0.0, )",
+          "EdFi.Api.Identity": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
           "EdFi.DataManagementService.Core.External": "[1.0.0, )",
           "FastGuid": "[1.4.1, )",
@@ -824,6 +837,7 @@
           "Microsoft.Extensions.Caching.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Caching.Hybrid": "[9.5.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Http": "[10.0.1, )",
           "Microsoft.Extensions.Logging": "[10.0.1, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
@@ -870,15 +884,6 @@
         "requested": "[4.0.0, )",
         "resolved": "4.0.0",
         "contentHash": "ssdML8g+JqdP2BbDxg/bqzUBz81RD3SCGAbop6qs+o1xCGPXnlCSNAOp22TDKTtFmHfp+sKSPuWL0JONf3fYYA=="
-      },
-      "Confluent.Kafka": {
-        "type": "CentralTransitive",
-        "requested": "[2.6.1, )",
-        "resolved": "2.6.1",
-        "contentHash": "DCap4xzbUzItoFVBCmBbng6q4XbaxfqLgR/b56b67L9S0iUTIwrSAvk3MPegyQNn56+1C/m3ytwy1YU+nAuqDA==",
-        "dependencies": {
-          "librdkafka.redist": "2.6.1"
-        }
       },
       "EdFi.DataStandard52.ApiSchema": {
         "type": "CentralTransitive",

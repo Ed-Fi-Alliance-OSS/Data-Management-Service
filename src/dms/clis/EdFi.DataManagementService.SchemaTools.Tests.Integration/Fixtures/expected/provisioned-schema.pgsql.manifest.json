@@ -77847,7 +77847,7 @@
     {
       "schema_name": "edfi",
       "table_name": "EducationOrganizationInterventionPrescriptionAssociation",
-      "constraint_name": "FK_EducationOrganizationInterventionPrescriptionAsso_b1d5f116fc",
+      "constraint_name": "FK_EducationOrganizationInterventionPrescriptionAsso_b08515ac5d",
       "constraint_type": "FOREIGN KEY",
       "columns": [
         "DocumentId"
@@ -102135,6 +102135,20 @@
     {
       "schema_name": "edfi",
       "table_name": "StudentEducationOrganizationResponsibilityAssociation",
+      "constraint_name": "FK_StudentEducationOrganizationResponsibilityAssocia_9378790dfe",
+      "constraint_type": "FOREIGN KEY",
+      "columns": [
+        "DocumentId"
+      ],
+      "referenced_schema": "dms",
+      "referenced_table": "Document",
+      "referenced_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "schema_name": "edfi",
+      "table_name": "StudentEducationOrganizationResponsibilityAssociation",
       "constraint_name": "FK_StudentEducationOrganizationResponsibilityAssocia_969ad3d2a8",
       "constraint_type": "FOREIGN KEY",
       "columns": [
@@ -102161,20 +102175,6 @@
       "referenced_table": "Student",
       "referenced_columns": [
         "StudentUniqueId",
-        "DocumentId"
-      ]
-    },
-    {
-      "schema_name": "edfi",
-      "table_name": "StudentEducationOrganizationResponsibilityAssociation",
-      "constraint_name": "FK_StudentEducationOrganizationResponsibilityAssocia_e45cfc3dea",
-      "constraint_type": "FOREIGN KEY",
-      "columns": [
-        "DocumentId"
-      ],
-      "referenced_schema": "dms",
-      "referenced_table": "Document",
-      "referenced_columns": [
         "DocumentId"
       ]
     },
@@ -108327,6 +108327,20 @@
     {
       "schema_name": "edfi",
       "table_name": "StudentSpecialEducationProgramEligibilityAssociation",
+      "constraint_name": "FK_StudentSpecialEducationProgramEligibilityAssociat_494ff3ccf6",
+      "constraint_type": "FOREIGN KEY",
+      "columns": [
+        "DocumentId"
+      ],
+      "referenced_schema": "dms",
+      "referenced_table": "Document",
+      "referenced_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "schema_name": "edfi",
+      "table_name": "StudentSpecialEducationProgramEligibilityAssociation",
       "constraint_name": "FK_StudentSpecialEducationProgramEligibilityAssociat_50bddc2fbe",
       "constraint_type": "FOREIGN KEY",
       "columns": [
@@ -108412,20 +108426,6 @@
       ],
       "referenced_schema": "dms",
       "referenced_table": "Descriptor",
-      "referenced_columns": [
-        "DocumentId"
-      ]
-    },
-    {
-      "schema_name": "edfi",
-      "table_name": "StudentSpecialEducationProgramEligibilityAssociation",
-      "constraint_name": "FK_StudentSpecialEducationProgramEligibilityAssociat_e20497bd59",
-      "constraint_type": "FOREIGN KEY",
-      "columns": [
-        "DocumentId"
-      ],
-      "referenced_schema": "dms",
-      "referenced_table": "Document",
       "referenced_columns": [
         "DocumentId"
       ]
@@ -110192,7 +110192,7 @@
     {
       "schema_name": "edfi",
       "table_name": "SurveyResponseEducationOrganizationTargetAssociation",
-      "constraint_name": "FK_SurveyResponseEducationOrganizationTargetAssociat_5c502ebd67",
+      "constraint_name": "FK_SurveyResponseEducationOrganizationTargetAssociat_7914a5d0b3",
       "constraint_type": "FOREIGN KEY",
       "columns": [
         "DocumentId"
@@ -110770,7 +110770,7 @@
     {
       "schema_name": "edfi",
       "table_name": "SurveySectionResponseEducationOrganizationTargetAssociation",
-      "constraint_name": "FK_SurveySectionResponseEducationOrganizationTargetA_4026fb64bb",
+      "constraint_name": "FK_SurveySectionResponseEducationOrganizationTargetA_9980508b39",
       "constraint_type": "FOREIGN KEY",
       "columns": [
         "DocumentId"
@@ -116333,6 +116333,7 @@
       "table_name": "Document",
       "index_name": "IX_Document_CreatedByOwnershipTokenId",
       "is_unique": false,
+      "filter": "(\u0022CreatedByOwnershipTokenId\u0022 IS NOT NULL)",
       "columns": [
         "CreatedByOwnershipTokenId"
       ]

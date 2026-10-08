@@ -394,7 +394,9 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                     poisonSuppressionRetryPassCount = 0;
                     logger.LogDebug(
                         "DocumentCache administrative drain for target {TargetKey} completed a cursor pass without acknowledging, removing, or recording failures and will poll again.",
-                        LoggingSanitizer.SanitizeForLogging(context.TargetContext.TargetKey.ToString())
+                        LoggingSanitizer.SanitizeInternalValueForLogging(
+                            context.TargetContext.TargetKey.ToString()
+                        )
                     );
                     await DelayForPollIntervalAsync(context, effectiveCancellationToken)
                         .ConfigureAwait(false);
@@ -450,7 +452,9 @@ internal sealed class DocumentCacheAdministrativeDrainer(
                     currentPass = NewPass(context);
                     logger.LogDebug(
                         "DocumentCache administrative drain for target {TargetKey} found durable work after an empty page and will poll again.",
-                        LoggingSanitizer.SanitizeForLogging(context.TargetContext.TargetKey.ToString())
+                        LoggingSanitizer.SanitizeInternalValueForLogging(
+                            context.TargetContext.TargetKey.ToString()
+                        )
                     );
                     await DelayForPollIntervalAsync(context, effectiveCancellationToken)
                         .ConfigureAwait(false);

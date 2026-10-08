@@ -12,6 +12,16 @@ on:
   # config_relevant and the heavy jobs skip when no config-relevant file changed, so idle PRs
   # stay cheap and the gate still reports (a skipped dependency counts as a pass).
   pull_request:
+    # Declaring types replaces the default set (opened, synchronize, reopened), so all three are
+    # restated. Jobs skip while a pull request is a draft, and ready_for_review runs them once it is
+    # marked ready. converted_to_draft starts a run that skips everything, which cancels the
+    # in-flight run through the concurrency group.
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - converted_to_draft
     branches:
       - main
 
@@ -33,6 +43,10 @@ permissions: read-all
 jobs:
   detect-fresh-build-changes:
     name: Detect Fresh Build Changes
+    # Every other job needs this one directly or transitively, so skipping it on a draft skips the
+    # whole workflow except the always() jobs, which carry the same check. pull_request is null on
+    # merge_group and workflow_dispatch, so those always run.
+    if: github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -116,12 +130,12 @@ jobs:
 
           while IFS= read -r file; do
             case "$file" in
-              src/Directory.Packages.props|src/nuget.config|src/config/Dockerfile|eng/docker-compose/*)
+              src/Directory.Packages.props|src/nuget.config|src/config/Dockerfile|src/plugins/*|eng/docker-compose/*)
                 fresh_build_required=true
                 ;;
             esac
             case "$file" in
-              .github/workflows/*|build-config.ps1|eng/*|src/Directory.Packages.props|src/nuget.config|src/config/*|src/plugins/*)
+              .github/workflows/*|build-config.ps1|eng/*|src/Directory.Packages.props|src/nuget.config|src/config/*|src/plugins/*|src/dms/PluginFixtureStaging.targets)
                 config_relevant=true
                 ;;
             esac
@@ -220,6 +234,20 @@ jobs:
               throw "$($result.FailedCount) build script zero-test guard test(s) failed."
           }
 
+      # The secret resolution proof runs only on a schedule (scheduled-secret-resolution-proof.yml).
+      # Its check that every proof executed and passed is exercised here, so a break in it fails a
+      # pull request rather than the next scheduled run.
+      - name: Run Secret Resolution Proof Results Tests
+        run: |
+          $result = Invoke-Pester -Path "eng/docker-compose/tests/SecretResolutionProof.Tests.ps1" -Output Detailed -PassThru
+          # Invoke-Pester returns nothing at all for a path that does not exist.
+          if ($null -eq $result -or $result.TotalCount -eq 0) {
+              throw "Secret resolution proof results Pester lane ran no tests; check that eng/docker-compose/tests/SecretResolutionProof.Tests.ps1 exists."
+          }
+          if ($result.FailedCount -gt 0 -or $result.FailedContainersCount -gt 0 -or $result.FailedBlocksCount -gt 0) {
+              throw "Secret resolution proof results Pester lane failed: $($result.FailedCount) test(s), $($result.FailedContainersCount) container(s), $($result.FailedBlocksCount) block(s)."
+          }
+
   run-unit-tests:
     name: Run Unit Tests
     needs: detect-fresh-build-changes
@@ -249,6 +277,11 @@ jobs:
 
       - name: Build
         run: ./build-config.ps1 Build -Configuration ${{ env.CONFIGURATION }}
+
+      # No test stages the secret resolution proof's fixture plugin, and the proof runs only on a
+      # schedule, so it is compiled here to fail a pull request that breaks it.
+      - name: Build the Secret Resolution Fixture Plugin
+        run: dotnet build src/plugins/EdFi.Api.Plugins.Hosting.Tests.Unit/Fixtures/Plugins/Acme.FileSecretResolver/Acme.FileSecretResolver.csproj --configuration ${{ env.CONFIGURATION }} --nologo
 
       - name: Restore .NET tools
         if: success()
@@ -642,6 +675,89 @@ jobs:
           path: |
             **/*.trx
 
+  # DMS-1552 and DMS-1555: the EdFi.Api.Secrets contract package. Packs it into a local folder feed,
+  # asserts the packed assembly's version equals the package version and that the packed readme is
+  # the implementer guide, compiles a scratch consumer that implements both contracts against that
+  # feed alone, and compiles the guide's worked examples against it and the packed EdFi.Api.Plugins.
+  # It also compiles the scratch consumer against the package published on the Ed-Fi feed once the
+  # declared version is there, and reports in as many words when it is not yet. Then asserts the
+  # packed contents - metadata, exported types, XML docs, no dependencies - as the prerelease lane
+  # does before publishing. Then runs the versioning and publication-wiring proofs once per pull
+  # request: the packed nupkg's identity and version, solution membership, the prerelease and
+  # release lanes' wiring, a real build-config.ps1 BuildAndPublish with explicit versions followed
+  # by a pack of what it built, and a real DockerBuild with an explicit assembly version, each with
+  # a control showing the Configuration Service assemblies were built by that run. Kept out of
+  # run-parity-pester-tests because the last two build the whole solution and the image.
+  verify-secrets-contract:
+    name: Verify Secrets Contract Package
+    needs: detect-fresh-build-changes
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.config_relevant == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      # build-config.ps1 DockerBuild uses `docker buildx build --build-context`.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Pack EdFi.Api.Secrets and Compile the Scratch Consumer and Worked Examples
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # Fresh feed and global-packages folders per run. The script refuses non-empty ones, so a
+          # stale nupkg or an already-extracted same-version package can never be what it restores.
+          # The published check reads the Ed-Fi feed anonymously, as every restore in this workflow
+          # already does, so it needs no secret and runs the same on a fork. An unreadable feed fails
+          # the step rather than reading as "not yet published".
+          $runId = [guid]::NewGuid().ToString('N')
+          $feed = Join-Path $env:RUNNER_TEMP "secrets-feed-$runId"
+          ./eng/verification/Invoke-SecretsConsumerCheck.ps1 `
+            -Configuration ${{ env.CONFIGURATION }} `
+            -FeedDirectory $feed `
+            -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-secrets-$runId") `
+            -PublishedServiceIndexUrl "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json" `
+            -PublishedNuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-published-secrets-$runId")
+
+          # The check the prerelease lane runs before it uploads the package for publication, run
+          # here on the same packed artifact so a contents change fails its pull request first.
+          Import-Module ./package-helpers.psm1
+          $contractVersion = Get-SecretsContractVersion
+          ./eng/verification/Assert-SecretsPackage.ps1 `
+            -PackageFile (Join-Path $feed "EdFi.Api.Secrets.$contractVersion.nupkg") `
+            -ExtractTo (Join-Path $env:RUNNER_TEMP "secrets-nupkg-$runId") `
+            -PackageId "EdFi.Api.Secrets" `
+            -ExpectedPackageVersion $contractVersion
+
+      - name: Install Pester
+        run: Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force
+
+      - name: Run Secrets Contract Versioning Tests
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $result = Invoke-Pester -Path "eng/ci/tests/ConfigSecretsContractVersioning.Tests.ps1" -Output Detailed -PassThru
+
+          # A discovery-time failure produces no test object, and a skipped or inconclusive proof
+          # reads as green unless it is counted; every case here must actually pass.
+          $nonPassing = @($result.Tests | Where-Object { $_.Result -ne "Passed" })
+          if ($result.FailedContainersCount -gt 0 -or $result.FailedBlocksCount -gt 0 -or $result.TotalCount -eq 0 -or $nonPassing.Count -gt 0) {
+              $summary = ($nonPassing | ForEach-Object { "$($_.Result): $($_.ExpandedName)" }) -join "`n"
+              throw "Secrets contract versioning tests did not all pass: $($result.TotalCount) total, $($result.FailedContainersCount) failed container(s), $($result.FailedBlocksCount) failed block(s).`n$summary"
+          }
+
   fresh-rebuild-docker-image:
     name: Fresh Rebuild Config Docker Image
     needs: detect-fresh-build-changes
@@ -668,8 +784,9 @@ jobs:
   event_file:
     name: Upload Event File
     runs-on: ubuntu-latest
-    needs: [verify-lock-files, run-parity-pester-tests, run-unit-tests, run-e2e-tests, run-e2e-tests-mssql, run-e2e-tests-mssql-multitenant, run-integration-tests, fresh-rebuild-docker-image]
-    if: always()
+    needs: [verify-lock-files, run-parity-pester-tests, verify-secrets-contract, run-unit-tests, run-e2e-tests, run-e2e-tests-mssql, run-e2e-tests-mssql-multitenant, run-integration-tests, fresh-rebuild-docker-image]
+    # always() overrides the skip a draft inherits through needs, so the draft check is repeated.
+    if: always() && github.event.pull_request.draft != true
     steps:
     - name: Upload
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -694,13 +811,16 @@ jobs:
       - scan-actions-bidi
       - verify-lock-files
       - run-parity-pester-tests
+      - verify-secrets-contract
       - run-unit-tests
       - run-integration-tests
       - run-e2e-tests
       - run-e2e-tests-mssql
       - run-e2e-tests-mssql-multitenant
       - fresh-rebuild-docker-image
-    if: always()
+    # Reports whatever its dependencies did, except on a draft, where nothing runs. A draft cannot
+    # be merged or enqueued, and ready_for_review re-runs the workflow so the gate reports then.
+    if: always() && github.event.pull_request.draft != true
     runs-on: ubuntu-latest
     permissions:
       contents: read

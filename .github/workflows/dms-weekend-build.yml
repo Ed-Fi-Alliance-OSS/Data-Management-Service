@@ -1,0 +1,500 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: DMS Weekend Build
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 8 * * 6" # Scheduled the job to run every Saturday at 8 AM UTC
+
+permissions: read-all
+
+env:
+  CONFIGURATION: "Release"
+
+jobs:
+  visual-studio-build:
+    name: Build DMS with Visual Studio MSBuild
+    # Scheduled runs only in Ed-Fi-Alliance-OSS: a fork inherits the schedule but not the Slack
+    # webhook or the Ed-Fi resources the run acts on. workflow_dispatch still runs anywhere.
+    if: (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
+    runs-on: windows-2025-vs2026
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Cache Nuget packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-visual-studio-${{ hashFiles('src/Directory.Packages.props', 'src/dms/Directory.Build.targets', 'src/dms/**/packages.lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-visual-studio-
+            ${{ runner.os }}-nuget-
+
+      - name: Build DMS solution with Visual Studio MSBuild
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+
+          $vswherePath = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path -LiteralPath $vswherePath)) {
+              throw "vswhere.exe was not found at '$vswherePath'."
+          }
+
+          $visualStudioInstallations = @(
+              & $vswherePath `
+                  -latest `
+                  -products * `
+                  -requires Microsoft.Component.MSBuild `
+                  -format json `
+                  | ConvertFrom-Json
+          )
+          if ($visualStudioInstallations.Count -ne 1) {
+              throw "Expected one Visual Studio installation with MSBuild, but found $($visualStudioInstallations.Count)."
+          }
+
+          $visualStudio = $visualStudioInstallations[0]
+          $msbuildPath = Join-Path $visualStudio.installationPath "MSBuild\Current\Bin\MSBuild.exe"
+          if (-not (Test-Path -LiteralPath $msbuildPath)) {
+              throw "MSBuild.exe was not found at '$msbuildPath'."
+          }
+
+          $frontendProjectPath = Join-Path $env:GITHUB_WORKSPACE "src\dms\frontend\EdFi.DataManagementService.Frontend.AspNetCore\EdFi.DataManagementService.Frontend.AspNetCore.csproj"
+          $solutionPath = Join-Path $env:GITHUB_WORKSPACE "src\dms\EdFi.DataManagementService.sln"
+
+          Write-Host "Runner image: $env:ImageOS $env:ImageVersion"
+          Write-Host "Visual Studio: $($visualStudio.displayName) $($visualStudio.catalog.productDisplayVersion)"
+          Write-Host "Visual Studio path: $($visualStudio.installationPath)"
+          Write-Host "MSBuild path: $msbuildPath"
+          & $msbuildPath -nologo -version
+
+          $dotnetSdks = @(dotnet --list-sdks)
+          $dotnetSdks | ForEach-Object { Write-Host ".NET SDK: $_" }
+          if (-not ($dotnetSdks -match '^10\.0\.')) {
+              throw "The runner does not have a .NET 10 SDK."
+          }
+
+          $msbuildRuntimeType = (
+              & $msbuildPath $frontendProjectPath -nologo -getProperty:MSBuildRuntimeType
+              | Out-String
+          ).Trim()
+          if ($msbuildRuntimeType -ne "Full") {
+              throw "Expected Visual Studio full-framework MSBuild runtime type 'Full', but found '$msbuildRuntimeType'."
+          }
+          Write-Host "MSBuild runtime type: $msbuildRuntimeType"
+
+          & $msbuildPath `
+              $solutionPath `
+              -restore `
+              -m `
+              -nr:false `
+              -nologo `
+              -verbosity:minimal `
+              -property:Configuration=$env:CONFIGURATION
+
+  build-and-test:
+    name: Build and Run Tests (${{ matrix.identityprovider }})
+    if: (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    strategy:
+      fail-fast: false
+      matrix:
+        identityprovider: [keycloak, self-contained]
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Cache Docker layers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('src/Directory.Packages.props', 'src/dms/Dockerfile', 'src/dms/**') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build DMS Docker image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          load: true
+          context: ./src/dms
+          file: ./src/dms/Dockerfile
+          build-contexts: |
+            parentdir=./src
+          push: false
+          tags: ed-fi-api-local:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Cache Nuget packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: DMS Build - IdentityProvider (${{matrix.identityprovider}})
+        id: build_step
+        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider ${{matrix.identityprovider}} -LockedMode
+
+      - name: Restore .NET tools
+        if: success()
+        run: dotnet tool restore
+
+      - name: Run DMS Unit Tests
+        id: unit_test_step
+        run: ./build-dms.ps1 UnitTest -Configuration ${{ env.CONFIGURATION }}
+
+      - name: Run DMS End to End Tests - IdentityProvider (${{ matrix.identityprovider }})
+        id: e2e
+        if: success()
+        # This lane runs against the default DS 5.2 stack at the shipped MAXIMUM_PAGE_SIZE of 500,
+        # so exclude the DS 6.1 version-coupled scenarios, the DocumentCache fixture, and the
+        # partition sizing scenarios. DocumentCache runs below with its explicit overlay; partition
+        # sizing needs .env.cursorpartitions.e2e, whose MAXIMUM_PAGE_SIZE of 2 is the only setting
+        # under which a collection an E2E scenario can seed over HTTP is cut into more than one
+        # partition, and runs per-PR in run-e2e-tests-partition-sizing.
+        # The non-empty filter writes the filtered TRX uploaded by the following step.
+        run: ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)'
+
+      - name: Export DMS E2E Docker Logs
+        if: always() && steps.e2e.outcome == 'failure'
+        run: |
+          $logDir = "${{ github.workspace }}/logs/e2e"
+          Remove-Item -Path $logDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+          $containers = @(docker ps -a --format "{{.Names}}" | Sort-Object)
+
+          if ($containers.Count -eq 0) {
+              Write-Host "No Docker containers found for log export."
+              exit 0
+          }
+
+          foreach ($container in $containers) {
+              $logPath = Join-Path $logDir "$container.log"
+              docker logs $container > $logPath 2>&1
+          }
+
+      - name: Upload DMS E2E Logs
+        if: always() && steps.e2e.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dms-weekend-build-logs-${{ matrix.identityprovider }}-e2e
+          path: |
+            ${{ github.workspace }}/logs/e2e
+          retention-days: 10
+
+      - name: Upload DMS End to End Test Results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dms-weekend-build-e2e-results-${{ matrix.identityprovider }}
+          path: TestResults/EdFi.DataManagementService.Tests.E2E.filtered.trx
+          if-no-files-found: ignore
+
+      - name: Run DocumentCache End to End Tests - IdentityProvider (${{ matrix.identityprovider }})
+        id: document_cache_e2e
+        if: steps.e2e.outcome == 'success'
+        run: >-
+          ./build-dms.ps1 E2ETest
+          -Configuration ${{ env.CONFIGURATION }}
+          -SkipDockerBuild
+          -IdentityProvider ${{ matrix.identityprovider }}
+          -EnvironmentFile './.env.e2e'
+          -EnvironmentOverlayFile './.env.document-cache.e2e'
+          -TestFilter 'Category=@DocumentCacheHostedHappyPath'
+
+      - name: Export DocumentCache E2E Docker Logs
+        if: always() && steps.document_cache_e2e.outcome == 'failure'
+        run: |
+          $logDir = "${{ github.workspace }}/logs/document-cache-e2e"
+          Remove-Item -Path $logDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+          $containers = @(docker ps -a --format "{{.Names}}" | Sort-Object)
+          foreach ($container in $containers) {
+              $logPath = Join-Path $logDir "$container.log"
+              docker logs $container > $logPath 2>&1
+          }
+
+      - name: Upload DocumentCache E2E Logs
+        if: always() && steps.document_cache_e2e.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dms-weekend-build-logs-${{ matrix.identityprovider }}-document-cache-e2e
+          path: ${{ github.workspace }}/logs/document-cache-e2e
+          retention-days: 10
+
+      - name: Upload DocumentCache End to End Test Results
+        if: always() && steps.document_cache_e2e.outcome != 'skipped'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dms-weekend-build-document-cache-e2e-results-${{ matrix.identityprovider }}
+          path: TestResults/EdFi.DataManagementService.Tests.E2E.e2e-document-cache.trx
+          if-no-files-found: ignore
+
+  build-and-start-dms:
+    name: Build and Start DMS, Download OpenAPI Specs
+    if: (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Cache Nuget packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Cache Docker layers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('src/Directory.Packages.props', 'src/dms/Dockerfile', 'src/dms/**') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build DMS Docker image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          load: true
+          context: ./src/dms
+          file: ./src/dms/Dockerfile
+          build-contexts: |
+            parentdir=./src
+          push: false
+          tags: ed-fi-api-local:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build
+        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
+
+      - name: Start DMS Docker
+        run: |
+          ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -EnableConfig -r
+        working-directory: eng/docker-compose/
+
+      # Legacy DLL-backed flow (no bootstrap manifest, non-bootstrap compatibility): the claims-ready
+      # gate does not apply, and the DMS container restarts until this data store exists
+      # (restart: unless-stopped).
+      - name: Configure DMS Data Store
+        run: |
+          ./configure-local-data-store.ps1 -EnvironmentFile "./.env.e2e"
+        working-directory: eng/docker-compose/
+
+      - name: Wait for DMS to be ready
+        run: |
+          $maxAttempts = 10
+          $attempt = 0
+          $ready = $false
+
+          while (-not $ready -and $attempt -lt $maxAttempts) {
+            $attempt++
+            Write-Host "Waiting for DMS to be ready (attempt $attempt/$maxAttempts)..."
+
+            try {
+              $response = Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/resources-spec.json" -Method Get -TimeoutSec 5 -ErrorAction Stop
+              if ($response.StatusCode -eq 200) {
+                $ready = $true
+                Write-Host "DMS is ready!"
+              }
+            }
+            catch {
+              Write-Host "DMS not ready yet: $_"
+              Start-Sleep -Seconds 10
+            }
+          }
+
+          if (-not $ready) {
+            throw "DMS did not become ready within the timeout period"
+          }
+
+      - name: Download OpenAPI specs
+        run: |
+          mkdir specs
+          Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/resources-spec.json" -OutFile "specs/resources-spec.json"
+          Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/descriptors-spec.json" -OutFile "specs/descriptors-spec.json"
+          Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/discovery-spec.json" -OutFile "specs/discovery-spec.json"
+
+      - name: Upload Resources Spec
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: resources-spec
+          path: specs/resources-spec.json
+
+      - name: Upload Descriptors Spec
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: descriptors-spec
+          path: specs/descriptors-spec.json
+
+      - name: Upload Discovery Spec
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: discovery-spec
+          path: specs/discovery-spec.json
+
+  validate-resources-spec:
+    name: Validate Resources Spec
+    runs-on: ubuntu-latest
+    needs: build-and-start-dms
+    services:
+      swagger-editor:
+        image: swaggerapi/swagger-editor:v4.14.8
+        ports:
+          - 80:8080
+        options: >-
+          --health-cmd="curl -f http://localhost:8080 || exit 1"
+          --health-interval=5s
+          --health-timeout=10s
+          --health-retries=20
+    steps:
+      - name: Download Resources Spec from artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: resources-spec
+          path: specs
+
+      - name: Validate Resources Spec downloaded
+        uses: swaggerexpert/swagger-editor-validate@54b85e2f5c1fcdee85308dd57cad8c8ec19d3970
+        with:
+          swagger-editor-url: http://localhost/
+          definition-file: specs/resources-spec.json
+          default-timeout: 45000
+
+  validate-descriptors-spec:
+    name: Validate Descriptors Spec
+    runs-on: ubuntu-latest
+    needs: build-and-start-dms
+    services:
+      swagger-editor:
+        image: swaggerapi/swagger-editor:v4.14.8
+        ports:
+          - 80:8080
+        options: >-
+          --health-cmd="curl -f http://localhost:8080 || exit 1"
+          --health-interval=5s
+          --health-timeout=10s
+          --health-retries=20
+    steps:
+      - name: Download Descriptors Spec from artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: descriptors-spec
+          path: specs
+
+      - name: Validate Descriptors Spec downloaded
+        uses: swaggerexpert/swagger-editor-validate@54b85e2f5c1fcdee85308dd57cad8c8ec19d3970
+        with:
+          swagger-editor-url: http://localhost/
+          definition-file: specs/descriptors-spec.json
+          default-timeout: 45000
+
+  validate-discovery-spec:
+    name: Validate Discovery Spec
+    runs-on: ubuntu-latest
+    needs: build-and-start-dms
+    services:
+      swagger-editor:
+        image: swaggerapi/swagger-editor:v4.14.8
+        ports:
+          - 80:8080
+        options: >-
+          --health-cmd="curl -f http://localhost:8080 || exit 1"
+          --health-interval=5s
+          --health-timeout=10s
+          --health-retries=20
+    steps:
+      - name: Download Discovery Spec from artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: discovery-spec
+          path: specs
+
+      - name: Validate Discovery Spec downloaded
+        uses: swaggerexpert/swagger-editor-validate@54b85e2f5c1fcdee85308dd57cad8c8ec19d3970
+        with:
+          swagger-editor-url: http://localhost/
+          definition-file: specs/discovery-spec.json
+          default-timeout: 45000
+
+  notify-results:
+    name: Notify Results
+    runs-on: ubuntu-latest
+    needs:
+      [
+        visual-studio-build,
+        build-and-test,
+        validate-resources-spec,
+        validate-descriptors-spec,
+        validate-discovery-spec,
+      ]
+    if: always() && (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
+    steps:
+      - name: Notify Slack on success
+        if: >-
+          github.event_name != 'workflow_dispatch' &&
+          needs.visual-studio-build.result == 'success' &&
+          needs.build-and-test.result == 'success' &&
+          needs.validate-resources-spec.result == 'success' &&
+          needs.validate-descriptors-spec.result == 'success' &&
+          needs.validate-discovery-spec.result == 'success'
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
+        with:
+          payload: |
+            {
+              "text": ":heavy_check_mark: DMS Weekend Build passed"
+            }
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+
+      - name: Notify Slack on failure
+        if: >-
+          github.event_name != 'workflow_dispatch' &&
+          (needs.visual-studio-build.result == 'failure' ||
+          needs.build-and-test.result == 'failure' ||
+          needs.validate-resources-spec.result == 'failure' ||
+          needs.validate-descriptors-spec.result == 'failure' ||
+          needs.validate-discovery-spec.result == 'failure')
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
+        with:
+          payload: |
+            {
+              "text": ":x: DMS Weekend Build failed: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
+            }
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook

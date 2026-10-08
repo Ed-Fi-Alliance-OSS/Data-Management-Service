@@ -105,7 +105,7 @@ internal static class ProfileCollectionPlanner
                 // Unmatched and not creatable: reject immediately before Phase 2.
                 return new ProfileCollectionPlanResult.CreatabilityRejection(
                     $"Profile does not allow creating new collection items in scope '{input.JsonScope}': "
-                        + LogSanitizer.SanitizeForLog(
+                        + LogSanitizer.SanitizeInternalValueForLog(
                             FormatIdentity(visibleRequestItem.Address.SemanticIdentityInOrder)
                         )
                         + "."
@@ -243,7 +243,7 @@ internal static class ProfileCollectionPlanner
                 throw new ProfilePlannerContractMismatchException(
                     jsonScope: input.JsonScope,
                     invariantName: "pre-scoped input: JsonScope mismatch",
-                    message: $"RequestCandidate belongs to scope '{LogSanitizer.SanitizeForLog(jsonScope)}' "
+                    message: $"RequestCandidate belongs to scope '{LogSanitizer.SanitizeInternalValueForLog(jsonScope)}' "
                         + $"but planner input scope is '{input.JsonScope}'. "
                         + "Planner invariant violated: pre-scoped input: JsonScope mismatch."
                 );
@@ -260,7 +260,7 @@ internal static class ProfileCollectionPlanner
                 throw new ProfilePlannerContractMismatchException(
                     jsonScope: input.JsonScope,
                     invariantName: "pre-scoped input: JsonScope mismatch",
-                    message: $"VisibleRequestCollectionItem belongs to scope '{LogSanitizer.SanitizeForLog(address.JsonScope)}' "
+                    message: $"VisibleRequestCollectionItem belongs to scope '{LogSanitizer.SanitizeInternalValueForLog(address.JsonScope)}' "
                         + $"but planner input scope is '{input.JsonScope}'. "
                         + "Planner invariant violated: pre-scoped input: JsonScope mismatch."
                 );
@@ -277,7 +277,7 @@ internal static class ProfileCollectionPlanner
                     jsonScope: input.JsonScope,
                     invariantName: "pre-scoped input: parent scope mismatch",
                     message: $"VisibleRequestCollectionItem in scope '{input.JsonScope}' has parent address "
-                        + $"'{LogSanitizer.SanitizeForLog(address.ParentAddress.JsonScope)}' "
+                        + $"'{LogSanitizer.SanitizeInternalValueForLog(address.ParentAddress.JsonScope)}' "
                         + $"but expected '{input.ParentScopeAddress.JsonScope}'. "
                         + "Planner invariant violated: pre-scoped input: parent scope mismatch."
                 );
@@ -294,7 +294,7 @@ internal static class ProfileCollectionPlanner
                 throw new ProfilePlannerContractMismatchException(
                     jsonScope: input.JsonScope,
                     invariantName: "pre-scoped input: JsonScope mismatch",
-                    message: $"VisibleStoredCollectionRow belongs to scope '{LogSanitizer.SanitizeForLog(address.JsonScope)}' "
+                    message: $"VisibleStoredCollectionRow belongs to scope '{LogSanitizer.SanitizeInternalValueForLog(address.JsonScope)}' "
                         + $"but planner input scope is '{input.JsonScope}'. "
                         + "Planner invariant violated: pre-scoped input: JsonScope mismatch."
                 );
@@ -311,7 +311,7 @@ internal static class ProfileCollectionPlanner
                     jsonScope: input.JsonScope,
                     invariantName: "pre-scoped input: parent scope mismatch",
                     message: $"VisibleStoredCollectionRow in scope '{input.JsonScope}' has parent address "
-                        + $"'{LogSanitizer.SanitizeForLog(address.ParentAddress.JsonScope)}' "
+                        + $"'{LogSanitizer.SanitizeInternalValueForLog(address.ParentAddress.JsonScope)}' "
                         + $"but expected '{input.ParentScopeAddress.JsonScope}'. "
                         + "Planner invariant violated: pre-scoped input: parent scope mismatch."
                 );
@@ -333,7 +333,7 @@ internal static class ProfileCollectionPlanner
                     jsonScope: input.JsonScope,
                     invariantName: "current row identity uniqueness",
                     message: $"Current rows contain duplicate semantic identity in scope '{input.JsonScope}': "
-                        + $"{LogSanitizer.SanitizeForLog(FormatIdentity(row.SemanticIdentityInOrder))}. "
+                        + $"{LogSanitizer.SanitizeInternalValueForLog(FormatIdentity(row.SemanticIdentityInOrder))}. "
                         + "Planner invariant violated: current row identity uniqueness."
                 );
             }
@@ -354,7 +354,7 @@ internal static class ProfileCollectionPlanner
                     jsonScope: input.JsonScope,
                     invariantName: "duplicate visible stored row",
                     message: $"Duplicate visible stored row in scope '{input.JsonScope}': "
-                        + $"{LogSanitizer.SanitizeForLog(FormatIdentity(identity))}. "
+                        + $"{LogSanitizer.SanitizeInternalValueForLog(FormatIdentity(identity))}. "
                         + "Planner invariant violated: duplicate visible stored row."
                 );
             }
@@ -375,7 +375,7 @@ internal static class ProfileCollectionPlanner
                     jsonScope: input.JsonScope,
                     invariantName: "reverse stored coverage",
                     message: $"VisibleStoredCollectionRow for scope '{input.JsonScope}' with identity "
-                        + $"{LogSanitizer.SanitizeForLog(FormatIdentity(identity))} "
+                        + $"{LogSanitizer.SanitizeInternalValueForLog(FormatIdentity(identity))} "
                         + "has no matching current row. "
                         + "Planner invariant violated: reverse stored coverage."
                 );
@@ -430,7 +430,7 @@ internal static class ProfileCollectionPlanner
                     jsonScope: input.JsonScope,
                     invariantName: "duplicate visible request candidate",
                     message: $"Duplicate semantic identity among flattened request candidates in scope '{input.JsonScope}': "
-                        + $"{LogSanitizer.SanitizeForLog(FormatCandidateIdentity(candidate))}. "
+                        + $"{LogSanitizer.SanitizeInternalValueForLog(FormatCandidateIdentity(candidate))}. "
                         + "Planner invariant violated: duplicate visible request candidate."
                 );
             }
@@ -451,7 +451,7 @@ internal static class ProfileCollectionPlanner
                     jsonScope: input.JsonScope,
                     invariantName: "duplicate visible request item",
                     message: $"Duplicate visible request item in scope '{input.JsonScope}': "
-                        + $"{LogSanitizer.SanitizeForLog(FormatIdentity(identity))}. "
+                        + $"{LogSanitizer.SanitizeInternalValueForLog(FormatIdentity(identity))}. "
                         + "Planner invariant violated: duplicate visible request item."
                 );
             }
@@ -472,7 +472,7 @@ internal static class ProfileCollectionPlanner
                     jsonScope: input.JsonScope,
                     invariantName: "request-side coverage",
                     message: $"VisibleRequestCollectionItem for scope '{input.JsonScope}' with identity "
-                        + $"{LogSanitizer.SanitizeForLog(FormatIdentity(identity))} "
+                        + $"{LogSanitizer.SanitizeInternalValueForLog(FormatIdentity(identity))} "
                         + "has no matching request candidate. "
                         + "Planner invariant violated: request-side coverage."
                 );
@@ -496,7 +496,7 @@ internal static class ProfileCollectionPlanner
                     jsonScope: input.JsonScope,
                     invariantName: "request-side coverage: orphan candidate",
                     message: $"Request candidate for scope '{input.JsonScope}' with identity "
-                        + $"{LogSanitizer.SanitizeForLog(FormatCandidateIdentity(candidate))} "
+                        + $"{LogSanitizer.SanitizeInternalValueForLog(FormatCandidateIdentity(candidate))} "
                         + "has no matching VisibleRequestCollectionItem. "
                         + "Planner invariant violated: request-side coverage: orphan candidate."
                 );
@@ -533,7 +533,7 @@ internal static class ProfileCollectionPlanner
 
     /// <summary>
     /// Formats a candidate's semantic identity as a human-readable diagnostics string. Used in
-    /// exception messages alongside <see cref="LogSanitizer.SanitizeForLog"/>.
+    /// exception messages alongside <see cref="LogSanitizer.SanitizeInternalValueForLog"/>.
     /// </summary>
     private static string FormatCandidateIdentity(CollectionWriteCandidate candidate) =>
         SemanticIdentityKeys.FormatForDiagnostics(candidate.SemanticIdentityInOrder);
@@ -543,7 +543,7 @@ internal static class ProfileCollectionPlanner
     /// (e.g. <c>"$.addressId=\"A1\""</c>). The output embeds schema-derived
     /// <see cref="SemanticIdentityPart.RelativePath"/> values verbatim; callers that
     /// include the result in log or exception messages MUST wrap the output in
-    /// <c>LogSanitizer.SanitizeForLog</c> to prevent log-forging via schema-sourced
+    /// <c>LogSanitizer.SanitizeInternalValueForLog</c> to prevent log-forging via schema-sourced
     /// control characters.
     /// </summary>
     private static string FormatIdentity(ImmutableArray<SemanticIdentityPart> identity) =>

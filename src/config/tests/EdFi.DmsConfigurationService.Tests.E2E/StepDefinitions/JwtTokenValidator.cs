@@ -84,6 +84,32 @@ public static class JwtTokenValidator
         return true;
     }
 
+    /// <summary>
+    /// Reads every value of one claim type, distinguishing a claim the provider never emitted
+    /// from one that is present. A multivalued claim, such as the role claim both providers emit,
+    /// arrives as one entry per value.
+    /// </summary>
+    public static bool TryGetClaimValues(string token, string claimType, out IReadOnlyList<string> values)
+    {
+        values = [];
+        var tokenHandler = new JwtSecurityTokenHandler();
+        if (!tokenHandler.CanReadToken(token))
+        {
+            return false;
+        }
+
+        List<string> claimValues =
+        [
+            .. tokenHandler
+                .ReadJwtToken(token)
+                .Claims.Where(claim => string.Equals(claim.Type, claimType, StringComparison.Ordinal))
+                .Select(claim => claim.Value),
+        ];
+
+        values = claimValues;
+        return claimValues.Count > 0;
+    }
+
     public static bool ValidateEdOrgIds(string token, string edOrgIds)
     {
         try

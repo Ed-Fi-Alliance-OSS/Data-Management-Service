@@ -88,6 +88,13 @@ internal sealed record CachedProfileStore(
 /// Provides profile resolution for requests, catalog-level access to profiles,
 /// and cached profile-filtered OpenAPI specifications.
 /// </summary>
+/// <remarks>
+/// Failures are never cached. A <see cref="ProfileDataUnavailableException" /> from the provider
+/// escapes the HybridCache factory, so nothing is stored, every caller joined to that fetch
+/// receives the exception, and the next request fetches again. There is no staleness policy: an
+/// expired catalog is gone, never served stale, so a failed refresh fails closed (503) rather than
+/// falling back to an older catalog or to unprofiled access.
+/// </remarks>
 internal class CachedProfileService(
     IProfileCmsProvider profileCmsProvider,
     IProfileDataValidator profileDataValidator,
@@ -100,6 +107,11 @@ internal class CachedProfileService(
     private const string ApplicationProfilesCacheKeyPrefix = "ApplicationProfiles";
     private const string ProfileCatalogCacheKeyPrefix = "ProfileCatalog";
     private const string ProfileOpenApiCacheKeyPrefix = "ProfileOpenApi";
+
+    /// <summary>
+    /// The most profile-definition fetches one catalog build keeps in flight against CMS.
+    /// </summary>
+    internal const int MaxConcurrentProfileFetches = 8;
     private readonly ProfileOpenApiSpecificationFilter profileFilter = new(logger);
 
     private static string GetApplicationCacheKey(string? tenantId, long applicationId)
@@ -109,7 +121,7 @@ internal class CachedProfileService(
             : $"{ApplicationProfilesCacheKeyPrefix}:{tenantId}:{applicationId}";
     }
 
-    private static string GetCatalogCacheKey(string? tenantId) =>
+    internal static string GetCatalogCacheKey(string? tenantId) =>
         string.IsNullOrEmpty(tenantId)
             ? ProfileCatalogCacheKeyPrefix
             : $"{ProfileCatalogCacheKeyPrefix}:{tenantId}";
@@ -192,6 +204,9 @@ internal class CachedProfileService(
                         applicationId
                     );
 
+                    // A failed fetch throws ProfileDataUnavailableException out of this factory, so it
+                    // is never cached, and a CMS 404 for the application is such a failure. Only a
+                    // completed fetch reaches the code below.
                     ApplicationProfileInfo? appInfo = await profileCmsProvider.GetApplicationProfileInfoAsync(
                         applicationId,
                         tenantId
@@ -210,6 +225,10 @@ internal class CachedProfileService(
                     // Fetch profile store to get names for the IDs
                     CachedProfileStore profileStore = await GetOrFetchProfileStoreAsync(tenantId);
 
+                    // An assigned id missing from the catalog CMS returned is dropped. That is not proof
+                    // the profile was deleted or is invalid: this entry and the catalog entry have
+                    // independent lifetimes, so a catalog older or newer than the assignments gives
+                    // the same result.
                     var profilesById = new Dictionary<long, string>();
                     foreach (long profileId in appInfo.ProfileIds)
                     {
@@ -220,7 +239,7 @@ internal class CachedProfileService(
                         else
                         {
                             logger.LogWarning(
-                                "Profile ID {ProfileId} not found in profile store for application {ApplicationId}",
+                                "Profile ID {ProfileId} is missing from the profile catalog CMS returned, for application {ApplicationId}",
                                 profileId,
                                 applicationId
                             );
@@ -636,7 +655,7 @@ internal class CachedProfileService(
                 {
                     logger.LogDebug(
                         "Cache miss for profile catalog, fetching from CMS for tenant: {Tenant}",
-                        LoggingSanitizer.SanitizeForLogging(tenantId)
+                        LoggingSanitizer.SanitizeInternalValueForLogging(tenantId)
                     );
 
                     IReadOnlyList<CmsProfileResponse> profiles = await profileCmsProvider.GetProfilesAsync(
@@ -647,7 +666,7 @@ internal class CachedProfileService(
                     {
                         logger.LogDebug(
                             "No profiles found for tenant: {Tenant}",
-                            LoggingSanitizer.SanitizeForLogging(tenantId)
+                            LoggingSanitizer.SanitizeInternalValueForLogging(tenantId)
                         );
                         return new CachedProfileStore(
                             new Dictionary<string, ProfileDefinition>(StringComparer.OrdinalIgnoreCase),
@@ -655,17 +674,29 @@ internal class CachedProfileService(
                         );
                     }
 
-                    // Fetch all profile definitions in parallel
-                    var fetchTasks = profiles.Select(async profile =>
-                    {
-                        CmsProfileResponse? profileResponse = await profileCmsProvider.GetProfileAsync(
-                            profile.Id,
-                            tenantId
-                        );
-                        return (ProfileId: profile.Id, Response: profileResponse);
-                    });
-
-                    var fetchResults = await Task.WhenAll(fetchTasks);
+                    // Fetch the profile definitions with bounded parallelism. Any failed fetch, of the list
+                    // or of one definition, throws ProfileDataUnavailableException out of this factory, so
+                    // a partial catalog is never cached. Only a CMS 404 for a definition comes back as
+                    // null, and that one profile is skipped below.
+                    //
+                    // Bounded as load mitigation: the catalog is all-or-nothing, so one failed fetch
+                    // fails the whole attempt, and the unbounded burst of one request per profile
+                    // coincided with the CMS timeouts tracked in DMS-1556 (their cause is not
+                    // established). After the first failure no further fetches start, so a failing
+                    // attempt ends sooner and stops adding load to a struggling CMS.
+                    var fetchResults = new (long ProfileId, CmsProfileResponse? Response)[profiles.Count];
+                    await Parallel.ForEachAsync(
+                        Enumerable.Range(0, profiles.Count),
+                        new ParallelOptions { MaxDegreeOfParallelism = MaxConcurrentProfileFetches },
+                        async (index, _) =>
+                        {
+                            long profileId = profiles[index].Id;
+                            fetchResults[index] = (
+                                profileId,
+                                await profileCmsProvider.GetProfileAsync(profileId, tenantId)
+                            );
+                        }
+                    );
 
                     // Parse all profiles and build the store
                     var profilesByName = new Dictionary<string, ProfileDefinition>(
@@ -678,9 +709,9 @@ internal class CachedProfileService(
                         if (profileResponse is null)
                         {
                             logger.LogWarning(
-                                "Profile fetch returned null. ProfileId: {ProfileId}, Tenant: {Tenant}",
+                                "Listed profile was deleted in CMS before its definition was fetched. ProfileId: {ProfileId}, Tenant: {Tenant}",
                                 profileId,
-                                LoggingSanitizer.SanitizeForLogging(tenantId)
+                                LoggingSanitizer.SanitizeInternalValueForLogging(tenantId)
                             );
                             continue;
                         }
@@ -694,8 +725,8 @@ internal class CachedProfileService(
                             logger.LogWarning(
                                 "Failed to parse profile definition. ProfileId: {ProfileId}, Name: {Name}, Error: {Error}",
                                 profileResponse.Id,
-                                LoggingSanitizer.SanitizeForLogging(profileResponse.Name),
-                                LoggingSanitizer.SanitizeForLogging(
+                                LoggingSanitizer.SanitizeInternalValueForLogging(profileResponse.Name),
+                                LoggingSanitizer.SanitizeInternalValueForLogging(
                                     parseResult.ErrorMessage ?? "Unknown error"
                                 )
                             );
@@ -714,12 +745,14 @@ internal class CachedProfileService(
                             logger.LogError(
                                 "Profile validation failed with errors. ProfileId: {ProfileId}, Name: {Name}, Errors: {Errors}",
                                 profileResponse.Id,
-                                LoggingSanitizer.SanitizeForLogging(profileResponse.Name),
+                                LoggingSanitizer.SanitizeInternalValueForLogging(profileResponse.Name),
                                 string.Join(
                                     "; ",
                                     validationResult
                                         .Failures.Where(f => f.Severity == ValidationSeverity.Error)
-                                        .Select(f => LoggingSanitizer.SanitizeForLogging(f.Message))
+                                        .Select(f =>
+                                            LoggingSanitizer.SanitizeInternalValueForLogging(f.Message)
+                                        )
                                 )
                             );
                             continue;
@@ -731,12 +764,14 @@ internal class CachedProfileService(
                             logger.LogWarning(
                                 "Profile validation succeeded with warnings. ProfileId: {ProfileId}, Name: {Name}, Warnings: {Warnings}",
                                 profileResponse.Id,
-                                LoggingSanitizer.SanitizeForLogging(profileResponse.Name),
+                                LoggingSanitizer.SanitizeInternalValueForLogging(profileResponse.Name),
                                 string.Join(
                                     "; ",
                                     validationResult
                                         .Failures.Where(f => f.Severity == ValidationSeverity.Warning)
-                                        .Select(f => LoggingSanitizer.SanitizeForLogging(f.Message))
+                                        .Select(f =>
+                                            LoggingSanitizer.SanitizeInternalValueForLogging(f.Message)
+                                        )
                                 )
                             );
                         }
@@ -761,7 +796,7 @@ internal class CachedProfileService(
                     logger.LogDebug(
                         "Cached {Count} profiles for tenant: {Tenant}",
                         profilesByName.Count,
-                        LoggingSanitizer.SanitizeForLogging(tenantId)
+                        LoggingSanitizer.SanitizeInternalValueForLogging(tenantId)
                     );
 
                     return new CachedProfileStore(profilesByName, nameById);
@@ -797,8 +832,8 @@ internal class CachedProfileService(
         {
             logger.LogWarning(
                 "Profile not found in catalog. ProfileName: {ProfileName}, TenantId: {TenantId}",
-                LoggingSanitizer.SanitizeForLogging(profileName),
-                LoggingSanitizer.SanitizeForLogging(tenantId)
+                LoggingSanitizer.SanitizeInternalValueForLogging(profileName),
+                LoggingSanitizer.SanitizeInternalValueForLogging(tenantId)
             );
             return null;
         }
@@ -814,8 +849,8 @@ internal class CachedProfileService(
             {
                 logger.LogDebug(
                     "Cache miss for profile OpenAPI spec, generating. ProfileName: {ProfileName}, TenantId: {TenantId}, SchemaLoadId: {SchemaLoadId}",
-                    LoggingSanitizer.SanitizeForLogging(profileName),
-                    LoggingSanitizer.SanitizeForLogging(tenantId),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(profileName),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(tenantId),
                     apiSchemaLoadId
                 );
 
@@ -830,8 +865,8 @@ internal class CachedProfileService(
 
                 logger.LogDebug(
                     "Cached profile OpenAPI spec. ProfileName: {ProfileName}, TenantId: {TenantId}",
-                    LoggingSanitizer.SanitizeForLogging(profileName),
-                    LoggingSanitizer.SanitizeForLogging(tenantId)
+                    LoggingSanitizer.SanitizeInternalValueForLogging(profileName),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(tenantId)
                 );
 
                 // Return as string for serialization

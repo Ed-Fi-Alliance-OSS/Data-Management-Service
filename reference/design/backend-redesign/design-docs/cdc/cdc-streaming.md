@@ -60,7 +60,7 @@ DocumentCache or CDC/Kafka content, not to unrelated material in the same artifa
 | [`multitenancy-analysis.md`](../../../multitenancy-analysis.md) | Stale-but-useful | Its database-engine constraints and topic-per-instance isolation guidance were incorporated here. Its OpenSearch material is historical and is not part of the relational CDC design. |
 | Deleted `remove-legacy-backend.md` | Historical | Records the completed removal of the document-store backend and its Kafka test path. It remains useful only as Git history and defines no active contract. |
 | Legacy document-store connector configurations and KafkaMessaging setup/test instructions | Obsolete | Targeted removed JSON columns and the shared legacy topic. They must not be restored or used to configure relational CDC; the proposed relational E2E replacement is defined by this design and the implementation stories. |
-| [`eng/docker-compose/README.md`](../../../../../eng/docker-compose/README.md), [`local-development-setup.http`](../../../../../src/dms/tests/RestClient/local-development-setup.http), and the [Instance Management E2E README](../../../../../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md) | Current | Describe present implementation state: Kafka infrastructure may be started, but relational connector registration has not landed. Their future opt-in must implement this design. |
+| [`eng/docker-compose/README.md`](../../../../../eng/docker-compose/README.md), [`local-development-setup.http`](../../../../../src/dms/tests/RestClient/local-development-setup.http), and the [Instance Management E2E README](../../../../../src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md) | Current | Managed relational registration is shipped through the local/published bootstrap and DMS E2E opt-in. These entry points link to the [operator procedures](../../../../cdc-documentation/README.md); manual RestClient and Instance Management route-context setup do not implement CDC admission. Procedure-to-test mappings and result-recording requirements are maintained in the [qualification index](../../../../cdc-documentation/cdc-inv-evidence.md); execution reports are retained outside the repository. |
 
 ## Scope and Architecture
 
@@ -486,6 +486,17 @@ and [`SubmittedRecords`](https://github.com/apache/kafka/blob/4.3.0/connect/runt
 The heartbeat table is not projection work, completeness evidence, a public event source,
 or part of the immutable binding record.
 
+Projection observation freshness is measured on the controller host clock. The
+production standalone status call must perform a new durable read, return its host
+process-observation envelope within the current call interval, and complete within
+the configured observation-age bound. Correlate the completed read with a host-clock
+completion timestamp before capturing the provider barrier. The database's durable
+observation timestamp remains diagnostic data for projection status and queue age;
+it is not compared with the host request-start time. SQL Server clock granularity
+and cross-host clock skew cannot establish or invalidate that call ordering. Missing
+durable evidence, stale or mismatched host envelopes, and expired calls still reject
+readiness. Provider positions, not wall-clock comparison, prove barrier coverage.
+
 For initial combined readiness only, deployment automation performs this sequence:
 
 1. Verify that the setup controller created the selected new physical database and has not
@@ -543,6 +554,14 @@ strict `lsn`, `lsn_commit`, a replication-slot flush position, or formatted stri
 heartbeat table is part of the publication, so the next action-query update from an idle
 database drives logical decoding beyond the captured WAL position.
 
+Before it has a completely processed LSN, the pinned connector can commit an initial
+offset containing only the numeric `lsn`, `txId`, and `ts_usec` fields. Recognize this
+exact initial-context shape as awaiting streaming during initial registration, not as
+an absent offset or a streaming position. Registration may wait within its existing
+deadline for a later `lsn_proc`; it must not substitute `lsn` or recreate the connector.
+This marker supplies no provider-barrier or readiness evidence. Its reappearance after
+establishment fails closed, as does malformed or unrecognized offset evidence.
+
 **SQL Server adapter**
 
 After the projection-health response selected by the applicable readiness sequence, read
@@ -557,6 +576,17 @@ compare commit LSN, then change LSN, then event serial number as unsigned values
 heartbeat update after-image has event serial number `2`, so the connector is caught up
 only at or after `(barrierCommitLsn, barrierChangeLsn, 2)`. Null/snapshot positions do not
 pass. Comparison uses the decoded unsigned bytes, not locale or string collation.
+
+The pinned Debezium 3.6.0 connector also emits an idle commit boundary after a streaming
+scan finds no captured rows: a valid nonzero `commit_lsn`, the literal string `"NULL"`
+for `change_lsn`, and `event_serial_no = 0`. This complete form represents an inclusive
+restart at the beginning of the commit. Preserve the marker in observations and incident
+evidence, and require its commit to remain in retained source history. It crosses the
+heartbeat barrier only when its commit LSN is strictly greater than the barrier commit;
+it cannot certify a barrier in the same commit. Do not synthesize a change LSN. Missing
+fields, JSON null, snapshot offsets, and other serial values do not qualify as this idle
+form. The initial `"NULL"` marker with serial 1 remains awaiting streaming. Source-partition,
+snapshot, continuity, freshness, and independent readiness checks still apply.
 
 The pinned Connect/Debezium image must support the connector-offset REST endpoint and
 these exact provider offset fields. Image qualification and provider integration tests
@@ -632,6 +662,24 @@ substitutes for retained CDC rows. See
 and the Debezium
 [PostgreSQL connector history-loss guidance](https://debezium.io/documentation/reference/3.6/connectors/postgresql.html).
 
+For SQL Server, a committed offset below the retained minimum proves a history gap and
+produces `lost`. An offset above the sampled maximum produces `unknown`: provider history
+is read before the Connect offset, so the maximum may be an older observation of an
+advancing range. This does not prove either continuity or terminal loss.
+
+SQL Server range refresh applies only while continuity is `unknown` with the
+`ProviderHistoryUnknown` diagnostic at `$.providerHistory.retainedRangeEnd`. Initial
+writer admission waits the configured poll interval and repeats the admission pass within
+its existing operation deadline. Established validation also requires an observed offset
+and allows at most three provider/offset pairs, including the initial pair, with the
+configured poll interval before each refresh. Both paths read the provider range before
+reading a fresh Connect offset, so an advancing retention floor is compared with the new
+offset. Refresh does not reset the operation deadline or apply to unrelated SQL Server
+`unknown` results. If evidence remains unknown, admission/readiness remains withheld;
+affirmative continuity and all other prerequisites are still required. This sampling rule
+does not authorize CDC on a clone or restored database; the
+[physical-source replacement restriction](#v1-physical-source-replacement-deferral) still applies.
+
 The deployment-owned status has three continuity outcomes:
 
 - `healthy`: the exact resume position is currently proved for every required provider
@@ -641,9 +689,10 @@ The deployment-owned status has three continuity outcomes:
   the controller does not start, restart, or resume the connector. Native recovery is subject
   to the boundary below. A later check may return to `healthy` only with complete
   affirmative evidence; and
-- `lost`: a required artifact was removed or re-created, the committed position fell
-  outside retained history, or a successful Connect query proves the established binding's
-  expected offset missing, malformed, or source-mismatched. Deployment state durably
+- `lost`: a required artifact was removed or re-created, a retained-history gap is proved
+  (including a SQL Server committed offset below the retained minimum), or a successful
+  Connect query proves the established binding's expected offset missing, malformed, or
+  source-mismatched. Deployment state durably
   latches `SourceHistoryContinuityLost` for that binding generation, stops the old connector,
   and keeps combined readiness false. The latch cannot be cleared by later artifact
   recreation, offset mutation, a healthy-looking lag value, or a snapshot.
@@ -683,6 +732,15 @@ image must prove that stopped target state survives worker restart and permits o
 inspection without task consumption. A worker startup that recovers a connector without
 a verified stopped state follows the native recovery boundary, even if startup was requested
 through a bootstrap wrapper.
+
+A standalone start, restart, or resume starts its invocation-owned projection executor
+only after fresh eligible preflight under the controller session (including verified
+`STOPPED` evidence for start). Reusing an already started executor is idempotent.
+Initialization and rejected preflight do not start processing. This supplies the process
+health observation needed for fresh post-operation readiness; it does not certify another
+DMS process's health, authorize initial writers, or renew a snapshot barrier. Read-only
+status/watch/validate retain their existing standalone observation limits. DMS-1326
+qualifies this command/runtime integration through marked lifecycle invocations.
 
 After an unclean worker exit, unverified shutdown, native task reassignment, or internal
 recovery, records may be consumed and published before the controller revalidates continuity.
@@ -808,9 +866,11 @@ artifact recreation, or status poll clears it. Explicit binding retirement remov
 after the connector and every governed artifact are retired in the required cleanup order.
 
 `maxRecordBytes` is intentionally absent from the binding record. It is a positive signed
-32-bit per-target operational ceiling for the pinned Kafka serialization and one-record
-produce-request framing, not a claim about the largest valid document across configurable
-schemas and extensions. It is not copied from the HTTP request-body limit because cache
+32-bit per-target operational ceiling for the pinned producer's local per-record size
+check after key/value serialization, including its record-batch size estimate with
+compression disabled. It does not bound the complete produce request on the wire or
+claim to describe the largest valid document across configurable schemas and extensions.
+It is not copied from the HTTP request-body limit because cache
 materialization can inject links and the transform adds the public envelope. Deployment
 automation may increase it in place through the coordinated procedure below without
 changing the binding generation or topic.
@@ -1081,15 +1141,20 @@ and live connector validation rejects drift from them. V1 does not rely on produ
 defaults supplied by the Kafka client or pinned Connect image.
 
 The authoritative topic/message contract defines `maxRecordBytes` as an enforced
-operational ceiling for a fully materialized public record and its one-record Kafka
+operational ceiling for the pinned producer's local per-record size estimate after public
+key/value serialization, including record-batch framing but excluding complete-request
 framing. After the real transform and converters serialize each retained record, the
 pinned producer's `max.request.size` check is the authoritative pre-publication guard. An
 over-budget record emits no partial public record, fails the connector task under
 `errors.tolerance=none`, and keeps combined readiness false. The topic sets
 `max.message.bytes` to the same operational value. Before registration, deployment
-automation verifies that broker request, record-batch, and replica-fetch limits accept the
-same budget. A self-managed deployment configures `socket.request.max.bytes`, the
-effective `message.max.bytes`/topic override, `replica.fetch.max.bytes`, and
+automation verifies that record-batch and replica-fetch limits accept that budget. Broker
+request capacity is separate: `socket.request.max.bytes` must be at least
+`maxRecordBytes + 1048576`, with widened arithmetic, and deployment qualification must
+establish sufficient capacity for supported batching and protocol overhead. The 1 MiB
+allowance is an operational floor, not an exact request-size calculation; deployments
+provision larger request limits when needed. A self-managed deployment also configures
+the effective `message.max.bytes`/topic override, `replica.fetch.max.bytes`, and
 `replica.fetch.response.max.bytes` accordingly; a managed deployment must provide an
 equivalent verifiable capability. Independently operated consumers set
 `max.partition.fetch.bytes` and `fetch.max.bytes` to at least the operational value and
@@ -1244,6 +1309,34 @@ database-per-instance isolation model.
   capture instance for `dms.DocumentProjectionWork`.
 - Use a least-privilege login with CDC read access plus only the access needed to read and
   update the internal heartbeat singleton; do not grant document-table writes.
+- The deployment supplies the SQL Server login and credentials. During
+  `InitialCreateOrExactMatch`, provider setup may create a missing database user mapped
+  to that existing login, then apply and validate the narrowly scoped connector grants.
+  The qualified local workflow uses the same login and user name, supplied through
+  `Cdc:DatabaseConnectorPrincipal`, with the matching connector `database.user` identity.
+  Automatic user creation supports this same-name SQL login mapping only; it does not
+  create logins, create or rotate credentials, or provide a general identity-mapping API.
+  Existing users must map to the expected login SID and pass the principal-type and
+  effective-permission checks. Missing logins, conflicting mappings, unsupported principal
+  types, and elevated connector permissions are rejected without automatic repair.
+  User creation runs within the existing managed initial provider setup/retry boundary,
+  after source/provenance checks and before connector registration or writer publication.
+  Once provider completion is durable, even an initial-enable retry uses `ValidateOnly`:
+  missing users and mapping mismatches fail validation and are never recreated or remapped.
+  [DMS-1326](../../epics/19-cdc-kafka/07-ops-docs-runbooks.md#sql-server-initial-connector-user-mapping)
+  owns implementation and qualification of this contract amendment. The provider checks
+  an enabled SQL login and an instance-authenticated SQL user with the same SID; it rejects
+  server role membership, ownership and elevated server grants before mapping, then reuses
+  the existing database effective-permission checks. Setup requires visibility of server
+  principal definitions (`VIEW ANY DEFINITION`, also implied by the setup administrator's
+  authority); unavailable metadata or insufficient `CREATE USER` authority fails closed.
+  Login/user identity rejection uses `CDC_SQLSERVER_CONNECTOR_LOGIN_MISSING`,
+  `CDC_SQLSERVER_CONNECTOR_LOGIN_UNSUPPORTED`, `CDC_SQLSERVER_CONNECTOR_LOGIN_ELEVATED`,
+  `CDC_SQLSERVER_CONNECTOR_USER_MAPPING_MISMATCH`, or (in validation-only mode)
+  `CDC_SQLSERVER_CONNECTOR_USER_MISSING`. Setup-authority failures use
+  `CDC_SQLSERVER_SETUP_PRINCIPAL_FAILURE`. These diagnostics never expose SIDs or credentials.
+  The [user-mapping test index](../../../../cdc-documentation/cdc-inv-evidence.md#sql-server-initial-user-mapping)
+  identifies provider, controller, and public-wrapper coverage.
 - Configure `DocumentUuid` as the Debezium message key for both tables.
 - `DocumentCache.DocumentUuid` remains non-indexed; provider CDC captures the column and
   the configured custom key does not change the table's `DocumentId` clustered key.
@@ -1438,6 +1531,10 @@ readiness. A partial, out-of-order, or unverifiable rollout remains not ready. I
 over-budget record already failed the connector, the task resumes from its uncommitted
 source position after the larger policy is effective.
 
+Broker request limits retain the separate 1 MiB minimum allowance above the new ceiling;
+stronger existing limits are preserved. Deployment qualification must be revisited when
+an increase or batching/configuration change exceeds its qualified request capacity.
+
 For v1, consumer-capacity confirmation is an explicit structured attestation from the
 operator authorized to administer the CDC deployment, using the existing administrative
 trust boundary. The operator obtains confirmation from every affected consumer owner that
@@ -1470,6 +1567,15 @@ invocation. Changed consumer deployments require updated evidence. A different b
 source, public topic, or requested ceiling cannot reuse the acknowledgement. Missing or
 mismatched confirmation prevents advancement, and a partially completed increase remains
 not ready. No automatic rollback or lowering of already increased limits is implied.
+
+After confirmed capacity alignment and fresh pre-start eligibility, the size-increase
+controller starts its invocation-owned projection executor before connector resume.
+An already running executor is preserved; this does not reactivate the projection,
+rebuild the source, authorize API writers, or change the caller's disposal ownership.
+An executor-start failure leaves the operation pending and does not resume the
+connector. Standalone completion requires this executor's fresh observations as well
+as the ordinary provider, broker, connector, offset and lag checks. Status/watch remain
+observation-only and cannot complete a pending size increase.
 
 ### Deferred new-topic cutover
 
@@ -1617,10 +1723,12 @@ Local bootstrap exposes an explicit opt-in such as `-EnableKafkaCdc`.
   exactly one partition, `cleanup.policy=delete`, `retention.ms=-1`, and
   `retention.bytes=-1`; it rejects compaction or any finite time/size retention.
 - Before connector registration, bootstrap verifies producer `max.request.size` and
-  `buffer.memory` plus the broker request, record-batch, and replica-fetch path against
-  `maxRecordBytes`; an unverifiable or smaller limit fails setup rather than relying on
-  Kafka defaults. It also requires deployment-provisioned Kafka Connect worker heap beyond
-  the configured producer buffer.
+  `buffer.memory` plus the record-batch and replica-fetch path against `maxRecordBytes`,
+  and broker request capacity against `maxRecordBytes + 1048576`. An unverifiable or smaller
+  limit fails setup rather than relying on Kafka defaults. These numeric checks do not
+  replace deployment qualification of request capacity for batching and protocol overhead.
+  It also requires deployment-provisioned Kafka Connect worker heap beyond the configured
+  producer buffer.
 - The same workflow provisions and idempotently validates the binding-scoped topic ACLs
   before connector registration. It emits literal public-topic grants for the connector
   and deployment-supplied consumer principals. It grants the connector principal only the

@@ -21,15 +21,19 @@ This runbook covers these DocumentCache operations:
 - SQL Server projection prerequisite correction when lifecycle is `Disabled`; and
 - the required explicit scrub after suspected restore or unsupported direct mutation.
 
-Kafka connector setup, connector status, topic operations, binding retirement, source
-replacement, downstream publication containment, and consumer-state recovery are Kafka/CDC
-runbook concerns. Use this runbook only up to the DMS projection boundary, then follow
-[Kafka/CDC operations](../design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md)
+Kafka connector setup, connector status, topic operations, binding retirement,
+downstream publication containment, and consumer evidence are Kafka/CDC runbook concerns.
+Physical-source replacement remains a [v1 deferral](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral).
+Use this runbook only up to the DMS projection boundary, then follow
+[Kafka/CDC projection and history handoff](../cdc-documentation/operations-runbook.md#projection-handoff)
 when connector or downstream state may be affected.
 
 Representation restamp belongs to the independently owned offline byte-changing
 representation correction workflow and is outside this runbook. This runbook does not
-replace that workflow with manual SQL.
+replace that workflow with manual SQL. Use the
+[CDC restamp handoff](../cdc-documentation/operations-runbook.md#representation-restamp)
+to reach the [DocumentCacheAdmin procedure](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#representation-restamp)
+under the [contract-change owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
 
 Owning design sections:
 
@@ -83,10 +87,14 @@ Mutating commands and required tokens:
 Current packaged production behavior intentionally rejects offline activation, offline
 deactivation, and internal-only cache-ahead recovery unless a trusted downstream
 publication-history provider reports `internalOnly` for the same target and
-physical-source fingerprint. The default provider reports `unknown` because durable CDC
-binding/history evidence is not available in this product scope. Treat
-`downstreamHistoryPresentOrUnknown` as expected in that default state and use the
-Kafka/CDC containment path instead of these internal-only workflows.
+physical-source fingerprint. The shipped DocumentCacheAdmin production reader uses
+`Cdc:PublicationHistory` to read the original managed creation/source history under the
+controller lock. Without that configuration, the default provider reports `unknown`;
+missing, unreadable or mismatched evidence also rejects. Configure the reader through the
+[Admin configuration reference](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#configuration)
+and use the [offline history decisions](#history-decisions-for-offline-administration)
+for admission or containment routing. Stopping a connector, removing runtime targets,
+binding absence or successful retirement does not establish internal-only history.
 
 Command result statuses are:
 
@@ -174,11 +182,12 @@ dms-document-cache activate-new-empty --data-store-id 1 --confirm newEmptyActiva
 
 Existing `Disabled` target activation is admitted only after trusted downstream
 publication history proves `internalOnly` for the same target and physical-source
-fingerprint. In the default packaged production state this proof is unavailable and the
-command rejects with `downstreamHistoryPresentOrUnknown`. When that proof exists, stop
-every DMS replica, projector/direct-fill writer, bulk loader, administrative writer,
-external writer, and other canonical writer, then drain in-flight transactions before
-asserting `closedAndDrained`:
+fingerprint. Without configured trusted matching evidence, the command rejects with
+`downstreamHistoryPresentOrUnknown`; use the [production history handoff](../cdc-documentation/operations-runbook.md#projection-handoff).
+Use the managed-history setup and writer fence in steps 1–4 of the
+[recovery procedure](#recovery-procedure), and the
+[offline history decisions](#history-decisions-for-offline-administration), then select
+this activation command for the existing `Disabled` target:
 
 ```bash
 dms-document-cache activate-offline --data-store-id 1 --confirm offlineActivation --offline-writer-admission closedAndDrained --settings ./appsettings.Production.json --environment Production --datastore postgresql --json
@@ -214,11 +223,14 @@ restart-safe only for an explicitly reissued operation.
 Offline deactivation is allowed only when trusted downstream publication history proves
 `internalOnly` for the same target and physical-source fingerprint. A data store with an
 active, historical, possible, or unknown downstream consumer or CDC binding is not
-eligible for the simple deactivation toggle. In the default packaged production state,
-the command rejects with `downstreamHistoryPresentOrUnknown`.
+eligible for the simple deactivation toggle. Absent trusted matching internal-only evidence,
+the command rejects with `downstreamHistoryPresentOrUnknown`; use the
+[production history handoff](../cdc-documentation/operations-runbook.md#projection-handoff).
 
-When internal-only proof exists, close and drain writers before using
-`closedAndDrained`:
+Use the managed-history setup and writer fence in steps 1–4 of the
+[recovery procedure](#recovery-procedure), and the
+[offline history decisions](#history-decisions-for-offline-administration), then select
+this deactivation command:
 
 ```bash
 dms-document-cache deactivate-offline --data-store-id 1 --confirm offlineDeactivation --offline-writer-admission closedAndDrained --settings ./appsettings.Production.json --environment Production --datastore postgresql --json
@@ -254,26 +266,111 @@ are unsupported.
 canonical source. Cache-backed reads and cache/direct-fill writes are fenced until an
 explicit workflow resolves the latch.
 
-If trusted downstream publication history proves the target/source is internal-only for
-the same target and physical-source fingerprint, and incident analysis proves the higher
-cache value could not have been observed by downstream systems, close and drain writers,
-stop projector/direct fill, then run:
+Recovery requires trusted internal-only history for the same target and physical-source
+fingerprint, and incident analysis establishing that the higher cache value could not
+have been observed by downstream systems. Use the
+[history decisions below](#history-decisions-for-offline-administration) to determine
+whether this procedure applies.
 
-```bash
-dms-document-cache recover-cache-ahead --data-store-id 1 --confirm internalCacheAheadRecovery --offline-writer-admission closedAndDrained --expected-physical-source-fingerprint sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --settings ./appsettings.Production.json --environment Production --datastore postgresql --json
-```
+### Recovery procedure
+
+1. **Locate the original managed state.** Find the original `ddl provision`
+   `--managed-state-path` and `--deployment-key` values in retained provisioning scripts
+   or deployment configuration, resolving the path against the original provisioning
+   working directory or mounted volume. If the deployment key was omitted, confirm the
+   original provisioning default (`local`); do not choose a new namespace. Successful
+   managed creation of a new database establishes its creation receipt, workflow journal,
+   and source history. Ordinary `source-history-only` provisioning establishes this
+   history without enabling Kafka CDC. Preserve those records; rerunning provisioning
+   cannot create retrospective proof for an existing/unmanaged database or replace
+   missing evidence. See the [managed provisioning reference](../../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#cdc-deployment-commands)
+   and [publication-history contract](../design/backend-redesign/epics/19-cdc-kafka/04-bootstrap-enable-kafka-cdc.md#publication-history-bridge-to-e18-administration).
+2. **Configure the history reader.** Use the existing
+   [Admin configuration example](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#configuration)
+   in your complete settings file. Map the original managed state root to
+   `Cdc:PublicationHistory:StatePath` and its deployment key to
+   `Cdc:PublicationHistory:DeploymentKey`. Reference the same exclusively managed root
+   used by provisioning and any CDC administration, with the original records and
+   owner-only access; an independent copy does not share its controller lock. Check
+   environment overrides, including `Cdc__PublicationHistory__StatePath` and
+   `Cdc__PublicationHistory__DeploymentKey`. These settings select evidence; they do not
+   attest to history. Preserve the root according to the
+   [CDC state inventory](../cdc-documentation/operations-runbook.md#deployment-state).
+3. **Confirm the target and fingerprint.** Run `status` with those complete settings
+   and the intended CMS data-store ID, tenant, and provider. Match the returned
+   `targetKey` to the incident target and retain its `physicalSourceFingerprint` for
+   `--expected-physical-source-fingerprint`. Status supplies the current source identity;
+   it does not grant history-based permission to recover. In the commands below, replace
+   the illustrative ID, fingerprint, settings path, environment, and provider with your
+   values. Omitted `--tenant-key` selects the default tenant; for a named tenant, pass
+   the same `--tenant-key` to both commands.
+
+   ```bash
+   dms-document-cache status --data-store-id 1 --settings ./appsettings.Production.json --environment Production --datastore postgresql --json
+   ```
+
+4. **Establish and retain the offline fence.** Close writer admission and prevent
+   automatic restarts or scheduled jobs from reopening it. Stop every DMS replica,
+   projector/direct-fill writer, bulk loader, administrative writer, external writer,
+   and other canonical writer for the target. Drain their in-flight transactions and
+   verify they have finished before proceeding. Keep this fence through completion or
+   incident reconciliation, including retries. `closedAndDrained` asserts that these
+   actions have already been performed; the flag does not stop writers or drain them.
+5. **Invoke recovery with the configured settings.** Supply the required
+   `internalCacheAheadRecovery` confirmation and the fingerprint retained in step 3:
+
+   ```bash
+   dms-document-cache recover-cache-ahead --data-store-id 1 --confirm internalCacheAheadRecovery --offline-writer-admission closedAndDrained --expected-physical-source-fingerprint sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --settings ./appsettings.Production.json --environment Production --datastore postgresql --json
+   ```
+
+   The command validates history automatically before mutation while holding the
+   controller lock, and retains that lock through administration. There is no separate
+   operator proof-establishment command or attestation override. Do not use this mutating
+   command merely to discover whether history exists.
 
 An accepted workflow keeps the latch set through `Resetting`, clears cache and work,
 then enters `Rebuilding` and clears the latch only in the verified transition. Baseline
 seeding and work drain must complete before `Tracking`, operational health, and
 caught-up success return.
 
+A successful command returns `completed` / `succeeded` (exit `0`). Rerun status for
+the same target to confirm a clear latch and `lifecycle.state = tracking`. Standalone
+CLI status can report `unknown` / `runtimeNotObserved` for operational health and
+caught-up state; observe those through the live projection health endpoint after
+restoring the runtime. If the command returns `incompleteRetryable` (exit `12`), keep
+the offline fence and reissue the same recovery command with the same target and guard
+values. Follow
+[Lifecycle Mismatch and Resetting](#lifecycle-mismatch-and-resetting) if the interrupted
+operation is uncertain.
+
+### History decisions for offline administration
+
+These decisions apply to `recover-cache-ahead`, `activate-offline`, and
+`deactivate-offline`. The tool verifies the original evidence during the selected
+command; operator inspection or configuration alone does not authorize mutation.
+
+| Situation | Operator action and history-gate outcome |
+| --- | --- |
+| Intact `internalOnly` history matching the target and physical source | Proceed with the selected offline procedure. The history gate can admit it; lifecycle, provider, fingerprint, and offline writer guards must also pass. |
+| Reader is unconfigured or settings reference the wrong root/deployment key, but the original records are known | Correct the settings to reference those original records, including environment overrides. This corrects a reference, not evidence. Without a configured reader, the default history is `unknown` and the command rejects. |
+| No original managed creation history | No supported internal-only recovery through this procedure. Existing/unmanaged databases cannot gain retrospective proof; preserve available evidence and escalate. |
+| Original receipt, journal, or history is missing, unreadable, corrupt, or mismatched | The history gate rejects. Preserve evidence and escalate; do not reconstruct or edit it to gain admission. |
+| Possible, active, or historical downstream exposure | The history gate rejects. Stop publication and follow the containment guidance below; retirement does not restore internal-only eligibility. |
+
+An empty state directory, absent/stopped connector, removed runtime target configuration,
+or retired binding does not prove internal-only history. Do not manually edit history,
+cache/work tables, lifecycle state, or the recovery latch. See the existing
+[CDC history decisions and examples](../cdc-documentation/operations-runbook.md#production-history-decision)
+for the shared admission/rejection behavior.
+
 If the higher cache value may have been published, or downstream observation is
-uncertain, do not run internal-only recovery. In the default packaged production state,
-downstream observation is uncertain and the command rejects with
-`downstreamHistoryPresentOrUnknown`. Stop publication, preserve cache/work/latch
-evidence, and follow the Kafka/CDC containment and new downstream namespace path. V1
-never publishes a lower canonical version as an in-place correction to the old namespace.
+uncertain, do not run internal-only recovery. Without trusted matching internal-only
+evidence the command rejects with `downstreamHistoryPresentOrUnknown`. Stop publication,
+preserve cache/work/latch evidence, and follow the
+[CDC history/containment handoff](../cdc-documentation/operations-runbook.md#projection-handoff).
+V1 never publishes a lower canonical version as an in-place correction to the old namespace;
+[new-generation cutover is deferred](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deferred-new-topic-cutover),
+not an executable recovery step.
 
 ## Persistent Projection Failure and Poison Remediation
 
@@ -396,3 +493,13 @@ an incident involves connector registration, Connect offsets, PostgreSQL
 slots/publications, SQL Server CDC capture artifacts, public or progress topics, source
 binding history, consumer state, possibly published cache-ahead values, sensitive-data
 containment, or destructive topic/binding cleanup.
+
+Start with the [CDC projection/history handoff](../cdc-documentation/operations-runbook.md#projection-handoff)
+and use [managed lifecycle](../cdc-documentation/operations-runbook.md#managed-lifecycle)
+or [native recovery/containment](../cdc-documentation/operations-runbook.md#native-recovery)
+for publication concerns. This runbook remains the owner of projection administration.
+
+Sensitive-data incidents use the [disclosure response](../cdc-documentation/operations-runbook.md#sensitive-data-response)
+and [guarded retirement](../cdc-documentation/operations-runbook.md#generation-retirement),
+under the [contract-change owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
+Restamp completion is not purge evidence.

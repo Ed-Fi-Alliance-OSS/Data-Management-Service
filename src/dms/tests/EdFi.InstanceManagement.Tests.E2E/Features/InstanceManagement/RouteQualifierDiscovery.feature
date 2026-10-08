@@ -8,6 +8,7 @@ Feature: Route Qualifier Discovery API
     Verify that the discovery API properly reflects tenant and route qualifiers in URLs.
     When multi-tenancy is enabled, tenant is the first URL segment followed by route qualifiers.
     Tenant_255901 (instances 255901/2024 and 255901/2025) is pre-registered by the suite-owned fixture.
+    This stack enables the identity surface, so Discovery also lists the identity URL.
 
     Background:
         Given the system is configured with route qualifiers
@@ -26,9 +27,26 @@ Feature: Route Qualifier Discovery API
                     "tokenInfo": "http://localhost:8080/Tenant_255901/255901/2024/oauth/token_info",
                     "dataManagementApi": "http://localhost:8080/Tenant_255901/255901/2024/data",
                     "changeQueries": "http://localhost:8080/Tenant_255901/255901/2024/changeQueries/v1/",
-                    "xsdMetadata": "http://localhost:8080/Tenant_255901/255901/2024/metadata/xsd"
+                    "xsdMetadata": "http://localhost:8080/Tenant_255901/255901/2024/metadata/xsd",
+                    "identity": "http://localhost:8080/Tenant_255901/255901/2024/identity/v2/"
                 }
               """
+
+          And the discovery metadata urls should resolve
+
+    Scenario: Concrete metadata endpoint with invalid route qualifiers returns 404
+         When a GET request is made to metadata path "Tenant_255901/999999/2024/metadata/dependencies"
+         Then it should respond with 404
+
+    Scenario Outline: Tenant-only metadata endpoints require route qualifiers
+         When a GET request is made to metadata path "<metadataPath>"
+         Then it should respond with 404
+
+        Examples:
+          | metadataPath                             |
+          | Tenant_255901/metadata                    |
+          | Tenant_255901/metadata/dependencies       |
+          | Tenant_255901/metadata/specifications     |
 
     Scenario: Discovery endpoint with tenant and partial route qualifier returns URLs with mixed context
          When a GET request is made to discovery endpoint with route "Tenant_255901/255901"
@@ -42,7 +60,8 @@ Feature: Route Qualifier Discovery API
                     "tokenInfo": "http://localhost:8080/Tenant_255901/255901/{schoolYear}/oauth/token_info",
                     "dataManagementApi": "http://localhost:8080/Tenant_255901/255901/{schoolYear}/data",
                     "changeQueries": "http://localhost:8080/Tenant_255901/255901/{schoolYear}/changeQueries/v1/",
-                    "xsdMetadata": "http://localhost:8080/Tenant_255901/255901/{schoolYear}/metadata/xsd"
+                    "xsdMetadata": "http://localhost:8080/Tenant_255901/255901/{schoolYear}/metadata/xsd",
+                    "identity": "http://localhost:8080/Tenant_255901/255901/{schoolYear}/identity/v2/"
                 }
               """
 
@@ -58,7 +77,8 @@ Feature: Route Qualifier Discovery API
                     "tokenInfo": "http://localhost:8080/Tenant_255901/{districtId}/{schoolYear}/oauth/token_info",
                     "dataManagementApi": "http://localhost:8080/Tenant_255901/{districtId}/{schoolYear}/data",
                     "changeQueries": "http://localhost:8080/Tenant_255901/{districtId}/{schoolYear}/changeQueries/v1/",
-                    "xsdMetadata": "http://localhost:8080/Tenant_255901/{districtId}/{schoolYear}/metadata/xsd"
+                    "xsdMetadata": "http://localhost:8080/Tenant_255901/{districtId}/{schoolYear}/metadata/xsd",
+                    "identity": "http://localhost:8080/Tenant_255901/{districtId}/{schoolYear}/identity/v2/"
                 }
               """
 
@@ -74,6 +94,7 @@ Feature: Route Qualifier Discovery API
                     "tokenInfo": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/oauth/token_info",
                     "dataManagementApi": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/data",
                     "changeQueries": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/changeQueries/v1/",
-                    "xsdMetadata": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/metadata/xsd"
+                    "xsdMetadata": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/metadata/xsd",
+                    "identity": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/identity/v2/"
                 }
               """

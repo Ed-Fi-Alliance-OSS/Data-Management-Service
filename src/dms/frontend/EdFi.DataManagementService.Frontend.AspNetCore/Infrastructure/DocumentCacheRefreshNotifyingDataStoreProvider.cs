@@ -93,7 +93,8 @@ internal sealed class DocumentCacheRefreshNotifyingDataStoreProvider : IDataStor
 
     public bool IsLoaded(string? tenant = null) => _dataStoreProvider.IsLoaded(tenant);
 
-    public Task<IList<string>> LoadTenants() => _dataStoreProvider.LoadTenants();
+    public Task<IList<string>> LoadTenants(CancellationToken cancellationToken = default) =>
+        _dataStoreProvider.LoadTenants(cancellationToken);
 
     public bool TenantExists(string tenant) => _dataStoreProvider.TenantExists(tenant);
 
@@ -115,7 +116,7 @@ internal sealed class DocumentCacheRefreshNotifyingDataStoreProvider : IDataStor
             _logger.LogWarning(
                 exception,
                 "DocumentCache target refresh notification failed after data store metadata refresh for tenant {Tenant}. Request data-store refresh will continue.",
-                LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)")
+                LoggingSanitizer.SanitizeInternalValueForLogging(tenant ?? "(default)")
             );
         }
     }

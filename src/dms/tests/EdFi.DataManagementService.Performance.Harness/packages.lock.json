@@ -532,6 +532,9 @@
       "EdFi.Api.CustomValidation": {
         "type": "Project"
       },
+      "EdFi.Api.Identity": {
+        "type": "Project"
+      },
       "edfi.api.plugins": {
         "type": "Project",
         "dependencies": {
@@ -542,8 +545,10 @@
       "edfi.api.plugins.hosting": {
         "type": "Project",
         "dependencies": {
-          "EdFi.Api.Plugins": "[1.0.0, )",
+          "EdFi.Api.Plugins": "[1.1.0, )",
+          "Microsoft.Extensions.Configuration": "[10.0.1, )",
           "Microsoft.Extensions.Configuration.Binder": "[10.0.1, )",
+          "Microsoft.Extensions.Configuration.EnvironmentVariables": "[10.0.1, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )"
         }
@@ -640,6 +645,7 @@
         "dependencies": {
           "Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic": "[4.0.0, )",
           "EdFi.Api.CustomValidation": "[1.0.0, )",
+          "EdFi.Api.Identity": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
           "EdFi.DataManagementService.Core.External": "[1.0.0, )",
           "FastGuid": "[1.4.1, )",
@@ -649,6 +655,7 @@
           "Microsoft.Extensions.Caching.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Caching.Hybrid": "[9.5.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Http": "[10.0.1, )",
           "Microsoft.Extensions.Logging": "[10.0.1, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
@@ -680,7 +687,7 @@
         "type": "Project",
         "dependencies": {
           "AspNetCore.HealthChecks.NpgSql": "[8.0.2, )",
-          "EdFi.Api.Plugins.Hosting": "[1.0.0, )",
+          "EdFi.Api.Plugins.Hosting": "[1.1.0, )",
           "EdFi.DataManagementService.Backend.Mssql": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Postgresql": "[1.0.0, )",
           "EdFi.DataManagementService.Core": "[1.0.0, )",
@@ -712,10 +719,13 @@
           "Microsoft.Extensions.Configuration": "[10.0.1, )",
           "Microsoft.Extensions.Configuration.Json": "[10.0.1, )",
           "Microsoft.Extensions.DependencyInjection": "[10.0.1, )",
+          "Microsoft.Extensions.TimeProvider.Testing": "[10.3.0, )",
           "Microsoft.NET.Test.Sdk": "[17.11.1, )",
           "NUnit": "[4.2.2, )",
           "NUnit3TestAdapter": "[4.6.0, )",
-          "Npgsql": "[8.0.4, )"
+          "Npgsql": "[8.0.4, )",
+          "Serilog": "[4.2.0, )",
+          "Serilog.Extensions.Logging": "[8.0.0, )"
         }
       },
       "AspNetCore.HealthChecks.NpgSql": {
@@ -1014,6 +1024,12 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.1",
           "Microsoft.Extensions.Primitives": "10.0.1"
         }
+      },
+      "Microsoft.Extensions.TimeProvider.Testing": {
+        "type": "CentralTransitive",
+        "requested": "[10.3.0, )",
+        "resolved": "10.3.0",
+        "contentHash": "CKjS1u0JlMIA44o/0NV8nXRCaudpol3ERVlB9eu21kvq++EMt7fBavbPxWXN+nOpsdDhz/pb0MY2RBpk2/PGbA=="
       },
       "Microsoft.IdentityModel.JsonWebTokens": {
         "type": "CentralTransitive",

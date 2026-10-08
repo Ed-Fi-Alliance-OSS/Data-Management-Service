@@ -51,7 +51,7 @@ internal static class DocumentCacheAdminOutput
 
     public static string BoundedLabel(string value)
     {
-        string sanitized = LoggingSanitizer.SanitizeForLogging(value);
+        string sanitized = LoggingSanitizer.SanitizeInternalValueForLogging(value);
         if (string.IsNullOrWhiteSpace(sanitized))
         {
             return DocumentCacheProjectionTelemetryLabel.Unknown;
@@ -62,7 +62,7 @@ internal static class DocumentCacheAdminOutput
 
     public static string SanitizeDiagnostic(string? value)
     {
-        string sanitized = LoggingSanitizer.SanitizeForLogging(value);
+        string sanitized = LoggingSanitizer.SanitizeInternalValueForLogging(value);
         if (string.IsNullOrWhiteSpace(sanitized))
         {
             return string.Empty;
