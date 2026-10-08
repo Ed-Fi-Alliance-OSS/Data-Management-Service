@@ -66,9 +66,20 @@ Describe 'Scheduled pre-image workflow safeguards' {
             $matrix | Should -Not -Match 'github.event_name|exclude:|include:'
         }
 
-        It 'keeps scheduled E2E available to forks independently of notification secrets' {
+        It 'sets job eligibility to <Eligible> for <EventName> on <Owner>' -ForEach @(
+            @{ EventName = 'schedule'; Owner = 'Ed-Fi-Alliance-OSS'; Eligible = $true }
+            @{ EventName = 'schedule'; Owner = 'example-fork-owner'; Eligible = $false }
+            @{ EventName = 'workflow_dispatch'; Owner = 'Ed-Fi-Alliance-OSS'; Eligible = $true }
+            @{ EventName = 'workflow_dispatch'; Owner = 'example-fork-owner'; Eligible = $true }
+        ) {
             $header = $script:job.Substring(0, $script:job.IndexOf('    steps:'))
-            $header | Should -Not -Match '(?m)^    if:'
+            $match = [regex]::Match($header, '(?m)^    if: *(?<condition>[^\r\n]+)$')
+            # A job with no condition is eligible for every event. Evaluate the actual workflow
+            # condition using the equivalent PowerShell operators for these context-only cases.
+            $condition = if ($match.Success) { $match.Groups['condition'].Value } else { '$true' }
+            $condition = $condition.Replace('github.event_name', '$EventName').Replace('github.repository_owner', '$Owner')
+            $condition = $condition.Replace('!=', '-ne').Replace('==', '-eq').Replace('||', '-or').Replace('&&', '-and')
+            & ([scriptblock]::Create($condition)) | Should -Be $Eligible
         }
 
         It 'bounds executable content before subsequent step properties' {

@@ -15,6 +15,8 @@ permissions: read-all
 jobs:
   test:
     name: pre Image Tests (${{ matrix.database_engine }}, ${{ matrix.identityprovider }})
+    # Skip inherited schedules on forks; manual runs retain the full engine/identity matrix.
+    if: (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -64,11 +66,18 @@ jobs:
           }
 
           $testFilter = switch ($env:E2E_DATABASE_ENGINE) {
+            # The PostgreSQL leg uses DS 5.2 and MAXIMUM_PAGE_SIZE=500, so exclude DS 6.1
+            # version-coupled scenarios, the local-compose-only DocumentCache fixture, and
+            # partition sizing. DocumentCache runs with its explicit overlay in dms-weekend-build.yml.
+            # Partition sizing runs per PR in run-e2e-tests-partition-sizing using
+            # .env.cursorpartitions.e2e: its MAXIMUM_PAGE_SIZE=2 lets a collection seeded over
+            # HTTP span multiple partitions.
             'postgresql' { '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)' }
             'mssql' { 'Category=@MssqlRepresentative' }
             default { throw 'Unsupported E2E database engine.' }
           }
 
+          # Both non-empty filters write the filtered TRX used for execution evidence and upload.
           & pwsh -NoProfile -File ./build-dms.ps1 E2ETest `
             -UsePublishedImage `
             -Configuration Release `
