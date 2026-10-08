@@ -27,7 +27,7 @@ The single inventory reader is also the task-25 carry-forward input:
 Import-Module ./eng/DatabaseTemplates/Compact-Descriptor.psm1
 $inventory = Read-CompactDescriptorInventory -Dialect pgsql -ExpectedModelManifestPath $baseline
 $inventory.data_schemas # resource/history table schemas to copy; includes extension histories
-$inventory.aliases # generated descriptor aliases, source-shape verification only; never writable
+$inventory.aliases # generated descriptor aliases checked in catalogs/source shapes; never writable
 $inventory.columns # canonical Stored DescriptorFk only; schema/table/name/scalar type/nullability
 $inventory.constraints # full composite membership, FK target columns and referential actions
 $inventory.indexes # complete ordered descriptor-related key/index membership
@@ -36,6 +36,9 @@ $inventory.indexes # complete ordered descriptor-related key/index membership
 It reads resource tables and abstract identity tables, de-duplicates physical tables, excludes
 `UnifiedAlias` and union-view outputs from writable coverage, and retains compact abstract identity
 projection columns even though those projections do not declare another direct descriptor FK.
+Catalog assertions separately require every expected descriptor alias to exist as an `int4` stored
+generated column on PostgreSQL or an `int` persisted computed column on SQL Server. Alias names
+come from the baseline; renamed, missing, wide, ordinary or non-persisted aliases fail verification.
 
 Verify a container database directly:
 

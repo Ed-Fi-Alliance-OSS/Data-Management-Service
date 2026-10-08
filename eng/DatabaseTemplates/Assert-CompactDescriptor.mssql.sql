@@ -51,6 +51,24 @@ END;
 CLOSE column_checks;
 DEALLOCATE column_checks;
 
+DECLARE alias_checks CURSOR LOCAL FAST_FORWARD FOR SELECT value FROM OPENJSON(@expected, '$.aliases');
+OPEN alias_checks;
+FETCH NEXT FROM alias_checks INTO @item;
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    SELECT @schema = JSON_VALUE(@item, '$.schema'), @table = JSON_VALUE(@item, '$.table'), @name = JSON_VALUE(@item, '$.name');
+    SET @relation = OBJECT_ID(QUOTENAME(@schema) + N'.' + QUOTENAME(@table), 'U');
+    IF NOT EXISTS (SELECT 1 FROM sys.computed_columns WHERE object_id = @relation AND name = @name COLLATE Latin1_General_100_BIN2
+        AND system_type_id = 56 AND is_persisted = 1)
+    BEGIN
+        SET @message = N'Compact descriptor baseline: missing/noncompact persisted computed descriptor alias ' + @schema + N'.' + @table + N'.' + @name;
+        THROW 51000, @message, 1;
+    END;
+    FETCH NEXT FROM alias_checks INTO @item;
+END;
+CLOSE alias_checks;
+DEALLOCATE alias_checks;
+
 DECLARE constraint_checks CURSOR LOCAL FAST_FORWARD FOR SELECT value FROM OPENJSON(@expected, '$.constraints');
 OPEN constraint_checks;
 FETCH NEXT FROM constraint_checks INTO @item;

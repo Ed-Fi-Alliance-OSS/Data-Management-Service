@@ -22,6 +22,10 @@ public class Given_A_Fresh_Mssql_CompactDescriptor_Schema : CompactDescriptorSch
 
     protected override DbConnection CreateConnection() => new SqlConnection(_database.ConnectionString);
 
+    [TestCaseSource(nameof(DescriptorAliasMutations), new object[] { "mssql" })]
+    public Task It_rejects_invalid_descriptor_aliases_even_with_the_same_v3_fingerprint(string mutation) =>
+        AssertDescriptorAliasMutationAsync(mutation);
+
     protected override async Task<IAsyncDisposable> ProvisionAsync()
     {
         MssqlConnectionStringGuard.RequireConfiguredForCiOrSkipLocally(

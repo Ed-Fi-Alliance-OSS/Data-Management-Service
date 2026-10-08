@@ -318,6 +318,26 @@ public abstract class CompactDescriptorSchemaTests
         string mutation
     )
     {
+        await AssertCatalogMutationRejectedAsync(mutation, "*Compact descriptor baseline:*");
+    }
+
+    public static IEnumerable<string> DescriptorAliasMutations(string dialect)
+    {
+        yield return "renamed_alias";
+        yield return "missing_alias";
+        yield return "wide_alias";
+        yield return "stored_alias";
+        if (dialect == "mssql")
+        {
+            yield return "nonpersisted_alias";
+        }
+    }
+
+    protected Task AssertDescriptorAliasMutationAsync(string mutation) =>
+        AssertCatalogMutationRejectedAsync(mutation, "*Compact descriptor baseline:*descriptor alias*");
+
+    private async Task AssertCatalogMutationRejectedAsync(string mutation, string expectedMessage)
+    {
         await ExecuteAsync(_assertionSql);
         var model = JsonNode.Parse(await File.ReadAllTextAsync(_manifestPath))!;
         model["relational_mapping_version"]!.GetValue<string>().Should().Be("v3");
@@ -335,7 +355,7 @@ public abstract class CompactDescriptorSchemaTests
             .Should()
             .Be(fingerprint);
         Func<Task> assert = () => ExecuteAsync(_assertionSql);
-        await assert.Should().ThrowAsync<DbException>().WithMessage("*Compact descriptor baseline:*");
+        await assert.Should().ThrowAsync<DbException>().WithMessage(expectedMessage);
     }
 
     [TestCase("missing")]

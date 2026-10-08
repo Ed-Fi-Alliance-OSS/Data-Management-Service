@@ -49,6 +49,17 @@ BEGIN
         END IF;
     END LOOP;
 
+    FOR item IN SELECT value FROM jsonb_array_elements(expected->'aliases') LOOP
+        relation := to_regclass(format('%I.%I', item->>'schema', item->>'table'));
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_attribute
+            WHERE attrelid = relation AND attname = item->>'name' AND NOT attisdropped
+              AND atttypid = 'int4'::regtype AND attgenerated = 's'
+        ) THEN
+            RAISE EXCEPTION 'Compact descriptor baseline: missing/noncompact stored generated descriptor alias %', item;
+        END IF;
+    END LOOP;
+
     FOR item IN SELECT value FROM jsonb_array_elements(expected->'constraints') LOOP
         definition := item->'definition';
         relation := to_regclass(format('%I.%I', item->>'schema', item->>'table'));

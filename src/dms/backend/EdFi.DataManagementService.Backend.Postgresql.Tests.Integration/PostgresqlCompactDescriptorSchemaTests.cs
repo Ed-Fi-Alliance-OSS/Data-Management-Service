@@ -21,6 +21,10 @@ public class Given_A_Fresh_Postgresql_CompactDescriptor_Schema : CompactDescript
 
     protected override DbConnection CreateConnection() => new NpgsqlConnection(_database.ConnectionString);
 
+    [TestCaseSource(nameof(DescriptorAliasMutations), new object[] { "pgsql" })]
+    public Task It_rejects_invalid_descriptor_aliases_even_with_the_same_v3_fingerprint(string mutation) =>
+        AssertDescriptorAliasMutationAsync(mutation);
+
     protected override async Task<IAsyncDisposable> ProvisionAsync()
     {
         var fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
