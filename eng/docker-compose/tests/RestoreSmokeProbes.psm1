@@ -39,6 +39,14 @@ $script:WrapperProfiles = @{
 # names, and a teardown with -v removes the selected project's named volumes.
 $script:GuardedComposeProjects = @("dms-local", "dms-published")
 
+# The engine compose file each start script swaps in ($databaseComposeFile in start-local-dms.ps1
+# and start-published-dms.ps1). A volume a confirmed removal leaves behind is identified only
+# against the top-level volumes these files declare.
+$script:EngineComposeFiles = [ordered]@{
+    postgresql = "postgresql.yml"
+    mssql      = "mssql.yml"
+}
+
 # The smoke's own image builds (Get-RestoreSmokeImageBuildPlan). Repository, source directory, and
 # VERSION mirror build-dms.ps1 / build-config.ps1 DockerBuild, whose version parameters default to
 # 8.0.0; BootstrapRestoreSmoke.Tests.ps1 pins both. Tags are run-unique, never the shared local/ tags.
@@ -246,6 +254,292 @@ function Assert-RestoreSmokeNoForeignStack {
         (Format-RestoreSmokeForeignStackInventory -Inventory $Inventory) +
         ". The smoke tears down with -d -v, which would remove them. Nothing was stopped or removed. " +
         "Run on an isolated Docker host, or pass -ConfirmForeignStackRemoval only with the stack owner's approval.")
+}
+
+function Get-RestoreSmokeEngineVolumeDefinition {
+    <#
+    .SYNOPSIS
+    The named volumes each database engine's compose file declares, read from the repository.
+
+    .DESCRIPTION
+    Reads the top-level volumes: keys (two-space-indented under a column-0 volumes:) of
+    postgresql.yml and mssql.yml. Service-level volume lists are indented and ignored. Fails closed:
+    a missing file, a file that declares no volume, or a key both engines declare means leftovers
+    cannot be identified, so the caller refuses before removing anything.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$DockerComposeRoot
+    )
+
+    $definitions = foreach ($engine in $script:EngineComposeFiles.Keys) {
+        $composeFile = $script:EngineComposeFiles[$engine]
+        $path = Join-Path $DockerComposeRoot $composeFile
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Cannot identify leftover volumes: the $engine compose file '$composeFile' was not found in '$DockerComposeRoot'."
+        }
+
+        $keys = [System.Collections.Generic.List[string]]::new()
+        $inVolumes = $false
+        foreach ($line in [System.IO.File]::ReadAllLines($path)) {
+            if ([string]::IsNullOrWhiteSpace($line) -or $line.TrimStart().StartsWith("#")) {
+                continue
+            }
+            if ($line -match '^\S') {
+                $inVolumes = $line -match '^volumes:\s*(#.*)?$'
+                continue
+            }
+            if ($inVolumes -and $line -match '^ {2}([A-Za-z0-9][A-Za-z0-9._-]*):') {
+                $keys.Add($matches[1])
+            }
+        }
+        if ($keys.Count -eq 0) {
+            throw "Cannot identify leftover volumes: the $engine compose file '$composeFile' declares no top-level volume."
+        }
+
+        [pscustomobject]@{
+            Engine      = $engine
+            ComposeFile = $composeFile
+            Volumes     = @($keys)
+        }
+    }
+
+    $definitions = @($definitions)
+    $declaredBy = @{}
+    foreach ($definition in $definitions) {
+        foreach ($key in $definition.Volumes) {
+            if ($declaredBy.ContainsKey($key)) {
+                throw "Cannot identify leftover volumes: volume '$key' is declared by both $($declaredBy[$key]) and $($definition.ComposeFile)."
+            }
+            $declaredBy[$key] = $definition.ComposeFile
+        }
+    }
+    return $definitions
+}
+
+function ConvertTo-RestoreSmokeVolumeTimestamp {
+    <#
+    .SYNOPSIS
+    A volume's CreatedAt as invariant round-trip UTC text. ConvertFrom-Json turns Docker's RFC 3339
+    value into a DateTime, whose default string form depends on the culture.
+    #>
+    param(
+        [AllowNull()]
+        [object]$Value
+    )
+
+    if ($Value -is [System.DateTime]) {
+        return $Value.ToUniversalTime().ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
+    }
+    if ($Value -is [System.DateTimeOffset]) {
+        return $Value.UtcDateTime.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
+    }
+    $text = [string]$Value
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        return $null
+    }
+    return ConvertTo-RestoreSmokeLogSafeText $text
+}
+
+function Read-RestoreSmokeVolumeInspection {
+    <#
+    .SYNOPSIS
+    One read-only docker volume inspect. Returns the parsed object, or a reason it could not be read.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$Name
+    )
+
+    $global:LASTEXITCODE = 0
+    $output = @(docker volume inspect --format '{{json .}}' $Name 2>&1)
+    $exitCode = $LASTEXITCODE
+    $text = (@($output | ForEach-Object { [string]$_ }) -join "`n").Trim()
+    if ($exitCode -ne 0) {
+        return [pscustomobject]@{ Volume = $null; ExitCode = $exitCode; Reason = "inspection failed (docker exit ${exitCode}: $(ConvertTo-RestoreSmokeLogSafeText $text))" }
+    }
+
+    $volume = $null
+    try {
+        $volume = $text | ConvertFrom-Json -AsHashtable -NoEnumerate -ErrorAction Stop
+    }
+    catch {
+        $volume = $null
+    }
+    if ($volume -isnot [System.Collections.IDictionary]) {
+        return [pscustomobject]@{ Volume = $null; ExitCode = $exitCode; Reason = "the inspection output is not one JSON object" }
+    }
+    if ([string]$volume["Name"] -cne $Name) {
+        return [pscustomobject]@{ Volume = $null; ExitCode = $exitCode; Reason = "the inspection returned volume '$(ConvertTo-RestoreSmokeLogSafeText ([string]$volume["Name"]))' instead" }
+    }
+    return [pscustomobject]@{ Volume = $volume; ExitCode = $exitCode; Reason = $null }
+}
+
+function Get-RestoreSmokeLeftoverVolumeClassification {
+    <#
+    .SYNOPSIS
+    Decides, for every volume a confirmed removal left in a guarded compose project, whether the
+    run may continue beside it.
+
+    .DESCRIPTION
+    Each volume is inspected (read-only) and allowed ONLY when its observed compose labels identify
+    it as a volume the OTHER engine's compose file declares: the selected engine's compose files do
+    not declare it, so this run's down -v teardowns leave it in place. Every other volume is
+    blocked with a reason: an inspection failure or unreadable output, a missing or conflicting
+    com.docker.compose.project label, a missing com.docker.compose.volume label, a name that is not
+    <project>_<volume label>, the selected engine's own storage, or a volume no engine compose file
+    declares. Never throws for a volume; the caller refuses when anything is blocked.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Inventory,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory)]
+        [object[]]$Definition
+    )
+
+    $selected = @($Definition | Where-Object { $_.Engine -eq $DatabaseEngine })
+    if ($selected.Count -ne 1) {
+        throw "No engine volume definition for '$DatabaseEngine'."
+    }
+    $selected = $selected[0]
+    $declaredFiles = @($Definition | ForEach-Object { $_.ComposeFile }) -join ", "
+
+    $records = [System.Collections.Generic.List[object]]::new()
+    foreach ($project in @($Inventory.Projects)) {
+        foreach ($name in @($project.Volumes)) {
+            $record = [ordered]@{
+                Project      = $project.Project
+                Name         = $name
+                ProjectLabel = $null
+                VolumeLabel  = $null
+                CreatedAt    = $null
+                Engine       = $null
+                ComposeFile  = $null
+                Decision     = "blocked"
+                Reason       = $null
+            }
+            $inspection = Read-RestoreSmokeVolumeInspection -Name $name
+            if ($null -eq $inspection.Volume) {
+                $record.Reason = $inspection.Reason
+                $records.Add([pscustomobject]$record)
+                continue
+            }
+
+            $labels = $inspection.Volume["Labels"]
+            if ($labels -isnot [System.Collections.IDictionary]) {
+                $labels = @{}
+            }
+            $projectLabel = [string]$labels["com.docker.compose.project"]
+            $volumeLabel = [string]$labels["com.docker.compose.volume"]
+            $record.ProjectLabel = if ([string]::IsNullOrWhiteSpace($projectLabel)) { $null } else { ConvertTo-RestoreSmokeLogSafeText $projectLabel }
+            $record.VolumeLabel = if ([string]::IsNullOrWhiteSpace($volumeLabel)) { $null } else { ConvertTo-RestoreSmokeLogSafeText $volumeLabel }
+            $record.CreatedAt = ConvertTo-RestoreSmokeVolumeTimestamp $inspection.Volume["CreatedAt"]
+
+            $owner = @($Definition | Where-Object { @($_.Volumes) -ccontains $volumeLabel })
+            if ([string]::IsNullOrWhiteSpace($projectLabel)) {
+                $record.Reason = "it has no com.docker.compose.project label"
+            }
+            elseif ($projectLabel -cne $project.Project) {
+                $record.Reason = "its com.docker.compose.project label is '$($record.ProjectLabel)', but it was listed under '$($project.Project)'"
+            }
+            elseif ([string]::IsNullOrWhiteSpace($volumeLabel)) {
+                $record.Reason = "it has no com.docker.compose.volume label"
+            }
+            elseif ($name -cne "$($project.Project)_$volumeLabel") {
+                $record.Reason = "its name does not match its compose labels (expected '$($project.Project)_$($record.VolumeLabel)')"
+            }
+            elseif ($owner.Count -eq 0) {
+                $record.Reason = "volume '$($record.VolumeLabel)' is not declared by any engine compose file ($declaredFiles), so it cannot be identified"
+            }
+            else {
+                $record.Engine = $owner[0].Engine
+                $record.ComposeFile = $owner[0].ComposeFile
+                if ($owner[0].Engine -eq $DatabaseEngine) {
+                    $record.Reason = "it is the selected engine's ($DatabaseEngine) storage, declared in $($owner[0].ComposeFile); the run needs fresh storage"
+                }
+                else {
+                    $record.Decision = "allowed"
+                    $record.Reason = "declared in $($owner[0].ComposeFile) as $($owner[0].Engine) storage; this run uses $DatabaseEngine, whose $($selected.ComposeFile) does not declare it, so this run's down -v teardowns leave it in place"
+                }
+            }
+            $records.Add([pscustomobject]$record)
+        }
+    }
+
+    $volumes = @($records)
+    return [pscustomobject]@{
+        DatabaseEngine = $DatabaseEngine
+        Volumes        = $volumes
+        Allowed        = @($volumes | Where-Object { $_.Decision -eq "allowed" })
+        Blocked        = @($volumes | Where-Object { $_.Decision -ne "allowed" })
+    }
+}
+
+function Format-RestoreSmokeLeftoverVolumeClassification {
+    <#
+    .SYNOPSIS
+    "<name> (<reason>)" for each volume with the given decision, for refusal messages and logs.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Classification,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("allowed", "blocked")]
+        [string]$Decision
+    )
+
+    $volumes = @($Classification.Blocked)
+    if ($Decision -eq "allowed") {
+        $volumes = @($Classification.Allowed)
+    }
+    return (($volumes | ForEach-Object { "$($_.Name) ($($_.Reason))" }) -join "; ")
+}
+
+function Get-RestoreSmokeAllowedVolumeState {
+    <#
+    .SYNOPSIS
+    Re-inspects each leftover volume the preflight allowed, at the end of the run: it is preserved
+    only when it still exists with the CreatedAt the preflight observed.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]$Classification
+    )
+
+    $states = foreach ($volume in @($Classification.Allowed)) {
+        $state = [ordered]@{
+            Name      = $volume.Name
+            Present   = $false
+            CreatedAt = $null
+            Preserved = $false
+            Reason    = $null
+        }
+        $inspection = Read-RestoreSmokeVolumeInspection -Name $volume.Name
+        if ($null -eq $inspection.Volume) {
+            $state.Reason = $inspection.Reason
+        }
+        else {
+            $state.Present = $true
+            $state.CreatedAt = ConvertTo-RestoreSmokeVolumeTimestamp $inspection.Volume["CreatedAt"]
+            if ([string]::IsNullOrWhiteSpace($volume.CreatedAt)) {
+                $state.Reason = "the preflight observed no CreatedAt, so preservation cannot be shown"
+            }
+            elseif ($state.CreatedAt -cne $volume.CreatedAt) {
+                $state.Reason = "CreatedAt changed from '$($volume.CreatedAt)' to '$($state.CreatedAt)'; the volume was recreated"
+            }
+            else {
+                $state.Preserved = $true
+            }
+        }
+        [pscustomobject]$state
+    }
+    return @($states)
 }
 
 function Get-RestoreSmokeSourceRevision {
@@ -937,7 +1231,8 @@ function Get-RestoreSmokeResultClassification {
     equal start and end revisions with a clean tree at both points; and for EVERY stack observation
     the dms/config containers running the verified in-run image IDs, a db container whose image has
     an observed repository digest (an image ID alone is not a digest), and an observed, non-blank
-    effective SCHEMA_PACKAGES value.
+    effective SCHEMA_PACKAGES value. Every leftover volume the preflight allowed must be shown
+    preserved at run end.
     #>
     param(
         [Parameter(Mandatory)]
@@ -1097,6 +1392,29 @@ function Get-RestoreSmokeResultClassification {
         }
     }
 
+    # A leftover volume the preflight allowed must still be there, unchanged, when the run ends.
+    $foreignStack = Get-RestoreSmokeEvidenceValue $Provenance "ForeignStack"
+    $allowedList = Get-RestoreSmokeEvidenceValue (Get-RestoreSmokeEvidenceValue $foreignStack "LeftoverVolumes") "Allowed"
+    $allowedVolumes = @()
+    if ($null -ne $allowedList) {
+        $allowedVolumes = @($allowedList | Where-Object { $null -ne $_ })
+    }
+    $stateList = Get-RestoreSmokeEvidenceValue $foreignStack "AllowedVolumesAtEnd"
+    $endStates = @()
+    if ($null -ne $stateList) {
+        $endStates = @($stateList | Where-Object { $null -ne $_ })
+    }
+    foreach ($volume in $allowedVolumes) {
+        $volumeName = [string](Get-RestoreSmokeEvidenceValue $volume "Name")
+        $endState = @($endStates | Where-Object { [string](Get-RestoreSmokeEvidenceValue $_ "Name") -ceq $volumeName })
+        if ($endState.Count -eq 0) {
+            $reasons.Add("leftover volume '$volumeName' was allowed by the preflight, but no run-end check was recorded")
+        }
+        elseif ((Get-RestoreSmokeEvidenceValue $endState[0] "Preserved") -ne $true) {
+            $reasons.Add("leftover volume '$volumeName' was allowed by the preflight, but was not shown preserved at run end: $(Get-RestoreSmokeEvidenceValue $endState[0] 'Reason')")
+        }
+    }
+
     if ([string]::IsNullOrWhiteSpace([string](Get-RestoreSmokeEvidenceValue $Provenance "SourceIdentity"))) {
         $reasons.Add("pre-backup SourceIdentity not captured: $(Get-RestoreSmokeEvidenceValue $Provenance 'SourceIdentityReason')")
     }
@@ -1115,6 +1433,10 @@ Export-ModuleMember -Function `
     Get-RestoreSmokeForeignStackInventory, `
     Format-RestoreSmokeForeignStackInventory, `
     Assert-RestoreSmokeNoForeignStack, `
+    Get-RestoreSmokeEngineVolumeDefinition, `
+    Get-RestoreSmokeLeftoverVolumeClassification, `
+    Format-RestoreSmokeLeftoverVolumeClassification, `
+    Get-RestoreSmokeAllowedVolumeState, `
     Get-RestoreSmokeSourceRevision, `
     Get-RestoreSmokeFileSha256, `
     Invoke-RestoreSmokeSchemaToolBuild, `

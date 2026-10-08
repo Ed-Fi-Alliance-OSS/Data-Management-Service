@@ -53,7 +53,7 @@ AfterAll {
     if ($script:createdDockerFallback) {
         Remove-Item function:global:docker -ErrorAction SilentlyContinue
     }
-    Remove-Variable -Name RestoreSmokeTestDocker, RestoreSmokeTestTargetDir, RestoreSmokeTestPwshExit, RestoreSmokeImageTestState -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name RestoreSmokeTestDocker, RestoreSmokeTestTargetDir, RestoreSmokeTestPwshExit, RestoreSmokeImageTestState, RestoreSmokeTestVolumes, RestoreSmokeTestVolumeCalls -Scope Global -ErrorAction SilentlyContinue
 }
 
 Describe "Get-RestoreSmokeWrapperProfile" {
@@ -198,6 +198,316 @@ Describe "Get-RestoreSmokeForeignStackInventory and Assert-RestoreSmokeNoForeign
         Set-DockerInventoryMock -State @{} -Fail
 
         { Get-RestoreSmokeForeignStackInventory } | Should -Throw "Refusing to run: could not list containers*Foreign Docker state is unknown*"
+    }
+}
+
+BeforeDiscovery {
+    # Every leftover-volume case runs for both engines: the allow rule and the selected-engine
+    # block rule swap between them, and the other block rules must hold under either.
+    $script:engineCases = @(
+        @{ Engine = "postgresql"; SelectedKey = "dms-postgresql"; SelectedFile = "postgresql.yml"; OtherEngine = "mssql"; OtherKey = "dms-mssql-2025"; OtherFile = "mssql.yml" }
+        @{ Engine = "mssql"; SelectedKey = "dms-mssql-2025"; SelectedFile = "mssql.yml"; OtherEngine = "postgresql"; OtherKey = "dms-postgresql"; OtherFile = "postgresql.yml" }
+    )
+
+    # Each case changes one thing about a volume that would otherwise be allowed (the other
+    # engine's storage, correctly labelled), so the block comes from that change alone.
+    $blockedTemplates = @(
+        @{ Case = "the inspection fails"; Name = "dms-local_{other}"; Entry = @{ Fail = "Error response from daemon: permission denied" }; Expected = "inspection failed (docker exit 1: Error response from daemon: permission denied)" }
+        @{ Case = "the inspection output is not JSON"; Name = "dms-local_{other}"; Entry = @{ Raw = "not json" }; Expected = "the inspection output is not one JSON object" }
+        @{ Case = "the inspection output is a JSON array"; Name = "dms-local_{other}"; Entry = @{ Raw = '[{"Name":"dms-local_{other}"}]' }; Expected = "the inspection output is not one JSON object" }
+        @{ Case = "the inspection returns another volume"; Name = "dms-local_{other}"; Entry = @{ InspectedName = "dms-local_elsewhere"; Labels = "default" }; Expected = "the inspection returned volume 'dms-local_elsewhere' instead" }
+        @{ Case = "the volume has no labels"; Name = "dms-local_{other}"; Entry = @{ Labels = $null }; Expected = "it has no com.docker.compose.project label" }
+        @{ Case = "the project label is missing"; Name = "dms-local_{other}"; Entry = @{ Labels = @{ "com.docker.compose.volume" = "{other}" } }; Expected = "it has no com.docker.compose.project label" }
+        @{ Case = "the project label conflicts with the listed project"; Name = "dms-local_{other}"; Entry = @{ Labels = @{ "com.docker.compose.project" = "dms-published"; "com.docker.compose.volume" = "{other}" } }; Expected = "its com.docker.compose.project label is 'dms-published', but it was listed under 'dms-local'" }
+        @{ Case = "the volume label is missing"; Name = "dms-local_{other}"; Entry = @{ Labels = @{ "com.docker.compose.project" = "dms-local" } }; Expected = "it has no com.docker.compose.volume label" }
+        @{ Case = "the name does not match the labels (a renamed volume)"; Name = "edfi-{other}-copy"; Entry = @{ Labels = @{ "com.docker.compose.project" = "dms-local"; "com.docker.compose.volume" = "{other}" } }; Expected = "its name does not match its compose labels (expected 'dms-local_{other}')" }
+        @{ Case = "the volume label differs only in case from a declared volume"; Name = "dms-local_{OTHER}"; Entry = @{ Labels = "default" }; Expected = "volume '{OTHER}' is not declared by any engine compose file (postgresql.yml, mssql.yml), so it cannot be identified" }
+        @{ Case = "the name merely contains the other engine's volume name"; Name = "dms-local_{other}-backup"; Entry = @{ Labels = "default" }; Expected = "volume '{other}-backup' is not declared by any engine compose file (postgresql.yml, mssql.yml), so it cannot be identified" }
+        @{ Case = "the volume is not engine storage (Keycloak)"; Name = "dms-local_dms-keycloak"; Entry = @{ Labels = "default" }; Expected = "volume 'dms-keycloak' is not declared by any engine compose file (postgresql.yml, mssql.yml), so it cannot be identified" }
+        @{ Case = "the volume is the selected engine's storage"; Name = "dms-local_{selected}"; Entry = @{ Labels = "default" }; Expected = "it is the selected engine's ({engine}) storage, declared in {selectedFile}; the run needs fresh storage" }
+    )
+    function Expand-CaseText {
+        param($Value, $EngineCase)
+
+        if ($Value -is [string]) {
+            return $Value.Replace("{other}", $EngineCase.OtherKey).Replace("{OTHER}", $EngineCase.OtherKey.ToUpperInvariant()).Replace("{selected}", $EngineCase.SelectedKey).Replace("{engine}", $EngineCase.Engine).Replace("{selectedFile}", $EngineCase.SelectedFile)
+        }
+        if ($Value -is [hashtable]) {
+            $copy = @{}
+            foreach ($key in $Value.Keys) {
+                $copy[$key] = Expand-CaseText -Value $Value[$key] -EngineCase $EngineCase
+            }
+            return $copy
+        }
+        return $Value
+    }
+    $script:blockedCases = foreach ($engineCase in $script:engineCases) {
+        foreach ($template in $blockedTemplates) {
+            @{
+                Engine   = $engineCase.Engine
+                Case     = $template.Case
+                Name     = Expand-CaseText -Value $template.Name -EngineCase $engineCase
+                Entry    = Expand-CaseText -Value $template.Entry -EngineCase $engineCase
+                Expected = Expand-CaseText -Value $template.Expected -EngineCase $engineCase
+            }
+        }
+    }
+}
+
+Describe "Leftover volume identification" {
+    BeforeAll {
+        $script:repositoryComposeRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+        # Docker reports RFC 3339; the record holds it as invariant round-trip UTC.
+        $script:createdAt = "2026-10-01T00:00:00.0000000Z"
+
+        # Serves docker volume inspect from a table: name -> @{ Labels = <hashtable> | "default" | $null;
+        # Fail = <message>; Raw = <output>; InspectedName = <name>; CreatedAt = <value> }. A name
+        # missing from the table does not exist. "default" means the compose labels its name implies.
+        function script:Set-VolumeInspectMock {
+            param([hashtable]$Volumes)
+
+            $global:RestoreSmokeTestVolumes = $Volumes
+            Mock docker -ModuleName RestoreSmokeProbes {
+                $name = [string]$args[-1]
+                if ($null -ne $global:RestoreSmokeTestVolumeCalls) {
+                    $global:RestoreSmokeTestVolumeCalls.Add($name)
+                }
+                $entry = $global:RestoreSmokeTestVolumes[$name]
+                if ($null -eq $entry) {
+                    $global:LASTEXITCODE = 1
+                    return "Error response from daemon: get ${name}: no such volume"
+                }
+                if ($entry.ContainsKey("Fail")) {
+                    $global:LASTEXITCODE = 1
+                    return $entry.Fail
+                }
+                $global:LASTEXITCODE = 0
+                if ($entry.ContainsKey("Raw")) {
+                    return $entry.Raw
+                }
+                $labels = $entry["Labels"]
+                if ($labels -eq "default") {
+                    $separator = $name.IndexOf("_")
+                    $labels = @{
+                        "com.docker.compose.project" = $name.Substring(0, $separator)
+                        "com.docker.compose.volume"  = $name.Substring($separator + 1)
+                        "com.docker.compose.version" = "5.1.3"
+                    }
+                }
+                $inspectedName = if ($entry.ContainsKey("InspectedName")) { $entry.InspectedName } else { $name }
+                $createdAt = if ($entry.ContainsKey("CreatedAt")) { $entry.CreatedAt } else { "2026-10-01T00:00:00Z" }
+                return ([ordered]@{ CreatedAt = $createdAt; Driver = "local"; Labels = $labels; Mountpoint = "/var/lib/docker/volumes/$name/_data"; Name = $inspectedName; Options = $null; Scope = "local" } | ConvertTo-Json -Compress -Depth 5)
+            }
+        }
+
+        function script:New-RemainingInventory {
+            param([hashtable]$VolumesByProject)
+
+            $projects = foreach ($project in @("dms-local", "dms-published")) {
+                $volumes = @()
+                if ($VolumesByProject.ContainsKey($project)) {
+                    $volumes = @($VolumesByProject[$project])
+                }
+                [pscustomobject]@{ Project = $project; Containers = @(); Volumes = $volumes }
+            }
+            return [pscustomobject]@{ Projects = @($projects) }
+        }
+
+        $script:engineVolumes = Get-RestoreSmokeEngineVolumeDefinition -DockerComposeRoot $script:repositoryComposeRoot
+    }
+
+    Context "Get-RestoreSmokeEngineVolumeDefinition" {
+        It "reads each engine's storage volume from the repository's compose files" {
+            $definitions = Get-RestoreSmokeEngineVolumeDefinition -DockerComposeRoot $script:repositoryComposeRoot
+
+            @($definitions.Engine) | Should -Be @("postgresql", "mssql")
+            $postgresql = @($definitions | Where-Object Engine -eq "postgresql")[0]
+            $mssql = @($definitions | Where-Object Engine -eq "mssql")[0]
+            $postgresql.ComposeFile | Should -Be "postgresql.yml"
+            @($postgresql.Volumes) | Should -Be @("dms-postgresql")
+            $mssql.ComposeFile | Should -Be "mssql.yml"
+            @($mssql.Volumes) | Should -Be @("dms-mssql-2025")
+        }
+
+        It "reads only top-level volume keys, ignoring service volume lists, comments, nested settings, and other sections" {
+            $root = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N"))
+            New-Item -ItemType Directory -Path $root | Out-Null
+            Set-Content -LiteralPath (Join-Path $root "postgresql.yml") -Value @(
+                "services:"
+                "  db:"
+                "    volumes:"
+                "      - service-list-entry:/var/lib/postgresql/data"
+                "# volumes:"
+                "#   commented-out:"
+                "volumes:"
+                "  # a comment inside the section"
+                "  pg-data:"
+                "    labels:"
+                "      nested-key: value"
+                "  pg-logs: {}"
+                "networks:"
+                "  pg-network:"
+            )
+            Set-Content -LiteralPath (Join-Path $root "mssql.yml") -Value @("volumes:", "  sql-data:")
+
+            $definitions = Get-RestoreSmokeEngineVolumeDefinition -DockerComposeRoot $root
+
+            @(@($definitions | Where-Object Engine -eq "postgresql")[0].Volumes) | Should -Be @("pg-data", "pg-logs")
+            @(@($definitions | Where-Object Engine -eq "mssql")[0].Volumes) | Should -Be @("sql-data")
+        }
+
+        It "fails closed when <case>" -ForEach @(
+            @{ Case = "an engine compose file is missing"; Postgresql = @("volumes:", "  pg-data:"); Mssql = $null; Expected = "Cannot identify leftover volumes: the mssql compose file 'mssql.yml' was not found*" }
+            @{ Case = "an engine compose file declares no top-level volume"; Postgresql = @("services:", "  db:", "    volumes:", "      - pg-data:/data"); Mssql = @("volumes:", "  sql-data:"); Expected = "Cannot identify leftover volumes: the postgresql compose file 'postgresql.yml' declares no top-level volume." }
+            @{ Case = "both engines declare the same volume"; Postgresql = @("volumes:", "  shared-data:"); Mssql = @("volumes:", "  shared-data:"); Expected = "Cannot identify leftover volumes: volume 'shared-data' is declared by both postgresql.yml and mssql.yml." }
+        ) {
+            $root = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N"))
+            New-Item -ItemType Directory -Path $root | Out-Null
+            Set-Content -LiteralPath (Join-Path $root "postgresql.yml") -Value $Postgresql
+            if ($null -ne $Mssql) {
+                Set-Content -LiteralPath (Join-Path $root "mssql.yml") -Value $Mssql
+            }
+
+            { Get-RestoreSmokeEngineVolumeDefinition -DockerComposeRoot $root } | Should -Throw $Expected
+        }
+    }
+
+    Context "Get-RestoreSmokeLeftoverVolumeClassification" {
+        It "allows the other engine's storage, by its labels, and blocks the selected engine's (<engine>)" -ForEach $script:engineCases {
+            Set-VolumeInspectMock -Volumes @{
+                "dms-local_$OtherKey"    = @{ Labels = "default" }
+                "dms-local_$SelectedKey" = @{ Labels = "default" }
+            }
+            $inventory = New-RemainingInventory -VolumesByProject @{ "dms-local" = @("dms-local_$OtherKey", "dms-local_$SelectedKey") }
+
+            $classification = Get-RestoreSmokeLeftoverVolumeClassification -Inventory $inventory -DatabaseEngine $Engine -Definition $script:engineVolumes
+
+            $classification.DatabaseEngine | Should -Be $Engine
+            @($classification.Allowed.Name) | Should -Be @("dms-local_$OtherKey")
+            @($classification.Blocked.Name) | Should -Be @("dms-local_$SelectedKey")
+            $allowed = $classification.Allowed[0]
+            $allowed.Decision | Should -Be "allowed"
+            $allowed.Project | Should -Be "dms-local"
+            $allowed.ProjectLabel | Should -Be "dms-local"
+            $allowed.VolumeLabel | Should -Be $OtherKey
+            $allowed.Engine | Should -Be $OtherEngine
+            $allowed.ComposeFile | Should -Be $OtherFile
+            $allowed.CreatedAt | Should -Be $script:createdAt
+            $allowed.Reason | Should -Be "declared in $OtherFile as $OtherEngine storage; this run uses $Engine, whose $SelectedFile does not declare it, so this run's down -v teardowns leave it in place"
+            $blocked = $classification.Blocked[0]
+            $blocked.Decision | Should -Be "blocked"
+            $blocked.Engine | Should -Be $Engine
+            $blocked.Reason | Should -Be "it is the selected engine's ($Engine) storage, declared in $SelectedFile; the run needs fresh storage"
+        }
+
+        It "blocks a volume when <case> (<engine>)" -ForEach $script:blockedCases {
+            Set-VolumeInspectMock -Volumes @{ $Name = $Entry }
+            $inventory = New-RemainingInventory -VolumesByProject @{ "dms-local" = @($Name) }
+
+            $classification = Get-RestoreSmokeLeftoverVolumeClassification -Inventory $inventory -DatabaseEngine $Engine -Definition $script:engineVolumes
+
+            $classification.Allowed.Count | Should -Be 0
+            $classification.Blocked.Count | Should -Be 1
+            $classification.Blocked[0].Name | Should -Be $Name
+            $classification.Blocked[0].Decision | Should -Be "blocked"
+            $classification.Blocked[0].Reason | Should -Be $Expected
+        }
+
+        It "classifies mixed leftovers in both projects in one read-only pass (<engine>)" -ForEach $script:engineCases {
+            Set-VolumeInspectMock -Volumes @{
+                "dms-local_$OtherKey"         = @{ Labels = "default" }
+                "dms-local_$SelectedKey"      = @{ Labels = "default" }
+                "dms-local_dms-keycloak"      = @{ Labels = "default" }
+                "dms-published_$OtherKey"     = @{ Labels = "default" }
+                "dms-published_$SelectedKey"  = @{ Fail = "Error response from daemon: context deadline exceeded" }
+            }
+            $inventory = New-RemainingInventory -VolumesByProject @{
+                "dms-local"     = @("dms-local_$OtherKey", "dms-local_$SelectedKey", "dms-local_dms-keycloak")
+                "dms-published" = @("dms-published_$OtherKey", "dms-published_$SelectedKey")
+            }
+
+            $classification = Get-RestoreSmokeLeftoverVolumeClassification -Inventory $inventory -DatabaseEngine $Engine -Definition $script:engineVolumes
+
+            @($classification.Volumes.Name) | Should -Be @("dms-local_$OtherKey", "dms-local_$SelectedKey", "dms-local_dms-keycloak", "dms-published_$OtherKey", "dms-published_$SelectedKey")
+            @($classification.Allowed.Name) | Should -Be @("dms-local_$OtherKey", "dms-published_$OtherKey")
+            @($classification.Blocked.Name) | Should -Be @("dms-local_$SelectedKey", "dms-local_dms-keycloak", "dms-published_$SelectedKey")
+            $classification.Blocked[2].Reason | Should -Be "inspection failed (docker exit 1: Error response from daemon: context deadline exceeded)"
+
+            $message = Format-RestoreSmokeLeftoverVolumeClassification -Classification $classification -Decision blocked
+            $message | Should -Be ("dms-local_$SelectedKey (it is the selected engine's ($Engine) storage, declared in $SelectedFile; the run needs fresh storage); " +
+                "dms-local_dms-keycloak (volume 'dms-keycloak' is not declared by any engine compose file (postgresql.yml, mssql.yml), so it cannot be identified); " +
+                "dms-published_$SelectedKey (inspection failed (docker exit 1: Error response from daemon: context deadline exceeded))")
+
+            Should -Invoke docker -ModuleName RestoreSmokeProbes -Times 5 -Exactly
+            Should -Invoke docker -ModuleName RestoreSmokeProbes -Times 0 -Exactly -ParameterFilter {
+                -not ($args[0] -eq "volume" -and $args[1] -eq "inspect")
+            }
+        }
+
+        It "inspects nothing when no volume remains" {
+            Set-VolumeInspectMock -Volumes @{}
+
+            $classification = Get-RestoreSmokeLeftoverVolumeClassification -Inventory (New-RemainingInventory -VolumesByProject @{}) -DatabaseEngine postgresql -Definition $script:engineVolumes
+
+            $classification.Volumes.Count | Should -Be 0
+            $classification.Allowed.Count | Should -Be 0
+            $classification.Blocked.Count | Should -Be 0
+            Should -Invoke docker -ModuleName RestoreSmokeProbes -Times 0 -Exactly
+        }
+    }
+
+    Context "Get-RestoreSmokeAllowedVolumeState" {
+        BeforeEach {
+            Set-VolumeInspectMock -Volumes @{
+                "dms-local_dms-mssql-2025" = @{ Labels = "default" }
+                "dms-local_dms-postgresql" = @{ Labels = "default" }
+            }
+            $script:classification = Get-RestoreSmokeLeftoverVolumeClassification `
+                -Inventory (New-RemainingInventory -VolumesByProject @{ "dms-local" = @("dms-local_dms-mssql-2025", "dms-local_dms-postgresql") }) `
+                -DatabaseEngine postgresql -Definition $script:engineVolumes
+        }
+
+        It "reports <case>" -ForEach @(
+            @{ Case = "an untouched volume as preserved"; Entry = @{ Labels = "default" }; Present = $true; Preserved = $true; Reason = $null }
+            @{ Case = "a removed volume as not present"; Entry = $null; Present = $false; Preserved = $false; Reason = "inspection failed (docker exit 1: Error response from daemon: get dms-local_dms-mssql-2025: no such volume)" }
+            @{ Case = "a recreated volume (new CreatedAt) as not preserved"; Entry = @{ Labels = "default"; CreatedAt = "2026-10-08T12:00:00Z" }; Present = $true; Preserved = $false; Reason = "CreatedAt changed from '2026-10-01T00:00:00.0000000Z' to '2026-10-08T12:00:00.0000000Z'; the volume was recreated" }
+            @{ Case = "an inspection failure as not shown preserved"; Entry = @{ Fail = "Cannot connect to the Docker daemon" }; Present = $false; Preserved = $false; Reason = "inspection failed (docker exit 1: Cannot connect to the Docker daemon)" }
+        ) {
+            $global:RestoreSmokeTestVolumes = @{}
+            if ($null -ne $Entry) {
+                $global:RestoreSmokeTestVolumes["dms-local_dms-mssql-2025"] = $Entry
+            }
+
+            $states = @(Get-RestoreSmokeAllowedVolumeState -Classification $script:classification)
+
+            $states.Count | Should -Be 1
+            $states[0].Name | Should -Be "dms-local_dms-mssql-2025"
+            $states[0].Present | Should -Be $Present
+            $states[0].Preserved | Should -Be $Preserved
+            $states[0].Reason | Should -Be $Reason
+        }
+
+        It "cannot show preservation when the preflight observed no CreatedAt" {
+            $script:classification.Allowed[0].CreatedAt = $null
+
+            $states = @(Get-RestoreSmokeAllowedVolumeState -Classification $script:classification)
+
+            $states[0].Present | Should -BeTrue
+            $states[0].Preserved | Should -BeFalse
+            $states[0].Reason | Should -Be "the preflight observed no CreatedAt, so preservation cannot be shown"
+        }
+
+        It "re-inspects only the allowed volumes" {
+            $global:RestoreSmokeTestVolumeCalls = [System.Collections.Generic.List[string]]::new()
+            try {
+                $null = Get-RestoreSmokeAllowedVolumeState -Classification $script:classification
+
+                @($global:RestoreSmokeTestVolumeCalls) | Should -Be @("dms-local_dms-mssql-2025")
+            }
+            finally {
+                $global:RestoreSmokeTestVolumeCalls = $null
+            }
+        }
     }
 }
 
@@ -962,10 +1272,32 @@ Describe "Get-RestoreSmokeResultClassification" {
                 SourceIdentityReason = $null
             }
         }
+
+        # The smoke's ForeignStack record after a confirmed removal that left one allowed volume.
+        function script:New-AllowedLeftoverForeignStack {
+            param([AllowNull()] [object[]]$EndStates)
+
+            $allowed = [pscustomobject]@{ Project = "dms-local"; Name = "dms-local_dms-mssql-2025"; Decision = "allowed"; CreatedAt = "2026-10-01T00:00:00Z"; Reason = "declared in mssql.yml as mssql storage" }
+            return [ordered]@{
+                RemovalConfirmed    = $true
+                LeftoverVolumes     = [pscustomobject]@{ DatabaseEngine = "postgresql"; Volumes = @($allowed); Allowed = @($allowed); Blocked = @() }
+                AllowedVolumesAtEnd = $EndStates
+            }
+        }
     }
 
     It "classifies a complete run with two stack observations as final" {
         $classification = Get-RestoreSmokeResultClassification -Provenance (New-CompleteProvenance)
+
+        $classification.Final | Should -BeTrue
+        $classification.Reasons | Should -BeNullOrEmpty
+    }
+
+    It "stays final when every allowed leftover volume was preserved, and when blocked ones were recorded" {
+        $provenance = New-CompleteProvenance
+        $provenance.ForeignStack = New-AllowedLeftoverForeignStack -EndStates @([pscustomobject]@{ Name = "dms-local_dms-mssql-2025"; Present = $true; Preserved = $true; Reason = $null })
+
+        $classification = Get-RestoreSmokeResultClassification -Provenance $provenance
 
         $classification.Final | Should -BeTrue
         $classification.Reasons | Should -BeNullOrEmpty
@@ -998,6 +1330,11 @@ Describe "Get-RestoreSmokeResultClassification" {
         @{ Case = "the end record claims clean but lists porcelain entries"; Mutate = { param($p) $p.SourceAtEnd.Porcelain = @("?? stray.txt") }; Expected = "SourceAtEnd worktree is dirty (1 porcelain entries)" }
         @{ Case = "the end record has no Clean field"; Mutate = { param($p) $p.SourceAtEnd.PSObject.Properties.Remove("Clean") }; Expected = "SourceAtEnd worktree is dirty (0 porcelain entries)" }
         @{ Case = "the start revision was never captured"; Mutate = { param($p) $p.Remove("SourceAtStart") }; Expected = "SourceAtStart not captured" }
+
+        # Allowed leftover volumes (2.1d).
+        @{ Case = "an allowed leftover volume was gone at run end"; Mutate = { param($p) $p.ForeignStack = (New-AllowedLeftoverForeignStack -EndStates @([pscustomobject]@{ Name = "dms-local_dms-mssql-2025"; Present = $false; Preserved = $false; Reason = "inspection failed (docker exit 1: no such volume)" })) }; Expected = "leftover volume 'dms-local_dms-mssql-2025' was allowed by the preflight, but was not shown preserved at run end: inspection failed (docker exit 1: no such volume)" }
+        @{ Case = "no run-end check was recorded for an allowed leftover volume"; Mutate = { param($p) $p.ForeignStack = (New-AllowedLeftoverForeignStack -EndStates $null) }; Expected = "leftover volume 'dms-local_dms-mssql-2025' was allowed by the preflight, but no run-end check was recorded" }
+        @{ Case = "the run-end check covered a different volume"; Mutate = { param($p) $p.ForeignStack = (New-AllowedLeftoverForeignStack -EndStates @([pscustomobject]@{ Name = "dms-published_dms-mssql-2025"; Present = $true; Preserved = $true; Reason = $null })) }; Expected = "leftover volume 'dms-local_dms-mssql-2025' was allowed by the preflight, but no run-end check was recorded" }
 
         # Effective SCHEMA_PACKAGES, only the second observation lacking it (2.1c).
         @{ Case = "the second observation has no SCHEMA_PACKAGES field"; Mutate = { param($p) $p.StackObservations[1].PSObject.Properties.Remove("EffectiveSchemaPackages") }; Expected = "leg-separate-config: effective SCHEMA_PACKAGES was not observed" }
@@ -1119,7 +1456,7 @@ Describe "Invoke-BootstrapRestoreSmoke complete preflight path (sandboxed, no Do
         $script:pwshPath = (Get-Process -Id $PID).Path
 
         function script:New-SmokeSandbox {
-            param([switch]$GitRepository, [switch]$SchemaToolsSucceed)
+            param([switch]$GitRepository, [switch]$SchemaToolsSucceed, [switch]$WithoutEngineComposeFiles)
 
             # The smoke's checkout is a subdirectory; the driver, call log, and results live
             # beside it, so a git-repository sandbox stays clean while the smoke runs.
@@ -1131,6 +1468,12 @@ Describe "Invoke-BootstrapRestoreSmoke complete preflight path (sandboxed, no Do
             Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Invoke-BootstrapRestoreSmoke.ps1") -Destination $testsRoot
             Copy-Item -LiteralPath (Join-Path $PSScriptRoot "RestoreSmokeProbes.psm1") -Destination $testsRoot
             Set-Content -LiteralPath (Join-Path $composeRoot ".env.example") -Value "POSTGRES_DB_NAME=edfi_datamanagementservice"
+            # The repository's real engine compose files: leftover volumes are identified against them.
+            if (-not $WithoutEngineComposeFiles) {
+                foreach ($composeFile in @("postgresql.yml", "mssql.yml")) {
+                    Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../$composeFile") -Destination $composeRoot
+                }
+            }
 
             # Every start/bootstrap script the smoke could invoke is a stub that only logs: even a
             # defect in the fakes below cannot reach a real stack.
@@ -1160,6 +1503,22 @@ param([string]$SmokePath, [string]$ArgumentsJson)
 $state = $env:SMOKE_SANDBOX_DOCKER_STATE | ConvertFrom-Json -AsHashtable
 if ($null -eq $state.Images) { $state.Images = @{} }
 $global:SmokeSandboxState = $state
+function global:Test-SmokeSandboxTeardownRan {
+    param([string]$Project)
+    Set-StrictMode -Off
+    if (-not (Test-Path -LiteralPath $env:SMOKE_SANDBOX_LOG)) { return $false }
+    $prefix = if ($Project) { "script: start-" + ($Project -replace "^dms-", "") + "-dms.ps1 " } else { "script: start-" }
+    return @(Get-Content -LiteralPath $env:SMOKE_SANDBOX_LOG | Where-Object { $_.StartsWith($prefix) }).Count -gt 0
+}
+function global:Get-SmokeSandboxProjectState {
+    # Once the project's teardown stub has run, the project holds only its AfterTeardown leftovers.
+    param([string]$Project)
+    Set-StrictMode -Off
+    $projectState = $global:SmokeSandboxState[$Project]
+    if ($null -eq $projectState) { return $null }
+    if (Test-SmokeSandboxTeardownRan -Project $Project) { return $projectState.AfterTeardown }
+    return $projectState
+}
 function global:docker {
     # The fakes run inside the smoke's strict-mode scope; they read optional keys of the state.
     Set-StrictMode -Off
@@ -1189,18 +1548,30 @@ function global:docker {
     }
     if ($args[0] -eq "ps" -or ($args[0] -eq "volume" -and $args[1] -eq "ls")) {
         if ($state.FailInventory) { $global:LASTEXITCODE = 1; return "Cannot connect to the Docker daemon" }
+        if ($state.FailInventoryAfterTeardown -and (Test-SmokeSandboxTeardownRan)) { $global:LASTEXITCODE = 1; return "Cannot connect to the Docker daemon" }
         $filter = [string]($args | Where-Object { "$_" -like "label=com.docker.compose.project=*" } | Select-Object -First 1)
         $project = $filter.Substring("label=com.docker.compose.project=".Length)
-        $projectState = $state[$project]
+        $projectState = Get-SmokeSandboxProjectState -Project $project
         if ($null -eq $projectState) { return }
-        # Once the project's teardown stub has run, the project holds only its AfterTeardown leftovers.
-        $teardownLine = "script: start-" + ($project -replace "^dms-", "") + "-dms.ps1 "
-        if ((Test-Path -LiteralPath $env:SMOKE_SANDBOX_LOG) -and @(Get-Content -LiteralPath $env:SMOKE_SANDBOX_LOG | Where-Object { $_.StartsWith($teardownLine) }).Count -gt 0) {
-            $projectState = $projectState.AfterTeardown
-            if ($null -eq $projectState) { return }
-        }
         if ($args[0] -eq "ps") { return @($projectState.Containers) }
         return @($projectState.Volumes)
+    }
+    if ($args[0] -eq "volume" -and $args[1] -eq "inspect") {
+        # A volume exists while a project's current listing shows it; its labels are the compose
+        # labels its name implies unless VolumeInspect overrides them (or fails the inspection).
+        $name = [string]$args[-1]
+        $override = $null
+        if ($null -ne $state.VolumeInspect) { $override = $state.VolumeInspect[$name] }
+        if ($null -ne $override -and $override.Fail) { $global:LASTEXITCODE = 1; return $override.Fail }
+        $listed = @(@("dms-local", "dms-published") | ForEach-Object { Get-SmokeSandboxProjectState -Project $_ } | Where-Object { $null -ne $_ } | ForEach-Object { $_.Volumes })
+        if ($listed -notcontains $name) { $global:LASTEXITCODE = 1; return "Error response from daemon: get ${name}: no such volume" }
+        $separator = $name.IndexOf("_")
+        $labels = @{}
+        if ($separator -gt 0) {
+            $labels = @{ "com.docker.compose.project" = $name.Substring(0, $separator); "com.docker.compose.volume" = $name.Substring($separator + 1); "com.docker.compose.version" = "5.1.3" }
+        }
+        if ($null -ne $override -and $null -ne $override.Labels) { $labels = $override.Labels }
+        return (@{ CreatedAt = "2026-10-01T00:00:00Z"; Driver = "local"; Labels = $labels; Name = $name; Scope = "local" } | ConvertTo-Json -Compress -Depth 5)
     }
 }
 function global:dotnet {
@@ -1237,10 +1608,12 @@ exit $LASTEXITCODE
 
                 [switch]$GitRepository,
 
-                [switch]$SchemaToolsSucceed
+                [switch]$SchemaToolsSucceed,
+
+                [switch]$WithoutEngineComposeFiles
             )
 
-            $sandbox = New-SmokeSandbox -GitRepository:$GitRepository -SchemaToolsSucceed:$SchemaToolsSucceed
+            $sandbox = New-SmokeSandbox -GitRepository:$GitRepository -SchemaToolsSucceed:$SchemaToolsSucceed -WithoutEngineComposeFiles:$WithoutEngineComposeFiles
             $DockerState = $DockerState.Clone()
             if ($SchemaToolsSucceed) {
                 $DockerState.SchemaToolsTargetDir = $sandbox.ToolDirectory
@@ -1375,40 +1748,128 @@ exit $LASTEXITCODE
             $run.Results.Classification.Final | Should -BeFalse
         }
 
-        It "records volumes another engine leaves behind and continues" {
+        It "continues beside only the other engine's storage, records why, and finds it preserved at the end (<engine>)" -ForEach $script:engineCases {
             $state = @{
                 "dms-local" = @{
-                    Containers    = @("dms-postgresql|exited|db")
-                    Volumes       = @("dms-local_dms-mssql-2025", "dms-local_dms-postgresql")
-                    AfterTeardown = @{ Containers = @(); Volumes = @("dms-local_dms-mssql-2025") }
+                    Containers    = @("dms-db|exited|db")
+                    Volumes       = @("dms-local_$OtherKey", "dms-local_$SelectedKey")
+                    AfterTeardown = @{ Containers = @(); Volumes = @("dms-local_$OtherKey") }
                 }
             }
 
-            $run = Invoke-SandboxedSmoke -DockerState $state -Arguments @{ ConfirmForeignStackRemoval = $true }
+            $run = Invoke-SandboxedSmoke -DockerState $state -Arguments @{ ConfirmForeignStackRemoval = $true; DatabaseEngine = $Engine }
 
-            $run.Output | Should -BeLike "*the confirmed removal left volumes this run's engine does not use: dms-local: containers none; volumes dms-local_dms-mssql-2025*"
-            $remaining = @($run.Results.Provenance.ForeignStack.RemainingAfterRemoval | Where-Object { $_.Project -eq "dms-local" })[0]
-            @($remaining.Volumes) | Should -Be @("dms-local_dms-mssql-2025")
+            $run.Output | Should -BeLike "*leaving volume dms-local_$OtherKey in place: declared in $OtherFile as $OtherEngine storage; this run uses $Engine*"
             @($run.Results.Steps.Name) | Should -Be @("preflight", "build-schema-tools")
             $run.Results.Steps[0].Status | Should -Be "ok"
+            $leftovers = $run.Results.Provenance.ForeignStack.LeftoverVolumes
+            @($leftovers.Allowed.Name) | Should -Be @("dms-local_$OtherKey")
+            @($leftovers.Allowed)[0].Reason | Should -Be "declared in $OtherFile as $OtherEngine storage; this run uses $Engine, whose $SelectedFile does not declare it, so this run's down -v teardowns leave it in place"
+            @($leftovers.Blocked) | Should -BeNullOrEmpty
+            @($run.Results.Provenance.ForeignStack.EngineVolumeDefinitions.ComposeFile) | Should -Be @("postgresql.yml", "mssql.yml")
+
+            # Authorization came back after the check: the build failure's teardown ran, after the build.
+            $firstDotnet = [array]::FindIndex([string[]]$run.Calls, [Predicate[string]] { param($line) $line -like "dotnet: *" })
+            $teardowns = @(for ($i = 0; $i -lt $run.Calls.Count; $i++) { if ($run.Calls[$i] -like "script: start-local-dms.ps1 *") { $i } })
+            $teardowns.Count | Should -Be 2
+            $teardowns[1] | Should -BeGreaterThan $firstDotnet
+
+            # Re-inspected after every teardown of the run, and found unchanged.
+            $lastInspect = [array]::FindLastIndex([string[]]$run.Calls, [Predicate[string]] { param($line) $line -like "docker: volume inspect *" })
+            $lastInspect | Should -BeGreaterThan $teardowns[1]
+            $atEnd = @($run.Results.Provenance.ForeignStack.AllowedVolumesAtEnd)
+            $atEnd.Count | Should -Be 1
+            $atEnd[0].Name | Should -Be "dms-local_$OtherKey"
+            $atEnd[0].Preserved | Should -BeTrue
+            @($run.Results.Classification.Reasons | Where-Object { $_ -like "leftover volume*" }) | Should -BeNullOrEmpty
         }
 
-        It "stops before any build when containers survive the confirmed removal" {
+        It "refuses mixed allowed and blocked leftovers before any build, with no further Docker change (<engine>)" -ForEach $script:engineCases {
             $state = @{
-                "dms-local" = @{
-                    Containers    = @("dms-postgresql|exited|db", "dms-mssql|exited|db")
-                    Volumes       = @()
-                    AfterTeardown = @{ Containers = @("dms-mssql|exited|db"); Volumes = @() }
+                "dms-local"     = @{
+                    Containers    = @("dms-db|exited|db")
+                    Volumes       = @("dms-local_$OtherKey", "dms-local_$SelectedKey", "dms-local_dms-keycloak")
+                    AfterTeardown = @{ Containers = @(); Volumes = @("dms-local_$OtherKey", "dms-local_$SelectedKey", "dms-local_dms-keycloak") }
                 }
+                "dms-published" = @{
+                    Containers    = @()
+                    Volumes       = @("dms-published_$OtherKey", "dms-published_$SelectedKey")
+                    AfterTeardown = @{ Containers = @(); Volumes = @("dms-published_$OtherKey", "dms-published_$SelectedKey") }
+                }
+                VolumeInspect   = @{ "dms-published_$SelectedKey" = @{ Fail = "Error response from daemon: context deadline exceeded" } }
             }
 
-            $run = Invoke-SandboxedSmoke -DockerState $state -Arguments @{ ConfirmForeignStackRemoval = $true }
+            $run = Invoke-SandboxedSmoke -DockerState $state -Arguments @{ ConfirmForeignStackRemoval = $true; DatabaseEngine = $Engine }
 
             $run.ExitCode | Should -Be 1
-            $run.Output | Should -BeLike "*The confirmed removal left containers in place: dms-local: containers dms-mssql (exited)*"
+            $run.Output | Should -BeLike "*The confirmed removal left volumes this run cannot identify as unrelated to its $Engine storage: *"
+            $run.Output | Should -BeLike "*dms-local_$SelectedKey (it is the selected engine's ($Engine) storage, declared in $SelectedFile; the run needs fresh storage)*"
+            $run.Output | Should -BeLike "*dms-local_dms-keycloak (volume 'dms-keycloak' is not declared by any engine compose file*"
+            $run.Output | Should -BeLike "*dms-published_$SelectedKey (inspection failed (docker exit 1: Error response from daemon: context deadline exceeded))*"
+            $run.Output | Should -BeLike "*no teardown: the confirmed removal left Docker state the preflight did not accept; it is left as found*"
+
+            # The only teardowns are the confirmed removal of each foreign project, and they precede
+            # the leftover check; nothing after the check changes Docker, and no build ran.
+            $scriptCalls = @(for ($i = 0; $i -lt $run.Calls.Count; $i++) { if ($run.Calls[$i] -like "script: *") { $i } })
+            $scriptCalls.Count | Should -Be 2
+            $run.Calls[$scriptCalls[0]] | Should -BeLike "script: start-local-dms.ps1 *"
+            $run.Calls[$scriptCalls[1]] | Should -BeLike "script: start-published-dms.ps1 *"
+            $firstInspect = [array]::FindIndex([string[]]$run.Calls, [Predicate[string]] { param($line) $line -like "docker: volume inspect *" })
+            $firstInspect | Should -BeGreaterThan $scriptCalls[1]
+            @($run.Calls[$scriptCalls[0]..($run.Calls.Count - 1)] | Where-Object { $_ -like "docker: *" -and $_ -notmatch '^docker: (ps -a|volume ls|volume inspect) ' }) | Should -BeNullOrEmpty
+            @($run.Calls | Where-Object { $_ -like "dotnet: *" }) | Should -BeNullOrEmpty
+
+            @($run.Results.Steps.Name) | Should -Be @("preflight")
+            $run.Results.Steps[0].Status | Should -Be "failed"
+            $leftovers = $run.Results.Provenance.ForeignStack.LeftoverVolumes
+            @($leftovers.Allowed.Name) | Should -Be @("dms-local_$OtherKey", "dms-published_$OtherKey")
+            @($leftovers.Blocked.Name) | Should -Be @("dms-local_$SelectedKey", "dms-local_dms-keycloak", "dms-published_$SelectedKey")
+            # The refusal left the allowed volumes in place too.
+            @($run.Results.Provenance.ForeignStack.AllowedVolumesAtEnd | Where-Object { $_.Preserved }).Count | Should -Be 2
+            $run.Results.Classification.Final | Should -BeFalse
+        }
+
+        It "refuses before any build, with no failure teardown, when <case>" -ForEach @(
+            @{
+                Case     = "containers survive the confirmed removal"
+                State    = @{ "dms-local" = @{ Containers = @("dms-postgresql|exited|db", "dms-mssql|exited|db"); Volumes = @(); AfterTeardown = @{ Containers = @("dms-mssql|exited|db"); Volumes = @() } } }
+                Expected = "*The confirmed removal left containers in place: dms-local: containers dms-mssql (exited)*"
+            }
+            @{
+                Case     = "a leftover volume cannot be inspected"
+                State    = @{ "dms-local" = @{ Containers = @("dms-postgresql|exited|db"); Volumes = @("dms-local_dms-mssql-2025"); AfterTeardown = @{ Containers = @(); Volumes = @("dms-local_dms-mssql-2025") } }; VolumeInspect = @{ "dms-local_dms-mssql-2025" = @{ Fail = "permission denied" } } }
+                Expected = "*dms-local_dms-mssql-2025 (inspection failed (docker exit 1: permission denied))*"
+            }
+            @{
+                Case     = "a leftover volume's project label conflicts with its listing"
+                State    = @{ "dms-local" = @{ Containers = @("dms-postgresql|exited|db"); Volumes = @("dms-local_dms-mssql-2025"); AfterTeardown = @{ Containers = @(); Volumes = @("dms-local_dms-mssql-2025") } }; VolumeInspect = @{ "dms-local_dms-mssql-2025" = @{ Labels = @{ "com.docker.compose.project" = "dms-published"; "com.docker.compose.volume" = "dms-mssql-2025" } } } }
+                Expected = "*dms-local_dms-mssql-2025 (its com.docker.compose.project label is 'dms-published', but it was listed under 'dms-local')*"
+            }
+            @{
+                Case     = "the inventory after the removal fails"
+                State    = @{ "dms-local" = @{ Containers = @("dms-postgresql|exited|db"); Volumes = @("dms-local_dms-mssql-2025"); AfterTeardown = @{ Containers = @(); Volumes = @("dms-local_dms-mssql-2025") } }; FailInventoryAfterTeardown = $true }
+                Expected = "*Refusing to run: could not list containers for compose project*"
+            }
+        ) {
+            $run = Invoke-SandboxedSmoke -DockerState $State -Arguments @{ ConfirmForeignStackRemoval = $true }
+
+            $run.ExitCode | Should -Be 1
+            $run.Output | Should -BeLike $Expected
+            $run.Output | Should -BeLike "*no teardown: the confirmed removal left Docker state the preflight did not accept; it is left as found*"
+            @($run.Calls | Where-Object { $_ -like "script: *" }).Count | Should -Be 1
             @($run.Calls | Where-Object { $_ -like "dotnet: *" }) | Should -BeNullOrEmpty
             @($run.Results.Steps.Name) | Should -Be @("preflight")
             $run.Results.Steps[0].Status | Should -Be "failed"
+        }
+
+        It "refuses before removing anything when the engine compose files cannot be read" {
+            $run = Invoke-SandboxedSmoke -DockerState $script:dms1440Shape -Arguments @{ ConfirmForeignStackRemoval = $true } -WithoutEngineComposeFiles
+
+            $run.ExitCode | Should -Be 1
+            $run.Output | Should -BeLike "*Cannot identify leftover volumes: the postgresql compose file 'postgresql.yml' was not found*"
+            $run.Output | Should -BeLike "*no teardown: the preflight did not authorize any Docker change*"
+            @($run.Calls | Where-Object { $_ -like "script: *" -or $_ -like "dotnet: *" }) | Should -BeNullOrEmpty
+            @($run.Calls | Where-Object { $_ -like "docker: *" -and $_ -notmatch '^docker: (info|ps -a|volume ls) ' }) | Should -BeNullOrEmpty
         }
     }
 

@@ -53,6 +53,13 @@
     compose project. If any exist, it refuses and changes nothing - its teardowns run with -d -v
     and would destroy them - unless -ConfirmForeignStackRemoval is passed, which tears exactly
     those projects down and is recorded in the results. A refused run never reaches any teardown.
+    That removal uses this run's engine compose files, so the smoke then inventories again. A
+    remaining container refuses the run. A remaining volume is allowed only when its observed
+    compose labels identify it as storage the OTHER engine's compose file declares (this run's
+    teardowns do not declare it, so they leave it in place); it is recorded with that reason and
+    re-inspected at the end of the run. Any other remaining volume - the selected engine's storage,
+    an unknown volume, missing or conflicting labels, or one that cannot be inspected - refuses the
+    run before any build, and that refusal makes no further Docker change.
 
     Provenance: after the preflight the smoke builds api-schema-tools (Debug, the configuration
     the bootstrap resolver prefers) and proves the resolver returns that exact executable, builds
@@ -101,7 +108,8 @@
 
 .PARAMETER ConfirmForeignStackRemoval
     Allows the run to tear down dms-local / dms-published containers and volumes it did not create.
-    Pass only on an isolated host or with the stack owner's recorded approval.
+    Pass only on an isolated host or with the stack owner's recorded approval. The run continues
+    only when nothing remains afterwards except volumes identified as the other engine's storage.
 
 .PARAMETER ExploratoryPackage
     Marks the run exploratory: its results are never classified as final evidence.
@@ -184,6 +192,7 @@ $script:CurrentStepName = $null
 # No teardown, of any project, runs until the preflight has proven that no foreign stack exists
 # (or the caller confirmed its removal). This includes the failure teardown in the finally block.
 $script:TeardownAuthorized = $false
+$script:TeardownWithheldReason = "the preflight did not authorize any Docker change"
 $script:OriginalSchemaToolPath = $env:DMS_SCHEMA_TOOL_PATH
 $script:Provenance = [ordered]@{
     RunId                        = $script:RunId
@@ -592,8 +601,18 @@ try {
             RemovalConfirmed = [bool]$ConfirmForeignStackRemoval
             RemovedProjects  = [System.Collections.Generic.List[string]]::new()
             RemainingAfterRemoval = $null
+            EngineVolumeDefinitions = $null
+            LeftoverVolumes  = $null
+            AllowedVolumesAtEnd = $null
         }
         Assert-RestoreSmokeNoForeignStack -Inventory $inventory -ConfirmForeignStackRemoval:$ConfirmForeignStackRemoval
+        $engineVolumes = $null
+        if ($inventory.HasForeignState) {
+            # Read before anything is removed: without the repository's engine-volume definitions,
+            # what the removal leaves behind could not be identified.
+            $engineVolumes = Get-RestoreSmokeEngineVolumeDefinition -DockerComposeRoot $script:DockerComposeRoot
+            $script:Provenance.ForeignStack.EngineVolumeDefinitions = $engineVolumes
+        }
         $script:TeardownAuthorized = $true
 
         $script:WorkDirectory = Join-Path ([System.IO.Path]::GetTempPath()) "dms-restore-smoke-$([Guid]::NewGuid().ToString('N'))"
@@ -614,15 +633,28 @@ try {
 
         if ($inventory.HasForeignState) {
             # The teardown uses this run's engine compose files, so another engine's containers or
-            # volumes in the same project can survive it: record what actually remains.
+            # volumes in the same project can survive it. Authorization is suspended while what
+            # remains is identified: nothing has been created since the removal, so a refusal here
+            # leaves the remaining state as found, and the failure teardown (-d -v) cannot remove a
+            # volume this check did not identify as safe.
+            $script:TeardownAuthorized = $false
+            $script:TeardownWithheldReason = "the confirmed removal left Docker state the preflight did not accept; it is left as found"
             $remaining = Get-RestoreSmokeForeignStackInventory
             $script:Provenance.ForeignStack.RemainingAfterRemoval = $remaining.Projects
+            $leftoverVolumes = Get-RestoreSmokeLeftoverVolumeClassification -Inventory $remaining -DatabaseEngine $DatabaseEngine -Definition $engineVolumes
+            $script:Provenance.ForeignStack.LeftoverVolumes = $leftoverVolumes
             if (@($remaining.Projects | ForEach-Object { $_.Containers }).Count -gt 0) {
                 throw "The confirmed removal left containers in place: $(Format-RestoreSmokeForeignStackInventory -Inventory $remaining). Remove them before rerunning."
             }
-            if ($remaining.HasForeignState) {
-                Write-Host "[restore-smoke] the confirmed removal left volumes this run's engine does not use: $(Format-RestoreSmokeForeignStackInventory -Inventory $remaining)"
+            if ($leftoverVolumes.Blocked.Count -gt 0) {
+                throw ("The confirmed removal left volumes this run cannot identify as unrelated to its $DatabaseEngine storage: " +
+                    (Format-RestoreSmokeLeftoverVolumeClassification -Classification $leftoverVolumes -Decision blocked) +
+                    ". Nothing further was stopped or removed. Account for them with their owner before rerunning.")
             }
+            foreach ($volume in $leftoverVolumes.Allowed) {
+                Write-Host "[restore-smoke] leaving volume $($volume.Name) in place: $($volume.Reason)"
+            }
+            $script:TeardownAuthorized = $true
         }
     }
 
@@ -965,7 +997,7 @@ finally {
             try { Invoke-SmokeTeardown } catch { Write-Warning "Final teardown failed: $($_.Exception.Message)" }
         }
         else {
-            Write-Host "[restore-smoke] no teardown: the preflight did not authorize any Docker change"
+            Write-Host "[restore-smoke] no teardown: $script:TeardownWithheldReason"
         }
     }
 
@@ -979,6 +1011,21 @@ finally {
         }
         foreach ($cleanup in $script:Provenance.Images.Cleanup) {
             Write-Host "[restore-smoke] run tag $($cleanup.Tag): $($cleanup.Action) $($cleanup.Detail)"
+        }
+    }
+
+    $foreignStack = $script:Provenance.ForeignStack
+    if ($null -ne $foreignStack -and $null -ne $foreignStack.LeftoverVolumes -and $foreignStack.LeftoverVolumes.Allowed.Count -gt 0) {
+        # Every teardown of this run is done: each leftover volume the preflight allowed must still
+        # exist, unchanged.
+        try {
+            $foreignStack.AllowedVolumesAtEnd = @(Get-RestoreSmokeAllowedVolumeState -Classification $foreignStack.LeftoverVolumes)
+        }
+        catch {
+            Write-Warning "Could not re-inspect the allowed leftover volumes: $($_.Exception.Message)"
+        }
+        foreach ($volumeState in @($foreignStack.AllowedVolumesAtEnd | Where-Object { $null -ne $_ })) {
+            Write-Host "[restore-smoke] allowed leftover volume $($volumeState.Name): preserved=$($volumeState.Preserved) $($volumeState.Reason)"
         }
     }
 
