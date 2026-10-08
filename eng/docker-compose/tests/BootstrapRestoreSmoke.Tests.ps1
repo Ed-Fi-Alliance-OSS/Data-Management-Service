@@ -157,8 +157,33 @@ Describe "Invoke-BootstrapRestoreSmoke static contract" {
             $body.Contains('$script:Provenance.ApiReads.Add($apiRead)') | Should -BeTrue
         }
 
-        It "probes the directory-feed leg's stack through the env file that started it" {
-            $script:smokeContent.Contains('Assert-RestoredDatastore -EnvironmentFile $feedEnvironmentFile') | Should -BeTrue
+        It "tags every post-restore assertion with its own leg's restore, inside that leg's step" {
+            $tokens = $null
+            $errors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:smokeScriptPath, [ref]$tokens, [ref]$errors)
+            $calls = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true) | Where-Object { $_.GetCommandName() -eq "Assert-RestoredDatastore" })
+
+            $legs = foreach ($call in $calls) {
+                $elements = @($call.CommandElements)
+                $parameterIndex = @(0..($elements.Count - 1) | Where-Object { $elements[$_] -is [System.Management.Automation.Language.CommandParameterAst] -and $elements[$_].ParameterName -eq "RestoreExecution" })
+                $parameterIndex.Count | Should -Be 1
+                $argumentText = $elements[$parameterIndex[0] + 1].Extent.Text
+                $argumentText -match '^\(Get-RestoreSmokeRestoreExecutionId -Leg "(?<leg>[a-z-]+)"\)$' | Should -BeTrue -Because $argumentText
+                $leg = $Matches["leg"]
+
+                # The enclosing step is the leg's own step.
+                $parent = $call.Parent
+                while ($null -ne $parent -and -not ($parent -is [System.Management.Automation.Language.CommandAst] -and $parent.GetCommandName() -eq "Invoke-SmokeStep")) {
+                    $parent = $parent.Parent
+                }
+                $parent | Should -Not -BeNullOrEmpty
+                $parent.Extent.Text | Should -Match ('^Invoke-SmokeStep -Name "leg-' + [regex]::Escape($leg) + '"')
+                $leg
+            }
+
+            @($legs) | Should -Be @("package-directory", "separate-config", "directory-feed", "populated")
+            $script:smokeContent.Contains('Assert-RestoredDatastore -RestoreExecution (Get-RestoreSmokeRestoreExecutionId -Leg "directory-feed") -EnvironmentFile $feedEnvironmentFile') | Should -BeTrue
+            (Get-SmokeFunctionBody -Name "Assert-RestoredDatastore").Contains('$apiRead | Add-Member -NotePropertyName RestoreExecution -NotePropertyValue $RestoreExecution') | Should -BeTrue
         }
 
         It "discards the cached DMS token before <function> recreates the stack" -ForEach @(

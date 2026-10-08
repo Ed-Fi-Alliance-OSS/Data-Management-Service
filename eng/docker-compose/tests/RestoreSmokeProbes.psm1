@@ -69,6 +69,21 @@ Import-Module (Join-Path $PSScriptRoot "../../Dms-Management.psm1")
 $script:ApiProbeDescriptorPath = "data/ed-fi/academicSubjectDescriptors?limit=5"
 $script:ApiProbeSchoolPath = "data/ed-fi/schools?limit=5"
 
+# The successful restores each leg performs, in order, by the template kind it restores. Each one
+# must leave exactly one complete served-data API record (Get-RestoreSmokeResultClassification).
+# The negative legs refuse a restore by design, so they require no API read.
+$script:RestoreLegExecutions = [ordered]@{
+    "package-directory" = @("Minimal")
+    "separate-config"   = @("Minimal")
+    "directory-feed"    = @("Minimal")
+    "populated"         = @("Populated")
+}
+$script:NegativeLegs = @("tampered-package", "contaminated-package", "running-stack")
+$script:ApiReadResources = [ordered]@{
+    Minimal   = @("academicSubjectDescriptors")
+    Populated = @("academicSubjectDescriptors", "schools")
+}
+
 function ConvertTo-RestoreSmokeLogSafeText {
     <#
     .SYNOPSIS
@@ -1589,6 +1604,126 @@ function Test-RestoreSmokeApiRead {
     }
 }
 
+function Get-RestoreSmokeRestoreExecutionId {
+    <#
+    .SYNOPSIS
+    The id of one successful restore a leg performs ("<leg>#<ordinal>"), which the smoke attaches to
+    that restore's served-data API record. Throws for a leg or ordinal with no defined restore, so a
+    probe can never be recorded under an id the classifier does not require.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$Leg,
+
+        [int]$Ordinal = 1
+    )
+
+    if (-not $script:RestoreLegExecutions.Contains($Leg)) {
+        throw "Leg '$Leg' performs no successful restore, so it has no restore execution id."
+    }
+    $kinds = @($script:RestoreLegExecutions[$Leg])
+    if ($Ordinal -lt 1 -or $Ordinal -gt $kinds.Count) {
+        throw "Leg '$Leg' performs $($kinds.Count) successful restore(s); restore $Ordinal is not defined."
+    }
+    return "$Leg#$Ordinal"
+}
+
+function Get-RestoreSmokeRequiredApiRead {
+    <#
+    .SYNOPSIS
+    The served-data API reads a run's selected legs require: one per successful restore, with the
+    template kind that decides which resources must be served. Negative legs require none; a leg
+    that is neither is returned as unknown, so the classifier reports it instead of ignoring it.
+    #>
+    param(
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [object[]]$Legs
+    )
+
+    $required = [System.Collections.Generic.List[object]]::new()
+    $unknown = [System.Collections.Generic.List[string]]::new()
+    foreach ($leg in @($Legs | Where-Object { $null -ne $_ } | ForEach-Object { [string]$_ } | Select-Object -Unique)) {
+        if ($script:RestoreLegExecutions.Contains($leg)) {
+            $kinds = @($script:RestoreLegExecutions[$leg])
+            for ($index = 0; $index -lt $kinds.Count; $index++) {
+                $required.Add([pscustomobject]@{ RestoreExecution = "$leg#$($index + 1)"; Leg = $leg; TemplateKind = $kinds[$index] })
+            }
+        }
+        elseif ($leg -notin $script:NegativeLegs) {
+            $unknown.Add($leg)
+        }
+    }
+    return [pscustomobject]@{ Required = @($required); UnknownLegs = @($unknown) }
+}
+
+function Get-RestoreSmokeApiReadDefect {
+    <#
+    .SYNOPSIS
+    Why one served-data API record does not prove its restore served the template's data: the mode
+    must match the template kind (a schema-only read never does), the record must name a data store,
+    and each required resource must have exactly one read with HTTP 200 and at least one row.
+    Returns no reason for a complete record. Only ids, resources, statuses, and counts are reported.
+    #>
+    param(
+        [AllowNull()]
+        [object]$Record,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("Minimal", "Populated")]
+        [string]$TemplateKind
+    )
+
+    $defects = [System.Collections.Generic.List[string]]::new()
+    $mode = ConvertTo-RestoreSmokeLogSafeText ([string](Get-RestoreSmokeEvidenceValue $Record "Mode"))
+    if ($mode -ceq "schema-only") {
+        $defects.Add("the API read was schema-only (unseeded source), which cannot prove seeded served data")
+        return @($defects)
+    }
+    $expectedMode = "seeded"
+    if ($TemplateKind -eq "Populated") {
+        $expectedMode = "populated"
+    }
+    if ($mode -cne $expectedMode) {
+        $defects.Add("the API read mode is '$mode', expected '$expectedMode' for a $TemplateKind restore")
+    }
+
+    $dataStoreId = [long]0
+    if (-not [long]::TryParse([string](Get-RestoreSmokeEvidenceValue $Record "DataStoreId"), [System.Globalization.NumberStyles]::None, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$dataStoreId) -or $dataStoreId -lt 1) {
+        $defects.Add("the API read names no data store")
+    }
+
+    $readList = Get-RestoreSmokeEvidenceValue $Record "Reads"
+    $reads = @()
+    if ($null -ne $readList) {
+        $reads = @(@($readList) | Where-Object { $null -ne $_ })
+    }
+    foreach ($resource in @($script:ApiReadResources[$TemplateKind])) {
+        $matching = @($reads | Where-Object { [string](Get-RestoreSmokeEvidenceValue $_ "Resource") -ceq $resource })
+        if ($matching.Count -eq 0) {
+            $defects.Add("no $resource read was recorded")
+            continue
+        }
+        if ($matching.Count -gt 1) {
+            $defects.Add("$($matching.Count) $resource reads were recorded; expected exactly one")
+            continue
+        }
+        $status = [string](Get-RestoreSmokeEvidenceValue $matching[0] "StatusCode")
+        if ($status -cne "200") {
+            $defects.Add("the $resource read returned HTTP $(ConvertTo-RestoreSmokeLogSafeText $status), not 200")
+        }
+        $countText = [string](Get-RestoreSmokeEvidenceValue $matching[0] "Count")
+        $count = [long]0
+        if (-not [long]::TryParse($countText, [System.Globalization.NumberStyles]::None, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$count)) {
+            $defects.Add("the $resource read recorded no row count")
+        }
+        elseif ($count -lt 1) {
+            $defects.Add("the $resource read returned no rows")
+        }
+    }
+    return @($defects)
+}
+
 function Get-RestoreSmokeEvidenceValue {
     <#
     .SYNOPSIS
@@ -1633,7 +1768,8 @@ function Get-RestoreSmokeResultClassification {
     the dms/config containers running the verified in-run image IDs, a db container whose image has
     an observed repository digest (an image ID alone is not a digest), and an observed, non-blank
     effective SCHEMA_PACKAGES value. Every leftover volume the preflight allowed must be shown
-    preserved at run end.
+    preserved at run end. Every successful restore the selected legs perform must have exactly one
+    served-data API record of its own, complete for its template kind (schema-only reads never are).
     #>
     param(
         [Parameter(Mandatory)]
@@ -1816,6 +1952,48 @@ function Get-RestoreSmokeResultClassification {
         }
     }
 
+    # Served data: every successful restore the selected legs perform needs exactly one complete API
+    # record of its own; a record anywhere else in the run does not stand in for it.
+    $legList = Get-RestoreSmokeEvidenceValue $Provenance "Legs"
+    $apiReadList = Get-RestoreSmokeEvidenceValue $Provenance "ApiReads"
+    $apiReads = @()
+    if ($null -ne $apiReadList) {
+        $apiReads = @(@($apiReadList) | Where-Object { $null -ne $_ })
+    }
+    if ($null -eq $legList) {
+        $reasons.Add("the selected legs were not recorded, so the required served-data API reads are unknown")
+    }
+    else {
+        $requirement = Get-RestoreSmokeRequiredApiRead -Legs @($legList)
+        foreach ($leg in $requirement.UnknownLegs) {
+            $reasons.Add("leg '$(ConvertTo-RestoreSmokeLogSafeText $leg)' has no defined served-data requirement")
+        }
+        $requiredIds = @($requirement.Required | ForEach-Object { $_.RestoreExecution })
+        foreach ($restore in $requirement.Required) {
+            $records = @($apiReads | Where-Object { [string](Get-RestoreSmokeEvidenceValue $_ "RestoreExecution") -ceq $restore.RestoreExecution })
+            if ($records.Count -eq 0) {
+                $reasons.Add("restore $($restore.RestoreExecution): no served-data API read was recorded")
+                continue
+            }
+            if ($records.Count -gt 1) {
+                $reasons.Add("restore $($restore.RestoreExecution): $($records.Count) served-data API reads were recorded; expected exactly one")
+                continue
+            }
+            foreach ($defect in @(Get-RestoreSmokeApiReadDefect -Record $records[0] -TemplateKind $restore.TemplateKind)) {
+                $reasons.Add("restore $($restore.RestoreExecution): $defect")
+            }
+        }
+        foreach ($record in $apiReads) {
+            $executionId = ConvertTo-RestoreSmokeLogSafeText ([string](Get-RestoreSmokeEvidenceValue $record "RestoreExecution"))
+            if ([string]::IsNullOrWhiteSpace($executionId)) {
+                $reasons.Add("a served-data API read names no restore execution")
+            }
+            elseif ($executionId -cnotin $requiredIds) {
+                $reasons.Add("a served-data API read was recorded for restore $executionId, which no selected leg performs")
+            }
+        }
+    }
+
     if ([string]::IsNullOrWhiteSpace([string](Get-RestoreSmokeEvidenceValue $Provenance "SourceIdentity"))) {
         $reasons.Add("pre-backup SourceIdentity not captured: $(Get-RestoreSmokeEvidenceValue $Provenance 'SourceIdentityReason')")
     }
@@ -1857,4 +2035,6 @@ Export-ModuleMember -Function `
     Select-RestoreSmokeDataStore, `
     Get-RestoreSmokeJsonArrayLength, `
     Test-RestoreSmokeApiRead, `
+    Get-RestoreSmokeRestoreExecutionId, `
+    Get-RestoreSmokeRequiredApiRead, `
     Get-RestoreSmokeResultClassification

@@ -1725,6 +1725,22 @@ Describe "Served-data API probe" {
             $unreachable | Should -Be "GET $script:descriptorUri failed: connection refused (Bearer ***)"
         }
 
+        It "produces a <mode> record the classifier <outcome>" -ForEach @(
+            @{ Mode = "seeded"; Leg = "package-directory"; Switches = @{}; Outcome = "accepts"; Expected = @() }
+            @{ Mode = "populated"; Leg = "populated"; Switches = @{ RequirePopulatedData = $true }; Outcome = "accepts"; Expected = @() }
+            @{ Mode = "schema-only"; Leg = "package-directory"; Switches = @{ SchemaOnly = $true }; Outcome = "rejects"; Expected = @("restore package-directory#1: the API read was schema-only (unseeded source), which cannot prove seeded served data") }
+        ) {
+            # The producer-consumer contract: the fields Test-RestoreSmokeApiRead writes are the ones
+            # the classifier reads, tagged exactly as Assert-RestoredDatastore tags them.
+            $record = Test-RestoreSmokeApiRead @script:readArguments @Switches
+            $record | Add-Member -NotePropertyName RestoreExecution -NotePropertyValue (Get-RestoreSmokeRestoreExecutionId -Leg $Leg)
+
+            $classification = Get-RestoreSmokeResultClassification -Provenance ([ordered]@{ Legs = @($Leg); ApiReads = @($record) })
+
+            $record.Mode | Should -Be $Mode
+            @($classification.Reasons | Where-Object { $_ -like "restore *" -or $_ -like "*served-data*" }) | Should -Be $Expected
+        }
+
         It "keeps tokens and secrets out of the evidence record" {
             $json = Test-RestoreSmokeApiRead @script:readArguments -RequirePopulatedData | ConvertTo-Json -Depth 10
 
@@ -1732,6 +1748,46 @@ Describe "Served-data API probe" {
                 $json | Should -Not -Match ([regex]::Escape($secret))
             }
         }
+    }
+}
+
+Describe "Restore executions requiring served-data evidence" {
+    It "names the restore <leg> performs" -ForEach @(
+        @{ Leg = "package-directory" }
+        @{ Leg = "separate-config" }
+        @{ Leg = "directory-feed" }
+        @{ Leg = "populated" }
+    ) {
+        Get-RestoreSmokeRestoreExecutionId -Leg $Leg | Should -BeExactly "$Leg#1"
+    }
+
+    It "has no restore id for <leg>" -ForEach @(
+        @{ Leg = "tampered-package"; Ordinal = 1; Expected = "Leg 'tampered-package' performs no successful restore, so it has no restore execution id." }
+        @{ Leg = "contaminated-package"; Ordinal = 1; Expected = "Leg 'contaminated-package' performs no successful restore, so it has no restore execution id." }
+        @{ Leg = "running-stack"; Ordinal = 1; Expected = "Leg 'running-stack' performs no successful restore, so it has no restore execution id." }
+        @{ Leg = "mystery-leg"; Ordinal = 1; Expected = "Leg 'mystery-leg' performs no successful restore, so it has no restore execution id." }
+        @{ Leg = "package-directory"; Ordinal = 2; Expected = "Leg 'package-directory' performs 1 successful restore(s); restore 2 is not defined." }
+        @{ Leg = "package-directory"; Ordinal = 0; Expected = "Leg 'package-directory' performs 1 successful restore(s); restore 0 is not defined." }
+    ) {
+        { Get-RestoreSmokeRestoreExecutionId -Leg $Leg -Ordinal $Ordinal } | Should -Throw -ExpectedMessage $Expected
+    }
+
+    It "derives one required read per successful restore of the selected legs, none for negative legs" {
+        $requirement = Get-RestoreSmokeRequiredApiRead -Legs @("package-directory", "tampered-package", "separate-config", "directory-feed", "contaminated-package", "running-stack", "populated", "package-directory")
+
+        @($requirement.Required | ForEach-Object { $_.RestoreExecution }) | Should -Be @("package-directory#1", "separate-config#1", "directory-feed#1", "populated#1")
+        @($requirement.Required | ForEach-Object { $_.TemplateKind }) | Should -Be @("Minimal", "Minimal", "Minimal", "Populated")
+        @($requirement.UnknownLegs) | Should -BeNullOrEmpty
+    }
+
+    It "derives no required read for only negative legs, and reports unknown legs" {
+        $negative = Get-RestoreSmokeRequiredApiRead -Legs @("tampered-package", "contaminated-package", "running-stack")
+        $unknown = Get-RestoreSmokeRequiredApiRead -Legs @("running-stack", "mystery-leg")
+
+        @($negative.Required) | Should -BeNullOrEmpty
+        @($negative.UnknownLegs) | Should -BeNullOrEmpty
+        @($unknown.Required) | Should -BeNullOrEmpty
+        @($unknown.UnknownLegs) | Should -Be @("mystery-leg")
     }
 }
 
@@ -1756,13 +1812,51 @@ Describe "Get-RestoreSmokeResultClassification" {
             }
         }
 
+        # The record Test-RestoreSmokeApiRead returns, tagged as Assert-RestoredDatastore tags it.
+        function script:New-CompleteApiRead {
+            param(
+                [string]$RestoreExecution,
+
+                [ValidateSet("Minimal", "Populated")]
+                [string]$TemplateKind = "Minimal"
+            )
+
+            $reads = [System.Collections.Generic.List[object]]::new()
+            $reads.Add([pscustomobject]@{ Resource = "academicSubjectDescriptors"; Uri = "http://localhost:8080/data/ed-fi/academicSubjectDescriptors?limit=5"; StatusCode = 200; Count = 5 })
+            $mode = "seeded"
+            if ($TemplateKind -eq "Populated") {
+                $reads.Add([pscustomobject]@{ Resource = "schools"; Uri = "http://localhost:8080/data/ed-fi/schools?limit=5"; StatusCode = 200; Count = 2 })
+                $mode = "populated"
+            }
+            return [pscustomobject]@{
+                Mode                = $mode
+                CmsUrl              = "http://localhost:8081"
+                DmsUrl              = "http://localhost:8080"
+                DataStoreId         = 1
+                DataStoreName       = "Local Development Data Store"
+                DataStoreCandidates = @()
+                StackGeneration     = 4
+                TokenReused         = $false
+                TokenRequestCount   = 1
+                Reads               = $reads
+                RestoreExecution    = $RestoreExecution
+                Label               = "leg-" + ($RestoreExecution -replace '#\d+$', '')
+            }
+        }
+
         # A complete run: every final-evidence field present, SourceIdentity supplied (so its
-        # pending Step 2.3 implementation cannot mask a check), and two stack observations.
+        # pending Step 2.3 implementation cannot mask a check), two stack observations, and one
+        # complete served-data record for each of the two restores its legs perform.
         function script:New-CompleteProvenance {
             $observations = [System.Collections.Generic.List[object]]::new()
             $observations.Add((New-CompleteObservation -Label "leg-package-directory"))
             $observations.Add((New-CompleteObservation -Label "leg-separate-config"))
+            $apiReads = [System.Collections.Generic.List[object]]::new()
+            $apiReads.Add((New-CompleteApiRead -RestoreExecution "package-directory#1"))
+            $apiReads.Add((New-CompleteApiRead -RestoreExecution "separate-config#1"))
             return [ordered]@{
+                Legs                 = @("package-directory", "separate-config", "tampered-package")
+                ApiReads             = $apiReads
                 ExploratoryPackage   = $false
                 SourceAtStart        = [pscustomobject]@{ Revision = $script:startRevision; Observed = $true; Clean = $true; Porcelain = @(); Reason = $null }
                 SourceAtEnd          = [pscustomobject]@{ Revision = $script:startRevision; Observed = $true; Clean = $true; Porcelain = @(); Reason = $null }
@@ -1848,6 +1942,25 @@ Describe "Get-RestoreSmokeResultClassification" {
         @{ Case = "the second observation's SCHEMA_PACKAGES read failed"; Mutate = { param($p) $p.StackObservations[1].EffectiveSchemaPackages = [pscustomobject]@{ Source = "x"; Value = $null; Reason = "derived env file not present" } }; Expected = "leg-separate-config: effective SCHEMA_PACKAGES not observed: derived env file not present" }
         @{ Case = "the second observation's SCHEMA_PACKAGES record has no Value field"; Mutate = { param($p) $p.StackObservations[1].EffectiveSchemaPackages = [pscustomobject]@{ Source = "x" } }; Expected = "leg-separate-config: effective SCHEMA_PACKAGES not observed: the value is blank" }
 
+        # Served-data evidence per restore (2.2a).
+        @{ Case = "only the first of two restore executions has a served-data record"; Mutate = { param($p) $p.ApiReads.RemoveAt(1) }; Expected = "restore separate-config#1: no served-data API read was recorded" }
+        @{ Case = "only the second of two restore executions has a served-data record"; Mutate = { param($p) $p.ApiReads.RemoveAt(0) }; Expected = "restore package-directory#1: no served-data API read was recorded" }
+        @{ Case = "the first restore's read was schema-only"; Mutate = { param($p) $p.ApiReads[0].Mode = "schema-only"; $p.ApiReads[0].Reads[0].Count = 0 }; Expected = "restore package-directory#1: the API read was schema-only (unseeded source), which cannot prove seeded served data" }
+        @{ Case = "the second restore's descriptor read was not HTTP 200"; Mutate = { param($p) $p.ApiReads[1].Reads[0].StatusCode = 401 }; Expected = "restore separate-config#1: the academicSubjectDescriptors read returned HTTP 401, not 200" }
+        @{ Case = "the second restore's descriptor read returned no rows"; Mutate = { param($p) $p.ApiReads[1].Reads[0].Count = 0 }; Expected = "restore separate-config#1: the academicSubjectDescriptors read returned no rows" }
+        @{ Case = "the second restore's descriptor read has no row count"; Mutate = { param($p) $p.ApiReads[1].Reads[0].PSObject.Properties.Remove("Count") }; Expected = "restore separate-config#1: the academicSubjectDescriptors read recorded no row count" }
+        @{ Case = "the second restore's record has no reads"; Mutate = { param($p) $p.ApiReads[1].Reads.Clear() }; Expected = "restore separate-config#1: no academicSubjectDescriptors read was recorded" }
+        @{ Case = "the second restore's record has no Reads field"; Mutate = { param($p) $p.ApiReads[1].PSObject.Properties.Remove("Reads") }; Expected = "restore separate-config#1: no academicSubjectDescriptors read was recorded" }
+        @{ Case = "the second restore's descriptor read was recorded twice"; Mutate = { param($p) $p.ApiReads[1].Reads.Add($p.ApiReads[1].Reads[0]) }; Expected = "restore separate-config#1: 2 academicSubjectDescriptors reads were recorded; expected exactly one" }
+        @{ Case = "the second restore's record names no data store"; Mutate = { param($p) $p.ApiReads[1].DataStoreId = $null }; Expected = "restore separate-config#1: the API read names no data store" }
+        @{ Case = "a Minimal restore's read is labelled populated"; Mutate = { param($p) $p.ApiReads[1].Mode = "populated" }; Expected = "restore separate-config#1: the API read mode is 'populated', expected 'seeded' for a Minimal restore" }
+        @{ Case = "the second restore's record has no mode"; Mutate = { param($p) $p.ApiReads[1].PSObject.Properties.Remove("Mode") }; Expected = "restore separate-config#1: the API read mode is '', expected 'seeded' for a Minimal restore" }
+        @{ Case = "an extra record names no restore execution"; Mutate = { param($p) $extra = New-CompleteApiRead -RestoreExecution ""; $p.ApiReads.Add($extra) }; Expected = "a served-data API read names no restore execution" }
+        @{ Case = "an extra record belongs to a negative leg"; Mutate = { param($p) $p.ApiReads.Add((New-CompleteApiRead -RestoreExecution "tampered-package#1")) }; Expected = "a served-data API read was recorded for restore tampered-package#1, which no selected leg performs" }
+        @{ Case = "an extra record belongs to a leg that was not selected"; Mutate = { param($p) $p.ApiReads.Add((New-CompleteApiRead -RestoreExecution "directory-feed#1")) }; Expected = "a served-data API read was recorded for restore directory-feed#1, which no selected leg performs" }
+        @{ Case = "a selected leg has no defined requirement"; Mutate = { param($p) $p.Legs = @($p.Legs) + "mystery-leg" }; Expected = "leg 'mystery-leg' has no defined served-data requirement" }
+        @{ Case = "the selected legs were not recorded"; Mutate = { param($p) $p.Remove("Legs") }; Expected = "the selected legs were not recorded, so the required served-data API reads are unknown" }
+
         # Engine repository digest, only the second observation lacking it (2.1c).
         @{ Case = "the second observation's engine image has no digest, with the observed reason"; Mutate = { param($p) $p.StackObservations[1].Services["db"].RepoDigests = @(); $p.StackObservations[1].Services["db"].RepoDigestsReason = "the image has no repository digest (locally built or untagged)" }; Expected = "leg-separate-config: the db image sha256:pg has no observed repository digest: the image has no repository digest (locally built or untagged)" }
         @{ Case = "the second observation's engine record has no RepoDigests field"; Mutate = { param($p) $p.StackObservations[1].Services["db"].PSObject.Properties.Remove("RepoDigests") }; Expected = "leg-separate-config: the db image sha256:pg has no observed repository digest" }
@@ -1875,6 +1988,62 @@ Describe "Get-RestoreSmokeResultClassification" {
 
         $classification.Final | Should -BeFalse
         @($classification.Reasons) | Should -Be $Expected
+    }
+
+    It "is non-final for each restore when <case>" -ForEach @(
+        @{ Case = "the run recorded no served-data reads at all"; Mutate = { param($p) $p.Remove("ApiReads") }; Expected = @("restore package-directory#1: no served-data API read was recorded", "restore separate-config#1: no served-data API read was recorded") }
+        @{ Case = "the second restore's record is filed under the first restore"; Mutate = { param($p) $p.ApiReads[1].RestoreExecution = "package-directory#1" }; Expected = @("restore package-directory#1: 2 served-data API reads were recorded; expected exactly one", "restore separate-config#1: no served-data API read was recorded") }
+        @{ Case = "both restores' reads were schema-only (-SkipSourceSeed)"; Mutate = { param($p) foreach ($record in $p.ApiReads) { $record.Mode = "schema-only"; $record.Reads[0].Count = 0 } }; Expected = @("restore package-directory#1: the API read was schema-only (unseeded source), which cannot prove seeded served data", "restore separate-config#1: the API read was schema-only (unseeded source), which cannot prove seeded served data") }
+    ) {
+        $provenance = New-CompleteProvenance
+        & $Mutate $provenance
+
+        $classification = Get-RestoreSmokeResultClassification -Provenance $provenance
+
+        $classification.Final | Should -BeFalse
+        @($classification.Reasons) | Should -Be $Expected
+    }
+
+    It "requires no served-data read for a run of only negative legs" {
+        $provenance = New-CompleteProvenance
+        $provenance.Legs = @("tampered-package", "contaminated-package", "running-stack")
+        $provenance.ApiReads.Clear()
+
+        $classification = Get-RestoreSmokeResultClassification -Provenance $provenance
+
+        $classification.Final | Should -BeTrue
+        $classification.Reasons | Should -BeNullOrEmpty
+    }
+
+    Context "a Populated restore" {
+        BeforeEach {
+            $script:populated = New-CompleteProvenance
+            $script:populated.Legs = @("populated")
+            $script:populated.ApiReads.Clear()
+            $script:populated.ApiReads.Add((New-CompleteApiRead -RestoreExecution "populated#1" -TemplateKind Populated))
+        }
+
+        It "is final with non-empty descriptor and schools reads" {
+            $classification = Get-RestoreSmokeResultClassification -Provenance $script:populated
+
+            $classification.Final | Should -BeTrue
+            $classification.Reasons | Should -BeNullOrEmpty
+        }
+
+        It "is non-final when <case>" -ForEach @(
+            @{ Case = "the schools read is missing"; Mutate = { param($p) $p.ApiReads[0].Reads.RemoveAt(1) }; Expected = @("restore populated#1: no schools read was recorded") }
+            @{ Case = "the schools read returned no rows"; Mutate = { param($p) $p.ApiReads[0].Reads[1].Count = 0 }; Expected = @("restore populated#1: the schools read returned no rows") }
+            @{ Case = "the schools read was not HTTP 200"; Mutate = { param($p) $p.ApiReads[0].Reads[1].StatusCode = 403 }; Expected = @("restore populated#1: the schools read returned HTTP 403, not 200") }
+            @{ Case = "the record is a seeded Minimal read"; Mutate = { param($p) $p.ApiReads[0] = New-CompleteApiRead -RestoreExecution "populated#1" }; Expected = @("restore populated#1: the API read mode is 'seeded', expected 'populated' for a Populated restore", "restore populated#1: no schools read was recorded") }
+            @{ Case = "the record is schema-only"; Mutate = { param($p) $p.ApiReads[0].Mode = "schema-only" }; Expected = @("restore populated#1: the API read was schema-only (unseeded source), which cannot prove seeded served data") }
+        ) {
+            & $Mutate $script:populated
+
+            $classification = Get-RestoreSmokeResultClassification -Provenance $script:populated
+
+            $classification.Final | Should -BeFalse
+            @($classification.Reasons) | Should -Be $Expected
+        }
     }
 
     It "reports a second observation that could not be taken at all, without throwing" {
@@ -1931,6 +2100,7 @@ Describe "Get-RestoreSmokeResultClassification" {
             "images were not built in this run"
             "no started stack was observed, so the images actually used are unknown"
             "no package was built in this run"
+            "the selected legs were not recorded, so the required served-data API reads are unknown"
             "pre-backup SourceIdentity not captured: "
         )
     }

@@ -82,7 +82,10 @@
     academicSubjectDescriptors must answer HTTP 200 with a non-empty JSON array (with
     -SkipSourceSeed an empty array passes and is reported as schema-only), and the populated leg
     also reads schools. The CMS per-client token limit keeps its default. Endpoints, data-store
-    selection, and read counts go to the results; tokens and secrets never do.
+    selection, and read counts go to the results, each record tagged with its restore; tokens and
+    secrets never do. A run is final evidence only when every successful restore its legs perform
+    has exactly one complete seeded read of its own (the negative legs need none, and a
+    -SkipSourceSeed run's schema-only reads never qualify).
 
     Trust: the smoke NEVER bypasses attestation. It registers an ephemeral development
     producer (restore-smoke-<hex>) in the git-ignored local trust overlay via
@@ -445,9 +448,13 @@ function Assert-RestoredDatastore {
     .SYNOPSIS
     The post-restore probes: DMS health, the dms.EffectiveSchema singleton, (when the source
     was seeded) at least one restored descriptor row, and the authenticated served-data read
-    through the DMS API of the stack -EnvironmentFile started.
+    through the DMS API of the stack -EnvironmentFile started, recorded under -RestoreExecution (the
+    restore's id from Get-RestoreSmokeRestoreExecutionId) so the classifier can match it to that restore.
     #>
     param(
+        [Parameter(Mandatory)]
+        [string]$RestoreExecution,
+
         [switch]$RequirePopulatedData,
 
         [string]$EnvironmentFile = $script:ResolvedEnvironmentFile
@@ -502,10 +509,11 @@ function Assert-RestoredDatastore {
         -DatabaseEngine $DatabaseEngine `
         -RequirePopulatedData:$RequirePopulatedData `
         -SchemaOnly:$SkipSourceSeed
+    $apiRead | Add-Member -NotePropertyName RestoreExecution -NotePropertyValue $RestoreExecution
     $apiRead | Add-Member -NotePropertyName Label -NotePropertyValue ([string]$script:CurrentStepName)
     $script:Provenance.ApiReads.Add($apiRead)
     $readSummary = ($apiRead.Reads | ForEach-Object { "$($_.Resource)=$($_.Count)" }) -join ", "
-    Write-Host "[restore-smoke] served-data API read ($($apiRead.Mode)): data store $($apiRead.DataStoreId), HTTP 200, $readSummary (token reused: $($apiRead.TokenReused))"
+    Write-Host "[restore-smoke] served-data API read for restore $RestoreExecution ($($apiRead.Mode)): data store $($apiRead.DataStoreId), HTTP 200, $readSummary (token reused: $($apiRead.TokenReused))"
 }
 
 function Build-SmokeSourceAndPackage {
@@ -771,7 +779,7 @@ try {
                 RestoreTemplate  = "Minimal"
                 PackageDirectory = $packageDirectoryPath
             }
-            Assert-RestoredDatastore
+            Assert-RestoredDatastore -RestoreExecution (Get-RestoreSmokeRestoreExecutionId -Leg "package-directory")
         }
         Invoke-SmokeStep -Name "leg-package-directory-teardown" -Body { Invoke-SmokeTeardown }
     }
@@ -804,7 +812,7 @@ try {
                 PackageDirectory       = $packageDirectoryPath
                 SeparateConfigDatabase = $true
             }
-            Assert-RestoredDatastore
+            Assert-RestoredDatastore -RestoreExecution (Get-RestoreSmokeRestoreExecutionId -Leg "separate-config")
 
             $markerCountQuery = if ($DatabaseEngine -eq "mssql") {
                 "SET NOCOUNT ON; SELECT COUNT(*) FROM dbo.restore_smoke_marker;"
@@ -838,7 +846,7 @@ try {
                 DatabaseEngine  = $DatabaseEngine
                 RestoreTemplate = "Minimal"
             }
-            Assert-RestoredDatastore -EnvironmentFile $feedEnvironmentFile
+            Assert-RestoredDatastore -RestoreExecution (Get-RestoreSmokeRestoreExecutionId -Leg "directory-feed") -EnvironmentFile $feedEnvironmentFile
         }
         Invoke-SmokeStep -Name "leg-directory-feed-teardown" -Body { Invoke-SmokeTeardown }
     }
@@ -1011,7 +1019,7 @@ try {
                 RestoreTemplate  = "Populated"
                 PackageDirectory = $populatedPackageDirectory
             }
-            Assert-RestoredDatastore -RequirePopulatedData
+            Assert-RestoredDatastore -RestoreExecution (Get-RestoreSmokeRestoreExecutionId -Leg "populated") -RequirePopulatedData
         }
         Invoke-SmokeStep -Name "leg-populated-teardown" -Body { Invoke-SmokeTeardown }
     }
