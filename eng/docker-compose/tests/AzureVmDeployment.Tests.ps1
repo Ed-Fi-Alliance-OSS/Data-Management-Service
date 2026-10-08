@@ -581,6 +581,27 @@ Describe "Azure VM review variant applications" {
             Should -Throw "*MT Data Store (tenant1 2025)*"
         Should -Invoke Add-Application -ModuleName review-variants -Times 0 -Exactly
     }
+
+    It "prints the credentials it created before a failure, because a re-run skips those applications" {
+        $script:applicationCalls = 0
+        Mock Add-Application -ModuleName review-variants {
+            $script:applicationCalls++
+            if ($script:applicationCalls -eq 2) { throw "CMS answered 500" }
+            @{ Id = $script:applicationCalls; Key = "key-$script:applicationCalls"; Secret = "secret-$script:applicationCalls" }
+        }
+
+        $failure = $null
+        $printed = try {
+            Add-ReviewVariantSet -Deployment (Get-ReviewDeployment -BaseUrl "https://host") -AdminClientId "admin" -AdminClientSecret "secret" 6>&1
+        }
+        catch { $failure = $_ }
+
+        "$failure" | Should -BeLike "*CMS answered 500*"
+        $text = $printed | Out-String
+        $text | Should -Match "Security Review ST SISVendor District"
+        $text | Should -Match "key-1"
+        $text | Should -Match "secret-1"
+    }
 }
 
 Describe "Azure VM educator-prep load" {
@@ -739,6 +760,7 @@ Describe "Azure VM educator-prep load" {
 Describe "Azure VM entry scripts" {
     BeforeAll {
         $script:seedRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm/compose/seed"))
+        $script:bootstrapRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm/compose/bootstrap"))
     }
 
     BeforeEach {
@@ -759,6 +781,18 @@ Describe "Azure VM entry scripts" {
 
         $LASTEXITCODE | Should -Not -Be 0
         $output | Out-String | Should -Match "No educator-prep files found"
+    }
+
+    It "add-review-variants.ps1 refuses an existing -OutFile before anything else, so a re-run cannot overwrite saved secrets" {
+        # The env file is missing on purpose: the refusal must come before the script reads it.
+        $outFile = Join-Path $script:work "review-variants.json"
+        Set-Content -LiteralPath $outFile -Value '[{"Key":"saved"}]' -NoNewline
+
+        $output = & pwsh -NoProfile -File (Join-Path $script:bootstrapRoot "add-review-variants.ps1") -OutFile $outFile -EnvFile (Join-Path $script:work "missing.env") 2>&1
+
+        $LASTEXITCODE | Should -Not -Be 0
+        $output | Out-String | Should -Match "already exists"
+        Get-Content -LiteralPath $outFile -Raw | Should -Be '[{"Key":"saved"}]'
     }
 }
 

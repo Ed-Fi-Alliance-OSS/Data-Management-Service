@@ -7,7 +7,8 @@
 # district 255901 -- 4 per deployment, 12 key/secret pairs.
 #
 # bootstrap.ps1 already does this on a fresh deploy. Run this script to add the variants to an
-# environment bootstrapped before they existed. It is re-runnable: existing variants are skipped.
+# environment bootstrapped before they existed. It is re-runnable: existing variants are skipped,
+# and -OutFile must name a new file, so a re-run cannot overwrite secrets saved by an earlier one.
 #
 # Usage (on the VM, from eng/azure-vm/compose):
 #   pwsh ./bootstrap/add-review-variants.ps1 -BaseUrl https://localhost -Insecure
@@ -18,12 +19,17 @@ param(
     [string]$EnvFile = "$PSScriptRoot/../.env",
     # Gateway base URL (default: PUBLIC_BASE_URL from .env). Use https://localhost on the VM.
     [string]$BaseUrl = "",
-    # Also write the created credentials as JSON (mode 600), e.g. for http/sample-variants.py.
+    # Also write the created credentials as JSON (mode 600) to this new file, e.g. for http/sample-variants.py.
     [string]$OutFile = "",
     [switch]$Insecure
 )
 
 $ErrorActionPreference = "Stop"
+# Refuse before anything else: the file may hold the only copy of an earlier run's secrets, and a
+# re-run that skips existing variants would rewrite it with only this run's credentials.
+if ($OutFile -and (Test-Path -LiteralPath $OutFile)) {
+    throw "-OutFile '$OutFile' already exists and may hold the only copy of earlier secrets. Move it away or choose a new path."
+}
 Import-Module "$PSScriptRoot/../../../Dms-Management.psm1" -Force
 Import-Module "$PSScriptRoot/review-variants.psm1" -Force
 
@@ -49,7 +55,7 @@ $created | Format-List
 if ($OutFile) {
     if (-not $IsWindows) {
         # Create the file 600 before any secret is written to it.
-        New-Item -ItemType File -Path $OutFile -Force | Out-Null
+        New-Item -ItemType File -Path $OutFile | Out-Null
         chmod 600 $OutFile
     }
     ConvertTo-Json -InputObject $created | Set-Content -Path $OutFile -NoNewline

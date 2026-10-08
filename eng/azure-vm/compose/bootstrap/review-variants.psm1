@@ -122,7 +122,8 @@ function Add-ReviewVariantSet {
     .DESCRIPTION
         Re-runnable: a variant whose application already exists is skipped with a warning (its
         secret cannot be read back; reset it through the CMS if it was lost), and an existing
-        vendor is reused because POST /v3/vendors rejects a repeated company.
+        vendor is reused because POST /v3/vendors rejects a repeated company. When a call fails
+        part-way, the credentials created so far are printed before the error is rethrown.
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject[]])]
@@ -150,43 +151,54 @@ function Add-ReviewVariantSet {
     }
 
     $created = [System.Collections.Generic.List[object]]::new()
-    foreach ($plan in $plans) {
-        $d = $plan.Deployment
-        $token = $plan.Token
-        $headers = $plan.Headers
-        $allApplications = Invoke-RestMethod -Uri "$($d.CmsUrl)v3/applications?offset=0&limit=500" -Headers $headers
-        $existingNames = @($allApplications | ForEach-Object { $_.applicationName })
-        $allVendors = Invoke-RestMethod -Uri "$($d.CmsUrl)v3/vendors?offset=0&limit=500" -Headers $headers
+    try {
+        foreach ($plan in $plans) {
+            $d = $plan.Deployment
+            $token = $plan.Token
+            $headers = $plan.Headers
+            $allApplications = Invoke-RestMethod -Uri "$($d.CmsUrl)v3/applications?offset=0&limit=500" -Headers $headers
+            $existingNames = @($allApplications | ForEach-Object { $_.applicationName })
+            $allVendors = Invoke-RestMethod -Uri "$($d.CmsUrl)v3/vendors?offset=0&limit=500" -Headers $headers
 
-        foreach ($v in $Variant) {
-            # dmscs.ApiClient.Name copies the application name and is VARCHAR(50).
-            $applicationName = "Security Review $($d.Code) $($v.Name)"
-            if ($applicationName.Length -gt 50) {
-                throw "Application name '$applicationName' is $($applicationName.Length) characters; the limit is 50."
-            }
-            if ($existingNames -contains $applicationName) {
-                Write-Warning "'$applicationName' already exists in $($d.Label); skipped."
-                continue
-            }
+            foreach ($v in $Variant) {
+                # dmscs.ApiClient.Name copies the application name and is VARCHAR(50).
+                $applicationName = "Security Review $($d.Code) $($v.Name)"
+                if ($applicationName.Length -gt 50) {
+                    throw "Application name '$applicationName' is $($applicationName.Length) characters; the limit is 50."
+                }
+                if ($existingNames -contains $applicationName) {
+                    Write-Warning "'$applicationName' already exists in $($d.Label); skipped."
+                    continue
+                }
 
-            $company = "Security Review Vendor ($($d.Code) $($v.Name))"
-            $vendor = @($allVendors | Where-Object { $_.company -eq $company })
-            $vendorId = if ($vendor.Count -eq 1) { $vendor[0].id } else {
-                Add-Vendor -CmsUrl $d.CmsUrl -Company $company -NamespacePrefixes $v.NamespacePrefixes -AccessToken $token -Tenant $d.Tenant
+                $company = "Security Review Vendor ($($d.Code) $($v.Name))"
+                $vendor = @($allVendors | Where-Object { $_.company -eq $company })
+                $vendorId = if ($vendor.Count -eq 1) { $vendor[0].id } else {
+                    Add-Vendor -CmsUrl $d.CmsUrl -Company $company -NamespacePrefixes $v.NamespacePrefixes -AccessToken $token -Tenant $d.Tenant
+                }
+                $application = Add-Application -CmsUrl $d.CmsUrl -ApplicationName $applicationName -ClaimSetName $v.ClaimSet `
+                    -VendorId $vendorId -AccessToken $token -EducationOrganizationIds $v.EducationOrganizationIds `
+                    -DataStoreIds @($plan.DataStoreId) -Tenant $d.Tenant
+                $created.Add([pscustomobject]@{
+                        Environment = $d.Label
+                        Application = $applicationName
+                        ClaimSet    = $v.ClaimSet
+                        EdOrgIds    = ($v.EducationOrganizationIds -join ",")
+                        Namespace   = $v.NamespacePrefixes
+                        Key         = $application.Key
+                        Secret      = $application.Secret
+                    })
             }
-            $application = Add-Application -CmsUrl $d.CmsUrl -ApplicationName $applicationName -ClaimSetName $v.ClaimSet `
-                -VendorId $vendorId -AccessToken $token -EducationOrganizationIds $v.EducationOrganizationIds `
-                -DataStoreIds @($plan.DataStoreId) -Tenant $d.Tenant
-            $created.Add([pscustomobject]@{
-                    Environment = $d.Label
-                    Application = $applicationName
-                    ClaimSet    = $v.ClaimSet
-                    EdOrgIds    = ($v.EducationOrganizationIds -join ",")
-                    Namespace   = $v.NamespacePrefixes
-                    Key         = $application.Key
-                    Secret      = $application.Secret
-                })
         }
+    }
+    catch {
+        # A re-run skips these applications and their secrets cannot be read back, so print them
+        # (Format-List keeps the full key and secret) before the error ends the caller.
+        if ($created.Count -gt 0) {
+            Write-Information "`n== Review-variant credentials created before the failure (store them now: a re-run skips these) ==" -InformationAction Continue
+            Write-Information ($created | Format-List | Out-String) -InformationAction Continue
+        }
+        throw
     }
 
     return $created.ToArray()
