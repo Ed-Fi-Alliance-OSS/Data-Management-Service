@@ -173,7 +173,7 @@ public sealed class ReferenceResolverIntegrationFixture
                     new ReferenceResolverDescriptorSeed(
                         303,
                         13,
-                        "uri://ed-fi.org",
+                        "uri://ed-fi.org/SchoolTypeDescriptor",
                         "Alternative",
                         "Alternative",
                         "SchoolTypeDescriptor",
@@ -182,7 +182,7 @@ public sealed class ReferenceResolverIntegrationFixture
                     new ReferenceResolverDescriptorSeed(
                         404,
                         14,
-                        "uri://ed-fi.org",
+                        "uri://ed-fi.org/AcademicSubjectDescriptor",
                         "English",
                         "English",
                         "AcademicSubjectDescriptor",
@@ -620,8 +620,6 @@ public sealed record ReferenceResolverSeedData(
                     new DbColumnName("Namespace"),
                     new DbColumnName("CodeValue"),
                     new DbColumnName("ShortDescription"),
-                    new DbColumnName("Discriminator"),
-                    new DbColumnName("Uri"),
                 ],
                 Descriptors
                     .Select(descriptor =>
@@ -632,8 +630,6 @@ public sealed record ReferenceResolverSeedData(
                                 descriptor.Namespace,
                                 descriptor.CodeValue,
                                 descriptor.ShortDescription,
-                                descriptor.Discriminator,
-                                descriptor.Uri,
                             ]
                     )
                     .ToArray()

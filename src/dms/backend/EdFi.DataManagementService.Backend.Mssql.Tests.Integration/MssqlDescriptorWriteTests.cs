@@ -637,6 +637,23 @@ public class Given_MssqlDescriptorWriteHandler
         };
     }
 
+    [Test]
+    public async Task It_keeps_DocumentCacheMaterializer_Descriptor_updates_and_work_on_the_owning_document()
+    {
+        using var scope = CreateConfiguredScope();
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await CompactDescriptorCacheScenario.ExecuteAsync(
+            connection,
+            _database.MappingSet,
+            _database.ConnectionString,
+            scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>(),
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheMaterializer>(),
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheWriter>(),
+            body => CreatePostRequest(_database.Fixture.SchoolTypeDescriptorResource, body)
+        );
+    }
+
     private static ServiceProvider CreateServiceProvider()
     {
         var services = new ServiceCollection();

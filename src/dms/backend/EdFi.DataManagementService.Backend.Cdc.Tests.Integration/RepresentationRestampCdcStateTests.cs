@@ -602,7 +602,14 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
     )
     {
         SeededDocument source = await SeedCanonicalDescriptorAsync(cancellationToken);
+        (await ReadRequiredContentVersionAsync(source.DocumentId, cancellationToken))
+            .Should()
+            .Be(source.ContentVersion);
+        (await ReadProjectionWorkCountAsync(source.DocumentId, cancellationToken)).Should().Be(1);
+        (await ReadProjectionWorkCountAsync(source.DescriptorId, cancellationToken)).Should().Be(0);
+        await AssertDescriptorStampsAsync(source, source.ContentVersion, cancellationToken);
         await DrainOrdinaryProjectorAsync(cancellationToken);
+        await AssertCacheOwnershipAsync(source, cancellationToken);
         CdcStateRecord original = (await ConsumeRecordsAsync(1, cancellationToken))[0];
         original.Value.GetProperty("contentVersion").GetInt64().Should().Be(source.ContentVersion);
 
@@ -612,8 +619,12 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
         (await ReadRequiredContentVersionAsync(source.DocumentId, cancellationToken))
             .Should()
             .Be(canonicalVersion);
+        (await ReadProjectionWorkCountAsync(source.DocumentId, cancellationToken)).Should().Be(1);
+        (await ReadProjectionWorkCountAsync(source.DescriptorId, cancellationToken)).Should().Be(0);
+        await AssertDescriptorStampsAsync(source, canonicalVersion, cancellationToken);
 
         await DrainOrdinaryProjectorAsync(cancellationToken);
+        await AssertCacheOwnershipAsync(source, cancellationToken);
         (await ReadProjectionWorkCountAsync(source.DocumentId, cancellationToken)).Should().Be(0);
         (await ReadCacheContentVersionAsync(source.DocumentId, cancellationToken))
             .Should()
@@ -903,6 +914,49 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
         await using DbCommand command = connection.CreateCommand();
         command.CommandText = sql;
         await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private string Quote(string name) =>
+        _providerOperations.Provider == CdcProvider.Postgresql ? $"\"{name}\"" : $"[{name}]";
+
+    private async Task AssertCacheOwnershipAsync(SeededDocument source, CancellationToken cancellationToken)
+    {
+        string sql =
+            $"SELECT COUNT(*) FROM {Quote("dms")}.{Quote("DocumentCache")} WHERE {Quote("DocumentId")} = @documentId;";
+        (await ReadScalarAsync(sql, source.DocumentId, cancellationToken)).Should().Be(1);
+        (await ReadScalarAsync(sql, source.DescriptorId, cancellationToken)).Should().Be(0);
+    }
+
+    private async Task AssertDescriptorStampsAsync(
+        SeededDocument source,
+        long expectedVersion,
+        CancellationToken cancellationToken
+    )
+    {
+        await using DbConnection connection = _providerOperations.OpenConnection(
+            await ConnectionStringAsync(cancellationToken)
+        );
+        await connection.OpenAsync(cancellationToken);
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT descriptor.{Quote("DescriptorId")}, descriptor.{Quote("DocumentId")},
+                   document.{Quote("ContentVersion")}, descriptor.{Quote("ContentVersion")},
+                   document.{Quote("ContentLastModifiedAt")}, descriptor.{Quote("ContentLastModifiedAt")}
+            FROM {Quote("dms")}.{Quote("Descriptor")} descriptor
+            JOIN {Quote("dms")}.{Quote("Document")} document ON document.{Quote(
+                "DocumentId"
+            )} = descriptor.{Quote("DocumentId")}
+            WHERE document.{Quote("DocumentId")} = @documentId;
+            """;
+        command.Parameters.Add(_providerOperations.Parameter("documentId", source.DocumentId));
+        await using DbDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        (await reader.ReadAsync(cancellationToken)).Should().BeTrue();
+        reader.GetInt32(0).Should().Be(source.DescriptorId);
+        reader.GetInt64(1).Should().Be(source.DocumentId);
+        reader.GetInt64(2).Should().Be(expectedVersion);
+        reader.GetInt64(3).Should().Be(expectedVersion);
+        reader.GetDateTime(4).Should().Be(reader.GetDateTime(5));
+        (await reader.ReadAsync(cancellationToken)).Should().BeFalse();
     }
 
     private async Task<long> ReadCanonicalContentVersionAsync(

@@ -227,7 +227,9 @@ public class Given_A_Mssql_RepresentationRestampStore
     {
         Source first = await InsertDescriptorAsync(10);
         Source second = await InsertDescriptorAsync(11);
-        await LifecycleAsync("Disabled", false);
+        Source unrelated = await InsertAsync(12);
+        var unrelatedBefore = await CanonicalAsync(unrelated.DocumentId);
+        await LifecycleAsync("Tracking", false);
         await using IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync();
         await using IRelationalWriteSession session = await lease.BeginTransactionAsync(
             IsolationLevel.Serializable
@@ -263,17 +265,22 @@ public class Given_A_Mssql_RepresentationRestampStore
 
         foreach (RepresentationRestampStamp stamp in commit.CanonicalStamps)
         {
-            (await DescriptorMirrorAsync(stamp.DocumentId))
-                .Should()
-                .Be((stamp.ContentVersion, stamp.ContentLastModifiedAt));
+            Source source = stamp.DocumentId == first.DocumentId ? first : second;
+            await AssertDescriptorRestampAsync(source, stamp);
         }
+        commit.CanonicalStamps.Select(stamp => stamp.ContentVersion).Should().OnlyHaveUniqueItems();
+        (await CountAsync("DocumentProjectionWork")).Should().Be(2);
+        (await CanonicalAsync(unrelated.DocumentId)).Should().Be(unrelatedBefore);
+        (await RootAsync(unrelated.DocumentId)).Should().Be(unrelatedBefore);
     }
 
     [Test]
     public async Task It_selects_and_stamps_descriptor_UUID_scope_through_the_real_store_path()
     {
         Source source = await InsertDescriptorAsync(10);
-        await LifecycleAsync("Disabled", false);
+        Source unrelated = await InsertDescriptorAsync(11);
+        var unrelatedBefore = await CanonicalAsync(unrelated.DocumentId);
+        await LifecycleAsync("Tracking", false);
         await using IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync();
         await using IRelationalWriteSession session = await lease.BeginTransactionAsync(
             IsolationLevel.Serializable
@@ -300,9 +307,11 @@ public class Given_A_Mssql_RepresentationRestampStore
         await session.CommitAsync();
 
         RepresentationRestampStamp stamp = commit.CanonicalStamps.Single();
-        (await DescriptorMirrorAsync(source.DocumentId))
-            .Should()
-            .Be((stamp.ContentVersion, stamp.ContentLastModifiedAt));
+        await AssertDescriptorRestampAsync(source, stamp);
+        (await CountAsync("DocumentProjectionWork")).Should().Be(1);
+        (await CanonicalAsync(unrelated.DocumentId)).Should().Be(unrelatedBefore);
+        (await DescriptorMirrorAsync(unrelated.DocumentId)).Should().Be(unrelatedBefore);
+        (await DescriptorIdAsync(unrelated.DocumentId)).Should().Be(unrelated.DescriptorId);
     }
 
     [Test]
@@ -1075,6 +1084,28 @@ public class Given_A_Mssql_RepresentationRestampStore
 
     private Task<(long Version, DateTimeOffset At)> DescriptorMirrorAsync(long id) =>
         ReadAsync("Descriptor", "dms", id);
+
+    private async Task AssertDescriptorRestampAsync(Source source, RepresentationRestampStamp stamp)
+    {
+        source.DescriptorId.Should().HaveValue();
+        ((long)source.DescriptorId!.Value).Should().NotBe(source.DocumentId);
+        stamp.DocumentId.Should().Be(source.DocumentId);
+        stamp.ContentVersion.Should().BeGreaterThan(source.Version);
+        (await DescriptorIdAsync(source.DocumentId)).Should().Be(source.DescriptorId.Value);
+        (await CanonicalAsync(source.DocumentId))
+            .Should()
+            .Be((stamp.ContentVersion, stamp.ContentLastModifiedAt));
+        (await DescriptorMirrorAsync(source.DocumentId))
+            .Should()
+            .Be((stamp.ContentVersion, stamp.ContentLastModifiedAt));
+        (await WorkAsync(source.DocumentId)).Should().Be(stamp.ContentVersion);
+    }
+
+    private Task<int> DescriptorIdAsync(long id) =>
+        _database.ExecuteScalarAsync<int>(
+            "SELECT [DescriptorId] FROM [dms].[Descriptor] WHERE [DocumentId] = @id;",
+            new SqlParameter("@id", SqlDbType.BigInt) { Value = id }
+        );
 
     private Task<long> WorkAsync(long id) =>
         _database.ExecuteScalarAsync<long>(

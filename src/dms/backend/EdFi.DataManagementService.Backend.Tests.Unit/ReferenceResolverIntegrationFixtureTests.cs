@@ -76,6 +76,20 @@ public class Given_ReferenceResolverIntegrationFixture
     }
 
     [Test]
+    public void It_omits_generated_descriptor_keys_and_removed_stored_columns_from_seed_inserts()
+    {
+        var batch = _seedBatches.Single(batch => batch.Table.Name == "Descriptor");
+        batch
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription");
+        batch
+            .Rows[0]
+            .Should()
+            .Equal(303L, (short)13, "uri://ed-fi.org/SchoolTypeDescriptor", "Alternative", "Alternative");
+    }
+
+    [Test]
     public async Task It_can_drive_successful_and_fail_closed_reference_resolution_scenarios()
     {
         var adapter = new RecordingReferenceResolverAdapter([

@@ -647,30 +647,15 @@ file static class DocumentCacheDescriptorTestData
         var descriptorTable = new DbTableModel(
             new DbTableName(new DbSchemaName("dms"), "Descriptor"),
             new JsonPathExpression("$", []),
-            new TableKey(
-                "PK_Descriptor",
-                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
-            ),
+            new TableKey("PK_Descriptor", [new DbKeyColumn(new("DescriptorId"), ColumnKind.Scalar)]),
             [
-                new DbColumnModel(
-                    new DbColumnName("DocumentId"),
-                    ColumnKind.ParentKeyPart,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    false,
-                    null,
-                    null
-                ),
+                new(new("DescriptorId"), ColumnKind.Scalar, new(ScalarKind.Int32), false, null, null),
+                new(new("DocumentId"), ColumnKind.ParentKeyPart, new(ScalarKind.Int64), false, null, null),
             ],
-            []
+            [new TableConstraint.Unique("UX_Descriptor_DocumentId", [new("DocumentId")])]
         )
         {
-            IdentityMetadata = new DbTableIdentityMetadata(
-                DbTableKind.Root,
-                [new DbColumnName("DocumentId")],
-                [new DbColumnName("DocumentId")],
-                [],
-                []
-            ),
+            IdentityMetadata = new(DbTableKind.Root, [new("DescriptorId")], [new("DocumentId")], [], []),
         };
 
         return new RelationalResourceModel(
