@@ -34,6 +34,14 @@ public class Given_The_Pgsql_Descriptor_Loader_Sql
     }
 
     [Test]
+    public void It_leaves_descriptor_identity_to_the_native_allocator()
+    {
+        PgsqlPerfDescriptorFixtureLoaderSql.DescriptorInsertSql.Should().NotContain("DescriptorId");
+        PgsqlPerfDescriptorFixtureLoaderSql.DescriptorInsertSql.Should().NotContain("Discriminator");
+        PgsqlPerfDescriptorFixtureLoaderSql.DescriptorInsertSql.Should().NotContain("Uri");
+    }
+
+    [Test]
     public void It_interleaves_the_namespaces_on_ordinal_parity()
     {
         PgsqlPerfDescriptorFixtureLoaderSql
@@ -88,7 +96,7 @@ public class Given_The_Pgsql_Descriptor_Loader_Sql
                 ("document-id-sum", 312_512_500),
                 ("referential-identity-count", 25_000),
                 ("referential-identity-pairing", 25_000),
-                ("uri-shape-count", 25_000)
+                ("uri-witness-count", 25_000)
             );
     }
 }

@@ -55,6 +55,8 @@ public class Given_The_Mssql_Authorization_Seed_Sql
     public void It_enrolls_student_ordinal_two_k_via_the_gap_rule_arithmetic()
     {
         string sql = MssqlPerfAuthorizationSeedSql.SsaInsertSql(_seed);
+        sql.Should().Contain("@entryGradeLevelDescriptorId");
+        sql.Should().NotContain($"{_seed.GradeLevelDescriptorDocumentId},");
 
         sql.Should().Contain("((s.value * 2 - 1) / 9) * 10 + ((s.value * 2 - 1) % 9) + 2");
         sql.Should().Contain("'perf-' + RIGHT(REPLICATE('0', 9) + CAST(s.value * 2 AS varchar(19)), 9)");

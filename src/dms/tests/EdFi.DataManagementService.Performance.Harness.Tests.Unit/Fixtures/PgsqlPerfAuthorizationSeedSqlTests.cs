@@ -55,6 +55,8 @@ public class Given_The_Pgsql_Authorization_Seed_Sql
     public void It_enrolls_student_ordinal_two_k_via_the_gap_rule_arithmetic()
     {
         string sql = PgsqlPerfAuthorizationSeedSql.SsaInsertSql(_seed);
+        sql.Should().Contain("@entryGradeLevelDescriptorId");
+        sql.Should().NotContain($"{_seed.GradeLevelDescriptorDocumentId},");
 
         sql.Should().Contain("((k * 2 - 1) / 9) * 10 + ((k * 2 - 1) % 9) + 2");
         sql.Should().Contain("'perf-' || lpad((k * 2)::text, 9, '0')");
@@ -100,6 +102,7 @@ public class Given_The_Pgsql_Authorization_Seed_Sql
                 ("school-self-auth-edge", 1),
                 ("authorized-view-membership", 250_000),
                 ("grade-level-descriptor-count", 1),
+                ("ssa-compact-grade-level-binding", 250_000),
                 ("max-document-id", 805_563)
             );
     }

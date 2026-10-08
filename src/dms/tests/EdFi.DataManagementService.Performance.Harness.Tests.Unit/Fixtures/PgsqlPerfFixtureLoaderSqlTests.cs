@@ -114,8 +114,9 @@ public class Given_The_Pgsql_Loader_Sql
         PgsqlPerfFixtureLoaderSql.DescriptorDocumentInsertSql.Should().Contain("@descriptorDocumentId");
         string sql = PgsqlPerfFixtureLoaderSql.DescriptorInsertSql("VisaDescriptor");
         sql.Should().Contain("'uri://ed-fi.org/VisaDescriptor'");
-        sql.Should().Contain("'uri://ed-fi.org/VisaDescriptor#Perf'");
-        sql.Should().Contain("'VisaDescriptor'");
+        sql.Should().NotContain("Discriminator");
+        sql.Should().NotContain("Uri");
+        sql.Should().Contain("RETURNING \"DescriptorId\"");
         PgsqlPerfFixtureLoaderSql
             .DescriptorResourceKeyLookupSql("SexDescriptor")
             .Should()
@@ -178,7 +179,26 @@ public class Given_The_Pgsql_Loader_Sql
                 ("student-identification-document-descriptor-bindings", 500_000),
                 ("student-other-name-row-count", 500_000),
                 ("student-personal-identification-document-row-count", 500_000),
-                ("student-visa-row-count", 500_000)
+                ("student-visa-row-count", 500_000),
+                ("Student-BirthSexDescriptor_DescriptorId-compact-binding", 500_000),
+                ("StudentOtherName-OtherNameTypeDescriptor_DescriptorId-compact-binding", 500_000),
+                (
+                    "StudentIdentificationDocument-IdentificationDocumentUseDescriptor_DescriptorId-compact-binding",
+                    500_000
+                ),
+                (
+                    "StudentIdentificationDocument-PersonalInformationVerificationDescriptor_DescriptorId-compact-binding",
+                    500_000
+                ),
+                (
+                    "StudentPersonalIdentificationDocument-IdentificationDocumentUseDescriptor_DescriptorId-compact-binding",
+                    500_000
+                ),
+                (
+                    "StudentPersonalIdentificationDocument-PersonalInformationVerificationDescriptor_DescriptorId-compact-binding",
+                    500_000
+                ),
+                ("StudentVisa-VisaDescriptor_DescriptorId-compact-binding", 500_000)
             );
     }
 
