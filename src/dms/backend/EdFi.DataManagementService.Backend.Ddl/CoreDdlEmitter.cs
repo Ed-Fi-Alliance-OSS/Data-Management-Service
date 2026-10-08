@@ -450,10 +450,12 @@ public sealed class CoreDdlEmitter
                 $"{_dialect.RenderColumnDefinition(Col("EffectiveBeginDate"), DateType, true)},"
             );
             writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("EffectiveEndDate"), DateType, true)},");
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("Discriminator"), StringType(128), false)},"
-            );
-            writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("Uri"), StringType(306), false)},");
+            if (_dialect.Rules.Dialect == SqlDialect.Mssql)
+            {
+                // The index stores the reconstructed URI; the base row does not. Both components
+                // inherit the database collation, just as the former stored Uri column did.
+                writer.AppendLine($"{Quote("Uri")} AS ({Quote("Namespace")} + N'#' + {Quote("CodeValue")}),");
+            }
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentVersion"), "bigint", false, "DF_Descriptor_ContentVersion", "0")},"
             );
@@ -467,15 +469,6 @@ public sealed class CoreDdlEmitter
 
         writer.AppendLine(
             _dialect.AddUniqueConstraint(_descriptorTable, "UX_Descriptor_DocumentId", [Col("DocumentId")])
-        );
-        writer.AppendLine();
-
-        writer.AppendLine(
-            _dialect.AddUniqueConstraint(
-                _descriptorTable,
-                "UX_Descriptor_Uri_Discriminator",
-                [Col("Uri"), Col("Discriminator")]
-            )
         );
         writer.AppendLine();
     }
@@ -1024,8 +1017,6 @@ public sealed class CoreDdlEmitter
         // Ordered by (table name, index name).
         //
         // Deliberately not emitted:
-        // - dms.Descriptor (Uri, Discriminator): already indexed by the
-        //   UX_Descriptor_Uri_Discriminator unique constraint.
         // - dms.Document (ResourceKeyId, DocumentId): descriptor paging roots on
         //   dms.Descriptor via IX_Descriptor_ResourceKeyId_DocumentId, and no other
         //   query path filters dms.Document by ResourceKeyId. FK_Document_ResourceKey
@@ -1044,6 +1035,20 @@ public sealed class CoreDdlEmitter
                 "IX_Descriptor_ResourceKeyId_DocumentId",
                 [Col("ResourceKeyId"), Col("DocumentId")]
             )
+        );
+        writer.AppendLine();
+
+        // Whole-URI equality preserves the former Uri column's database collation. Component-wise
+        // uniqueness would incorrectly distinguish different pairs that reconstruct the same URI.
+        writer.AppendLine(
+            _dialect.Rules.Dialect == SqlDialect.Pgsql
+                ? $"CREATE UNIQUE INDEX IF NOT EXISTS {Quote("UX_Descriptor_ResourceKeyId_Uri")} ON {_dialect.QualifyTable(_descriptorTable)} ({Quote("ResourceKeyId")}, ({Quote("Namespace")} || '#' || {Quote("CodeValue")}));"
+                : _dialect.CreateIndexIfNotExists(
+                    _descriptorTable,
+                    "UX_Descriptor_ResourceKeyId_Uri",
+                    [Col("ResourceKeyId"), Col("Uri")],
+                    isUnique: true
+                )
         );
         writer.AppendLine();
 
@@ -1598,8 +1603,6 @@ public sealed class CoreDdlEmitter
             (new("Description"), ScalarKind.String),
             (new("EffectiveBeginDate"), ScalarKind.Date),
             (new("EffectiveEndDate"), ScalarKind.Date),
-            (new("Discriminator"), ScalarKind.String),
-            (new("Uri"), ScalarKind.String),
         };
 
     /// <summary>

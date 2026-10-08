@@ -623,9 +623,20 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     // ── UNIQUE constraints ──────────────────────────────────────────
 
     [Test]
-    public void It_should_have_unique_on_descriptor_uri_discriminator()
+    public void It_should_have_unique_on_descriptor_resource_key_and_reconstructed_whole_uri()
     {
-        _ddl.Should().Contain("\"UX_Descriptor_Uri_Discriminator\" UNIQUE");
+        _ddl.Should()
+            .Contain(
+                "CREATE UNIQUE INDEX IF NOT EXISTS \"UX_Descriptor_ResourceKeyId_Uri\" ON \"dms\".\"Descriptor\" (\"ResourceKeyId\", (\"Namespace\" || '#' || \"CodeValue\"));"
+            );
+        _ddl.Should().NotContain("UX_Descriptor_Uri_Discriminator");
+        _ddl.Should().NotContain("IX_Descriptor_Discriminator_ContentVersion");
+    }
+
+    [Test]
+    public void It_should_not_store_descriptor_uri_or_discriminator()
+    {
+        DescriptorTableColumnExtractor.ExtractPgColumns(_ddl).Should().NotContain(["Uri", "Discriminator"]);
     }
 
     [Test]
@@ -794,8 +805,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     [Test]
     public void It_should_not_emit_a_descriptor_uri_discriminator_index()
     {
-        // UX_Descriptor_Uri_Discriminator already indexes (Uri, Discriminator); a plain
-        // index on the same columns would be a duplicate.
+        // Descriptor identity is indexed by ResourceKeyId and the reconstructed whole URI.
         _ddl.Should().NotContain("\"IX_Descriptor_Uri_Discriminator\"");
     }
 
@@ -941,8 +951,8 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         _ddl.Should().Contain("OLD.\"Description\" IS DISTINCT FROM NEW.\"Description\"");
         _ddl.Should().Contain("OLD.\"EffectiveBeginDate\" IS DISTINCT FROM NEW.\"EffectiveBeginDate\"");
         _ddl.Should().Contain("OLD.\"EffectiveEndDate\" IS DISTINCT FROM NEW.\"EffectiveEndDate\"");
-        _ddl.Should().Contain("OLD.\"Discriminator\" IS DISTINCT FROM NEW.\"Discriminator\"");
-        _ddl.Should().Contain("OLD.\"Uri\" IS DISTINCT FROM NEW.\"Uri\"");
+        _ddl.Should().NotContain("OLD.\"Discriminator\"");
+        _ddl.Should().NotContain("OLD.\"Uri\"");
     }
 
     [Test]
@@ -2023,12 +2033,13 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_have_exactly_the_three_core_indexes()
+    public void It_should_have_the_descriptor_identity_and_core_support_indexes()
     {
+        _ddl.Should().Contain("[UX_Descriptor_ResourceKeyId_Uri]");
         _ddl.Should().Contain("[IX_Descriptor_ResourceKeyId_DocumentId]");
         _ddl.Should().Contain("[IX_Document_CreatedByOwnershipTokenId]");
         _ddl.Should().Contain("[IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId]");
-        // (Uri, Discriminator) is covered by UX_Descriptor_Uri_Discriminator, and
+        // Descriptor identity is covered by UX_Descriptor_ResourceKeyId_Uri, and
         // ReferentialIdentity DocumentId access by the leading column of
         // UX_ReferentialIdentity_DocumentId_ResourceKeyId. Descriptor paging roots
         // on dms.Descriptor, so dms.Document carries no ResourceKeyId index.
@@ -2039,6 +2050,21 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().NotContain("[IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt]");
         _ddl.Should().NotContain("[IX_Document_ResourceKeyId_DocumentId]");
         _ddl.Should().NotContain("[IX_ReferentialIdentity_DocumentId]");
+    }
+
+    [Test]
+    public void It_should_use_a_non_persisted_descriptor_uri_in_the_unique_resource_key_index()
+    {
+        var columns = DescriptorTableColumnExtractor.ExtractMssqlColumns(_ddl);
+        columns.Should().Contain(("Uri", "AS"));
+        columns.Select(c => c.Name).Should().NotContain("Discriminator");
+        _ddl.Should().Contain("[Uri] AS ([Namespace] + N'#' + [CodeValue]),");
+        _ddl.Should()
+            .Contain(
+                "CREATE UNIQUE INDEX [UX_Descriptor_ResourceKeyId_Uri] ON [dms].[Descriptor] ([ResourceKeyId], [Uri]);"
+            );
+        _ddl.Should().NotContain("UX_Descriptor_Uri_Discriminator");
+        _ddl.Should().NotContain("IX_Descriptor_Discriminator_ContentVersion");
     }
 
     // ── MSSQL DocumentCache UUID validation trigger ─────────────────
@@ -2177,11 +2203,8 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
             );
         _ddl.Should()
             .Contain("(CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max))");
-        _ddl.Should()
-            .Contain(
-                "(CAST(i.[Discriminator] AS varbinary(max)) <> CAST(del.[Discriminator] AS varbinary(max))"
-            );
-        _ddl.Should().Contain("(CAST(i.[Uri] AS varbinary(max)) <> CAST(del.[Uri] AS varbinary(max))");
+        _ddl.Should().NotContain("i.[Discriminator]");
+        _ddl.Should().NotContain("i.[Uri]");
         // Date columns must use plain <> (no CAST).
         _ddl.Should().Contain("(i.[EffectiveBeginDate] <> del.[EffectiveBeginDate]");
         _ddl.Should().Contain("(i.[EffectiveEndDate] <> del.[EffectiveEndDate]");
@@ -2272,7 +2295,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
                 "IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) "
                     + "OR UPDATE([Namespace]) OR UPDATE([CodeValue]) OR UPDATE([ShortDescription]) "
                     + "OR UPDATE([Description]) OR UPDATE([EffectiveBeginDate]) "
-                    + "OR UPDATE([EffectiveEndDate]) OR UPDATE([Discriminator]) OR UPDATE([Uri]))"
+                    + "OR UPDATE([EffectiveEndDate]))"
             );
     }
 
@@ -2363,7 +2386,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
 
         foreach (
             var (name, type) in columns.Where(c =>
-                !stampColumns.Contains(c.Name) && !immutableColumns.Contains(c.Name)
+                !stampColumns.Contains(c.Name) && !immutableColumns.Contains(c.Name) && c.Type != "AS"
             )
         )
         {
@@ -2380,7 +2403,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
                 );
         }
 
-        foreach (var excludedColumn in stampColumns.Concat(immutableColumns))
+        foreach (var excludedColumn in stampColumns.Concat(immutableColumns).Append("Uri"))
         {
             descriptorTriggerBody
                 .Should()
@@ -2983,13 +3006,14 @@ public class Given_CoreDdlEmitter_Descriptor_Stamping_Trigger_Metadata
     [Test]
     public void It_should_not_emit_the_derived_descriptor_change_version_index()
     {
-        // IX_Descriptor_Discriminator_ContentVersion is derived-inventory-owned and rendered once by the
+        // IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId is derived-inventory-owned and rendered once by the
         // relational DDL emitter; the core emitter must not also emit it (which would duplicate it in the
-        // full DDL). The core emitter emits no plain descriptor index at all: (Uri, Discriminator) is
-        // covered by the UX_Descriptor_Uri_Discriminator unique constraint.
+        // full DDL). The core emitter owns the ResourceKeyId paging and whole-URI identity indexes.
+        _pgsqlDdl.Should().NotContain("IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId");
         _pgsqlDdl.Should().NotContain("IX_Descriptor_Discriminator_ContentVersion");
         _pgsqlDdl.Should().NotContain("IX_Descriptor_Uri_Discriminator");
-        _pgsqlDdl.Should().Contain("UX_Descriptor_Uri_Discriminator");
+        _pgsqlDdl.Should().Contain("UX_Descriptor_ResourceKeyId_Uri");
+        _pgsqlDdl.Should().NotContain("UX_Descriptor_Uri_Discriminator");
     }
 
     private static int CountOccurrences(string haystack, string needle)

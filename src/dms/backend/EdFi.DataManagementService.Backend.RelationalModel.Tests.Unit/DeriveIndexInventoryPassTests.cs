@@ -371,22 +371,17 @@ public class Given_Descriptor_Resources_With_Mirror_Active_For_Index_Derivation
     }
 
     /// <summary>
-    /// It should derive exactly one shared descriptor composite ContentVersion index.
+    /// The removed live discriminator must not appear in a descriptor index.
     /// </summary>
     [Test]
-    public void It_should_derive_single_descriptor_composite_ContentVersion_index()
+    public void It_should_not_derive_the_obsolete_descriptor_discriminator_index()
     {
-        var descriptorIndexes = _indexes
-            .Where(i => i.Name.Value == "IX_Descriptor_Discriminator_ContentVersion")
-            .ToArray();
-
-        descriptorIndexes.Should().ContainSingle();
-        var index = descriptorIndexes.Single();
-        index.Table.Schema.Value.Should().Be("dms");
-        index.Table.Name.Should().Be("Descriptor");
-        index.KeyColumns.Select(c => c.Value).Should().Equal("Discriminator", "ContentVersion");
-        index.IsUnique.Should().BeFalse();
-        index.Kind.Should().Be(DbIndexKind.Explicit);
+        _indexes.Should().NotContain(i => i.Name.Value == "IX_Descriptor_Discriminator_ContentVersion");
+        _indexes
+            .Where(i => i.Table.Schema.Value == "dms" && i.Table.Name == "Descriptor")
+            .SelectMany(i => i.KeyColumns)
+            .Should()
+            .NotContain(c => c.Value == "Discriminator");
     }
 
     /// <summary>
