@@ -66,21 +66,9 @@ Describe 'Scheduled pre-image workflow safeguards' {
             $matrix | Should -Not -Match 'github.event_name|exclude:|include:'
         }
 
-        It 'permits <Event> for <Owner> only when appropriate' -ForEach @(
-            @{ Event = 'schedule'; Owner = 'Ed-Fi-Alliance-OSS'; Expected = $true }
-            @{ Event = 'workflow_dispatch'; Owner = 'Ed-Fi-Alliance-OSS'; Expected = $true }
-            @{ Event = 'schedule'; Owner = 'example-fork'; Expected = $false }
-            @{ Event = 'workflow_dispatch'; Owner = 'example-fork'; Expected = $true }
-        ) {
+        It 'keeps scheduled E2E available to forks independently of notification secrets' {
             $header = $script:job.Substring(0, $script:job.IndexOf('    steps:'))
-            $condition = [regex]::Match($header, '(?m)^    if: (?<expression>[^\r\n]+)')
-            $condition.Success | Should -BeTrue
-            # Evaluate the workflow's comparison/OR expression for the four supported event/owner cases.
-            $expression = $condition.Groups['expression'].Value.
-                Replace('github.event_name', "'$Event'").
-                Replace('github.repository_owner', "'$Owner'").
-                Replace('!=', '-ne').Replace('==', '-eq').Replace('||', '-or')
-            (& ([scriptblock]::Create($expression))) | Should -Be $Expected
+            $header | Should -Not -Match '(?m)^    if:'
         }
 
         It 'bounds executable content before subsequent step properties' {
@@ -149,22 +137,29 @@ throw 'safe failure'
             $teardown | Should -Match '\.env\.e2e'
         }
 
-        It 'captures native failure for <Engine>/<Identity> without exposing child output and removes stale TRX before invoking the child' -ForEach @(
-            @{ Engine = 'mssql'; Filter = 'Category=@MssqlRepresentative'; Identity = 'keycloak' }
-            @{ Engine = 'postgresql'; Filter = '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)'; Identity = 'self-contained' }
-            @{ Engine = 'postgresql'; Filter = '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)'; Identity = 'keycloak' }
+        It 'handles child exit <ExitCode> for <Engine>/<Identity> without exposing output and removes stale TRX before execution' -ForEach @(
+            @{ Engine = 'mssql'; Filter = 'Category=@MssqlRepresentative'; Identity = 'keycloak'; ExitCode = 7 }
+            @{ Engine = 'postgresql'; Filter = '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)'; Identity = 'self-contained'; ExitCode = 7 }
+            @{ Engine = 'postgresql'; Filter = '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)'; Identity = 'keycloak'; ExitCode = 7 }
+            @{ Engine = 'postgresql'; Filter = '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)'; Identity = 'self-contained'; ExitCode = 0 }
+            @{ Engine = 'postgresql'; Filter = '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)'; Identity = 'keycloak'; ExitCode = 0 }
         ) {
-            $workingDirectory = Join-Path $TestDrive "e2e-child-$Engine-$Identity"
+            $workingDirectory = Join-Path $TestDrive "e2e-child-$Engine-$Identity-$ExitCode"
             $diagnosticDirectory = Join-Path $workingDirectory 'diagnostics'
             $trxPath = Join-Path $workingDirectory 'TestResults/EdFi.DataManagementService.Tests.E2E.filtered.trx'
             New-Item -ItemType Directory -Path (Split-Path $trxPath) -Force | Out-Null
             New-Item -ItemType Directory -Path $diagnosticDirectory -Force | Out-Null
             Set-Content -LiteralPath $trxPath -Value 'stale-result'
+            Set-Content -LiteralPath (Join-Path $workingDirectory 'child-exit-code.txt') -Value $ExitCode
             Set-Content -LiteralPath (Join-Path $workingDirectory 'build-dms.ps1') -Value @'
 if (Test-Path -LiteralPath $env:E2E_TRX_PATH) { Set-Content -LiteralPath 'trx-existed-at-child-start.txt' -Value 'true' }
 Set-Content -LiteralPath 'child-arguments.txt' -Value ($args -join '|')
 [Console]::Error.WriteLine('Password=sentinel-secret')
-exit 7
+$exitCode = [int](Get-Content -LiteralPath 'child-exit-code.txt')
+if ($exitCode -eq 0) {
+    Set-Content -LiteralPath $env:E2E_TRX_PATH -Value '<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Results><UnitTestResult outcome="Passed" /></Results><ResultSummary><Counters executed="1" /></ResultSummary></TestRun>'
+}
+exit $exitCode
 '@
 
             $oldLocation = Get-Location
@@ -180,18 +175,27 @@ exit 7
                 $env:E2E_TRX_PATH = $trxPath
                 $runBlock = Get-RunBlock -Name 'Run DMS End to End Tests'
                 $result = Invoke-CapturedRunBlock -RunBlock $runBlock
-                $result.Failure | Should -Not -BeNullOrEmpty
-                $result.Failure.Exception.Message | Should -Match 'exit code 7'
-                $result.Failure.Exception.Message | Should -Not -Match 'sentinel-secret'
+                if ($ExitCode -eq 0) {
+                    $result.Failure | Should -BeNullOrEmpty
+                    $evidence = Invoke-CapturedRunBlock -RunBlock (Get-RunBlock -Name 'Verify DMS E2E Execution')
+                    $evidence.Failure | Should -BeNullOrEmpty
+                    $evidence.Output | Should -Match 'executed=1, passed=1'
+                }
+                else {
+                    $result.Failure | Should -Not -BeNullOrEmpty
+                    $result.Failure.Exception.Message | Should -Match 'exit code 7'
+                    $result.Failure.Exception.Message | Should -Not -Match 'sentinel-secret'
+                    Test-Path -LiteralPath $trxPath | Should -BeFalse
+                }
                 $result.Output | Should -Not -Match 'sentinel-secret'
 
-                Test-Path -LiteralPath $trxPath | Should -BeFalse
                 Test-Path -LiteralPath (Join-Path $workingDirectory 'trx-existed-at-child-start.txt') | Should -BeFalse
                 $setupLog = Get-Content -LiteralPath (Join-Path $diagnosticDirectory 'build-dms-setup.log') -Raw
                 $setupLog | Should -Match 'sentinel-secret'
                 $setupLog | Should -Not -BeNullOrEmpty
                 $arguments = Get-Content -LiteralPath (Join-Path $workingDirectory 'child-arguments.txt') -Raw
                 $arguments | Should -Match 'UsePublishedImage'
+                $arguments | Should -Match 'Configuration\|Release'
                 $arguments | Should -Match "DatabaseEngine\|$Engine"
                 $arguments | Should -Match "IdentityProvider\|$Identity"
                 $arguments | Should -Match 'EnvironmentFile\|\./\.env\.e2e'
@@ -463,6 +467,7 @@ exit 7
 
         It 'keeps Slack results per leg, scheduled-only, and free of commit text' {
             foreach ($name in @('Notify Slack on success', 'Notify Slack on failure')) {
+                (Get-StepChunk -Name $name) | Should -Match "github.repository_owner == 'Ed-Fi-Alliance-OSS'"
                 $step = Get-StepChunk -Name $name
                 $step | Should -Match "github.event_name != 'workflow_dispatch'"
                 $step | Should -Match 'matrix.database_engine'

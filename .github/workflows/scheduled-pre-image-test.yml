@@ -15,9 +15,6 @@ permissions: read-all
 jobs:
   test:
     name: pre Image Tests (${{ matrix.database_engine }}, ${{ matrix.identityprovider }})
-    # Scheduled runs only in Ed-Fi-Alliance-OSS: a fork inherits the schedule but not the Slack
-    # webhook or the Ed-Fi resources the run acts on. workflow_dispatch still runs anywhere.
-    if: (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -263,7 +260,7 @@ jobs:
           Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value $summaryText
 
       - name: Notify Slack on success
-        if: success() && github.event_name != 'workflow_dispatch' && steps.e2e.outcome == 'success' && steps.evidence.outcome == 'success'
+        if: success() && github.event_name != 'workflow_dispatch' && github.repository_owner == 'Ed-Fi-Alliance-OSS' && steps.e2e.outcome == 'success' && steps.evidence.outcome == 'success'
         uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
         with:
           payload: |
@@ -274,7 +271,7 @@ jobs:
           webhook-type: incoming-webhook
 
       - name: Notify Slack on failure
-        if: failure() && github.event_name != 'workflow_dispatch'
+        if: failure() && github.event_name != 'workflow_dispatch' && github.repository_owner == 'Ed-Fi-Alliance-OSS'
         uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
         with:
           payload: |
