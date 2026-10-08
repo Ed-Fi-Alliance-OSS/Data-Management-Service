@@ -193,7 +193,7 @@ The DS 6.1 template must exist for the running build; builds before 8.0.1-alpha.
 
    The script loads the files the template excluded, then re-posts the template files whose records reference educator-prep students.
    Each pass uses a temporary loader application that it deletes by id afterwards.
-   A re-run is safe: existing records are upserted.
+   A re-run is safe, also after the databases are recreated: each pass clears the BulkLoadClient's record cache, so it sends every record again, and existing records are upserted.
 
 7. Compare with the ODS/API DS 6.1 populated template **[bash]**:
 

@@ -682,6 +682,30 @@ Describe "Azure VM educator-prep load" {
         }
     }
 
+    It "clears the BulkLoadClient's record cache before every pass so a re-run sends every record" {
+        # The client skips every record listed in the newest *.hash file in its working folder, so a
+        # re-run into recreated databases would silently miss records; Build-Template's -ForceReloadData
+        # clears the same files.
+        $script:clientWork = (New-Item -ItemType Directory -Path (Join-Path $script:work "work-ST/client") -Force).FullName
+        foreach ($name in @("639269944027118911.hash", "639269945459902762.hash", "metadata.json")) {
+            Set-Content -LiteralPath (Join-Path $script:clientWork $name) -Value "cached"
+        }
+        $script:hashesAtRun = $null
+        Mock docker -ModuleName educator-prep {
+            $script:hashesAtRun = @(Get-ChildItem -LiteralPath $script:clientWork -Filter "*.hash")
+            $global:LASTEXITCODE = 0
+        }
+
+        $exitCode = Invoke-BulkLoadClientContainer -ClientDirectory (Join-Path $script:work "client/tools/net10.0/any") -DataDirectory $script:work `
+            -WorkDirectory (Join-Path $script:work "work-ST") -DmsUrl "http://st-dms:8080/st-dms" -Key "key" -Secret "secret" `
+            -LogPath (Join-Path $script:work "bulkload.log")
+
+        $exitCode | Should -Be 0
+        Should -Invoke docker -ModuleName educator-prep -Times 1 -Exactly
+        $script:hashesAtRun | Should -BeNullOrEmpty
+        Test-Path -LiteralPath (Join-Path $script:clientWork "metadata.json") | Should -BeTrue
+    }
+
     It "resolves the pinned BulkLoadClient from the package it downloads" {
         Mock Get-BulkLoadClient -ModuleName educator-prep { ".packages/edfi.suite3.bulkloadclient.console.1.2.3" }
         $clientDirectory = Join-Path $script:work ".packages/edfi.suite3.bulkloadclient.console.1.2.3/tools/net10.0/any"

@@ -147,6 +147,10 @@ function Invoke-BulkLoadClientContainer {
     $runtimeTag = $framework -replace '^net', ''
     $xsd = New-Item -ItemType Directory -Force -Path (Join-Path $WorkDirectory "xsd")
     $work = New-Item -ItemType Directory -Force -Path (Join-Path $WorkDirectory "client")
+    # The client skips every record listed in the newest *.hash file in its working folder, so a
+    # re-run into recreated databases would silently miss records. Clear them as Build-Template's
+    # -ForceReloadData does; the host user owns the folder, so it can delete the container's files.
+    Get-ChildItem -LiteralPath $work.FullName -Filter "*.hash" -File | Remove-Item -Force -ErrorAction Stop
     docker run --rm --network $Network `
         -v "${ClientDirectory}:/client:ro" -v "${DataDirectory}:/data:ro" -v "$($work.FullName):/work" -v "$($xsd.FullName):/xsd" `
         "mcr.microsoft.com/dotnet/runtime:$runtimeTag" dotnet /client/EdFi.BulkLoadClient.Console.dll `
@@ -161,7 +165,8 @@ function Invoke-EducatorPrepLoad {
         Loads one directory of sample files into one deployment through its DMS API.
     .DESCRIPTION
         Mirrors Build-Template's populated load: a temporary EdFiSandbox application scoped to the
-        sample data's education organizations, the repo-pinned BulkLoadClient, -ForceReloadMetadata.
+        sample data's education organizations, the repo-pinned BulkLoadClient, -ForceReloadMetadata
+        and -ForceReloadData.
         The temporary application is removed by id afterwards, also when the load fails.
     #>
     [CmdletBinding()]
