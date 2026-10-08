@@ -18,6 +18,8 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [Category("DatabaseIntegration")]
 [Category("CdcMessageContract")]
 [Category("CdcMessageContractKafka")]
+[Property("CdcInvariant", "CDC-INV-09")]
+[Property("CdcInvariant", "CDC-INV-10")]
 public sealed class Given_MessageContractProgressAcknowledgement(CdcProvider provider, string scenarioPrefix)
 {
     private readonly List<object> _observations = [];

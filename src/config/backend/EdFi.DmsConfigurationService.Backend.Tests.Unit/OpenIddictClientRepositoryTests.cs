@@ -8,9 +8,9 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
-using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
+using EdFi.DmsConfigurationService.Secrets;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -604,10 +604,13 @@ public class OpenIddictClientRepositoryTests
                     }
                 );
 
-        protected async Task ActUpdateAsync(string? clientUuid = null) =>
+        protected async Task ActUpdateAsync(
+            string? clientUuid = null,
+            string namespacePrefixes = NewPrefixes
+        ) =>
             _result = await _repository.UpdateClientNamespaceClaimAsync(
                 clientUuid ?? _clientUuid.ToString(),
-                NewPrefixes
+                namespacePrefixes
             );
 
         protected List<Dictionary<string, string>> AppliedMappers() =>
@@ -667,6 +670,43 @@ public class OpenIddictClientRepositoryTests
 
         [Test]
         public void It_commits_the_transaction()
+        {
+            A.CallTo(() => _transaction.Commit()).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _transaction.Rollback()).MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_UpdateClientNamespaceClaimAsync_Clearing_The_Existing_Claim
+        : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act() => await ActUpdateAsync(namespacePrefixes: "");
+
+        [Test]
+        public void It_returns_success_carrying_the_unchanged_client_uuid()
+        {
+            _result.Should().BeOfType<ClientUpdateResult.Success>();
+            ((ClientUpdateResult.Success)_result).ClientUuid.Should().Be(_clientUuid);
+            _updatedApplicationId.Should().Be(_clientUuid);
+        }
+
+        [Test]
+        public void It_keeps_one_empty_namespace_mapper()
+        {
+            ClaimsNamed(AppliedMappers(), "namespacePrefixes").Should().ContainSingle();
+            ClaimValue(AppliedMappers(), "namespacePrefixes").Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_preserves_the_other_mappers()
+        {
+            ClaimValue(AppliedMappers(), "educationOrganizationIds").Should().Be("100");
+            ClaimValue(AppliedMappers(), "dataStoreIds").Should().Be("7,8");
+        }
+
+        [Test]
+        public void It_commits_without_rollback()
         {
             A.CallTo(() => _transaction.Commit()).MustHaveHappenedOnceExactly();
             A.CallTo(() => _transaction.Rollback()).MustNotHaveHappened();

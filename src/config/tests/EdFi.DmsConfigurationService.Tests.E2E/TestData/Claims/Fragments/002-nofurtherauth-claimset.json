@@ -5565,6 +5565,75 @@
           ]
         }
       ]
+    },
+    {
+      "id": 70,
+      "name": "ed-fi/schoolTypeDescriptors",
+      "actions": [
+        {
+          "name": "Create",
+          "enabled": true
+        },
+        {
+          "name": "Delete",
+          "enabled": true
+        },
+        {
+          "name": "Update",
+          "enabled": true
+        },
+        {
+          "name": "Read",
+          "enabled": true
+        }
+      ],
+      "children": [],
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionId": 1,
+          "actionName": "Create",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 2,
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 3,
+          "actionName": "Update",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 4,
+          "actionName": "Delete",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        }
+      ]
     }
   ]
 }

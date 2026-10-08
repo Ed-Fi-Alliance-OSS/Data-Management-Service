@@ -11,12 +11,14 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
+using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
+using FluentValidation.Results;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 
@@ -24,6 +26,15 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
 public class ApiClientModule : IEndpointModule
 {
+    private const string DuplicateNameError =
+        "An API client with this name already exists for the application.";
+
+    private static IResult DuplicateName(HttpContext httpContext) =>
+        FailureResults.DataValidation(
+            [new ValidationFailure("Name", DuplicateNameError)],
+            httpContext.TraceIdentifier
+        );
+
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints
@@ -194,6 +205,21 @@ public class ApiClientModule : IEndpointModule
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
 
+        if (
+            await CheckNameAvailableAsync(
+                apiClientRepository,
+                command.ApplicationId,
+                command.Name,
+                excludedApiClientId: null,
+                httpContext,
+                logger
+            ) is
+            { } nameFailure
+        )
+        {
+            return nameFailure;
+        }
+
         var clientId = Guid.NewGuid().ToString();
         var clientSecret = ClientSecretValidation.GenerateSecretWithMinimumLength(
             clientSecretValidationOptionsAccessor.Value
@@ -284,6 +310,9 @@ public class ApiClientModule : IEndpointModule
                     contentType: "application/problem+json",
                     statusCode: (int)HttpStatusCode.Conflict
                 );
+            case ApiClientInsertResult.FailureDuplicateName:
+                await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
+                return DuplicateName(httpContext);
             case ApiClientInsertResult.FailureUnknown failure:
                 logger.LogError(
                     "Failure inserting the API client row: {FailureMessage}",
@@ -295,6 +324,46 @@ public class ApiClientModule : IEndpointModule
 
         logger.LogError("Failure creating client");
         return FailureResults.Unknown(httpContext.TraceIdentifier);
+    }
+
+    /// <summary>
+    /// Rejects a name another client of the application already has, before the identity provider
+    /// is touched, so a duplicate the caller can correct never provisions or changes a provider
+    /// client. The comparison is ordinal, so it never rejects a name the database would accept;
+    /// SQL Server case and trailing-space variants, and a concurrent writer taking the name after
+    /// this read, are still rejected by UX_ApiClient_ApplicationId_Name through the repository's
+    /// duplicate result. Returns null when the name is available.
+    /// </summary>
+    private static async Task<IResult?> CheckNameAvailableAsync(
+        IApiClientRepository apiClientRepository,
+        int applicationId,
+        string name,
+        int? excludedApiClientId,
+        HttpContext httpContext,
+        ILogger logger
+    )
+    {
+        switch (
+            await apiClientRepository.QueryApiClient(new ApiClientQuery { ApplicationId = applicationId })
+        )
+        {
+            case ApiClientQueryResult.Success success:
+                return success.ApiClientResponses.Exists(client =>
+                    client.Id != excludedApiClientId
+                    && string.Equals(client.Name, name, StringComparison.Ordinal)
+                )
+                    ? DuplicateName(httpContext)
+                    : null;
+            case ApiClientQueryResult.FailureUnknown failure:
+                logger.LogError(
+                    "Error checking API client name availability: {Message}",
+                    SanitizeForLog(failure.FailureMessage)
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+            default:
+                logger.LogError("Error checking API client name availability");
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
     }
 
     /// <summary>
@@ -553,6 +622,21 @@ public class ApiClientModule : IEndpointModule
                     application.VendorId
                 );
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
+            }
+
+            if (
+                await CheckNameAvailableAsync(
+                    apiClientRepository,
+                    command.ApplicationId,
+                    command.Name,
+                    excludedApiClientId: id,
+                    httpContext,
+                    logger
+                ) is
+                { } nameFailure
+            )
+            {
+                return nameFailure;
             }
 
             // A failed repository update is compensated from the client's current parent
@@ -886,6 +970,13 @@ public class ApiClientModule : IEndpointModule
                                 contentType: "application/problem+json",
                                 statusCode: (int)HttpStatusCode.Conflict
                             );
+                        case ApiClientUpdateResult.FailureDuplicateName:
+                            if (!await TryCompensateAsync())
+                            {
+                                return FailureResults.Unknown(httpContext.TraceIdentifier);
+                            }
+
+                            return DuplicateName(httpContext);
                         case ApiClientUpdateResult.FailureUnknown updateFailure:
                             logger.LogError(
                                 "Repository update failed for ApiClient {Id}: {Message}",

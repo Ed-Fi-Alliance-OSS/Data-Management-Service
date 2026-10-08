@@ -25,6 +25,9 @@ env:
 jobs:
   cleanup:
     name: Cleanup DMS CI GHCR Images
+    # Scheduled runs only in Ed-Fi-Alliance-OSS: a fork inherits the schedule but not the Slack
+    # webhook or the Ed-Fi resources the run acts on. workflow_dispatch still runs anywhere.
+    if: (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
     runs-on: ubuntu-latest
     permissions:
       # Write to delete versions; the same scope covers reading them to find the build cache
@@ -121,7 +124,7 @@ jobs:
     name: Verify Shared Build Cache
     runs-on: ubuntu-latest
     needs: cleanup
-    if: always()
+    if: always() && (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
     # The build cache is deliberately non-fatal wherever it is used: the export carries
     # ignore-error=true so that a registry blip cannot eject an entry from the merge queue, and
     # an unreadable import only makes buildx build cold. That leaves no failing signal for a
@@ -167,7 +170,7 @@ jobs:
     name: Notify Results
     runs-on: ubuntu-latest
     needs: [cleanup, verify-build-cache]
-    if: always()
+    if: always() && (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
     # Posts through a webhook secret, so it needs nothing from the workflow token.
     permissions: {}
     steps:

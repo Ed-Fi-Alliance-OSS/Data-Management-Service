@@ -8,10 +8,10 @@ using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
-using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Secrets;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -28,6 +28,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         {
             // Add identity options
             services.AddOpenIddictIdentityOptions(configuration);
+            services.AddSigningKeyServices();
             services.AddSingleton<IOpenIddictDataRepository, OpenIddictDataRepository>();
             services.AddSingleton<IIdentityProviderRepository, OpenIddictClientRepository>();
             services.AddSingleton<IOpenIddictTokenRepository, OpenIddictTokenRepository>();
@@ -85,6 +86,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         {
             // Add identity options
             services.AddOpenIddictIdentityOptions(configuration);
+            services.AddSigningKeyServices();
 
             services.AddSingleton<IIdentityProviderRepository, OpenIddictClientRepository>();
             services.AddSingleton<IOpenIddictTokenRepository, OpenIddictTokenRepository>();

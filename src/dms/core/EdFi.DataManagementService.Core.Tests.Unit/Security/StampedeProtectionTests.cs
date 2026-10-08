@@ -53,13 +53,14 @@ public class StampedeProtectionTests
             _mockProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
 
             // Configure mock to track calls and add delay to simulate real fetch
-            A.CallTo(() => _mockProvider.GetAllClaimSets(A<string?>.Ignored))
+            A.CallTo(() => _mockProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
                 .ReturnsLazily(_ => FetchClaimSetsAsync());
 
             _cachedProvider = new CachedClaimSetProvider(
                 _mockProvider,
                 CreateMemoryCache(),
                 CreateCacheSettings(),
+                TimeProvider.System,
                 NullLogger<CachedClaimSetProvider>.Instance
             );
         }
@@ -116,7 +117,13 @@ public class StampedeProtectionTests
             _factoryExecutionCount = 0;
             _mockProvider = A.Fake<IConfigurationServiceApplicationProvider>();
 
-            A.CallTo(() => _mockProvider.GetApplicationByClientIdAsync(A<string>.Ignored, A<string?>.Ignored))
+            A.CallTo(() =>
+                    _mockProvider.GetApplicationByClientIdAsync(
+                        A<string>.Ignored,
+                        A<string?>.Ignored,
+                        A<CancellationToken>._
+                    )
+                )
                 .ReturnsLazily(_ => FetchApplicationContextAsync());
 
             _cachedProvider = new CachedApplicationContextProvider(
@@ -152,11 +159,29 @@ public class StampedeProtectionTests
             results
                 .Should()
                 .AllSatisfy(result => result.Should().BeOfType<ApplicationContextResult.Success>());
-            A.CallTo(() => _mockProvider.GetApplicationByClientIdAsync("first-client", tenant: null))
+            A.CallTo(() =>
+                    _mockProvider.GetApplicationByClientIdAsync(
+                        "first-client",
+                        tenant: null,
+                        A<CancellationToken>._
+                    )
+                )
                 .MustHaveHappenedOnceExactly();
-            A.CallTo(() => _mockProvider.GetApplicationByClientIdAsync("second-client", "north"))
+            A.CallTo(() =>
+                    _mockProvider.GetApplicationByClientIdAsync(
+                        "second-client",
+                        "north",
+                        A<CancellationToken>._
+                    )
+                )
                 .MustHaveHappenedOnceExactly();
-            A.CallTo(() => _mockProvider.GetApplicationByClientIdAsync("third-client", "south"))
+            A.CallTo(() =>
+                    _mockProvider.GetApplicationByClientIdAsync(
+                        "third-client",
+                        "south",
+                        A<CancellationToken>._
+                    )
+                )
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -284,16 +309,27 @@ public class StampedeProtectionTests
             _tenant2FactoryCount = 0;
             _mockProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
 
-            A.CallTo(() => _mockProvider.GetAllClaimSets(A<string?>.That.IsEqualTo("tenant1")))
+            A.CallTo(() =>
+                    _mockProvider.GetAllClaimSets(
+                        A<string?>.That.IsEqualTo("tenant1"),
+                        A<CancellationToken>._
+                    )
+                )
                 .ReturnsLazily(_ => FetchTenant1ClaimSetsAsync());
 
-            A.CallTo(() => _mockProvider.GetAllClaimSets(A<string?>.That.IsEqualTo("tenant2")))
+            A.CallTo(() =>
+                    _mockProvider.GetAllClaimSets(
+                        A<string?>.That.IsEqualTo("tenant2"),
+                        A<CancellationToken>._
+                    )
+                )
                 .ReturnsLazily(_ => FetchTenant2ClaimSetsAsync());
 
             _cachedProvider = new CachedClaimSetProvider(
                 _mockProvider,
                 CreateMemoryCache(),
                 CreateCacheSettings(),
+                TimeProvider.System,
                 NullLogger<CachedClaimSetProvider>.Instance
             );
         }

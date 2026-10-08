@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# DMS-1556 investigation control E4 (spec §3.4): thread availability. Raises the CMS
+# thread-pool worker minimum to 128 (the runtime knob takes a HEXADECIMAL value, V-7).
+# The effective value must be confirmed from a dump ('Worker Min Limit'), never assumed.
+# Improvement supports H1; no improvement does not exclude it. Apply IN ADDITION to the
+# stack's -f list and the diagnostics overlays, then recreate the config service.
+services:
+  config:
+    environment:
+      DOTNET_ThreadPool_ForceMinWorkerThreads: "0x80"

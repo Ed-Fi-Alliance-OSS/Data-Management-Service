@@ -389,6 +389,21 @@ A `/partitions` response is always `application/json` and never carries
 and has no successor.
 
 > [!NOTE]
+> A query parameter an operation does not use, including a mistyped filter name,
+> does not reject the request: it is ignored and named in an `X-EdFi-Warning`
+> response header, for example
+> `X-EdFi-Warning: Ignored query parameters: studentUniqueld`. A mistyped filter
+> therefore widens the result, so check for this header. The header lists names
+> only, never values, percent-encoded and capped at ten names. Known controls
+> keep their value validation: a malformed `limit`, `offset`, change version, or
+> consumed filter value is still rejected. The paging controls are not ignored
+> where they do not apply: `/partitions` rejects all five by name, and
+> `/deletes` and `/keyChanges` reject `pageToken` and `pageSize` by name.
+> `/deletes` and `/keyChanges` do ignore resource filters, without validating
+> their values.
+> See `reference/adr-unknown-query-parameters-DMS-1589.md`.
+
+> [!NOTE]
 > A resource that declares a query property literally named `number` can filter
 > on it on its collection GET-many but not on its `/partitions` sibling, where
 > that name is the partition-count parameter. This is an intentional difference

@@ -12,11 +12,20 @@ using EdFi.DmsConfigurationService.DataModel.Model.DataStore;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
+using FluentValidation.Results;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
 public class DataStoreModule : IEndpointModule
 {
+    private const string DuplicateNameError = "A data store with this name already exists.";
+
+    private static IResult DuplicateName(HttpContext httpContext) =>
+        FailureResults.DataValidation(
+            [new ValidationFailure("Name", DuplicateNameError)],
+            httpContext.TraceIdentifier
+        );
+
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapSecuredPost("/v3/dataStores/", InsertDataStore);
@@ -51,6 +60,7 @@ public class DataStoreModule : IEndpointModule
                     Title = $"New DataStore {entity.Name} has been created successfully.",
                 }
             ),
+            DataStoreInsertResult.FailureDuplicateName => DuplicateName(httpContext),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
@@ -116,6 +126,7 @@ public class DataStoreModule : IEndpointModule
                 ),
                 statusCode: (int)HttpStatusCode.NotFound
             ),
+            DataStoreUpdateResult.FailureDuplicateName => DuplicateName(httpContext),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }

@@ -236,10 +236,14 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         );
         var workflow = new DelegatingWorkflow(
             preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
-            execute: static async (context, _) =>
+            execute: static async (context, cancellationToken) =>
             {
                 context.EnterPhase(DocumentCacheAdministrativeCommandPhase.StampDocuments);
-                await Task.Delay(TimeSpan.FromMilliseconds(60)).ConfigureAwait(false);
+
+                // Wait for the workflow budget token so the provider timeout is thrown only after the
+                // budget has expired, independent of timer callback ordering on a loaded machine.
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken)
+                    .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
 
                 throw CreateSqlException(-2, "Execution Timeout Expired.");
             }

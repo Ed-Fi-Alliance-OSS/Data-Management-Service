@@ -150,14 +150,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             token
         );
 
-    public Task AdvanceHeartbeatAsync(CancellationToken token) =>
-        ExecuteProviderMutationAsync(
-            $"UPDATE {Quote("dms")}.{Quote("CdcHeartbeat")} SET "
-                + $"{Quote("HeartbeatSequence")} = {Quote("HeartbeatSequence")} + 1, {Quote("HeartbeatAt")} = {CurrentTimestamp} "
-                + $"WHERE {Quote("HeartbeatId")} = 1",
-            0,
-            token
-        );
+    public async Task AdvanceHeartbeatAsync(CancellationToken token) =>
+        await (await CreateProviderObserverAsync(token)).AdvanceHeartbeatAsync(token);
 
     private string CurrentTimestamp =>
         Provider == CdcProvider.Postgresql ? "clock_timestamp()" : "SYSUTCDATETIME()";
@@ -283,238 +277,25 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             _ => "UNKNOWN",
         };
 
-    internal ConsumerConfig CreateByteConsumerConfig() =>
-        new()
-        {
-            BootstrapServers = HostKafkaBootstrapServers,
-            GroupId = $"{_resourcePrefix}-observer-{Guid.NewGuid():N}",
-            EnableAutoCommit = false,
-            EnableAutoOffsetStore = false,
-            EnablePartitionEof = true,
-            AutoOffsetReset = AutoOffsetReset.Error,
-            AllowAutoCreateTopics = false,
-            MaxPartitionFetchBytes = 70_000_000,
-            FetchMaxBytes = 140_000_000,
-        };
+    private MessageContractKafkaObserver KafkaObserver => new(HostKafkaBootstrapServers);
 
-    private IConsumer<byte[], byte[]> CreateByteConsumer() =>
-        new ConsumerBuilder<byte[], byte[]>(CreateByteConsumerConfig())
-            .SetLogHandler((_, _) => { })
-            .SetErrorHandler((_, _) => { })
-            .Build();
+    internal ConsumerConfig CreateByteConsumerConfig() => KafkaObserver.CreateByteConsumerConfig();
 
     public Task<IReadOnlyList<MessageContractKafkaBoundary>> CaptureKafkaBoundariesAsync(
         string topic,
         CancellationToken token
-    ) =>
-        Task.Run(
-            () =>
-            {
-                token.ThrowIfCancellationRequested();
-                using IConsumer<byte[], byte[]> consumer = CreateByteConsumer();
-                using IAdminClient admin = new AdminClientBuilder(
-                    new AdminClientConfig { BootstrapServers = HostKafkaBootstrapServers }
-                )
-                    .SetLogHandler((_, _) => { })
-                    .Build();
-                try
-                {
-                    Metadata metadata = admin.GetMetadata(topic, TimeSpan.FromSeconds(10));
-                    TopicMetadata found = metadata.Topics.Single(t => t.Topic == topic);
-                    if (found.Error.IsError || found.Partitions.Count == 0)
-                    {
-                        throw new InvalidOperationException("CDC Kafka topic metadata unavailable.");
-                    }
+    ) => KafkaObserver.CaptureKafkaBoundariesAsync(topic, token);
 
-                    return (IReadOnlyList<MessageContractKafkaBoundary>)
-                        found
-                            .Partitions.OrderBy(p => p.PartitionId)
-                            .Select(p =>
-                            {
-                                token.ThrowIfCancellationRequested();
-                                WatermarkOffsets offsets = consumer.QueryWatermarkOffsets(
-                                    new TopicPartition(topic, p.PartitionId),
-                                    TimeSpan.FromSeconds(10)
-                                );
-                                return new MessageContractKafkaBoundary(
-                                    topic,
-                                    p.PartitionId,
-                                    offsets.Low.Value,
-                                    offsets.High.Value
-                                );
-                            })
-                            .ToArray();
-                }
-                catch (KafkaException)
-                {
-                    throw new InvalidOperationException("CDC Kafka boundary read failed. Details redacted.");
-                }
-            },
-            token
-        );
-
-    /// <summary>Reads exactly [start, captured exclusive end) on each partition. Completion requires actual
-    /// consumer scan positions, including gaps in a compacted log. A timeout never proves absence.</summary>
     public Task<MessageContractKafkaScan> ConsumeThroughAsync(
         IReadOnlyList<MessageContractKafkaBoundary> boundaries,
         CancellationToken token
-    ) =>
-        Task.Run(
-            () =>
-            {
-                ValidateBoundaries(boundaries);
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-                timeout.CancelAfter(TimeSpan.FromMinutes(2));
-                using IConsumer<byte[], byte[]> consumer = CreateByteConsumer();
-                try
-                {
-                    var pending = boundaries.ToDictionary(b => new TopicPartition(b.Topic, b.Partition));
-                    var positions = boundaries.ToDictionary(
-                        b => new TopicPartition(b.Topic, b.Partition),
-                        b => b.StartOffset
-                    );
-                    List<MessageContractKafkaRecord> records = [];
-                    foreach (var (partition, bound) in pending)
-                    {
-                        timeout.Token.ThrowIfCancellationRequested();
-                        WatermarkOffsets current = consumer.QueryWatermarkOffsets(
-                            partition,
-                            TimeSpan.FromSeconds(10)
-                        );
-                        if (current.Low.Value > bound.StartOffset || current.High.Value < bound.EndOffset)
-                        {
-                            throw new InvalidOperationException(
-                                "CDC Kafka captured bounds are no longer retained."
-                            );
-                        }
-                    }
-                    consumer.Assign(
-                        pending.Select(p => new TopicPartitionOffset(p.Key, new Offset(p.Value.StartOffset)))
-                    );
-                    while (pending.Count > 0)
-                    {
-                        timeout.Token.ThrowIfCancellationRequested();
-                        foreach (var (partition, bound) in pending.ToArray())
-                        {
-                            long position = consumer.Position(partition).Value;
-                            if (bound.StartOffset == bound.EndOffset || position >= bound.EndOffset)
-                            {
-                                positions[partition] = bound.EndOffset;
-                                consumer.Pause([partition]);
-                                pending.Remove(partition);
-                            }
-                        }
-                        if (pending.Count == 0)
-                        {
-                            break;
-                        }
+    ) => KafkaObserver.ConsumeThroughAsync(boundaries, token);
 
-                        ConsumeResult<byte[], byte[]> observed = consumer.Consume(timeout.Token);
-                        if (
-                            observed.IsPartitionEOF
-                            || !pending.TryGetValue(observed.TopicPartition, out var boundForRecord)
-                            || observed.Offset.Value >= boundForRecord.EndOffset
-                        )
-                        {
-                            continue;
-                        }
-
-                        records.Add(
-                            new(
-                                observed.Topic,
-                                observed.Partition.Value,
-                                observed.Offset.Value,
-                                MessageContractKafkaBytes.From(observed.Message.Key),
-                                MessageContractKafkaBytes.From(observed.Message.Value),
-                                observed
-                                    .Message.Headers.Select(h => new MessageContractKafkaHeader(
-                                        h.Key,
-                                        MessageContractKafkaBytes.From(h.GetValueBytes())
-                                    ))
-                                    .ToArray(),
-                                observed.Message.Timestamp.UnixTimestampMs
-                            )
-                        );
-                    }
-                    return new MessageContractKafkaScan(
-                        records,
-                        boundaries
-                            .Select(b => new MessageContractKafkaBoundary(
-                                b.Topic,
-                                b.Partition,
-                                b.StartOffset,
-                                positions[new TopicPartition(b.Topic, b.Partition)]
-                            ))
-                            .ToArray()
-                    );
-                }
-                catch (OperationCanceledException) when (!token.IsCancellationRequested)
-                {
-                    throw new TimeoutException("CDC Kafka scan did not reach every captured boundary.");
-                }
-                catch (KafkaException)
-                {
-                    throw new InvalidOperationException("CDC Kafka scan failed. Details redacted.");
-                }
-            },
-            token
-        );
-
-    internal static void ValidateBoundaries(IReadOnlyList<MessageContractKafkaBoundary> boundaries)
-    {
-        if (
-            boundaries.Count == 0
-            || boundaries.Any(b =>
-                b.Partition < 0
-                || b.StartOffset < 0
-                || b.EndOffset < b.StartOffset
-                || string.IsNullOrWhiteSpace(b.Topic)
-            )
-            || boundaries.Select(b => (b.Topic, b.Partition)).Distinct().Count() != boundaries.Count
-        )
-        {
-            throw new ArgumentException("Invalid CDC Kafka scan boundaries.");
-        }
-    }
+    internal static void ValidateBoundaries(IReadOnlyList<MessageContractKafkaBoundary> boundaries) =>
+        MessageContractKafkaObserver.ValidateBoundaries(boundaries);
 }
 
 internal sealed record MessageContractConnectorStatus(
     string ConnectorState,
     IReadOnlyList<string> TaskStates
-);
-
-internal sealed record MessageContractKafkaBoundary(
-    string Topic,
-    int Partition,
-    long StartOffset,
-    long EndOffset
-);
-
-internal sealed record MessageContractKafkaBytes(bool IsNull, byte[] Bytes)
-{
-    public static MessageContractKafkaBytes From(byte[] bytes) =>
-        bytes is null ? new(true, []) : new(false, bytes.ToArray());
-
-    public override string ToString() => IsNull ? "Kafka null" : $"{Bytes.Length} bytes";
-}
-
-internal sealed record MessageContractKafkaHeader(string Key, MessageContractKafkaBytes Value);
-
-internal sealed record MessageContractKafkaRecord(
-    string Topic,
-    int Partition,
-    long Offset,
-    MessageContractKafkaBytes Key,
-    MessageContractKafkaBytes Value,
-    IReadOnlyList<MessageContractKafkaHeader> Headers,
-    long BrokerTimestamp
-)
-{
-    public override string ToString() =>
-        $"Kafka record: partition {Partition}, offset {Offset}, value {Value}";
-}
-
-internal sealed record MessageContractKafkaScan(
-    IReadOnlyList<MessageContractKafkaRecord> Records,
-    IReadOnlyList<MessageContractKafkaBoundary> CompletedBoundaries
 );

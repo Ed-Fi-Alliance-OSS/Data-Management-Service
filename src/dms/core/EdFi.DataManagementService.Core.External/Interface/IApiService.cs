@@ -44,22 +44,34 @@ public interface IApiService
     /// <summary>
     /// DMS entry point for all API DELETE requests, which are "by id"
     /// </summary>
-    Task<IFrontendResponse> DeleteById(FrontendRequest frontendRequest);
+    Task<IFrontendResponse> DeleteById(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// DMS entry point for the token introspection request
     /// </summary>
-    Task<IFrontendResponse> GetTokenInfo(FrontendRequest frontendRequest);
+    Task<IFrontendResponse> GetTokenInfo(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// DMS entry point for the Change Queries availableChangeVersions request
     /// </summary>
-    Task<IFrontendResponse> GetAvailableChangeVersions(FrontendRequest frontendRequest);
+    Task<IFrontendResponse> GetAvailableChangeVersions(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// DMS entry point for resource-scoped Change Query tracked changes requests
     /// </summary>
-    Task<IFrontendResponse> GetTrackedChanges(FrontendRequest frontendRequest);
+    Task<IFrontendResponse> GetTrackedChanges(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// DMS entry point for a data-route request whose HTTP method is not one of the supported
@@ -157,4 +169,59 @@ public interface IApiService
         string? tenantId,
         JsonArray servers
     );
+
+    /// <summary>
+    /// DMS entry point for the identity create request: POST /identity/v2/identities
+    /// </summary>
+    Task<IFrontendResponse> IdentityCreate(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// DMS entry point for the identity get-by-id request: GET /identity/v2/identities/{id}
+    /// </summary>
+    /// <param name="frontendRequest">The request to be processed</param>
+    /// <param name="uniqueId">The UniqueId route value</param>
+    /// <param name="cancellationToken">Cancellation token for the request</param>
+    Task<IFrontendResponse> IdentityGetById(
+        FrontendRequest frontendRequest,
+        string uniqueId,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// DMS entry point for the identity find request: POST /identity/v2/identities/find
+    /// </summary>
+    Task<IFrontendResponse> IdentityFind(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// DMS entry point for the identity search request: POST /identity/v2/identities/search
+    /// </summary>
+    Task<IFrontendResponse> IdentitySearch(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// DMS entry point for the identity asynchronous job results poll request:
+    /// GET /identity/v2/identities/results/{token}
+    /// </summary>
+    /// <param name="frontendRequest">The request to be processed</param>
+    /// <param name="requestToken">The request token route value, passed through unchanged</param>
+    /// <param name="cancellationToken">Cancellation token for the request</param>
+    Task<IFrontendResponse> IdentityResults(
+        FrontendRequest frontendRequest,
+        string requestToken,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// DMS entry point to get the fixed identity OpenAPI specification.
+    /// Servers array should be provided by the front end.
+    /// </summary>
+    JsonNode GetIdentityOpenApiSpecification(JsonArray servers);
 }

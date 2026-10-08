@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.ChangeQueries;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
@@ -19,13 +20,21 @@ using static EdFi.DataManagementService.Core.Response.FailureResponse;
 namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
-/// Validates the paging, change-version, and resource-filter query parameters of a request.
+/// Validates the paging, change-version, and resource-filter query parameters of a request, and
+/// reports the parameters the operation ignores.
 /// </summary>
 /// <param name="_cursorParametersRecognized">
 /// Whether this pipeline's operation supports cursor paging. True for live GET-many, false for
-/// Change Query endpoints, which must reject the cursor parameters rather than acquire them.
-/// Recognition is a property of pipeline composition rather than something inferred at run time, so
-/// a reader can see at the composition site which operations page by cursor.
+/// Change Query endpoints, which must reject the cursor parameters by name rather than acquire or
+/// ignore them: silently discarding a pageToken there would let a client believe it was walking a
+/// cursor when it was re-reading page one. Recognition is a property of pipeline composition rather
+/// than something inferred at run time, so a reader can see at the composition site which operations
+/// page by cursor.
+/// </param>
+/// <param name="_resourceFiltersRecognized">
+/// Whether this pipeline's operation filters on the resource's query fields. True for live GET-many,
+/// false for Change Query endpoints, which ignore a resource filter without validating its value, as
+/// the ODS/API does. Composed for the same reason as cursor recognition.
 /// </param>
 /// <param name="_collectionPagingTelemetry">
 /// Where a rejection is counted. Required rather than defaulted to the no-op because this step is
@@ -42,6 +51,7 @@ internal class ValidateQueryMiddleware(
     ILogger _logger,
     int _maximumPageSize,
     bool _cursorParametersRecognized,
+    bool _resourceFiltersRecognized,
     ICollectionPagingTelemetry _collectionPagingTelemetry,
     bool _useLegacyDocumentIdOrderingForChangeQueries
 ) : IPipelineStep
@@ -60,7 +70,7 @@ internal class ValidateQueryMiddleware(
     /// The paging names this operation parses and excludes from filter matching. Spelled from the
     /// constants the cursor validator reads, because <see cref="Paging.PartitionRequestValidator" />
     /// reserves the same five names from the same constants: matching filters over a different set of
-    /// names than /partitions rejects would let one operation filter on a resource property the other
+    /// names than /partitions reserves would let one operation filter on a resource property the other
     /// treats as paging.
     /// </summary>
     private static readonly string[] _paginationQueryParameters =
@@ -68,6 +78,17 @@ internal class ValidateQueryMiddleware(
         CursorRequestValidator.LimitParameter,
         CursorRequestValidator.OffsetParameter,
         CursorRequestValidator.TotalCountParameter,
+    ];
+
+    /// <summary>
+    /// The names this operation owns, matched case-sensitively: the paging names, matched the way they
+    /// are parsed, and the cursor names. The cursor names are never ignored: an operation that does not
+    /// page by cursor rejects them by name, and a rejected name is not reported as ignored.
+    /// </summary>
+    private static readonly string[] _ordinalOwnedParameters =
+    [
+        .. _paginationQueryParameters,
+        .. CursorRequestValidator.CursorParameters,
     ];
 
     /// <summary>
@@ -142,6 +163,32 @@ internal class ValidateQueryMiddleware(
             requestInfo.FrontendRequest.TraceId.Value
         );
 
+        // Materialized once and shared with filter validation, because the schema rebuilds its query
+        // fields on every enumeration.
+        Lazy<QueryField[]> queryFields = new(() => requestInfo.ResourceSchema.QueryFields.ToArray());
+
+        // Decided before any validation can answer, so a rejection below carries the warning too. The
+        // change-version names are matched case-insensitively, consistent with how the validator looks
+        // them up.
+        await IgnoredQueryParameterWarning.ReportAround(
+            requestInfo,
+            IgnoredQueryParameterWarning.IgnoredNames(
+                requestInfo.FrontendRequest.QueryParameters,
+                _ordinalOwnedParameters,
+                ChangeVersionParameterValidator.ReservedParameterNames,
+                _resourceFiltersRecognized ? queryFields : null
+            ),
+            _logger,
+            () => ValidateAndContinue(requestInfo, queryFields, next)
+        );
+    }
+
+    private async Task ValidateAndContinue(
+        RequestInfo requestInfo,
+        Lazy<QueryField[]> queryFields,
+        Func<Task> next
+    )
+    {
         // All three parameter faults below - cursor, traditional pagination, and change-version -
         // answer with the same shell, so they share one construction rather than three copies that
         // have to be kept in step, and counting the rejection here covers all three for the same
@@ -221,8 +268,8 @@ internal class ValidateQueryMiddleware(
         }
 
         // Determined here, but the typed collection-paging choice reaches request state only at the
-        // accepting exit below, its single assignment site: the change-version and query-field steps
-        // that follow can still answer the request, and a request they reject must not carry a paging
+        // accepting exits below: the change-version, cursor-name and query-field steps that follow
+        // can still answer the request, and a request they reject must not carry a paging
         // mode a handler could act on. That deferral covers the typed choice. The traditional branch
         // assigns pagination parameters as soon as they parse cleanly, which is ahead of those later
         // steps, so a request one of them rejects does keep parsed pagination parameters.
@@ -263,33 +310,25 @@ internal class ValidateQueryMiddleware(
             return;
         }
 
-        // The window and the anchor it resolves to are assigned together: the anchor is a function of
-        // the window and of the data store serving the request, so a request carrying the window
-        // without the anchor it resolved would describe a page selection that cannot exist.
-        requestInfo.ChangeVersionRange = changeVersionResult.Range;
-        requestInfo.PageOrderingMode = pageOrderingMode;
-
-        // Pagination parameters are matched case-sensitively, consistent with how they are
-        // parsed above; change-version parameters are matched case-insensitively, consistent
-        // with how the validator looks them up.
-        //
-        // The cursor parameters are excluded in both modes, for different reasons. Where they are
-        // recognized, the cursor validation above has already consumed them. Where they are not,
-        // excluding them here is what lets the Change Query step reject them by name instead of the
-        // filter validator answering first with the resource-field wording. Excluding a name is not
-        // accepting it: an operation that does not recognize these rejects them in the step that
-        // follows.
-        ResourceQueryFilterResult filterResult = ResourceQueryFilterValidator.Validate(
-            requestInfo.FrontendRequest.QueryParameters,
-            requestInfo.ResourceSchema.QueryFields.ToArray(),
-            ordinalExcludedNames: [.. _paginationQueryParameters, .. CursorRequestValidator.CursorParameters],
-            ignoreCaseExcludedNames: ChangeVersionParameterValidator.ReservedParameterNames
-        );
-
-        switch (filterResult)
+        // An operation that does not page by cursor rejects the cursor parameters by name, whatever
+        // their values. They are not globally reserved names that such an operation may discard:
+        // discarding a pageToken would let a client believe it was walking a cursor when it was
+        // re-reading page one.
+        if (!_cursorParametersRecognized)
         {
-            case ResourceQueryFilterResult.UnknownQueryField unknownQueryField:
-                RecordValidationRejected(requestInfo);
+            string[] cursorParameterErrors =
+            [
+                .. CursorRequestValidator
+                    .CursorParameters.Where(requestInfo.FrontendRequest.QueryParameters.ContainsKey)
+                    .Select(name => $"The query field '{name}' is not valid for this Change Query endpoint."),
+            ];
+
+            if (cursorParameterErrors.Length > 0)
+            {
+                _logger.LogDebug(
+                    "Cursor parameter on a Change Query endpoint - {TraceId}",
+                    requestInfo.FrontendRequest.TraceId.Value
+                );
 
                 requestInfo.FrontendResponse = new FrontendResponse(
                     StatusCode: 400,
@@ -297,14 +336,42 @@ internal class ValidateQueryMiddleware(
                         "The request could not be processed. See 'errors' for details.",
                         requestInfo.FrontendRequest.TraceId,
                         [],
-                        [
-                            $@"The query field '{unknownQueryField.QueryFieldName}' is not valid for this resource.",
-                        ]
+                        cursorParameterErrors
                     ),
-                    []
+                    Headers: []
                 );
                 return;
+            }
+        }
 
+        // The window and the anchor it resolves to are assigned together: the anchor is a function of
+        // the window and of the data store serving the request, so a request carrying the window
+        // without the anchor it resolved would describe a page selection that cannot exist.
+        requestInfo.ChangeVersionRange = changeVersionResult.Range;
+        requestInfo.PageOrderingMode = pageOrderingMode;
+
+        // An operation that does not filter never validates a filter value, because it never uses one.
+        if (!_resourceFiltersRecognized)
+        {
+            requestInfo.CollectionPaging = collectionPaging;
+
+            await next();
+            return;
+        }
+
+        // Pagination parameters are matched case-sensitively, consistent with how they are
+        // parsed above; change-version parameters are matched case-insensitively, consistent
+        // with how the validator looks them up. The cursor parameters are excluded too, because the
+        // cursor validation above has already consumed them.
+        ResourceQueryFilterResult filterResult = ResourceQueryFilterValidator.Validate(
+            requestInfo.FrontendRequest.QueryParameters,
+            queryFields.Value,
+            ordinalExcludedNames: _ordinalOwnedParameters,
+            ignoreCaseExcludedNames: ChangeVersionParameterValidator.ReservedParameterNames
+        );
+
+        switch (filterResult)
+        {
             case ResourceQueryFilterResult.InvalidValues invalidValues:
                 _logger.LogDebug(
                     "Query parameter format error - {TraceId}",
@@ -378,7 +445,7 @@ internal class ValidateQueryMiddleware(
     /// request state.
     /// </summary>
     /// <remarks>
-    /// <see cref="RequestInfo.CollectionPaging" /> is assigned only at the accepting exit, so a rejected
+    /// <see cref="RequestInfo.CollectionPaging" /> is assigned only at an accepting exit, so a rejected
     /// cursor request still carries the traditional default and would be counted as traditional traffic.
     /// The same constant array the cursor validator reads is used here, so the two cannot disagree about
     /// what makes a request a cursor request.

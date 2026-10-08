@@ -54,13 +54,15 @@ public sealed class PluginContributionRecord
         LoadedPlugin plugin,
         IReadOnlyList<ServiceDescriptor> additions,
         IReadOnlyList<PluginDescriptorDisplacement> removals,
-        IReadOnlyList<Type> replacedServiceTypes
+        IReadOnlyList<Type> replacedServiceTypes,
+        IReadOnlyList<string> configurationSourceTypes
     )
     {
         Plugin = plugin;
         Additions = new ReadOnlyCollection<ServiceDescriptor>([.. additions]);
         Removals = new ReadOnlyCollection<PluginDescriptorDisplacement>([.. removals]);
         ReplacedServiceTypes = new ReadOnlyCollection<Type>([.. replacedServiceTypes]);
+        ConfigurationSourceTypes = new ReadOnlyCollection<string>([.. configurationSourceTypes]);
     }
 
     /// <summary>The plugin this record belongs to, as the loader returned it.</summary>
@@ -105,6 +107,38 @@ public sealed class PluginContributionRecord
     /// this record exists to avoid.
     /// </remarks>
     public IReadOnlyList<Type> ReplacedServiceTypes { get; }
+
+    /// <summary>
+    /// The type name of each configuration source this plugin's configuration hook added, in the order
+    /// it added them, one entry per source.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Type names and nothing else, which is what the Phase A inventory reports. A source's own
+    /// properties can carry a path or a prefix and its data is configuration values, so neither the
+    /// source object nor anything it renders is retained: a record that held the source would be a
+    /// record a diagnostic could reach a secret through.
+    /// </para>
+    /// <para>
+    /// Historical, like <see cref="Additions"/>, and recorded only once the hook passed the additive
+    /// guard and its sources loaded. Empty for a plugin that added none, and for every plugin in a
+    /// host that does not run the configuration phase.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<string> ConfigurationSourceTypes { get; }
+
+    /// <summary>
+    /// Whether this plugin's configuration hook added at least one configuration source.
+    /// </summary>
+    /// <remarks>
+    /// Historical, like <see cref="Additions"/>: it stays true if the source was later removed from the
+    /// builder. What it answers is whether the plugin contributed configuration at all, which is what
+    /// the no-contract check reads, and that is a fact of the configuration phase rather than of
+    /// whatever the builder holds when the audit runs. False for a plugin that added none, and for
+    /// every plugin in a host that does not run the configuration phase. Derived from
+    /// <see cref="ConfigurationSourceTypes"/>, so the two cannot disagree.
+    /// </remarks>
+    public bool ContributedConfiguration => ConfigurationSourceTypes.Count > 0;
 
     /// <summary>The plugin's declared-file inventory, as it stands now.</summary>
     public IReadOnlyList<PluginInventoryRow> MaterializeInventory() => Plugin.MaterializeInventory();

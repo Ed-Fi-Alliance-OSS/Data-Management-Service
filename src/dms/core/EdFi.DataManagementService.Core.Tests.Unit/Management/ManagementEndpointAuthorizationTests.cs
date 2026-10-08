@@ -20,7 +20,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Management;
 [Parallelizable]
 public class Given_ManagementEndpointAuthorizationService
 {
-    private const string RequiredRole = "dms-management-operator";
+    private const string RequiredRole = "cms-client";
     private const string RoleClaimType = "operator_role";
     private const string Token = "valid-token";
 
@@ -111,7 +111,7 @@ public class Given_ManagementEndpointAuthorizationService
 
     [TestCase(null)]
     [TestCase("")]
-    [TestCase("dms management operator")]
+    [TestCase("cms client")]
     public async Task It_reports_the_required_role_as_not_configured(string? requiredRole)
     {
         ManagementEndpointAuthorizationService service = CreateService(
@@ -132,16 +132,16 @@ public class Given_ManagementEndpointsOptions
     [Test]
     public void It_yields_a_valid_required_role()
     {
-        ManagementEndpointsOptions options = new() { RequiredRole = "dms-management-operator" };
+        ManagementEndpointsOptions options = new() { RequiredRole = "cms-client" };
 
         options.TryGetRequiredRoleForEndpointMapping(out string? requiredRole).Should().BeTrue();
-        requiredRole.Should().Be("dms-management-operator");
+        requiredRole.Should().Be("cms-client");
     }
 
     [TestCase(null)]
     [TestCase("")]
     [TestCase("   ")]
-    [TestCase("dms management operator")]
+    [TestCase("cms client")]
     public void It_rejects_an_unusable_required_role(string? configuredRole)
     {
         ManagementEndpointsOptions options = new() { RequiredRole = configuredRole };
@@ -153,12 +153,12 @@ public class Given_ManagementEndpointsOptions
     [Test]
     public void It_omits_the_required_role_when_options_are_serialized()
     {
-        ManagementEndpointsOptions options = new() { RequiredRole = "dms-management-operator" };
+        ManagementEndpointsOptions options = new() { RequiredRole = "cms-client" };
 
         string json = System.Text.Json.JsonSerializer.Serialize(options);
 
         json.Should().NotContain("RequiredRole");
-        json.Should().NotContain("dms-management-operator");
+        json.Should().NotContain("cms-client");
     }
 
     [Test]

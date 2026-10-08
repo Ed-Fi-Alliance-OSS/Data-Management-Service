@@ -12,14 +12,26 @@ Feature: OWASP critical attack path protections
              Then it should respond with 400
 
         @e2e-ci-shard-3
-        Scenario: 01a SQL injection payload in query string numeric field is rejected
+        Scenario: 01a SQL injection payload in a query parameter name is ignored and named in the warning
              When a GET request is made to "/ed-fi/schools?OR 1=1--schoolId=9999"
-             Then it should respond with 400
+             Then it should respond with 200
+              And the response headers include
+                  """
+                  {
+                      "X-EdFi-Warning": "Ignored query parameters: OR%201"
+                  }
+                  """
 
         @e2e-ci-shard-3
-        Scenario: 01b SQL injection payload in query string numeric field is rejected
+        Scenario: 01b URL-encoded SQL injection payload in a query parameter name is ignored and named in the warning
              When a GET request is made to "/ed-fi/schools?+OR+1%3D1+--schoolId=9999"
-             Then it should respond with 400
+             Then it should respond with 200
+              And the response headers include
+                  """
+                  {
+                      "X-EdFi-Warning": "Ignored query parameters: %20OR%201%3D1%20--schoolId"
+                  }
+                  """
 
         @e2e-ci-shard-3
         Scenario: 02 SQL injection payload in JSON body numeric field is rejected

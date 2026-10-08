@@ -46,7 +46,7 @@ internal class CacheClaimSetsTask(
         {
             if (_appSettings.MultiTenancy)
             {
-                IList<string> tenants = await _dataStoreProvider.LoadTenants();
+                IList<string> tenants = await _dataStoreProvider.LoadTenants(cancellationToken);
 
                 foreach (string tenant in tenants)
                 {
@@ -57,12 +57,12 @@ internal class CacheClaimSetsTask(
                         LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
                     );
 
-                    await _claimSetProvider.GetAllClaimSets(tenant);
+                    await _claimSetProvider.GetAllClaimSets(tenant, cancellationToken);
                 }
             }
             else
             {
-                await _claimSetProvider.GetAllClaimSets();
+                await _claimSetProvider.GetAllClaimSets(cancellationToken: cancellationToken);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

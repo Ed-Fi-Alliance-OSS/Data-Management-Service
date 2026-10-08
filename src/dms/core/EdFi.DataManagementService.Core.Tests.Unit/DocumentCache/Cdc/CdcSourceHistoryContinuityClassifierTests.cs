@@ -697,6 +697,19 @@ public class Given_CdcContinuityIncidentClassifier
     private static IEnumerable<TestCaseData> TerminalIncidentCases()
     {
         yield return new TestCaseData(
+            CdcIncidentFailureCategory.RetainedHistoryGap,
+            CdcProvider.SqlServer,
+            new Func<CdcSourceHistoryClassificationInput, CdcSourceHistoryClassificationInput>(input =>
+                input with
+                {
+                    ProviderHistory = input.ProviderHistory! with
+                    {
+                        RetainedRangeStart = "00000023:00000138:0003",
+                    },
+                }
+            )
+        ).SetName("sql_server_committed_offset_below_retained_floor");
+        yield return new TestCaseData(
             CdcIncidentFailureCategory.ProviderArtifactMissing,
             CdcProvider.Postgresql,
             new Func<CdcSourceHistoryClassificationInput, CdcSourceHistoryClassificationInput>(input =>
@@ -1097,4 +1110,47 @@ public class Given_Postgresql_continuity_observations_are_refreshed
     [Test]
     public void It_recovers_with_affirmative_current_wal_evidence() =>
         _after.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Healthy);
+}
+
+[TestFixture("00000030:00000368:0003", CdcSourceHistoryContinuity.Unknown)]
+[TestFixture("00000030:00000390:0003", CdcSourceHistoryContinuity.Healthy)]
+[TestFixture("00000030:00000400:0003", CdcSourceHistoryContinuity.Healthy)]
+[Category("CdcSourceHistory")]
+public class Given_SqlServer_range_is_sampled_before_a_newer_connector_commit(
+    string retainedEnd,
+    CdcSourceHistoryContinuity expected
+)
+{
+    private CdcSourceHistoryClassificationResult _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var input = CdcContinuityFixture.CreateInput(
+            CdcContinuityFixture.CreateBinding(CdcProvider.SqlServer)
+        );
+        _result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            input with
+            {
+                ConnectorOffset = input.ConnectorOffset! with
+                {
+                    CommitLsn = "00000030:00000390:0003",
+                    ChangeLsn = "00000030:00000390:0002",
+                },
+                ProviderHistory = input.ProviderHistory! with
+                {
+                    RetainedRangeStart = "0000002e:000002a8:003c",
+                    RetainedRangeEnd = retainedEnd,
+                },
+            }
+        );
+    }
+
+    [Test]
+    public void It_requires_a_range_that_covers_the_committed_position() =>
+        _result.Observation.Continuity.Should().Be(expected);
+
+    [Test]
+    public void It_does_not_latch_history_loss_from_an_older_upper_bound() =>
+        _result.IncidentCandidate.Should().BeNull();
 }

@@ -97,7 +97,8 @@ public class Given_The_Composite_Stored_Ownership_Authorization
 
     /// <summary>
     /// The check carries the carrier's row guard, which is what makes it vacuous when the capture observed
-    /// no target — the property a create relies on to never be denied by ownership.
+    /// no target — so the stored-token check never decides a create, which the create-side verdict decides
+    /// instead.
     /// </summary>
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]

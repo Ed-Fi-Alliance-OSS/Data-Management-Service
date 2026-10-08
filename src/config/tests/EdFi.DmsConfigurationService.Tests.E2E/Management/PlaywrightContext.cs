@@ -11,7 +11,14 @@ public class PlaywrightContext
 {
     private Task<IAPIRequestContext>? _requestContext;
 
-    public string ApiUrl { get; set; } = "http://localhost:8081";
+    /// <summary>
+    /// The Configuration Service the suite calls: CMS_E2E_API_URL when an isolated deployment sets it,
+    /// and the stock stack's address otherwise.
+    /// </summary>
+    public string ApiUrl { get; set; } =
+        Environment.GetEnvironmentVariable("CMS_E2E_API_URL") is { Length: > 0 } apiUrl
+            ? apiUrl
+            : "http://localhost:8081";
 
     public IAPIRequestContext? ApiRequestContext => _requestContext?.GetAwaiter().GetResult();
 

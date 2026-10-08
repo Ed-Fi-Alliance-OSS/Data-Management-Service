@@ -774,8 +774,8 @@ public class GetByIdHandlerTests
                 "Relational descriptor GET authorization is not implemented for resource "
                 + "'Ed-Fi.SchoolTypeDescriptor' when effective GET authorization requires filtering. "
                 + "Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no "
-                + "authorization strategies or with 'NamespaceBased' and/or "
-                + "'NoFurtherAuthorizationRequired' are currently supported.";
+                + "authorization strategies or with 'NamespaceBased', 'NoFurtherAuthorizationRequired', "
+                + "and/or 'OwnershipBased' are currently supported.";
 
             public override Task<GetResult> GetDocumentById(
                 IGetRequest getRequest,

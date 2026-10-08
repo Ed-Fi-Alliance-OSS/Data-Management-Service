@@ -56,11 +56,17 @@ public interface IOpenIddictTokenRepository
     Task<string?> GetTokenStatusAsync(Guid tokenId);
 
     /// <summary>
-    /// Revokes a token by its ID.
+    /// Revokes a token by its ID, provided it is stored for the given application and not already
+    /// revoked. The ownership and status conditions are part of the UPDATE, so no other
+    /// application's token can change and a repeated revocation keeps the original redemption date.
     /// </summary>
     /// <param name="tokenId">The token ID to revoke.</param>
-    /// <returns>True if the token was successfully revoked, false otherwise.</returns>
-    Task<bool> RevokeTokenAsync(Guid tokenId);
+    /// <param name="applicationId">The stored Id of the authenticated application.</param>
+    /// <returns>
+    /// True if a row changed; false if the token is unknown, already revoked, or stored for a
+    /// different application.
+    /// </returns>
+    Task<bool> RevokeTokenAsync(Guid tokenId, Guid applicationId);
 
     /// <summary>
     /// Deletes tokens that expired before the given UTC bound, regardless of status.
@@ -81,6 +87,12 @@ public interface IOpenIddictTokenRepository
     /// </summary>
     /// <returns>Collection of public key information.</returns>
     Task<IEnumerable<PublicKeyInfo>> GetActivePublicKeysAsync();
+
+    /// <summary>
+    /// Gets all active public keys; <paramref name="cancellationToken"/> cancels both the connection open and the query.
+    /// </summary>
+    /// <returns>Collection of public key information.</returns>
+    Task<IEnumerable<PublicKeyInfo>> GetActivePublicKeysAsync(CancellationToken cancellationToken);
 
     /// <summary>
     /// Gets application information by client ID.

@@ -18,6 +18,8 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [Category("DatabaseIntegration")]
 [Category("CdcMessageContract")]
 [Category("CdcMessageContractSerialized")]
+[Property("CdcInvariant", "CDC-INV-08")]
+[Property("CdcInvariant", "CDC-INV-10")]
 public sealed class Given_MessageContractProgress(CdcProvider provider)
 {
     private MessageContractFixture _fixture = null!;

@@ -207,48 +207,34 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
     }
 
     [Test]
-    public void It_maps_specific_IfNoneMatch_root_create_races_to_retryable_write_conflicts()
-    {
-        ConfigureRootNaturalKeyUniqueViolation();
-        var request = CreateRequest(
-            RelationalWriteOperationKind.Post,
-            writePrecondition: new WritePrecondition.IfNoneMatch("\"5-client-tag\"")
-        );
-
-        var isMapped = _sut.TryBuild(request, new StubDbException("unique violation"), out var result);
-
-        isMapped.Should().BeTrue();
-        result
-            .Should()
-            .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureWriteConflict())
-            );
-    }
-
-    [Test]
-    public void It_maps_wildcard_IfNoneMatch_root_create_races_to_retryable_write_conflicts()
-    {
-        ConfigureRootNaturalKeyUniqueViolation();
-        var request = CreateRequest(
-            RelationalWriteOperationKind.Post,
-            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
-        );
-
-        var isMapped = _sut.TryBuild(request, new StubDbException("unique violation"), out var result);
-
-        isMapped.Should().BeTrue();
-        result
-            .Should()
-            .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureWriteConflict())
-            );
-    }
-
-    [Test]
-    public void It_retains_identity_conflicts_for_unguarded_root_create_races()
+    public void It_maps_root_create_races_to_identity_conflicts_without_a_precondition()
     {
         ConfigureRootNaturalKeyUniqueViolation();
         var request = CreateRequest(RelationalWriteOperationKind.Post);
+
+        var isMapped = _sut.TryBuild(request, new StubDbException("unique violation"), out var result);
+
+        isMapped.Should().BeTrue();
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureIdentityConflict(
+                        new ResourceName("School"),
+                        [new KeyValuePair<string, string>("schoolId", "255901")]
+                    )
+                )
+            );
+    }
+
+    [Test]
+    public void It_maps_root_create_races_to_identity_conflicts_when_an_IfMatch_precondition_is_present()
+    {
+        ConfigureRootNaturalKeyUniqueViolation();
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            writePrecondition: new WritePrecondition.IfMatch("\"5-client-tag\"")
+        );
 
         var isMapped = _sut.TryBuild(request, new StubDbException("unique violation"), out var result);
 
@@ -282,72 +268,6 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             new RelationalWriteConstraintResolver()
         );
         var request = CreateSchoolAbstractIdentityRequest(RelationalWriteOperationKind.Post);
-
-        var isMapped = mapper.TryBuild(request, new StubDbException("unique violation"), out var result);
-
-        isMapped.Should().BeTrue();
-        result
-            .Should()
-            .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.UpsertFailureIdentityConflict(
-                        new ResourceName("School"),
-                        [new KeyValuePair<string, string>("schoolId", "155901")]
-                    )
-                )
-            );
-    }
-
-    [Test]
-    public void It_retains_abstract_identity_conflicts_for_IfNoneMatch_wildcard_creates()
-    {
-        var classifier = new RecordingRelationalWriteExceptionClassifier
-        {
-            ClassificationToReturn = new RelationalWriteExceptionClassification.UniqueConstraintViolation(
-                "UX_EducationOrganizationIdentity_NK"
-            ),
-        };
-        var mapper = new RelationalWriteDatabaseFailureResultMapper(
-            classifier,
-            new RelationalWriteConstraintResolver()
-        );
-        var request = CreateSchoolAbstractIdentityRequest(
-            RelationalWriteOperationKind.Post,
-            new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
-        );
-
-        var isMapped = mapper.TryBuild(request, new StubDbException("unique violation"), out var result);
-
-        isMapped.Should().BeTrue();
-        result
-            .Should()
-            .BeEquivalentTo(
-                new RelationalWriteExecutorResult.Upsert(
-                    new UpsertResult.UpsertFailureIdentityConflict(
-                        new ResourceName("School"),
-                        [new KeyValuePair<string, string>("schoolId", "155901")]
-                    )
-                )
-            );
-    }
-
-    [Test]
-    public void It_retains_abstract_identity_conflicts_for_specific_IfNoneMatch_creates()
-    {
-        var classifier = new RecordingRelationalWriteExceptionClassifier
-        {
-            ClassificationToReturn = new RelationalWriteExceptionClassification.UniqueConstraintViolation(
-                "UX_EducationOrganizationIdentity_NK"
-            ),
-        };
-        var mapper = new RelationalWriteDatabaseFailureResultMapper(
-            classifier,
-            new RelationalWriteConstraintResolver()
-        );
-        var request = CreateSchoolAbstractIdentityRequest(
-            RelationalWriteOperationKind.Post,
-            new WritePrecondition.IfNoneMatch("\"5-client-tag\"")
-        );
 
         var isMapped = mapper.TryBuild(request, new StubDbException("unique violation"), out var result);
 
@@ -622,8 +542,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
     // so both the POST and PUT identity-conflict paths are covered. Shares its table shapes with the
     // constraint-resolver tests via AbstractIdentitySchoolTestData.
     private static RelationalWriteExecutorRequest CreateSchoolAbstractIdentityRequest(
-        RelationalWriteOperationKind operationKind,
-        WritePrecondition? writePrecondition = null
+        RelationalWriteOperationKind operationKind
     )
     {
         var (writePlan, mappingSet) = AbstractIdentitySchoolTestData.BuildSchoolWriteModel();
@@ -647,8 +566,7 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             new ReferenceResolverRequest(mappingSet, writePlan.Model.Resource, [], DescriptorReferences: []),
             operationKind == RelationalWriteOperationKind.Put
                 ? new RelationalWriteTargetContext.ExistingDocument(345L, updateDocumentUuid, 44L)
-                : new RelationalWriteTargetContext.CreateNew(createDocumentUuid),
-            writePrecondition: writePrecondition
+                : new RelationalWriteTargetContext.CreateNew(createDocumentUuid)
         );
     }
 

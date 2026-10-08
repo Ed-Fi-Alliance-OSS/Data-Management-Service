@@ -19,6 +19,8 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [Category("DatabaseIntegration")]
 [Category("CdcMessageContract")]
 [Category("CdcMessageContractSerialized")]
+[Property("CdcInvariant", "CDC-INV-07")]
+[Property("CdcInvariant", "CDC-INV-08")]
 public sealed class Given_MessageContractRouting(CdcProvider provider)
 {
     private const string Unavailable = "__debezium_unavailable_value";

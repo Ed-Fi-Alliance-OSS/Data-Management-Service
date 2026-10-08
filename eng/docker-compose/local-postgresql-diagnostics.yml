@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# DMS-1556 investigation overlay: PostgreSQL connection/statement/checkpoint logging.
+# Apply IN ADDITION to the stack's own -f list (see local-config-diagnostics.yml for the
+# invocation shape); recreate the db service for the flags to take effect.
+#
+# Compose replaces `command` wholesale, so the base postgresql.yml setting
+# (max_locks_per_transaction=256) is restated here — dropping it re-surfaces PG error
+# 53200 under parallel provisioning.
+services:
+  db:
+    command:
+      - postgres
+      - -c
+      - max_locks_per_transaction=256
+      - -c
+      - log_connections=on
+      - -c
+      - log_disconnections=on
+      - -c
+      - log_min_duration_statement=250
+      - -c
+      - log_lock_waits=on
+      - -c
+      - log_checkpoints=on

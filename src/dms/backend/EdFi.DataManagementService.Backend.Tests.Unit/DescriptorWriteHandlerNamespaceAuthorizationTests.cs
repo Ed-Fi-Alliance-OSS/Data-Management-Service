@@ -23,7 +23,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 [TestFixture]
 [Parallelizable]
-public class Given_Descriptor_Write_Handler_Namespace_Authorization
+public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
 {
     private static readonly QualifiedResourceName _descriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
     private static readonly DocumentUuid _documentUuid = new(
@@ -77,7 +77,6 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     [TestCase(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly)]
-    [TestCase(AuthorizationStrategyNameConstants.OwnershipBased)]
     public async Task It_fails_closed_for_descriptor_post_with_an_unsupported_strategy_without_executing_sql(
         string authorizationStrategyName
     )
@@ -128,7 +127,6 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     [TestCase(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly)]
-    [TestCase(AuthorizationStrategyNameConstants.OwnershipBased)]
     public async Task It_fails_closed_for_descriptor_put_with_an_unsupported_strategy_without_executing_sql(
         string authorizationStrategyName
     )
@@ -312,9 +310,9 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
 
     /// <summary>
     /// A descriptor create stamps <c>CreatedByOwnershipTokenId</c> exactly as a regular-resource create does.
-    /// Ownership <em>enforcement</em> for descriptors remains a 501 for this ticket, but stamping is
-    /// unconditional and does not wait for it: an unstamped descriptor could never be reached by ownership
-    /// authorization once it is enabled.
+    /// Stamping is unconditional and never consults configured strategies: these creates run under
+    /// NamespaceBased alone, so no ownership verdict is involved, and a client with no creator token still
+    /// stamps null.
     /// </summary>
     [TestCase(SqlDialect.Pgsql, "\"CreatedByOwnershipTokenId\"")]
     [TestCase(SqlDialect.Mssql, "[CreatedByOwnershipTokenId]")]
@@ -454,47 +452,6 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         ) with
         {
             WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
-        };
-
-        var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
-
-        result.Should().BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>();
-        result
-            .As<UpsertResult.UpsertFailureNamespaceNotAuthorized>()
-            .NamespaceFailure.ValueSource.Should()
-            .Be(NamespaceAuthorizationFailureValueSource.Proposed);
-        sessionFactory
-            .Session.Executor.Commands.Should()
-            .NotContain(command =>
-                command.CommandText.Contains("INSERT INTO dms.\"Document\"", StringComparison.Ordinal)
-            );
-        sessionFactory.Session.CommitCallCount.Should().Be(0);
-    }
-
-    [Test]
-    public async Task It_returns_namespace_403_and_does_not_insert_when_descriptor_post_create_under_wildcard_if_none_match_has_a_proposed_namespace_denial()
-    {
-        // If-None-Match on a CreateNew descriptor POST is the new "proceed to insert" branch, but the
-        // proposed-namespace check runs inside the locked resolve before the insert. A denial must
-        // therefore return the namespace 403, issue no INSERT, and never commit — mirroring the
-        // If-Match create case so a future switch-reordering that inserted before the auth check fails
-        // here rather than opening a namespace-authorization bypass.
-        var targetLookupService = new StubRelationalWriteTargetLookupService
-        {
-            PostResult = new RelationalWriteTargetLookupResult.CreateNew(_documentUuid),
-        };
-        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.Executor.NamespaceResults.Enqueue(
-            new NamespaceAuthorizationExecutionResult.NotAuthorized(ProposedMismatchFailure())
-        );
-        var sut = CreateSut(sessionFactory, targetLookupService);
-        var request = CreatePostRequest(
-            namespacePrefixes: ["uri://ed-fi.org/"],
-            authorizationStrategy: NamespaceStrategy(),
-            @namespace: "uri://other.org/SchoolTypeDescriptor"
-        ) with
-        {
-            WritePrecondition = new WritePrecondition.IfNoneMatch("*", IsWildcard: true),
         };
 
         var result = await sut.HandlePostWithSamePolicyForCreateAndUpdateAsync(request);
@@ -1050,7 +1007,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
                 authorizationStrategies:
                 [
                     DeleteCustomViewStrategy(),
-                    UnsupportedStrategy(AuthorizationStrategyNameConstants.OwnershipBased),
+                    UnsupportedStrategy(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly),
                 ]
             )
         );
@@ -1204,7 +1161,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     [Test]
     public async Task It_reports_a_self_basis_denial_through_the_precondition_helper_without_a_later_namespace_check()
     {
-        // Seam E: the If-None-Match create resolves through the shared locked-precondition helper rather than
+        // Seam E: the If-Match create resolves through the shared locked-precondition helper rather than
         // the plain create path. The exact defect this guards was the two paths disagreeing, so the same
         // configured-order rule has to hold here — the denial preempts both the namespace check and the
         // precondition outcome.
@@ -1224,7 +1181,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategies: [DeleteCustomViewStrategy(), NamespaceStrategy()],
-                writePrecondition: new WritePrecondition.IfNoneMatch(["\"some-etag\""])
+                writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
             )
         );
 
@@ -1264,7 +1221,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             CreatePostRequest(
                 namespacePrefixes: ["uri://ed-fi.org/"],
                 authorizationStrategies: [NamespaceStrategy(), DeleteCustomViewStrategy()],
-                writePrecondition: new WritePrecondition.IfNoneMatch(["\"some-etag\""])
+                writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
             )
         );
 
@@ -1535,8 +1492,8 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     [Test]
     public async Task It_validates_a_descriptor_delete_custom_view_configured_before_an_unsupported_strategy()
     {
-        // OwnershipBased executes last regardless of configured position, so every resolved view is validated
-        // before its 501.
+        // A relationship strategy fails closed with a 501 on descriptors, and every resolved view is validated
+        // before it.
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var validationExecutor = new RecordingCustomViewValidationExecutor();
         var sut = CreateSut(sessionFactory, customViewValidationCommandExecutor: validationExecutor);
@@ -1547,7 +1504,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
                 authorizationStrategies:
                 [
                     DeleteCustomViewStrategy(),
-                    UnsupportedStrategy(AuthorizationStrategyNameConstants.OwnershipBased),
+                    UnsupportedStrategy(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly),
                 ]
             )
         );
@@ -1873,13 +1830,12 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     /// <summary>
-    /// Descriptor ownership enforcement is out of scope for DMS-1060, so a descriptor write configured with
-    /// OwnershipBased fails closed with 501 even when NamespaceBased is configured alongside it and the
-    /// client has no namespace prefixes. Reporting the namespace 403 first would answer as though the
-    /// caller's prefixes refused a check that was never enforced.
+    /// Descriptor POST, PUT and DELETE enforce OwnershipBased, so they take the regular-resource precedence:
+    /// with no namespace prefixes the namespace 403 is reported before any session opens, because
+    /// Namespace-based executes ahead of Ownership-based among the AND strategies.
     /// </summary>
     [Test]
-    public async Task It_returns_not_implemented_for_descriptor_post_with_ownership_when_the_client_has_no_prefixes()
+    public async Task It_returns_namespace_403_for_descriptor_post_with_ownership_when_the_client_has_no_prefixes()
     {
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var sut = CreateSut(sessionFactory);
@@ -1895,12 +1851,16 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             )
         );
 
-        result.Should().BeOfType<UpsertResult.UpsertFailureNotImplemented>();
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureNamespaceNotAuthorized>()
+            .Which.NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
         sessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
 
     [Test]
-    public async Task It_returns_not_implemented_for_descriptor_put_with_ownership_when_the_client_has_no_prefixes()
+    public async Task It_returns_namespace_403_for_descriptor_put_with_ownership_when_the_client_has_no_prefixes()
     {
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var sut = CreateSut(sessionFactory);
@@ -1916,12 +1876,16 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             )
         );
 
-        result.Should().BeOfType<UpdateResult.UpdateFailureNotImplemented>();
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureNamespaceNotAuthorized>()
+            .Which.NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
         sessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
 
     [Test]
-    public async Task It_returns_not_implemented_for_descriptor_delete_with_ownership_when_the_client_has_no_prefixes()
+    public async Task It_returns_namespace_403_for_descriptor_delete_with_ownership_when_the_client_has_no_prefixes()
     {
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
         var sut = CreateSut(sessionFactory);
@@ -1937,7 +1901,11 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
             )
         );
 
-        result.Should().BeOfType<DeleteResult.DeleteFailureNotImplemented>();
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureNamespaceNotAuthorized>()
+            .Which.NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
         sessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
 
@@ -2052,30 +2020,6 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     [Test]
-    public async Task It_creates_under_if_none_match_without_running_an_update_only_namespace_check()
-    {
-        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
-        // The in-session lookup finds no row, then the insert reads back its content version.
-        sessionFactory.Session.Executor.ResultSets.Enqueue([]);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow()]);
-        sessionFactory.Session.Executor.NamespaceResults.Enqueue(
-            new NamespaceAuthorizationExecutionResult.NotAuthorized(ProposedMismatchFailure())
-        );
-        var sut = CreateSut(sessionFactory, new StubRelationalWriteTargetLookupService());
-
-        var result = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(
-                writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
-            ),
-            PolicyPair(create: [NoFurtherStrategy()], update: [NamespaceStrategy()])
-        );
-
-        result.Should().BeOfType<UpsertResult.InsertSuccess>();
-        sessionFactory.Session.Executor.NamespaceResults.Should().ContainSingle();
-        sessionFactory.Session.CommitCallCount.Should().Be(1);
-    }
-
-    [Test]
     public async Task It_applies_the_update_policy_namespace_denial_before_a_stale_if_match()
     {
         var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
@@ -2166,26 +2110,6 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         // Refused on the resolved target, before the row is locked or compared.
         sessionFactory.Session.ScalarCommands.Should().BeEmpty();
         sessionFactory.Session.Executor.Commands.Should().NotContain(command => IsDescriptorUpdate(command));
-        sessionFactory.Session.RollbackCallCount.Should().Be(1);
-        sessionFactory.Session.CommitCallCount.Should().Be(0);
-    }
-
-    [Test]
-    public async Task It_denies_a_create_the_policy_does_not_permit_under_if_none_match()
-    {
-        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([]);
-        var sut = CreateSut(sessionFactory, new StubRelationalWriteTargetLookupService());
-
-        var result = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(
-                writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
-            ),
-            UpdateOnly()
-        );
-
-        result.Should().Be(new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Create));
-        sessionFactory.Session.Executor.Commands.Should().NotContain(command => IsDocumentInsert(command));
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
         sessionFactory.Session.CommitCallCount.Should().Be(0);
     }
@@ -2331,31 +2255,6 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
     }
 
     [Test]
-    public async Task It_reselects_the_update_policy_after_an_if_none_match_create_loses_to_a_concurrent_create()
-    {
-        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
-        sessionFactory.Session.Executor.ResultSets.Enqueue([]);
-        sessionFactory.Session.Executor.CommandFailure = command =>
-            IsDocumentInsert(command) ? new StubDbException("duplicate descriptor identity") : null;
-        var sut = CreateSut(
-            sessionFactory,
-            new StubRelationalWriteTargetLookupService(),
-            writeExceptionClassifier: new UniqueViolationWriteExceptionClassifier()
-        );
-        var request = CreatePolicyPostRequest(
-            writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
-        );
-
-        var staleAttempt = await sut.HandlePostAsync(request, CreateOnly());
-        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRowWithId(345L)]);
-        var retry = await sut.HandlePostAsync(request, CreateOnly());
-
-        staleAttempt.Should().BeOfType<UpsertResult.UpsertFailureWriteConflict>();
-        retry.Should().Be(new UpsertResult.UpsertFailureTargetActionNotPermitted(UpsertTargetAction.Update));
-        sessionFactory.Session.CommitCallCount.Should().Be(0);
-    }
-
-    [Test]
     public async Task It_attributes_a_locked_update_security_configuration_failure_to_update()
     {
         var targetLookupService = new StubRelationalWriteTargetLookupService
@@ -2410,9 +2309,7 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         var sut = CreateSut(sessionFactory, new StubRelationalWriteTargetLookupService());
 
         var result = await sut.HandlePostAsync(
-            CreatePolicyPostRequest(
-                writePrecondition: new WritePrecondition.IfNoneMatch("*", IsWildcard: true)
-            ),
+            CreatePolicyPostRequest(writePrecondition: new WritePrecondition.IfMatch("*", IsWildcard: true)),
             UpsertActionAuthorization.SamePolicyForCreateAndUpdate([UnsupportedStrategy(unknownStrategyName)])
         );
 
@@ -3070,6 +2967,14 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
 
         public Queue<NamespaceAuthorizationExecutionResult> NamespaceResults { get; } = [];
 
+        /// <summary>
+        /// Answers for the stored-stamp ownership checks, in order. An empty queue authorizes, so every test that
+        /// relies on a check not running asserts <see cref="OwnershipCallCount"/> as well.
+        /// </summary>
+        public Queue<OwnershipAuthorizationExecutionResult> OwnershipResults { get; } = [];
+
+        public int OwnershipCallCount { get; private set; }
+
         public List<RelationalCommand> Commands { get; } = [];
 
         /// <summary>
@@ -3111,6 +3016,16 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
                         ? new NamespaceAuthorizationExecutionResult.Authorized()
                         : NamespaceResults.Dequeue();
                 return (TResult)(object)namespaceResult;
+            }
+
+            if (typeof(TResult) == typeof(OwnershipAuthorizationExecutionResult))
+            {
+                OwnershipCallCount++;
+                OwnershipAuthorizationExecutionResult ownershipResult =
+                    OwnershipResults.Count == 0
+                        ? new OwnershipAuthorizationExecutionResult.Authorized()
+                        : OwnershipResults.Dequeue();
+                return (TResult)(object)ownershipResult;
             }
 
             IReadOnlyList<InMemoryRelationalResultSet> resultSets =

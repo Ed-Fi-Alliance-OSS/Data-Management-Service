@@ -205,7 +205,7 @@ CREATE TABLE dms.Descriptor (
     ContentLastModifiedAt timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT PK_Descriptor PRIMARY KEY (DocumentId),
     CONSTRAINT FK_Descriptor_DocumentResourceKey FOREIGN KEY (DocumentId, ResourceKeyId)
-        REFERENCES dms.Document (DocumentId, ResourceKeyId) ON DELETE CASCADE
+        REFERENCES dms.Document (DocumentId, ResourceKeyId) ON DELETE RESTRICT -- NO ACTION on SQL Server; see "Root table"
 );
 
 CREATE UNIQUE INDEX UX_Descriptor_UriLowered_ResourceKeyId
@@ -797,8 +797,10 @@ One row per document; PK is `DocumentId` (shared surrogate key).
 
 Typical structure:
 
-- `DocumentId BIGINT` **PK/FK** → `dms.Document(DocumentId)` ON DELETE CASCADE
-  - The `ON DELETE CASCADE` action is a referential-integrity safety net, not the primary deletion path. The DMS write path deletes the concrete resource row before deleting the corresponding `dms.Document` row (within the same transaction) so that the resource's `_Stamp` trigger can read `DocumentUuid` and `ContentVersion` from `dms.Document` before the parent row is removed. See [change-queries.md](change-queries.md) §"Cascade-ordering requirement for deletes" for the trigger-side rationale.
+- `DocumentId BIGINT` **PK/FK** → `dms.Document(DocumentId)` ON DELETE RESTRICT (PostgreSQL) / ON DELETE NO ACTION (SQL Server)
+  - This foreign key is a referential-integrity safety net, not the primary deletion path. The DMS write path deletes the concrete resource row before deleting the corresponding `dms.Document` row (within the same transaction) so that the resource's `_Stamp` trigger can read `DocumentUuid` and `ContentVersion` from `dms.Document` before the parent row is removed. See [change-queries.md](change-queries.md) §"Cascade-ordering requirement for deletes" for the trigger-side rationale.
+  - The delete action is the relational model's `ReferentialAction.Restrict` (manifest `on_delete: "Restrict"`), the single-probe check on both engines, and the same rule applies to `dms.Descriptor`. It replaced `ON DELETE CASCADE` (DMS-1268): because the root row is already gone, the cascade never had anything to delete, but SQL Server compiles every root table's cascade into the `dms.Document` DELETE plan (hundreds of tables, 16x slower on the volume test), and PostgreSQL's `NO ACTION` would re-check the parent key before probing each referencing table (two statements per foreign key per delete). With RESTRICT / NO ACTION a direct `DELETE FROM dms.Document` that still has a live root row fails instead of silently cascading. The cascade-maintained tables keep `ON DELETE CASCADE`: `dms.DocumentCache`, `dms.DocumentProjectionWork`, `dms.ReferentialIdentity`, the abstract identity tables, and the child collection and extension tables.
+  - The decision record [0001-document-safety-net-foreign-key-delete-action.md](data-model/0001-document-safety-net-foreign-key-delete-action.md) assesses the alternatives (dropping the keys, asynchronous purge, replica-role deletes, partitioning, hand-rolled RI), records the measurements, and states the condition under which the question is reopened.
 - Natural key columns (from `identityJsonPaths`) → **API-semantic** unique constraint derived from the identity endpoint bindings.
   - Scalar identity elements map to scalar path/binding columns.
   - Descriptor identity elements map to resolved `..._DescriptorId` FK columns.
@@ -992,7 +994,7 @@ CREATE SCHEMA IF NOT EXISTS edfi;
 
 CREATE TABLE IF NOT EXISTS edfi.Student (
     DocumentId       bigint PRIMARY KEY
-                     REFERENCES dms.Document(DocumentId) ON DELETE CASCADE,
+                     REFERENCES dms.Document(DocumentId) ON DELETE RESTRICT, -- NO ACTION on SQL Server
 
     StudentUniqueId  varchar(32)  NOT NULL,
     FirstName        varchar(75)  NOT NULL,
@@ -1009,7 +1011,7 @@ CREATE TABLE IF NOT EXISTS edfi.Student (
 
 CREATE TABLE IF NOT EXISTS edfi.School (
     DocumentId             bigint PRIMARY KEY
-                           REFERENCES dms.Document(DocumentId) ON DELETE CASCADE,
+                           REFERENCES dms.Document(DocumentId) ON DELETE RESTRICT,
 
     SchoolId               int          NOT NULL,
     NameOfInstitution      varchar(255) NOT NULL,
@@ -1077,7 +1079,7 @@ CREATE TABLE IF NOT EXISTS edfi.SchoolAddressPeriod (
 
 CREATE TABLE IF NOT EXISTS edfi.StudentSchoolAssociation (
     DocumentId         bigint PRIMARY KEY
-                       REFERENCES dms.Document(DocumentId) ON DELETE CASCADE,
+                       REFERENCES dms.Document(DocumentId) ON DELETE RESTRICT,
 
     Student_DocumentId bigint NOT NULL,
     Student_StudentUniqueId varchar(32) NOT NULL,

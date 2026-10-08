@@ -21,6 +21,68 @@ public interface IClaimSetRepository
     Task<ClaimSetExportResult> Export(int id);
     Task<ClaimSetImportResult> Import(ClaimSetImportCommand command);
     Task<ClaimSetCopyResult> Copy(ClaimSetCopyCommand command);
+    Task<ClaimSetResourceActionMutationResult> GrantResourceClaimActions(
+        ResourceClaimActionMutationCommand command
+    ) => throw new NotImplementedException();
+    Task<ClaimSetResourceActionMutationResult> ModifyResourceClaimActions(
+        ResourceClaimActionMutationCommand command
+    ) => throw new NotImplementedException();
+    Task<ClaimSetResourceActionMutationResult> RevokeResourceClaimActions(
+        int claimSetId,
+        int resourceClaimId
+    ) => throw new NotImplementedException();
+    Task<ClaimSetResourceActionMutationResult> OverrideAuthorizationStrategy(
+        AuthorizationStrategyOverrideCommand command
+    ) => throw new NotImplementedException();
+    Task<ClaimSetResourceActionMutationResult> ResetAuthorizationStrategies(
+        int claimSetId,
+        int resourceClaimId
+    ) => throw new NotImplementedException();
+}
+
+public sealed record ResourceClaimActionMutationCommand(
+    int ClaimSetId,
+    int ResourceClaimId,
+    IReadOnlyList<string> EnabledActionNames
+)
+{
+    public IReadOnlyList<string> SuppliedActionNames { get; init; } = EnabledActionNames;
+}
+
+public sealed record AuthorizationStrategyOverrideCommand(
+    int ClaimSetId,
+    int ResourceClaimId,
+    string ActionName,
+    IReadOnlyList<string> AuthorizationStrategyNames,
+    IReadOnlyList<int> AuthStrategyIds
+);
+
+public abstract record ClaimSetResourceActionMutationResult
+{
+    public sealed record Success() : ClaimSetResourceActionMutationResult;
+
+    public sealed record FailureClaimSetNotFound() : ClaimSetResourceActionMutationResult;
+
+    public sealed record FailureResourceClaimNotFound() : ClaimSetResourceActionMutationResult;
+
+    public sealed record FailureTargetAssociationNotFound() : ClaimSetResourceActionMutationResult;
+
+    public sealed record FailureSystemReserved() : ClaimSetResourceActionMutationResult;
+
+    public sealed record FailureInvalidAction(string ActionName) : ClaimSetResourceActionMutationResult;
+
+    public sealed record FailureInvalidAuthorizationStrategy(string AuthorizationStrategy)
+        : ClaimSetResourceActionMutationResult;
+
+    public sealed record FailureAuthorizationStrategyMismatch() : ClaimSetResourceActionMutationResult;
+
+    public sealed record FailureDuplicateAuthorizationStrategy() : ClaimSetResourceActionMutationResult;
+
+    public sealed record FailureMultipleHierarchiesFound() : ClaimSetResourceActionMutationResult;
+
+    public sealed record FailureMultiUserConflict() : ClaimSetResourceActionMutationResult;
+
+    public sealed record FailureUnknown(string FailureMessage) : ClaimSetResourceActionMutationResult;
 }
 
 public record ClaimSetInsertResult

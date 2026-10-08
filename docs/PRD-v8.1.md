@@ -342,8 +342,8 @@ host-configurable limits on token lifetime or concurrency.
 
 - **FR-AUTHN-6.** Hosts SHALL be able to limit how long an access token remains
   active.
-- **FR-AUTHN-7.** Hosts SHALL be able to limit how many active tokens a single
-  client may hold at once.
+- **FR-AUTHN-7.** Hosts SHALL be able to limit how many active tokens a single Ed-Fi
+  API client may hold at once.
 
 ### 3.9 Event Streaming (FR-STREAM)
 

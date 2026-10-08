@@ -8,8 +8,10 @@ namespace EdFi.DmsConfigurationService.Backend.Services;
 /// <summary>
 /// Whether an update writes the connection string it was handed, or leaves the stored one alone.
 ///
-/// A get returns the stored cipher text and the write path refuses cipher text, so a client that
-/// reads a data store and writes it back cannot resend the value it read. Leaving the field out is
+/// A get returns cipher text, the stored value or, for one carrying a secret reference, its resolved
+/// value encrypted again, and the write path refuses cipher text, so a client that reads a data store
+/// and writes it back cannot resend the value it read. That matters most for a reference: resending
+/// the resolved value would replace the reference with the secret itself. Leaving the field out is
 /// how such a client keeps the stored connection string, which is why a null value means "not
 /// provided" here rather than "clear this".
 ///

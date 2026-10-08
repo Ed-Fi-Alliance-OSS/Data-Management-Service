@@ -19,14 +19,13 @@ public class VendorUpdateCommand : VendorInsertCommand
             RuleFor(v => v.ContactName).MaximumLength(128);
             RuleFor(v => v.ContactEmailAddress).EmailAddress().MaximumLength(320);
             RuleFor(v => v.NamespacePrefixes)
-                .NotEmpty()
                 .Must(s =>
                 {
-                    var split = s?.Split(
+                    var split = s.Split(
                         ',',
                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
                     );
-                    return split != null && !Array.Exists(split, x => x.Length > 128);
+                    return !Array.Exists(split, x => x.Length > 128);
                 })
                 .WithMessage("Each NamespacePrefix length must be 128 characters or fewer.");
         }

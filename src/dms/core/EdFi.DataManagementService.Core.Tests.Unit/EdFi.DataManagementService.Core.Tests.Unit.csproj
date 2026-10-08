@@ -116,6 +116,9 @@
         <None Include="Fixtures/EffectiveSchemaHash/core-schema-fixture.json">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </None>
+        <None Include="OpenApi/Fixtures/ods-7.3.2-identity-openapi.json">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend\EdFi.DataManagementService.Backend.csproj" />
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Plans\EdFi.DataManagementService.Backend.Plans.csproj" />
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.RelationalModel\EdFi.DataManagementService.Backend.RelationalModel.csproj" />

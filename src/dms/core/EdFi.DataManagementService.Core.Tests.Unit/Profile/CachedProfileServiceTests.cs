@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
+using System.Text.Json;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Model;
@@ -1437,6 +1439,597 @@ public class CachedProfileServiceTests
                 definition.Should().NotBeNull();
                 definition!.ProfileName.Should().Be("StudentProfile");
             }
+        }
+    }
+
+    /// <summary>
+    /// Regression fixtures for CMS failures (DMS-1557). They run through the real provider and the
+    /// production response handler over a scripted CMS, because a faked provider that throws would
+    /// pass on the pre-fix code: the old service never swallowed exceptions, the old provider did.
+    /// CMS serves StudentProfile (id 5, IncludeOnly on Student) and SchoolProfile (id 6), and
+    /// application 7 is assigned StudentProfile.
+    /// </summary>
+    public abstract class Given_A_Cms_Backed_Profile_Service : CachedProfileServiceTests
+    {
+        protected const string CatalogPath = "/v3/profiles";
+        protected const string StudentProfilePath = "/v3/profiles/5";
+        protected const string SchoolProfilePath = "/v3/profiles/6";
+        protected const string ApplicationPath = "/v3/applications/7";
+        protected const long ApplicationId = 7;
+
+        private protected CmsProfileHttpDouble Cms { get; private set; } = null!;
+
+        protected HybridCache Cache { get; private set; } = null!;
+
+        private protected CachedProfileService Service { get; private set; } = null!;
+
+        private protected static CmsReply InternalServerError =>
+            CmsReply.Status(HttpStatusCode.InternalServerError);
+
+        [SetUp]
+        public async Task CreateCmsBackedService()
+        {
+            Cms = new CmsProfileHttpDouble();
+            Cms.Serve(
+                CatalogPath,
+                CmsReply.Json("""[{"id":5,"name":"StudentProfile"},{"id":6,"name":"SchoolProfile"}]""")
+            );
+            Cms.Serve(StudentProfilePath, CmsReply.Json(ProfileJson(5, "StudentProfile", StudentProfileXml)));
+            Cms.Serve(SchoolProfilePath, CmsReply.Json(ProfileJson(6, "SchoolProfile", SchoolProfileXml)));
+            Cms.Serve(
+                ApplicationPath,
+                CmsReply.Json(
+                    """{"id":7,"applicationName":"App","vendorId":1,"claimSetName":"SIS","educationOrganizationIds":[],"dataStoreIds":[],"profileIds":[5]}"""
+                )
+            );
+
+            Cache = CreateHybridCache();
+            Service = CreateService(Cms.CreateProvider(), Cache);
+
+            await Act();
+        }
+
+        [TearDown]
+        public void DisposeCms() => Cms.Dispose();
+
+        protected abstract Task Act();
+
+        protected Task<ProfileResolutionResult> ImplicitGet(string? tenantId = null) =>
+            Service.ResolveProfileAsync(null, RequestMethod.GET, "Student", ApplicationId, tenantId);
+
+        protected Task<ProfileResolutionResult> ExplicitGet(string? tenantId = null) =>
+            Service.ResolveProfileAsync(
+                new ParsedProfileHeader("Student", "StudentProfile", ProfileUsageType.Readable),
+                RequestMethod.GET,
+                "Student",
+                ApplicationId,
+                tenantId
+            );
+
+        protected Task<ProfileResolutionResult> ExplicitPost(string? tenantId = null) =>
+            Service.ResolveProfileAsync(
+                new ParsedProfileHeader("Student", "StudentProfile", ProfileUsageType.Writable),
+                RequestMethod.POST,
+                "Student",
+                ApplicationId,
+                tenantId
+            );
+
+        protected static async Task<Exception?> CaptureFailure(Func<Task> call)
+        {
+            try
+            {
+                await call();
+                return null;
+            }
+            catch (Exception ex)
+            {
+                return ex;
+            }
+        }
+
+        protected static void AssertExplicitStudentProfile(ProfileResolutionResult result)
+        {
+            result.IsSuccess.Should().BeTrue();
+            result.ProfileContext!.ProfileName.Should().Be("StudentProfile");
+            result.ProfileContext.WasExplicitlySpecified.Should().BeTrue();
+        }
+
+        protected static void AssertImplicitStudentProfile(ProfileResolutionResult result)
+        {
+            result.IsSuccess.Should().BeTrue();
+            result.ProfileContext!.ProfileName.Should().Be("StudentProfile");
+            result.ProfileContext.WasExplicitlySpecified.Should().BeFalse();
+            result
+                .ProfileContext.ResourceProfile.ReadContentType!.MemberSelection.Should()
+                .Be(MemberSelection.IncludeOnly);
+        }
+
+        private static string ProfileJson(long id, string name, string definition) =>
+            JsonSerializer.Serialize(
+                new
+                {
+                    id,
+                    name,
+                    definition,
+                }
+            );
+    }
+
+    /// <summary>
+    /// The ticket's failure: one CMS call fails once. The failure must not be cached as "absent"
+    /// or "no profiles"; the very next request recovers without waiting for expiry, and the
+    /// successful result is cached.
+    /// </summary>
+    [TestFixture(CatalogPath, HttpStatusCode.InternalServerError)]
+    [TestFixture(StudentProfilePath, HttpStatusCode.InternalServerError)]
+    [TestFixture(ApplicationPath, HttpStatusCode.InternalServerError)]
+    // The application id comes from a resolved client, so CMS not finding it is a failure too,
+    // never a cached "no profiles assigned".
+    [TestFixture(ApplicationPath, HttpStatusCode.NotFound)]
+    public class Given_A_Cms_Endpoint_That_Fails_Once(string failingPath, HttpStatusCode failureStatus)
+        : Given_A_Cms_Backed_Profile_Service
+    {
+        private Exception? _firstFailure;
+        private ProfileResolutionResult _explicitResult = null!;
+        private ProfileResolutionResult _implicitResult = null!;
+        private int _failingPathRequestsBeforeFourthCall;
+        private int _requestsBeforeFourthCall;
+        private int _requestsAfterFourthCall;
+
+        protected override async Task Act()
+        {
+            Cms.FailTimes(failingPath, CmsReply.Status(failureStatus), times: 1);
+
+            _firstFailure = await CaptureFailure(() => ImplicitGet());
+            _explicitResult = await ExplicitGet();
+            _implicitResult = await ImplicitGet();
+
+            _failingPathRequestsBeforeFourthCall = Cms.RequestCount(failingPath);
+            _requestsBeforeFourthCall = Cms.Requests.Count;
+            await ImplicitGet();
+            _requestsAfterFourthCall = Cms.Requests.Count;
+        }
+
+        [Test]
+        public void It_throws_profile_data_unavailable_for_the_first_request()
+        {
+            _firstFailure.Should().BeOfType<ProfileDataUnavailableException>();
+        }
+
+        [Test]
+        public void It_resolves_the_explicit_profile_on_the_next_request()
+        {
+            AssertExplicitStudentProfile(_explicitResult);
+        }
+
+        [Test]
+        public void It_applies_the_assigned_profile_implicitly_after_recovery()
+        {
+            AssertImplicitStudentProfile(_implicitResult);
+        }
+
+        [Test]
+        public void It_does_not_cache_the_failure()
+        {
+            _failingPathRequestsBeforeFourthCall.Should().Be(2);
+        }
+
+        [Test]
+        public void It_caches_the_successful_result()
+        {
+            _requestsAfterFourthCall.Should().Be(_requestsBeforeFourthCall);
+        }
+    }
+
+    /// <summary>
+    /// The catalog is all-or-nothing, so its per-profile fetches are bounded: a catalog larger than the
+    /// bound never has more than the bound in flight against CMS, and still loads completely.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Catalog_Larger_Than_The_Fetch_Bound : Given_A_Cms_Backed_Profile_Service
+    {
+        private const int ProfileCount = CachedProfileService.MaxConcurrentProfileFetches * 3;
+
+        private int _inFlightWhileHeld;
+        private IReadOnlyList<string> _profileNames = [];
+        private readonly List<string> _detailPaths = [];
+
+        protected override async Task Act()
+        {
+            List<object> listed = [];
+            List<(CmsGate Gate, CmsReply Reply)> gates = [];
+            for (int index = 0; index < ProfileCount; index++)
+            {
+                long id = 100 + index;
+                string name = $"Profile{index}";
+                string path = $"/v3/profiles/{id}";
+                listed.Add(new { id, name });
+                _detailPaths.Add(path);
+                CmsReply reply = CmsReply.Json(
+                    JsonSerializer.Serialize(
+                        new
+                        {
+                            id,
+                            name,
+                            definition = SchoolProfileXml.Replace("SchoolProfile", name),
+                        }
+                    )
+                );
+                Cms.Serve(path, reply);
+                gates.Add((Cms.GateNext(path), reply));
+            }
+            Cms.Serve(CatalogPath, CmsReply.Json(JsonSerializer.Serialize(listed)));
+
+            Task<IReadOnlyList<string>> load = Service.GetProfileNamesAsync(null);
+
+            // Wait for the bound to fill, then give an unbounded fan-out time to exceed it.
+            await WaitUntil(() => Cms.InFlight >= CachedProfileService.MaxConcurrentProfileFetches);
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+            _inFlightWhileHeld = Cms.InFlight;
+
+            foreach ((CmsGate gate, CmsReply reply) in gates)
+            {
+                gate.Release(reply);
+            }
+            _profileNames = await load;
+        }
+
+        private static async Task WaitUntil(Func<bool> condition)
+        {
+            DateTime deadline = DateTime.UtcNow.AddSeconds(10);
+            while (!condition())
+            {
+                if (DateTime.UtcNow > deadline)
+                {
+                    throw new TimeoutException("The catalog fetch never reached the fetch bound.");
+                }
+                await Task.Delay(10);
+            }
+        }
+
+        [Test]
+        public void It_holds_no_more_than_the_bound_in_flight()
+        {
+            _inFlightWhileHeld.Should().Be(CachedProfileService.MaxConcurrentProfileFetches);
+            Cms.MaxInFlight.Should().Be(CachedProfileService.MaxConcurrentProfileFetches);
+        }
+
+        [Test]
+        public void It_fetches_every_listed_profile()
+        {
+            _detailPaths.Should().OnlyContain(path => Cms.RequestCount(path) == 1);
+        }
+
+        [Test]
+        public void It_loads_the_complete_catalog()
+        {
+            _profileNames.Should().HaveCount(ProfileCount);
+        }
+    }
+
+    /// <summary>
+    /// Once one definition fetch fails, the attempt starts no further fetches: only the requests
+    /// already in flight finish, so a failing attempt never sends every listed profile's request to a
+    /// struggling CMS. A bound that queued every fetch up front (a semaphore around Task.WhenAll)
+    /// would still send all of them.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Catalog_Larger_Than_The_Fetch_Bound_Whose_First_Fetch_Fails
+        : Given_A_Cms_Backed_Profile_Service
+    {
+        private const int ProfileCount = CachedProfileService.MaxConcurrentProfileFetches * 3;
+
+        private readonly List<string> _detailPaths = [];
+        private Exception? _failure;
+
+        protected override async Task Act()
+        {
+            // SetUp runs once per test on the same fixture instance.
+            _detailPaths.Clear();
+            List<object> listed = [];
+            List<(CmsGate Gate, CmsReply Reply)> gates = [];
+            for (int index = 0; index < ProfileCount; index++)
+            {
+                long id = 100 + index;
+                string name = $"Profile{index}";
+                string path = $"/v3/profiles/{id}";
+                listed.Add(new { id, name });
+                _detailPaths.Add(path);
+                CmsReply reply = CmsReply.Json(
+                    JsonSerializer.Serialize(
+                        new
+                        {
+                            id,
+                            name,
+                            definition = SchoolProfileXml.Replace("SchoolProfile", name),
+                        }
+                    )
+                );
+                Cms.Serve(path, reply);
+
+                if (index == 0)
+                {
+                    // The first listed profile fails at once; every other one is held.
+                    Cms.FailTimes(path, InternalServerError, times: 1);
+                }
+                else
+                {
+                    gates.Add((Cms.GateNext(path), reply));
+                }
+            }
+            Cms.Serve(CatalogPath, CmsReply.Json(JsonSerializer.Serialize(listed)));
+
+            Task<Exception?> load = CaptureFailure(() => Service.GetProfileNamesAsync(null));
+
+            // Let the failure be recorded while the other fetches are still held, so a released
+            // fetch cannot race ahead of it and claim another profile.
+            await WaitUntil(() => Cms.RequestCount(_detailPaths[0]) == 1);
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+
+            foreach ((CmsGate gate, CmsReply reply) in gates)
+            {
+                gate.Release(reply);
+            }
+            _failure = await load;
+        }
+
+        private static async Task WaitUntil(Func<bool> condition)
+        {
+            DateTime deadline = DateTime.UtcNow.AddSeconds(10);
+            while (!condition())
+            {
+                if (DateTime.UtcNow > deadline)
+                {
+                    throw new TimeoutException("The failing definition fetch was never requested.");
+                }
+                await Task.Delay(10);
+            }
+        }
+
+        [Test]
+        public void It_fails_the_catalog_load()
+        {
+            _failure.Should().BeOfType<ProfileDataUnavailableException>();
+        }
+
+        [Test]
+        public void It_starts_no_fetch_after_the_failure()
+        {
+            _detailPaths
+                .Sum(path => Cms.RequestCount(path))
+                .Should()
+                .BeLessThanOrEqualTo(CachedProfileService.MaxConcurrentProfileFetches);
+        }
+    }
+
+    /// <summary>
+    /// Callers joined to one failing fetch all receive the failure, the fetch is still shared
+    /// (stampede protection), and the failure is not left behind for the next caller.
+    /// </summary>
+    [TestFixture]
+    public class Given_Concurrent_Requests_Joined_To_A_Failing_Catalog_Fetch
+        : Given_A_Cms_Backed_Profile_Service
+    {
+        private Exception? _implicitFailure;
+        private Exception? _explicitFailure;
+        private int _catalogRequestsDuringFailure;
+        private int _applicationRequestsDuringFailure;
+        private ProfileResolutionResult _recoveredResult = null!;
+
+        protected override async Task Act()
+        {
+            CmsGate gate = Cms.GateNext(StudentProfilePath);
+
+            Task<Exception?> implicitCall = CaptureFailure(() => ImplicitGet());
+            await gate.Observed;
+            // Joins the application-profile fetch that is waiting on the gated catalog fetch.
+            Task<Exception?> explicitCall = CaptureFailure(() => ExplicitGet());
+            gate.Release(InternalServerError);
+
+            _implicitFailure = await implicitCall;
+            _explicitFailure = await explicitCall;
+            _catalogRequestsDuringFailure = Cms.RequestCount(CatalogPath);
+            _applicationRequestsDuringFailure = Cms.RequestCount(ApplicationPath);
+
+            _recoveredResult = await ImplicitGet();
+        }
+
+        [Test]
+        public void It_fails_the_first_caller()
+        {
+            _implicitFailure.Should().BeOfType<ProfileDataUnavailableException>();
+        }
+
+        [Test]
+        public void It_fails_the_joined_caller()
+        {
+            _explicitFailure.Should().BeOfType<ProfileDataUnavailableException>();
+        }
+
+        [Test]
+        public void It_shares_one_fetch_between_the_callers()
+        {
+            _catalogRequestsDuringFailure.Should().Be(1);
+            _applicationRequestsDuringFailure.Should().Be(1);
+        }
+
+        [Test]
+        public void It_fetches_again_after_the_failure()
+        {
+            AssertImplicitStudentProfile(_recoveredResult);
+            Cms.RequestCount(CatalogPath).Should().Be(2);
+        }
+    }
+
+    /// <summary>
+    /// No staleness policy: when the catalog expires while the assignments are still cached and
+    /// the refresh fails, nothing stale and nothing partial is served. The request fails closed
+    /// until CMS is healthy again.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Catalog_Refresh_That_Fails_After_Expiry : Given_A_Cms_Backed_Profile_Service
+    {
+        private Exception? _explicitFailure;
+        private Exception? _implicitFailure;
+        private ProfileResolutionResult _explicitAfterRecovery = null!;
+        private ProfileResolutionResult _implicitAfterRecovery = null!;
+
+        protected override async Task Act()
+        {
+            await ImplicitGet();
+            await ExplicitGet();
+
+            // Expire only the catalog, the way its own expiration would.
+            await Cache.RemoveAsync(CachedProfileService.GetCatalogCacheKey(null));
+            Cms.FailUntilHealthy(StudentProfilePath, InternalServerError);
+
+            _explicitFailure = await CaptureFailure(() => ExplicitGet());
+            _implicitFailure = await CaptureFailure(() => ImplicitGet());
+
+            Cms.MakeHealthy(StudentProfilePath);
+            _explicitAfterRecovery = await ExplicitGet();
+            _implicitAfterRecovery = await ImplicitGet();
+        }
+
+        [Test]
+        public void It_fails_an_explicit_request_closed()
+        {
+            _explicitFailure.Should().BeOfType<ProfileDataUnavailableException>();
+        }
+
+        [Test]
+        public void It_fails_an_implicit_request_closed()
+        {
+            _implicitFailure.Should().BeOfType<ProfileDataUnavailableException>();
+        }
+
+        [Test]
+        public void It_resolves_the_explicit_profile_after_recovery()
+        {
+            AssertExplicitStudentProfile(_explicitAfterRecovery);
+        }
+
+        [Test]
+        public void It_applies_the_assigned_profile_implicitly_after_recovery()
+        {
+            AssertImplicitStudentProfile(_implicitAfterRecovery);
+        }
+    }
+
+    /// <summary>
+    /// A failure for one tenant neither leaks into nor evicts another tenant's cache entries.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Failing_Tenant_Beside_A_Healthy_Tenant : Given_A_Cms_Backed_Profile_Service
+    {
+        private const string FailingTenant = "tenant-a";
+        private const string HealthyTenant = "tenant-b";
+
+        private ProfileResolutionResult _healthyFirst = null!;
+        private Exception? _failingFirst;
+        private ProfileResolutionResult _failingRecovered = null!;
+        private ProfileResolutionResult _healthySecond = null!;
+
+        protected override async Task Act()
+        {
+            Cms.FailTimes(StudentProfilePath, InternalServerError, times: 1, tenant: FailingTenant);
+
+            _healthyFirst = await ImplicitGet(HealthyTenant);
+            _failingFirst = await CaptureFailure(() => ImplicitGet(FailingTenant));
+            _failingRecovered = await ImplicitGet(FailingTenant);
+            _healthySecond = await ImplicitGet(HealthyTenant);
+        }
+
+        [Test]
+        public void It_resolves_the_healthy_tenant()
+        {
+            AssertImplicitStudentProfile(_healthyFirst);
+            AssertImplicitStudentProfile(_healthySecond);
+        }
+
+        [Test]
+        public void It_keeps_the_healthy_tenant_cached()
+        {
+            Cms.RequestCount(CatalogPath, HealthyTenant).Should().Be(1);
+        }
+
+        [Test]
+        public void It_fails_the_failing_tenant_closed()
+        {
+            _failingFirst.Should().BeOfType<ProfileDataUnavailableException>();
+        }
+
+        [Test]
+        public void It_recovers_the_failing_tenant_on_its_next_request()
+        {
+            AssertImplicitStudentProfile(_failingRecovered);
+            Cms.RequestCount(CatalogPath, FailingTenant).Should().Be(2);
+        }
+    }
+
+    /// <summary>
+    /// A genuine CMS 404: an unassigned profile deleted between the list and the detail fetch. (CMS
+    /// refuses to delete an assigned profile, and leaves XSD-invalid profiles out of the list, so this is
+    /// the state a detail 404 actually represents.) That profile is absent from a successfully fetched,
+    /// cached catalog, explicit requests naming it get 406/415, and the assigned profile is unaffected.
+    /// </summary>
+    [TestFixture]
+    public class Given_An_Unassigned_Profile_That_Cms_Reports_Not_Found : Given_A_Cms_Backed_Profile_Service
+    {
+        private IReadOnlyList<string> _profileNames = [];
+        private ProfileResolutionResult _explicitGet = null!;
+        private ProfileResolutionResult _explicitPost = null!;
+        private ProfileResolutionResult _implicitGet = null!;
+
+        protected override async Task Act()
+        {
+            Cms.Serve(SchoolProfilePath, CmsReply.Status(HttpStatusCode.NotFound));
+
+            _profileNames = await Service.GetProfileNamesAsync(null);
+            _explicitGet = await ExplicitSchoolRequest(RequestMethod.GET, ProfileUsageType.Readable);
+            _explicitPost = await ExplicitSchoolRequest(RequestMethod.POST, ProfileUsageType.Writable);
+            _implicitGet = await ImplicitGet();
+        }
+
+        private Task<ProfileResolutionResult> ExplicitSchoolRequest(
+            RequestMethod method,
+            ProfileUsageType usageType
+        ) =>
+            Service.ResolveProfileAsync(
+                new ParsedProfileHeader("School", "SchoolProfile", usageType),
+                method,
+                "School",
+                ApplicationId,
+                null
+            );
+
+        [Test]
+        public void It_caches_the_catalog_without_that_profile()
+        {
+            _profileNames.Should().Equal("StudentProfile");
+            Cms.RequestCount(CatalogPath).Should().Be(1);
+            Cms.RequestCount(SchoolProfilePath).Should().Be(1);
+        }
+
+        [Test]
+        public void It_answers_an_explicit_get_naming_it_with_406()
+        {
+            _explicitGet.IsSuccess.Should().BeFalse();
+            _explicitGet.Error!.StatusCode.Should().Be(406);
+        }
+
+        [Test]
+        public void It_answers_an_explicit_post_naming_it_with_415()
+        {
+            _explicitPost.IsSuccess.Should().BeFalse();
+            _explicitPost.Error!.StatusCode.Should().Be(415);
+        }
+
+        [Test]
+        public void It_still_applies_the_assigned_profile_implicitly()
+        {
+            AssertImplicitStudentProfile(_implicitGet);
         }
     }
 }

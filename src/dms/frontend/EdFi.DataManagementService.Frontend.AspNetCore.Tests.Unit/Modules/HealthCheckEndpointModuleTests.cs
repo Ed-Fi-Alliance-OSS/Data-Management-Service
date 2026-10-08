@@ -28,7 +28,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 [NonParallelizable]
 public class Given_HealthCheckEndpointModule
 {
-    private const string ValidRequiredRole = "dms-document-cache-operator";
+    private const string ValidRequiredRole = "dms-client";
     private const string RoleClaimType = "operator_role";
     private const string ValidBearerToken = "valid-token";
 
@@ -151,7 +151,7 @@ public class Given_HealthCheckEndpointModule
     [Test]
     public async Task It_warns_and_omits_document_cache_status_when_required_role_is_present_but_invalid()
     {
-        const string invalidRequiredRole = "dms document cache operator";
+        const string invalidRequiredRole = "dms client";
         ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
         var loggerProvider = new RecordingLoggerProvider();
         await using WebApplicationFactory<Program> factory = CreateFactory(
@@ -173,6 +173,7 @@ public class Given_HealthCheckEndpointModule
                 && entry.Message.Contains("DataManagement:DocumentCache:Status:RequiredRole is invalid")
             )
             .Subject;
+        warning.Message.Should().Contain("such as dms-client");
         warning.Message.Should().NotContain(invalidRequiredRole);
     }
 
