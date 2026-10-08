@@ -72,11 +72,13 @@ Base: `https://<PUBLIC_HOST>`
 
 Swagger UI lists the single-tenant and multi-tenant DMS specs (Resources, Descriptors,
 Change-Queries; pick the tenant in the multi-tenant spec's server variables) and the Configuration
-Service once for single-tenant and once per tenant. **Authorize** with a key/secret: for the DMS
-choose "Authorization header"; for the Configuration Service choose "Request body" and a scope
-(`edfi_admin_api/readonly_access` or `full_access`). The Configuration Service spec declares no
-security scheme of its own, so the Swagger UI adds its client-credentials flow, and it sends the
-`Tenant` header for the per-tenant definitions.
+Service once for single-tenant and once per tenant. **Authorize** with the key/secret as the
+client id and secret; for the Configuration Service also tick a scope (`edfi_admin_api/readonly_access`
+or `full_access`, whichever the client is granted). The page adjusts what it loads and sends:
+the Configuration Service spec declares no security scheme, so the page adds its client-credentials
+flow, moves the credentials Swagger UI sends as HTTP Basic into the token request's form body (the
+only place that endpoint reads them), and sends the `Tenant` header for the per-tenant definitions;
+the DMS specs give `pageSize` a default the DMS rejects without a `pageToken`, so the page drops it.
 
 Multi-tenant requests (note the two systems identify the tenant differently):
 - **DMS** takes the tenant as the **first path segment**, followed by the route

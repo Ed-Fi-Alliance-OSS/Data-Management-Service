@@ -65,7 +65,7 @@ window.EdFiReviewSwagger = (function () {
         if (!spec.components.securitySchemes.oauth2_client_credentials) {
             spec.components.securitySchemes.oauth2_client_credentials = {
                 type: "oauth2",
-                description: "Configuration Service client credentials: choose \"Request body\" as the client credentials location.",
+                description: "Configuration Service client credentials: enter the client id and secret and tick a scope.",
                 flows: { clientCredentials: { tokenUrl: `${origin}${prefix}/connect/token`, scopes: configurationServiceScopes } }
             };
         }
@@ -91,7 +91,49 @@ window.EdFiReviewSwagger = (function () {
         return new URL(selectedSpecUrl, "https://placeholder.invalid").searchParams.get("tenant");
     }
 
-    return { buildDefinitions, withConfigurationServiceSecurity, tenantForRequest };
+    // Swagger UI's client-credentials flow sends the client id and secret only as an HTTP Basic
+    // header, but the Configuration Service token endpoint reads them from the form body (400
+    // without them). Move them into the form for that endpoint; the DMS token endpoint takes Basic.
+    function withClientCredentialsInBody(request) {
+        const headers = request.headers || {};
+        const headerName = Object.keys(headers).find(name => name.toLowerCase() === "authorization");
+        const authorization = headerName ? headers[headerName] : null;
+        const path = new URL(request.url || "", "https://placeholder.invalid").pathname;
+        if (!/^\/(st|mt)-config\/connect\/token$/.test(path) || typeof authorization !== "string" ||
+            !authorization.startsWith("Basic ") || typeof request.body !== "string") {
+            return request;
+        }
+        const credentials = atob(authorization.slice("Basic ".length));
+        const separator = credentials.indexOf(":");
+        if (separator < 0) {
+            return request;
+        }
+        const form = new URLSearchParams(request.body);
+        form.set("client_id", credentials.slice(0, separator));
+        form.set("client_secret", credentials.slice(separator + 1));
+        request.body = form.toString();
+        delete headers[headerName];
+        return request;
+    }
+
+    // The DMS specs give pageSize a default, and Swagger UI sends every default, but the DMS
+    // rejects pageSize without a pageToken (400). Drop the default so "Try it out" works as
+    // offered; pageSize stays available for cursor paging.
+    function withoutPageSizeDefault(spec, specUrl) {
+        if (!/^\/(st|mt)-dms\//.test(toPath(specUrl || "")) || !spec || typeof spec !== "object") {
+            return spec;
+        }
+        const operationParameters = Object.values(spec.paths || {}).flatMap(item =>
+            Object.values(item || {}).flatMap(operation => Array.isArray(operation) ? operation : (operation && operation.parameters) || []));
+        for (const parameter of [...Object.values((spec.components || {}).parameters || {}), ...operationParameters]) {
+            if (parameter && parameter.name === "pageSize" && parameter.in === "query" && parameter.schema) {
+                delete parameter.schema.default;
+            }
+        }
+        return spec;
+    }
+
+    return { buildDefinitions, withConfigurationServiceSecurity, tenantForRequest, withClientCredentialsInBody, withoutPageSizeDefault };
 })();
 
 window.onload = function () {
@@ -110,8 +152,8 @@ window.onload = function () {
         }
     }
 
-    // Applies withConfigurationServiceSecurity to every spec as it loads.
-    function configurationServiceSecurityPlugin() {
+    // Applies withConfigurationServiceSecurity and withoutPageSizeDefault to every spec as it loads.
+    function specPatchPlugin() {
         return {
             statePlugins: {
                 spec: {
@@ -125,7 +167,9 @@ window.onload = function () {
                             catch (error) {
                                 return originalAction(spec, ...rest);
                             }
-                            const patched = helpers.withConfigurationServiceSecurity(parsed, system.specSelectors.url(), window.location.origin);
+                            const url = system.specSelectors.url();
+                            const patched = helpers.withoutPageSizeDefault(
+                                helpers.withConfigurationServiceSecurity(parsed, url, window.location.origin), url);
                             return originalAction(isString ? JSON.stringify(patched) : patched, ...rest);
                         }
                     }
@@ -134,7 +178,7 @@ window.onload = function () {
         };
     }
 
-    const plugins = [configurationServiceSecurityPlugin, window.EdFiSingleOperationGroup, window.EdFiCustomFields];
+    const plugins = [specPatchPlugin, window.EdFiSingleOperationGroup, window.EdFiCustomFields];
     if (window.EdFiCustomDomains) {
         plugins.push(window.EdFiCustomDomains);
     }
@@ -152,6 +196,7 @@ window.onload = function () {
             layout: "StandaloneLayout",
             docExpansion: "none",
             requestInterceptor: (request) => {
+                helpers.withClientCredentialsInBody(request);
                 const selected = window.ui && window.ui.specSelectors ? window.ui.specSelectors.url() : null;
                 const tenant = helpers.tenantForRequest(request.url, selected);
                 if (tenant) {
