@@ -20,6 +20,8 @@ function Disable-ReviewCertificateCheck {
         $PSDefaultParameterValues, not the global one. A module may call into a Dms-Management instance
         that Get-Module no longer lists (Template-Management force-reimports it), so the defaults are set
         in each given module and in the module behind every CMS helper as that module resolves it.
+        Package-Management is left out on purpose: the BulkLoadClient comes from the public package
+        feed with no hash check, so TLS is the only thing verifying it.
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory)][System.Management.Automation.PSModuleInfo[]]$Module)
@@ -28,7 +30,7 @@ function Disable-ReviewCertificateCheck {
     $global:PSDefaultParameterValues['Invoke-WebRequest:SkipCertificateCheck'] = $true
     foreach ($caller in $Module) {
         $targets = @($caller) + @(& $caller {
-                foreach ($name in @("Get-CmsToken", "Add-Vendor", "Add-Application", "Get-BulkLoadClient")) {
+                foreach ($name in @("Get-CmsToken", "Add-Vendor", "Add-Application")) {
                     $command = Get-Command $name -ErrorAction SilentlyContinue
                     if ($command -and $command.Module) { $command.Module }
                 }

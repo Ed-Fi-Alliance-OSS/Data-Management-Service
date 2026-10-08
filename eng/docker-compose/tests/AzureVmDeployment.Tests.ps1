@@ -650,23 +650,36 @@ Describe "Azure VM educator-prep load" {
         Should -Invoke Invoke-RestMethod -ModuleName educator-prep -Times 0 -Exactly -ParameterFilter { $Method -eq "Delete" }
     }
 
-    It "skips certificate checks in every module instance its CMS calls resolve to under -Insecure" {
+    It "skips certificate checks for its CMS calls under -Insecure but never for the BulkLoadClient download" {
         # Template-Management force-reimports Dms-Management, so the instance educator-prep calls can be
-        # one that Get-Module no longer lists; only resolving the commands themselves reaches it.
+        # one that Get-Module no longer lists; only resolving the commands themselves reaches it. The
+        # download comes from the public package feed with no hash check, so it keeps TLS verification.
         Import-Module ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm/compose/bootstrap/review-variants.psm1"))) -Force
         $educatorPrep = Get-Module educator-prep
 
-        Disable-ReviewCertificateCheck -Module $educatorPrep
+        try {
+            Disable-ReviewCertificateCheck -Module $educatorPrep
 
-        $resolved = & $educatorPrep {
-            foreach ($name in @("Get-CmsToken", "Add-Vendor", "Add-Application", "Get-BulkLoadClient")) {
-                $module = (Get-Command $name).Module
-                & $module { [bool]$PSDefaultParameterValues["Invoke-RestMethod:SkipCertificateCheck"] -and [bool]$PSDefaultParameterValues["Invoke-WebRequest:SkipCertificateCheck"] }
+            $skips = & $educatorPrep {
+                $result = @{ "educator-prep" = [bool]$PSDefaultParameterValues["Invoke-RestMethod:SkipCertificateCheck"] }
+                foreach ($name in @("Get-CmsToken", "Add-Vendor", "Add-Application", "Get-BulkLoadClient")) {
+                    $result[$name] = & (Get-Command $name).Module {
+                        "{0}/{1}" -f [bool]$PSDefaultParameterValues["Invoke-RestMethod:SkipCertificateCheck"], [bool]$PSDefaultParameterValues["Invoke-WebRequest:SkipCertificateCheck"]
+                    }
+                }
+                $result
             }
-            [bool]$PSDefaultParameterValues["Invoke-RestMethod:SkipCertificateCheck"]
+            $skips["educator-prep"] | Should -BeTrue
+            foreach ($name in @("Get-CmsToken", "Add-Vendor", "Add-Application")) {
+                $skips[$name] | Should -Be "True/True" -Because "$name calls the CMS through the gateway"
+            }
+            $skips["Get-BulkLoadClient"] | Should -Be "False/False"
         }
-        $resolved | Should -Not -Contain $false
-        Remove-Module review-variants -ErrorAction SilentlyContinue
+        finally {
+            $global:PSDefaultParameterValues.Remove("Invoke-RestMethod:SkipCertificateCheck")
+            $global:PSDefaultParameterValues.Remove("Invoke-WebRequest:SkipCertificateCheck")
+            Remove-Module review-variants -ErrorAction SilentlyContinue
+        }
     }
 
     It "resolves the pinned BulkLoadClient from the package it downloads" {
