@@ -69,7 +69,7 @@ public enum ColumnKind
     DocumentFk,
 
     /// <summary>
-    /// A foreign key to <c>dms.Descriptor</c> (stored as <c>DescriptorId</c> / <c>DocumentId</c>).
+    /// An Int32 foreign key to the independently allocated <c>dms.Descriptor.DescriptorId</c>.
     /// </summary>
     DescriptorFk,
 

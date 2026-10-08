@@ -462,7 +462,7 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
             var column = new DbColumnModel(
                 columnName,
                 ColumnKind.DescriptorFk,
-                new RelationalScalarType(ScalarKind.Int64),
+                new RelationalScalarType(ScalarKind.Int32),
                 isNullable,
                 descriptorPathInfo.DescriptorValuePath,
                 descriptorPathInfo.DescriptorResource
@@ -474,7 +474,7 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
                     ConstraintNaming.BuildDescriptorForeignKeyName(tableBuilder.Definition.Table, columnName),
                     new[] { columnName },
                     _descriptorTableName,
-                    new[] { RelationalNameConventions.DocumentIdColumnName },
+                    new[] { RelationalNameConventions.DescriptorKeyColumnName },
                     OnDelete: ReferentialAction.NoAction,
                     OnUpdate: ReferentialAction.NoAction
                 )

@@ -99,7 +99,7 @@ public class Given_A_Complete_Relational_Model_Pipeline
         );
 
         descriptorColumn.Kind.Should().Be(ColumnKind.DescriptorFk);
-        descriptorColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int64));
+        descriptorColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int32));
         _rootTable
             .Columns.Select(column => column.ColumnName.Value)
             .Should()
