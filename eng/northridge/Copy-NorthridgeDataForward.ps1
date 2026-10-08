@@ -1625,21 +1625,21 @@ function Get-DescriptorHistoryConversionSql {
     [OutputType([string])]
     param([Parameter(Mandatory)][string]$StagedTable, [Parameter(Mandatory)][System.Collections.IDictionary]$Inventory)
     $types = (ConvertTo-Json -InputObject @($Inventory.resources | Where-Object { $_.ContainsKey('storage_kind') -and $_.storage_kind -ceq 'SharedDescriptorTable' }) -Depth 20 -Compress).Replace("'", "''")
-    # Legacy writers also used unqualified names. Accept them only when the provisioned descriptor
-    # catalog identifies exactly one qualified type. No live document/descriptor join:
+    # Legacy writers used colon- and dot-qualified types, plus unqualified names. Accept a name
+    # only when the provisioned descriptor catalog identifies exactly one type. No live owner join:
     # deletes can outlive both, and equal resource names in different projects are distinct types.
     return @"
 ALTER TABLE $StagedTable ADD COLUMN "ResourceKeyId" smallint;
 DO `$history`$
 BEGIN
     IF EXISTS (SELECT 1 FROM $StagedTable s WHERE
-        (SELECT COUNT(*) FROM dms."ResourceKey" k WHERE (k."ProjectName" || '.' || k."ResourceName" = s."Discriminator" OR k."ResourceName" = s."Discriminator")
+        (SELECT COUNT(*) FROM dms."ResourceKey" k WHERE (k."ProjectName" || ':' || k."ResourceName" = s."Discriminator" OR k."ProjectName" || '.' || k."ResourceName" = s."Discriminator" OR k."ResourceName" = s."Discriminator")
             AND EXISTS (SELECT 1 FROM jsonb_array_elements('$types'::jsonb) t
                 WHERE t->>'project_name' = k."ProjectName" AND t->>'resource_name' = k."ResourceName")) <> 1)
     THEN RAISE EXCEPTION 'Unknown or ambiguous descriptor history type identity'; END IF;
 END `$history`$;
 UPDATE $StagedTable s SET "ResourceKeyId" = k."ResourceKeyId"
-FROM dms."ResourceKey" k WHERE (k."ProjectName" || '.' || k."ResourceName" = s."Discriminator" OR k."ResourceName" = s."Discriminator")
+FROM dms."ResourceKey" k WHERE (k."ProjectName" || ':' || k."ResourceName" = s."Discriminator" OR k."ProjectName" || '.' || k."ResourceName" = s."Discriminator" OR k."ResourceName" = s."Discriminator")
     AND EXISTS (SELECT 1 FROM jsonb_array_elements('$types'::jsonb) t
         WHERE t->>'project_name' = k."ProjectName" AND t->>'resource_name' = k."ResourceName");
 "@
@@ -2142,7 +2142,7 @@ DO `$descriptor`$
 BEGIN
     IF EXISTS (SELECT 1 FROM "$script:StagingSchema"."Descriptor" s LEFT JOIN dms."Document" d ON d."DocumentId" = s."DocumentId"
         LEFT JOIN dms."ResourceKey" k ON k."ResourceKeyId" = d."ResourceKeyId"
-        WHERE d."DocumentId" IS NULL OR (s."Discriminator" IS DISTINCT FROM k."ProjectName" || '.' || k."ResourceName" AND s."Discriminator" IS DISTINCT FROM k."ResourceName")
+        WHERE d."DocumentId" IS NULL OR (s."Discriminator" IS DISTINCT FROM k."ProjectName" || ':' || k."ResourceName" AND s."Discriminator" IS DISTINCT FROM k."ProjectName" || '.' || k."ResourceName" AND s."Discriminator" IS DISTINCT FROM k."ResourceName")
             OR s."Uri" IS DISTINCT FROM s."Namespace" || '#' || s."CodeValue")
     THEN RAISE EXCEPTION 'Legacy descriptor owner/type/whole URI mismatch'; END IF;
 END `$descriptor`$;

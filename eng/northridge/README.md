@@ -128,10 +128,12 @@ and receive native independent int `DescriptorId` values. The exact mapping is s
 `descriptor-key-map.<target>.tsv` beside the copy evidence. Descriptor-bearing tables load through
 source-shaped staging and are remapped before target insertion; a non-null reference with no
 mapping stops the copy. Legacy `Uri` and `Discriminator` remain in staging only. History replaces
-`Discriminator` with the qualified catalog `ResourceKeyId` without joining live owners. Qualified
-`ProjectName.ResourceName` values remain distinct across projects; old unqualified resource names
-are accepted only if exactly one descriptor type has that name. Unknown or ambiguous history types
-stop the copy and require resolving the source type identity before retrying.
+`Discriminator` with the qualified catalog `ResourceKeyId` without joining live owners. Exact
+`ProjectName:ResourceName` and `ProjectName.ResourceName` values remain distinct across projects;
+old unqualified resource names are accepted in history only if exactly one descriptor type has
+that name. Unknown or ambiguous history types stop the copy and require resolving the source
+type identity before retrying. Live rows accept those same qualified forms or an unqualified
+resource name matching the owning document's type; their `ResourceKeyId` comes from that document.
 
 Document IDs/UUIDs, document-level RI rows, content stamps and history IDs/versions remain intact.
 Both document stamp columns remain required here; DMS-1401 owns the timestamp change. The tool

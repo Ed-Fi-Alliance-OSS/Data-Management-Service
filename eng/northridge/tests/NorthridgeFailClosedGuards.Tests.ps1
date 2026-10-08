@@ -1770,7 +1770,12 @@ Describe 'Compact descriptor carry-forward contracts and independent allocator g
         $sql = Get-DescriptorHistoryConversionSql -StagedTable '"northridge_staging"."history"' -Inventory $compactInventory
         $sql | Should -Match 'Unknown or ambiguous descriptor history type identity'
         $sql | Should -Match 'COUNT\(\*\).*dms\."ResourceKey"'
-        $sql | Should -Match ([regex]::Escape('"ProjectName" || ''.'' || k."ResourceName"'))
+        # The cardinality guard and UPDATE must use the same exact accepted type forms.
+        foreach ($predicate in @('k."ProjectName" || '':'' || k."ResourceName" = s."Discriminator"',
+                'k."ProjectName" || ''.'' || k."ResourceName" = s."Discriminator"', 'OR k."ResourceName" = s."Discriminator"')) {
+            @([regex]::Matches($sql, [regex]::Escape($predicate))).Count | Should -Be 2
+        }
+        $sql | Should -Match '\)\) <> 1'
         $sql | Should -Match '"project_name":"Ed-Fi"'
         $sql | Should -Match '"project_name":"Sample"'
         $sql | Should -Not -Match 'dms\."(Document|Descriptor)"'

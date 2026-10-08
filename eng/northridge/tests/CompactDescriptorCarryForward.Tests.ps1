@@ -8,7 +8,10 @@ BeforeDiscovery {
     $script:enabled = -not [string]::IsNullOrWhiteSpace($env:DMS_NORTHRIDGE_PG_FIXTURE_CONTAINER)
 }
 
-Describe 'Legacy dump carry-forward into native compact descriptor storage' -Skip:(-not $script:enabled) {
+Describe 'Legacy dump carry-forward into native compact descriptor storage with <Form> types' -Skip:(-not $script:enabled) -ForEach @(
+    @{ Form = 'dot-qualified and unqualified'; CoreLiveType = 'SchoolTypeDescriptor'; SampleLiveType = 'Sample.SchoolTypeDescriptor'; CoreHistoryType = 'Ed-Fi.SchoolTypeDescriptor'; SampleHistoryType = 'Sample.SchoolTypeDescriptor' },
+    @{ Form = 'colon-qualified'; CoreLiveType = 'Ed-Fi:SchoolTypeDescriptor'; SampleLiveType = 'Sample:SchoolTypeDescriptor'; CoreHistoryType = 'Ed-Fi:SchoolTypeDescriptor'; SampleHistoryType = 'Sample:SchoolTypeDescriptor' }
+) {
     BeforeAll {
         $script:repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
         $script:container = $env:DMS_NORTHRIDGE_PG_FIXTURE_CONTAINER
@@ -55,7 +58,7 @@ CREATE SCHEMA auth; CREATE TABLE auth."CarryForwardWitness" ("DocumentId" bigint
             if ($LASTEXITCODE -ne 0) { throw "Cannot create fixture $db" }
             Query $db $(if ($db -ceq $script:source) { $legacy } else { $ddl }) | Out-Null
         }
-        Query $script:source @'
+        $seedSql = @'
 BEGIN;
 SET LOCAL session_replication_role = replica;
 INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "ContentLastModifiedAt", "CreatedAt") OVERRIDING SYSTEM VALUE VALUES
@@ -64,8 +67,8 @@ INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ResourceKeyId", "Cont
 (5000000100, '00000000-0000-0000-0000-000000000100', 4, 103, '2026-01-04Z', '2026-01-01Z'),
 (5000000200, '00000000-0000-0000-0000-000000000200', 2, 104, '2026-01-05Z', '2026-01-01Z');
 INSERT INTO dms."Descriptor" ("DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription", "Uri", "Discriminator", "ContentVersion", "ContentLastModifiedAt") VALUES
-(5000000042, 3, 'uri://Example/Type', 'A#B', 'Core', 'uri://Example/Type#A#B', 'SchoolTypeDescriptor', 101, '2026-01-02Z'),
-(5000000043, 5, 'uri://Example/Type', 'A#B', 'Sample', 'uri://Example/Type#A#B', 'Sample.SchoolTypeDescriptor', 102, '2026-01-03Z');
+(5000000042, 3, 'uri://Example/Type', 'A#B', 'Core', 'uri://Example/Type#A#B', '__CORE_LIVE_TYPE__', 101, '2026-01-02Z'),
+(5000000043, 5, 'uri://Example/Type', 'A#B', 'Sample', 'uri://Example/Type#A#B', '__SAMPLE_LIVE_TYPE__', 102, '2026-01-03Z');
 INSERT INTO dms."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId") VALUES
 ('00000000-0000-0000-0000-000000000001', 5000000042, 3), ('00000000-0000-0000-0000-000000000002', 5000000043, 5),
 ('00000000-0000-0000-0000-000000000003', 5000000100, 4), ('00000000-0000-0000-0000-000000000004', 5000000200, 2);
@@ -78,14 +81,15 @@ INSERT INTO sample."ProfileRootOnlyMergeItemExtension" ("DocumentId", "SchoolTyp
 INSERT INTO edfi."ProfileRootOnlyMergeItemItem" ("CollectionItemId", "Ordinal", "ProfileRootOnlyMergeItem_DocumentId", "SchoolTypeDescriptor_DescriptorId") VALUES (9001, 0, 5000000200, 5000000042);
 INSERT INTO edfi."ProfileRootOnlyMergeItemItemNested" ("CollectionItemId", "Ordinal", "ParentCollectionItemId", "ProfileRootOnlyMergeItem_DocumentId", "SchoolTypeDescriptor_DescriptorId") VALUES (9002, 0, 9001, 5000000200, 5000000043), (9003, 1, 9001, 5000000200, NULL);
 INSERT INTO tracked_changes_edfi."Descriptor" ("Discriminator", "OldNamespace", "OldCodeValue", "Id", "DocumentId", "ChangeVersion", "CreatedAt") VALUES
-('Ed-Fi.SchoolTypeDescriptor', 'uri://Deleted', 'Core', '00000000-0000-0000-0000-000000000901', 6000000901, 201, '2026-01-06Z'),
-('Sample.SchoolTypeDescriptor', 'uri://Deleted', 'Sample', '00000000-0000-0000-0000-000000000902', 6000000902, 202, '2026-01-07Z');
+('__CORE_HISTORY_TYPE__', 'uri://Deleted', 'Core', '00000000-0000-0000-0000-000000000901', 6000000901, 201, '2026-01-06Z'),
+('__SAMPLE_HISTORY_TYPE__', 'uri://Deleted', 'Sample', '00000000-0000-0000-0000-000000000902', 6000000902, 202, '2026-01-07Z');
 INSERT INTO auth."CarryForwardWitness" ("DocumentId") VALUES (5000000100);
 SELECT setval(pg_get_serial_sequence('dms."Document"', 'DocumentId'), 5000000200);
 SELECT setval('dms."CollectionItemIdSequence"', 9003);
 SELECT setval('dms."ChangeVersionSequence"', 202);
 COMMIT;
-'@ | Out-Null
+'@
+        Query $script:source $seedSql.Replace('__CORE_LIVE_TYPE__', $CoreLiveType).Replace('__SAMPLE_LIVE_TYPE__', $SampleLiveType).Replace('__CORE_HISTORY_TYPE__', $CoreHistoryType).Replace('__SAMPLE_HISTORY_TYPE__', $SampleHistoryType) | Out-Null
         # Offset target native allocation so neither compact IDs nor maxima equal source keys.
         Query $script:target 'SELECT setval(pg_get_serial_sequence(''dms."Descriptor"'', ''DescriptorId''), 41, false);' | Out-Null
         $script:originalIdentity = Query $script:target 'SELECT "SourceIdentity" FROM dms."DataStoreIdentity";'
@@ -108,6 +112,11 @@ COMMIT;
         $map = Import-Csv (Join-Path $script:outputDir "descriptor-key-map.$script:target.tsv") -Delimiter "`t"
         $map.DocumentId | Should -Be @('5000000042', '5000000043')
         $map.DescriptorId | Should -Be @('41', '42')
+    }
+    It 'Preserves each owning document type and reconstructs the exact legacy URI' {
+        (Query $script:target 'SELECT s."DocumentId" || ''|'' || s."ResourceKeyId" || ''|'' || d."ResourceKeyId" || ''|'' || s."Namespace" || ''#'' || s."CodeValue" FROM dms."Descriptor" s JOIN dms."Document" d ON d."DocumentId" = s."DocumentId" ORDER BY s."DocumentId";') | Should -Be @(
+            '5000000042|3|3|uri://Example/Type#A#B', '5000000043|5|5|uri://Example/Type#A#B')
+        (Query $script:target 'SELECT "Namespace" || ''#'' || "CodeValue" FROM dms."Descriptor" ORDER BY "DocumentId";') | Should -Be (Query $script:source 'SELECT "Uri" FROM dms."Descriptor" ORDER BY "DocumentId";')
     }
     It 'Remaps every stored root/copied/collection/nested/extension/abstract key and preserves composite FKs and aliases' {
         foreach ($column in $script:inventory.columns) {
@@ -157,6 +166,8 @@ COMMIT;
     It 'Stops the actual copy on <name> and cleans its staging' -ForEach @(
         @{ Name = 'unmapped stored reference'; Mutation = 'UPDATE edfi."Student" SET "SchoolTypeDescriptor_DescriptorId" = 5000000999'; Error = '*Unmapped descriptor reference*' },
         @{ Name = 'unknown deleted type'; Mutation = 'UPDATE tracked_changes_edfi."Descriptor" SET "Discriminator" = ''Missing.SchoolTypeDescriptor'' WHERE "ChangeVersion" = 201'; Error = '*Unknown or ambiguous descriptor history type*' },
+        @{ Name = 'unknown colon-qualified deleted type'; Mutation = 'UPDATE tracked_changes_edfi."Descriptor" SET "Discriminator" = ''Missing:SchoolTypeDescriptor'' WHERE "ChangeVersion" = 201'; Error = '*Unknown or ambiguous descriptor history type*' },
+        @{ Name = 'colon-qualified live type from the wrong project'; Mutation = 'UPDATE dms."Descriptor" SET "Discriminator" = ''Sample:SchoolTypeDescriptor'' WHERE "DocumentId" = 5000000042'; Error = '*Legacy descriptor owner/type/whole URI mismatch*' },
         @{ Name = 'ambiguous unqualified deleted type'; Mutation = 'UPDATE tracked_changes_edfi."Descriptor" SET "Discriminator" = ''SchoolTypeDescriptor'' WHERE "ChangeVersion" = 201'; Error = '*Unknown or ambiguous descriptor history type*' }
     ) {
         $id = [guid]::NewGuid().ToString('N')
