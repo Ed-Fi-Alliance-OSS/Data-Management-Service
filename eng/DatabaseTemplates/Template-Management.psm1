@@ -1596,4 +1596,4 @@ function Build-Template {
     Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas -DatabaseEngine $DatabaseEngine -MssqlPassword $MssqlPassword
 }
 
-Export-ModuleMember -Function Build-Template, Get-UserSchemaNames, Restore-TemplatePackage, Get-EducatorPreparationSampleFileName, Get-EducationOrganizationIdsFromSampleData
+Export-ModuleMember -Function Build-Template, Get-UserSchemaNames, Restore-TemplatePackage, Get-EducatorPreparationSampleFileName, Get-EducationOrganizationIdsFromSampleData, Get-TemplateBulkLoadTuning

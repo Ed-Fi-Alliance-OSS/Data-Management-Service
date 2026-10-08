@@ -719,12 +719,57 @@ Describe "Azure VM educator-prep load" {
 
         $exitCode = Invoke-BulkLoadClientContainer -ClientDirectory (Join-Path $script:work "client/tools/net10.0/any") -DataDirectory $script:work `
             -WorkDirectory (Join-Path $script:work "work-ST") -DmsUrl "http://st-dms:8080/st-dms" -Key "key" -Secret "secret" `
-            -LogPath (Join-Path $script:work "bulkload.log")
+            -LogPath (Join-Path $script:work "bulkload.log") -MaxConcurrentConnections 5 -MaxSimultaneousRequests 5 -MaxBufferedTasks 2 -RetryCount 5
 
         $exitCode | Should -Be 0
         Should -Invoke docker -ModuleName educator-prep -Times 1 -Exactly
         $script:hashesAtRun | Should -BeNullOrEmpty
         Test-Path -LiteralPath (Join-Path $script:clientWork "metadata.json") | Should -BeTrue
+    }
+
+    It "passes the bulk-load tuning to the client's -c, -l, -t and -r flags" {
+        $script:dockerArgs = $null
+        Mock docker -ModuleName educator-prep {
+            $script:dockerArgs = @($args)
+            $global:LASTEXITCODE = 0
+        }
+
+        Invoke-BulkLoadClientContainer -ClientDirectory (Join-Path $script:work "client/tools/net10.0/any") -DataDirectory $script:work `
+            -WorkDirectory (Join-Path $script:work "work-ST") -DmsUrl "http://st-dms:8080/st-dms" -Key "key" -Secret "secret" `
+            -LogPath (Join-Path $script:work "bulkload.log") -MaxConcurrentConnections 3 -MaxSimultaneousRequests 4 -MaxBufferedTasks 2 -RetryCount 6 | Out-Null
+
+        $flags = @{}
+        for ($i = 0; $i -lt $script:dockerArgs.Count - 1; $i++) {
+            if ("$($script:dockerArgs[$i])" -in @("-c", "-l", "-t", "-r")) { $flags["$($script:dockerArgs[$i])"] = "$($script:dockerArgs[$i + 1])" }
+        }
+        $flags["-c"] | Should -Be "3"
+        $flags["-l"] | Should -Be "4"
+        $flags["-t"] | Should -Be "2"
+        $flags["-r"] | Should -Be "6"
+    }
+
+    It "loads with Build-Template's bulk-load tuning so the two loaders cannot drift" {
+        $script:tuning = & (Get-Module educator-prep) { Get-TemplateBulkLoadTuning -DatabaseEngine "postgresql" }
+        @($script:tuning.Keys | Sort-Object) | Should -Be @("MaxBufferedTasks", "MaxConcurrentConnections", "MaxSimultaneousRequests", "RetryCount")
+        Mock Get-CmsToken -ModuleName educator-prep { "token" }
+        Mock Invoke-RestMethod -ModuleName educator-prep -ParameterFilter { $Uri -like "*v3/dataStores*" } {
+            Write-Output -NoEnumerate -InputObject @([pscustomobject]@{ id = 7; name = "Single-Tenant Data Store" })
+        }
+        Mock Invoke-RestMethod -ModuleName educator-prep -ParameterFilter { $Uri -like "*v3/vendors*" } { Write-Output -NoEnumerate -InputObject @() }
+        Mock Add-Vendor -ModuleName educator-prep { 100 }
+        Mock Add-Application -ModuleName educator-prep { @{ Id = 42; Key = "key"; Secret = "secret" } }
+        Mock Invoke-BulkLoadClientContainer -ModuleName educator-prep { 0 }
+        Mock Remove-ReviewLoaderApplication -ModuleName educator-prep { }
+        Set-Content -LiteralPath (Join-Path $script:work "Candidate.xml") -Value "<x/>"
+
+        $deployment = @{ Label = "single-tenant"; Code = "ST"; CmsUrl = "https://host/st-config/"; Tenant = ""; DataStoreName = "Single-Tenant Data Store"; DmsUrl = "http://st-dms:8080/st-dms" }
+        Invoke-EducatorPrepLoad -Deployment $deployment -DataDirectory $script:work -LogDirectory $script:work `
+            -AdminClientId "admin" -AdminClientSecret "secret" -BulkLoadClientDirectory $script:work | Out-Null
+
+        Should -Invoke Invoke-BulkLoadClientContainer -ModuleName educator-prep -Times 1 -Exactly -ParameterFilter {
+            $MaxConcurrentConnections -eq $script:tuning.MaxConcurrentConnections -and $MaxSimultaneousRequests -eq $script:tuning.MaxSimultaneousRequests -and
+            $MaxBufferedTasks -eq $script:tuning.MaxBufferedTasks -and $RetryCount -eq $script:tuning.RetryCount
+        }
     }
 
     It "resolves the pinned BulkLoadClient from the package it downloads" {

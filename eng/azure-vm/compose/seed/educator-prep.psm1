@@ -136,10 +136,12 @@ function Invoke-BulkLoadClientContainer {
         [Parameter(Mandatory)][string]$Key,
         [Parameter(Mandatory)][string]$Secret,
         [Parameter(Mandatory)][string]$LogPath,
-        [string]$Network = "dms-sec",
-        [int]$MaxConcurrentConnections = 100,
-        [int]$MaxSimultaneousRequests = 500,
-        [int]$RetryCount = 1
+        # Tuning, as Get-TemplateBulkLoadTuning returns it; no defaults, so a caller cannot drift from it.
+        [Parameter(Mandatory)][int]$MaxConcurrentConnections,
+        [Parameter(Mandatory)][int]$MaxSimultaneousRequests,
+        [Parameter(Mandatory)][int]$MaxBufferedTasks,
+        [Parameter(Mandatory)][int]$RetryCount,
+        [string]$Network = "dms-sec"
     )
 
     # The client ships as tools/<tfm>/any; run it on the matching runtime image (net10.0 -> 10.0).
@@ -155,7 +157,7 @@ function Invoke-BulkLoadClientContainer {
         -v "${ClientDirectory}:/client:ro" -v "${DataDirectory}:/data:ro" -v "$($work.FullName):/work" -v "$($xsd.FullName):/xsd" `
         "mcr.microsoft.com/dotnet/runtime:$runtimeTag" dotnet /client/EdFi.BulkLoadClient.Console.dll `
         -b $DmsUrl -d /data -w /work "--key=$Key" "--secret=$Secret" `
-        -c $MaxConcurrentConnections -r $RetryCount -l $MaxSimultaneousRequests -t 50 -x /xsd -o "$DmsUrl/oauth/token" -f *> $LogPath
+        -c $MaxConcurrentConnections -r $RetryCount -l $MaxSimultaneousRequests -t $MaxBufferedTasks -x /xsd -o "$DmsUrl/oauth/token" -f *> $LogPath
     return $LASTEXITCODE
 }
 
@@ -165,8 +167,8 @@ function Invoke-EducatorPrepLoad {
         Loads one directory of sample files into one deployment through its DMS API.
     .DESCRIPTION
         Mirrors Build-Template's populated load: a temporary EdFiSandbox application scoped to the
-        sample data's education organizations, the repo-pinned BulkLoadClient, -ForceReloadMetadata
-        and -ForceReloadData.
+        sample data's education organizations, the repo-pinned BulkLoadClient at Build-Template's
+        PostgreSQL tuning (Get-TemplateBulkLoadTuning), -ForceReloadMetadata and -ForceReloadData.
         The temporary application is removed by id afterwards, also when the load fails.
     #>
     [CmdletBinding()]
@@ -206,11 +208,12 @@ function Invoke-EducatorPrepLoad {
         -VendorId $vendorId -AccessToken $token -EducationOrganizationIds $edOrgIds -DataStoreIds @([long]$dataStore[0].id) -Tenant $d.Tenant
 
     $logPath = Join-Path $LogDirectory "bulkload-$($d.Code)-$(Split-Path $DataDirectory -Leaf).log"
+    $tuning = Get-TemplateBulkLoadTuning -DatabaseEngine "postgresql"
     $started = Get-Date
     try {
         $exitCode = Invoke-BulkLoadClientContainer -ClientDirectory $BulkLoadClientDirectory -DataDirectory $DataDirectory `
             -WorkDirectory (Join-Path $LogDirectory "work-$($d.Code)") -DmsUrl $d.DmsUrl -Key $application.Key -Secret $application.Secret `
-            -LogPath $logPath -Network $Network
+            -LogPath $logPath -Network $Network @tuning
     }
     finally {
         Remove-ReviewLoaderApplication -CmsUrl $d.CmsUrl -Headers $headers -ApplicationId $application.Id -ExpectedName $applicationName -Confirm:$false
