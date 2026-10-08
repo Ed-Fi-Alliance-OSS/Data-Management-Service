@@ -308,8 +308,14 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
         AssertEmptyPage(result);
     }
 
-    [TestCaseSource(nameof(CaseSensitiveStringFilterCases))]
-    public async Task It_treats_descriptor_string_filter_values_as_case_sensitive(
+    /// <summary>
+    /// SQL Server descriptor string filters carry no query-side collation (DMS-1443), so each follows its
+    /// column's collation: identity columns are pinned case-insensitive regardless of the database default,
+    /// while payload columns follow the database default, which is case-insensitive on the test server.
+    /// </summary>
+    [TestCaseSource(nameof(IdentityCollationStringFilterCases))]
+    [TestCaseSource(nameof(DatabaseDefaultCollationStringFilterCases))]
+    public async Task It_matches_case_variant_descriptor_string_filter_values(
         string queryFieldName,
         string path,
         string value
@@ -322,7 +328,7 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
             $"mssql-descriptor-query-case-{queryFieldName}"
         );
 
-        AssertEmptyPage(result);
+        AssertSingleDescriptorMatch(result, MixedCaseSeed);
     }
 
     [Test]
@@ -540,28 +546,40 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
         ).SetName("It_filters_by_effective_end_date");
     }
 
-    private static IEnumerable<TestCaseData> CaseSensitiveStringFilterCases()
+    /// <summary>
+    /// Descriptor identity columns carry the SQL Server identity collation, so case variants match on any
+    /// database default.
+    /// </summary>
+    private static IEnumerable<TestCaseData> IdentityCollationStringFilterCases()
     {
         yield return new TestCaseData(
             "namespace",
             "$.namespace",
             MixedCaseSeed.Namespace.ToLowerInvariant()
-        ).SetName("It_requires_exact_case_for_namespace");
+        ).SetName("It_matches_namespace_case_variants_under_the_identity_collation");
         yield return new TestCaseData(
             "codeValue",
             "$.codeValue",
             MixedCaseSeed.CodeValue.ToLowerInvariant()
-        ).SetName("It_requires_exact_case_for_code_value");
+        ).SetName("It_matches_code_value_case_variants_under_the_identity_collation");
+    }
+
+    /// <summary>
+    /// Descriptor payload columns have no explicit collation and follow the database default, which is
+    /// case-insensitive on the integration test server (CI uses the SQL Server default collation).
+    /// </summary>
+    private static IEnumerable<TestCaseData> DatabaseDefaultCollationStringFilterCases()
+    {
         yield return new TestCaseData(
             "shortDescription",
             "$.shortDescription",
             MixedCaseSeed.ShortDescription.ToLowerInvariant()
-        ).SetName("It_requires_exact_case_for_short_description");
+        ).SetName("It_matches_short_description_case_variants_under_the_database_default");
         yield return new TestCaseData(
             "description",
             "$.description",
             MixedCaseSeed.Description!.ToLowerInvariant()
-        ).SetName("It_requires_exact_case_for_description");
+        ).SetName("It_matches_description_case_variants_under_the_database_default");
     }
 
     private ServiceProvider CreateServiceProvider()

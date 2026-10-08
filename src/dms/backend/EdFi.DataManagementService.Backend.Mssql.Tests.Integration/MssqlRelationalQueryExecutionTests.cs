@@ -444,8 +444,13 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         AssertPageMaterialization(expectedSchool.DocumentId);
     }
 
+    /// <summary>
+    /// SQL Server string filters carry no query-side collation (DMS-1443) and follow the column collation.
+    /// NameOfInstitution is not an identity column, so it follows the database default, which is
+    /// case-insensitive on the integration test server; a lower-cased value therefore matches.
+    /// </summary>
     [Test]
-    public async Task It_enforces_case_sensitive_string_filtering_for_sql_server()
+    public async Task It_follows_the_column_collation_for_string_filtering_on_sql_server()
     {
         var expectedSchool = _persistedSchoolsInDocumentOrder[0];
 
@@ -460,16 +465,17 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             limit: 25,
             offset: 0,
             totalCount: true,
-            traceId: "mssql-query-case-sensitive-filter"
+            traceId: "mssql-query-column-collation-filter"
         );
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
 
-        success.TotalCount.Should().Be(0);
-        success.EdfiDocs.Should().BeEmpty();
-        AssertSingleQueryHydration().Plan.TotalCountSql.Should().NotBeNull();
-        _recorder.PageMaterializedDocumentIds.Should().BeEmpty();
-        _recorder.SingleDocumentMaterializationCallCount.Should().Be(0);
+        success.TotalCount.Should().Be(1);
+        success.EdfiDocs.Should().HaveCount(1);
+        success.EdfiDocs[0]!["id"]!.GetValue<string>().Should().Be(expectedSchool.DocumentUuid.ToString());
+
+        AssertSingleQueryHydration();
+        AssertPageMaterialization(expectedSchool.DocumentId);
     }
 
     [Test]
