@@ -20,9 +20,22 @@ raw form.
 - `multi-tenant.http` — token + tenant/route-qualifier data request against `/mt-dms`,
   plus a Configuration Service call using the `Tenant` header (switch to tenant2 via
   `@tenant` and its credentials).
+- `dms-routing.http` — multi-tenant isolation: the same person written under tenant1 and tenant2
+  lands in separate databases, and a token used on another tenant's (or school year's) path gets 404.
+- `dms-sis-relationship.http` — relationship-based authorization with the SISVendor (district and
+  school) and EdFiSandbox review-variant keys: students, staff, and contacts stay invisible until
+  related to the client's education organizations, and writes outside the hierarchy get 403.
+- `dms-assessment-namespace.http` — namespace-based authorization with the AssessmentVendor
+  (`uri://one.example.com`) and EdFiSandbox (`uri://ed-fi.org`) review-variant keys: descriptor and
+  assessment writes outside a vendor's namespace get 403; other vendors' assessments read as empty.
+- `cms-resourceclaims.http` — Configuration Service resource claims and claim-set authorization
+  metadata behind the walkthroughs above.
 - `sample-all.sh` — curl-based smoke sampler: tokens each environment (ST + both tenants)
   and reads a spread of resources; exits nonzero if any token or read fails, so it doubles
   as a handoff check. Run `./sample-all.sh` (override host with `FQDN=...`).
 - `sample-variants.py` - access matrix for the review-variant keys: tokens each credential in the
   JSON that `bootstrap/add-review-variants.ps1 -OutFile` writes and prints how many schools,
   students and assessments it sees. Read-only; verifies TLS unless `INSECURE=1`.
+
+Requests in the `dms-*` walkthroughs are commented ALLOWED or DENIED with the expected status.
+Creates return 201 on the first run and 200 (upsert) on later runs.
