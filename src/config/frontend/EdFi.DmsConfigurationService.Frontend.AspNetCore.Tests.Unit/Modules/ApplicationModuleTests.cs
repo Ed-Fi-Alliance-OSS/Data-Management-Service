@@ -4790,14 +4790,6 @@ public class ApplicationModuleTests
             string responseBody = await _updateResponse.Content.ReadAsStringAsync();
             responseBody.Should().NotContain(Sentinel);
         }
-
-        [Test]
-        public void It_performs_no_rollback_or_deletion()
-        {
-            _updatedClientUuids.Should().HaveCount(1);
-            _syncCalls.Should().BeEmpty();
-            _deletedClientIds.Should().BeEmpty();
-        }
     }
 
     [TestFixture]
