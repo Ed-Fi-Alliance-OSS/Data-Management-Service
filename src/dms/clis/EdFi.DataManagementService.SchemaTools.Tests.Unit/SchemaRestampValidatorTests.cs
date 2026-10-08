@@ -113,6 +113,15 @@ public class Given_SchemaRestamp_Compatibility
         AssertValidationFailure("EffectiveSchema", field);
     }
 
+    [Test]
+    public void It_rejects_format_case_changes_ordinally()
+    {
+        _target = _target with { ApiSchemaFormatVersion = "v1.0.0" };
+        ChangeFingerprint(fingerprint => fingerprint with { ApiSchemaFormatVersion = "V1.0.0" });
+
+        AssertValidationFailure("EffectiveSchema", "ApiSchemaFormatVersion");
+    }
+
     [TestCase("short")]
     [TestCase("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")]
     public void It_rejects_malformed_hashes(string hash)
