@@ -633,4 +633,150 @@ public class GlobalExceptionHandlerTests
             _body["errors"]!.AsArray().Count.Should().Be(0);
         }
     }
+
+    private static Endpoint CreateEndpoint(params object[] metadata) =>
+        new(_ => Task.CompletedTask, new EndpointMetadataCollection(metadata), "test-endpoint");
+
+    private const string OAuthSentinel = "SENTINEL_OAUTH_HANDLER_3c1e_must_not_leak";
+
+    public static IEnumerable<TestFixtureData> OAuthMappedExceptions()
+    {
+        yield return new TestFixtureData(
+            new InvalidDataException(OAuthSentinel),
+            400,
+            "invalid_request",
+            "The request form payload is malformed."
+        ).SetArgDisplayNames("InvalidDataException");
+        yield return new TestFixtureData(
+            new BadHttpRequestException(OAuthSentinel, StatusCodes.Status400BadRequest),
+            400,
+            "invalid_request",
+            "The request form payload is malformed."
+        ).SetArgDisplayNames("BadHttpRequestException 400");
+        yield return new TestFixtureData(
+            new BadHttpRequestException(
+                OAuthSentinel,
+                StatusCodes.Status400BadRequest,
+                new JsonException(OAuthSentinel)
+            ),
+            400,
+            "invalid_request",
+            "The request form payload is malformed."
+        ).SetArgDisplayNames("BadHttpRequestException 400 with a JSON inner exception");
+        yield return new TestFixtureData(
+            new BadHttpRequestException(OAuthSentinel, StatusCodes.Status413PayloadTooLarge),
+            413,
+            "invalid_request",
+            "The request body is too large."
+        ).SetArgDisplayNames("BadHttpRequestException 413");
+        yield return new TestFixtureData(
+            new BadHttpRequestException(OAuthSentinel, StatusCodes.Status415UnsupportedMediaType),
+            415,
+            "invalid_request",
+            "The request body must be application/x-www-form-urlencoded."
+        ).SetArgDisplayNames("BadHttpRequestException 415");
+        yield return new TestFixtureData(
+            new BadHttpRequestException(OAuthSentinel, StatusCodes.Status408RequestTimeout),
+            408,
+            "invalid_request",
+            "The request could not be read."
+        ).SetArgDisplayNames("BadHttpRequestException 408");
+        yield return new TestFixtureData(
+            new InvalidOperationException(OAuthSentinel),
+            500,
+            "server_error",
+            "The revocation request could not be processed."
+        ).SetArgDisplayNames("InvalidOperationException");
+        yield return new TestFixtureData(
+            new ValidationException(OAuthSentinel),
+            500,
+            "server_error",
+            "The revocation request could not be processed."
+        ).SetArgDisplayNames("ValidationException");
+    }
+
+    /// <summary>
+    /// DMS-1327 D-17: an endpoint carrying <see cref="OAuthErrorContractMetadata"/> gets the RFC 6749
+    /// §5.2 body for every exception, with client statuses kept for unreadable bodies and 500
+    /// <c>server_error</c> for everything else.
+    /// </summary>
+    [TestFixtureSource(typeof(GlobalExceptionHandlerTests), nameof(OAuthMappedExceptions))]
+    public class Given_an_exception_on_an_endpoint_with_the_oauth_error_contract(
+        Exception exception,
+        int status,
+        string error,
+        string description
+    )
+    {
+        private bool _handled;
+        private DefaultHttpContext _context = null!;
+        private string _content = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup() =>
+            (_handled, _context, _content, _body) = await HandleAsync(
+                exception,
+                "trace-oauth",
+                CreateEndpoint(OAuthErrorContractMetadata.Instance)
+            );
+
+        [Test]
+        public void It_reports_the_exception_as_handled() => _handled.Should().BeTrue();
+
+        [Test]
+        public void It_returns_the_mapped_status() => _context.Response.StatusCode.Should().Be(status);
+
+        [Test]
+        public void It_uses_the_json_content_type() =>
+            _context.Response.ContentType.Should().StartWith("application/json");
+
+        [Test]
+        public void It_returns_only_the_oauth_members()
+        {
+            _body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+            _body["error"]!.GetValue<string>().Should().Be(error);
+            _body["error_description"]!.GetValue<string>().Should().Be(description);
+        }
+
+        [Test]
+        public void It_keeps_the_trace_id_header() =>
+            _context.Response.Headers["TraceId"].ToString().Should().Be("trace-oauth");
+
+        [Test]
+        public void It_does_not_leak_the_exception_text() => _content.Should().NotContain(OAuthSentinel);
+    }
+
+    /// <summary>
+    /// The marker, not the presence of an endpoint, selects the OAuth writer: any other endpoint
+    /// keeps the Ed-Fi contract.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_invalid_data_exception_on_an_endpoint_without_the_oauth_error_contract
+    {
+        private DefaultHttpContext _context = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup() =>
+            (_, _context, _, _body) = await HandleAsync(
+                new InvalidDataException(OAuthSentinel),
+                "trace-ed-fi",
+                CreateEndpoint()
+            );
+
+        [Test]
+        public void It_returns_the_ed_fi_bad_request_contract() =>
+            AssertHandledContract(
+                _context,
+                _body,
+                400,
+                "urn:ed-fi:api:bad-request",
+                "Bad Request",
+                "The request could not be processed. See 'errors' for details."
+            );
+
+        [Test]
+        public void It_has_no_oauth_members() => _body.ContainsKey("error").Should().BeFalse();
+    }
 }

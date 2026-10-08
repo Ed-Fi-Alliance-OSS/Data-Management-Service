@@ -1578,12 +1578,23 @@ public static class CdcSourceHistoryContinuityClassifier
             return CdcRetainedRangeEvaluation.UnknownResult(diagnostics);
         }
 
-        if (
-            committed.Lsn.Value.CompareTo(start.Lsn.Value) < 0
-            || committed.Lsn.Value.CompareTo(end.Lsn.Value) > 0
-        )
+        if (committed.Lsn.Value.CompareTo(start.Lsn.Value) < 0)
         {
             return CdcRetainedRangeEvaluation.Gap(diagnostics);
+        }
+
+        // Provider history is sampled before Connect. A newer committed offset can exceed
+        // that sample's upper bound without any retained history having been removed.
+        if (committed.Lsn.Value.CompareTo(end.Lsn.Value) > 0)
+        {
+            return CdcRetainedRangeEvaluation.UnknownResult([
+                .. diagnostics,
+                new(
+                    CdcDiagnosticCategory.ProviderHistoryUnknown,
+                    "$.providerHistory.retainedRangeEnd",
+                    "Refresh SQL Server retained range after the committed offset observation."
+                ),
+            ]);
         }
 
         return start.Lsn.Value.CompareTo(end.Lsn.Value) <= 0

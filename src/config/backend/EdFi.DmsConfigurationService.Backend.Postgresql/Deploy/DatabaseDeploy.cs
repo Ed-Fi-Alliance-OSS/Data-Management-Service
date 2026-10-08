@@ -17,8 +17,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Deploy;
 /// <remarks>
 /// <see cref="ScriptOutputLog"/> exists so integration tests can observe the script output that
 /// <c>LogScriptOutput</c> captures, which is the only channel an upgrade script has for diagnostics
-/// too large to fit in the thrown error. It is internal and unset in production, where logging stays
-/// on the autodetected log.
+/// too large to fit in the thrown error. <see cref="ScriptFilter"/> exists so upgrade tests can build
+/// a database journaled up to an earlier script, which is the state a real deployment upgrades from.
+/// Both are internal and unset in production, where every embedded script runs and logging stays on
+/// the autodetected log.
 /// </remarks>
 public class DatabaseDeploy : IDatabaseDeploy
 {
@@ -27,6 +29,12 @@ public class DatabaseDeploy : IDatabaseDeploy
     /// upgrade diagnostics; production leaves it null.
     /// </summary>
     internal IUpgradeLog? ScriptOutputLog { get; init; }
+
+    /// <summary>
+    /// When set, only embedded scripts whose resource name satisfies the filter are deployed. Tests
+    /// use it to stop at an earlier schema version; production leaves it null.
+    /// </summary>
+    internal Func<string, bool>? ScriptFilter { get; init; }
 
     public DatabaseDeployResult DeployDatabase(string connectionString)
     {
@@ -41,7 +49,7 @@ public class DatabaseDeploy : IDatabaseDeploy
 
         UpgradeEngineBuilder builder = DeployChanges
             .To.PostgresqlDatabase(connectionString)
-            .WithScriptsEmbeddedInAssembly(Assembly.GetExecutingAssembly())
+            .WithScriptsEmbeddedInAssembly(Assembly.GetExecutingAssembly(), ScriptFilter ?? (_ => true))
             .JournalToPostgresqlTable("public", "dmscs_SchemaVersions")
             .WithVariablesDisabled()
             .LogScriptOutput()

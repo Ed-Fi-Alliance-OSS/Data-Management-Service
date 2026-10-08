@@ -274,7 +274,7 @@ Describe "Assert-TemplateWorkflowInputs" {
             "src/dms/run.sh"
         )
         $publishGate = "publish_package: `${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true) }}"
-        $forkGate = "if: `${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false) }}"
+        $forkGate = "if: `${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false)) && ((github.event_name != 'push' && github.event_name != 'release') || github.repository_owner == 'Ed-Fi-Alliance-OSS') }}"
         $concurrencyGroup = "group: `${{ github.workflow }}-`${{ github.event.pull_request.number || github.run_id }}"
         $cancelInProgress = "cancel-in-progress: `${{ github.event_name == 'pull_request' }}"
 

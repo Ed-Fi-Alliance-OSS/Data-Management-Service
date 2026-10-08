@@ -349,12 +349,17 @@
         "resolved": "8.0.0",
         "contentHash": "7mu9v0QDv66ar3DpGSZHg9NuNcxDaaAcnMULuZlaTpP9+hwXhrxNGsF5GmLkSHxFdb5bBc1TzeujsRgTrPWi+Q=="
       },
+      "EdFi.Api.Secrets": {
+        "type": "Project"
+      },
       "edfi.dmsconfigurationservice.backend": {
         "type": "Project",
         "dependencies": {
+          "EdFi.Api.Secrets": "[1.0.0, )",
           "EdFi.DmsConfigurationService.DataModel": "[1.0.0, )",
           "JsonSchema.Net": "[7.2.2, )",
           "Microsoft.AspNetCore.Http.Abstractions": "[2.2.0, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Logging": "[10.0.1, )",
           "Microsoft.Extensions.Options": "[10.0.1, )"
         }

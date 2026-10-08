@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        A second plugin claiming the Configuration Service's secret resolver contract, so a boot that
+        allowlists it beside Acme.CmsContributor has two plugins each claiming a replace-cardinality
+        contract once. It is staged with that fixture, by the CMS frontend test project, for the same
+        reason that fixture's own project file gives.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.CmsSecondResolver</AssemblyName>
+        <RootNamespace>Acme.CmsSecondResolver</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <ProjectReference Include="..\..\..\..\..\config\contracts\EdFi.DmsConfigurationService.Secrets\EdFi.DmsConfigurationService.Secrets.csproj" />
+    </ItemGroup>
+</Project>

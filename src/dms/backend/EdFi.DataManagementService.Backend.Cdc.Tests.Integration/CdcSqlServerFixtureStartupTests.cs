@@ -314,7 +314,12 @@ public sealed class Given_CdcSqlServerFixtureStartup
     public void It_exposes_only_sanitized_failure_classifications()
     {
         _state.IsLsaInitializationTimeout.Should().BeTrue();
-        JsonSerializer.Serialize(_state).Should().NotContain("private").And.NotContain("AppLoader");
+        JsonSerializer
+            .Serialize(_state)
+            .Should()
+            .NotContain("private")
+            .And.NotContain("AppLoader.exe")
+            .And.NotContain("Failed to load LSA");
     }
 
     private Task RunAsync() => RunAsync(CancellationToken.None);

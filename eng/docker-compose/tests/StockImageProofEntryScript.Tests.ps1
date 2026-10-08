@@ -240,6 +240,10 @@ function global:Get-DmsCmsResponse {
         return @([pscustomobject]@{ id = 7; name = 'Stock Proof Data Store'; dataStoreContexts = @() })
     }
 
+    # Get-SmokeTestCredential looks its vendor up by company before creating it; a fresh
+    # deployment has none, so the lookup is an empty listing and the vendor is POSTed.
+    if ($Uri -match '/v3/vendors\?company=') { return , @() }
+
     if ($Uri -match '/v3/applications') {
         return [pscustomobject]@{ id = 11; key = $global:DmsClientKey; secret = $global:DmsClientSecret }
     }
@@ -782,6 +786,9 @@ exit 0
                 @{ phase = $Phase; match = 'req:Get /v3/dataStores'; exitCode = 200; limit = 1; expect = 1
                     output = $DataStoreListing
                 }
+                # POST /v3/vendors is create-only, so Get-SmokeTestCredential looks the company up
+                # first; a fresh deployment has no such vendor, so the listing is empty.
+                @{ phase = $Phase; match = 'req:Get /v3/vendors\?company='; exitCode = 200; output = '[]'; limit = 1; expect = 1 }
                 @{ phase = $Phase; match = 'req:Post /v3/vendors'; exitCode = 201; output = '{}'; limit = 1; expect = 1
                     location = '/v3/vendors/3'
                 }

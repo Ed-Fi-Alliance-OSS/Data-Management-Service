@@ -38,9 +38,9 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
             return await dataRepository.GetTokenStatusAsync(tokenId);
         }
 
-        public async Task<bool> RevokeTokenAsync(Guid tokenId)
+        public async Task<bool> RevokeTokenAsync(Guid tokenId, Guid applicationId)
         {
-            return await dataRepository.RevokeTokenAsync(tokenId);
+            return await dataRepository.RevokeTokenAsync(tokenId, applicationId);
         }
 
         public async Task<int> DeleteExpiredTokensAsync(DateTimeOffset expiredBefore)
@@ -56,9 +56,16 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
                 : null;
         }
 
-        public async Task<IEnumerable<PublicKeyInfo>> GetActivePublicKeysAsync()
+        public Task<IEnumerable<PublicKeyInfo>> GetActivePublicKeysAsync()
         {
-            var results = await dataRepository.GetActivePublicKeysInternalAsync();
+            return GetActivePublicKeysAsync(CancellationToken.None);
+        }
+
+        public async Task<IEnumerable<PublicKeyInfo>> GetActivePublicKeysAsync(
+            CancellationToken cancellationToken
+        )
+        {
+            var results = await dataRepository.GetActivePublicKeysInternalAsync(cancellationToken);
             return results.Select(r => new PublicKeyInfo { KeyId = r.KeyId, PublicKey = r.PublicKey });
         }
 

@@ -31,6 +31,7 @@ internal class UpsertHandler(ILogger _logger, ResiliencePipeline _resiliencePipe
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug("Entering UpsertHandler - {TraceId}", requestInfo.FrontendRequest.TraceId.Value);
+        LogIfNoneMatchIgnoredOnWrite(_logger, requestInfo);
 
         // Resolve repository from the per-request scoped service provider
         var documentStoreRepository =

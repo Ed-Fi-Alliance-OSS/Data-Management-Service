@@ -385,8 +385,13 @@ public class Given_A_Postgresql_RepresentationRestampStore
             await _store.StampPageAsync(session, page, CancellationToken.None);
             await session.CommitAsync();
         }
+        // The document "disappears" the way the write path removes it: root row first (its FK to
+        // dms.Document is ON DELETE RESTRICT), then the dms.Document row.
         await _database.ExecuteNonQueryAsync(
-            """DELETE FROM "dms"."Document" WHERE "DocumentId" = @id;""",
+            """
+            DELETE FROM "edfi"."Student" WHERE "DocumentId" = @id;
+            DELETE FROM "dms"."Document" WHERE "DocumentId" = @id;
+            """,
             new NpgsqlParameter("id", second.DocumentId)
         );
         await using IDocumentCacheAdministrativeMutexLease checkLease = await LeaseAsync();

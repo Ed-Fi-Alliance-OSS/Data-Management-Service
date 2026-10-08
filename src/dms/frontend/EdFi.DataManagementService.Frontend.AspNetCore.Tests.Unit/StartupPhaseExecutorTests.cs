@@ -138,6 +138,7 @@ public class StartupStatusTests
                 DmsStartupPhases.BuildApplication,
                 DmsStartupPhases.LoadDataStores,
                 DmsStartupPhases.InitializeApiSchemas,
+                DmsStartupPhases.ValidatePluginRegistrations,
                 DmsStartupPhases.InitializeBackendMappings,
                 DmsStartupPhases.InitializeAuthMetadata,
                 DmsStartupPhases.ConfigureEndpoints,

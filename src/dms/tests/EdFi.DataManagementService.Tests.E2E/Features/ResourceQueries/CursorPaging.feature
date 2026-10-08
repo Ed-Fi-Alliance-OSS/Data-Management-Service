@@ -148,6 +148,17 @@ Feature: Cursor paging for GET requests for Ed-Fi Resources
               And the response body has exactly one error "The query field 'pageSize' is not valid for this Change Query endpoint."
 
         @e2e-ci-shard-2
+        Scenario: 08a A keyChanges request ignores a resource filter and names it in the warning
+             When a GET request is made to "/ed-fi/schools/keyChanges?schoolId=1"
+             Then it should respond with 200
+              And the response headers include
+                  """
+                  {
+                      "X-EdFi-Warning": "Ignored query parameters: schoolId"
+                  }
+                  """
+
+        @e2e-ci-shard-2
         Scenario: 09 The served resources document publishes the cursor parameters and the continuation header
              When a GET request is made to "/metadata/specifications/resources-spec.json"
              Then it should respond with 200

@@ -3,10 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Globalization;
 using System.Text.Json;
 using FluentAssertions;
-using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
@@ -92,22 +90,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
     public async Task AssertPostgresqlCaptureInventoryAsync(CancellationToken token)
     {
         await AssertMessageContractSourceLayoutAsync(token);
-        string inventory = await ReadPostgresqlScalarAsync(
-            $"""
-            SELECT string_agg(schemaname || '.' || tablename, ',' ORDER BY tablename)
-            FROM pg_publication_tables WHERE pubname = '{PostgresqlPublicationName}';
-            """,
-            token
-        );
-        inventory.Trim().Should().Be("dms.CdcHeartbeat,dms.Document,dms.DocumentCache");
-        string fullIdentity = await ReadPostgresqlScalarAsync(
-            """
-            SELECT string_agg(relname, ',' ORDER BY relname) FROM pg_class
-            WHERE oid IN ('dms."Document"'::regclass, 'dms."DocumentCache"'::regclass) AND relreplident = 'f';
-            """,
-            token
-        );
-        fullIdentity.Trim().Should().Be("Document");
+        await (await CreateProviderObserverAsync(token)).AssertCaptureInventoryAsync(token);
     }
 
     public Task UpdateCanonicalRowAsync(JsonElement row, CancellationToken token) =>
@@ -133,46 +116,9 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         await ReadPostgresqlScalarAsync("TRUNCATE TABLE \"dms\".\"Document\" CASCADE; SELECT 'done';", token);
     }
 
-    /// <summary>Capture WAL after the preceding mutations, then require committed lsn_proc at/beyond it.
-    /// A heartbeat after the capture drives retained output. Neither a topic end nor heartbeat value is the fence.</summary>
     public async Task<MessageContractPostgresqlFence> FencePostgresqlSourceAsync(
         CdcConnectorTemplateRequest request,
         string phase,
         CancellationToken token
-    )
-    {
-        string wal = await ReadPostgresqlScalarAsync("SELECT pg_current_wal_lsn()::text;", token);
-        string[] parts = wal.Split('/');
-        ulong barrier =
-            (ulong.Parse(parts[0], NumberStyles.HexNumber, CultureInfo.InvariantCulture) << 32)
-            | ulong.Parse(parts[1], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-        await AdvanceHeartbeatAsync(token);
-        DateTimeOffset deadline = DateTimeOffset.UtcNow.AddMinutes(2);
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            await AssertRegisteredConnectorReachesRunningStateAsync(request, token);
-            var observed = await TryReadCommittedSourceOffsetAsync(request, token);
-            if (observed is not null)
-            {
-                observed.SourcePartitionEvidence.Properties.Count.Should().Be(1);
-                (observed.SourcePartitionEvidence.Properties["server"] == request.ConnectorName.Value)
-                    .Should()
-                    .BeTrue();
-                ulong processed = ((PostgresqlConnectorOffsetPosition)observed.ProviderPosition).LsnProc;
-                if (processed >= barrier)
-                {
-                    await TestContext.Out.WriteLineAsync(
-                        $"{phase}: WAL barrier={barrier}, committed lsn_proc={processed}, matching single server partition"
-                    );
-                    return new(phase, barrier, processed);
-                }
-            }
-            await Task.Delay(TimeSpan.FromMilliseconds(500), token);
-        }
-        throw new AssertionException(
-            $"PostgreSQL {phase} committed source fence timed out; WAL barrier={barrier}. Details redacted."
-        );
-    }
+    ) => await (await CreateProviderFencesAsync(request, token)).FencePostgresqlSourceAsync(phase, token);
 }
-
-internal sealed record MessageContractPostgresqlFence(string Phase, ulong WalBarrier, ulong CommittedLsnProc);

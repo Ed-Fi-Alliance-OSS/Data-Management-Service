@@ -53,7 +53,7 @@ Unprefixed paths are relative to the repository root.
 - A null column returns null with no decrypt call.
 - A token-free row returns the Base64 of its input bytes unchanged, with no resolver call, asserted against a value encrypted before this change.
 - A decryption that throws fails the read with its own message, distinct from every resolution failure, and mentions neither secrets nor resolvers.
-- That decryption-failure case is asserted on the parent path and on both derivative paths.
+- That decryption-failure case is asserted on the parent path and on both derivative paths: it fails a data store read and a derivative read through `/v3/dataStoreDerivatives/`, and a derivative read as part of its data store reads as not configured instead, as the derivative containment rule in [design.md](design.md) records.
 - Both directions use the existing `IConnectionStringEncryptionService` (`Backend/Services/IConnectionStringEncryptionService.cs:10-11`), and no new cryptography is written.
 - `Decrypt` gains its first production caller, having been exercised only by tests until now.
 

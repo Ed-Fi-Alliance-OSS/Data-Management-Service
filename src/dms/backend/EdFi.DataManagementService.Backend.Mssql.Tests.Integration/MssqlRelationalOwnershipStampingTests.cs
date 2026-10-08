@@ -443,15 +443,35 @@ public class Given_A_Mssql_Relational_Write_With_Ownership_Stamping
     // ----- Write enforcement -----------------------------------------------
 
     /// <summary>
-    /// The live half of the D1 proof, moved here from 6.2 because a POST create cannot plan an ownership
-    /// check until the Update gate is open. <c>OwnershipBased</c> is configured and the caller holds no
-    /// tokens at all — the configuration most likely to deny if the carrier row guard were missing — and the
-    /// create still succeeds and still stamps.
+    /// With <c>OwnershipBased</c> configured, a create by a client holding no ownership tokens would stamp a
+    /// row that client could never reach, so it is denied as auth.md 2.13 and no document row exists
+    /// afterwards. The stored-token statement stays vacuous under its carrier row guard; the denial is the
+    /// create-side verdict, returned before any insert.
     /// </summary>
     [Test]
-    public async Task It_creates_and_stamps_with_ownership_configured_and_no_tokens()
+    public async Task It_denies_a_create_whose_creator_token_the_client_does_not_hold_and_writes_no_row()
     {
         var createResult = await ExecuteOwnershipCreateAsync(CreatorToken, ownershipTokenIds: []);
+
+        createResult
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch);
+        (await CountStoredDocumentsAsync()).Should().Be(0);
+    }
+
+    /// <summary>
+    /// A client whose creator token is among its own ownership tokens creates under <c>OwnershipBased</c>
+    /// exactly as it would without it, and the row carries that token.
+    /// </summary>
+    [Test]
+    public async Task It_creates_and_stamps_with_ownership_configured_for_a_client_holding_its_creator_token()
+    {
+        var createResult = await ExecuteOwnershipCreateAsync(
+            CreatorToken,
+            ownershipTokenIds: [OtherToken, CreatorToken]
+        );
 
         createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
         (await ReadStoredOwnershipTokenAsync()).Should().Be(CreatorToken);

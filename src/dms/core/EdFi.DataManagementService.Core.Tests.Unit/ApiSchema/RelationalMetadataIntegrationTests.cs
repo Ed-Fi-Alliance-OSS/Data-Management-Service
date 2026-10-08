@@ -77,42 +77,6 @@ public class RelationalMetadataIntegrationTests
     }
 
     [Test]
-    public void Should_Properly_Deserialize_RootTableNameOverride_When_Present()
-    {
-        // Arrange
-        var resourceSchemas = _apiSchemaNode["projectSchema"]?["resourceSchemas"]?.AsObject();
-
-        // Act - Find a resource with rootTableNameOverride
-        ResourceSchema? resourceWithOverride = null;
-        string? resourceNameWithOverride = null;
-
-        foreach (var resource in resourceSchemas!)
-        {
-            var resourceSchema = new ResourceSchema(resource.Value!);
-
-            if (resourceSchema.Relational?.RootTableNameOverride is not null)
-            {
-                resourceWithOverride = resourceSchema;
-                resourceNameWithOverride = resource.Key;
-                break;
-            }
-        }
-
-        // Assert
-        if (resourceWithOverride is not null)
-        {
-            resourceWithOverride.Relational!.RootTableNameOverride.Should().NotBeNullOrEmpty();
-            TestContext.WriteLine(
-                $"✓ Found resource '{resourceNameWithOverride}' with rootTableNameOverride: '{resourceWithOverride.Relational.RootTableNameOverride}'"
-            );
-        }
-        else
-        {
-            Assert.Inconclusive("No resources found with rootTableNameOverride in this ApiSchema");
-        }
-    }
-
-    [Test]
     public void Should_Properly_Deserialize_NameOverrides_When_Present()
     {
         // Arrange

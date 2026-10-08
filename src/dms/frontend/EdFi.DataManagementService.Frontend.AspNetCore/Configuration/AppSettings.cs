@@ -117,6 +117,53 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
             );
         }
 
+        string[] routeQualifierSegments = options.GetRouteQualifierSegmentsArray();
+
+        // Checked whether or not identity management is enabled: the identity routes append their
+        // own get-by-id and results-token parameters after the qualifier segments, so a qualifier
+        // with either name would repeat a parameter name in those route templates, and reserving
+        // two double-underscore names costs an operator nothing.
+        string[] reservedNames = routeQualifierSegments
+            .Where(segment =>
+                string.Equals(
+                    segment,
+                    AspNetCoreFrontend.IdentityIdRouteParameterName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+                || string.Equals(
+                    segment,
+                    AspNetCoreFrontend.IdentityTokenRouteParameterName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            .ToArray();
+
+        if (reservedNames.Length > 0)
+        {
+            return ValidateOptionsResult.Fail(
+                "AppSettings value RouteQualifierSegments uses names reserved for the identity route "
+                    + "parameters: "
+                    + string.Join(", ", reservedNames)
+            );
+        }
+
+        // Route templates compare parameter names case-insensitively, and so does the identity
+        // request context's qualifier lookup, so names differing only by case are one qualifier.
+        string[] collidingNames = routeQualifierSegments
+            .GroupBy(segment => segment, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1)
+            .SelectMany(group => group)
+            .ToArray();
+
+        if (collidingNames.Length > 0)
+        {
+            return ValidateOptionsResult.Fail(
+                "AppSettings value RouteQualifierSegments contains names that are equal under "
+                    + "case-insensitive comparison: "
+                    + string.Join(", ", collidingNames)
+            );
+        }
+
         return ValidateOptionsResult.Success;
     }
 }

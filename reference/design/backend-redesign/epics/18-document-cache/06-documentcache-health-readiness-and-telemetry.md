@@ -97,7 +97,7 @@ sanitized queue/lifecycle telemetry without coupling normal API routing to proje
   health, and existing operational probes.
 - Use the existing OAuth/JWT validation path, not a new authorization system. Configure
   `DataManagement:DocumentCache:Status:RequiredRole`, with
-  `dms-document-cache-operator` as the recommended value. The configured role must be a
+  `dms-client` as the recommended value. The configured role must be a
   single literal role token: trimming must not change it, it must not contain ASCII
   whitespace, comma, semicolon, quote, bracket, brace, or control characters, and it must
   not exceed 256 characters. Authorize a valid bearer token by exact ordinal match against

@@ -13,16 +13,16 @@ using Microsoft.Extensions.DependencyInjection;
 namespace PluginHostRunner;
 
 /// <summary>
-/// A host whose default context carries contract 1.1.0, loading a plugin built against 1.0.0 through
+/// A host whose default context carries contract 1.2.0, loading a plugin built against 1.1.0 through
 /// the real loader.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The staging that gives this process a 1.1.0 contract happens outside it, in a temporary copy of its
+/// The staging that gives this process a 1.2.0 contract happens outside it, in a temporary copy of its
 /// own publish output. That makes the identity it ends up with a thing to be verified rather than
 /// assumed, which is why the first thing this program does is read the contract version out of its own
-/// default context and refuse to go on unless it is exactly 1.1.0.0. A run that reported success
-/// against a 1.0.0 host would prove nothing at all, and this is what stops that being possible.
+/// default context and refuse to go on unless it is exactly 1.2.0.0. A run that reported success
+/// against a 1.1.0 host would prove nothing at all, and this is what stops that being possible.
 /// </para>
 /// <para>
 /// Everything else it reports is read rather than asserted. The caller does the asserting, so a
@@ -32,7 +32,7 @@ namespace PluginHostRunner;
 internal static class Program
 {
     /// <summary>The contract identity this program requires its own default context to carry.</summary>
-    private static readonly Version _requiredHostContract = new(1, 1, 0, 0);
+    private static readonly Version _requiredHostContract = new(1, 2, 0, 0);
 
     /// <summary>The line prefix the caller looks for, so ordinary output cannot be mistaken for it.</summary>
     private const string ResultPrefix = "RESULT ";
@@ -49,8 +49,8 @@ internal static class Program
 
         if (hostContract != _requiredHostContract)
         {
-            // Named, and before anything is loaded. Staging is what puts 1.1.0 here, and staging that
-            // silently did not take would otherwise turn this whole proof into a 1.0-on-1.0 run.
+            // Named, and before anything is loaded. Staging is what puts 1.2.0 here, and staging that
+            // silently did not take would otherwise turn this whole proof into a 1.1-on-1.1 run.
             Console.Error.WriteLine(
                 $"HOST CONTRACT MISMATCH: this process requires EdFi.Api.Plugins "
                     + $"{_requiredHostContract} in its default context and carries "
@@ -88,7 +88,7 @@ internal static class Program
 
         Type pluginType = plugin.Instance.GetType();
 
-        // The 1.1 addition, found by name because this program was compiled against 1.0.0 and cannot
+        // The 1.2 addition, found by name because this program was compiled against 1.1.0 and cannot
         // refer to it. Invoked as well as found, so "present and does nothing" is a fact of the run
         // rather than a claim about a member nobody called.
         MethodInfo? addedVirtual = pluginType.GetMethod("DescribeCapabilities");

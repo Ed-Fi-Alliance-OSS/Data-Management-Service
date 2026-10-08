@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!-- DMS-1556 step 0.2 (E0): scratch framework probes. Not part of any solution or CI
+       lane; run directly with `dotnet test eng/performance/dms-1556/E0Probes`.
+       Package versions are pinned to the same versions src/Directory.Packages.props pins
+       for CMS (aspnetcore 10.0.1, IdentityModel 8.12.0), because the probes exist to pin
+       the behavior of exactly those versions (spec §1.3 V-1..V-7). -->
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <IsPackable>false</IsPackable>
+        <!-- Standalone: this scratch project pins its own versions and must not inherit a
+         Directory.Packages.props from an enclosing checkout (a worktree nested under the
+         main checkout's src\ otherwise picks one up and fails with NU1008). -->
+        <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="FluentAssertions" Version="6.12.1" />
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.1" />
+        <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.1" />
+        <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.12.0" />
+        <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.12.0" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+        <PackageReference Include="NUnit" Version="4.2.2" />
+        <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+    </ItemGroup>
+</Project>

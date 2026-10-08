@@ -6,6 +6,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.Net;
+using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
@@ -46,7 +47,10 @@ public class HealthTests
 /// </summary>
 public abstract class MultiTenantPipelineTestBase
 {
-    protected static WebApplicationFactory<Program> CreateMultiTenantFactory(string? pathBase = null)
+    protected static WebApplicationFactory<Program> CreateMultiTenantFactory(
+        string? pathBase = null,
+        ITenantRepository? tenantRepository = null
+    )
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -65,7 +69,15 @@ public abstract class MultiTenantPipelineTestBase
             );
 
             builder.ConfigureServices(
-                (_, services) => services.Configure<AppSettings>(s => s.MultiTenancy = true)
+                (_, services) =>
+                {
+                    services.Configure<AppSettings>(s => s.MultiTenancy = true);
+
+                    if (tenantRepository is not null)
+                    {
+                        services.AddTransient(_ => tenantRepository);
+                    }
+                }
             );
         });
     }

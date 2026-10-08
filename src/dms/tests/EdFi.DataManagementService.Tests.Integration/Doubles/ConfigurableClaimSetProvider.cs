@@ -36,7 +36,10 @@ internal sealed class ConfigurableClaimSetProvider(
 
     private string[] Actions => grantReadChanges ? _crudAndReadChangesActions : _crudActions;
 
-    public Task<IList<ClaimSet>> GetAllClaimSets(string? tenant = null)
+    public Task<IList<ClaimSet>> GetAllClaimSets(
+        string? tenant = null,
+        CancellationToken cancellationToken = default
+    )
     {
         var resourceClaims = fixture
             .Resources.SelectMany(resource =>

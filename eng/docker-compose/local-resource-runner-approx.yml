@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# DMS-1556 investigation overlay: the P-runner-approx resource profile (spec §3.1.8) —
+# a stress APPROXIMATION of the shared CI runner, not its real envelope: CMS and
+# PostgreSQL are capped at 2 CPUs each and the CMS runtime sees DOTNET_PROCESSOR_COUNT=4.
+# Apply IN ADDITION to the stack's own -f list and the diagnostics overlays, then
+# recreate the db and config services. Omit this file (and recreate) for P-dev.
+services:
+  config:
+    cpus: 2
+    environment:
+      DOTNET_PROCESSOR_COUNT: "4"
+
+  db:
+    cpus: 2

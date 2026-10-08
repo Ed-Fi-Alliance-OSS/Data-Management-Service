@@ -5,6 +5,7 @@
 
 using System.Diagnostics;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 
@@ -14,6 +15,16 @@ public class RequestLoggingMiddleware(RequestDelegate next)
 {
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
     private const string ApplicationName = "EdFi.DmsConfigurationService";
+
+    private const string FailedTemplate =
+        "{EventName}: CMS request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}";
+
+    /// <summary>
+    /// The failure event for a route marked with <see cref="ExceptionTypeOnlyLoggingMetadata"/>: the
+    /// same event and fields, plus the exception type names in place of the exception object.
+    /// </summary>
+    private const string TypeOnlyFailedTemplate =
+        "{EventName}: CMS request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId} ({ExceptionTypes})";
 
     public async Task Invoke(HttpContext context, ILogger<RequestLoggingMiddleware> logger)
     {
@@ -72,17 +83,33 @@ public class RequestLoggingMiddleware(RequestDelegate next)
                 if (statusCode >= StatusCodes.Status500InternalServerError)
                 {
                     var handledException = context.Features.Get<IExceptionHandlerFeature>()?.Error;
-                    logger.LogError(
-                        RequestLoggingEventIds.HttpRequestFailed,
-                        handledException,
-                        "{EventName}: CMS request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
-                        RequestLoggingEventIds.HttpRequestFailed.Name,
-                        method,
-                        path,
-                        statusCode,
-                        durationMs,
-                        traceId
-                    );
+                    if (LogsExceptionTypesOnly(context))
+                    {
+                        LogTypeOnlyFailure(
+                            context,
+                            logger,
+                            handledException,
+                            method,
+                            path,
+                            statusCode,
+                            durationMs,
+                            traceId
+                        );
+                    }
+                    else
+                    {
+                        logger.LogError(
+                            RequestLoggingEventIds.HttpRequestFailed,
+                            handledException,
+                            FailedTemplate,
+                            RequestLoggingEventIds.HttpRequestFailed.Name,
+                            method,
+                            path,
+                            statusCode,
+                            durationMs,
+                            traceId
+                        );
+                    }
                 }
                 else
                 {
@@ -101,7 +128,14 @@ public class RequestLoggingMiddleware(RequestDelegate next)
             }
             catch (Exception ex)
             {
-                LogFailure(context, logger, sw, ex, method, path, traceId);
+                bool typesOnly = LogsExceptionTypesOnly(context);
+                LogFailure(context, logger, sw, ex, method, path, traceId, typesOnly);
+                if (typesOnly)
+                {
+                    // The server logs an exception that escapes the pipeline with its own logger, so a
+                    // route whose exception text is not under CMS control hands it a replacement.
+                    throw TypeOnlyReplacement(context, ex);
+                }
                 throw;
             }
         }
@@ -114,7 +148,8 @@ public class RequestLoggingMiddleware(RequestDelegate next)
         Exception ex,
         string method,
         string path,
-        string traceId
+        string traceId,
+        bool typesOnly
     )
     {
         try
@@ -127,10 +162,16 @@ public class RequestLoggingMiddleware(RequestDelegate next)
             var statusCode = GetFailureStatusCode(context);
             var durationMs = sw.ElapsedMilliseconds;
 
+            if (typesOnly)
+            {
+                LogTypeOnlyFailure(context, logger, ex, method, path, statusCode, durationMs, traceId);
+                return;
+            }
+
             logger.LogError(
                 RequestLoggingEventIds.HttpRequestFailed,
                 ex,
-                "{EventName}: CMS request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+                FailedTemplate,
                 RequestLoggingEventIds.HttpRequestFailed.Name,
                 method,
                 path,
@@ -144,6 +185,59 @@ public class RequestLoggingMiddleware(RequestDelegate next)
             // Preserve the original downstream exception if the failure log path itself fails.
         }
     }
+
+    /// <summary>
+    /// Whether the request's route is marked with <see cref="ExceptionTypeOnlyLoggingMetadata"/>.
+    /// Exception handling clears the active endpoint but keeps the original on
+    /// <see cref="IExceptionHandlerFeature"/>, so that is read first.
+    /// </summary>
+    private static bool LogsExceptionTypesOnly(HttpContext context) =>
+        (
+            context.Features.Get<IExceptionHandlerFeature>()?.Endpoint ?? context.GetEndpoint()
+        )?.Metadata.GetMetadata<ExceptionTypeOnlyLoggingMetadata>()
+            is not null;
+
+    /// <summary>
+    /// The failure event with the exception type names as a field and no exception object attached,
+    /// so no message, inner exception or <c>Data</c> reaches a log sink. The type names are those of
+    /// the exception <c>ExceptionContentBoundaryMiddleware</c> withheld when it replaced one, otherwise
+    /// those of the exception seen here.
+    /// </summary>
+    private static void LogTypeOnlyFailure(
+        HttpContext context,
+        ILogger<RequestLoggingMiddleware> logger,
+        Exception? exception,
+        string method,
+        string path,
+        int statusCode,
+        long durationMs,
+        string traceId
+    ) =>
+        logger.LogError(
+            RequestLoggingEventIds.HttpRequestFailed,
+            TypeOnlyFailedTemplate,
+            RequestLoggingEventIds.HttpRequestFailed.Name,
+            method,
+            path,
+            statusCode,
+            durationMs,
+            traceId,
+            context.Features.Get<WithheldExceptionFeature>()?.OriginalExceptionTypes
+                ?? (exception is null ? "none" : ExceptionTypeNames.Chain(exception))
+        );
+
+    /// <summary>
+    /// The exception rethrown to the server in place of one from a route that logs exception types
+    /// only. A caller cancellation stays a cancellation, so the server still treats the request as
+    /// aborted; anything else becomes a fixed-text exception naming only the original type chain.
+    /// Neither carries the original as its inner exception.
+    /// </summary>
+    private static Exception TypeOnlyReplacement(HttpContext context, Exception exception) =>
+        exception is OperationCanceledException && context.RequestAborted.IsCancellationRequested
+            ? new OperationCanceledException(context.RequestAborted)
+            : new InvalidOperationException(
+                $"The request failed with {ExceptionTypeNames.Chain(exception)}; the exception's content was withheld."
+            );
 
     private static int GetFailureStatusCode(HttpContext context) =>
         context.Response.HasStarted ? context.Response.StatusCode : StatusCodes.Status500InternalServerError;

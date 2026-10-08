@@ -1060,6 +1060,12 @@ public class KeycloakClientRepositoryTests
         {
             _clientUuid = Guid.NewGuid().ToString();
             _clientUpdates = [];
+            ClientProtocolMapper namespaceMapper = ClaimMapper(
+                "Namespace Prefixes",
+                "namespacePrefixes",
+                "uri://ed-fi.org"
+            );
+            namespaceMapper.Config["jsonType.label"] = "String";
 
             _storedClient = new Client
             {
@@ -1072,7 +1078,7 @@ public class KeycloakClientRepositoryTests
                 ProtocolMappers =
                 [
                     MapperWithoutClaimName(),
-                    ClaimMapper("Namespace Prefixes", "namespacePrefixes", "uri://ed-fi.org"),
+                    namespaceMapper,
                     ClaimMapper("Education Organization Ids", "educationOrganizationIds", "100"),
                     ClaimMapper("Data Store IDs", "dataStoreIds", "7,8"),
                 ],
@@ -1230,6 +1236,67 @@ public class KeycloakClientRepositoryTests
                     )
                 )
                 .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_namespace_claim_update_clearing_the_existing_claim : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act() => await ActUpdateAsync("");
+
+        [Test]
+        public void It_returns_success_carrying_the_stored_uuid()
+        {
+            _result.Should().BeOfType<ClientUpdateResult.Success>();
+            ((ClientUpdateResult.Success)_result).ClientUuid.Should().Be(Guid.Parse(_clientUuid));
+        }
+
+        [Test]
+        public void It_updates_the_existing_client_once()
+        {
+            AssertClientIdentityPreserved();
+            _clientUpdates.Should().HaveCount(1);
+            A.CallTo(() => _keycloakClientFacade.UpdateClientAsync("edfi", _clientUuid, A<Client>.Ignored))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public void It_keeps_one_empty_namespace_claim()
+        {
+            NamespaceClaims(AppliedClient()).Should().ContainSingle();
+            ClientProtocolMapper mapper = NamespaceClaims(AppliedClient()).Single();
+            mapper.Config["claim.value"].Should().Be("\"\"");
+            mapper.Config["jsonType.label"].Should().Be("JSON");
+        }
+
+        [Test]
+        public void It_preserves_the_other_claims()
+        {
+            ClaimValue(AppliedClient(), "educationOrganizationIds").Should().Be("100");
+            ClaimValue(AppliedClient(), "dataStoreIds").Should().Be("7,8");
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_namespace_claim_update_restoring_a_cleared_claim : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ClientProtocolMapper namespaceMapper = NamespaceClaims(_storedClient).Single();
+            namespaceMapper.Config["claim.value"] = "\"\"";
+            namespaceMapper.Config["jsonType.label"] = "JSON";
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_restores_the_non_empty_value_as_a_string_claim()
+        {
+            ClientProtocolMapper mapper = NamespaceClaims(AppliedClient()).Should().ContainSingle().Subject;
+            mapper.Config["claim.value"].Should().Be(NewPrefixes);
+            mapper.Config["jsonType.label"].Should().Be("String");
         }
     }
 
@@ -1626,14 +1693,18 @@ public class KeycloakClientRepositoryTests
                 });
         }
 
-        protected async Task ActCreateAsync(string clientId = ClientKey, bool isApproved = true) =>
+        protected async Task ActCreateAsync(
+            string clientId = ClientKey,
+            bool isApproved = true,
+            string namespacePrefixes = "uri://ed-fi.org"
+        ) =>
             _result = await _repository.CreateClientAsync(
                 clientId,
                 ClientSecret,
                 RoleName,
                 "Display Name",
                 ScopeName,
-                "uri://ed-fi.org",
+                namespacePrefixes,
                 "255901",
                 [2, 1],
                 isApproved
@@ -1894,10 +1965,28 @@ public class KeycloakClientRepositoryTests
             _callOrder.Should().Equal("create-client", "service-account", "role-mapping");
     }
 
+    [TestFixture]
+    public class Given_a_client_creation_with_empty_namespace_prefixes : CreateClientTestBase
+    {
+        [SetUp]
+        public async Task Act() => await ActCreateAsync(namespacePrefixes: "");
+
+        [Test]
+        public void It_configures_a_json_encoded_empty_namespace_string()
+        {
+            ClientProtocolMapper mapper = _createdClients
+                .Single()
+                .ProtocolMappers.Single(mapper => mapper.Config["claim.name"] == "namespacePrefixes");
+
+            mapper.Config["claim.value"].Should().Be("\"\"");
+            mapper.Config["jsonType.label"].Should().Be("JSON");
+        }
+    }
+
     /// <summary>
     /// The shape <c>IdentityModule.RegisterClient</c> uses: a caller-chosen key and secret, the
-    /// configuration-service role, the admin scope, and no namespace or education-organization
-    /// claims. It provisions by the same contract, so its failures compensate the same way.
+    /// configuration-service role, the admin scope, and empty namespace and education-organization
+    /// inputs. It provisions by the same contract, so its failures compensate the same way.
     /// </summary>
     [TestFixture]
     public class Given_a_registration_shaped_client_creation_that_succeeds : CreateClientTestBase

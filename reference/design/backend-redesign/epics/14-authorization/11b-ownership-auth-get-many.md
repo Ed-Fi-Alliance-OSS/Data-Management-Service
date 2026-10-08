@@ -37,6 +37,10 @@ first, then planner enablement and repository consumption in one commit, then pr
   `Plan.OwnershipPageFilter`. The gate is disjoint from DMS-1060's `EnforcesOwnershipChecks` (ReadSingle,
   Update, Delete), so the single-record `OwnershipAuthorizationPlanner` is never asked to plan ReadMany.
   Descriptor GET-many keeps the DMS-1060 501 carve-out, and tracked changes are unchanged.
+  *Superseded by [DMS-1431](https://edfi.atlassian.net/browse/DMS-1431) (2026-09-28): the gate admits
+  ReadMany for descriptors too, and descriptor GET-many and partitions apply the same page filter through
+  the shared compiler — pages, `Total-Count`, cursor bounds, and partition boundaries are cut from owned
+  rows, and an empty token list is an empty result. Tracked changes are still unchanged.*
 - **Compilation.** `PageDocumentIdSqlCompiler` joins `dms.Document` once under alias `doc`, shared with the
   `?id=` predicate, and emits `doc.CreatedByOwnershipTokenId IS NOT NULL AND <membership>` after the value
   predicates and the namespace and custom-view filters, ahead of the relationship OR group and the cursor

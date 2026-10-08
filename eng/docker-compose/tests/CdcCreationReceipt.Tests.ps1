@@ -19,6 +19,7 @@ BeforeAll {
     }, $true)
     . ([scriptblock]::Create($functionAst.Extent.Text))
     function Format-LogSafeText { param($Value) return [string]$Value }
+    function Format-LogSafePath { param($Value) return [string]$Value }
 }
 
 Describe 'Managed creation receipt handoff' {

@@ -663,6 +663,13 @@ exit $ExitCode
                 Should -Throw -ExpectedMessage "*api-schema-tools hash failed*"
         }
 
+        It "preserves Windows backslashes in a missing ApiSchemaPath error" {
+            $missingPath = "C:\dms-1427-missing-schema-$([Guid]::NewGuid().ToString('N'))"
+
+            { Invoke-PrepareSchema -ApiSchemaPath $missingPath } |
+                Should -Throw -ExpectedMessage "*$missingPath*"
+        }
+
         It "fails fast when manifest has stale claims/seed sections but ApiSchema workspace is missing" {
             $schemaDir = New-ApiSchemaSet
 
@@ -730,6 +737,14 @@ exit $ExitCode
 
             { Invoke-PrepareClaim } |
                 Should -Throw -ExpectedMessage "*ClaimsDirectoryPath is required*Acme*"
+        }
+
+        It "preserves Windows backslashes in a missing ClaimsDirectoryPath error" {
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet)
+            $missingPath = "C:\dms-1427-missing-claims-$([Guid]::NewGuid().ToString('N'))"
+
+            { Invoke-PrepareClaim -ClaimsDirectoryPath $missingPath } |
+                Should -Throw -ExpectedMessage "*$missingPath*"
         }
 
         It "throws when a known-extension catalog entry contributes no security metadata (misspelled key)" {

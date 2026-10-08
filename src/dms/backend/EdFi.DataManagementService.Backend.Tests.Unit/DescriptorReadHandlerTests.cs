@@ -133,6 +133,100 @@ public partial class Given_DescriptorReadHandler
             .MustHaveHappenedOnceExactly();
     }
 
+    /// <summary>
+    /// Read acceleration selects a cache candidate only through the handler's selection delegate, so the
+    /// ownership check runs there too: a descriptor the caller does not own completes with the 403 and never
+    /// becomes a candidate the cache could serve.
+    /// </summary>
+    [Test]
+    public async Task It_completes_descriptor_get_read_acceleration_with_the_ownership_denial_instead_of_a_candidate()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-131313131313"));
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentUuid.Value, documentId: 205L)),
+            ]),
+        ]);
+        var denial = new OwnershipAuthorizationFailure(
+            OwnershipAuthorizationFailureKind.OwnershipTokenMismatch,
+            0,
+            AuthorizationStrategyNameConstants.OwnershipBased
+        );
+        List<OwnershipAuthorizationExecutionRequest> ownershipRequests = [];
+        var ownershipExecutor = A.Fake<IOwnershipAuthorizationExecutor>();
+        A.CallTo(() =>
+                ownershipExecutor.ExecuteAsync(
+                    A<OwnershipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call =>
+                ownershipRequests.Add(call.GetArgument<OwnershipAuthorizationExecutionRequest>(0)!)
+            )
+            .Returns(
+                Task.FromResult<OwnershipAuthorizationExecutionResult>(
+                    new OwnershipAuthorizationExecutionResult.NotAuthorized(denial)
+                )
+            );
+        DocumentCacheReadAccelerationGetByIdSelectionResult capturedSelection = null!;
+
+        A.CallTo(() =>
+                readAccelerationCoordinator.GetByIdAsync(
+                    A<DocumentCacheReadAccelerationGetByIdRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationGetByIdRequest>(0)!;
+                capturedSelection = await request
+                    .SelectAuthorizedCandidate(call.GetArgument<CancellationToken>(1))
+                    .ConfigureAwait(false);
+
+                return capturedSelection
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationGetByIdSelectionResult.Complete>()
+                    .Subject.Result;
+            });
+
+        var sut = CreateHandler(
+            commandExecutor,
+            readAccelerationCoordinator,
+            ownershipAuthorizationExecutor: ownershipExecutor
+        );
+
+        var result = await sut.HandleGetByIdAsync(
+            new DescriptorGetByIdRequest(
+                CreateMappingSet(SqlDialect.Pgsql),
+                _descriptorResource,
+                documentUuid,
+                RelationalGetRequestReadMode.ExternalResponse,
+                [CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased)],
+                readableProfileProjectionContext: null,
+                new TraceId("descriptor-get-ownership-candidate"),
+                new RelationalAuthorizationContext(
+                    [],
+                    [],
+                    creatorOwnershipTokenId: null,
+                    ownershipTokenIds: [7]
+                )
+            )
+        );
+
+        result.Should().Be(new GetResult.GetFailureOwnershipNotAuthorized(denial));
+        capturedSelection
+            .Should()
+            .Be(
+                new DocumentCacheReadAccelerationGetByIdSelectionResult.Complete(
+                    new GetResult.GetFailureOwnershipNotAuthorized(denial)
+                )
+            );
+        ownershipRequests.Should().ContainSingle().Which.DocumentId.Should().Be(205L);
+        commandExecutor.Commands.Should().ContainSingle();
+        AssertDescriptorCandidateCommandOmitsBodyColumns(commandExecutor.Commands[0]);
+    }
+
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
     public async Task It_reexecutes_descriptor_get_relational_fallback_after_cache_lookup_miss(
@@ -238,7 +332,7 @@ public partial class Given_DescriptorReadHandler
             .Should()
             .BeEquivalentTo(
                 new GetResult.GetFailureNotImplemented(
-                    "Relational descriptor GET authorization is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor' when effective GET authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or with 'NamespaceBased' and/or 'NoFurtherAuthorizationRequired' are currently supported."
+                    "Relational descriptor GET authorization is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor' when effective GET authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or with 'NamespaceBased', 'NoFurtherAuthorizationRequired', and/or 'OwnershipBased' are currently supported."
                 )
             );
         commandExecutor.Commands.Should().BeEmpty();
@@ -666,7 +760,7 @@ public partial class Given_DescriptorReadHandler
             .Should()
             .BeEquivalentTo(
                 new QueryResult.QueryFailureNotImplemented(
-                    "Relational descriptor query authorization is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor' when effective GET-many authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or with 'NamespaceBased' and/or 'NoFurtherAuthorizationRequired' are currently supported."
+                    "Relational descriptor query authorization is not implemented for resource 'Ed-Fi.SchoolTypeDescriptor' when effective GET-many authorization requires filtering. Effective strategies: ['RelationshipsWithEdOrgsOnly']. Only requests with no authorization strategies or with 'NamespaceBased', 'NoFurtherAuthorizationRequired', and/or 'OwnershipBased' are currently supported."
                 )
             );
         commandExecutor.Commands.Should().BeEmpty();
@@ -1178,9 +1272,10 @@ public partial class Given_DescriptorReadHandler
     [Test]
     public async Task It_returns_the_descriptor_not_implemented_terminal_when_OwnershipBased_accompanies_an_unsupported_relationship_strategy()
     {
-        // OwnershipBased is known-but-not-enabled, so it cannot short-circuit ahead of the relationship
-        // OR group with an empty page. The custom view configured ahead of it is still validated before
-        // the 501 is returned.
+        // The relationship strategy is the unsupported one: OwnershipBased plans its page filter, but the
+        // descriptor guardrail still rejects the relationship OR group with a 501, and the client holds no token,
+        // so ownership must not short-circuit ahead of it with an empty page. The custom view configured ahead
+        // of it is still validated before the 501 is returned.
         var commandExecutor = new InMemoryRelationalCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
@@ -1202,7 +1297,7 @@ public partial class Given_DescriptorReadHandler
 
         // The resolved custom view is a supported GET-many AND filter, so the 501 must neither report it
         // as an unsupported effective strategy nor claim only NamespaceBased/NoFurtherAuthorizationRequired
-        // are supported. Only the genuinely unimplemented strategies belong in the effective list.
+        // are supported; OwnershipBased is named as supported too, since it is enforced here.
         var failureMessage = result
             .Should()
             .BeOfType<QueryResult.QueryFailureNotImplemented>()
@@ -1216,7 +1311,10 @@ public partial class Given_DescriptorReadHandler
             );
         failureMessage
             .Should()
-            .Contain("and/or a resolved custom view-based strategy are currently supported.");
+            .Contain(
+                $"'{AuthorizationStrategyNameConstants.OwnershipBased}', and/or a resolved custom view-based "
+                    + "strategy are currently supported."
+            );
         commandExecutor
             .Commands.Select(command => command.CommandText)
             .Should()
@@ -1259,11 +1357,49 @@ public partial class Given_DescriptorReadHandler
     }
 
     [Test]
-    public async Task It_returns_the_descriptor_not_implemented_terminal_when_a_custom_view_accompanies_OwnershipBased()
+    public async Task It_composes_a_descriptor_custom_view_with_the_ownership_page_filter()
     {
-        // Custom view + OwnershipBased: Ownership is an AND term, so the request fails closed with 501
-        // instead of letting the custom-view filter stand in for it. The custom view is still
-        // validated first.
+        // Custom view + OwnershipBased: both are AND filters on the one page relation. The custom view is
+        // validated first, then the page query carries the view membership ahead of the ownership predicate —
+        // ownership executes last among the AND strategies.
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(Guid.NewGuid(), documentId: 101L, codeValue: "Charter")
+                ),
+            ]),
+        ]);
+        var sut = CreateHandler(commandExecutor);
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ],
+            ownershipTokenIds: [42]
+        );
+
+        QueryResult result = await sut.HandleQueryAsync(request);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>().Which.EdfiDocs.Should().ContainSingle();
+        commandExecutor.Commands.Should().HaveCount(2);
+        commandExecutor.Commands[0].CommandText.Should().Contain("LIMIT 0");
+        var pageSql = commandExecutor.Commands[1].CommandText;
+        pageSql.Should().Contain("= ANY(@ownershipTokenIds)");
+        pageSql
+            .IndexOf("StudentWithCustomViewProviderTest", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(pageSql.IndexOf("= ANY(@ownershipTokenIds)", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public async Task It_validates_a_descriptor_custom_view_configured_after_OwnershipBased_before_the_empty_ownership_page()
+    {
+        // OwnershipBased executes last per auth.md "Execution order" no matter where the CMS placed it, so a
+        // caller with no ownership token still gets the custom view validated before its empty page, and no
+        // page SQL runs.
         var commandExecutor = new InMemoryRelationalCommandExecutor([
             new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
         ]);
@@ -1273,19 +1409,17 @@ public partial class Given_DescriptorReadHandler
             totalCount: true,
             authorizationStrategyEvaluators:
             [
-                CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
             ]
         );
 
         QueryResult result = await sut.HandleQueryAsync(request);
 
-        result
-            .Should()
-            .BeOfType<QueryResult.QueryFailureNotImplemented>()
-            .Which.FailureMessage.Should()
-            .Contain(AuthorizationStrategyNameConstants.OwnershipBased)
-            .And.NotContain("StudentWithCustomViewProviderTest");
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.EdfiDocs.Should().BeEmpty();
+        success.TotalCount.Should().Be(0);
+        success.SelectionSkipped.Should().BeTrue();
         commandExecutor
             .Commands.Select(command => command.CommandText)
             .Should()
@@ -1296,60 +1430,22 @@ public partial class Given_DescriptorReadHandler
     }
 
     [Test]
-    public async Task It_excludes_the_resolved_custom_view_from_the_descriptor_get_by_id_OwnershipBased_message()
+    public async Task It_fails_the_empty_ownership_page_on_a_missing_descriptor_custom_view()
     {
-        // The GET-by-id mirror of the sibling above. OwnershipBased is what fails the request closed, so it
-        // belongs in the message; the resolved custom view is supported on this path too and must not be
-        // named alongside it.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
-            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
-        ]);
-        var sut = CreateHandler(commandExecutor);
-
-        var result = await sut.HandleGetByIdAsync(
-            new DescriptorGetByIdRequest(
-                CreateQueryMappingSet(SqlDialect.Pgsql, CreateSupportedDescriptorQueryCapability()),
-                _descriptorResource,
-                new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-161616161616")),
-                RelationalGetRequestReadMode.ExternalResponse,
-                [
-                    CreateAuthorizationStrategyEvaluator("StudentWithCustomViewProviderTest"),
-                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
-                ],
-                readableProfileProjectionContext: null,
-                new TraceId("descriptor-get-custom-view-ownership"),
-                new RelationalAuthorizationContext([], ["uri://ed-fi.org/"])
+        // The validation ahead of the empty page is live: a missing view is its own 500, not an empty page.
+        var commandExecutor = A.Fake<IRelationalCommandExecutor>();
+        var databaseException = new StubDbException("custom view does not exist");
+        A.CallTo(() =>
+                commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
             )
-        );
-
-        result
-            .Should()
-            .BeOfType<GetResult.GetFailureNotImplemented>()
-            .Which.FailureMessage.Should()
-            .Contain(AuthorizationStrategyNameConstants.OwnershipBased)
-            .And.NotContain("StudentWithCustomViewProviderTest");
-        commandExecutor
-            .Commands.Select(command => command.CommandText)
-            .Should()
-            .ContainSingle(sql =>
-                sql.Contains("StudentWithCustomViewProviderTest", StringComparison.Ordinal)
-                && sql.Contains("LIMIT 0", StringComparison.Ordinal)
-            );
-    }
-
-    [Test]
-    public async Task It_validates_a_descriptor_custom_view_configured_after_OwnershipBased()
-    {
-        // The inverse configured order of the sibling above, with the same outcome: OwnershipBased executes
-        // last per auth.md "Execution order" no matter where the CMS placed it, so the descriptor custom
-        // view is still validated ahead of the 501.
-        var commandExecutor = new InMemoryRelationalCommandExecutor([
-            new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
-        ]);
+            .Throws(databaseException);
         var sut = CreateHandler(commandExecutor);
         var request = CreateQueryRequest(
             SqlDialect.Pgsql,
-            totalCount: true,
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
@@ -1357,21 +1453,11 @@ public partial class Given_DescriptorReadHandler
             ]
         );
 
-        QueryResult result = await sut.HandleQueryAsync(request);
+        var action = () => sut.HandleQueryAsync(request);
 
-        result
-            .Should()
-            .BeOfType<QueryResult.QueryFailureNotImplemented>()
-            .Which.FailureMessage.Should()
-            .Contain(AuthorizationStrategyNameConstants.OwnershipBased)
-            .And.NotContain("StudentWithCustomViewProviderTest");
-        commandExecutor
-            .Commands.Select(command => command.CommandText)
-            .Should()
-            .ContainSingle(sql =>
-                sql.Contains("StudentWithCustomViewProviderTest", StringComparison.Ordinal)
-                && sql.Contains("LIMIT 0", StringComparison.Ordinal)
-            );
+        (await action.Should().ThrowAsync<CustomViewAuthorizationValidationException>())
+            .Which.InnerException.Should()
+            .BeSameAs(databaseException);
     }
 
     [TestCase(
@@ -1448,7 +1534,7 @@ public partial class Given_DescriptorReadHandler
     public async Task It_reports_an_unknown_custom_view_basis_for_descriptor_query_ahead_of_OwnershipBased()
     {
         // Custom view-based executes before Ownership, so its configuration failure must not be hidden
-        // by the OwnershipBased known-but-not-enabled terminal.
+        // behind the ownership page filter or the empty page a token-less caller would otherwise get.
         var commandExecutor = new InMemoryRelationalCommandExecutor([]);
         var sut = CreateHandler(commandExecutor);
         var request = CreateQueryRequest(
@@ -2058,6 +2144,115 @@ public partial class Given_DescriptorReadHandler
                 )
             )
             .MustHaveHappenedOnceExactly();
+    }
+
+    /// <summary>
+    /// Cached and uncached descriptor GET-many select through one preparation, so the ownership filter is the
+    /// same on both lanes: the read-acceleration candidate selection and the direct page query carry the same
+    /// ownership predicate and bind the same tokens. The cache never sees a candidate the direct query would
+    /// not have selected.
+    /// </summary>
+    [Test]
+    public async Task It_applies_the_same_ownership_page_filter_to_cached_and_uncached_descriptor_queries()
+    {
+        const string OwnershipPredicate =
+            "doc.\"CreatedByOwnershipTokenId\" IS NOT NULL AND doc.\"CreatedByOwnershipTokenId\" = ANY(@ownershipTokenIds)";
+        var request = CreateQueryRequest(
+            SqlDialect.Pgsql,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ],
+            ownershipTokenIds: [42]
+        );
+
+        var cachedExecutor = CreateQueryRowsExecutor(
+            CreateDescriptorRow(Guid.NewGuid(), documentId: 101L, codeValue: "Charter")
+        );
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                var selection = await call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!
+                    .SelectAuthorizedCandidatePage(call.GetArgument<CancellationToken>(1))
+                    .ConfigureAwait(false);
+                selection
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.CandidatePage>();
+                return new QueryResult.QuerySuccess([], TotalCount: null);
+            });
+        var uncachedExecutor = CreateQueryRowsExecutor(
+            CreateDescriptorRow(Guid.NewGuid(), documentId: 101L, codeValue: "Charter")
+        );
+
+        await CreateHandler(cachedExecutor, readAccelerationCoordinator: readAccelerationCoordinator)
+            .HandleQueryAsync(request);
+        await CreateHandler(uncachedExecutor).HandleQueryAsync(request);
+
+        foreach (
+            var command in (RelationalCommand[])
+                [cachedExecutor.Commands.Single(), uncachedExecutor.Commands.Single()]
+        )
+        {
+            command.CommandText.Should().Contain(OwnershipPredicate);
+            command
+                .Parameters.Single(static parameter => parameter.Name == "@ownershipTokenIds")
+                .Value.Should()
+                .BeAssignableTo<IReadOnlyList<short>>()
+                .Which.Should()
+                .Equal((short)42);
+        }
+    }
+
+    /// <summary>
+    /// A caller with no ownership token gets its empty page on the cached lane without a candidate page ever
+    /// reaching the cache, and without SQL.
+    /// </summary>
+    [Test]
+    public async Task It_completes_cached_descriptor_query_selection_with_an_empty_page_for_a_caller_with_no_ownership_token()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        DocumentCacheReadAccelerationQuerySelectionResult selection = null!;
+        var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        A.CallTo(() =>
+                readAccelerationCoordinator.QueryAsync(
+                    A<DocumentCacheReadAccelerationQueryRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                selection = await call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!
+                    .SelectAuthorizedCandidatePage(call.GetArgument<CancellationToken>(1))
+                    .ConfigureAwait(false);
+                return selection
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.Complete>()
+                    .Subject.Result;
+            });
+        var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
+
+        var result = await sut.HandleQueryAsync(
+            CreateQueryRequest(
+                SqlDialect.Pgsql,
+                totalCount: true,
+                authorizationStrategyEvaluators:
+                [
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                ]
+            )
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.EdfiDocs.Should().BeEmpty();
+        success.TotalCount.Should().Be(0);
+        success.SelectionSkipped.Should().BeTrue();
+        commandExecutor.Commands.Should().BeEmpty();
     }
 
     // A traditional descriptor page anchored on ContentVersion shapes a cache-served response from a
@@ -2715,7 +2910,8 @@ public partial class Given_DescriptorReadHandler
         bool includeDescriptorMetadata = true,
         CollectionPaging? paging = null,
         ChangeVersionRange? changeVersionRange = null,
-        PageOrderingMode pageOrderingMode = PageOrderingMode.DocumentId
+        PageOrderingMode pageOrderingMode = PageOrderingMode.DocumentId,
+        IReadOnlyList<short>? ownershipTokenIds = null
     )
     {
         var mappingSet = CreateQueryMappingSet(
@@ -2741,7 +2937,7 @@ public partial class Given_DescriptorReadHandler
             readableProfileProjectionContext,
             new TraceId("descriptor-query-trace"),
             pageOrderingMode,
-            new RelationalAuthorizationContext([], namespacePrefixes ?? []),
+            new RelationalAuthorizationContext([], namespacePrefixes ?? [], null, ownershipTokenIds ?? []),
             changeVersionRange
         );
     }
@@ -2752,20 +2948,23 @@ public partial class Given_DescriptorReadHandler
     private static DescriptorReadHandler CreateHandler(
         IRelationalCommandExecutor commandExecutor,
         IReadableProfileProjector? readableProfileProjector = null,
-        ICustomViewAuthorizationExecutor? customViewAuthorizationExecutor = null
+        ICustomViewAuthorizationExecutor? customViewAuthorizationExecutor = null,
+        IOwnershipAuthorizationExecutor? ownershipAuthorizationExecutor = null
     ) =>
         CreateHandler(
             commandExecutor,
             PassthroughDocumentCacheReadAccelerationCoordinator.Instance,
             readableProfileProjector,
-            customViewAuthorizationExecutor
+            customViewAuthorizationExecutor,
+            ownershipAuthorizationExecutor
         );
 
     private static DescriptorReadHandler CreateHandler(
         IRelationalCommandExecutor commandExecutor,
         IDocumentCacheReadAccelerationCoordinator readAccelerationCoordinator,
         IReadableProfileProjector? readableProfileProjector = null,
-        ICustomViewAuthorizationExecutor? customViewAuthorizationExecutor = null
+        ICustomViewAuthorizationExecutor? customViewAuthorizationExecutor = null,
+        IOwnershipAuthorizationExecutor? ownershipAuthorizationExecutor = null
     )
     {
         return new DescriptorReadHandler(
@@ -2774,7 +2973,10 @@ public partial class Given_DescriptorReadHandler
             _servedEtagComposer,
             NullLogger<DescriptorReadHandler>.Instance,
             readAccelerationCoordinator,
-            customViewAuthorizationExecutor ?? A.Fake<ICustomViewAuthorizationExecutor>()
+            customViewAuthorizationExecutor ?? A.Fake<ICustomViewAuthorizationExecutor>(),
+            // Strict, so a read that runs an ownership check nobody configured fails rather than passing.
+            ownershipAuthorizationExecutor
+                ?? A.Fake<IOwnershipAuthorizationExecutor>(options => options.Strict())
         );
     }
 

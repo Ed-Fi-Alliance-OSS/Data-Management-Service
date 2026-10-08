@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!--
+        Acme.ConfigContributor's source compiled under a second assembly name. The plugin names itself
+        from its assembly, so this is a second plugin identity with the same behaviours, and a case can
+        allowlist the two in either order.
+    -->
+    <PropertyGroup>
+        <AssemblyName>Acme.SecondConfigContributor</AssemblyName>
+        <RootNamespace>Acme.SecondConfigContributor</RootNamespace>
+    </PropertyGroup>
+    <ItemGroup>
+        <Compile Include="..\Acme.ConfigContributor\ConfigContributorPlugin.cs" />
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
+        <ProjectReference Include="..\..\Support\AcmeFixtureContracts\Acme.FixtureContracts.csproj" />
+        <PackageReference Include="Microsoft.Extensions.Configuration" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+    </ItemGroup>
+</Project>

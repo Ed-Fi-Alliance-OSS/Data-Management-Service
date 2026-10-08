@@ -4,18 +4,16 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Reflection;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using NUnit.Framework;
 using NUnit.Framework.Api;
 using NUnit.Framework.Interfaces;
+using NUnit.Framework.Internal;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 
 // Linked into the integration assembly too: discovery executes case sources, never fixture setup.
-// This keeps the normal PR checks Docker-free without a dependency between test assemblies.
 internal static class MessageContractTraceability
 {
     internal static readonly string[] AssignedInvariants =
@@ -31,63 +29,13 @@ internal static class MessageContractTraceability
     ];
 
     internal sealed record Discovered(
-        string Id,
         string Test,
+        string Method,
+        string[] Invariants,
         string[] Categories,
         string[] ScenarioIds,
         bool Runnable = true
     );
-
-    internal sealed record Mapping(string Id, string Test, string[] Invariants);
-
-    internal sealed record Group(
-        string Assembly,
-        string Fixture,
-        string[] Invariants,
-        Dictionary<string, string> Tests
-    );
-
-    internal sealed record Contract(
-        int FormatVersion,
-        Dictionary<string, string[]> Invariants,
-        string[] Exclusions,
-        Group[] Groups
-    );
-
-    internal static Contract Read(string json)
-    {
-        using JsonDocument document = JsonDocument.Parse(json);
-        RejectDuplicateProperties(document.RootElement);
-        return document.RootElement.Deserialize<Contract>(
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-        )!;
-    }
-
-    private static void RejectDuplicateProperties(JsonElement element)
-    {
-        if (element.ValueKind == JsonValueKind.Object)
-        {
-            HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
-            foreach (JsonProperty property in element.EnumerateObject())
-            {
-                if (!names.Add(property.Name))
-                {
-                    throw new InvalidOperationException("duplicate-json-property");
-                }
-                RejectDuplicateProperties(property.Value);
-            }
-        }
-        else if (element.ValueKind == JsonValueKind.Array)
-        {
-            foreach (JsonElement item in element.EnumerateArray())
-            {
-                RejectDuplicateProperties(item);
-            }
-        }
-    }
-
-    internal static string StableId(string fullName) =>
-        "MC-TEST-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(fullName)))[..20];
 
     internal static Discovered[] Discover(Assembly assembly)
     {
@@ -100,8 +48,9 @@ internal static class MessageContractTraceability
                 ) && !t.FullName.Contains("MessageContractTraceability", StringComparison.Ordinal)
             )
             .Select(t => new Discovered(
-                StableId(t.FullName),
                 t.FullName,
+                $"{t.TypeInfo?.FullName}.{t.Method?.Name}",
+                GetInvariants(t),
                 Properties(t, "Category"),
                 Properties(t, "ScenarioId"),
                 t.RunState == RunState.Runnable
@@ -113,6 +62,20 @@ internal static class MessageContractTraceability
     private static IEnumerable<ITest> Leaves(ITest test) =>
         test.IsSuite ? test.Tests.SelectMany(Leaves) : [test];
 
+    // A method/case annotation replaces the fixture defaults; it does not broaden them.
+    internal static string[] GetInvariants(ITest test)
+    {
+        for (ITest current = test; current is not null; current = current.Parent!)
+        {
+            string[] values = current.Properties["CdcInvariant"].Cast<string>().ToArray();
+            if (values.Length > 0)
+            {
+                return values.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+            }
+        }
+        return [];
+    }
+
     private static string[] Properties(ITest test, string key)
     {
         List<string> values = [];
@@ -123,95 +86,58 @@ internal static class MessageContractTraceability
         return values.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
     }
 
-    internal static Mapping[] Mappings(Contract contract, string assembly) =>
-        contract
-            .Groups.Where(g => g.Assembly == assembly)
-            .SelectMany(g => g.Tests.Select(t => new Mapping(t.Key, g.Fixture + "." + t.Value, g.Invariants)))
-            .ToArray();
-
     internal static string[] Validate(
-        IReadOnlyList<Mapping> mappings,
         IReadOnlyList<Discovered> discovered,
         IReadOnlyCollection<string> required
     )
     {
         List<string> errors = [];
-        if (mappings.Count == 0 || discovered.Count == 0)
+        if (discovered.Count == 0)
         {
             errors.Add("empty-coverage");
         }
-        if (mappings.Select(m => m.Id).Distinct().Count() != mappings.Count)
+        foreach (var test in discovered)
         {
-            errors.Add("duplicate-id");
-        }
-        if (mappings.Select(m => m.Test).Distinct().Count() != mappings.Count)
-        {
-            errors.Add("duplicate-test");
-        }
-        if (discovered.Select(d => d.Id).Distinct().Count() != discovered.Count)
-        {
-            errors.Add("duplicate-discovered-id");
-        }
-        if (discovered.Any(d => !d.Runnable))
-        {
-            errors.Add("non-runnable-case");
-        }
-        if (
-            discovered.Any(d =>
-                (
-                    d.Categories.Contains("CdcMessageContractSerialized")
-                    || d.Categories.Contains("CdcMessageContractKafka")
-                ) && !d.Categories.Contains("DatabaseIntegration")
-            )
-        )
-        {
-            errors.Add("missing-database-category");
-        }
-        if (mappings.Any(m => m.Id != StableId(m.Test)))
-        {
-            errors.Add("invalid-stable-id");
-        }
-        if (mappings.Any(m => m.Invariants.Length == 0))
-        {
-            errors.Add("missing-invariant");
-        }
-        if (mappings.SelectMany(m => m.Invariants).Except(AssignedInvariants).Any())
-        {
-            errors.Add("unassigned-invariant");
-        }
-        if (required.Except(mappings.SelectMany(m => m.Invariants)).Any())
-        {
-            errors.Add("uncovered-invariant");
-        }
-        if (discovered.Select(d => d.Id).Except(mappings.Select(m => m.Id)).Any())
-        {
-            errors.Add("missing-mapping");
-        }
-        if (mappings.Select(m => m.Id).Except(discovered.Select(d => d.Id)).Any())
-        {
-            errors.Add("stale-reference");
-        }
-        if (discovered.Any(d => !d.Categories.Contains("CdcMessageContract")))
-        {
-            errors.Add("missing-category");
-        }
-        if (
-            discovered.Any(d =>
-                d.Categories.Contains("DatabaseIntegration")
+            if (test.Invariants.Length == 0)
+            {
+                errors.Add($"missing-invariant: {test.Test}");
+            }
+            foreach (string invariant in test.Invariants.Except(AssignedInvariants))
+            {
+                errors.Add($"unassigned-invariant: {test.Test}: {invariant}");
+            }
+            if (!test.Runnable)
+            {
+                errors.Add($"non-runnable-case: {test.Test}");
+            }
+            if (!test.Categories.Contains("CdcMessageContract"))
+            {
+                errors.Add($"missing-category: {test.Test}");
+            }
+            bool serialized = test.Categories.Contains("CdcMessageContractSerialized");
+            bool kafka = test.Categories.Contains("CdcMessageContractKafka");
+            bool database = test.Categories.Contains("DatabaseIntegration");
+            if ((serialized || kafka) && !database)
+            {
+                errors.Add($"missing-database-category: {test.Test}");
+            }
+            if (
+                database
                 && (
-                    !(
-                        d.Categories.Contains("CdcMessageContractSerialized")
-                        ^ d.Categories.Contains("CdcMessageContractKafka")
-                    )
+                    !(serialized ^ kafka)
                     || !(
-                        d.Categories.Contains("PostgresqlIntegration")
-                        ^ d.Categories.Contains("MssqlIntegration")
+                        test.Categories.Contains("PostgresqlIntegration")
+                        ^ test.Categories.Contains("MssqlIntegration")
                     )
                 )
             )
-        )
+            {
+                errors.Add($"missing-qualification-category: {test.Test}");
+            }
+        }
+        foreach (string invariant in required.Except(discovered.SelectMany(t => t.Invariants)))
         {
-            errors.Add("missing-qualification-category");
+            errors.Add($"uncovered-invariant: {invariant}");
         }
         return errors.ToArray();
     }
@@ -221,83 +147,25 @@ internal static class MessageContractTraceability
 [Category("CdcMessageContract")]
 public sealed class Given_MessageContractTraceability
 {
-    private MessageContractTraceability.Contract _contract = null!;
     private MessageContractTraceability.Discovered[] _discovered = null!;
     private string _assembly = null!;
 
     [OneTimeSetUp]
     public void Setup()
     {
-        _assembly = typeof(Given_MessageContractTraceability).Assembly.GetName().Name!;
-        _discovered = MessageContractTraceability.Discover(
-            typeof(Given_MessageContractTraceability).Assembly
-        );
-        _contract = MessageContractTraceability.Read(
-            File.ReadAllText(
-                Path.Combine(
-                    AppContext.BaseDirectory,
-                    "Fixtures",
-                    "cdc",
-                    "message-contract",
-                    "traceability.json"
-                )
-            )
-        );
+        var assembly = typeof(Given_MessageContractTraceability).Assembly;
+        _assembly = assembly.GetName().Name!;
+        _discovered = MessageContractTraceability.Discover(assembly);
     }
 
     [Test]
-    public void It_maps_every_discovered_parameterized_case_to_assigned_invariants()
+    public void It_maps_discovered_cases_to_assigned_invariants_and_execution_lanes()
     {
-        MessageContractTraceability
-            .Validate(MessageContractTraceability.Mappings(_contract, _assembly), _discovered, [])
-            .Should()
-            .BeEmpty(
-                "the manifest must match executable NUnit discovery, including all provider and case variants"
-            );
-    }
-
-    [Test]
-    public void It_covers_the_story_boundary_without_duplicate_or_unassigned_identifiers()
-    {
-        _contract.FormatVersion.Should().Be(1);
-        _contract.Invariants.Keys.Should().BeEquivalentTo(MessageContractTraceability.AssignedInvariants);
-        _contract
-            .Invariants.Values.Should()
-            .OnlyContain(links =>
-                links.Length > 0
-                && Array.TrueForAll(
-                    links,
-                    link =>
-                        link.StartsWith(
-                            "reference/design/backend-redesign/design-docs/cdc/",
-                            StringComparison.Ordinal
-                        ) && link.Contains('#')
-                )
-            );
-        _contract.Exclusions.Should().NotBeEmpty();
-        _contract
-            .Groups.Select(g => g.Assembly)
-            .Distinct()
-            .Should()
-            .BeEquivalentTo(
-                "EdFi.DataManagementService.Backend.Cdc.Tests.Unit",
-                "EdFi.DataManagementService.Backend.Cdc.Tests.Integration"
-            );
-        var all = _contract
-            .Groups.SelectMany(g =>
-                MessageContractTraceability.Mappings(_contract with { Groups = [g] }, g.Assembly)
-            )
-            .ToArray();
-        all.Select(m => m.Id).Should().OnlyHaveUniqueItems();
-        all.Select(m => m.Test).Should().OnlyHaveUniqueItems();
-        all.Should()
-            .OnlyContain(m =>
-                m.Id == MessageContractTraceability.StableId(m.Test) && m.Invariants.Length > 0
-            );
-        all.SelectMany(m => m.Invariants)
-            .Distinct()
-            .Should()
-            .BeEquivalentTo(MessageContractTraceability.AssignedInvariants);
+        // The integration scenarios cover the full story; unit helpers cover a subset.
+        string[] required = _assembly.EndsWith(".Integration", StringComparison.Ordinal)
+            ? MessageContractTraceability.AssignedInvariants
+            : [];
+        MessageContractTraceability.Validate(_discovered, required).Should().BeEmpty();
     }
 
     [Test]
@@ -325,8 +193,8 @@ public sealed class Given_MessageContractTraceability
         }
     }
 
-    [Test]
-    public void It_retains_stable_ids_and_categories_as_discovery_evidence()
+    [OneTimeTearDown]
+    public void ExportDiscoveryEvidence()
     {
         string directory = Path.Combine(
             TestContext.CurrentContext.WorkDirectory,
@@ -340,100 +208,107 @@ public sealed class Given_MessageContractTraceability
             JsonSerializer.Serialize(
                 _discovered.Select(d => new
                 {
-                    d.Id,
+                    Test = d.Method,
+                    d.Invariants,
                     d.Categories,
                     d.ScenarioIds,
                 })
             )
         );
-        TestContext.AddTestAttachment(
-            path,
-            "Executable message-contract discovery; no record bodies or source identities."
-        );
-        _discovered.Should().NotBeEmpty();
+        TestContext.AddTestAttachment(path, "Discovered invariant annotations; test arguments omitted.");
     }
 }
 
-[TestFixture]
+[TestFixture(false)]
+[TestFixture(true)]
 [Category("CdcMessageContract")]
-public sealed class Given_MessageContractTraceability_invalid_coverage
+public sealed class Given_MessageContractTraceability_annotations(bool methodOverride)
 {
-    [TestCase("{\"groups\":[],\"groups\":[]}")]
-    [TestCase("{\"groups\":[{\"tests\":{\"same\":\"first\",\"same\":\"second\"}}]}")]
-    public void It_rejects_duplicate_json_properties_before_deserialization(string json)
+    private string[] _invariants = null!;
+
+    [SetUp]
+    public void Setup()
     {
-        Action read = () => MessageContractTraceability.Read(json);
-        read.Should().Throw<InvalidOperationException>().WithMessage("duplicate-json-property");
+        TestSuite fixture = new("fixture");
+        fixture.Properties.Add("CdcInvariant", "CDC-INV-07");
+        fixture.Properties.Add("CdcInvariant", "CDC-INV-08");
+        TestSuite method = new("method");
+        fixture.Add(method);
+        TestSuite parameterizedCase = new("case");
+        method.Add(parameterizedCase);
+        if (methodOverride)
+        {
+            method.Properties.Add("CdcInvariant", "CDC-INV-10");
+        }
+        _invariants = MessageContractTraceability.GetInvariants(parameterizedCase);
     }
 
-    [TestCase("missing-mapping")]
-    [TestCase("stale-reference")]
-    [TestCase("duplicate-id")]
-    [TestCase("duplicate-test")]
-    [TestCase("duplicate-discovered-id")]
-    [TestCase("invalid-stable-id")]
-    [TestCase("missing-invariant")]
-    [TestCase("unassigned-invariant")]
-    [TestCase("uncovered-invariant")]
-    [TestCase("missing-category")]
-    [TestCase("missing-qualification-category")]
-    [TestCase("empty-coverage")]
-    [TestCase("non-runnable-case")]
-    [TestCase("missing-database-category")]
-    public void It_rejects_broken_coverage(string fault)
+    [Test]
+    public void It_inherits_fixture_defaults_unless_the_method_overrides_them()
     {
-        string id = MessageContractTraceability.StableId("fixture.It_checks(\"PG\",1)");
-        MessageContractTraceability.Mapping mapping = new(id, "fixture.It_checks(\"PG\",1)", ["CDC-INV-07"]);
-        MessageContractTraceability.Discovered test = new(id, mapping.Test, ["CdcMessageContract"], []);
-        List<MessageContractTraceability.Mapping> mappings = [mapping];
-        List<MessageContractTraceability.Discovered> discovered = [test];
+        string[] expected = methodOverride ? ["CDC-INV-10"] : ["CDC-INV-07", "CDC-INV-08"];
+        _invariants.Should().Equal(expected);
+    }
+}
+
+[TestFixture("valid")]
+[TestFixture("missing-invariant")]
+[TestFixture("unassigned-invariant")]
+[TestFixture("uncovered-invariant")]
+[TestFixture("missing-category")]
+[TestFixture("missing-qualification-category")]
+[TestFixture("empty-coverage")]
+[TestFixture("non-runnable-case")]
+[TestFixture("missing-database-category")]
+[Category("CdcMessageContract")]
+public sealed class Given_MessageContractTraceability_coverage(string fault)
+{
+    private string[] _errors = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        MessageContractTraceability.Discovered test = new(
+            "fixture.case",
+            "fixture.method",
+            ["CDC-INV-07"],
+            ["CdcMessageContract"],
+            []
+        );
         string[] required = ["CDC-INV-07"];
-        switch (fault)
+        test = fault switch
         {
-            case "missing-mapping":
-                mappings.Clear();
-                break;
-            case "stale-reference":
-                discovered.Clear();
-                break;
-            case "duplicate-id":
-                mappings.Add(mapping with { Test = "other" });
-                break;
-            case "duplicate-test":
-                mappings.Add(mapping with { Id = "other" });
-                break;
-            case "duplicate-discovered-id":
-                discovered.Add(test);
-                break;
-            case "invalid-stable-id":
-                mappings[0] = mapping with { Id = "other" };
-                break;
-            case "missing-invariant":
-                mappings[0] = mapping with { Invariants = [] };
-                break;
-            case "unassigned-invariant":
-                mappings[0] = mapping with { Invariants = ["CDC-INV-01"] };
-                break;
-            case "uncovered-invariant":
-                required = ["CDC-INV-13"];
-                break;
-            case "missing-category":
-                discovered[0] = test with { Categories = [] };
-                break;
-            case "missing-qualification-category":
-                discovered[0] = test with { Categories = ["CdcMessageContract", "DatabaseIntegration"] };
-                break;
-            case "non-runnable-case":
-                discovered[0] = test with { Runnable = false };
-                break;
-            case "missing-database-category":
-                discovered[0] = test with { Categories = ["CdcMessageContract", "CdcMessageContractKafka"] };
-                break;
-            case "empty-coverage":
-                mappings.Clear();
-                discovered.Clear();
-                break;
+            "missing-invariant" => test with { Invariants = [] },
+            "unassigned-invariant" => test with { Invariants = ["CDC-INV-01"] },
+            "missing-category" => test with { Categories = [] },
+            "missing-qualification-category" => test with
+            {
+                Categories = ["CdcMessageContract", "DatabaseIntegration"],
+            },
+            "non-runnable-case" => test with { Runnable = false },
+            "missing-database-category" => test with
+            {
+                Categories = ["CdcMessageContract", "CdcMessageContractKafka"],
+            },
+            _ => test,
+        };
+        if (fault == "uncovered-invariant")
+        {
+            required = ["CDC-INV-13"];
         }
-        MessageContractTraceability.Validate(mappings, discovered, required).Should().Contain(fault);
+        _errors = MessageContractTraceability.Validate(fault == "empty-coverage" ? [] : [test], required);
+    }
+
+    [Test]
+    public void It_validates_annotation_and_execution_requirements()
+    {
+        if (fault == "valid")
+        {
+            _errors.Should().BeEmpty();
+        }
+        else
+        {
+            _errors.Should().Contain(error => error.StartsWith(fault, StringComparison.Ordinal));
+        }
     }
 }

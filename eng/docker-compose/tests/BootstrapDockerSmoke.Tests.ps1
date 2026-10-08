@@ -155,8 +155,8 @@ Describe "DMS-1154 Invoke-BootstrapDockerSmoke static contract" {
             $script:smokeContent | Should -Match 'function Format-LogSafeText'
         }
 
-        It "uses Format-LogSafeText when logging the environment file path" {
-            $script:smokeContent | Should -Match 'Format-LogSafeText.*resolvedEnvFile'
+        It "uses Format-LogSafePath when logging the environment file path" {
+            $script:smokeContent | Should -Match 'Format-LogSafePath.*resolvedEnvFile'
         }
 
         It "uses Format-LogSafeText when logging the package download URL" {

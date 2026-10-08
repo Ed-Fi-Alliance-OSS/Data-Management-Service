@@ -35,7 +35,7 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.DocumentCache;
 [Category("DocumentCacheStatusEndpointAuthorization")]
 public class Given_DocumentCacheStatusEndpointAuthorization
 {
-    private const string RequiredRole = "dms-document-cache-operator";
+    private const string RequiredRole = "dms-client";
     private const string RoleClaimType = "operator_role";
     private const string ValidBearerToken = "valid-token";
     private const string TestAudience = "ed-fi-ods-api";
@@ -114,6 +114,7 @@ public class Given_DocumentCacheStatusEndpointAuthorization
 
         JwtAuthenticationOptions jwtAuthenticationOptions = new()
         {
+            Authority = TestIssuer,
             Audience = TestAudience,
             RoleClaimType = roleClaimType,
             ClientRole = "legacy-service",
@@ -174,7 +175,7 @@ public class Given_DocumentCacheStatusEndpointAuthorization
         ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
         await using WebApplicationFactory<Program> factory = CreateFactory(
             documentCacheStatusService,
-            requiredRole: "dms document cache operator"
+            requiredRole: "dms client"
         );
         using HttpClient client = factory.CreateClient();
 
@@ -367,14 +368,14 @@ public class Given_DocumentCacheStatusEndpointAuthorization
     private static void AddEssentialMocks(IServiceCollection services)
     {
         var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._)).Returns([]);
+        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._)).Returns([]);
         services.AddTransient(_ => claimSetProvider);
 
         var dataStoreProvider = A.Fake<IDataStoreProvider>();
         var dataStore = new DataStore(1, "Test", "TestInstance", "test-connection-string", []);
         A.CallTo(() => dataStoreProvider.LoadDataStores(A<string?>._, A<CancellationToken>._))
             .Returns([dataStore]);
-        A.CallTo(() => dataStoreProvider.LoadTenants()).Returns(["TestTenant"]);
+        A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._)).Returns(["TestTenant"]);
         A.CallTo(() => dataStoreProvider.GetAll(A<string?>._)).Returns([dataStore]);
         A.CallTo(() => dataStoreProvider.GetById(A<long>._, A<string?>._)).Returns(dataStore);
         A.CallTo(() => dataStoreProvider.IsLoaded(A<string?>._)).Returns(true);
