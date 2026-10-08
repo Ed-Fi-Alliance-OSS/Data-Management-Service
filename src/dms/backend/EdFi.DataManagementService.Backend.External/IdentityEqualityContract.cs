@@ -38,4 +38,18 @@ public sealed record IdentityEqualityContract(
     /// <see cref="StringComparer.Ordinal"/>.
     /// </summary>
     public static IdentityEqualityContract Postgresql { get; } = new(null, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Selects the runtime comparer for a column's values from its derived identity-text role only:
+    /// a column flagged <see cref="DbColumnModel.UsesSqlServerIdentityCollation"/> uses the SQL Server
+    /// identity comparer, and every other column uses <see cref="StringComparer.Ordinal"/>.
+    /// </summary>
+    public static StringComparer ComparerFor(DbColumnModel column)
+    {
+        ArgumentNullException.ThrowIfNull(column);
+
+        return column.UsesSqlServerIdentityCollation
+            ? SqlServer.IdentityTextComparer
+            : StringComparer.Ordinal;
+    }
 }

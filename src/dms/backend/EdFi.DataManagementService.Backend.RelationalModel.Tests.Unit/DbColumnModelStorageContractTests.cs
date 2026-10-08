@@ -99,7 +99,7 @@ public class Given_DbColumnModel_Storage_Constructor_Contract
     [Test]
     public void It_should_include_storage_in_record_deconstruction()
     {
-        var (columnName, kind, scalarType, isNullable, sourceJsonPath, targetResource, storage) =
+        var (columnName, kind, scalarType, isNullable, sourceJsonPath, targetResource, storage, _) =
             _aliasColumn;
 
         columnName.Should().Be(new DbColumnName("SchoolId"));
