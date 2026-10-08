@@ -157,32 +157,52 @@ Describe "Invoke-BootstrapRestoreSmoke static contract" {
             $body.Contains('$script:Provenance.ApiReads.Add($apiRead)') | Should -BeTrue
         }
 
-        It "tags every post-restore assertion with its own leg's restore, inside that leg's step" {
+        It "tags every post-restore assertion with its own restore and the directory it restored from, inside that restore's step" {
             $tokens = $null
             $errors = $null
             $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:smokeScriptPath, [ref]$tokens, [ref]$errors)
             $calls = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true) | Where-Object { $_.GetCommandName() -eq "Assert-RestoredDatastore" })
 
-            $legs = foreach ($call in $calls) {
+            # The step each restore runs in: the leg's own step, and the repeat step for the
+            # repeated restore of package-directory.
+            $stepNames = @{
+                "package-directory#1" = "leg-package-directory"
+                "package-directory#2" = "leg-package-directory-repeat"
+                "separate-config#1"   = "leg-separate-config"
+                "directory-feed#1"    = "leg-directory-feed"
+                "populated#1"         = "leg-populated"
+            }
+            $restores = foreach ($call in $calls) {
                 $elements = @($call.CommandElements)
                 $parameterIndex = @(0..($elements.Count - 1) | Where-Object { $elements[$_] -is [System.Management.Automation.Language.CommandParameterAst] -and $elements[$_].ParameterName -eq "RestoreExecution" })
                 $parameterIndex.Count | Should -Be 1
                 $argumentText = $elements[$parameterIndex[0] + 1].Extent.Text
-                $argumentText -match '^\(Get-RestoreSmokeRestoreExecutionId -Leg "(?<leg>[a-z-]+)"\)$' | Should -BeTrue -Because $argumentText
-                $leg = $Matches["leg"]
+                $argumentText -match '^\(Get-RestoreSmokeRestoreExecutionId -Leg "(?<leg>[a-z-]+)"( -Ordinal (?<ordinal>\d+))?\)$' | Should -BeTrue -Because $argumentText
+                $ordinal = if ($Matches.ContainsKey("ordinal")) { $Matches["ordinal"] } else { "1" }
+                $restore = "$($Matches['leg'])#$ordinal"
 
-                # The enclosing step is the leg's own step.
+                $directoryIndex = @(0..($elements.Count - 1) | Where-Object { $elements[$_] -is [System.Management.Automation.Language.CommandParameterAst] -and $elements[$_].ParameterName -eq "PackageDirectory" })
+                $directoryIndex.Count | Should -Be 1 -Because "$restore must name the directory it restored from"
+                $directoryText = $elements[$directoryIndex[0] + 1].Extent.Text
+
+                # The enclosing step is the restore's own step, and the restore there used that directory.
                 $parent = $call.Parent
                 while ($null -ne $parent -and -not ($parent -is [System.Management.Automation.Language.CommandAst] -and $parent.GetCommandName() -eq "Invoke-SmokeStep")) {
                     $parent = $parent.Parent
                 }
                 $parent | Should -Not -BeNullOrEmpty
-                $parent.Extent.Text | Should -Match ('^Invoke-SmokeStep -Name "leg-' + [regex]::Escape($leg) + '"')
-                $leg
+                $parent.Extent.Text | Should -Match ('^Invoke-SmokeStep -Name "' + [regex]::Escape($stepNames[$restore]) + '"')
+                if ($restore -eq "directory-feed#1") {
+                    $parent.Extent.Text.Contains("DATABASE_TEMPLATE_FEED_URL=$directoryText") | Should -BeTrue
+                }
+                else {
+                    $parent.Extent.Text | Should -Match ('PackageDirectory\s+=\s+' + [regex]::Escape($directoryText) + '\s')
+                }
+                $restore
             }
 
-            @($legs) | Should -Be @("package-directory", "separate-config", "directory-feed", "populated")
-            $script:smokeContent.Contains('Assert-RestoredDatastore -RestoreExecution (Get-RestoreSmokeRestoreExecutionId -Leg "directory-feed") -EnvironmentFile $feedEnvironmentFile') | Should -BeTrue
+            @($restores) | Should -Be @("package-directory#1", "package-directory#2", "separate-config#1", "directory-feed#1", "populated#1")
+            $script:smokeContent.Contains('Assert-RestoredDatastore -RestoreExecution (Get-RestoreSmokeRestoreExecutionId -Leg "directory-feed") -PackageDirectory $packageDirectoryPath -EnvironmentFile $feedEnvironmentFile') | Should -BeTrue
             (Get-SmokeFunctionBody -Name "Assert-RestoredDatastore").Contains('$apiRead | Add-Member -NotePropertyName RestoreExecution -NotePropertyValue $RestoreExecution') | Should -BeTrue
         }
 
@@ -196,6 +216,74 @@ Describe "Invoke-BootstrapRestoreSmoke static contract" {
 
             $resetIndex | Should -BeGreaterThan 0
             $invocationIndex | Should -BeGreaterThan $resetIndex
+        }
+
+        It "restores the same package twice in package-directory, around a -KeepVolumes stop and nothing else" {
+            $tokens = $null
+            $errors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:smokeScriptPath, [ref]$tokens, [ref]$errors)
+            $legBlocks = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.IfStatementAst] -and $node.Clauses[0].Item1.Extent.Text -eq '$legSet.Contains("package-directory")' }, $true))
+            $legBlocks.Count | Should -Be 1
+            $steps = @($legBlocks[0].Clauses[0].Item2.Statements | ForEach-Object { $_.PipelineElements[0] })
+            @($steps | ForEach-Object { $_.GetCommandName() }) | Should -Be @("Invoke-SmokeStep", "Invoke-SmokeStep", "Invoke-SmokeStep", "Invoke-SmokeStep")
+            @($steps | ForEach-Object { $_.CommandElements[2].Value }) | Should -Be @("leg-package-directory", "leg-package-directory-stop", "leg-package-directory-repeat", "leg-package-directory-teardown")
+
+            $bodies = @($steps | ForEach-Object { $_.CommandElements[4].ScriptBlock.EndBlock })
+            $bodies[1].Extent.Text.Trim() | Should -BeExactly "Invoke-SmokeTeardown -KeepVolumes"
+            $bodies[3].Extent.Text.Trim() | Should -BeExactly "Invoke-SmokeTeardown"
+
+            # Each restore step runs exactly one wrapper restore (which discards the DMS token) and
+            # one assertion, and no teardown; both restores pass identical arguments.
+            $restoreArguments = foreach ($index in @(0, 2)) {
+                $commands = @($bodies[$index].FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object { $_.GetCommandName() })
+                @($commands | Where-Object { $_ -eq "Invoke-RestoreWrapper" }).Count | Should -Be 1
+                @($commands | Where-Object { $_ -eq "Assert-RestoredDatastore" }).Count | Should -Be 1
+                @($commands | Where-Object { $_ -eq "Invoke-SmokeTeardown" }) | Should -BeNullOrEmpty
+                $wrapper = @($bodies[$index].FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq "Invoke-RestoreWrapper" }, $true))[0]
+                $wrapper.CommandElements[2].Extent.Text
+            }
+            $restoreArguments[0] | Should -BeExactly $restoreArguments[1]
+            $restoreArguments[0] | Should -Match 'RestoreTemplate\s+=\s+"Minimal"'
+            $restoreArguments[0] | Should -Match 'PackageDirectory\s+=\s+\$packageDirectoryPath'
+        }
+
+        It "proves the SourceIdentity in every post-restore assertion, before the API read, and records it under the restore" {
+            $assertBody = Get-SmokeFunctionBody -Name "Assert-RestoredDatastore"
+            $identityIndex = $assertBody.IndexOf('Assert-RestoredSourceIdentity -RestoreExecution $RestoreExecution -TemplateKind $templateKind -PackageDirectory $PackageDirectory')
+            $apiIndex = $assertBody.IndexOf('Test-RestoreSmokeApiRead')
+            $identityIndex | Should -BeGreaterThan 0
+            $apiIndex | Should -BeGreaterThan $identityIndex
+
+            $identityBody = Get-SmokeFunctionBody -Name "Assert-RestoredSourceIdentity"
+            $identityBody | Should -Match '(?s)\$script:Provenance\.RestoredIdentities\.Add\(\[pscustomobject\]@\{\s+RestoreExecution = \$RestoreExecution\s+TemplateKind\s+= \$TemplateKind.*PackageSha256\s+= \$packageSha256.*Rows\s+= \$targetRead\.Rows'
+            $recordIndex = $identityBody.IndexOf('$script:Provenance.RestoredIdentities.Add(')
+            $inspectionIndex = $identityBody.IndexOf('Invoke-RestoreSmokePackageInspection')
+            $defectIndex = $identityBody.IndexOf('Get-RestoreSmokeRestoredIdentityDefect -Row $targetRead.Rows -PackageIdentity $packageInspection.Identity -EarlierRestore $earlierRestores')
+            $recordIndex | Should -BeGreaterThan 0
+            $inspectionIndex | Should -BeGreaterThan $recordIndex
+            $defectIndex | Should -BeGreaterThan $inspectionIndex
+            # Earlier restores are taken before this restore's record is added.
+            $identityBody.IndexOf('$earlierRestores = $script:Provenance.RestoredIdentities.ToArray()') | Should -BeLessThan $recordIndex
+            # The inspected identity must equal the capture bound to the same package hash.
+            $identityBody.Contains('$bindings[0].BeforeBackup.Identity -cne $packageInspection.Identity') | Should -BeTrue
+        }
+
+        It "binds the source's SourceIdentity around the producer build, per template kind" {
+            $buildBody = Get-SmokeFunctionBody -Name "Build-SmokeSourceAndPackage"
+            $buildBody | Should -Match '(?s)Invoke-RestoreSmokeIdentityBoundPackageBuild\s+`.*-BindingList \$script:Provenance\.SourceIdentityBindings\s+`\s+-PackageList \$script:Provenance\.Packages\s+`\s+-BuildPackage \{.*Build-TemplateNuGetPackage'
+            $buildBody.Contains('$packageDirectory = Get-SmokePackageDirectory -TemplateKind $TemplateKind') | Should -BeTrue
+            (Get-SmokeFunctionBody -Name "Get-SmokePackageDirectory").Contains('"package-$($TemplateKind.ToLowerInvariant())"') | Should -BeTrue
+            $script:smokeContent | Should -Not -Match 'SourceIdentityReason'
+        }
+
+        It "never issues or requests the reseed (<file>)" -ForEach @(
+            @{ File = "Invoke-BootstrapRestoreSmoke.ps1" }
+            @{ File = "RestoreSmokeProbes.psm1" }
+        ) {
+            $content = Get-Content -LiteralPath (Join-Path $PSScriptRoot $File) -Raw
+            foreach ($forbidden in @("Get-SourceIdentityReseedSql", "Invoke-RestoredDataStoreIdentitySourceIdentityReseed", "gen_random_uuid", "NEWID(")) {
+                $content.Contains($forbidden) | Should -BeFalse -Because "$File must not contain $forbidden"
+            }
         }
 
         It "never sets the CMS per-client bearer-token limit (<file>)" -ForEach @(

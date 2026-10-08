@@ -20,9 +20,12 @@
     BootstrapRestoreSmoke.Tests.ps1, pins this script's surface without Docker).
 
     Legs (select with -Leg; each leg starts from its own stack state):
-      package-directory   Full restore via -PackageDirectory on a fresh volume; asserts DMS
-                          health, the restored dms.EffectiveSchema singleton, (when the source
-                          was seeded) restored descriptor rows, and the served-data API read.
+      package-directory   Full restore via -PackageDirectory on a fresh volume, then a -KeepVolumes
+                          stop and a second restore of the same package onto that restored target;
+                          after each restore asserts DMS health, the restored dms.EffectiveSchema
+                          singleton, (when the source was seeded) restored descriptor rows, the
+                          SourceIdentity proof, and the served-data API read. The two restored
+                          identities must differ from each other and from the package's.
       separate-config     Same restore with -SeparateConfigDatabase against a pre-existing
                           separate-topology stack; asserts a marker table planted in
                           edfi_configurationservice BEFORE the restore survives it.
@@ -86,6 +89,19 @@
     secrets never do. A run is final evidence only when every successful restore its legs perform
     has exactly one complete seeded read of its own (the negative legs need none, and a
     -SkipSourceSeed run's schema-only reads never qualify).
+
+    SourceIdentity: the source database's dms.DataStoreIdentity.SourceIdentity is read immediately
+    before the producer builds each package and again after it, and both reads are bound to the
+    built .nupkg's SHA-256 (each template kind has its own package directory and binding). On the
+    first successful restore of a package, while that stack is up, the smoke inspects the package
+    independently: it replays (PostgreSQL) or restores (SQL Server) the artifact from that exact
+    .nupkg into a run-owned scratch database restore_smoke_inspect_<12 hex>, selects the identity,
+    and drops the database again, on failure too; it never reseeds it and never reads the identity
+    from the artifact's text. The inspected identity must equal the bound pre-backup capture. Every
+    successful restore must leave exactly one valid, nonzero UUID in the target, different from the
+    package's identity and from every earlier restore's in the run. The results record each
+    capture, inspection (with its cleanup), and restored identity, and a run is final evidence only
+    when each successful restore its legs perform has that complete identity proof.
 
     Trust: the smoke NEVER bypasses attestation. It registers an ephemeral development
     producer (restore-smoke-<hex>) in the git-ignored local trust overlay via
@@ -233,8 +249,11 @@ $script:Provenance = [ordered]@{
     StackObservations            = [System.Collections.Generic.List[object]]::new()
     Packages                     = [System.Collections.Generic.List[object]]::new()
     ApiReads                     = [System.Collections.Generic.List[object]]::new()
-    SourceIdentity               = $null
-    SourceIdentityReason         = "the pre-backup SourceIdentity capture is not implemented yet (Step 2.3)"
+    # One pre-backup capture per built package, bound to its SHA-256; one independent inspection
+    # per package a restore used; one restored identity per successful restore.
+    SourceIdentityBindings       = [System.Collections.Generic.List[object]]::new()
+    PackageInspections           = [System.Collections.Generic.List[object]]::new()
+    RestoredIdentities           = [System.Collections.Generic.List[object]]::new()
 }
 
 function Write-SmokeStep {
@@ -443,17 +462,118 @@ function Invoke-RestoreWrapper {
     }
 }
 
-function Assert-RestoredDatastore {
+function Get-SmokePackageDirectory {
     <#
     .SYNOPSIS
-    The post-restore probes: DMS health, the dms.EffectiveSchema singleton, (when the source
-    was seeded) at least one restored descriptor row, and the authenticated served-data read
-    through the DMS API of the stack -EnvironmentFile started, recorded under -RestoreExecution (the
-    restore's id from Get-RestoreSmokeRestoreExecutionId) so the classifier can match it to that restore.
+    The work-directory folder holding one template kind's built package: each kind has its own, so a
+    run that builds both never mixes their packages or their evidence.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet("Minimal", "Populated")]
+        [string]$TemplateKind
+    )
+
+    return (Join-Path $script:WorkDirectory "package-$($TemplateKind.ToLowerInvariant())")
+}
+
+function Assert-RestoredSourceIdentity {
+    <#
+    .SYNOPSIS
+    The SourceIdentity proof for one successful restore. The target must hold exactly one valid,
+    nonzero UUID that differs from the identity of the package it was restored from and from every
+    earlier restore's identity in this run. The package identity comes from an independent
+    inspection of the exact .nupkg in -PackageDirectory (once per package SHA-256, on its first
+    restore, while this stack is up) and must equal the pre-backup capture bound to that SHA-256.
+    The target read is recorded under -RestoreExecution before anything is judged.
     #>
     param(
         [Parameter(Mandatory)]
         [string]$RestoreExecution,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("Minimal", "Populated")]
+        [string]$TemplateKind,
+
+        [Parameter(Mandatory)]
+        [string]$PackageDirectory
+    )
+
+    $packages = @(Get-ChildItem -LiteralPath $PackageDirectory -Filter "*.nupkg" -File | Where-Object { $_.Name -notlike "*.Attestation.*" })
+    if ($packages.Count -ne 1) {
+        throw "Restore ${RestoreExecution}: expected exactly one template .nupkg in '$PackageDirectory', found $($packages.Count)."
+    }
+    $packageSha256 = Get-RestoreSmokeFileSha256 -Path $packages[0].FullName
+
+    $earlierRestores = $script:Provenance.RestoredIdentities.ToArray()
+    $targetRead = Get-RestoreSmokeSourceIdentityRead -DatabaseEngine $DatabaseEngine -DatabaseName $script:TargetDatabaseName
+    $script:Provenance.RestoredIdentities.Add([pscustomobject]@{
+            RestoreExecution = $RestoreExecution
+            TemplateKind     = $TemplateKind
+            Label            = [string]$script:CurrentStepName
+            TargetDatabase   = $script:TargetDatabaseName
+            PackageFile      = $packages[0].Name
+            PackageSha256    = $packageSha256
+            ExitCode         = $targetRead.ExitCode
+            Rows             = $targetRead.Rows
+            Identity         = $targetRead.Identity
+            Reason           = $targetRead.Reason
+        })
+    if ($targetRead.ExitCode -ne 0) {
+        throw "Restore ${RestoreExecution}: $($targetRead.Reason)"
+    }
+
+    $inspections = @($script:Provenance.PackageInspections | Where-Object { $_.PackageSha256 -ceq $packageSha256 })
+    if ($inspections.Count -eq 0) {
+        $inspection = Invoke-RestoreSmokePackageInspection `
+            -PackagePath $packages[0].FullName `
+            -TemplateKind $TemplateKind `
+            -DatabaseEngine $DatabaseEngine `
+            -WorkDirectory $script:WorkDirectory `
+            -RestoreManifestFileName (Get-RestoreManifestFileName)
+        $script:Provenance.PackageInspections.Add($inspection)
+        Write-Host "[restore-smoke] inspected $($inspection.PackageFile) in $($inspection.InspectionDatabase): SourceIdentity $($inspection.Identity); cleanup complete=$($inspection.Cleanup.Complete)"
+        $inspections = @($inspection)
+    }
+    $packageInspection = $inspections[0]
+    if (-not [string]::IsNullOrWhiteSpace($packageInspection.Reason)) {
+        throw "Restore ${RestoreExecution}: the independent inspection of $($packages[0].Name) failed: $($packageInspection.Reason)"
+    }
+    if ($packageInspection.Cleanup.Complete -ne $true) {
+        throw "Restore ${RestoreExecution}: the package inspection's cleanup did not complete: $($packageInspection.Cleanup.Reasons -join '; ')"
+    }
+
+    $bindings = @($script:Provenance.SourceIdentityBindings | Where-Object { $_.PackageSha256 -ceq $packageSha256 })
+    if ($bindings.Count -ne 1 -or $bindings[0].Bound -ne $true) {
+        throw "Restore ${RestoreExecution}: no bound pre-backup SourceIdentity capture exists for $($packages[0].Name) (SHA-256 $packageSha256); the package changed after it was built, or its capture failed."
+    }
+    if ($bindings[0].BeforeBackup.Identity -cne $packageInspection.Identity) {
+        throw "Restore ${RestoreExecution}: the package's inspected SourceIdentity $($packageInspection.Identity) differs from the pre-backup capture $($bindings[0].BeforeBackup.Identity) bound to its SHA-256."
+    }
+
+    $defects = @(Get-RestoreSmokeRestoredIdentityDefect -Row $targetRead.Rows -PackageIdentity $packageInspection.Identity -EarlierRestore $earlierRestores)
+    if ($defects.Count -gt 0) {
+        throw "Restore ${RestoreExecution}: $($defects -join '; ')."
+    }
+    Write-Host "[restore-smoke] restore $RestoreExecution SourceIdentity $($targetRead.Identity) differs from the package's $($packageInspection.Identity) and from $($earlierRestores.Count) earlier restore(s)"
+}
+
+function Assert-RestoredDatastore {
+    <#
+    .SYNOPSIS
+    The post-restore probes: DMS health, the dms.EffectiveSchema singleton, (when the source
+    was seeded) at least one restored descriptor row, the SourceIdentity proof against the package
+    in -PackageDirectory, and the authenticated served-data read through the DMS API of the stack
+    -EnvironmentFile started. Both records carry -RestoreExecution (the restore's id from
+    Get-RestoreSmokeRestoreExecutionId) so the classifier can match them to that restore.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$RestoreExecution,
+
+        # The directory the restore resolved its package from (-PackageDirectory or the feed).
+        [Parameter(Mandatory)]
+        [string]$PackageDirectory,
 
         [switch]$RequirePopulatedData,
 
@@ -501,6 +621,12 @@ function Assert-RestoredDatastore {
         Write-Host "[restore-smoke] restored populated documents: $populatedCount"
     }
 
+    $templateKind = "Minimal"
+    if ($RequirePopulatedData) {
+        $templateKind = "Populated"
+    }
+    Assert-RestoredSourceIdentity -RestoreExecution $RestoreExecution -TemplateKind $templateKind -PackageDirectory $PackageDirectory
+
     $apiEndpoint = Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $EnvironmentFile
     $apiRead = Test-RestoreSmokeApiRead `
         -Session $script:ApiSession `
@@ -544,64 +670,68 @@ function Build-SmokeSourceAndPackage {
     }
 
     Invoke-SmokeStep -Name "build-attested-package-$($TemplateKind.ToLowerInvariant())" -Body {
-        $packageDirectory = Join-Path $script:WorkDirectory "package"
+        $packageDirectory = Get-SmokePackageDirectory -TemplateKind $TemplateKind
         New-Item -ItemType Directory -Path $packageDirectory -Force | Out-Null
-
-        Push-Location $script:TemplatesRoot
-        try {
-            Import-Module (Join-Path $script:TemplatesRoot "Template-Management.psm1") -Force
-            $configFileName = if ($TemplateKind -eq "Populated") { "./PopulatedTemplateSettings.psd1" } else { "./MinimalTemplateSettings.psd1" }
-            Build-TemplateNuGetPackage `
-                -ConfigFilePath $configFileName `
-                -StandardVersion $script:ResolvedStandardVersion `
-                -PackageVersion $PackageVersion `
-                -TemplateKind $TemplateKind `
-                -DatabaseName $script:TargetDatabaseName `
-                -DumpAllUserSchemas `
-                -DatabaseEngine $DatabaseEngine `
-                -AttestationSignerKeyPath $script:SmokeSignerKeyPath `
-                -AttestationProducer $script:SmokeProducerName
-
-            # Collect the outputs into the private work directory and clear the build artifacts
-            # out of the repo tree (including the transient restore-manifest.json the producer
-            # writes beside them).
-            $transientManifestPath = Join-Path $script:TemplatesRoot "restore-manifest.json"
-            if (Test-Path -LiteralPath $transientManifestPath) {
-                Remove-Item -LiteralPath $transientManifestPath -Force
-            }
-            foreach ($builtFile in @(Get-ChildItem -Path $script:TemplatesRoot -File |
-                        Where-Object { $_.Name -like "EdFi.Api.$TemplateKind.Template.*" })) {
-                if ($builtFile.Extension -in @(".nupkg", ".json")) {
-                    Move-Item -LiteralPath $builtFile.FullName -Destination (Join-Path $packageDirectory $builtFile.Name) -Force
-                }
-                else {
-                    Remove-Item -LiteralPath $builtFile.FullName -Force
-                }
-            }
-        }
-        finally {
-            Pop-Location
-        }
-
-        $builtPackages = @(Get-ChildItem -Path $packageDirectory -Filter "*.nupkg" | Where-Object { $_.Name -notlike "*.Attestation.*" })
-        if ($builtPackages.Count -ne 1) {
-            throw "Expected exactly one built template .nupkg in '$packageDirectory', found $($builtPackages.Count)."
-        }
-        $attestations = @(Get-ChildItem -Path $packageDirectory -Filter "*.nupkg.attestation.json")
-        if ($attestations.Count -ne 1) {
-            throw "Expected exactly one sibling attestation document in '$packageDirectory', found $($attestations.Count)."
-        }
-        Write-Host "[restore-smoke] built $($builtPackages[0].Name) + attestation"
-
         Import-Module (Join-Path $script:TemplatesRoot "Template-RestoreCore.psm1") -Force
-        $packageProvenance = Get-RestoreSmokePackageProvenance `
+
+        # The source's SourceIdentity is read immediately before the producer runs and again after
+        # it, and both reads are bound to the SHA-256 of the exact .nupkg this build leaves.
+        $bound = Invoke-RestoreSmokeIdentityBoundPackageBuild `
+            -TemplateKind $TemplateKind `
+            -DatabaseEngine $DatabaseEngine `
+            -SourceDatabaseName $script:TargetDatabaseName `
             -PackageDirectory $packageDirectory `
             -RestoreManifestFileName (Get-RestoreManifestFileName) `
-            -TemplateKind $TemplateKind
-        $script:Provenance.Packages.Add($packageProvenance)
-        if (-not $packageProvenance.Verified) {
-            throw "Package provenance could not be established: $($packageProvenance.Reason)"
+            -BindingList $script:Provenance.SourceIdentityBindings `
+            -PackageList $script:Provenance.Packages `
+            -BuildPackage {
+            Push-Location $script:TemplatesRoot
+            try {
+                Import-Module (Join-Path $script:TemplatesRoot "Template-Management.psm1") -Force
+                $configFileName = if ($TemplateKind -eq "Populated") { "./PopulatedTemplateSettings.psd1" } else { "./MinimalTemplateSettings.psd1" }
+                Build-TemplateNuGetPackage `
+                    -ConfigFilePath $configFileName `
+                    -StandardVersion $script:ResolvedStandardVersion `
+                    -PackageVersion $PackageVersion `
+                    -TemplateKind $TemplateKind `
+                    -DatabaseName $script:TargetDatabaseName `
+                    -DumpAllUserSchemas `
+                    -DatabaseEngine $DatabaseEngine `
+                    -AttestationSignerKeyPath $script:SmokeSignerKeyPath `
+                    -AttestationProducer $script:SmokeProducerName
+
+                # Collect the outputs into the private work directory and clear the build artifacts
+                # out of the repo tree (including the transient restore-manifest.json the producer
+                # writes beside them).
+                $transientManifestPath = Join-Path $script:TemplatesRoot "restore-manifest.json"
+                if (Test-Path -LiteralPath $transientManifestPath) {
+                    Remove-Item -LiteralPath $transientManifestPath -Force
+                }
+                foreach ($builtFile in @(Get-ChildItem -Path $script:TemplatesRoot -File |
+                            Where-Object { $_.Name -like "EdFi.Api.$TemplateKind.Template.*" })) {
+                    if ($builtFile.Extension -in @(".nupkg", ".json")) {
+                        Move-Item -LiteralPath $builtFile.FullName -Destination (Join-Path $packageDirectory $builtFile.Name) -Force
+                    }
+                    else {
+                        Remove-Item -LiteralPath $builtFile.FullName -Force
+                    }
+                }
+            }
+            finally {
+                Pop-Location
+            }
+
+            $builtPackages = @(Get-ChildItem -Path $packageDirectory -Filter "*.nupkg" | Where-Object { $_.Name -notlike "*.Attestation.*" })
+            if ($builtPackages.Count -ne 1) {
+                throw "Expected exactly one built template .nupkg in '$packageDirectory', found $($builtPackages.Count)."
+            }
+            $attestations = @(Get-ChildItem -Path $packageDirectory -Filter "*.nupkg.attestation.json")
+            if ($attestations.Count -ne 1) {
+                throw "Expected exactly one sibling attestation document in '$packageDirectory', found $($attestations.Count)."
+            }
+            Write-Host "[restore-smoke] built $($builtPackages[0].Name) + attestation"
         }
+        Write-Host "[restore-smoke] source SourceIdentity $($bound.Binding.BeforeBackup.Identity) bound to $($bound.Package.PackageFile) (SHA-256 $($bound.Package.Sha256))"
     }
 
     Invoke-SmokeStep -Name "teardown-source-stack" -Body {
@@ -768,7 +898,7 @@ try {
 
     if (@($minimalLegs).Count -gt 0) {
         Build-SmokeSourceAndPackage -TemplateKind "Minimal"
-        $packageDirectoryPath = Join-Path $script:WorkDirectory "package"
+        $packageDirectoryPath = Get-SmokePackageDirectory -TemplateKind "Minimal"
     }
 
     if ($legSet.Contains("package-directory")) {
@@ -779,7 +909,20 @@ try {
                 RestoreTemplate  = "Minimal"
                 PackageDirectory = $packageDirectoryPath
             }
-            Assert-RestoredDatastore -RestoreExecution (Get-RestoreSmokeRestoreExecutionId -Leg "package-directory")
+            Assert-RestoredDatastore -RestoreExecution (Get-RestoreSmokeRestoreExecutionId -Leg "package-directory") -PackageDirectory $packageDirectoryPath
+        }
+        # The repeated single-target restore: stop the stack with its volumes and workspace kept,
+        # then restore the same package onto the already-restored target. The second restore must
+        # receive a new SourceIdentity again, different from the first and from the package's.
+        Invoke-SmokeStep -Name "leg-package-directory-stop" -Body { Invoke-SmokeTeardown -KeepVolumes }
+        Invoke-SmokeStep -Name "leg-package-directory-repeat" -Body {
+            Invoke-RestoreWrapper -Arguments @{
+                EnvironmentFile  = $script:ResolvedEnvironmentFile
+                DatabaseEngine   = $DatabaseEngine
+                RestoreTemplate  = "Minimal"
+                PackageDirectory = $packageDirectoryPath
+            }
+            Assert-RestoredDatastore -RestoreExecution (Get-RestoreSmokeRestoreExecutionId -Leg "package-directory" -Ordinal 2) -PackageDirectory $packageDirectoryPath
         }
         Invoke-SmokeStep -Name "leg-package-directory-teardown" -Body { Invoke-SmokeTeardown }
     }
@@ -812,7 +955,7 @@ try {
                 PackageDirectory       = $packageDirectoryPath
                 SeparateConfigDatabase = $true
             }
-            Assert-RestoredDatastore -RestoreExecution (Get-RestoreSmokeRestoreExecutionId -Leg "separate-config")
+            Assert-RestoredDatastore -RestoreExecution (Get-RestoreSmokeRestoreExecutionId -Leg "separate-config") -PackageDirectory $packageDirectoryPath
 
             $markerCountQuery = if ($DatabaseEngine -eq "mssql") {
                 "SET NOCOUNT ON; SELECT COUNT(*) FROM dbo.restore_smoke_marker;"
@@ -846,7 +989,7 @@ try {
                 DatabaseEngine  = $DatabaseEngine
                 RestoreTemplate = "Minimal"
             }
-            Assert-RestoredDatastore -RestoreExecution (Get-RestoreSmokeRestoreExecutionId -Leg "directory-feed") -EnvironmentFile $feedEnvironmentFile
+            Assert-RestoredDatastore -RestoreExecution (Get-RestoreSmokeRestoreExecutionId -Leg "directory-feed") -PackageDirectory $packageDirectoryPath -EnvironmentFile $feedEnvironmentFile
         }
         Invoke-SmokeStep -Name "leg-directory-feed-teardown" -Body { Invoke-SmokeTeardown }
     }
@@ -1011,7 +1154,7 @@ try {
 
     if ($legSet.Contains("populated")) {
         Build-SmokeSourceAndPackage -TemplateKind "Populated"
-        $populatedPackageDirectory = Join-Path $script:WorkDirectory "package"
+        $populatedPackageDirectory = Get-SmokePackageDirectory -TemplateKind "Populated"
         Invoke-SmokeStep -Name "leg-populated" -Body {
             Invoke-RestoreWrapper -Arguments @{
                 EnvironmentFile  = $script:ResolvedEnvironmentFile
@@ -1019,7 +1162,7 @@ try {
                 RestoreTemplate  = "Populated"
                 PackageDirectory = $populatedPackageDirectory
             }
-            Assert-RestoredDatastore -RestoreExecution (Get-RestoreSmokeRestoreExecutionId -Leg "populated") -RequirePopulatedData
+            Assert-RestoredDatastore -RestoreExecution (Get-RestoreSmokeRestoreExecutionId -Leg "populated") -PackageDirectory $populatedPackageDirectory -RequirePopulatedData
         }
         Invoke-SmokeStep -Name "leg-populated-teardown" -Body { Invoke-SmokeTeardown }
     }

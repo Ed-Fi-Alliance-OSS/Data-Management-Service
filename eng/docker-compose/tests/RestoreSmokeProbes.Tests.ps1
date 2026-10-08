@@ -1737,8 +1737,10 @@ Describe "Served-data API probe" {
 
             $classification = Get-RestoreSmokeResultClassification -Provenance ([ordered]@{ Legs = @($Leg); ApiReads = @($record) })
 
+            # Only this record's own restore: the leg's other restores and the SourceIdentity
+            # evidence are not supplied here.
             $record.Mode | Should -Be $Mode
-            @($classification.Reasons | Where-Object { $_ -like "restore *" -or $_ -like "*served-data*" }) | Should -Be $Expected
+            @($classification.Reasons | Where-Object { ($_ -like "restore $($record.RestoreExecution):*" -and $_ -notlike "*SourceIdentity*") -or $_ -like "a served-data*" }) | Should -Be $Expected
         }
 
         It "keeps tokens and secrets out of the evidence record" {
@@ -1751,7 +1753,7 @@ Describe "Served-data API probe" {
     }
 }
 
-Describe "Restore executions requiring served-data evidence" {
+Describe "Restore executions requiring served-data and SourceIdentity evidence" {
     It "names the restore <leg> performs" -ForEach @(
         @{ Leg = "package-directory" }
         @{ Leg = "separate-config" }
@@ -1761,13 +1763,18 @@ Describe "Restore executions requiring served-data evidence" {
         Get-RestoreSmokeRestoreExecutionId -Leg $Leg | Should -BeExactly "$Leg#1"
     }
 
+    It "names package-directory's second restore, the repeated restore of the same package" {
+        Get-RestoreSmokeRestoreExecutionId -Leg "package-directory" -Ordinal 2 | Should -BeExactly "package-directory#2"
+    }
+
     It "has no restore id for <leg>" -ForEach @(
         @{ Leg = "tampered-package"; Ordinal = 1; Expected = "Leg 'tampered-package' performs no successful restore, so it has no restore execution id." }
         @{ Leg = "contaminated-package"; Ordinal = 1; Expected = "Leg 'contaminated-package' performs no successful restore, so it has no restore execution id." }
         @{ Leg = "running-stack"; Ordinal = 1; Expected = "Leg 'running-stack' performs no successful restore, so it has no restore execution id." }
         @{ Leg = "mystery-leg"; Ordinal = 1; Expected = "Leg 'mystery-leg' performs no successful restore, so it has no restore execution id." }
-        @{ Leg = "package-directory"; Ordinal = 2; Expected = "Leg 'package-directory' performs 1 successful restore(s); restore 2 is not defined." }
-        @{ Leg = "package-directory"; Ordinal = 0; Expected = "Leg 'package-directory' performs 1 successful restore(s); restore 0 is not defined." }
+        @{ Leg = "package-directory"; Ordinal = 3; Expected = "Leg 'package-directory' performs 2 successful restore(s); restore 3 is not defined." }
+        @{ Leg = "package-directory"; Ordinal = 0; Expected = "Leg 'package-directory' performs 2 successful restore(s); restore 0 is not defined." }
+        @{ Leg = "separate-config"; Ordinal = 2; Expected = "Leg 'separate-config' performs 1 successful restore(s); restore 2 is not defined." }
     ) {
         { Get-RestoreSmokeRestoreExecutionId -Leg $Leg -Ordinal $Ordinal } | Should -Throw -ExpectedMessage $Expected
     }
@@ -1775,8 +1782,8 @@ Describe "Restore executions requiring served-data evidence" {
     It "derives one required read per successful restore of the selected legs, none for negative legs" {
         $requirement = Get-RestoreSmokeRequiredApiRead -Legs @("package-directory", "tampered-package", "separate-config", "directory-feed", "contaminated-package", "running-stack", "populated", "package-directory")
 
-        @($requirement.Required | ForEach-Object { $_.RestoreExecution }) | Should -Be @("package-directory#1", "separate-config#1", "directory-feed#1", "populated#1")
-        @($requirement.Required | ForEach-Object { $_.TemplateKind }) | Should -Be @("Minimal", "Minimal", "Minimal", "Populated")
+        @($requirement.Required | ForEach-Object { $_.RestoreExecution }) | Should -Be @("package-directory#1", "package-directory#2", "separate-config#1", "directory-feed#1", "populated#1")
+        @($requirement.Required | ForEach-Object { $_.TemplateKind }) | Should -Be @("Minimal", "Minimal", "Minimal", "Minimal", "Populated")
         @($requirement.UnknownLegs) | Should -BeNullOrEmpty
     }
 
@@ -1791,11 +1798,740 @@ Describe "Restore executions requiring served-data evidence" {
     }
 }
 
+Describe "SourceIdentity evidence (capture, inspection, restored identity)" {
+    BeforeAll {
+        $script:savedMssqlPassword = $env:MSSQL_SA_PASSWORD
+        $env:MSSQL_SA_PASSWORD = "Sm0ke-Secret!"
+        $script:sourceIdentity = "6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11"
+        $script:otherIdentity = "7a2d2d44-1e5f-4e1a-8c0f-5a6c9b4e3d22"
+        $script:decoyIdentity = "11111111-2222-4333-8444-555555555555"
+
+        # A fake engine container. Each docker call is classified by what it does, logged with its
+        # step, and answered from $global:RestoreSmokeIdentityTest: Fail = @{ <step> = @{ Exit; Output } },
+        # DatabaseExists (the inspection database), IdentityRows, and SelectQueue ("|"-joined rows per
+        # SELECT, "" for none). An unrecognized call fails.
+        Mock docker -ModuleName RestoreSmokeProbes {
+            $state = $global:RestoreSmokeIdentityTest
+            $line = $args -join " "
+            $step = "unknown"
+            if ($args[0] -eq "cp") { $step = "cp" }
+            elseif ($line.Contains(" rm -f ")) { $step = "rm" }
+            elseif ($line.Contains("RESTORE FILELISTONLY")) { $step = "filelist" }
+            elseif ($line.Contains("RESTORE DATABASE")) { $step = "restore" }
+            elseif ($line.Contains("ON_ERROR_STOP=1 -f ")) { $step = "replay" }
+            elseif ($line.Contains("FROM pg_database WHERE") -or $line.Contains("SELECT CASE WHEN DB_ID")) { $step = "presence" }
+            elseif ($line.Contains("CREATE DATABASE")) { $step = "create" }
+            elseif ($line.Contains("pg_terminate_backend")) { $step = "terminate" }
+            elseif ($line.Contains("DROP DATABASE")) { $step = "drop" }
+            elseif ($line.Contains("DataStoreIdentity")) { $step = "select" }
+            $state.Calls.Add($line)
+            $state.Steps.Add($step)
+            if ($state.Fail.ContainsKey($step)) {
+                $global:LASTEXITCODE = [int]$state.Fail[$step].Exit
+                return $state.Fail[$step].Output
+            }
+            $global:LASTEXITCODE = 0
+            switch ($step) {
+                "presence" { if ($state.DatabaseExists) { return "1" } return "0" }
+                "create" { $state.DatabaseExists = $true; return "CREATE DATABASE" }
+                "restore" { $state.DatabaseExists = $true; return "RESTORE DATABASE successfully processed 1234 pages" }
+                "drop" { $state.DatabaseExists = $false; return "DROP DATABASE" }
+                "replay" { return @("SET", "CREATE SCHEMA", "INSERT 0 1") }
+                "filelist" { return @("EdFi_Ods|/var/opt/mssql/data/EdFi_Ods.mdf|D|PRIMARY|8388608|35184372080640", "EdFi_Ods_log|/var/opt/mssql/data/EdFi_Ods_log.ldf|L|NULL|8388608|2199023255552") }
+                "select" {
+                    if ($state.SelectQueue.Count -gt 0) {
+                        $next = [string]$state.SelectQueue.Dequeue()
+                        if ($next -eq "") { return }
+                        return $next.Split("|")
+                    }
+                    return $state.IdentityRows
+                }
+                "unknown" { $global:LASTEXITCODE = 99; return "unexpected docker call: $line" }
+                default { return }
+            }
+        }
+
+        function script:Reset-IdentityDocker {
+            param(
+                [object[]]$IdentityRows = @($script:sourceIdentity),
+
+                [hashtable]$Fail = @{},
+
+                [switch]$DatabaseExists,
+
+                [string[]]$SelectQueue = @()
+            )
+
+            $queue = [System.Collections.Generic.Queue[string]]::new()
+            foreach ($item in $SelectQueue) {
+                $queue.Enqueue($item)
+            }
+            $global:RestoreSmokeIdentityTest = @{
+                Calls          = [System.Collections.Generic.List[string]]::new()
+                Steps          = [System.Collections.Generic.List[string]]::new()
+                IdentityRows   = $IdentityRows
+                Fail           = $Fail
+                DatabaseExists = [bool]$DatabaseExists
+                SelectQueue    = $queue
+            }
+        }
+
+        # A template package as the producer lays it out: the artifact and restore-manifest.json in
+        # the .nupkg, and the sibling attestation document over the .nupkg's SHA-256.
+        function script:New-FakeIdentityPackage {
+            param(
+                [Parameter(Mandatory)]
+                [string]$Directory,
+
+                [ValidateSet("postgresql", "mssql")]
+                [string]$Engine = "postgresql",
+
+                [ValidateSet("Minimal", "Populated")]
+                [string]$TemplateKind = "Minimal",
+
+                [string]$ArtifactContent = "-- template dump",
+
+                [string]$RecordedArtifactSha,
+
+                [string]$RecordedPackageSha,
+
+                [switch]$WithoutManifest
+            )
+
+            New-Item -ItemType Directory -Path $Directory -Force | Out-Null
+            $engineToken = if ($Engine -eq "mssql") { "MsSql" } else { "PostgreSql" }
+            $extension = if ($Engine -eq "mssql") { "bak" } else { "sql" }
+            $contents = Join-Path $Directory "contents-$([Guid]::NewGuid().ToString('N'))"
+            New-Item -ItemType Directory -Path $contents | Out-Null
+            $artifactName = "EdFi.Api.$TemplateKind.Template.$engineToken.$extension"
+            $artifactPath = Join-Path $contents $artifactName
+            [System.IO.File]::WriteAllText($artifactPath, $ArtifactContent)
+            $artifactSha = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if (-not $WithoutManifest) {
+                [ordered]@{
+                    templateKind     = $TemplateKind
+                    projects         = @("edfi")
+                    artifactFileName = $artifactName
+                    artifactSha256   = ($RecordedArtifactSha ? $RecordedArtifactSha : $artifactSha)
+                } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $contents "restore-manifest.json")
+            }
+            $packagePath = Join-Path $Directory "EdFi.Api.$TemplateKind.Template.$engineToken.5.2.0.1.0.999.nupkg"
+            Compress-Archive -Path (Join-Path $contents "*") -DestinationPath ($packagePath + ".zip")
+            Move-Item -LiteralPath ($packagePath + ".zip") -Destination $packagePath
+            Remove-Item -LiteralPath $contents -Recurse -Force
+
+            $packageSha = (Get-FileHash -LiteralPath $packagePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            $payload = @{ packageId = "EdFi.Api.$TemplateKind.Template.$engineToken.5.2.0"; packageVersion = "1.0.999"; packageSha256 = ($RecordedPackageSha ? $RecordedPackageSha : $packageSha); producer = "restore-smoke-1234" } | ConvertTo-Json -Compress
+            @{
+                version    = 1
+                payloadB64 = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($payload))
+                signature  = @{ algorithm = "ECDSA_P256_SHA256"; keyId = ("ab" * 32); valueB64 = "AA==" }
+            } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath "$packagePath.attestation.json"
+            return [pscustomobject]@{ Path = $packagePath; Name = [System.IO.Path]::GetFileName($packagePath); Sha256 = $packageSha; ArtifactName = $artifactName; ArtifactSha256 = $artifactSha }
+        }
+
+        function script:Invoke-TestInspection {
+            param([string]$Engine, [object]$Package, [string]$Label)
+
+            $work = Join-Path $TestDrive "work-$Label-$([Guid]::NewGuid().ToString('N'))"
+            New-Item -ItemType Directory -Path $work -Force | Out-Null
+            $record = Invoke-RestoreSmokePackageInspection -PackagePath $Package.Path -TemplateKind Minimal -DatabaseEngine $Engine -WorkDirectory $work -RestoreManifestFileName "restore-manifest.json"
+            return [pscustomobject]@{ Record = $record; Work = $work }
+        }
+
+        function script:Get-ModuleSql {
+            # The consumer's SQL builders, called where the probe module imported them.
+            param([string]$Function, [string]$Engine)
+
+            return (& (Get-Module RestoreSmokeProbes) { param($name, $engine) & $name -DatabaseEngine $engine } $Function $Engine)
+        }
+    }
+
+    AfterAll {
+        $env:MSSQL_SA_PASSWORD = $script:savedMssqlPassword
+        Remove-Variable -Name RestoreSmokeIdentityTest -Scope Global -ErrorAction SilentlyContinue
+    }
+
+    Context "Get-RestoreSmokeSourceIdentityValue" {
+        It "accepts exactly one canonical UUID, ignoring blank rows, and lower-cases it" {
+            $value = Get-RestoreSmokeSourceIdentityValue -Row @("", "  6F1C1C33-0D4E-4D0F-9B9E-4F5B8A3D2C11  ", $null, "   ")
+
+            $value.Identity | Should -BeExactly $script:sourceIdentity
+            $value.Defect | Should -BeNullOrEmpty
+        }
+
+        It "rejects <case>" -ForEach @(
+            @{ Case = "no row"; Rows = @(); Expected = "has 0 rows; expected exactly one" }
+            @{ Case = "null"; Rows = $null; Expected = "has 0 rows; expected exactly one" }
+            @{ Case = "only blank rows"; Rows = @("", "   "); Expected = "has 0 rows; expected exactly one" }
+            @{ Case = "two different rows"; Rows = @("6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11", "7a2d2d44-1e5f-4e1a-8c0f-5a6c9b4e3d22"); Expected = "has 2 rows; expected exactly one" }
+            @{ Case = "the same row twice"; Rows = @("6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11", "6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11"); Expected = "has 2 rows; expected exactly one" }
+            @{ Case = "a non-UUID"; Rows = @("not-a-uuid"); Expected = "is not a UUID ('not-a-uuid')" }
+            @{ Case = "a braced UUID"; Rows = @("{6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11}"); Expected = "is not a UUID ('{6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11}')" }
+            @{ Case = "a UUID without hyphens"; Rows = @("6f1c1c330d4e4d0f9b9e4f5b8a3d2c11"); Expected = "is not a UUID ('6f1c1c330d4e4d0f9b9e4f5b8a3d2c11')" }
+            @{ Case = "the zero UUID"; Rows = @("00000000-0000-0000-0000-000000000000"); Expected = "is the zero UUID" }
+        ) {
+            $value = Get-RestoreSmokeSourceIdentityValue -Row $Rows
+
+            $value.Identity | Should -BeNullOrEmpty
+            $value.Defect | Should -BeExactly $Expected
+        }
+    }
+
+    Context "Get-RestoreSmokeSourceIdentityRead" {
+        It "runs the consumer's SELECT, and nothing else, through the <engine> transport" -ForEach @(
+            @{ Engine = "postgresql"; Prefix = "exec dms-postgresql psql -U postgres -d edfi_datamanagementservice -tA -c " }
+            @{ Engine = "mssql"; Prefix = "exec -e SQLCMDPASSWORD=Sm0ke-Secret! dms-mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -d edfi_datamanagementservice -C -b -h -1 -W -Q " }
+        ) {
+            Reset-IdentityDocker -IdentityRows @("6F1C1C33-0D4E-4D0F-9B9E-4F5B8A3D2C11")
+
+            $read = Get-RestoreSmokeSourceIdentityRead -DatabaseEngine $Engine -DatabaseName "edfi_datamanagementservice"
+
+            $read.Identity | Should -BeExactly $script:sourceIdentity
+            $read.Reason | Should -BeNullOrEmpty
+            $read.ExitCode | Should -Be 0
+            @($read.Rows) | Should -Be @("6F1C1C33-0D4E-4D0F-9B9E-4F5B8A3D2C11")
+            @($global:RestoreSmokeIdentityTest.Calls) | Should -Be @($Prefix + (Get-ModuleSql -Function Get-SourceIdentitySelectSql -Engine $Engine))
+        }
+
+        It "records a failed query as a reason, with the sa password redacted (<engine>)" -ForEach @(
+            @{ Engine = "postgresql" }
+            @{ Engine = "mssql" }
+        ) {
+            Reset-IdentityDocker -Fail @{ select = @{ Exit = 1; Output = "Login failed for user 'sa' (password Sm0ke-Secret!)" } }
+
+            $read = Get-RestoreSmokeSourceIdentityRead -DatabaseEngine $Engine -DatabaseName "edfi_datamanagementservice"
+
+            $read.ExitCode | Should -Be 1
+            $read.Identity | Should -BeNullOrEmpty
+            @($read.Rows).Count | Should -Be 0
+            $read.Reason | Should -BeExactly "the SourceIdentity query against 'edfi_datamanagementservice' exited 1: Login failed for user 'sa' (password ***)"
+        }
+
+        It "keeps both rows of a two-row answer and gives the cardinality as the reason" {
+            Reset-IdentityDocker -IdentityRows @($script:sourceIdentity, $script:otherIdentity)
+
+            $read = Get-RestoreSmokeSourceIdentityRead -DatabaseEngine postgresql -DatabaseName "edfi_datamanagementservice"
+
+            @($read.Rows) | Should -Be @($script:sourceIdentity, $script:otherIdentity)
+            $read.Identity | Should -BeNullOrEmpty
+            $read.Reason | Should -BeExactly "dms.DataStoreIdentity.SourceIdentity in 'edfi_datamanagementservice' has 2 rows; expected exactly one"
+        }
+    }
+
+    Context "Invoke-RestoreSmokeIdentityBoundPackageBuild" {
+        BeforeEach {
+            $script:directory = Join-Path $TestDrive "bound-$([Guid]::NewGuid().ToString('N'))"
+            $script:bindings = [System.Collections.Generic.List[object]]::new()
+            $script:packages = [System.Collections.Generic.List[object]]::new()
+            $script:buildArguments = @{
+                TemplateKind            = "Minimal"
+                DatabaseEngine          = "postgresql"
+                SourceDatabaseName      = "edfi_datamanagementservice"
+                PackageDirectory        = $script:directory
+                RestoreManifestFileName = "restore-manifest.json"
+                BindingList             = $script:bindings
+                PackageList             = $script:packages
+                BuildPackage            = {
+                    $global:RestoreSmokeIdentityTest.Steps.Add("build")
+                    $null = New-FakeIdentityPackage -Directory $script:directory
+                }
+            }
+        }
+
+        It "reads the source identity, builds, reads it again, and binds both to the exact .nupkg's SHA-256" {
+            Reset-IdentityDocker -SelectQueue @("6F1C1C33-0D4E-4D0F-9B9E-4F5B8A3D2C11", $script:sourceIdentity)
+
+            $result = Invoke-RestoreSmokeIdentityBoundPackageBuild @script:buildArguments
+
+            @($global:RestoreSmokeIdentityTest.Steps) | Should -Be @("select", "build", "select")
+            foreach ($call in $global:RestoreSmokeIdentityTest.Calls) {
+                $call | Should -BeLike "exec dms-postgresql psql -U postgres -d edfi_datamanagementservice -tA -c *"
+            }
+            $packageFile = @(Get-ChildItem -LiteralPath $script:directory -Filter "*.nupkg")
+            $packageFile.Count | Should -Be 1
+            $fileSha = (Get-FileHash -LiteralPath $packageFile[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+
+            $script:bindings.Count | Should -Be 1
+            $binding = $script:bindings[0]
+            $binding.Bound | Should -BeTrue
+            $binding.Reason | Should -BeNullOrEmpty
+            $binding.TemplateKind | Should -Be "Minimal"
+            $binding.SourceDatabase | Should -Be "edfi_datamanagementservice"
+            $binding.PackageSha256 | Should -BeExactly $fileSha
+            $binding.PackageFile | Should -Be $packageFile[0].Name
+            $binding.BeforeBackup.Identity | Should -BeExactly $script:sourceIdentity
+            $binding.AfterBackup.Identity | Should -BeExactly $script:sourceIdentity
+            $script:packages.Count | Should -Be 1
+            $script:packages[0].Sha256 | Should -BeExactly $fileSha
+            $script:packages[0].Verified | Should -BeTrue
+            $result.Binding | Should -Be $binding
+        }
+
+        It "builds nothing when the source identity before the backup <case>" -ForEach @(
+            @{ Case = "has no row"; Queue = @(""); Fail = @{}; Expected = "dms.DataStoreIdentity.SourceIdentity in 'edfi_datamanagementservice' has 0 rows; expected exactly one" }
+            @{ Case = "has two rows"; Queue = @("6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11|7a2d2d44-1e5f-4e1a-8c0f-5a6c9b4e3d22"); Fail = @{}; Expected = "dms.DataStoreIdentity.SourceIdentity in 'edfi_datamanagementservice' has 2 rows; expected exactly one" }
+            @{ Case = "is not a UUID"; Queue = @("pending"); Fail = @{}; Expected = "dms.DataStoreIdentity.SourceIdentity in 'edfi_datamanagementservice' is not a UUID ('pending')" }
+            @{ Case = "is the zero UUID"; Queue = @("00000000-0000-0000-0000-000000000000"); Fail = @{}; Expected = "dms.DataStoreIdentity.SourceIdentity in 'edfi_datamanagementservice' is the zero UUID" }
+            @{ Case = "cannot be read"; Queue = @(); Fail = @{ select = @{ Exit = 2; Output = "connection refused" } }; Expected = "the SourceIdentity query against 'edfi_datamanagementservice' exited 2: connection refused" }
+        ) {
+            Reset-IdentityDocker -SelectQueue $Queue -Fail $Fail
+
+            { Invoke-RestoreSmokeIdentityBoundPackageBuild @script:buildArguments } | Should -Throw -ExpectedMessage "Cannot bind the Minimal package to its source's SourceIdentity: before the backup, $Expected. Nothing was built."
+
+            @($global:RestoreSmokeIdentityTest.Steps) | Should -Be @("select")
+            Test-Path -LiteralPath $script:directory | Should -BeFalse
+            $script:packages.Count | Should -Be 0
+            $script:bindings.Count | Should -Be 1
+            $script:bindings[0].Bound | Should -BeFalse
+            $script:bindings[0].PackageSha256 | Should -BeNullOrEmpty
+            $script:bindings[0].Reason | Should -BeExactly "before the backup, $Expected"
+        }
+
+        It "does not bind when the source identity changed across the build" {
+            Reset-IdentityDocker -SelectQueue @($script:sourceIdentity, $script:otherIdentity)
+
+            { Invoke-RestoreSmokeIdentityBoundPackageBuild @script:buildArguments } | Should -Throw -ExpectedMessage "*changed across the backup (before $($script:sourceIdentity), after $($script:otherIdentity))*"
+
+            @($global:RestoreSmokeIdentityTest.Steps) | Should -Be @("select", "build", "select")
+            $binding = $script:bindings[0]
+            $binding.Bound | Should -BeFalse
+            $binding.PackageSha256 | Should -BeExactly $script:packages[0].Sha256
+            $binding.Reason | Should -BeExactly "the source's SourceIdentity changed across the backup (before $($script:sourceIdentity), after $($script:otherIdentity))"
+        }
+
+        It "does not bind when the identity cannot be read after the build" {
+            Reset-IdentityDocker -SelectQueue @($script:sourceIdentity, "")
+
+            { Invoke-RestoreSmokeIdentityBoundPackageBuild @script:buildArguments } | Should -Throw -ExpectedMessage "*after the backup, dms.DataStoreIdentity.SourceIdentity in 'edfi_datamanagementservice' has 0 rows; expected exactly one*"
+
+            $script:bindings[0].Bound | Should -BeFalse
+        }
+
+        It "does not bind a package whose provenance cannot be established" {
+            Reset-IdentityDocker -SelectQueue @($script:sourceIdentity, $script:sourceIdentity)
+            $script:buildArguments.BuildPackage = {
+                $global:RestoreSmokeIdentityTest.Steps.Add("build")
+                $null = New-FakeIdentityPackage -Directory $script:directory -RecordedPackageSha ("0" * 64)
+            }
+
+            { Invoke-RestoreSmokeIdentityBoundPackageBuild @script:buildArguments } | Should -Throw -ExpectedMessage "Package provenance could not be established: *"
+
+            $script:packages[0].Verified | Should -BeFalse
+            $script:bindings[0].Bound | Should -BeFalse
+            $script:bindings[0].Reason | Should -BeLike "the package provenance could not be established: *"
+        }
+
+        It "keeps a separate binding for each template kind, so a later build never overwrites an earlier one" {
+            Reset-IdentityDocker -SelectQueue @($script:sourceIdentity, $script:sourceIdentity, $script:otherIdentity, $script:otherIdentity)
+            $minimalDirectory = Join-Path $TestDrive "bound-minimal"
+            $populatedDirectory = Join-Path $TestDrive "bound-populated"
+
+            $minimal = Invoke-RestoreSmokeIdentityBoundPackageBuild @script:buildArguments -PackageDirectory $minimalDirectory -BuildPackage { $null = New-FakeIdentityPackage -Directory $minimalDirectory }
+            $populated = Invoke-RestoreSmokeIdentityBoundPackageBuild @script:buildArguments -TemplateKind Populated -PackageDirectory $populatedDirectory -BuildPackage { $null = New-FakeIdentityPackage -Directory $populatedDirectory -TemplateKind Populated -ArtifactContent "-- populated dump" }
+
+            $script:bindings.Count | Should -Be 2
+            @($script:bindings.TemplateKind) | Should -Be @("Minimal", "Populated")
+            $script:bindings[0].PackageSha256 | Should -BeExactly $minimal.Package.Sha256
+            $script:bindings[0].BeforeBackup.Identity | Should -BeExactly $script:sourceIdentity
+            $script:bindings[1].PackageSha256 | Should -BeExactly $populated.Package.Sha256
+            $script:bindings[1].BeforeBackup.Identity | Should -BeExactly $script:otherIdentity
+            $script:bindings[0].PackageSha256 | Should -Not -Be $script:bindings[1].PackageSha256
+            @($script:bindings.Bound) | Should -Be @($true, $true)
+        }
+    }
+
+    Context "Invoke-RestoreSmokePackageInspection" {
+        It "restores the exact package into a run-owned database, selects its identity, and removes everything it created (<engine>)" -ForEach @(
+            @{ Engine = "postgresql"; Container = "dms-postgresql"; Steps = @("presence", "create", "cp", "replay", "select", "terminate", "drop", "presence", "rm"); ContainerFile = '^/tmp/restore-smoke-inspect-[0-9a-f]{12}\.sql$' }
+            @{ Engine = "mssql"; Container = "dms-mssql"; Steps = @("presence", "cp", "filelist", "restore", "select", "drop", "presence", "rm"); ContainerFile = '^/var/opt/mssql/data/restore-smoke-inspect-[0-9a-f]{12}\.bak$' }
+        ) {
+            $package = New-FakeIdentityPackage -Directory (Join-Path $TestDrive "inspect-ok-$Engine") -Engine $Engine
+            Reset-IdentityDocker -IdentityRows @("6F1C1C33-0D4E-4D0F-9B9E-4F5B8A3D2C11")
+
+            $run = Invoke-TestInspection -Engine $Engine -Package $package -Label "ok-$Engine"
+            $record = $run.Record
+
+            $record.Reason | Should -BeNullOrEmpty
+            $record.Identity | Should -BeExactly $script:sourceIdentity
+            @($record.Rows) | Should -Be @("6F1C1C33-0D4E-4D0F-9B9E-4F5B8A3D2C11")
+            $record.PackageSha256 | Should -BeExactly $package.Sha256
+            $record.PackageFile | Should -Be $package.Name
+            $record.ArtifactFileName | Should -Be $package.ArtifactName
+            $record.ArtifactSha256 | Should -BeExactly $package.ArtifactSha256
+            $record.InspectionDatabase | Should -Match '^restore_smoke_inspect_[0-9a-f]{12}$'
+            $record.Cleanup.DatabaseOwned | Should -BeTrue
+            $record.Cleanup.DatabaseDropped | Should -BeTrue
+            $record.Cleanup.DatabaseAbsent | Should -BeTrue
+            $record.Cleanup.ContainerFile | Should -Match $ContainerFile
+            $record.Cleanup.ContainerFileRemoved | Should -BeTrue
+            $record.Cleanup.LocalDirectoryRemoved | Should -BeTrue
+            $record.Cleanup.Complete | Should -BeTrue
+            @(Get-ChildItem -LiteralPath $run.Work -Force) | Should -BeNullOrEmpty
+            $global:RestoreSmokeIdentityTest.DatabaseExists | Should -BeFalse
+
+            @($global:RestoreSmokeIdentityTest.Steps) | Should -Be $Steps
+            $database = $record.InspectionDatabase
+            $calls = @($global:RestoreSmokeIdentityTest.Calls)
+            foreach ($call in $calls) {
+                $call | Should -BeLike "*$Container*"
+            }
+            $copy = @($calls | Where-Object { $_ -like "cp *" })
+            $copy.Count | Should -Be 1
+            $copy[0] | Should -BeExactly ("cp " + (Join-Path $run.Work ("inspect-" + $database.Substring("restore_smoke_inspect_".Length)) | Join-Path -ChildPath $package.ArtifactName) + " ${Container}:$($record.Cleanup.ContainerFile)")
+            $select = @($calls | Where-Object { $_.Contains("DataStoreIdentity") })
+            $select.Count | Should -Be 1
+            $select[0] | Should -BeLike "* -d $database *"
+            $select[0].EndsWith((Get-ModuleSql -Function Get-SourceIdentitySelectSql -Engine $Engine)) | Should -BeTrue
+            if ($Engine -eq "mssql") {
+                $restore = @($calls | Where-Object { $_.Contains("RESTORE DATABASE") })[0]
+                $restore | Should -BeLike "*RESTORE DATABASE [[]$database] FROM DISK = N'$($record.Cleanup.ContainerFile)' WITH MOVE N'EdFi_Ods' TO N'/var/opt/mssql/data/$database.mdf', MOVE N'EdFi_Ods_log' TO N'/var/opt/mssql/data/${database}_log.ldf';"
+                $restore | Should -Not -BeLike "*REPLACE*"
+            }
+            else {
+                @($calls | Where-Object { $_.Contains("CREATE DATABASE") }) | Should -Be @("exec dms-postgresql psql -U postgres -d postgres -tA -c CREATE DATABASE `"$database`";")
+                @($calls | Where-Object { $_.Contains("ON_ERROR_STOP") }) | Should -Be @("exec dms-postgresql psql -U postgres -d $database -v ON_ERROR_STOP=1 -f $($record.Cleanup.ContainerFile)")
+            }
+        }
+
+        It "never issues the reseed and never takes the identity from the artifact's text (<engine>)" -ForEach @(
+            @{ Engine = "postgresql" }
+            @{ Engine = "mssql" }
+        ) {
+            $package = New-FakeIdentityPackage -Directory (Join-Path $TestDrive "inspect-decoy-$Engine") -Engine $Engine -ArtifactContent "INSERT INTO dms.`"DataStoreIdentity`" VALUES (1, '$($script:decoyIdentity)');"
+            Reset-IdentityDocker -IdentityRows @($script:sourceIdentity)
+
+            $record = (Invoke-TestInspection -Engine $Engine -Package $package -Label "decoy-$Engine").Record
+
+            $record.Identity | Should -BeExactly $script:sourceIdentity
+            $reseedSql = Get-ModuleSql -Function Get-SourceIdentityReseedSql -Engine $Engine
+            foreach ($call in $global:RestoreSmokeIdentityTest.Calls) {
+                $call.Contains($reseedSql) | Should -BeFalse
+                $call | Should -Not -Match '(?i)\bUPDATE\b|NEWID|gen_random_uuid'
+                $call.Contains($script:decoyIdentity) | Should -BeFalse
+            }
+        }
+
+        It "reports a package identity that <case>, and still drops its database (<engine>)" -ForEach @(
+            @{ Engine = "postgresql"; Case = "has no row"; Rows = @(); Expected = "has 0 rows; expected exactly one" }
+            @{ Engine = "mssql"; Case = "has no row"; Rows = @(); Expected = "has 0 rows; expected exactly one" }
+            @{ Engine = "postgresql"; Case = "has two rows"; Rows = @("6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11", "7a2d2d44-1e5f-4e1a-8c0f-5a6c9b4e3d22"); Expected = "has 2 rows; expected exactly one" }
+            @{ Engine = "mssql"; Case = "has two rows"; Rows = @("6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11", "7a2d2d44-1e5f-4e1a-8c0f-5a6c9b4e3d22"); Expected = "has 2 rows; expected exactly one" }
+            @{ Engine = "postgresql"; Case = "is not a UUID"; Rows = @("NULL"); Expected = "is not a UUID ('NULL')" }
+            @{ Engine = "mssql"; Case = "is not a UUID"; Rows = @("NULL"); Expected = "is not a UUID ('NULL')" }
+            @{ Engine = "postgresql"; Case = "is the zero UUID"; Rows = @("00000000-0000-0000-0000-000000000000"); Expected = "is the zero UUID" }
+            @{ Engine = "mssql"; Case = "is the zero UUID"; Rows = @("00000000-0000-0000-0000-000000000000"); Expected = "is the zero UUID" }
+        ) {
+            $package = New-FakeIdentityPackage -Directory (Join-Path $TestDrive "inspect-rows-$Engine-$([Guid]::NewGuid().ToString('N'))") -Engine $Engine
+            Reset-IdentityDocker -IdentityRows $Rows
+
+            $record = (Invoke-TestInspection -Engine $Engine -Package $package -Label "rows").Record
+
+            $record.Identity | Should -BeNullOrEmpty
+            $record.Reason | Should -BeExactly "the package's dms.DataStoreIdentity.SourceIdentity in '$($record.InspectionDatabase)' $Expected"
+            $record.Cleanup.DatabaseDropped | Should -BeTrue
+            $record.Cleanup.DatabaseAbsent | Should -BeTrue
+            $record.Cleanup.Complete | Should -BeTrue
+        }
+
+        It "cleans up what it created when the <failstep> step fails (<engine>)" -ForEach @(
+            @{ Engine = "postgresql"; FailStep = "create"; Steps = @("presence", "create", "terminate", "drop", "presence"); Reason = "CREATE DATABASE {db} exited 1: boom"; FileExpected = $false }
+            @{ Engine = "postgresql"; FailStep = "cp"; Steps = @("presence", "create", "cp", "terminate", "drop", "presence", "rm"); Reason = "docker cp of the artifact exited 1: boom"; FileExpected = $true }
+            @{ Engine = "postgresql"; FailStep = "replay"; Steps = @("presence", "create", "cp", "replay", "terminate", "drop", "presence", "rm"); Reason = "the replay into {db} exited 1: boom"; FileExpected = $true }
+            @{ Engine = "postgresql"; FailStep = "select"; Steps = @("presence", "create", "cp", "replay", "select", "terminate", "drop", "presence", "rm"); Reason = "the SourceIdentity query against '{db}' exited 1: boom"; FileExpected = $true }
+            @{ Engine = "mssql"; FailStep = "cp"; Steps = @("presence", "cp", "drop", "presence", "rm"); Reason = "docker cp of the artifact exited 1: boom"; FileExpected = $true }
+            @{ Engine = "mssql"; FailStep = "filelist"; Steps = @("presence", "cp", "filelist", "drop", "presence", "rm"); Reason = "RESTORE FILELISTONLY exited 1: boom"; FileExpected = $true }
+            @{ Engine = "mssql"; FailStep = "restore"; Steps = @("presence", "cp", "filelist", "restore", "drop", "presence", "rm"); Reason = "RESTORE DATABASE {db} exited 1: boom"; FileExpected = $true }
+            @{ Engine = "mssql"; FailStep = "select"; Steps = @("presence", "cp", "filelist", "restore", "select", "drop", "presence", "rm"); Reason = "the SourceIdentity query against '{db}' exited 1: boom"; FileExpected = $true }
+        ) {
+            $package = New-FakeIdentityPackage -Directory (Join-Path $TestDrive "inspect-fail-$Engine-$FailStep") -Engine $Engine
+            Reset-IdentityDocker -Fail @{ $FailStep = @{ Exit = 1; Output = "boom" } }
+
+            $run = Invoke-TestInspection -Engine $Engine -Package $package -Label "fail-$FailStep"
+            $record = $run.Record
+
+            $record.Reason | Should -BeExactly $Reason.Replace("{db}", $record.InspectionDatabase)
+            $record.Identity | Should -BeNullOrEmpty
+            @($global:RestoreSmokeIdentityTest.Steps) | Should -Be $Steps
+            $record.Cleanup.DatabaseOwned | Should -BeTrue
+            $record.Cleanup.DatabaseDropped | Should -BeTrue
+            $record.Cleanup.DatabaseAbsent | Should -BeTrue
+            if ($FileExpected) {
+                $record.Cleanup.ContainerFileRemoved | Should -BeTrue
+            }
+            else {
+                $record.Cleanup.ContainerFile | Should -BeNullOrEmpty
+                $record.Cleanup.ContainerFileRemoved | Should -BeNullOrEmpty
+            }
+            $record.Cleanup.LocalDirectoryRemoved | Should -BeTrue
+            $record.Cleanup.Complete | Should -BeTrue
+            @(Get-ChildItem -LiteralPath $run.Work -Force) | Should -BeNullOrEmpty
+        }
+
+        It "records cleanup it could not complete: the <failstep> step fails (<engine>)" -ForEach @(
+            @{ Engine = "postgresql"; FailStep = "drop"; Dropped = $false; Absent = $false; FileRemoved = $true; Reasons = @("dropping {db} exited 1: ERROR: database is being accessed by other users", "{db} was not shown absent after the drop") }
+            @{ Engine = "mssql"; FailStep = "drop"; Dropped = $false; Absent = $false; FileRemoved = $true; Reasons = @("dropping {db} exited 1: ERROR: database is being accessed by other users", "{db} was not shown absent after the drop") }
+            @{ Engine = "postgresql"; FailStep = "rm"; Dropped = $true; Absent = $true; FileRemoved = $false; Reasons = @("removing {file} from dms-postgresql exited 1: ERROR: database is being accessed by other users") }
+            @{ Engine = "mssql"; FailStep = "rm"; Dropped = $true; Absent = $true; FileRemoved = $false; Reasons = @("removing {file} from dms-mssql exited 1: ERROR: database is being accessed by other users") }
+        ) {
+            $package = New-FakeIdentityPackage -Directory (Join-Path $TestDrive "inspect-cleanup-$Engine-$FailStep") -Engine $Engine
+            Reset-IdentityDocker -Fail @{ $FailStep = @{ Exit = 1; Output = "ERROR: database is being accessed by other users" } }
+
+            $record = (Invoke-TestInspection -Engine $Engine -Package $package -Label "cleanup-$FailStep").Record
+
+            $record.Identity | Should -BeExactly $script:sourceIdentity
+            $record.Cleanup.DatabaseDropped | Should -Be $Dropped
+            $record.Cleanup.DatabaseAbsent | Should -Be $Absent
+            $record.Cleanup.ContainerFileRemoved | Should -Be $FileRemoved
+            $record.Cleanup.Complete | Should -BeFalse
+            @($record.Cleanup.Reasons) | Should -Be @($Reasons | ForEach-Object { $_.Replace("{db}", $record.InspectionDatabase).Replace("{file}", [string]$record.Cleanup.ContainerFile) })
+        }
+
+        It "touches no database when the generated name already exists, and leaves that database in place (<engine>)" -ForEach @(
+            @{ Engine = "postgresql" }
+            @{ Engine = "mssql" }
+        ) {
+            $package = New-FakeIdentityPackage -Directory (Join-Path $TestDrive "inspect-exists-$Engine") -Engine $Engine
+            Reset-IdentityDocker -DatabaseExists
+
+            $record = (Invoke-TestInspection -Engine $Engine -Package $package -Label "exists").Record
+
+            $record.Reason | Should -BeExactly "'$($record.InspectionDatabase)' already exists; it is not this inspection's and is left in place"
+            @($global:RestoreSmokeIdentityTest.Steps) | Should -Be @("presence")
+            $global:RestoreSmokeIdentityTest.DatabaseExists | Should -BeTrue
+            $record.Cleanup.DatabaseOwned | Should -BeFalse
+            $record.Cleanup.DatabaseDropped | Should -BeNullOrEmpty
+            $record.Cleanup.ContainerFile | Should -BeNullOrEmpty
+            $record.Cleanup.Complete | Should -BeTrue
+        }
+
+        It "touches no database when the name's absence cannot be established (<engine>)" -ForEach @(
+            @{ Engine = "postgresql" }
+            @{ Engine = "mssql" }
+        ) {
+            $package = New-FakeIdentityPackage -Directory (Join-Path $TestDrive "inspect-presence-$Engine") -Engine $Engine
+            Reset-IdentityDocker -Fail @{ presence = @{ Exit = 1; Output = "server is starting up" } }
+
+            $record = (Invoke-TestInspection -Engine $Engine -Package $package -Label "presence").Record
+
+            $record.Reason | Should -BeExactly "could not establish that '$($record.InspectionDatabase)' is absent (exit 1: server is starting up)"
+            @($global:RestoreSmokeIdentityTest.Steps) | Should -Be @("presence")
+            $record.Cleanup.DatabaseOwned | Should -BeFalse
+        }
+
+        It "makes no Docker call when the package <case> (<engine>)" -ForEach @(
+            @{ Engine = "postgresql"; Case = "artifact does not match its manifest's artifactSha256"; Manifest = "mismatch"; Expected = "the artifact hashes to {artifact}, but the restore manifest records $("0" * 64)" }
+            @{ Engine = "mssql"; Case = "artifact does not match its manifest's artifactSha256"; Manifest = "mismatch"; Expected = "the artifact hashes to {artifact}, but the restore manifest records $("0" * 64)" }
+            @{ Engine = "postgresql"; Case = "has no restore manifest"; Manifest = "missing"; Expected = "expected one 'restore-manifest.json' in the package, found 0" }
+        ) {
+            $packageArguments = @{ Directory = (Join-Path $TestDrive "inspect-manifest-$Engine-$Manifest"); Engine = $Engine }
+            if ($Manifest -eq "mismatch") { $packageArguments.RecordedArtifactSha = "0" * 64 }
+            if ($Manifest -eq "missing") { $packageArguments.WithoutManifest = $true }
+            $package = New-FakeIdentityPackage @packageArguments
+            Reset-IdentityDocker
+
+            $run = Invoke-TestInspection -Engine $Engine -Package $package -Label "manifest-$Manifest"
+
+            $run.Record.Reason | Should -BeExactly $Expected.Replace("{artifact}", $package.ArtifactSha256)
+            @($global:RestoreSmokeIdentityTest.Calls) | Should -BeNullOrEmpty
+            $run.Record.Cleanup.DatabaseOwned | Should -BeFalse
+            $run.Record.Cleanup.Complete | Should -BeTrue
+            @(Get-ChildItem -LiteralPath $run.Work -Force) | Should -BeNullOrEmpty
+        }
+
+        It "keeps the sa password out of the record" {
+            $package = New-FakeIdentityPackage -Directory (Join-Path $TestDrive "inspect-secret") -Engine mssql
+            Reset-IdentityDocker -Fail @{ restore = @{ Exit = 1; Output = "Msg 18456: Login failed for user 'sa' with password Sm0ke-Secret!" } }
+
+            $record = (Invoke-TestInspection -Engine mssql -Package $package -Label "secret").Record
+
+            $record.Reason | Should -BeExactly "RESTORE DATABASE $($record.InspectionDatabase) exited 1: Msg 18456: Login failed for user 'sa' with password ***"
+            ($record | ConvertTo-Json -Depth 6) | Should -Not -Match "Sm0ke-Secret"
+        }
+    }
+
+    Context "Get-RestoreSmokeRestoredIdentityDefect" {
+        BeforeAll {
+            $script:earlierRestores = @(
+                [pscustomobject]@{ RestoreExecution = "package-directory#1"; Rows = @("d1000000-0000-4000-8000-000000000001") }
+                [pscustomobject]@{ RestoreExecution = "package-directory#2"; Rows = @("D1000000-0000-4000-8000-000000000002") }
+            )
+        }
+
+        It "finds no defect in a new identity" {
+            @(Get-RestoreSmokeRestoredIdentityDefect -Row @("d1000000-0000-4000-8000-000000000003") -PackageIdentity $script:sourceIdentity -EarlierRestore $script:earlierRestores) | Should -BeNullOrEmpty
+        }
+
+        It "reports <case>" -ForEach @(
+            @{ Case = "no row"; Rows = @(); Expected = @("the restored SourceIdentity has 0 rows; expected exactly one") }
+            @{ Case = "two rows"; Rows = @("d1000000-0000-4000-8000-000000000003", "d1000000-0000-4000-8000-000000000004"); Expected = @("the restored SourceIdentity has 2 rows; expected exactly one") }
+            @{ Case = "a non-UUID"; Rows = @("x"); Expected = @("the restored SourceIdentity is not a UUID ('x')") }
+            @{ Case = "the zero UUID"; Rows = @("00000000-0000-0000-0000-000000000000"); Expected = @("the restored SourceIdentity is the zero UUID") }
+            @{ Case = "the package's identity, in another case"; Rows = @("6F1C1C33-0D4E-4D0F-9B9E-4F5B8A3D2C11"); Expected = @("the restored SourceIdentity 6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11 equals the package's inspected SourceIdentity") }
+            @{ Case = "an earlier restore's identity, in another case"; Rows = @("d1000000-0000-4000-8000-000000000002"); Expected = @("the restored SourceIdentity d1000000-0000-4000-8000-000000000002 equals restore package-directory#2's") }
+        ) {
+            @(Get-RestoreSmokeRestoredIdentityDefect -Row $Rows -PackageIdentity $script:sourceIdentity -EarlierRestore $script:earlierRestores) | Should -Be $Expected
+        }
+
+        It "reports both equalities when the identity is the package's and an earlier restore's" {
+            $earlier = @([pscustomobject]@{ RestoreExecution = "package-directory#1"; Rows = @($script:sourceIdentity) })
+
+            @(Get-RestoreSmokeRestoredIdentityDefect -Row @($script:sourceIdentity) -PackageIdentity $script:sourceIdentity -EarlierRestore $earlier) | Should -Be @(
+                "the restored SourceIdentity $($script:sourceIdentity) equals the package's inspected SourceIdentity"
+                "the restored SourceIdentity $($script:sourceIdentity) equals restore package-directory#1's"
+            )
+        }
+
+        It "skips only the package comparison when the package identity is unknown" {
+            @(Get-RestoreSmokeRestoredIdentityDefect -Row @($script:sourceIdentity) -PackageIdentity "" -EarlierRestore @()) | Should -BeNullOrEmpty
+            @(Get-RestoreSmokeRestoredIdentityDefect -Row @("d1000000-0000-4000-8000-000000000001") -PackageIdentity $null -EarlierRestore $script:earlierRestores) | Should -Be @("the restored SourceIdentity d1000000-0000-4000-8000-000000000001 equals restore package-directory#1's")
+        }
+    }
+
+    Context "producer-consumer contract" {
+        It "classifies the records the capture, the inspection, and two target reads produce: <case>" -ForEach @(
+            @{ Case = "two new identities"; SecondRead = "d1000000-0000-4000-8000-000000000002"; Expected = @() }
+            @{ Case = "the repeated restore kept the first identity"; SecondRead = "d1000000-0000-4000-8000-000000000001"; Expected = @("restore package-directory#2: the restored SourceIdentity d1000000-0000-4000-8000-000000000001 equals restore package-directory#1's") }
+            @{ Case = "the repeated restore kept the package identity"; SecondRead = "6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11"; Expected = @("restore package-directory#2: the restored SourceIdentity 6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11 equals the package's inspected SourceIdentity") }
+        ) {
+            # The smoke's order: capture before and after the build, the first restore's target
+            # read, the inspection (on the first restore), the second restore's target read.
+            Reset-IdentityDocker -SelectQueue @($script:sourceIdentity, $script:sourceIdentity, "d1000000-0000-4000-8000-000000000001", $script:sourceIdentity, $SecondRead)
+            $directory = Join-Path $TestDrive "contract-$([Guid]::NewGuid().ToString('N'))"
+            $bindings = [System.Collections.Generic.List[object]]::new()
+            $packages = [System.Collections.Generic.List[object]]::new()
+
+            $bound = Invoke-RestoreSmokeIdentityBoundPackageBuild -TemplateKind Minimal -DatabaseEngine postgresql -SourceDatabaseName "edfi_datamanagementservice" -PackageDirectory $directory -RestoreManifestFileName "restore-manifest.json" -BindingList $bindings -PackageList $packages -BuildPackage { $null = New-FakeIdentityPackage -Directory $directory }
+            $packagePath = Join-Path $directory $bound.Package.PackageFile
+            $restored = [System.Collections.Generic.List[object]]::new()
+            $first = Get-RestoreSmokeSourceIdentityRead -DatabaseEngine postgresql -DatabaseName "edfi_datamanagementservice"
+            $restored.Add([pscustomobject]@{ RestoreExecution = "package-directory#1"; TemplateKind = "Minimal"; PackageSha256 = (Get-RestoreSmokeFileSha256 -Path $packagePath); Rows = $first.Rows; Identity = $first.Identity; Reason = $first.Reason })
+            $work = Join-Path $TestDrive "contract-work-$([Guid]::NewGuid().ToString('N'))"
+            New-Item -ItemType Directory -Path $work | Out-Null
+            $inspection = Invoke-RestoreSmokePackageInspection -PackagePath $packagePath -TemplateKind Minimal -DatabaseEngine postgresql -WorkDirectory $work -RestoreManifestFileName "restore-manifest.json"
+            $second = Get-RestoreSmokeSourceIdentityRead -DatabaseEngine postgresql -DatabaseName "edfi_datamanagementservice"
+            $restored.Add([pscustomobject]@{ RestoreExecution = "package-directory#2"; TemplateKind = "Minimal"; PackageSha256 = (Get-RestoreSmokeFileSha256 -Path $packagePath); Rows = $second.Rows; Identity = $second.Identity; Reason = $second.Reason })
+
+            $classification = Get-RestoreSmokeResultClassification -Provenance ([ordered]@{
+                    Legs                   = @("package-directory")
+                    Packages               = $packages
+                    SourceIdentityBindings = $bindings
+                    PackageInspections     = @($inspection)
+                    RestoredIdentities     = $restored
+                })
+
+            $inspection.Identity | Should -BeExactly $script:sourceIdentity
+            @($classification.Reasons | Where-Object { $_ -like "*SourceIdentity*" -or $_ -like "*inspect*" -or $_ -like "Minimal package *" }) | Should -Be $Expected
+        }
+    }
+}
+
 Describe "Get-RestoreSmokeResultClassification" {
     BeforeAll {
         $script:startRevision = "1111111111111111111111111111111111111111"
         $script:otherRevision = "2222222222222222222222222222222222222222"
         $script:engineDigest = "postgres@sha256:" + ("a" * 64)
+        $script:minimalSha = "a1" * 32
+        $script:populatedSha = "b2" * 32
+        $script:otherSha = "ff" * 32
+        $script:inspectionDatabase = "restore_smoke_inspect_0123456789ab"
+        $script:packageIdentity = @{ Minimal = "6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11"; Populated = "7a2d2d44-1e5f-4e1a-8c0f-5a6c9b4e3d22" }
+        $script:restoredIdentity = @{
+            "package-directory#1" = "d1000000-0000-4000-8000-000000000001"
+            "package-directory#2" = "d1000000-0000-4000-8000-000000000002"
+            "separate-config#1"   = "d1000000-0000-4000-8000-000000000003"
+            "populated#1"         = "d1000000-0000-4000-8000-000000000005"
+            "tampered-package#1"  = "d1000000-0000-4000-8000-000000000009"
+        }
+
+        # Expected reasons are written with placeholders, because -ForEach data is built before
+        # this block runs.
+        function script:Expand-FixtureText {
+            param([string[]]$Text)
+
+            foreach ($line in $Text) {
+                $line.Replace("{minimalSha}", $script:minimalSha).Replace("{populatedSha}", $script:populatedSha).Replace("{otherSha}", $script:otherSha).Replace("{db}", $script:inspectionDatabase).Replace("{minimalId}", $script:packageIdentity.Minimal).Replace("{populatedId}", $script:packageIdentity.Populated).Replace("{pd1}", $script:restoredIdentity["package-directory#1"]).Replace("{pd2}", $script:restoredIdentity["package-directory#2"])
+            }
+        }
+
+        function script:Get-FixtureSha {
+            param([string]$TemplateKind)
+
+            if ($TemplateKind -eq "Populated") {
+                return $script:populatedSha
+            }
+            return $script:minimalSha
+        }
+
+        # The records the smoke writes for one package of a kind: Get-RestoreSmokePackageProvenance,
+        # Invoke-RestoreSmokeIdentityBoundPackageBuild, Invoke-RestoreSmokePackageInspection, and
+        # Assert-RestoredSourceIdentity.
+        function script:New-CompletePackage {
+            param([string]$TemplateKind = "Minimal")
+
+            return [pscustomobject]@{ TemplateKind = $TemplateKind; PackageFile = "EdFi.Api.$TemplateKind.Template.PostgreSql.5.2.0.1.0.999.nupkg"; Sha256 = (Get-FixtureSha $TemplateKind); Verified = $true; Reason = $null }
+        }
+
+        function script:New-CompleteBinding {
+            param([string]$TemplateKind = "Minimal")
+
+            $identity = $script:packageIdentity[$TemplateKind]
+            return [pscustomobject]@{
+                TemplateKind   = $TemplateKind
+                SourceDatabase = "edfi_datamanagementservice"
+                BeforeBackup   = [pscustomobject]@{ DatabaseName = "edfi_datamanagementservice"; ExitCode = 0; Rows = @($identity); Identity = $identity; Reason = $null }
+                AfterBackup    = [pscustomobject]@{ DatabaseName = "edfi_datamanagementservice"; ExitCode = 0; Rows = @($identity); Identity = $identity; Reason = $null }
+                PackageFile    = "EdFi.Api.$TemplateKind.Template.PostgreSql.5.2.0.1.0.999.nupkg"
+                PackageSha256  = (Get-FixtureSha $TemplateKind)
+                Bound          = $true
+                Reason         = $null
+            }
+        }
+
+        function script:New-CompleteInspection {
+            param([string]$TemplateKind = "Minimal")
+
+            $identity = $script:packageIdentity[$TemplateKind]
+            return [pscustomobject]@{
+                TemplateKind       = $TemplateKind
+                DatabaseEngine     = "postgresql"
+                PackageFile        = "EdFi.Api.$TemplateKind.Template.PostgreSql.5.2.0.1.0.999.nupkg"
+                PackageSha256      = (Get-FixtureSha $TemplateKind)
+                ArtifactFileName   = "EdFi.Api.$TemplateKind.Template.PostgreSql.sql"
+                ArtifactSha256     = ("c3" * 32)
+                InspectionDatabase = $script:inspectionDatabase
+                Rows               = @($identity)
+                Identity           = $identity
+                Reason             = $null
+                Cleanup            = [pscustomobject]@{ DatabaseOwned = $true; DatabaseDropped = $true; DatabaseAbsent = $true; ContainerFile = "/tmp/restore-smoke-inspect-0123456789ab.sql"; ContainerFileRemoved = $true; LocalDirectoryRemoved = $true; Complete = $true; Reasons = @() }
+            }
+        }
+
+        function script:New-CompleteRestoredIdentity {
+            param(
+                [string]$RestoreExecution,
+
+                [string]$TemplateKind = "Minimal",
+
+                [string]$Identity
+            )
+
+            if ([string]::IsNullOrEmpty($Identity)) {
+                $Identity = $script:restoredIdentity[$RestoreExecution]
+            }
+            return [pscustomobject]@{
+                RestoreExecution = $RestoreExecution
+                TemplateKind     = $TemplateKind
+                Label            = "leg-" + ($RestoreExecution -replace '#\d+$', '')
+                TargetDatabase   = "edfi_datamanagementservice"
+                PackageFile      = "EdFi.Api.$TemplateKind.Template.PostgreSql.5.2.0.1.0.999.nupkg"
+                PackageSha256    = (Get-FixtureSha $TemplateKind)
+                ExitCode         = 0
+                Rows             = @($Identity)
+                Identity         = $Identity
+                Reason           = $null
+            }
+        }
 
         function script:New-CompleteObservation {
             param([string]$Label)
@@ -1844,9 +2580,11 @@ Describe "Get-RestoreSmokeResultClassification" {
             }
         }
 
-        # A complete run: every final-evidence field present, SourceIdentity supplied (so its
-        # pending Step 2.3 implementation cannot mask a check), two stack observations, and one
-        # complete served-data record for each of the two restores its legs perform.
+        # A complete run: every final-evidence field present, two stack observations, and for each
+        # of the three restores its legs perform (package-directory twice, separate-config once)
+        # one complete served-data record and one restored identity, beside the Minimal package's
+        # bound pre-backup capture and its independent inspection. Records are listed in the
+        # order package-directory#1, separate-config#1, package-directory#2.
         function script:New-CompleteProvenance {
             $observations = [System.Collections.Generic.List[object]]::new()
             $observations.Add((New-CompleteObservation -Label "leg-package-directory"))
@@ -1854,6 +2592,11 @@ Describe "Get-RestoreSmokeResultClassification" {
             $apiReads = [System.Collections.Generic.List[object]]::new()
             $apiReads.Add((New-CompleteApiRead -RestoreExecution "package-directory#1"))
             $apiReads.Add((New-CompleteApiRead -RestoreExecution "separate-config#1"))
+            $apiReads.Add((New-CompleteApiRead -RestoreExecution "package-directory#2"))
+            $restored = [System.Collections.Generic.List[object]]::new()
+            $restored.Add((New-CompleteRestoredIdentity -RestoreExecution "package-directory#1"))
+            $restored.Add((New-CompleteRestoredIdentity -RestoreExecution "separate-config#1"))
+            $restored.Add((New-CompleteRestoredIdentity -RestoreExecution "package-directory#2"))
             return [ordered]@{
                 Legs                 = @("package-directory", "separate-config", "tampered-package")
                 ApiReads             = $apiReads
@@ -1866,9 +2609,10 @@ Describe "Get-RestoreSmokeResultClassification" {
                     Config = [ordered]@{ ImageId = "sha256:config"; Verified = $true; Reason = $null }
                 }
                 StackObservations    = $observations
-                Packages             = @([pscustomobject]@{ TemplateKind = "Minimal"; Verified = $true; Reason = $null })
-                SourceIdentity       = "6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11"
-                SourceIdentityReason = $null
+                Packages             = @(New-CompletePackage)
+                SourceIdentityBindings = @(New-CompleteBinding)
+                PackageInspections   = @(New-CompleteInspection)
+                RestoredIdentities   = $restored
             }
         }
 
@@ -1916,9 +2660,7 @@ Describe "Get-RestoreSmokeResultClassification" {
         @{ Case = "the second observation ran a different DMS image (for example the stale shared tag's)"; Mutate = { param($p) $p.StackObservations[1].Services["dms"] = [pscustomobject]@{ ImageId = "sha256:stale" } }; Expected = "leg-separate-config: dms runs image sha256:stale, not the in-run build (sha256:dms)" }
         @{ Case = "the second observation ran a different config image"; Mutate = { param($p) $p.StackObservations[1].Services["config"] = [pscustomobject]@{ ImageId = "sha256:stale" } }; Expected = "leg-separate-config: config runs image sha256:stale, not the in-run build (sha256:config)" }
         @{ Case = "the second observation has no config container"; Mutate = { param($p) $p.StackObservations[1].Services.Remove("config") }; Expected = "leg-separate-config: no config container observed" }
-        @{ Case = "no package was built"; Mutate = { param($p) $p.Packages = @() }; Expected = "no package was built in this run" }
         @{ Case = "the package was not verified"; Mutate = { param($p) $p.Packages[0].Verified = $false; $p.Packages[0].Reason = "sha mismatch" }; Expected = "package (Minimal) not verified: sha mismatch" }
-        @{ Case = "the pre-backup SourceIdentity was not captured"; Mutate = { param($p) $p.SourceIdentity = $null; $p.SourceIdentityReason = "not implemented yet (Step 2.3)" }; Expected = "pre-backup SourceIdentity not captured: not implemented yet (Step 2.3)" }
 
         # Revisions (2.1c).
         @{ Case = "clean start and end trees are at different revisions"; Mutate = { param($p) $p.SourceAtEnd.Revision = $script:otherRevision }; Expected = "the revision changed during the run (start 1111111111111111111111111111111111111111, end 2222222222222222222222222222222222222222)" }
@@ -1959,7 +2701,7 @@ Describe "Get-RestoreSmokeResultClassification" {
         @{ Case = "an extra record belongs to a negative leg"; Mutate = { param($p) $p.ApiReads.Add((New-CompleteApiRead -RestoreExecution "tampered-package#1")) }; Expected = "a served-data API read was recorded for restore tampered-package#1, which no selected leg performs" }
         @{ Case = "an extra record belongs to a leg that was not selected"; Mutate = { param($p) $p.ApiReads.Add((New-CompleteApiRead -RestoreExecution "directory-feed#1")) }; Expected = "a served-data API read was recorded for restore directory-feed#1, which no selected leg performs" }
         @{ Case = "a selected leg has no defined requirement"; Mutate = { param($p) $p.Legs = @($p.Legs) + "mystery-leg" }; Expected = "leg 'mystery-leg' has no defined served-data requirement" }
-        @{ Case = "the selected legs were not recorded"; Mutate = { param($p) $p.Remove("Legs") }; Expected = "the selected legs were not recorded, so the required served-data API reads are unknown" }
+        @{ Case = "the selected legs were not recorded"; Mutate = { param($p) $p.Remove("Legs") }; Expected = "the selected legs were not recorded, so the required served-data API reads and restored SourceIdentity records are unknown" }
 
         # Engine repository digest, only the second observation lacking it (2.1c).
         @{ Case = "the second observation's engine image has no digest, with the observed reason"; Mutate = { param($p) $p.StackObservations[1].Services["db"].RepoDigests = @(); $p.StackObservations[1].Services["db"].RepoDigestsReason = "the image has no repository digest (locally built or untagged)" }; Expected = "leg-separate-config: the db image sha256:pg has no observed repository digest: the image has no repository digest (locally built or untagged)" }
@@ -1991,9 +2733,9 @@ Describe "Get-RestoreSmokeResultClassification" {
     }
 
     It "is non-final for each restore when <case>" -ForEach @(
-        @{ Case = "the run recorded no served-data reads at all"; Mutate = { param($p) $p.Remove("ApiReads") }; Expected = @("restore package-directory#1: no served-data API read was recorded", "restore separate-config#1: no served-data API read was recorded") }
+        @{ Case = "the run recorded no served-data reads at all"; Mutate = { param($p) $p.Remove("ApiReads") }; Expected = @("restore package-directory#1: no served-data API read was recorded", "restore package-directory#2: no served-data API read was recorded", "restore separate-config#1: no served-data API read was recorded") }
         @{ Case = "the second restore's record is filed under the first restore"; Mutate = { param($p) $p.ApiReads[1].RestoreExecution = "package-directory#1" }; Expected = @("restore package-directory#1: 2 served-data API reads were recorded; expected exactly one", "restore separate-config#1: no served-data API read was recorded") }
-        @{ Case = "both restores' reads were schema-only (-SkipSourceSeed)"; Mutate = { param($p) foreach ($record in $p.ApiReads) { $record.Mode = "schema-only"; $record.Reads[0].Count = 0 } }; Expected = @("restore package-directory#1: the API read was schema-only (unseeded source), which cannot prove seeded served data", "restore separate-config#1: the API read was schema-only (unseeded source), which cannot prove seeded served data") }
+        @{ Case = "both restores' reads were schema-only (-SkipSourceSeed)"; Mutate = { param($p) foreach ($record in $p.ApiReads) { $record.Mode = "schema-only"; $record.Reads[0].Count = 0 } }; Expected = @("restore package-directory#1: the API read was schema-only (unseeded source), which cannot prove seeded served data", "restore package-directory#2: the API read was schema-only (unseeded source), which cannot prove seeded served data", "restore separate-config#1: the API read was schema-only (unseeded source), which cannot prove seeded served data") }
     ) {
         $provenance = New-CompleteProvenance
         & $Mutate $provenance
@@ -2004,15 +2746,90 @@ Describe "Get-RestoreSmokeResultClassification" {
         @($classification.Reasons) | Should -Be $Expected
     }
 
-    It "requires no served-data read for a run of only negative legs" {
+    It "is non-final with exactly the SourceIdentity reasons when <case>" -ForEach @(
+        # The pre-backup capture bound to the package hash.
+        @{ Case = "no capture is bound to the package"; Mutate = { param($p) $p.SourceIdentityBindings = @() }; Expected = @("Minimal package {minimalSha}: no pre-backup SourceIdentity capture is bound to it") }
+        @{ Case = "two captures are bound to the package"; Mutate = { param($p) $p.SourceIdentityBindings = @($p.SourceIdentityBindings[0], (New-CompleteBinding)) }; Expected = @("Minimal package {minimalSha}: 2 pre-backup SourceIdentity captures are bound to it; expected exactly one") }
+        @{ Case = "the capture is bound to another package's hash"; Mutate = { param($p) $p.SourceIdentityBindings[0].PackageSha256 = $script:otherSha }; Expected = @("Minimal package {minimalSha}: no pre-backup SourceIdentity capture is bound to it", "a pre-backup SourceIdentity capture (Minimal) is bound to package SHA-256 {otherSha}, which no package built in this run has") }
+        @{ Case = "a failed capture is bound to no package"; Mutate = { param($p) $p.SourceIdentityBindings = @($p.SourceIdentityBindings[0], [pscustomobject]@{ TemplateKind = "Populated"; PackageSha256 = $null; Bound = $false; Reason = "before the backup, the SourceIdentity query against 'edfi_datamanagementservice' exited 1: refused" }) }; Expected = @("a pre-backup SourceIdentity capture (Populated) is bound to no package: before the backup, the SourceIdentity query against 'edfi_datamanagementservice' exited 1: refused") }
+        @{ Case = "the capture is of another template kind"; Mutate = { param($p) $p.SourceIdentityBindings[0].TemplateKind = "Populated" }; Expected = @("Minimal package {minimalSha}: the bound capture is for a Populated package") }
+        @{ Case = "the pre-backup read returned no row (its stored Identity is ignored)"; Mutate = { param($p) $p.SourceIdentityBindings[0].BeforeBackup.Rows = @() }; Expected = @("Minimal package {minimalSha}: the pre-backup SourceIdentity has 0 rows; expected exactly one") }
+        @{ Case = "the pre-backup read returned two rows"; Mutate = { param($p) $p.SourceIdentityBindings[0].BeforeBackup.Rows = @($script:packageIdentity.Minimal, $script:packageIdentity.Populated) }; Expected = @("Minimal package {minimalSha}: the pre-backup SourceIdentity has 2 rows; expected exactly one") }
+        @{ Case = "the pre-backup value is not a UUID"; Mutate = { param($p) $p.SourceIdentityBindings[0].BeforeBackup.Rows = @("not-a-uuid") }; Expected = @("Minimal package {minimalSha}: the pre-backup SourceIdentity is not a UUID ('not-a-uuid')") }
+        @{ Case = "the pre-backup value is a braced UUID"; Mutate = { param($p) $p.SourceIdentityBindings[0].BeforeBackup.Rows = @("{6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11}") }; Expected = @("Minimal package {minimalSha}: the pre-backup SourceIdentity is not a UUID ('{6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11}')") }
+        @{ Case = "the pre-backup value is the zero UUID"; Mutate = { param($p) $p.SourceIdentityBindings[0].BeforeBackup.Rows = @("00000000-0000-0000-0000-000000000000") }; Expected = @("Minimal package {minimalSha}: the pre-backup SourceIdentity is the zero UUID") }
+        @{ Case = "the pre-backup read is missing"; Mutate = { param($p) $p.SourceIdentityBindings[0].BeforeBackup = $null }; Expected = @("Minimal package {minimalSha}: the pre-backup SourceIdentity has 0 rows; expected exactly one") }
+        @{ Case = "the identity changed across the backup"; Mutate = { param($p) $p.SourceIdentityBindings[0].AfterBackup.Rows = @($script:packageIdentity.Populated) }; Expected = @("Minimal package {minimalSha}: the source's SourceIdentity changed across the backup (before {minimalId}, after {populatedId})") }
+        @{ Case = "the after-backup read is missing"; Mutate = { param($p) $p.SourceIdentityBindings[0].AfterBackup = $null }; Expected = @("Minimal package {minimalSha}: the SourceIdentity read after the backup has 0 rows; expected exactly one") }
+
+        # The independent inspection of the package.
+        @{ Case = "the package was not inspected"; Mutate = { param($p) $p.PackageInspections = @() }; Expected = @("Minimal package {minimalSha}: it was not independently inspected") }
+        @{ Case = "the package was inspected twice"; Mutate = { param($p) $p.PackageInspections = @($p.PackageInspections[0], (New-CompleteInspection)) }; Expected = @("Minimal package {minimalSha}: it was inspected 2 times; expected exactly once") }
+        @{ Case = "the inspection failed"; Mutate = { param($p) $p.PackageInspections[0].Reason = "the replay into restore_smoke_inspect_0123456789ab exited 3: ERROR: syntax error" }; Expected = @("Minimal package {minimalSha}: the independent inspection failed: the replay into {db} exited 3: ERROR: syntax error") }
+        @{ Case = "the inspection read no row"; Mutate = { param($p) $p.PackageInspections[0].Rows = @() }; Expected = @("Minimal package {minimalSha}: the inspected package SourceIdentity has 0 rows; expected exactly one") }
+        @{ Case = "the inspection read two rows"; Mutate = { param($p) $p.PackageInspections[0].Rows = @($script:packageIdentity.Minimal, $script:packageIdentity.Minimal) }; Expected = @("Minimal package {minimalSha}: the inspected package SourceIdentity has 2 rows; expected exactly one") }
+        @{ Case = "the inspected value is not a UUID"; Mutate = { param($p) $p.PackageInspections[0].Rows = @("SourceIdentity") }; Expected = @("Minimal package {minimalSha}: the inspected package SourceIdentity is not a UUID ('SourceIdentity')") }
+        @{ Case = "the inspected value is the zero UUID"; Mutate = { param($p) $p.PackageInspections[0].Rows = @("00000000-0000-0000-0000-000000000000") }; Expected = @("Minimal package {minimalSha}: the inspected package SourceIdentity is the zero UUID") }
+        @{ Case = "the inspected identity differs from the bound capture"; Mutate = { param($p) $p.PackageInspections[0].Rows = @($script:packageIdentity.Populated) }; Expected = @("Minimal package {minimalSha}: the inspected package SourceIdentity {populatedId} differs from the pre-backup capture {minimalId} bound to its SHA-256") }
+        @{ Case = "the inspection is of another package's hash"; Mutate = { param($p) $p.PackageInspections[0].PackageSha256 = $script:otherSha }; Expected = @("package inspection {db}: it inspected package SHA-256 '{otherSha}', which no package built in this run has", "Minimal package {minimalSha}: it was not independently inspected") }
+        @{ Case = "the inspection database was not shown dropped"; Mutate = { param($p) $p.PackageInspections[0].Cleanup = [pscustomobject]@{ DatabaseOwned = $true; DatabaseDropped = $false; DatabaseAbsent = $false; ContainerFile = "/tmp/x.sql"; ContainerFileRemoved = $true; LocalDirectoryRemoved = $true; Complete = $false; Reasons = @("dropping restore_smoke_inspect_0123456789ab exited 1: ERROR: database is being accessed", "restore_smoke_inspect_0123456789ab was not shown absent after the drop") } }; Expected = @("package inspection {db}: its cleanup was not shown complete: dropping {db} exited 1: ERROR: database is being accessed; {db} was not shown absent after the drop") }
+        @{ Case = "the inspection recorded no cleanup"; Mutate = { param($p) $p.PackageInspections[0].PSObject.Properties.Remove("Cleanup") }; Expected = @("package inspection {db}: its cleanup was not shown complete") }
+
+        # The restored identity of each restore, including the repeated restore.
+        @{ Case = "the repeated restore recorded no identity"; Mutate = { param($p) $p.RestoredIdentities.RemoveAt(2) }; Expected = @("restore package-directory#2: no restored SourceIdentity was recorded") }
+        @{ Case = "the repeated restore left neither an API read nor an identity"; Mutate = { param($p) $p.RestoredIdentities.RemoveAt(2); $p.ApiReads.RemoveAt(2) }; Expected = @("restore package-directory#2: no served-data API read was recorded", "restore package-directory#2: no restored SourceIdentity was recorded") }
+        @{ Case = "the repeated restore recorded two identities"; Mutate = { param($p) $p.RestoredIdentities.Add((New-CompleteRestoredIdentity -RestoreExecution "package-directory#2" -Identity "d1000000-0000-4000-8000-000000000008")) }; Expected = @("restore package-directory#2: 2 restored SourceIdentity records were recorded; expected exactly one") }
+        @{ Case = "the repeated restore read no row"; Mutate = { param($p) $p.RestoredIdentities[2].Rows = @() }; Expected = @("restore package-directory#2: the restored SourceIdentity has 0 rows; expected exactly one") }
+        @{ Case = "the repeated restore read two rows"; Mutate = { param($p) $p.RestoredIdentities[2].Rows = @($script:restoredIdentity["package-directory#2"], "d1000000-0000-4000-8000-000000000008") }; Expected = @("restore package-directory#2: the restored SourceIdentity has 2 rows; expected exactly one") }
+        @{ Case = "the repeated restore's value is not a UUID"; Mutate = { param($p) $p.RestoredIdentities[2].Rows = @("NULL") }; Expected = @("restore package-directory#2: the restored SourceIdentity is not a UUID ('NULL')") }
+        @{ Case = "the repeated restore's value is the zero UUID"; Mutate = { param($p) $p.RestoredIdentities[2].Rows = @("00000000-0000-0000-0000-000000000000") }; Expected = @("restore package-directory#2: the restored SourceIdentity is the zero UUID") }
+        @{ Case = "the repeated restore reused the first restore's identity"; Mutate = { param($p) $p.RestoredIdentities[2].Rows = @($script:restoredIdentity["package-directory#1"].ToUpperInvariant()) }; Expected = @("restore package-directory#2: the restored SourceIdentity {pd1} equals restore package-directory#1's") }
+        @{ Case = "the first restore kept the package's identity"; Mutate = { param($p) $p.RestoredIdentities[0].Rows = @($script:packageIdentity.Minimal.ToUpperInvariant()) }; Expected = @("restore package-directory#1: the restored SourceIdentity {minimalId} equals the package's inspected SourceIdentity") }
+        @{ Case = "the repeated restore kept the package's identity"; Mutate = { param($p) $p.RestoredIdentities[2].Rows = @($script:packageIdentity.Minimal) }; Expected = @("restore package-directory#2: the restored SourceIdentity {minimalId} equals the package's inspected SourceIdentity") }
+        @{ Case = "a later leg's restore reused the repeated restore's identity"; Mutate = { param($p) $p.RestoredIdentities[1].Rows = @($script:restoredIdentity["package-directory#2"]) }; Expected = @("restore separate-config#1: the restored SourceIdentity {pd2} equals restore package-directory#2's") }
+        @{ Case = "the repeated restore names another package's hash"; Mutate = { param($p) $p.RestoredIdentities[2].PackageSha256 = $script:otherSha }; Expected = @("restore package-directory#2: its package SHA-256 '{otherSha}' matches no package built in this run") }
+        @{ Case = "the repeated restore's record has no package hash"; Mutate = { param($p) $p.RestoredIdentities[2].PSObject.Properties.Remove("PackageSha256") }; Expected = @("restore package-directory#2: its package SHA-256 '' matches no package built in this run") }
+        @{ Case = "an identity record names no restore"; Mutate = { param($p) $p.RestoredIdentities.Add((New-CompleteRestoredIdentity -RestoreExecution "" -Identity "d1000000-0000-4000-8000-000000000007")) }; Expected = @("a restored SourceIdentity record names no restore execution") }
+        @{ Case = "an identity record belongs to a negative leg"; Mutate = { param($p) $p.RestoredIdentities.Add((New-CompleteRestoredIdentity -RestoreExecution "tampered-package#1")) }; Expected = @("a restored SourceIdentity was recorded for restore tampered-package#1, which no selected leg performs") }
+        @{ Case = "the run recorded no restored identities"; Mutate = { param($p) $p.Remove("RestoredIdentities") }; Expected = @("restore package-directory#1: no restored SourceIdentity was recorded", "restore package-directory#2: no restored SourceIdentity was recorded", "restore separate-config#1: no restored SourceIdentity was recorded") }
+
+        # No package was built, while its evidence names its hash.
+        @{ Case = "no package was built"; Mutate = { param($p) $p.Packages = @() }; Expected = @(
+                "no package was built in this run"
+                "a pre-backup SourceIdentity capture (Minimal) is bound to package SHA-256 {minimalSha}, which no package built in this run has"
+                "package inspection {db}: it inspected package SHA-256 '{minimalSha}', which no package built in this run has"
+                "restore package-directory#1: its package SHA-256 '{minimalSha}' matches no package built in this run"
+                "restore package-directory#2: its package SHA-256 '{minimalSha}' matches no package built in this run"
+                "restore separate-config#1: its package SHA-256 '{minimalSha}' matches no package built in this run"
+            )
+        }
+    ) {
+        $provenance = New-CompleteProvenance
+        & $Mutate $provenance
+
+        $classification = Get-RestoreSmokeResultClassification -Provenance $provenance
+
+        $classification.Final | Should -BeFalse
+        @($classification.Reasons) | Should -Be @(Expand-FixtureText $Expected)
+    }
+
+    It "requires no served-data read or restored identity for a run of only negative legs, but still the bound pre-backup capture" {
         $provenance = New-CompleteProvenance
         $provenance.Legs = @("tampered-package", "contaminated-package", "running-stack")
         $provenance.ApiReads.Clear()
+        $provenance.RestoredIdentities.Clear()
+        $provenance.PackageInspections = @()
 
         $classification = Get-RestoreSmokeResultClassification -Provenance $provenance
 
         $classification.Final | Should -BeTrue
         $classification.Reasons | Should -BeNullOrEmpty
+
+        $provenance.SourceIdentityBindings = @()
+        $withoutCapture = Get-RestoreSmokeResultClassification -Provenance $provenance
+
+        $withoutCapture.Final | Should -BeFalse
+        @($withoutCapture.Reasons) | Should -Be @(Expand-FixtureText "Minimal package {minimalSha}: no pre-backup SourceIdentity capture is bound to it")
     }
 
     Context "a Populated restore" {
@@ -2021,6 +2838,11 @@ Describe "Get-RestoreSmokeResultClassification" {
             $script:populated.Legs = @("populated")
             $script:populated.ApiReads.Clear()
             $script:populated.ApiReads.Add((New-CompleteApiRead -RestoreExecution "populated#1" -TemplateKind Populated))
+            $script:populated.Packages = @(New-CompletePackage -TemplateKind Populated)
+            $script:populated.SourceIdentityBindings = @(New-CompleteBinding -TemplateKind Populated)
+            $script:populated.PackageInspections = @(New-CompleteInspection -TemplateKind Populated)
+            $script:populated.RestoredIdentities.Clear()
+            $script:populated.RestoredIdentities.Add((New-CompleteRestoredIdentity -RestoreExecution "populated#1" -TemplateKind Populated))
         }
 
         It "is final with non-empty descriptor and schools reads" {
@@ -2043,6 +2865,42 @@ Describe "Get-RestoreSmokeResultClassification" {
 
             $classification.Final | Should -BeFalse
             @($classification.Reasons) | Should -Be $Expected
+        }
+    }
+
+    Context "a run that builds both a Minimal and a Populated package" {
+        BeforeEach {
+            $script:both = New-CompleteProvenance
+            $script:both.Legs = @("package-directory", "populated")
+            $script:both.ApiReads.RemoveAt(1)
+            $script:both.ApiReads.Add((New-CompleteApiRead -RestoreExecution "populated#1" -TemplateKind Populated))
+            $script:both.Packages = @((New-CompletePackage), (New-CompletePackage -TemplateKind Populated))
+            $script:both.SourceIdentityBindings = @((New-CompleteBinding), (New-CompleteBinding -TemplateKind Populated))
+            $script:both.PackageInspections = @((New-CompleteInspection), (New-CompleteInspection -TemplateKind Populated))
+            $script:both.RestoredIdentities.RemoveAt(1)
+            $script:both.RestoredIdentities.Add((New-CompleteRestoredIdentity -RestoreExecution "populated#1" -TemplateKind Populated))
+        }
+
+        It "is final when each package has its own capture and inspection and each restore its own identity" {
+            $classification = Get-RestoreSmokeResultClassification -Provenance $script:both
+
+            $classification.Final | Should -BeTrue
+            $classification.Reasons | Should -BeNullOrEmpty
+        }
+
+        It "is non-final when <case>" -ForEach @(
+            @{ Case = "only the Minimal package's capture was kept"; Mutate = { param($p) $p.SourceIdentityBindings = @($p.SourceIdentityBindings[0]) }; Expected = @("Populated package {populatedSha}: no pre-backup SourceIdentity capture is bound to it") }
+            @{ Case = "the Populated capture was filed under the Minimal package's hash"; Mutate = { param($p) $p.SourceIdentityBindings[1].PackageSha256 = $script:minimalSha }; Expected = @("Minimal package {minimalSha}: 2 pre-backup SourceIdentity captures are bound to it; expected exactly one", "Populated package {populatedSha}: no pre-backup SourceIdentity capture is bound to it") }
+            @{ Case = "the Populated package was not inspected"; Mutate = { param($p) $p.PackageInspections = @($p.PackageInspections[0]) }; Expected = @("Populated package {populatedSha}: it was not independently inspected") }
+            @{ Case = "the populated restore names the Minimal package"; Mutate = { param($p) $p.RestoredIdentities[2].PackageSha256 = $script:minimalSha }; Expected = @("restore populated#1: it restored the Minimal package; the leg restores Populated") }
+            @{ Case = "the populated restore kept the Populated package's identity"; Mutate = { param($p) $p.RestoredIdentities[2].Rows = @($script:packageIdentity.Populated) }; Expected = @("restore populated#1: the restored SourceIdentity {populatedId} equals the package's inspected SourceIdentity") }
+        ) {
+            & $Mutate $script:both
+
+            $classification = Get-RestoreSmokeResultClassification -Provenance $script:both
+
+            $classification.Final | Should -BeFalse
+            @($classification.Reasons) | Should -Be @(Expand-FixtureText $Expected)
         }
     }
 
@@ -2100,8 +2958,7 @@ Describe "Get-RestoreSmokeResultClassification" {
             "images were not built in this run"
             "no started stack was observed, so the images actually used are unknown"
             "no package was built in this run"
-            "the selected legs were not recorded, so the required served-data API reads are unknown"
-            "pre-backup SourceIdentity not captured: "
+            "the selected legs were not recorded, so the required served-data API reads and restored SourceIdentity records are unknown"
         )
     }
 
@@ -2114,7 +2971,9 @@ Describe "Get-RestoreSmokeResultClassification" {
             Images             = (New-RestoreSmokeImageLedger)
             StackObservations  = [System.Collections.Generic.List[object]]::new()
             Packages           = [System.Collections.Generic.List[object]]::new()
-            SourceIdentity     = $null
+            SourceIdentityBindings = [System.Collections.Generic.List[object]]::new()
+            PackageInspections = [System.Collections.Generic.List[object]]::new()
+            RestoredIdentities = [System.Collections.Generic.List[object]]::new()
         }
 
         $classification = Get-RestoreSmokeResultClassification -Provenance $provenance
@@ -2144,8 +3003,8 @@ Describe "Invoke-BootstrapRestoreSmoke complete preflight path (sandboxed, no Do
             Copy-Item -LiteralPath (Join-Path $PSScriptRoot "RestoreSmokeProbes.psm1") -Destination $testsRoot
             # The helper modules the probe module imports, at their repository paths.
             $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
-            New-Item -ItemType Directory -Path (Join-Path $checkout "eng/smoke_test/modules") -Force | Out-Null
-            foreach ($helperModule in @("eng/docker-compose/env-utility.psm1", "eng/docker-compose/database-safety.psm1", "eng/Dms-Management.psm1", "eng/smoke_test/modules/SmokeTest.psm1")) {
+            New-Item -ItemType Directory -Path (Join-Path $checkout "eng/smoke_test/modules"), (Join-Path $checkout "eng/DatabaseTemplates") -Force | Out-Null
+            foreach ($helperModule in @("eng/docker-compose/env-utility.psm1", "eng/docker-compose/database-safety.psm1", "eng/Dms-Management.psm1", "eng/smoke_test/modules/SmokeTest.psm1", "eng/DatabaseTemplates/Template-RestoreCore.psm1")) {
                 Copy-Item -LiteralPath (Join-Path $repoRoot $helperModule) -Destination (Join-Path $checkout $helperModule)
             }
             Set-Content -LiteralPath (Join-Path $composeRoot ".env.example") -Value "POSTGRES_DB_NAME=edfi_datamanagementservice"
