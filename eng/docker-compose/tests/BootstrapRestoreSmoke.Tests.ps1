@@ -43,7 +43,7 @@ Describe "Invoke-BootstrapRestoreSmoke static contract" {
     Context "Parameter surface" {
         It "declares the smoke parameters" {
             $params = Get-DeclaredScriptParameters -Path $script:smokeScriptPath
-            foreach ($expected in @("EnvironmentFile", "DatabaseEngine", "Leg", "PackageVersion", "StandardVersion", "SkipSourceSeed", "ResultsPath", "SkipTeardown")) {
+            foreach ($expected in @("EnvironmentFile", "DatabaseEngine", "Leg", "PackageVersion", "StandardVersion", "DataStandardVersion", "Wrapper", "SkipSourceSeed", "ResultsPath", "SkipTeardown", "ConfirmForeignStackRemoval", "ExploratoryPackage")) {
                 $params | Should -Contain $expected
             }
         }
@@ -67,7 +67,8 @@ Describe "Invoke-BootstrapRestoreSmoke static contract" {
         }
 
         It "the tampered-package leg proves the refusal happened before any Docker activity" {
-            $script:smokeContent.Contains('label=com.docker.compose.project=dms-local') | Should -BeTrue
+            # The project label follows -Wrapper (dms-local or dms-published).
+            $script:smokeContent.Contains('label=com.docker.compose.project=$($script:WrapperProfile.ComposeProject)') | Should -BeTrue
             $script:smokeContent.Contains("Tampered-package refusal happened AFTER Docker activity") | Should -BeTrue
         }
 
@@ -96,6 +97,41 @@ Describe "Invoke-BootstrapRestoreSmoke static contract" {
 
         It "tears down and cleans transient state in the finally block" {
             $script:smokeContent | Should -Match '(?s)finally \{.*Invoke-SmokeTeardown.*Remove-Item -LiteralPath \$script:WorkDirectory'
+        }
+    }
+
+    Context "Foreign-stack preflight and provenance" {
+        It "inventories foreign stacks and refuses before authorizing the first teardown" {
+            $inventoryIndex = $script:smokeContent.IndexOf('$inventory = Get-RestoreSmokeForeignStackInventory')
+            $assertIndex = $script:smokeContent.IndexOf('Assert-RestoreSmokeNoForeignStack -Inventory $inventory')
+            $authorizeIndex = $script:smokeContent.IndexOf('$script:TeardownAuthorized = $true')
+            $workDirectoryIndex = $script:smokeContent.IndexOf('$script:WorkDirectory = Join-Path')
+            $firstTeardownCallIndex = $script:smokeContent.IndexOf('Invoke-SmokeTeardown -WrapperProfile (Get-RestoreSmokeWrapperProfile')
+
+            $inventoryIndex | Should -BeGreaterThan 0
+            $assertIndex | Should -BeGreaterThan $inventoryIndex
+            $authorizeIndex | Should -BeGreaterThan $assertIndex
+            $workDirectoryIndex | Should -BeGreaterThan $authorizeIndex
+            $firstTeardownCallIndex | Should -BeGreaterThan $authorizeIndex
+        }
+
+        It "gates every teardown, including the failure teardown in the finally block, on the preflight authorization" {
+            $script:smokeContent.Contains('if (-not $script:TeardownAuthorized) {') | Should -BeTrue
+            $script:smokeContent | Should -Match '(?s)finally \{\s*if \(-not \$SkipTeardown -and \$exitCode -ne 0\) \{\s*if \(\$script:TeardownAuthorized\) \{'
+        }
+
+        It "runs the wrapper and teardown scripts selected by -Wrapper, never a hard-wired local script" {
+            $script:smokeContent.Contains('$($script:WrapperProfile.BootstrapScriptName)') | Should -BeTrue
+            $script:smokeContent.Contains('$($WrapperProfile.TeardownScriptName)') | Should -BeTrue
+            $script:smokeContent | Should -Not -Match '&\s*"\$script:DockerComposeRoot/(start|bootstrap)-local-dms\.ps1"'
+            $script:smokeContent.Contains('Get-RestoreSmokeWrapperArgumentSet') | Should -BeTrue
+        }
+
+        It "builds SchemaTools and the images in-run and writes the provenance classification to the results" {
+            $script:smokeContent.Contains('Invoke-RestoreSmokeSchemaToolBuild') | Should -BeTrue
+            $script:smokeContent.Contains('Invoke-RestoreSmokeImageBuild') | Should -BeTrue
+            $script:smokeContent.Contains('Get-RestoreSmokeResultClassification -Provenance $script:Provenance') | Should -BeTrue
+            $script:smokeContent | Should -Match 'Classification\s*=\s*\$classification'
         }
     }
 }
