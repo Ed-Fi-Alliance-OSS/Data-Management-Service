@@ -94,7 +94,7 @@ internal static class AncestorDescriptorIdFixtures
 [TestFixture]
 public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_for_descriptor_only_identity_with_one_current_row
 {
-    private long? _result;
+    private int? _result;
 
     [SetUp]
     public void Setup()
@@ -106,7 +106,7 @@ public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_for_descriptor_
         [
             AncestorDescriptorIdFixtures.Snapshot(
                 stableRowIdentity: 1L,
-                ("$.zoneDescriptor", JsonValue.Create(7777L))
+                ("$.zoneDescriptor", JsonValue.Create(7777))
             ),
         ];
         ImmutableArray<VisibleStoredCollectionRow> storedRows =
@@ -135,13 +135,13 @@ public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_for_descriptor_
 
     [Test]
     public void It_returns_the_descriptor_id_via_count_equal_positional_fallback() =>
-        _result.Should().Be(7777L);
+        _result.Should().Be(7777);
 }
 
 [TestFixture]
 public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_for_descriptor_only_identity_with_no_current_rows
 {
-    private long? _result;
+    private int? _result;
 
     [SetUp]
     public void Setup()
@@ -170,7 +170,7 @@ public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_for_descriptor_
 [TestFixture]
 public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_for_descriptor_only_identity_with_multiple_count_equal_rows
 {
-    private long? _result;
+    private int? _result;
 
     [SetUp]
     public void Setup()
@@ -182,11 +182,11 @@ public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_for_descriptor_
         [
             AncestorDescriptorIdFixtures.Snapshot(
                 stableRowIdentity: 1L,
-                ("$.zoneDescriptor", JsonValue.Create(7777L))
+                ("$.zoneDescriptor", JsonValue.Create(7777))
             ),
             AncestorDescriptorIdFixtures.Snapshot(
                 stableRowIdentity: 2L,
-                ("$.zoneDescriptor", JsonValue.Create(8888L))
+                ("$.zoneDescriptor", JsonValue.Create(8888))
             ),
         ];
         ImmutableArray<VisibleStoredCollectionRow> storedRows =
@@ -218,13 +218,13 @@ public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_for_descriptor_
     }
 
     [Test]
-    public void It_resolves_the_second_row_positionally_to_the_canonical_id() => _result.Should().Be(8888L);
+    public void It_resolves_the_second_row_positionally_to_the_canonical_id() => _result.Should().Be(8888);
 }
 
 [TestFixture]
 public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_when_stored_count_diverges_from_current_count
 {
-    private long? _result;
+    private int? _result;
 
     [SetUp]
     public void Setup()
@@ -236,11 +236,11 @@ public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_when_stored_cou
         [
             AncestorDescriptorIdFixtures.Snapshot(
                 stableRowIdentity: 1L,
-                ("$.zoneDescriptor", JsonValue.Create(7777L))
+                ("$.zoneDescriptor", JsonValue.Create(7777))
             ),
             AncestorDescriptorIdFixtures.Snapshot(
                 stableRowIdentity: 2L,
-                ("$.zoneDescriptor", JsonValue.Create(8888L))
+                ("$.zoneDescriptor", JsonValue.Create(8888))
             ),
         ];
         ImmutableArray<VisibleStoredCollectionRow> storedRows =
@@ -274,7 +274,7 @@ public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_when_stored_cou
 [TestFixture]
 public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_for_descriptor_only_identity_in_two_partitions_with_partition_map
 {
-    private long? _result;
+    private int? _result;
 
     [SetUp]
     public void Setup()
@@ -290,14 +290,14 @@ public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_for_descriptor_
         [
             AncestorDescriptorIdFixtures.Snapshot(
                 stableRowIdentity: 11L,
-                ("$.zoneDescriptor", JsonValue.Create(1111L))
+                ("$.zoneDescriptor", JsonValue.Create(1111))
             ),
         ];
         ImmutableArray<CurrentCollectionRowSnapshot> partitionBCurrent =
         [
             AncestorDescriptorIdFixtures.Snapshot(
                 stableRowIdentity: 22L,
-                ("$.zoneDescriptor", JsonValue.Create(2222L))
+                ("$.zoneDescriptor", JsonValue.Create(2222))
             ),
         ];
         ImmutableArray<CurrentCollectionRowSnapshot> scopeWideCurrent =
@@ -335,13 +335,13 @@ public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_for_descriptor_
     }
 
     [Test]
-    public void It_resolves_via_target_partition_positional_pairing() => _result.Should().Be(2222L);
+    public void It_resolves_via_target_partition_positional_pairing() => _result.Should().Be(2222);
 }
 
 [TestFixture]
 public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_for_mixed_identity_with_unique_scalar_match
 {
-    private long? _result;
+    private int? _result;
 
     [SetUp]
     public void Setup()
@@ -355,12 +355,12 @@ public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_for_mixed_ident
             AncestorDescriptorIdFixtures.Snapshot(
                 stableRowIdentity: 1L,
                 ("$.programId", JsonValue.Create("ProgA")),
-                ("$.programTypeDescriptor", JsonValue.Create(4242L))
+                ("$.programTypeDescriptor", JsonValue.Create(4242))
             ),
             AncestorDescriptorIdFixtures.Snapshot(
                 stableRowIdentity: 2L,
                 ("$.programId", JsonValue.Create("ProgB")),
-                ("$.programTypeDescriptor", JsonValue.Create(5252L))
+                ("$.programTypeDescriptor", JsonValue.Create(5252))
             ),
         ];
         var partitionMap = AncestorDescriptorIdFixtures.PartitionMap(
@@ -381,13 +381,13 @@ public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_for_mixed_ident
     }
 
     [Test]
-    public void It_returns_the_descriptor_id_from_the_uniquely_matched_row() => _result.Should().Be(4242L);
+    public void It_returns_the_descriptor_id_from_the_uniquely_matched_row() => _result.Should().Be(4242);
 }
 
 [TestFixture]
 public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_for_mixed_identity_with_partition_scoped_scalar_match
 {
-    private long? _result;
+    private int? _result;
 
     [SetUp]
     public void Setup()
@@ -410,7 +410,7 @@ public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_for_mixed_ident
             AncestorDescriptorIdFixtures.Snapshot(
                 stableRowIdentity: 11L,
                 ("$.code", JsonValue.Create("A")),
-                ("$.kindDescriptor", JsonValue.Create(101L))
+                ("$.kindDescriptor", JsonValue.Create(101))
             ),
         ];
         ImmutableArray<CurrentCollectionRowSnapshot> partitionBCurrent =
@@ -418,7 +418,7 @@ public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_for_mixed_ident
             AncestorDescriptorIdFixtures.Snapshot(
                 stableRowIdentity: 22L,
                 ("$.code", JsonValue.Create("A")),
-                ("$.kindDescriptor", JsonValue.Create(202L))
+                ("$.kindDescriptor", JsonValue.Create(202))
             ),
         ];
         ImmutableArray<CurrentCollectionRowSnapshot> scopeWideCurrent =
@@ -446,5 +446,40 @@ public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_for_mixed_ident
     }
 
     [Test]
-    public void It_returns_the_descriptor_id_from_the_target_partition() => _result.Should().Be(202L);
+    public void It_returns_the_descriptor_id_from_the_target_partition() => _result.Should().Be(202);
+}
+
+[TestFixture]
+public class Given_TryResolveAncestorDescriptorIdFromCurrentRows_with_a_wide_document_key_in_the_descriptor_slot
+{
+    private int? _result;
+
+    [SetUp]
+    public void Setup()
+    {
+        var identity = AncestorDescriptorIdFixtures.Identity(
+            ("$.kindDescriptor", JsonValue.Create("uri://Example.org/Kind#Value"))
+        );
+        ImmutableArray<CurrentCollectionRowSnapshot> currentRows =
+        [
+            AncestorDescriptorIdFixtures.Snapshot(1L, ("$.kindDescriptor", JsonValue.Create(5000000042L))),
+        ];
+        var parent = AncestorDescriptorIdFixtures.RootParent;
+        _result = RelationalWriteProfileMergeSynthesizer.TryResolveAncestorDescriptorIdFromCurrentRows(
+            identity,
+            [0],
+            0,
+            currentRows,
+            [AncestorDescriptorIdFixtures.StoredRow(parent, ("$.kindDescriptor", identity[0].Value))],
+            parent,
+            parent,
+            AncestorDescriptorIdFixtures.AncestorScope,
+            AncestorDescriptorIdFixtures.PartitionMap(
+                (AncestorDescriptorIdFixtures.AncestorScope, parent, currentRows)
+            )
+        );
+    }
+
+    [Test]
+    public void It_rejects_the_wide_value_without_narrowing() => _result.Should().BeNull();
 }

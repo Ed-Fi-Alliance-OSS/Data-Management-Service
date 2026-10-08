@@ -396,7 +396,7 @@ public abstract class WritePlanCompilerTestBase
                 new DbColumnModel(
                     ColumnName: new DbColumnName("SchoolYearTypeDescriptorIdCanonical"),
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: null,
                     TargetResource: descriptorResource
@@ -439,7 +439,7 @@ public abstract class WritePlanCompilerTestBase
                 new DbColumnModel(
                     ColumnName: new DbColumnName("SchoolYearTypeDescriptorPrimary"),
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: CreatePath(
                         "$.schoolYearTypeDescriptor",
@@ -454,7 +454,7 @@ public abstract class WritePlanCompilerTestBase
                 new DbColumnModel(
                     ColumnName: new DbColumnName("SchoolYearTypeDescriptorSecondary"),
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: CreatePath(
                         "$.localSchoolYearTypeDescriptor",
@@ -1236,7 +1236,7 @@ public abstract class WritePlanCompilerTestBase
                 new DbColumnModel(
                     ColumnName: new DbColumnName("ProgramTypeDescriptorId"),
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: CreatePath(
                         "$.addresses[*].programTypeDescriptor",
@@ -1274,7 +1274,7 @@ public abstract class WritePlanCompilerTestBase
                 new DbColumnModel(
                     ColumnName: new DbColumnName("ProgramTypeDescriptorIdAlias"),
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: CreatePath(
                         "$.addresses[*].programTypeDescriptor",

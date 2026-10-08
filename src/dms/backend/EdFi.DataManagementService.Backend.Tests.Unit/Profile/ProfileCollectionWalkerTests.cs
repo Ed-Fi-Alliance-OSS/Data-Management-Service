@@ -2925,7 +2925,7 @@ public class Given_a_descriptor_backed_parent_collection_with_nested_children
 {
     private const long DocumentId = 345L;
     private const long ParentItemId = 100L;
-    private const long ParentDescriptorId = 42L;
+    private const int ParentDescriptorId = 42;
     private const long ChildA1ItemId = 1001L;
     private const long ChildA2ItemId = 1002L;
 
@@ -2951,7 +2951,7 @@ public class Given_a_descriptor_backed_parent_collection_with_nested_children
             ),
         };
 
-        // Parent candidate carries the canonicalized Int64 descriptor id (as the flattener
+        // Parent candidate carries the canonicalized Int32 descriptor id (as the flattener
         // produces after URI resolution).
         var candidate = DescriptorBackedNestedTopologyBuilders.BuildParentCandidate(
             parentsPlan,
@@ -2990,7 +2990,7 @@ public class Given_a_descriptor_backed_parent_collection_with_nested_children
 
         var context = DescriptorBackedNestedTopologyBuilders.BuildContext(request, storedRows);
 
-        // Current DB state: parent stored as Int64 descriptor id; two children under it.
+        // Current DB state: parent stored as Int32 descriptor id; two children under it.
         var currentState = DescriptorBackedNestedTopologyBuilders.BuildCurrentState(
             rootPlan,
             parentsPlan,
@@ -3150,7 +3150,7 @@ public class Given_a_descriptor_backed_parent_with_inlined_descendant_hidden_mem
 {
     private const long DocumentId = 345L;
     private const long ParentItemId = 100L;
-    private const long ParentDescriptorId = 42L;
+    private const int ParentDescriptorId = 42;
     private const long ChildA1ItemId = 1001L;
     private const long ChildA2ItemId = 1002L;
 
@@ -3495,7 +3495,7 @@ internal static class DescriptorBackedNestedTopologyBuilders
         var descriptorColumn = new DbColumnModel(
             ColumnName: new DbColumnName("ParentTypeDescriptor_Id"),
             Kind: ColumnKind.DescriptorFk,
-            ScalarType: new RelationalScalarType(ScalarKind.Int64),
+            ScalarType: new RelationalScalarType(ScalarKind.Int32),
             IsNullable: false,
             SourceJsonPath: new JsonPathExpression(ParentDescriptorPath, []),
             TargetResource: ParentTypeDescriptorResource
@@ -3691,7 +3691,7 @@ internal static class DescriptorBackedNestedTopologyBuilders
 
     public static CollectionWriteCandidate BuildParentCandidate(
         TableWritePlan parentsPlan,
-        long descriptorId,
+        int descriptorId,
         int requestOrder
     )
     {
@@ -3816,7 +3816,7 @@ internal static class DescriptorBackedNestedTopologyBuilders
             []
         );
 
-    public static ResolvedReferenceSet BuildResolvedReferenceSet(string uri, long descriptorId) =>
+    public static ResolvedReferenceSet BuildResolvedReferenceSet(string uri, int descriptorId) =>
         new(
             SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
             SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
@@ -3834,8 +3834,8 @@ internal static class DescriptorBackedNestedTopologyBuilders
                         ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Path: new JsonPath("$.parents[0].parentTypeDescriptor")
                     ),
-                    17,
-                    DocumentId: descriptorId,
+                    DescriptorId: descriptorId,
+                    DocumentId: 5000000000L + descriptorId,
                     ResourceKeyId: 1
                 ),
             },
@@ -5753,7 +5753,7 @@ internal static class DocumentReferenceBackedNestedTopologyBuilders
 /// part (e.g., <c>programReference.programId</c>) AND a descriptor URI part (e.g.,
 /// <c>programReference.programTypeDescriptor</c>) — the stored ancestor identity carries
 /// the URI string at the descriptor slot while the current row carries the canonical
-/// Int64 descriptor id. Raw JSON equality cannot match the URI string against the Int64,
+/// Int32 descriptor id. Raw JSON equality cannot match the URI string against the Int32,
 /// and the helper fell through to the fail-closed
 /// <see cref="InvalidOperationException"/> even when the URI was resolvable via the
 /// request-cycle URI cache.
@@ -5775,7 +5775,7 @@ public class Given_a_composite_descriptor_and_scalar_document_reference_backed_p
     private const long ParentItemId = 100L;
     private const long ParentReferenceDocumentId = 555L;
     private const long ProgramId = 42L;
-    private const long RegularDescriptorId = 77L;
+    private const int RegularDescriptorId = 77;
     private const string RegularUri = "uri://ed-fi.org/ProgramTypeDescriptor#Regular";
     private const long ChildA1ItemId = 1001L;
     private const long ChildA2ItemId = 1002L;
@@ -5811,7 +5811,7 @@ public class Given_a_composite_descriptor_and_scalar_document_reference_backed_p
         // two stored children whose ParentAddress.AncestorCollectionInstances[0] carries
         // the parent's COMPOSITE natural-key form. Without descriptor-aware comparison in
         // the ancestor canonicalization scan, the URI part fails raw-equality against the
-        // current row's Int64 descriptor id and the helper throws fail-closed.
+        // current row's Int32 descriptor id and the helper throws fail-closed.
         var storedRows = ImmutableArray.Create(
             CompositeDescriptorScalarDocumentReferenceBackedNestedTopologyBuilders.BuildParentStoredRow(
                 ProgramId,
@@ -5903,7 +5903,7 @@ public class Given_a_composite_descriptor_and_scalar_document_reference_backed_p
         // Without the fix: TryResolveAncestorDocumentReferenceIdFromCurrentRows throws
         // InvalidOperationException ("Cannot canonicalize document-reference ancestor
         // identity...") during walker construction because the raw-JSON equality scan
-        // cannot match the stored URI string against the current row's Int64 descriptor
+        // cannot match the stored URI string against the current row's Int32 descriptor
         // id, even though the URI is present in the cache. The exception fires from
         // CanonicalizeAncestorDocumentReferenceParts via CanonicalizeAddressAncestors
         // during walker construction, so the [SetUp] does not complete and Setup throws.
@@ -5996,8 +5996,8 @@ public class Given_a_composite_descriptor_and_scalar_document_reference_backed_p
     private const long ParentReferenceDocumentId = 555L;
     private const long ProgramId = 42L;
     private const long HiddenProgramId = 99L;
-    private const long RegularDescriptorId = 77L;
-    private const long HiddenDescriptorId = 88L;
+    private const int RegularDescriptorId = 77;
+    private const int HiddenDescriptorId = 88;
     private const string RegularUri = "uri://ed-fi.org/ProgramTypeDescriptor#Regular";
     private const long ChildA1ItemId = 1001L;
     private const long ChildA2ItemId = 1002L;
@@ -6293,7 +6293,7 @@ internal static class CompositeDescriptorScalarDocumentReferenceBackedNestedTopo
     {
         // Layout: [ParentItemId, ParentDocumentId, Ordinal, ParentReference_DocumentId,
         // ParentReference_ProgramId, ParentReference_ProgramTypeDescriptor_Id].
-        // ProgramId is a scalar Int64; ProgramTypeDescriptor_Id is a DescriptorFk Int64
+        // ProgramId is a scalar Int64; ProgramTypeDescriptor_Id is a DescriptorFk Int32
         // — the canonical id resolved from the URI. Both feed the table's two semantic
         // identity bindings (the COMPOSITE natural key).
         var parentItemIdColumn = new DbColumnModel(
@@ -6339,7 +6339,7 @@ internal static class CompositeDescriptorScalarDocumentReferenceBackedNestedTopo
         var programTypeDescriptorColumn = new DbColumnModel(
             ColumnName: new DbColumnName("ParentReference_ProgramTypeDescriptor_Id"),
             Kind: ColumnKind.DescriptorFk,
-            ScalarType: new RelationalScalarType(ScalarKind.Int64),
+            ScalarType: new RelationalScalarType(ScalarKind.Int32),
             IsNullable: false,
             SourceJsonPath: new JsonPathExpression(ParentReferenceProgramTypeDescriptorPath, []),
             TargetResource: DescriptorResource
@@ -6693,7 +6693,7 @@ internal static class CompositeDescriptorScalarDocumentReferenceBackedNestedTopo
     public static ResolvedReferenceSet BuildResolvedReferenceSet(
         long programId,
         string programTypeUri,
-        long programTypeDescriptorId,
+        int programTypeDescriptorId,
         long parentReferenceDocumentId
     ) =>
         new(
@@ -6742,8 +6742,8 @@ internal static class CompositeDescriptorScalarDocumentReferenceBackedNestedTopo
                             new ReferentialId(Guid.NewGuid()),
                             new JsonPath(ParentReferenceProgramTypeDescriptorConcretePath)
                         ),
-                        17,
-                        programTypeDescriptorId,
+                        DescriptorId: programTypeDescriptorId,
+                        DocumentId: 5000000000L + programTypeDescriptorId,
                         13
                     ),
             },

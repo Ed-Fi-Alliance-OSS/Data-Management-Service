@@ -4077,7 +4077,7 @@ internal static class DescriptorCanonicalizeBuilders
     );
 
     public const string AddressTypeUri = "uri://ed-fi.org/AddressTypeDescriptor#Physical";
-    public const long AddressTypeId = 42L;
+    public const int AddressTypeId = 42;
 
     /// <summary>
     /// Builds a two-table ResourceWritePlan: [0] root, [1] collection table with
@@ -4192,7 +4192,7 @@ internal static class DescriptorCanonicalizeBuilders
         var descriptorColumn = new DbColumnModel(
             ColumnName: new DbColumnName("AddressTypeDescriptor_Id"),
             Kind: ColumnKind.DescriptorFk,
-            ScalarType: new RelationalScalarType(ScalarKind.Int64),
+            ScalarType: new RelationalScalarType(ScalarKind.Int32),
             IsNullable: false,
             SourceJsonPath: Path(DescriptorPath),
             TargetResource: AddressTypeDescriptorResource
@@ -4281,10 +4281,10 @@ internal static class DescriptorCanonicalizeBuilders
     }
 
     /// <summary>
-    /// Builds a CollectionWriteCandidate whose semantic identity carries the Int64 descriptor id
+    /// Builds a CollectionWriteCandidate whose semantic identity carries the Int32 descriptor id
     /// (as the backend flattener would emit after resolving the URI).
     /// </summary>
-    public static CollectionWriteCandidate BuildCandidate(TableWritePlan collectionPlan, long descriptorId)
+    public static CollectionWriteCandidate BuildCandidate(TableWritePlan collectionPlan, int descriptorId)
     {
         var values = new FlattenedWriteValue[collectionPlan.ColumnBindings.Length];
         for (var i = 0; i < values.Length; i++)
@@ -4343,7 +4343,7 @@ internal static class DescriptorCanonicalizeBuilders
     /// </summary>
     public static ResolvedReferenceSet BuildResolvedReferenceSetWithDescriptor(
         string uri,
-        long descriptorId
+        int descriptorId
     ) =>
         new(
             SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
@@ -4362,8 +4362,8 @@ internal static class DescriptorCanonicalizeBuilders
                         ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Path: new JsonPath("$.addresses[0].addressTypeDescriptor")
                     ),
-                    17,
-                    DocumentId: descriptorId,
+                    DescriptorId: descriptorId,
+                    DocumentId: 5000000000L + descriptorId,
                     ResourceKeyId: 1
                 ),
             },
@@ -4409,7 +4409,7 @@ internal static class DescriptorCanonicalizeBuilders
 
 /// <summary>
 /// Fixture: descriptor-backed identity in request + stored both carry the URI; the cache
-/// resolves it to Int64. Planner must produce a MatchedUpdateEntry.
+/// resolves it to Int32. Planner must produce a MatchedUpdateEntry.
 /// </summary>
 [TestFixture]
 public class Given_top_level_collection_with_descriptor_backed_semantic_identity_matches_when_uri_in_cache
@@ -4429,7 +4429,7 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
             ),
         };
 
-        // Backend candidate carries Int64 (as flattener produces after resolving).
+        // Backend candidate carries Int32 (as flattener produces after resolving).
         var candidate = DescriptorCanonicalizeBuilders.BuildCandidate(
             collectionPlan,
             DescriptorCanonicalizeBuilders.AddressTypeId
@@ -4470,14 +4470,14 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
             [storedRow]
         );
 
-        // Current DB state: one stored row with Int64 descriptor id.
+        // Current DB state: one stored row with Int32 descriptor id.
         var currentState = DescriptorCanonicalizeBuilders.BuildCurrentState(
             rootPlan,
             collectionPlan,
             documentId: 345L,
             collectionRows:
             [
-                [1L, 345L, 1, DescriptorCanonicalizeBuilders.AddressTypeId],
+                [1L, 345L, 0, DescriptorCanonicalizeBuilders.AddressTypeId],
             ]
         );
 
@@ -4512,6 +4512,25 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
     [Test]
     public void It_produces_one_merged_collection_row() =>
         _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(1);
+
+    [Test]
+    public void It_keeps_the_compact_descriptor_value_in_the_matched_row() =>
+        _outcome
+            .MergeResult!.TablesInDependencyOrder[1]
+            .MergedRows.Single()
+            .Values[3]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal(DescriptorCanonicalizeBuilders.AddressTypeId));
+
+    [Test]
+    public void It_keeps_unchanged_descriptor_rows_equal_for_no_op_detection()
+    {
+        var table = _outcome.MergeResult!.TablesInDependencyOrder[1];
+        table
+            .MergedRows.Single()
+            .ComparableValues.Should()
+            .Equal(table.CurrentRows.Single().ComparableValues);
+    }
 
     [Test]
     public void It_has_one_current_collection_row() =>
@@ -4602,7 +4621,7 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
                     2L,
                     345L,
                     2,
-                    99L, /* hidden row's descriptor id */
+                    99, /* hidden row's descriptor id */
                 ],
             ]
         );
@@ -4631,6 +4650,18 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
 
     [Test]
     public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
+
+    [Test]
+    public void It_preserves_the_hidden_compact_descriptor_and_matches_the_visible_compact_descriptor()
+    {
+        var rows = _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows;
+        rows[0]
+            .Values[3]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal(DescriptorCanonicalizeBuilders.AddressTypeId));
+        rows[1].Values[3].Should().Be(new FlattenedWriteValue.Literal(99));
+        rows[1].Values[0].Should().Be(new FlattenedWriteValue.Literal(2L));
+    }
 
     [Test]
     public void It_produces_two_merged_rows_one_visible_update_and_one_hidden_preserve() =>
@@ -4765,9 +4796,9 @@ public class Given_top_level_collection_with_descriptor_backed_identity_delete_b
 
     // Two descriptor URIs/ids used in this fixture.
     private const string AddressTypeUriA = DescriptorCanonicalizeBuilders.AddressTypeUri; // "Physical"
-    private const long AddressTypeIdA = DescriptorCanonicalizeBuilders.AddressTypeId; // 42L
+    private const int AddressTypeIdA = DescriptorCanonicalizeBuilders.AddressTypeId; // 42L
     private const string AddressTypeUriB = "uri://ed-fi.org/AddressTypeDescriptor#Home";
-    private const long AddressTypeIdB = 99L;
+    private const int AddressTypeIdB = 99;
 
     [SetUp]
     public void Setup()
@@ -4879,7 +4910,7 @@ public class Given_top_level_collection_with_descriptor_backed_identity_delete_b
 
 /// <summary>
 /// Fixture: two-part identity with one scalar part and one descriptor part. The scalar part
-/// must pass through unchanged; the descriptor URI must be canonicalized to Int64.
+/// must pass through unchanged; the descriptor URI must be canonicalized to Int32.
 /// Planner must match request item against stored row after both canonicalizations apply.
 /// </summary>
 [TestFixture]
@@ -4931,7 +4962,7 @@ public class Given_top_level_collection_with_mixed_scalar_and_descriptor_identit
         var descriptorColumn = new DbColumnModel(
             ColumnName: new DbColumnName("AddressTypeDescriptor_Id"),
             Kind: ColumnKind.DescriptorFk,
-            ScalarType: new RelationalScalarType(ScalarKind.Int64),
+            ScalarType: new RelationalScalarType(ScalarKind.Int32),
             IsNullable: false,
             SourceJsonPath: new JsonPathExpression(DescriptorCanonicalizeBuilders.DescriptorPath, []),
             TargetResource: DescriptorCanonicalizeBuilders.AddressTypeDescriptorResource
@@ -5101,7 +5132,7 @@ public class Given_top_level_collection_with_mixed_scalar_and_descriptor_identit
             [rootPlan, collectionPlan]
         );
 
-        // Candidate carries: city = "Springfield", descriptorId = Int64 (Int64 from flattener).
+        // Candidate carries: city = "Springfield", descriptorId = Int32 (Int32 from flattener).
         var candidateValues = new FlattenedWriteValue[]
         {
             new FlattenedWriteValue.Literal(null), // CollectionItemId
@@ -5268,9 +5299,9 @@ internal static class MixedIdentityBuilders
         DescriptorCanonicalizeBuilders.AddressTypeDescriptorResource;
 
     public const string PhysicalUri = DescriptorCanonicalizeBuilders.AddressTypeUri; // "uri://ed-fi.org/AddressTypeDescriptor#Physical"
-    public const long PhysicalId = DescriptorCanonicalizeBuilders.AddressTypeId; // 42L
+    public const int PhysicalId = DescriptorCanonicalizeBuilders.AddressTypeId; // 42L
     public const string MailingUri = "uri://ed-fi.org/AddressTypeDescriptor#Mailing";
-    public const long MailingId = 50L;
+    public const int MailingId = 50;
 
     /// <summary>
     /// Builds the five-column mixed-identity collection plan:
@@ -5317,7 +5348,7 @@ internal static class MixedIdentityBuilders
         var descriptorColumn = new DbColumnModel(
             ColumnName: new DbColumnName("AddressTypeDescriptor_Id"),
             Kind: ColumnKind.DescriptorFk,
-            ScalarType: new RelationalScalarType(ScalarKind.Int64),
+            ScalarType: new RelationalScalarType(ScalarKind.Int32),
             IsNullable: false,
             SourceJsonPath: Path(DescriptorPath),
             TargetResource: AddressTypeDescriptorResource
@@ -5529,7 +5560,7 @@ internal static class MixedIdentityBuilders
     public static CollectionWriteCandidate BuildCandidate(
         TableWritePlan collectionPlan,
         string city,
-        long descriptorId,
+        int descriptorId,
         int requestOrder
     )
     {
@@ -6177,8 +6208,8 @@ internal static class ReferenceWithDescriptorIdentityBuilders
     public const string ProgramBId = "99";
     public const string AthleticUri = "uri://ed-fi.org/ProgramTypeDescriptor#Athletic";
     public const string CareerUri = "uri://ed-fi.org/ProgramTypeDescriptor#Career";
-    public const long AthleticDescriptorId = 10L;
-    public const long CareerDescriptorId = 20L;
+    public const int AthleticDescriptorId = 10;
+    public const int CareerDescriptorId = 20;
     public const long ProgramADocumentId = 501L;
     public const long ProgramBDocumentId = 502L;
 
@@ -6360,7 +6391,7 @@ internal static class ReferenceWithDescriptorIdentityBuilders
         var programTypeDescriptorColumn = new DbColumnModel(
             ColumnName: new DbColumnName("ProgramReference_ProgramTypeDescriptor_Id"),
             Kind: ColumnKind.DescriptorFk,
-            ScalarType: new RelationalScalarType(ScalarKind.Int64),
+            ScalarType: new RelationalScalarType(ScalarKind.Int32),
             IsNullable: false,
             SourceJsonPath: Path(ProgramTypeDescriptorPath),
             TargetResource: ProgramTypeDescriptorResource

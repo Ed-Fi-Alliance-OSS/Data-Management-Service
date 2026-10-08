@@ -1701,7 +1701,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         );
     }
 
-    private static long ResolveReferenceDerivedDescriptorValue(
+    private static int ResolveReferenceDerivedDescriptorValue(
         TableWritePlan tableWritePlan,
         DbColumnName columnName,
         ReferenceDerivedValueSourceMetadata referenceSource,
