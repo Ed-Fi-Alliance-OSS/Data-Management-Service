@@ -16,7 +16,7 @@ internal static class ReferenceLookupResultReader
     private const string DocumentIdColumnName = "DocumentId";
     private const string ResourceKeyIdColumnName = "ResourceKeyId";
     private const string ReferentialIdentityResourceKeyIdColumnName = "ReferentialIdentityResourceKeyId";
-    private const string IsDescriptorColumnName = "IsDescriptor";
+    private const string DescriptorIdColumnName = "DescriptorId";
     private const string VerificationIdentityKeyColumnName = "VerificationIdentityKey";
 
     public static async Task<IReadOnlyList<ReferenceLookupResult>> ReadAsync(
@@ -27,6 +27,7 @@ internal static class ReferenceLookupResultReader
         ArgumentNullException.ThrowIfNull(reader);
 
         List<ReferenceLookupResult> lookupResults = [];
+        var descriptorIdOrdinal = reader.GetOrdinal(DescriptorIdColumnName);
         var verificationIdentityKeyOrdinal = reader.GetOrdinal(VerificationIdentityKeyColumnName);
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -41,7 +42,9 @@ internal static class ReferenceLookupResultReader
                     ReferentialIdentityResourceKeyId: reader.GetRequiredFieldValue<short>(
                         ReferentialIdentityResourceKeyIdColumnName
                     ),
-                    IsDescriptor: reader.GetRequiredFieldValue<bool>(IsDescriptorColumnName),
+                    DescriptorId: reader.IsDBNull(descriptorIdOrdinal)
+                        ? null
+                        : reader.GetFieldValue<int>(descriptorIdOrdinal),
                     VerificationIdentityKey: reader.IsDBNull(verificationIdentityKeyOrdinal)
                         ? null
                         : reader.GetFieldValue<string>(verificationIdentityKeyOrdinal)

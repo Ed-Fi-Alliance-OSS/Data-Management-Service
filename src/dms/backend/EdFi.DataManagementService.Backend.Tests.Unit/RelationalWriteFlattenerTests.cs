@@ -4386,6 +4386,7 @@ public class Given_RelationalWriteFlattener
                 new ReferentialId(Guid.NewGuid()),
                 new JsonPath(path)
             ),
+            17,
             documentId,
             ResourceKeyId: 31
         );
@@ -4406,6 +4407,7 @@ public class Given_RelationalWriteFlattener
                 new ReferentialId(Guid.NewGuid()),
                 new JsonPath(path)
             ),
+            17,
             documentId,
             ResourceKeyId: 31
         );
@@ -4431,6 +4433,7 @@ public class Given_RelationalWriteFlattener
                         new ReferentialId(Guid.NewGuid()),
                         new JsonPath(descriptor.Path)
                     ),
+                    17,
                     descriptor.DocumentId,
                     ResourceKeyId: 31
                 )
@@ -4614,6 +4617,7 @@ public class Given_RelationalWriteFlattener
                 {
                     [new JsonPath("$.programTypeDescriptor")] = new ResolvedDescriptorReference(
                         programDescriptorReference,
+                        17,
                         DocumentId: 77L,
                         ResourceKeyId: 31
                     ),

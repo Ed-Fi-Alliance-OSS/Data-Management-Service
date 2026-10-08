@@ -3834,6 +3834,7 @@ internal static class DescriptorBackedNestedTopologyBuilders
                         ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Path: new JsonPath("$.parents[0].parentTypeDescriptor")
                     ),
+                    17,
                     DocumentId: descriptorId,
                     ResourceKeyId: 1
                 ),
@@ -6741,6 +6742,7 @@ internal static class CompositeDescriptorScalarDocumentReferenceBackedNestedTopo
                             new ReferentialId(Guid.NewGuid()),
                             new JsonPath(ParentReferenceProgramTypeDescriptorConcretePath)
                         ),
+                        17,
                         programTypeDescriptorId,
                         13
                     ),

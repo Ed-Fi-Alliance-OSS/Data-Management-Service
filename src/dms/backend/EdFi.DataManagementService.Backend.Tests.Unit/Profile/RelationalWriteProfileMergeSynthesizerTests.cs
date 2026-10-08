@@ -4362,6 +4362,7 @@ internal static class DescriptorCanonicalizeBuilders
                         ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Path: new JsonPath("$.addresses[0].addressTypeDescriptor")
                     ),
+                    17,
                     DocumentId: descriptorId,
                     ResourceKeyId: 1
                 ),

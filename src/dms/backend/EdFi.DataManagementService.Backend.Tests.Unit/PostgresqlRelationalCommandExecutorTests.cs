@@ -27,13 +27,13 @@ public class Given_PostgresqlRelationalCommandExecutor
             new RecordingDbCommand(
                 CreateReader(
                     CreateLookupTable(
-                        (documentReferentialId.Value, 101L, (short)11, (short)11, false, "$.schoolId=255901"),
+                        (documentReferentialId.Value, 101L, (short)11, (short)11, null, "$.schoolId=255901"),
                         (
                             descriptorReferentialId.Value,
                             202L,
                             (short)12,
                             (short)12,
-                            true,
+                            17,
                             "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                         )
                     )
@@ -78,13 +78,13 @@ public class Given_PostgresqlRelationalCommandExecutor
         result
             .Should()
             .BeEquivalentTo([
-                new ReferenceLookupResult(documentReferentialId, 101L, 11, 11, false, "$.schoolId=255901"),
+                new ReferenceLookupResult(documentReferentialId, 101L, 11, 11, null, "$.schoolId=255901"),
                 new ReferenceLookupResult(
                     descriptorReferentialId,
                     202L,
                     12,
                     12,
-                    true,
+                    17,
                     "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                 ),
             ]);
@@ -151,7 +151,7 @@ public class Given_PostgresqlRelationalCommandExecutor
             long DocumentId,
             short ResourceKeyId,
             short ReferentialIdentityResourceKeyId,
-            bool IsDescriptor,
+            int? DescriptorId,
             string? VerificationIdentityKey
         )[] rows
     )
@@ -161,7 +161,7 @@ public class Given_PostgresqlRelationalCommandExecutor
         table.Columns.Add("DocumentId", typeof(long));
         table.Columns.Add("ResourceKeyId", typeof(short));
         table.Columns.Add("ReferentialIdentityResourceKeyId", typeof(short));
-        table.Columns.Add("IsDescriptor", typeof(bool));
+        table.Columns.Add("DescriptorId", typeof(int));
         table.Columns.Add("VerificationIdentityKey", typeof(string));
 
         foreach (var row in rows)
@@ -171,7 +171,7 @@ public class Given_PostgresqlRelationalCommandExecutor
                 row.DocumentId,
                 row.ResourceKeyId,
                 row.ReferentialIdentityResourceKeyId,
-                row.IsDescriptor,
+                (object?)row.DescriptorId ?? DBNull.Value,
                 row.VerificationIdentityKey
             );
         }

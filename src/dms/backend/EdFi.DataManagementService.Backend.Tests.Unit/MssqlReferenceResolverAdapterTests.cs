@@ -43,7 +43,7 @@ public class Given_MssqlReferenceResolverAdapter
                     ("DocumentId", 101L),
                     ("ResourceKeyId", (short)11),
                     ("ReferentialIdentityResourceKeyId", (short)11),
-                    ("IsDescriptor", false),
+                    ("DescriptorId", null),
                     ("VerificationIdentityKey", "$.schoolId=255901")
                 ),
                 RelationalAccessTestData.CreateRow(
@@ -51,7 +51,7 @@ public class Given_MssqlReferenceResolverAdapter
                     ("DocumentId", 202L),
                     ("ResourceKeyId", (short)90),
                     ("ReferentialIdentityResourceKeyId", (short)90),
-                    ("IsDescriptor", false),
+                    ("DescriptorId", null),
                     ("VerificationIdentityKey", "$.schoolId=999999")
                 ),
                 RelationalAccessTestData.CreateRow(
@@ -59,7 +59,7 @@ public class Given_MssqlReferenceResolverAdapter
                     ("DocumentId", 303L),
                     ("ResourceKeyId", (short)40),
                     ("ReferentialIdentityResourceKeyId", (short)40),
-                    ("IsDescriptor", true),
+                    ("DescriptorId", 17),
                     (
                         "VerificationIdentityKey",
                         "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
@@ -74,7 +74,7 @@ public class Given_MssqlReferenceResolverAdapter
                     ("DocumentId", 101L),
                     ("ResourceKeyId", (short)11),
                     ("ReferentialIdentityResourceKeyId", (short)11),
-                    ("IsDescriptor", false),
+                    ("DescriptorId", null),
                     ("VerificationIdentityKey", "$.schoolId=255901")
                 ),
                 RelationalAccessTestData.CreateRow(
@@ -82,7 +82,7 @@ public class Given_MssqlReferenceResolverAdapter
                     ("DocumentId", 202L),
                     ("ResourceKeyId", (short)90),
                     ("ReferentialIdentityResourceKeyId", (short)90),
-                    ("IsDescriptor", false),
+                    ("DescriptorId", null),
                     ("VerificationIdentityKey", "$.schoolId=999999")
                 ),
                 RelationalAccessTestData.CreateRow(
@@ -90,7 +90,7 @@ public class Given_MssqlReferenceResolverAdapter
                     ("DocumentId", 303L),
                     ("ResourceKeyId", (short)40),
                     ("ReferentialIdentityResourceKeyId", (short)40),
-                    ("IsDescriptor", true),
+                    ("DescriptorId", 17),
                     (
                         "VerificationIdentityKey",
                         "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
@@ -115,13 +115,13 @@ public class Given_MssqlReferenceResolverAdapter
         result
             .Should()
             .Equal(
-                new ReferenceLookupResult(foundReferentialId, 101L, 11, 11, false, "$.schoolId=255901"),
+                new ReferenceLookupResult(foundReferentialId, 101L, 11, 11, null, "$.schoolId=255901"),
                 new ReferenceLookupResult(
                     incompatibleTargetReferentialId,
                     202L,
                     90,
                     90,
-                    false,
+                    null,
                     "$.schoolId=999999"
                 ),
                 new ReferenceLookupResult(
@@ -129,7 +129,7 @@ public class Given_MssqlReferenceResolverAdapter
                     303L,
                     40,
                     40,
-                    true,
+                    17,
                     "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                 )
             );
@@ -157,7 +157,7 @@ public class Given_MssqlReferenceResolverAdapter
                     ("DocumentId", 303L),
                     ("ResourceKeyId", (short)40),
                     ("ReferentialIdentityResourceKeyId", (short)40),
-                    ("IsDescriptor", true),
+                    ("DescriptorId", 17),
                     (
                         "VerificationIdentityKey",
                         "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
@@ -168,7 +168,7 @@ public class Given_MssqlReferenceResolverAdapter
                     ("DocumentId", 101L),
                     ("ResourceKeyId", (short)11),
                     ("ReferentialIdentityResourceKeyId", (short)11),
-                    ("IsDescriptor", false),
+                    ("DescriptorId", null),
                     ("VerificationIdentityKey", "$.schoolId=255901")
                 )
             ),
@@ -197,13 +197,13 @@ public class Given_MssqlReferenceResolverAdapter
         result
             .Should()
             .Equal(
-                new ReferenceLookupResult(firstFoundReferentialId, 101L, 11, 11, false, "$.schoolId=255901"),
+                new ReferenceLookupResult(firstFoundReferentialId, 101L, 11, 11, null, "$.schoolId=255901"),
                 new ReferenceLookupResult(
                     descriptorReferentialId,
                     303L,
                     40,
                     40,
-                    true,
+                    17,
                     "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                 )
             );

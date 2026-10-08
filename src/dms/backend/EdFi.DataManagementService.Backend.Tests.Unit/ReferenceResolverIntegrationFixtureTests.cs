@@ -85,7 +85,7 @@ public class Given_ReferenceResolverIntegrationFixture
                     101L,
                     11,
                     11,
-                    false,
+                    null,
                     "$.schoolId=255901"
                 ),
                 new ReferenceLookupResult(
@@ -93,7 +93,7 @@ public class Given_ReferenceResolverIntegrationFixture
                     101L,
                     11,
                     30,
-                    false,
+                    null,
                     "$.educationOrganizationId=255901"
                 ),
                 new ReferenceLookupResult(
@@ -101,7 +101,7 @@ public class Given_ReferenceResolverIntegrationFixture
                     202L,
                     12,
                     12,
-                    false,
+                    null,
                     "$.schoolId=255901"
                 ),
                 new ReferenceLookupResult(
@@ -109,7 +109,7 @@ public class Given_ReferenceResolverIntegrationFixture
                     303L,
                     13,
                     13,
-                    true,
+                    17,
                     "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                 ),
                 new ReferenceLookupResult(
@@ -117,7 +117,7 @@ public class Given_ReferenceResolverIntegrationFixture
                     404L,
                     14,
                     14,
-                    true,
+                    17,
                     "$.descriptor=uri://ed-fi.org/academicsubjectdescriptor#english"
                 ),
             ],

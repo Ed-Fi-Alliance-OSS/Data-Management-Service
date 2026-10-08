@@ -181,7 +181,7 @@ public class Given_RelationalQueryRequestPreprocessor
                             request
                                 .DescriptorReferences.Select(
                                     (reference, index) =>
-                                        new ResolvedDescriptorReference(reference, 800L + index, 31)
+                                        new ResolvedDescriptorReference(reference, 17, 800L + index, 31)
                                 )
                                 .ToArray()
                         )

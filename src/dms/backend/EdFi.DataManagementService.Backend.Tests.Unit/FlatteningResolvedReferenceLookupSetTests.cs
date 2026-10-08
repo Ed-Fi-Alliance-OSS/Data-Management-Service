@@ -652,6 +652,7 @@ public class Given_FlatteningResolvedReferenceLookupSet
                 new ReferentialId(Guid.NewGuid()),
                 new JsonPath(path)
             ),
+            17,
             documentId,
             13
         );
@@ -1292,6 +1293,7 @@ public class Given_FlatteningResolvedReferenceLookupSet
                 new ReferentialId(Guid.NewGuid()),
                 new JsonPath(path)
             ),
+            17,
             documentId,
             13
         );

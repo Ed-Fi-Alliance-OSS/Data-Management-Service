@@ -38,6 +38,8 @@ public class Given_MssqlReferenceLookupSmallListStrategy
         command.CommandText.Should().Contain("[VerificationIdentityKey]");
         command.CommandText.Should().Contain("INNER JOIN [dms].[ReferentialIdentity]");
         command.CommandText.Should().Contain("LEFT JOIN [dms].[Descriptor]");
+        command.CommandText.Should().Contain("referentialIdentity.[DocumentId] AS [DocumentId]");
+        command.CommandText.Should().Contain("descriptor.[DescriptorId] AS [DescriptorId]");
         command.CommandText.Should().Contain("ORDER BY lookupInput.[Ordinal]");
     }
 
@@ -58,7 +60,7 @@ public class Given_MssqlReferenceLookupSmallListStrategy
                         ("DocumentId", 101L),
                         ("ResourceKeyId", (short)11),
                         ("ReferentialIdentityResourceKeyId", (short)11),
-                        ("IsDescriptor", false),
+                        ("DescriptorId", null),
                         ("VerificationIdentityKey", "$.schoolId=255901")
                     ),
                     RelationalAccessTestData.CreateRow(
@@ -66,7 +68,7 @@ public class Given_MssqlReferenceLookupSmallListStrategy
                         ("DocumentId", 202L),
                         ("ResourceKeyId", (short)21),
                         ("ReferentialIdentityResourceKeyId", (short)30),
-                        ("IsDescriptor", false),
+                        ("DescriptorId", null),
                         ("VerificationIdentityKey", "$.educationOrganizationId=255901")
                     ),
                     RelationalAccessTestData.CreateRow(
@@ -74,7 +76,7 @@ public class Given_MssqlReferenceLookupSmallListStrategy
                         ("DocumentId", 303L),
                         ("ResourceKeyId", (short)40),
                         ("ReferentialIdentityResourceKeyId", (short)40),
-                        ("IsDescriptor", true),
+                        ("DescriptorId", 17),
                         (
                             "VerificationIdentityKey",
                             "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
@@ -120,14 +122,26 @@ public class Given_MssqlReferenceLookupSmallListStrategy
         executor.Commands[0].CommandText.Should().Contain("N'$.termDescriptor='");
         executor.Commands[0].CommandText.Should().Contain("N'$.schoolTypeDescriptor='");
         executor.Commands[0].CommandText.Should().Contain("FROM [dms].[Descriptor] descriptor");
+        executor.Commands[0].CommandText.Should().Contain("referentialIdentity.[DocumentId] AS [DocumentId]");
+        executor.Commands[0].CommandText.Should().Contain("descriptor.[DescriptorId] AS [DescriptorId]");
+        executor.Commands[0].CommandText.Should().Contain("descriptor.[DocumentId] = document.[DocumentId]");
         executor
             .Commands[0]
             .CommandText.Should()
-            .Contain("descriptor.[DocumentId] = source.[TermDescriptor_DescriptorId]");
+            .Contain("LOWER(descriptor.[Namespace] + N'#' + descriptor.[CodeValue])");
         executor
             .Commands[0]
             .CommandText.Should()
-            .Contain("descriptor.[DocumentId] = source.[SchoolTypeDescriptor_DescriptorId]");
+            .Contain("SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue]");
+        executor.Commands[0].CommandText.Should().NotContain("descriptor.[Uri]");
+        executor
+            .Commands[0]
+            .CommandText.Should()
+            .Contain("descriptor.[DescriptorId] = source.[TermDescriptor_DescriptorId]");
+        executor
+            .Commands[0]
+            .CommandText.Should()
+            .Contain("descriptor.[DescriptorId] = source.[SchoolTypeDescriptor_DescriptorId]");
         executor.Commands[0].Parameters.Should().HaveCount(6);
         executor.Commands[0].Parameters[0].Name.Should().Be("@p0");
         executor.Commands[0].Parameters[0].Value.Should().Be(foundReferentialId.Value);
@@ -146,13 +160,13 @@ public class Given_MssqlReferenceLookupSmallListStrategy
         result
             .Should()
             .Equal(
-                new ReferenceLookupResult(foundReferentialId, 101L, 11, 11, false, "$.schoolId=255901"),
+                new ReferenceLookupResult(foundReferentialId, 101L, 11, 11, null, "$.schoolId=255901"),
                 new ReferenceLookupResult(
                     aliasReferentialId,
                     202L,
                     21,
                     30,
-                    false,
+                    null,
                     "$.educationOrganizationId=255901"
                 ),
                 new ReferenceLookupResult(
@@ -160,7 +174,7 @@ public class Given_MssqlReferenceLookupSmallListStrategy
                     303L,
                     40,
                     40,
-                    true,
+                    17,
                     "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                 )
             );
