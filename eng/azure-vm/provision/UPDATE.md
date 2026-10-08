@@ -43,7 +43,43 @@ Commands are labeled **[bash]** (WSL shell) or **[pwsh]** (`pwsh` inside WSL) an
 
    Rename or delete any duplicate through `PUT`/`DELETE /v3/dataStores/{id}` or `/v3/apiClients/{id}` on the current build first.
 
-3. Back up the credential state.
+3. Check for claim sets created at runtime.
+   Part C's claims reload deletes every claim set that is not system-reserved, in every tenant.
+   Applications bound to one keep its name, so their keys still get tokens, but every API request they make answers `500` until the claim set is back.
+   Part B alone keeps them.
+
+   ```bash
+   for db in edfi_st_config edfi_mt_config; do
+     docker exec dms-sec-postgres psql -U postgres -d "$db" \
+       -c 'SELECT c."Id", c."ClaimSetName", t."Name" AS "Tenant" FROM dmscs."ClaimSet" c LEFT JOIN dmscs."Tenant" t ON t."Id" = c."TenantId" WHERE NOT c."IsSystemReserved";' \
+       -c 'SELECT "Id", "ApplicationName", "ClaimSetName" FROM dmscs."Application" WHERE "ClaimSetName" IN (SELECT "ClaimSetName" FROM dmscs."ClaimSet" WHERE NOT "IsSystemReserved");'
+   done
+   ```
+
+   If either query returns rows and you will run Part C, export those claim sets now; Part C step 4 imports them back after the reload:
+
+   ```bash
+   mkdir -p ~/backup/claimsets
+   for cms in st-config mt-config; do
+     docker exec dms-sec-postgres psql -U postgres -d "edfi_${cms%-config}_config" -At -F ' ' \
+       -c 'SELECT c."Id", coalesce(t."Name", $$none$$) FROM dmscs."ClaimSet" c LEFT JOIN dmscs."Tenant" t ON t."Id" = c."TenantId" WHERE NOT c."IsSystemReserved";' |
+     while read -r id tenant; do
+       HDR=(); [ "$cms" = mt-config ] && HDR=(-H "Tenant: $tenant")
+       TOKEN=$(curl -sk "https://localhost/$cms/connect/token" -d grant_type=client_credentials -d scope=edfi_admin_api/full_access \
+         --data-urlencode "client_id=$ADMIN_ID" --data-urlencode "client_secret=$ADMIN_SECRET" \
+         | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+       out=~/backup/claimsets/"$cms.$tenant.$id.json"
+       if curl -skf "https://localhost/$cms/v3/claimSets/$id/export" -H "Authorization: Bearer $TOKEN" "${HDR[@]}" > "$out"; then
+         echo "exported $cms $tenant $id"
+       else rm -f "$out"; echo "FAILED $cms $tenant $id"; fi
+     done
+   done
+   ```
+
+   `ADMIN_ID` and `ADMIN_SECRET` come from step 1.
+   A claim set defined in a `*-claimset.json` file under `compose/claims` is not at risk: the reload reads those files again.
+
+4. Back up the credential state.
    Stop Keycloak briefly so its H2 files are copied consistently.
 
    ```bash
@@ -56,7 +92,7 @@ Commands are labeled **[bash]** (WSL shell) or **[pwsh]** (`pwsh` inside WSL) an
    docker start dms-sec-keycloak
    ```
 
-4. Record what is running, for the credentials doc and for rollback:
+5. Record what is running, for the credentials doc and for rollback:
 
    ```bash
    for c in dms-sec-st-dms dms-sec-st-config dms-sec-keycloak; do
@@ -107,6 +143,7 @@ The DMS DS 6.1 populated template leaves out the educator-preparation sample dat
 Step 6 loads that data, which gives the deployment the ODS/API DS 6.1 populated template's Grand Bend set: 1959 students in 9 schools.
 The API changes to the DS 6.1 surface; requests written for DS 5.2 may need updating.
 **Only the three data databases are recreated: anything reviewers wrote through the API is lost. The keys are kept.**
+Claim sets created at runtime are deleted by step 4's claims reload; Part A step 3 exports them, and step 4 imports them back.
 The DS 6.1 template must exist for the running build; builds before 8.0.1-alpha.0.196 have none, so run Part B first on an older deployment.
 
 1. Stage the DS 6.1 ApiSchema **[bash]**, as in [`REDEPLOY.md`](REDEPLOY.md) Part C but with `.env.template.ds61`:
@@ -167,6 +204,23 @@ The DS 6.1 template must exist for the running build; builds before 8.0.1-alpha.
 
    Each call must answer `"success": true`.
    The claims are shared by every tenant, so one multi-tenant reload covers both tenants.
+   If Part A step 3 exported claim sets, import them back now; each import must answer `201` with an empty `warnings` list:
+
+   ```bash
+   for f in ~/backup/claimsets/*.json; do
+     [ -e "$f" ] || continue
+     IFS=. read -r cms tenant id _ <<< "$(basename "$f")"
+     HDR=(); [ "$cms" = mt-config ] && HDR=(-H "Tenant: $tenant")
+     TOKEN=$(curl -sk "https://localhost/$cms/connect/token" -d grant_type=client_credentials -d scope=edfi_admin_api/full_access \
+       --data-urlencode "client_id=$ADMIN_ID" --data-urlencode "client_secret=$ADMIN_SECRET" \
+       | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+     echo "$cms $tenant $id: $(curl -sk -X POST "https://localhost/$cms/v3/claimSets/import" -H "Authorization: Bearer $TOKEN" "${HDR[@]}" \
+       -H 'Content-Type: application/json' --data-binary @"$f" -w ' %{http_code}')"
+   done
+   ```
+
+   A resource claim the new Data Standard lacks is left out and named in `warnings`: rename it in that file to its new equivalent, delete the imported claim set (`DELETE /v3/claimSets/{id}` with the `id` the import answered), and import the file again.
+   The applications bound to a claim set pick it up again by name.
    Then close the reload endpoint again:
 
    ```bash

@@ -54,5 +54,10 @@ Two ways:
    `export`/`import` shape (which uses `claimSetName`), so start from that example rather than an
    API export. Restart the `*-config` services (or use the management reload).
 
+> A claims reload or upload (`/management/reload-claims`, `/management/upload-claims`) deletes
+> every claim set created through the API, in every tenant, while file-based claim sets are read
+> again. `provision/UPDATE.md` Part C runs a reload to switch the Data Standard, so its Part A
+> step 3 exports the API-created ones first and Part C imports them back.
+
 > Keep this directory free of partial/invalid fragments while in Hybrid mode — a malformed
 > claim set can fail CMS startup. Files not named `*-claimset.json` (like this README) are ignored.
