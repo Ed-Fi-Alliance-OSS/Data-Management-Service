@@ -140,13 +140,16 @@ internal static class PostgresqlDescriptorReadTestSupport
         var rows = await database.QueryRowsAsync(
             """
             SELECT
+                "DescriptorId",
                 "DocumentId",
+                "ResourceKeyId",
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
                 "Description",
                 "EffectiveBeginDate",
-                "EffectiveEndDate"
+                "EffectiveEndDate",
+                "Namespace" || '#' || "CodeValue" AS "Uri"
             FROM "dms"."Descriptor"
             WHERE "DocumentId" = @documentId;
             """,

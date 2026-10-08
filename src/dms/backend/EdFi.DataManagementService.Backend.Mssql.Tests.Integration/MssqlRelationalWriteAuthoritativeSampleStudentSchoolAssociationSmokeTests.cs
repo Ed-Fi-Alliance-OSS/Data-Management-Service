@@ -307,7 +307,7 @@ file static class MssqlStudentSchoolAssociationIntegrationTestSupport
 
 internal sealed record MssqlStudentSchoolAssociationSeedData(
     long StudentDocumentId,
-    long GraduationPlanTypeDescriptorId
+    int GraduationPlanTypeDescriptorId
 );
 
 internal sealed record MssqlStudentSchoolAssociationDocumentMetadata(
@@ -923,7 +923,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             calendarTypeDescriptorResourceKeyId,
             "Ed-Fi",
             "CalendarTypeDescriptor",
-            "Ed-Fi:CalendarTypeDescriptor",
             CalendarTypeDescriptorUri,
             "uri://ed-fi.org/CalendarTypeDescriptor",
             "Instructional",
@@ -934,7 +933,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             gradeLevelDescriptorResourceKeyId,
             "Ed-Fi",
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
             NinthGradeLevelDescriptorUri,
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Ninth grade",
@@ -945,7 +943,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             graduationPlanTypeDescriptorResourceKeyId,
             "Ed-Fi",
             "GraduationPlanTypeDescriptor",
-            "Ed-Fi:GraduationPlanTypeDescriptor",
             GraduationPlanTypeDescriptorUri,
             "uri://ed-fi.org/GraduationPlanTypeDescriptor",
             "Foundation",
@@ -956,7 +953,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             educationPlanDescriptorResourceKeyId,
             "Ed-Fi",
             "EducationPlanDescriptor",
-            "Ed-Fi:EducationPlanDescriptor",
             PathwayEducationPlanDescriptorUri,
             "uri://ed-fi.org/EducationPlanDescriptor",
             "Pathway",
@@ -967,7 +963,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             educationPlanDescriptorResourceKeyId,
             "Ed-Fi",
             "EducationPlanDescriptor",
-            "Ed-Fi:EducationPlanDescriptor",
             InterventionEducationPlanDescriptorUri,
             "uri://ed-fi.org/EducationPlanDescriptor",
             "Intervention",
@@ -978,7 +973,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             membershipTypeDescriptorResourceKeyId,
             "Sample",
             "MembershipTypeDescriptor",
-            "Sample:MembershipTypeDescriptor",
             ResidentMembershipTypeDescriptorUri,
             "uri://sample.org/MembershipTypeDescriptor",
             "Resident",
@@ -1234,12 +1228,11 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         );
     }
 
-    private async Task<long> SeedDescriptorAsync(
+    private async Task<int> SeedDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
         string projectName,
         string resourceName,
-        string discriminator,
         string uri,
         string @namespace,
         string codeValue,
@@ -1249,8 +1242,6 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         var documentId = await InsertDescriptorAsync(
             documentUuid,
             resourceKeyId,
-            discriminator,
-            uri,
             @namespace,
             codeValue,
             shortDescription
@@ -1262,59 +1253,55 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
                 resourceName,
                 uri
             ),
-            documentId,
+            documentId.DocumentId,
             resourceKeyId
         );
 
-        return documentId;
+        return documentId.DescriptorId;
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<SeededDescriptor> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
+            DECLARE @descriptor TABLE ([DescriptorId] int);
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
                 [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
-                [Description],
-                [Discriminator],
-                [Uri]
+                [Description]
             )
+            OUTPUT INSERTED.[DescriptorId] INTO @descriptor ([DescriptorId])
             VALUES (
                 @documentId,
                 @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
+                @description
             );
+            SELECT [DescriptorId] FROM @descriptor;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
-            new SqlParameter("@description", shortDescription),
-            new SqlParameter("@discriminator", discriminator),
-            new SqlParameter("@uri", uri)
+            new SqlParameter("@description", shortDescription)
         );
 
-        return documentId;
+        return new(descriptorId, documentId);
     }
 
     private async Task InsertSchoolYearTypeAsync(long documentId, int schoolYear, bool currentSchoolYear)
@@ -1401,7 +1388,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         int schoolYear,
         long schoolDocumentId,
         long schoolId,
-        long calendarTypeDescriptorId,
+        int calendarTypeDescriptorId,
         string calendarCode
     )
     {
@@ -1442,7 +1429,7 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
         long educationOrganizationId,
         long graduationSchoolYearDocumentId,
         int graduationSchoolYear,
-        long graduationPlanTypeDescriptorId,
+        int graduationPlanTypeDescriptorId,
         decimal totalRequiredCredits
     )
     {

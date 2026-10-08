@@ -145,13 +145,16 @@ internal static class MssqlDescriptorReadTestSupport
         var rows = await database.QueryRowsAsync(
             """
             SELECT
+                [DescriptorId],
                 [DocumentId],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
                 [Description],
                 [EffectiveBeginDate],
-                [EffectiveEndDate]
+                [EffectiveEndDate],
+                [Uri]
             FROM [dms].[Descriptor]
             WHERE [DocumentId] = @documentId;
             """,

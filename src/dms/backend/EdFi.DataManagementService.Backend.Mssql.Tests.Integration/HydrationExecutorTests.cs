@@ -839,22 +839,23 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
             );
 
             CREATE TABLE dms.Descriptor (
-                DocumentId bigint PRIMARY KEY,
+                DescriptorId int IDENTITY(1,1) PRIMARY KEY,
+                DocumentId bigint NOT NULL UNIQUE REFERENCES dms.Document (DocumentId),
+                ResourceKeyId smallint NOT NULL,
                 Namespace varchar(255) NOT NULL DEFAULT '',
                 CodeValue varchar(50) NOT NULL DEFAULT '',
                 ShortDescription varchar(75) NOT NULL DEFAULT '',
                 Description varchar(1024) NULL,
                 EffectiveBeginDate date NULL,
                 EffectiveEndDate date NULL,
-                Discriminator varchar(128) NOT NULL DEFAULT '',
-                Uri varchar(306) NOT NULL
+                Uri AS (Namespace + '#' + CodeValue) PERSISTED
             );
 
             CREATE TABLE hydfastpath.StudentSchoolAssociation (
                 DocumentId bigint PRIMARY KEY,
                 School_DocumentId bigint NULL,
                 School_SchoolId bigint NULL,
-                EntryGradeLevelDescriptor_DescriptorId bigint NULL
+                EntryGradeLevelDescriptor_DescriptorId int NULL
             );
 
             CREATE TABLE hydfastpath.StudentSchoolAssociationProgram (
@@ -863,7 +864,7 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
                 Ordinal int NOT NULL,
                 Program_DocumentId bigint NULL,
                 Program_ProgramName varchar(100) NULL,
-                ProgramTypeDescriptor_DescriptorId bigint NULL
+                ProgramTypeDescriptor_DescriptorId int NULL
             );
             """
         );
@@ -878,15 +879,17 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
                 (11001, '00000000-0000-0000-0000-000000011001', 2, 1),
                 (11002, '00000000-0000-0000-0000-000000011002', 3, 1),
                 (11003, '00000000-0000-0000-0000-000000011003', 4, 1),
-                (12001, '00000000-0000-0000-0000-000000012001', 5, 1),
-                (12002, '00000000-0000-0000-0000-000000012002', 6, 1),
-                (12003, '00000000-0000-0000-0000-000000012003', 7, 1);
+                (5000012001, '00000000-0000-0000-0000-000000012001', 5, 1),
+                (5000012002, '00000000-0000-0000-0000-000000012002', 6, 1),
+                (5000012003, '00000000-0000-0000-0000-000000012003', 7, 1);
 
-            INSERT INTO dms.Descriptor (DocumentId, Namespace, CodeValue, ShortDescription, Discriminator, Uri)
+            SET IDENTITY_INSERT dms.Descriptor ON;
+            INSERT INTO dms.Descriptor (DescriptorId, DocumentId, ResourceKeyId, Namespace, CodeValue, ShortDescription)
             VALUES
-                (12001, 'uri://ed-fi.org/GradeLevelDescriptor', 'Ninth grade', 'Ninth grade', 'edfi.GradeLevelDescriptor', 'uri://ed-fi.org/GradeLevelDescriptor#Ninth grade'),
-                (12002, 'uri://ed-fi.org/ProgramTypeDescriptor', 'Gifted', 'Gifted', 'edfi.ProgramTypeDescriptor', 'uri://ed-fi.org/ProgramTypeDescriptor#Gifted'),
-                (12003, 'uri://ed-fi.org/GradeLevelDescriptor', 'Tenth grade', 'Tenth grade', 'edfi.GradeLevelDescriptor', 'uri://ed-fi.org/GradeLevelDescriptor#Tenth grade');
+                (12001, 5000012001, 5, 'uri://ed-fi.org/GradeLevelDescriptor', 'Ninth grade', 'Ninth grade'),
+                (12002, 5000012002, 6, 'uri://ed-fi.org/ProgramTypeDescriptor', 'Gifted', 'Gifted'),
+                (12003, 5000012003, 7, 'uri://ed-fi.org/GradeLevelDescriptor', 'Tenth grade', 'Tenth grade');
+            SET IDENTITY_INSERT dms.Descriptor OFF;
 
             INSERT INTO hydfastpath.StudentSchoolAssociation
                 (DocumentId, School_DocumentId, School_SchoolId, EntryGradeLevelDescriptor_DescriptorId)
@@ -974,7 +977,7 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
         var childRows = _fastPathResult.TableRowsInDependencyOrder[1].Rows;
         childRows.Should().HaveCount(2);
         childRows.Select(row => (long)row[1]!).Should().Equal(ResourceDocumentId, ResourceDocumentId);
-        childRows.Select(row => row[5]).Should().Equal(12002L, null);
+        childRows.Select(row => row[5]).Should().Equal(12002, null);
 
         _fastPathResult
             .DescriptorRowsInPlanOrder.Should()
@@ -1071,7 +1074,7 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
                 CreateColumn(
                     "EntryGradeLevelDescriptor_DescriptorId",
                     ColumnKind.DescriptorFk,
-                    ScalarKind.Int64,
+                    ScalarKind.Int32,
                     true,
                     entryGradePath,
                     gradeLevelDescriptorResource
@@ -1141,7 +1144,7 @@ public class Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorPr
                 CreateColumn(
                     "ProgramTypeDescriptor_DescriptorId",
                     ColumnKind.DescriptorFk,
-                    ScalarKind.Int64,
+                    ScalarKind.Int32,
                     true,
                     programTypeDescriptorPath,
                     programTypeDescriptorResource

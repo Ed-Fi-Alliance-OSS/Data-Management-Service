@@ -341,7 +341,6 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         long descriptorDocumentId = await SeedDescriptorAsync(
             Guid.Parse("c0000003-2000-0000-0000-000000000003"),
             "ProgramTypeDescriptor",
-            "ProgramTypeDescriptor",
             ProgramTypeDescriptorUri,
             ProgramTypeDescriptorNamespace,
             ProgramTypeDescriptorCodeValue,
@@ -371,8 +370,6 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         long descriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("c0000004-2000-0000-0000-000000000004"),
             resourceKeyId,
-            "Ed-Fi:ProgramTypeDescriptor",
-            ProgramTypeDescriptorUri,
             ProgramTypeDescriptorNamespace,
             ProgramTypeDescriptorCodeValue,
             ProgramTypeDescriptorCodeValue
@@ -383,8 +380,6 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         await InsertDescriptorAsync(
             Guid.Parse("c0000005-2000-0000-0000-000000000005"),
             resourceKeyId,
-            "ProgramTypeDescriptor",
-            ProgramTypeDescriptorUri,
             ProgramTypeDescriptorNamespace,
             ProgramTypeDescriptorCodeValue,
             ProgramTypeDescriptorCodeValue
@@ -406,8 +401,6 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         long programTypeDescriptorDocumentId = await InsertDescriptorAsync(
             Guid.Parse("c0000006-2000-0000-0000-000000000006"),
             await GetResourceKeyIdAsync("Ed-Fi", "ProgramTypeDescriptor"),
-            "Ed-Fi:ProgramTypeDescriptor",
-            ProgramTypeDescriptorUri,
             ProgramTypeDescriptorNamespace,
             ProgramTypeDescriptorCodeValue,
             ProgramTypeDescriptorCodeValue
@@ -513,7 +506,6 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         await SeedDescriptorAsync(
             Guid.Parse("c0000001-2000-0000-0000-000000000001"),
             "EducationOrganizationCategoryDescriptor",
-            "Ed-Fi:EducationOrganizationCategoryDescriptor",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
             "School",
@@ -522,7 +514,6 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         await SeedDescriptorAsync(
             Guid.Parse("c0000002-2000-0000-0000-000000000002"),
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
             "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade",
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Ninth grade",
@@ -533,7 +524,6 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
     private async Task<long> SeedDescriptorAsync(
         Guid documentUuid,
         string resourceName,
-        string discriminator,
         string uri,
         string @namespace,
         string codeValue,
@@ -544,8 +534,6 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         long documentId = await InsertDescriptorAsync(
             documentUuid,
             resourceKeyId,
-            discriminator,
-            uri,
             @namespace,
             codeValue,
             shortDescription
@@ -870,7 +858,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
                 @documentId,
                 @schoolDocumentId,
                 @schoolId,
-                @programTypeDescriptorDocumentId,
+                (SELECT [DescriptorId] FROM [dms].[Descriptor] WHERE [DocumentId] = @programTypeDescriptorDocumentId),
                 @programName
             );
             """,
@@ -961,13 +949,12 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
     private async Task<long> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         long documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
         await _database.ExecuteNonQueryAsync(
@@ -978,9 +965,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
-                [Description],
-                [Discriminator],
-                [Uri]
+                [Description]
             )
             VALUES (
                 @documentId,
@@ -988,9 +973,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
+                @description
             );
             """,
             new SqlParameter("@documentId", documentId),
@@ -998,9 +981,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
-            new SqlParameter("@description", shortDescription),
-            new SqlParameter("@discriminator", discriminator),
-            new SqlParameter("@uri", uri)
+            new SqlParameter("@description", shortDescription)
         );
 
         return documentId;
@@ -1059,9 +1040,9 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
     private const long AuthThirdEdOrgId = 255888888L;
     private const long AuthDirectOnlyEdOrgId = 255777777L;
     private const string AuthNamespacePrefix = "uri://ed-fi.org/";
-    private const string CrisisTypeDescriptorDiscriminator = "Ed-Fi:CrisisTypeDescriptor";
-    private const string NonMedicalImmunizationExemptionDescriptorDiscriminator =
-        "Ed-Fi:NonMedicalImmunizationExemptionDescriptor";
+    private const string CrisisTypeDescriptorResourceName = "CrisisTypeDescriptor";
+    private const string NonMedicalImmunizationExemptionDescriptorResourceName =
+        "NonMedicalImmunizationExemptionDescriptor";
 
     private static readonly QualifiedResourceName DisciplineActionResource = new("Ed-Fi", "DisciplineAction");
     private static readonly QualifiedResourceName StudentResource = new("Ed-Fi", "Student");
@@ -1400,20 +1381,20 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
     // ── NamespaceBased (descriptor exception) ─────────────────────────────
 
     [Test]
-    public async Task ReadChanges_filters_a_descriptor_by_namespace_prefix_and_discriminator()
+    public async Task ReadChanges_filters_a_descriptor_by_namespace_prefix_and_resource_key()
     {
         await InsertDescriptorTombstoneAsync(
-            CrisisTypeDescriptorDiscriminator,
+            CrisisTypeDescriptorResourceName,
             AuthNamespacePrefix + "CrisisTypeDescriptor",
             "Lockdown-Match"
         );
         await InsertDescriptorTombstoneAsync(
-            CrisisTypeDescriptorDiscriminator,
+            CrisisTypeDescriptorResourceName,
             "uri://other.org/CrisisTypeDescriptor",
             "Lockdown-Mismatch"
         );
         await InsertDescriptorTombstoneAsync(
-            "Ed-Fi:GradeLevelDescriptor",
+            "GradeLevelDescriptor",
             AuthNamespacePrefix + "GradeLevelDescriptor",
             "Tenth grade"
         );
@@ -1430,12 +1411,12 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
     public async Task ReadChanges_filters_the_nonmedical_immunization_exemption_descriptor_exception_by_namespace_prefix()
     {
         await InsertDescriptorTombstoneAsync(
-            NonMedicalImmunizationExemptionDescriptorDiscriminator,
+            NonMedicalImmunizationExemptionDescriptorResourceName,
             AuthNamespacePrefix + "NonMedicalImmunizationExemptionDescriptor",
             "Religious"
         );
         await InsertDescriptorTombstoneAsync(
-            NonMedicalImmunizationExemptionDescriptorDiscriminator,
+            NonMedicalImmunizationExemptionDescriptorResourceName,
             "uri://other.org/NonMedicalImmunizationExemptionDescriptor",
             "Medical"
         );
@@ -1866,7 +1847,6 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         await SeedDescriptorAsync(
             Guid.NewGuid(),
             "TermDescriptor",
-            "Ed-Fi:TermDescriptor",
             SeekTermDescriptorUri,
             "uri://ed-fi.org/TermDescriptor",
             "Seek Fall Semester",
@@ -1875,7 +1855,6 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         await SeedDescriptorAsync(
             Guid.NewGuid(),
             "GradingPeriodDescriptor",
-            "Ed-Fi:GradingPeriodDescriptor",
             SeekGradingPeriodDescriptorUri,
             "uri://ed-fi.org/GradingPeriodDescriptor",
             "Seek First Six Weeks",
@@ -1884,7 +1863,6 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         await SeedDescriptorAsync(
             Guid.NewGuid(),
             "GradeTypeDescriptor",
-            "Ed-Fi:GradeTypeDescriptor",
             SeekGradeTypeDescriptorUri,
             "uri://ed-fi.org/GradeTypeDescriptor",
             "Seek Final",
@@ -1892,9 +1870,9 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         );
     }
 
-    private static string DescriptorDocumentIdSql(string resourceName, string uriParameter) =>
+    private static string DescriptorIdSql(string resourceName, string uriParameter) =>
         $"""
-            (SELECT descriptor.[DocumentId]
+            (SELECT descriptor.[DescriptorId]
              FROM [dms].[Descriptor] descriptor
              INNER JOIN [dms].[Document] document ON document.[DocumentId] = descriptor.[DocumentId]
              INNER JOIN [dms].[ResourceKey] resourceKey ON resourceKey.[ResourceKeyId] = document.[ResourceKeyId]
@@ -1976,7 +1954,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
                 [School_DocumentId], [School_SchoolId], [TermDescriptor_DescriptorId], [BeginDate], [EndDate],
                 [SessionName], [TotalInstructionalDays])
             VALUES (@documentId, {SchoolYearDocumentIdSql}, @schoolYear, @schoolDocumentId, @schoolId,
-                {DescriptorDocumentIdSql("TermDescriptor", "@termDescriptorUri")}, CAST('2024-08-01' AS date),
+                {DescriptorIdSql("TermDescriptor", "@termDescriptorUri")}, CAST('2024-08-01' AS date),
                 CAST('2024-12-20' AS date), @sessionName, 90);
             """,
             new SqlParameter("@documentId", sessionDocumentId),
@@ -2028,7 +2006,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
                 [School_DocumentId], [School_SchoolId], [GradingPeriodDescriptor_DescriptorId], [BeginDate],
                 [EndDate], [GradingPeriodName], [TotalInstructionalDays])
             VALUES (@documentId, {SchoolYearDocumentIdSql}, @schoolYear, @schoolDocumentId, @schoolId,
-                {DescriptorDocumentIdSql("GradingPeriodDescriptor", "@gradingPeriodDescriptorUri")},
+                {DescriptorIdSql("GradingPeriodDescriptor", "@gradingPeriodDescriptorUri")},
                 CAST('2024-08-01' AS date), CAST('2024-09-13' AS date), @gradingPeriodName, 30);
             """,
             new SqlParameter("@documentId", gradingPeriodDocumentId),
@@ -2136,7 +2114,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             SELECT @documentId, @schoolId, @schoolYear, gradingPeriod.[DocumentId],
                 gradingPeriod.[GradingPeriodDescriptor_DescriptorId], gradingPeriod.[GradingPeriodName],
                 @associationDocumentId, @beginDate, @localCourseCode, @sectionIdentifier, @sessionName,
-                @studentUniqueId, {DescriptorDocumentIdSql("GradeTypeDescriptor", "@gradeTypeDescriptorUri")}
+                @studentUniqueId, {DescriptorIdSql("GradeTypeDescriptor", "@gradeTypeDescriptorUri")}
             FROM [edfi].[GradingPeriod] gradingPeriod
             WHERE gradingPeriod.[GradingPeriodName] = @gradingPeriodName;
             """,
@@ -2339,21 +2317,22 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
     }
 
     private async Task InsertDescriptorTombstoneAsync(
-        string discriminator,
+        string resourceName,
         string oldNamespace,
         string oldCodeValue
     )
     {
+        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", resourceName);
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO [tracked_changes_edfi].[Descriptor]
-                ([OldNamespace], [NewNamespace], [OldCodeValue], [NewCodeValue], [Discriminator],
+                ([OldNamespace], [NewNamespace], [OldCodeValue], [NewCodeValue], [ResourceKeyId],
                  [Id], [ChangeVersion], [DocumentId])
-            VALUES (@oldNamespace, NULL, @oldCodeValue, NULL, @discriminator, @id, @changeVersion, @documentId);
+            VALUES (@oldNamespace, NULL, @oldCodeValue, NULL, @resourceKeyId, @id, @changeVersion, @documentId);
             """,
             new SqlParameter("@oldNamespace", oldNamespace),
             new SqlParameter("@oldCodeValue", oldCodeValue),
-            new SqlParameter("@discriminator", discriminator),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@id", Guid.NewGuid()),
             new SqlParameter("@changeVersion", NextAuthChangeVersion()),
             new SqlParameter("@documentId", NextSeededDocumentId())
@@ -3005,7 +2984,6 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         await SeedDescriptorAsync(
             Guid.NewGuid(),
             "GradeTypeDescriptor",
-            "Ed-Fi:GradeTypeDescriptor",
             SeekMidtermGradeTypeDescriptorUri,
             "uri://ed-fi.org/GradeTypeDescriptor",
             "Seek Midterm",
@@ -3111,7 +3089,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         whileDescriptorLive.Items.Should().ContainSingle();
 
         long finalDescriptorDocumentId = await _database.ExecuteScalarAsync<long>(
-            $"SELECT {DescriptorDocumentIdSql("GradeTypeDescriptor", "@uri")};",
+            $"SELECT [DocumentId] FROM [dms].[Descriptor] WHERE [DescriptorId] = {DescriptorIdSql("GradeTypeDescriptor", "@uri")};",
             new SqlParameter("@uri", SeekGradeTypeDescriptorUri)
         );
         await DeleteDescriptorAsync(finalDescriptorDocumentId);
@@ -3149,13 +3127,13 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             .Be("STU-CV-GradeTypeGone");
     }
 
-    // dms.Descriptor rows may be stored under the bare or the project-qualified discriminator, the same
-    // two values the emitted seek binds.
+    // Resolve the descriptor type through its resource key, as the emitted seek does.
     private static string GradeTypeDescriptorViewSql(string codeValue) =>
         $"""
             SELECT descriptor.[DocumentId]
             FROM [dms].[Descriptor] descriptor
-            WHERE descriptor.[Discriminator] IN ('GradeTypeDescriptor', 'Ed-Fi:GradeTypeDescriptor')
+            INNER JOIN [dms].[ResourceKey] resourceKey ON resourceKey.[ResourceKeyId] = descriptor.[ResourceKeyId]
+            WHERE resourceKey.[ProjectName] = 'Ed-Fi' AND resourceKey.[ResourceName] = 'GradeTypeDescriptor'
               AND descriptor.[CodeValue] = '{codeValue}'
             """;
 
@@ -3654,7 +3632,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             SELECT school.[DocumentId]
             FROM [edfi].[School] school
             INNER JOIN [dms].[Descriptor] descriptor
-                ON descriptor.[DocumentId] = school.[SchoolTypeDescriptor_DescriptorId]
+                ON descriptor.[DescriptorId] = school.[SchoolTypeDescriptor_DescriptorId]
             WHERE descriptor.[Namespace] = '{SchoolTypeDescriptorNamespace}'
               AND descriptor.[CodeValue] = '{schoolTypeCodeValue}'
             """;
@@ -3664,7 +3642,6 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         await SeedDescriptorAsync(
             Guid.NewGuid(),
             "SchoolTypeDescriptor",
-            "Ed-Fi:SchoolTypeDescriptor",
             AlternativeSchoolTypeUri,
             SchoolTypeDescriptorNamespace,
             "Alternative",
@@ -3673,7 +3650,6 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
         await SeedDescriptorAsync(
             Guid.NewGuid(),
             "SchoolTypeDescriptor",
-            "Ed-Fi:SchoolTypeDescriptor",
             RegularSchoolTypeUri,
             SchoolTypeDescriptorNamespace,
             "Regular",
@@ -3696,7 +3672,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             INSERT INTO [edfi].[School] ([DocumentId], [NameOfInstitution], [SchoolId],
                 [SchoolTypeDescriptor_DescriptorId])
             VALUES (@documentId, @nameOfInstitution, @schoolId,
-                {DescriptorDocumentIdSql("SchoolTypeDescriptor", "@schoolTypeDescriptorUri")});
+                {DescriptorIdSql("SchoolTypeDescriptor", "@schoolTypeDescriptorUri")});
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@nameOfInstitution", nameOfInstitution),
@@ -3732,7 +3708,7 @@ public class Given_A_Mssql_Generated_Ddl_RelationalChangeQueryRepository
             INSERT INTO [edfi].[StudentSchoolAssociation] ([DocumentId], [SchoolId_Unified], [School_DocumentId],
                 [Student_DocumentId], [Student_StudentUniqueId], [EntryGradeLevelDescriptor_DescriptorId], [EntryDate])
             VALUES (@documentId, @schoolId, @schoolDocumentId, @studentDocumentId, @studentUniqueId,
-                {DescriptorDocumentIdSql(
+                {DescriptorIdSql(
                 "GradeLevelDescriptor",
                 "@entryGradeLevelDescriptorUri"
             )}, @entryDate);

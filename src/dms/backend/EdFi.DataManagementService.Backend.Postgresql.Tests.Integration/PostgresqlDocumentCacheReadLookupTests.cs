@@ -594,9 +594,7 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
                 "ShortDescription",
                 "Description",
                 "EffectiveBeginDate",
-                "EffectiveEndDate",
-                "Discriminator",
-                "Uri"
+                "EffectiveEndDate"
             )
             VALUES (
                 @documentId,
@@ -606,9 +604,7 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
                 @shortDescription,
                 @description,
                 @effectiveBeginDate,
-                @effectiveEndDate,
-                @discriminator,
-                @uri
+                @effectiveEndDate
             );
             """,
             new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = descriptor.DocumentId },
@@ -624,15 +620,7 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
             {
                 Value = new DateOnly(2025, 1, 15),
             },
-            new NpgsqlParameter("effectiveEndDate", NpgsqlDbType.Date) { Value = new DateOnly(2025, 12, 31) },
-            new NpgsqlParameter("discriminator", NpgsqlDbType.Varchar)
-            {
-                Value = DescriptorResource.ResourceName,
-            },
-            new NpgsqlParameter("uri", NpgsqlDbType.Varchar)
-            {
-                Value = "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
-            }
+            new NpgsqlParameter("effectiveEndDate", NpgsqlDbType.Date) { Value = new DateOnly(2025, 12, 31) }
         );
     }
 

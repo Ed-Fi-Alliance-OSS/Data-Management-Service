@@ -179,10 +179,10 @@ file static class AuthoritativeDs52ContactWriteIntegrationTestSupport
 }
 
 internal sealed record AuthoritativeDs52ContactSeedData(
-    long HomeAddressTypeDescriptorId,
-    long WorkAddressTypeDescriptorId,
-    long TemporaryAddressTypeDescriptorId,
-    long StateAbbreviationDescriptorId
+    int HomeAddressTypeDescriptorId,
+    int WorkAddressTypeDescriptorId,
+    int TemporaryAddressTypeDescriptorId,
+    int StateAbbreviationDescriptorId
 );
 
 internal sealed record AuthoritativeDs52ContactDocumentRow(
@@ -203,8 +203,8 @@ internal sealed record AuthoritativeDs52ContactAddressRow(
     long CollectionItemId,
     int Ordinal,
     long ContactDocumentId,
-    long AddressTypeDescriptorId,
-    long StateAbbreviationDescriptorId,
+    int AddressTypeDescriptorId,
+    int StateAbbreviationDescriptorId,
     string City,
     string PostalCode,
     string StreetNumberName,
@@ -713,7 +713,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         var homeAddressTypeDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("11111111-aaaa-aaaa-aaaa-aaaaaaaaaaa1"),
             "AddressTypeDescriptor",
-            "Ed-Fi:AddressTypeDescriptor",
             HomeAddressTypeDescriptorUri,
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Home",
@@ -722,7 +721,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         var workAddressTypeDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("22222222-bbbb-bbbb-bbbb-bbbbbbbbbbb2"),
             "AddressTypeDescriptor",
-            "Ed-Fi:AddressTypeDescriptor",
             WorkAddressTypeDescriptorUri,
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Work",
@@ -731,7 +729,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         var temporaryAddressTypeDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("33333333-cccc-cccc-cccc-ccccccccccc3"),
             "AddressTypeDescriptor",
-            "Ed-Fi:AddressTypeDescriptor",
             TemporaryAddressTypeDescriptorUri,
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Temporary",
@@ -740,7 +737,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         var stateAbbreviationDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("44444444-dddd-dddd-dddd-ddddddddddd4"),
             "StateAbbreviationDescriptor",
-            "Ed-Fi:StateAbbreviationDescriptor",
             StateAbbreviationDescriptorUri,
             "uri://ed-fi.org/StateAbbreviationDescriptor",
             "TX",
@@ -755,10 +751,9 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         );
     }
 
-    private async Task<long> SeedDescriptorAsync(
+    private async Task<int> SeedDescriptorAsync(
         Guid documentUuid,
         string resourceName,
-        string discriminator,
         string uri,
         string @namespace,
         string codeValue,
@@ -769,8 +764,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         var documentId = await InsertDescriptorAsync(
             documentUuid,
             resourceKeyId,
-            discriminator,
-            uri,
             @namespace,
             codeValue,
             shortDescription
@@ -778,11 +771,11 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
 
         await InsertReferentialIdentityAsync(
             CreateDescriptorReferentialId("Ed-Fi", resourceName, uri),
-            documentId,
+            documentId.DocumentId,
             resourceKeyId
         );
 
-        return documentId;
+        return documentId.DescriptorId;
     }
 
     private async Task<short> GetResourceKeyIdAsync(string projectName, string resourceName)
@@ -812,19 +805,18 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         );
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<SeededDescriptor> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
@@ -832,9 +824,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
+                "Description"
             )
             VALUES (
                 @documentId,
@@ -842,22 +832,18 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
-            );
+                @description
+            ) RETURNING "DescriptorId";
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),
-            new NpgsqlParameter("description", shortDescription),
-            new NpgsqlParameter("discriminator", discriminator),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("description", shortDescription)
         );
 
-        return documentId;
+        return new(descriptorId, documentId);
     }
 
     private async Task InsertReferentialIdentityAsync(
@@ -993,14 +979,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
                 AuthoritativeDs52ContactWriteIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
                 AuthoritativeDs52ContactWriteIntegrationTestSupport.GetInt32(row, "Ordinal"),
                 AuthoritativeDs52ContactWriteIntegrationTestSupport.GetInt64(row, "Contact_DocumentId"),
-                AuthoritativeDs52ContactWriteIntegrationTestSupport.GetInt64(
-                    row,
-                    "AddressTypeDescriptor_DescriptorId"
-                ),
-                AuthoritativeDs52ContactWriteIntegrationTestSupport.GetInt64(
-                    row,
-                    "StateAbbreviationDescriptor_DescriptorId"
-                ),
+                (int)row["AddressTypeDescriptor_DescriptorId"]!,
+                (int)row["StateAbbreviationDescriptor_DescriptorId"]!,
                 AuthoritativeDs52ContactWriteIntegrationTestSupport.GetString(row, "City"),
                 AuthoritativeDs52ContactWriteIntegrationTestSupport.GetString(row, "PostalCode"),
                 AuthoritativeDs52ContactWriteIntegrationTestSupport.GetString(row, "StreetNumberName"),

@@ -277,7 +277,6 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
         await SeedDescriptorAsync(
             Guid.Parse("c2c00001-0000-0000-0000-000000000001"),
             "EducationOrganizationCategoryDescriptor",
-            "Ed-Fi:EducationOrganizationCategoryDescriptor",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
             "School",
@@ -286,7 +285,6 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
         await SeedDescriptorAsync(
             Guid.Parse("c2c00002-0000-0000-0000-000000000002"),
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
             "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade",
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Ninth grade",
@@ -297,7 +295,6 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
     private async Task SeedDescriptorAsync(
         Guid documentUuid,
         string resourceName,
-        string discriminator,
         string uri,
         string @namespace,
         string codeValue,
@@ -308,8 +305,6 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
         long documentId = await InsertDescriptorAsync(
             documentUuid,
             resourceKeyId,
-            discriminator,
-            uri,
             @namespace,
             codeValue,
             shortDescription
@@ -550,13 +545,12 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
     private async Task<long> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         long documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
         await _database.ExecuteNonQueryAsync(
@@ -567,9 +561,7 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
+                "Description"
             )
             VALUES (
                 @documentId,
@@ -577,9 +569,7 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
+                @description
             );
             """,
             new NpgsqlParameter("documentId", documentId),
@@ -587,9 +577,7 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),
-            new NpgsqlParameter("description", shortDescription),
-            new NpgsqlParameter("discriminator", discriminator),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("description", shortDescription)
         );
 
         return documentId;
