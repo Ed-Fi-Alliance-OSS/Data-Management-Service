@@ -337,7 +337,7 @@ internal static class PeopleRelationshipGetManyStudentScenario
         long? studentAcademicRecordDocumentId
     )
     {
-        long termDescriptorId = await ReadDescriptorIdAsync(harness, TermDescriptor);
+        int termDescriptorId = await ReadDescriptorIdAsync(harness, TermDescriptor);
         short resourceKeyId = Convert.ToInt16(
             await ReadInt64Async(
                 harness.DbConnection,
@@ -491,16 +491,32 @@ internal static class PeopleRelationshipGetManyStudentScenario
             ("@educationOrganizationId", educationOrganizationId)
         );
 
-    private static async Task<long> ReadDescriptorIdAsync(ApiIntegrationHarness harness, string uri) =>
-        await ReadInt64Async(
-            harness.DbConnection,
-            """
-            SELECT "DocumentId"
-            FROM "dms"."Descriptor"
-            WHERE "Uri" = @uri
-            """,
-            ("@uri", uri)
-        );
+    private static async Task<int> ReadDescriptorIdAsync(ApiIntegrationHarness harness, string uri)
+    {
+        await using DbCommand command = harness.DbConnection.CreateCommand();
+        string expression = IsMssql(harness.DbConnection)
+            ? "descriptor.\"Namespace\" + N'#' + descriptor.\"CodeValue\""
+            : "descriptor.\"Namespace\" || '#' || descriptor.\"CodeValue\"";
+        command.CommandText = $"""
+            SELECT descriptor."DescriptorId", descriptor."DocumentId"
+            FROM "dms"."Descriptor" descriptor
+            JOIN "dms"."ResourceKey" resource ON resource."ResourceKeyId" = descriptor."ResourceKeyId"
+            WHERE resource."ProjectName" = 'Ed-Fi'
+              AND resource."ResourceName" = 'TermDescriptor'
+              AND ({expression}) = @uri
+            """;
+        DbParameter parameter = command.CreateParameter();
+        parameter.ParameterName = "@uri";
+        parameter.Value = uri;
+        command.Parameters.Add(parameter);
+        await using DbDataReader reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetFieldType(0).Should().Be(typeof(int));
+        int descriptorId = reader.GetInt32(0);
+        reader.GetInt64(1).Should().BeGreaterThan(int.MaxValue);
+        ((long)descriptorId).Should().NotBe(reader.GetInt64(1));
+        return descriptorId;
+    }
 
     private static async Task<long> InsertDocumentAsync(DbConnection connection, short resourceKeyId)
     {

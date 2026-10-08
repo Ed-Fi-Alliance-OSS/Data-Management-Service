@@ -21,7 +21,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// <c>"StudentSchoolAssociation"</c> table that has one nullable descriptor FK column.
 /// </summary>
 /// <remarks>
-/// DocumentIds 700–703 and DescriptorIds 901–903 are reserved for these fixtures.
+/// Resource DocumentIds 700–703 are reserved; descriptor keys allocate independently for owning DocumentIds above int range.
 /// Each fixture provisions its own isolated MSSQL database.
 /// </remarks>
 internal static class MssqlDescriptorProjectionFixture
@@ -31,9 +31,9 @@ internal static class MssqlDescriptorProjectionFixture
     internal const long DocumentId701 = 701L;
     internal const long DocumentId702 = 702L;
     internal const long DocumentId703 = 703L;
-    internal const int DescriptorId901 = 901;
-    internal const int DescriptorId902 = 902;
-    internal const int DescriptorId903 = 903;
+    internal static int DescriptorId901 { get; private set; }
+    internal static int DescriptorId902 { get; private set; }
+    internal static int DescriptorId903 { get; private set; }
     internal const string Uri901 = "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade";
     internal const string Uri902 = "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade";
     internal const string Uri903 = "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade";
@@ -97,7 +97,7 @@ internal static class MssqlDescriptorProjectionFixture
                 new DbColumnModel(
                     ColumnName: FkColumnName,
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: GradeLevelDescriptorPath,
                     TargetResource: GradeLevelDescriptorResource
@@ -137,20 +137,20 @@ internal static class MssqlDescriptorProjectionFixture
             );
 
             CREATE TABLE [dms].[Descriptor] (
-                [DocumentId] bigint PRIMARY KEY,
+                [DescriptorId] int IDENTITY(1,1) PRIMARY KEY,
+                [DocumentId] bigint NOT NULL UNIQUE REFERENCES [dms].[Document] ([DocumentId]),
+                [ResourceKeyId] smallint NOT NULL,
                 [Namespace] varchar(255) NOT NULL DEFAULT '',
                 [CodeValue] varchar(50) NOT NULL DEFAULT '',
                 [ShortDescription] varchar(75) NOT NULL DEFAULT '',
                 [Description] varchar(1024) NULL,
                 [EffectiveBeginDate] date NULL,
-                [EffectiveEndDate] date NULL,
-                [Discriminator] varchar(128) NOT NULL DEFAULT '',
-                [Uri] varchar(306) NOT NULL
+                [EffectiveEndDate] date NULL
             );
 
             CREATE TABLE [{TestSchema}].[StudentSchoolAssociation] (
                 [DocumentId] bigint PRIMARY KEY,
-                [GradeLevelDescriptor_DescriptorId] bigint NULL
+                [GradeLevelDescriptor_DescriptorId] int NULL
             );
             """
         );
@@ -167,11 +167,25 @@ internal static class MssqlDescriptorProjectionFixture
                 (702, '70200000-0000-0000-0000-000000000702', 0, 1),
                 (703, '70300000-0000-0000-0000-000000000703', 0, 1);
 
-            INSERT INTO [dms].[Descriptor] ([DocumentId], [Namespace], [CodeValue], [ShortDescription], [Discriminator], [Uri]) VALUES
-                (901, 'uri://ed-fi.org/GradeLevelDescriptor', 'Ninth grade', 'Ninth grade', 'edfi.GradeLevelDescriptor', '{Uri901}'),
-                (902, 'uri://ed-fi.org/GradeLevelDescriptor', 'Tenth grade', 'Tenth grade', 'edfi.GradeLevelDescriptor', '{Uri902}'),
-                (903, 'uri://ed-fi.org/GradeLevelDescriptor', 'Eleventh grade', 'Eleventh grade', 'edfi.GradeLevelDescriptor', '{Uri903}');
             """
+        );
+        DescriptorId901 = await MssqlDescriptorProjectionSeedSupport.SeedAsync(
+            connection,
+            5000000901L,
+            "uri://ed-fi.org/GradeLevelDescriptor",
+            "Ninth grade"
+        );
+        DescriptorId902 = await MssqlDescriptorProjectionSeedSupport.SeedAsync(
+            connection,
+            5000000902L,
+            "uri://ed-fi.org/GradeLevelDescriptor",
+            "Tenth grade"
+        );
+        DescriptorId903 = await MssqlDescriptorProjectionSeedSupport.SeedAsync(
+            connection,
+            5000000903L,
+            "uri://ed-fi.org/GradeLevelDescriptor",
+            "Eleventh grade"
         );
     }
 

@@ -61,6 +61,14 @@ public class Given_The_Parity_Scenario_Catalog
         "Api/DescriptorRuntime/ImmutablePutIdentity",
         "Api/DescriptorRuntime/DescriptiveAndDateUpdates",
         "Api/DescriptorRuntime/NamespaceAuthorization",
+        "Api/CompactDescriptorResources/LookupBatching",
+        "Api/CompactDescriptorResources/CustomViewDocumentBridge",
+        "Api/CompactDescriptorResources/StorageAndHydration",
+        "Api/CompactDescriptorResources/MixedCaseIdentityMatching",
+        "Api/CompactDescriptorResources/WholeUriFilters",
+        "Api/CompactDescriptorResources/ReferencedDeleteProtection",
+        "Api/CompactDescriptorResources/IdentityUpdatePropagation",
+        "Api/CompactDescriptorResources/NamespaceAuthorization",
     ];
 
     private static readonly string[] ExpectedProfileIds =

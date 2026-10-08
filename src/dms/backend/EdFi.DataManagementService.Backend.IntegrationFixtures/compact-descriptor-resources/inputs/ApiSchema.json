@@ -1,0 +1,663 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "5.0.0",
+    "isExtensionProject": false,
+    "openApiBaseDocuments": {
+      "resources": {
+        "paths": {},
+        "components": {
+          "schemas": {},
+          "parameters": {
+            "limit": {
+              "name": "limit",
+              "in": "query",
+              "schema": {}
+            },
+            "pageToken": {
+              "name": "pageToken",
+              "in": "query",
+              "schema": {}
+            },
+            "pageSize": {
+              "name": "pageSize",
+              "in": "query",
+              "schema": {}
+            },
+            "numberOfPartitions": {
+              "name": "number",
+              "in": "query",
+              "schema": {}
+            }
+          }
+        }
+      },
+      "descriptors": {
+        "paths": {},
+        "components": {
+          "schemas": {},
+          "parameters": {
+            "limit": {
+              "name": "limit",
+              "in": "query",
+              "schema": {}
+            },
+            "pageToken": {
+              "name": "pageToken",
+              "in": "query",
+              "schema": {}
+            },
+            "pageSize": {
+              "name": "pageSize",
+              "in": "query",
+              "schema": {}
+            },
+            "numberOfPartitions": {
+              "name": "number",
+              "in": "query",
+              "schema": {}
+            }
+          }
+        }
+      }
+    },
+    "description": "Compact descriptor resource references, transitive identities, collections and extensions.",
+    "abstractResources": {},
+    "caseInsensitiveEndpointNameMapping": {
+      "schooltypedescriptors": "schoolTypeDescriptors",
+      "academicsubjectdescriptors": "academicSubjectDescriptors",
+      "compactdescriptoritems": "compactDescriptorItems",
+      "compactdescriptorbridges": "compactDescriptorBridges",
+      "compactdescriptorconsumers": "compactDescriptorConsumers"
+    },
+    "educationOrganizationHierarchy": {},
+    "educationOrganizationTypes": [],
+    "resourceNameMapping": {
+      "SchoolTypeDescriptor": "schoolTypeDescriptors",
+      "AcademicSubjectDescriptor": "academicSubjectDescriptors",
+      "CompactDescriptorItem": "compactDescriptorItems",
+      "CompactDescriptorBridge": "compactDescriptorBridges",
+      "CompactDescriptorConsumer": "compactDescriptorConsumers"
+    },
+    "resourceSchemas": {
+      "schoolTypeDescriptors": {
+        "resourceName": "SchoolTypeDescriptor",
+        "isDescriptor": true,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.namespace",
+          "$.codeValue"
+        ],
+        "documentPathsMapping": {
+          "Namespace": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.namespace"
+          },
+          "CodeValue": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.codeValue"
+          },
+          "ShortDescription": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": true,
+            "path": "$.shortDescription"
+          },
+          "Description": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.description"
+          },
+          "EffectiveBeginDate": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.effectiveBeginDate"
+          },
+          "EffectiveEndDate": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.effectiveEndDate"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "namespace": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "codeValue": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 50
+            },
+            "shortDescription": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 75
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "effectiveBeginDate": {
+              "type": "string",
+              "format": "date"
+            },
+            "effectiveEndDate": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          "required": [
+            "namespace",
+            "codeValue",
+            "shortDescription"
+          ]
+        },
+        "queryFieldMapping": {
+          "id": [
+            {
+              "path": "$.id",
+              "type": "string"
+            }
+          ],
+          "namespace": [
+            {
+              "path": "$.namespace",
+              "type": "string"
+            }
+          ],
+          "codeValue": [
+            {
+              "path": "$.codeValue",
+              "type": "string"
+            }
+          ],
+          "shortDescription": [
+            {
+              "path": "$.shortDescription",
+              "type": "string"
+            }
+          ],
+          "description": [
+            {
+              "path": "$.description",
+              "type": "string"
+            }
+          ],
+          "effectiveBeginDate": [
+            {
+              "path": "$.effectiveBeginDate",
+              "type": "date"
+            }
+          ],
+          "effectiveEndDate": [
+            {
+              "path": "$.effectiveEndDate",
+              "type": "date"
+            }
+          ]
+        }
+      },
+      "academicSubjectDescriptors": {
+        "resourceName": "AcademicSubjectDescriptor",
+        "isDescriptor": true,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.namespace",
+          "$.codeValue"
+        ],
+        "documentPathsMapping": {
+          "Namespace": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.namespace"
+          },
+          "CodeValue": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.codeValue"
+          },
+          "ShortDescription": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": true,
+            "path": "$.shortDescription"
+          },
+          "Description": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.description"
+          },
+          "EffectiveBeginDate": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.effectiveBeginDate"
+          },
+          "EffectiveEndDate": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.effectiveEndDate"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "namespace": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "codeValue": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 50
+            },
+            "shortDescription": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 75
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "effectiveBeginDate": {
+              "type": "string",
+              "format": "date"
+            },
+            "effectiveEndDate": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          "required": [
+            "namespace",
+            "codeValue",
+            "shortDescription"
+          ]
+        },
+        "queryFieldMapping": {
+          "id": [
+            {
+              "path": "$.id",
+              "type": "string"
+            }
+          ],
+          "namespace": [
+            {
+              "path": "$.namespace",
+              "type": "string"
+            }
+          ],
+          "codeValue": [
+            {
+              "path": "$.codeValue",
+              "type": "string"
+            }
+          ],
+          "shortDescription": [
+            {
+              "path": "$.shortDescription",
+              "type": "string"
+            }
+          ],
+          "description": [
+            {
+              "path": "$.description",
+              "type": "string"
+            }
+          ],
+          "effectiveBeginDate": [
+            {
+              "path": "$.effectiveBeginDate",
+              "type": "date"
+            }
+          ],
+          "effectiveEndDate": [
+            {
+              "path": "$.effectiveEndDate",
+              "type": "date"
+            }
+          ]
+        }
+      },
+      "compactDescriptorItems": {
+        "resourceName": "CompactDescriptorItem",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": true,
+        "arrayUniquenessConstraints": [
+          {
+            "paths": [
+              "$.choices[*].choiceCode"
+            ],
+            "nestedConstraints": [
+              {
+                "basePath": "$.choices[*]",
+                "paths": [
+                  "$.variants[*].variantCode"
+                ]
+              }
+            ]
+          }
+        ],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.itemCode",
+          "$.schoolTypeDescriptor"
+        ],
+        "documentPathsMapping": {
+          "ItemCode": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.itemCode"
+          },
+          "DisplayName": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.displayName"
+          },
+          "SchoolTypeDescriptor": {
+            "isReference": true,
+            "isDescriptor": true,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "resourceName": "SchoolTypeDescriptor",
+            "path": "$.schoolTypeDescriptor"
+          },
+          "ChoiceSchoolTypeDescriptor": {
+            "isReference": true,
+            "isDescriptor": true,
+            "isPartOfIdentity": false,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "resourceName": "SchoolTypeDescriptor",
+            "path": "$.choices[*].schoolTypeDescriptor"
+          },
+          "VariantSchoolTypeDescriptor": {
+            "isReference": true,
+            "isDescriptor": true,
+            "isPartOfIdentity": false,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "resourceName": "SchoolTypeDescriptor",
+            "path": "$.choices[*].variants[*].schoolTypeDescriptor"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "itemCode": {
+              "type": "string",
+              "maxLength": 30
+            },
+            "displayName": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "schoolTypeDescriptor": {
+              "type": "string",
+              "maxLength": 306
+            },
+            "choices": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "choiceCode": {
+                    "type": "string",
+                    "maxLength": 30
+                  },
+                  "schoolTypeDescriptor": {
+                    "type": "string",
+                    "maxLength": 306
+                  },
+                  "variants": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "variantCode": {
+                          "type": "string",
+                          "maxLength": 30
+                        },
+                        "schoolTypeDescriptor": {
+                          "type": "string",
+                          "maxLength": 306
+                        }
+                      },
+                      "required": [
+                        "variantCode",
+                        "schoolTypeDescriptor"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "choiceCode",
+                  "schoolTypeDescriptor"
+                ]
+              }
+            }
+          },
+          "required": [
+            "itemCode",
+            "schoolTypeDescriptor"
+          ]
+        },
+        "queryFieldMapping": {
+          "schoolTypeDescriptor": [
+            {
+              "path": "$.schoolTypeDescriptor",
+              "type": "string"
+            }
+          ]
+        },
+        "securableElements": {
+          "Namespace": [
+            "$.schoolTypeDescriptor"
+          ],
+          "EducationOrganization": [],
+          "Student": [],
+          "Contact": [],
+          "Staff": []
+        }
+      },
+      "compactDescriptorBridges": {
+        "resourceName": "CompactDescriptorBridge",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": true,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.bridgeCode",
+          "$.itemReference.itemCode",
+          "$.itemReference.schoolTypeDescriptor"
+        ],
+        "documentPathsMapping": {
+          "BridgeCode": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.bridgeCode"
+          },
+          "Item": {
+            "isReference": true,
+            "isDescriptor": false,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "resourceName": "CompactDescriptorItem",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.itemCode",
+                "referenceJsonPath": "$.itemReference.itemCode"
+              },
+              {
+                "identityJsonPath": "$.schoolTypeDescriptor",
+                "referenceJsonPath": "$.itemReference.schoolTypeDescriptor"
+              }
+            ]
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "bridgeCode": {
+              "type": "string",
+              "maxLength": 30
+            },
+            "itemReference": {
+              "type": "object",
+              "properties": {
+                "itemCode": {
+                  "type": "string",
+                  "maxLength": 30
+                },
+                "schoolTypeDescriptor": {
+                  "type": "string",
+                  "maxLength": 306
+                }
+              },
+              "required": [
+                "itemCode",
+                "schoolTypeDescriptor"
+              ]
+            }
+          },
+          "required": [
+            "bridgeCode",
+            "itemReference"
+          ]
+        },
+        "queryFieldMapping": {
+          "schoolTypeDescriptor": [
+            {
+              "path": "$.itemReference.schoolTypeDescriptor",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "compactDescriptorConsumers": {
+        "resourceName": "CompactDescriptorConsumer",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": true,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.consumerCode"
+        ],
+        "documentPathsMapping": {
+          "ConsumerCode": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.consumerCode"
+          },
+          "Bridge": {
+            "isReference": true,
+            "isDescriptor": false,
+            "isRequired": true,
+            "projectName": "Ed-Fi",
+            "resourceName": "CompactDescriptorBridge",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.bridgeCode",
+                "referenceJsonPath": "$.bridgeReference.bridgeCode"
+              },
+              {
+                "identityJsonPath": "$.itemReference.itemCode",
+                "referenceJsonPath": "$.bridgeReference.itemCode"
+              },
+              {
+                "identityJsonPath": "$.itemReference.schoolTypeDescriptor",
+                "referenceJsonPath": "$.bridgeReference.schoolTypeDescriptor"
+              }
+            ]
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "consumerCode": {
+              "type": "string",
+              "maxLength": 30
+            },
+            "bridgeReference": {
+              "type": "object",
+              "properties": {
+                "bridgeCode": {
+                  "type": "string",
+                  "maxLength": 30
+                },
+                "itemCode": {
+                  "type": "string",
+                  "maxLength": 30
+                },
+                "schoolTypeDescriptor": {
+                  "type": "string",
+                  "maxLength": 306
+                }
+              },
+              "required": [
+                "bridgeCode",
+                "itemCode",
+                "schoolTypeDescriptor"
+              ]
+            }
+          },
+          "required": [
+            "consumerCode",
+            "bridgeReference"
+          ]
+        },
+        "queryFieldMapping": {
+          "schoolTypeDescriptor": [
+            {
+              "path": "$.bridgeReference.schoolTypeDescriptor",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

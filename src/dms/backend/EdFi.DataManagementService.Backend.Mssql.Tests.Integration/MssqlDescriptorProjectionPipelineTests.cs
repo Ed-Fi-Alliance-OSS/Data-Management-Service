@@ -23,8 +23,8 @@ internal static class MssqlDescriptorProjectionPipelineFixture
     internal const string TestSchema = "descprojpipelinemssqltest";
     internal const long DocumentId810 = 810L;
     internal const long DocumentId811 = 811L;
-    internal const int DescriptorId910 = 910;
-    internal const int DescriptorId911 = 911;
+    internal static int DescriptorId910 { get; private set; }
+    internal static int DescriptorId911 { get; private set; }
     internal const string Uri910 = "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts";
     internal const string Uri911 = "uri://ed-fi.org/InstructionLanguageDescriptor#English";
 
@@ -110,7 +110,7 @@ internal static class MssqlDescriptorProjectionPipelineFixture
                 new DbColumnModel(
                     ColumnName: AcademicSubjectFkColumn,
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: false,
                     SourceJsonPath: AcademicSubjectDescriptorPath,
                     TargetResource: AcademicSubjectDescriptorResource
@@ -118,7 +118,7 @@ internal static class MssqlDescriptorProjectionPipelineFixture
                 new DbColumnModel(
                     ColumnName: InstructionLanguageFkColumn,
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: InstructionLanguageDescriptorPath,
                     TargetResource: InstructionLanguageDescriptorResource
@@ -154,21 +154,21 @@ internal static class MssqlDescriptorProjectionPipelineFixture
             );
 
             CREATE TABLE [dms].[Descriptor] (
-                [DocumentId] bigint PRIMARY KEY,
+                [DescriptorId] int IDENTITY(1,1) PRIMARY KEY,
+                [DocumentId] bigint NOT NULL UNIQUE REFERENCES [dms].[Document] ([DocumentId]),
+                [ResourceKeyId] smallint NOT NULL,
                 [Namespace] varchar(255) NOT NULL DEFAULT '',
                 [CodeValue] varchar(50) NOT NULL DEFAULT '',
                 [ShortDescription] varchar(75) NOT NULL DEFAULT '',
                 [Description] varchar(1024) NULL,
                 [EffectiveBeginDate] date NULL,
-                [EffectiveEndDate] date NULL,
-                [Discriminator] varchar(128) NOT NULL DEFAULT '',
-                [Uri] varchar(306) NOT NULL
+                [EffectiveEndDate] date NULL
             );
 
             CREATE TABLE [{TestSchema}].[CourseOffering] (
                 [DocumentId] bigint PRIMARY KEY,
-                [AcademicSubjectDescriptor_DescriptorId] bigint NOT NULL,
-                [InstructionLanguageDescriptor_DescriptorId] bigint NULL
+                [AcademicSubjectDescriptor_DescriptorId] int NOT NULL,
+                [InstructionLanguageDescriptor_DescriptorId] int NULL
             );
             """
         );
@@ -183,10 +183,19 @@ internal static class MssqlDescriptorProjectionPipelineFixture
                 (810, '81000000-0000-0000-0000-000000000810', 0, 1),
                 (811, '81100000-0000-0000-0000-000000000811', 0, 1);
 
-            INSERT INTO [dms].[Descriptor] ([DocumentId], [Namespace], [CodeValue], [ShortDescription], [Discriminator], [Uri]) VALUES
-                (910, 'uri://ed-fi.org/AcademicSubjectDescriptor', 'English Language Arts', 'English Language Arts', 'edfi.AcademicSubjectDescriptor', '{Uri910}'),
-                (911, 'uri://ed-fi.org/InstructionLanguageDescriptor', 'English', 'English', 'edfi.InstructionLanguageDescriptor', '{Uri911}');
             """
+        );
+        DescriptorId910 = await MssqlDescriptorProjectionSeedSupport.SeedAsync(
+            connection,
+            5000000910L,
+            "uri://ed-fi.org/AcademicSubjectDescriptor",
+            "English Language Arts"
+        );
+        DescriptorId911 = await MssqlDescriptorProjectionSeedSupport.SeedAsync(
+            connection,
+            5000000911L,
+            "uri://ed-fi.org/InstructionLanguageDescriptor",
+            "English"
         );
     }
 

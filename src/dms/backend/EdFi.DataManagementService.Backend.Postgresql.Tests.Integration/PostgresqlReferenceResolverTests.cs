@@ -652,7 +652,7 @@ public class Given_PostgresqlReferenceResolver
                 new ReferenceResolverDescriptorSeed(
                     606,
                     schoolTypeDescriptorResourceKeyId,
-                    "uri://ed-fi.org",
+                    "uri://ed-fi.org/SchoolTypeDescriptor",
                     "Wrong",
                     "Wrong",
                     "SchoolTypeDescriptor",
@@ -724,7 +724,7 @@ public class Given_PostgresqlReferenceResolver
                 new ReferenceResolverDescriptorSeed(
                     808,
                     academicSubjectDescriptorResourceKeyId,
-                    "uri://ed-fi.org",
+                    "uri://ed-fi.org/AcademicSubjectDescriptor",
                     "Mathematics",
                     "Mathematics",
                     "AcademicSubjectDescriptor",

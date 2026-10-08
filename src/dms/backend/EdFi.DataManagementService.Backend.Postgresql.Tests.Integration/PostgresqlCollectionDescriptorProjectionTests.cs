@@ -25,8 +25,8 @@ internal static class CollectionDescriptorProjectionFixture
     internal const long SchoolDocumentId1 = 820L;
     internal const long AddressCollectionItemId1 = 5001L;
     internal const long AddressCollectionItemId2 = 5002L;
-    internal const int DescriptorId920 = 920;
-    internal const int DescriptorId921 = 921;
+    internal static int DescriptorId920 { get; private set; }
+    internal static int DescriptorId921 { get; private set; }
     internal const string Uri920 = "uri://ed-fi.org/AddressTypeDescriptor#Physical";
     internal const string Uri921 = "uri://ed-fi.org/AddressTypeDescriptor#Mailing";
 
@@ -150,7 +150,7 @@ internal static class CollectionDescriptorProjectionFixture
                 new DbColumnModel(
                     ColumnName: AddressTypeFkColumn,
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: AddressTypeDescriptorPath,
                     TargetResource: AddressTypeDescriptorResource
@@ -210,15 +210,15 @@ internal static class CollectionDescriptorProjectionFixture
             );
 
             CREATE TABLE IF NOT EXISTS dms."Descriptor" (
-                "DocumentId" bigint PRIMARY KEY,
+                "DescriptorId" int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                "DocumentId" bigint NOT NULL UNIQUE REFERENCES dms."Document" ("DocumentId"),
+                "ResourceKeyId" smallint NOT NULL,
                 "Namespace" varchar(255) NOT NULL DEFAULT '',
                 "CodeValue" varchar(50) NOT NULL DEFAULT '',
                 "ShortDescription" varchar(75) NOT NULL DEFAULT '',
                 "Description" varchar(1024) NULL,
                 "EffectiveBeginDate" date NULL,
-                "EffectiveEndDate" date NULL,
-                "Discriminator" varchar(128) NOT NULL DEFAULT '',
-                "Uri" varchar(306) NOT NULL
+                "EffectiveEndDate" date NULL
             );
 
             CREATE TABLE "{TestSchema}"."School" (
@@ -231,7 +231,7 @@ internal static class CollectionDescriptorProjectionFixture
                 "School_DocumentId" bigint NOT NULL,
                 "Ordinal" int NOT NULL,
                 "City" varchar(100) NOT NULL,
-                "AddressType_DescriptorId" bigint NULL
+                "AddressType_DescriptorId" int NULL
             );
             """,
             connection
@@ -243,19 +243,29 @@ internal static class CollectionDescriptorProjectionFixture
     {
         await using var cmd = new NpgsqlCommand(
             $"""
-            DELETE FROM dms."Descriptor" WHERE "DocumentId" IN ({DescriptorId920}, {DescriptorId921});
+            DELETE FROM dms."Descriptor" WHERE "DocumentId" IN (5000000920, 5000000921);
+            DELETE FROM dms."Document" WHERE "DocumentId" IN (5000000920, 5000000921);
             DELETE FROM dms."Document" WHERE "DocumentId" IN ({SchoolDocumentId1});
 
             INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion") VALUES
                 ({SchoolDocumentId1}, '82000000-0000-0000-0000-000000000820', 0, 1);
 
-            INSERT INTO dms."Descriptor" ("DocumentId", "Namespace", "CodeValue", "ShortDescription", "Discriminator", "Uri") VALUES
-                ({DescriptorId920}, 'uri://ed-fi.org/AddressTypeDescriptor', 'Physical', 'Physical', 'edfi.AddressTypeDescriptor', '{Uri920}'),
-                ({DescriptorId921}, 'uri://ed-fi.org/AddressTypeDescriptor', 'Mailing', 'Mailing', 'edfi.AddressTypeDescriptor', '{Uri921}');
             """,
             connection
         );
         await cmd.ExecuteNonQueryAsync();
+        DescriptorId920 = await PostgresqlDescriptorProjectionSeedSupport.SeedAsync(
+            connection,
+            5000000920L,
+            "uri://ed-fi.org/AddressTypeDescriptor",
+            "Physical"
+        );
+        DescriptorId921 = await PostgresqlDescriptorProjectionSeedSupport.SeedAsync(
+            connection,
+            5000000921L,
+            "uri://ed-fi.org/AddressTypeDescriptor",
+            "Mailing"
+        );
     }
 
     internal static async Task DropSchemaAsync(NpgsqlConnection connection)
@@ -263,7 +273,8 @@ internal static class CollectionDescriptorProjectionFixture
         await using var cmd = new NpgsqlCommand(
             $"""
             DROP SCHEMA IF EXISTS "{TestSchema}" CASCADE;
-            DELETE FROM dms."Descriptor" WHERE "DocumentId" IN ({DescriptorId920}, {DescriptorId921});
+            DELETE FROM dms."Descriptor" WHERE "DocumentId" IN (5000000920, 5000000921);
+            DELETE FROM dms."Document" WHERE "DocumentId" IN (5000000920, 5000000921);
             DELETE FROM dms."Document" WHERE "DocumentId" IN ({SchoolDocumentId1});
             """,
             connection

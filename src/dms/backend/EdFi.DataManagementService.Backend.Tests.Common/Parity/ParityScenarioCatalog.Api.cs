@@ -135,6 +135,62 @@ public static partial class ParityScenarioCatalog
             "It_enforces_namespace_authorization_without_stamp_side_effects",
             fixtureSuffix: "CompactDescriptorRuntime"
         ),
+        Api(
+            "Api/CompactDescriptorResources/StorageAndHydration",
+            "Root, nested collections, extensions and copied identities store exact int keys and serve original-case whole URIs across qualified descriptor types.",
+            "CompactDescriptorResourceScenario.It_stores_compact_keys_and_hydrates_root_collection_extension_and_copied_URIs",
+            "It_stores_compact_keys_and_hydrates_root_collection_extension_and_copied_URIs",
+            fixtureSuffix: "CompactDescriptorResources"
+        ),
+        Api(
+            "Api/CompactDescriptorResources/MixedCaseIdentityMatching",
+            "Repeated resource POSTs and transitive descriptor-bearing document identities resolve mixed-case URIs through RI with stable document IDs and exact no-op stamps.",
+            "CompactDescriptorResourceScenario.It_matches_repeated_POST_and_transitive_document_identities_with_mixed_case_descriptors",
+            "It_matches_repeated_POST_and_transitive_document_identities_with_mixed_case_descriptors",
+            fixtureSuffix: "CompactDescriptorResources"
+        ),
+        Api(
+            "Api/CompactDescriptorResources/WholeUriFilters",
+            "Direct and copied-identity filters preserve exact/mixed-case matches, missing/wrong-type empty pages, extra delimiters and internal pre-delimiter spaces.",
+            "CompactDescriptorResourceScenario.It_filters_whole_descriptor_URIs_on_direct_and_transitive_identity_paths",
+            "It_filters_whole_descriptor_URIs_on_direct_and_transitive_identity_paths",
+            fixtureSuffix: "CompactDescriptorResources"
+        ),
+        Api(
+            "Api/CompactDescriptorResources/ReferencedDeleteProtection",
+            "Referenced descriptor DELETE returns 409 with unchanged compact keys, resource representation and document stamps; deletion succeeds after removing the reference.",
+            "CompactDescriptorResourceScenario.It_protects_referenced_descriptors_without_changing_rows_or_stamps",
+            "It_protects_referenced_descriptors_without_changing_rows_or_stamps",
+            fixtureSuffix: "CompactDescriptorResources"
+        ),
+        Api(
+            "Api/CompactDescriptorResources/IdentityUpdatePropagation",
+            "Regular-resource descriptor identity updates propagate compact keys and canonical URIs through two reference levels, advance stamps, maintain RI matching and reject stale references.",
+            "CompactDescriptorResourceScenario.It_maintains_RI_and_copied_descriptor_keys_after_resource_identity_updates",
+            "It_maintains_RI_and_copied_descriptor_keys_after_resource_identity_updates",
+            fixtureSuffix: "CompactDescriptorResources"
+        ),
+        Api(
+            "Api/CompactDescriptorResources/NamespaceAuthorization",
+            "Stored/proposed namespace authorization dereferences compact keys for read/write/delete and paging; denied operations preserve rows and stamps.",
+            "CompactDescriptorResourceScenario.It_authorizes_stored_and_proposed_namespaces_through_compact_descriptor_keys",
+            "It_authorizes_stored_and_proposed_namespaces_through_compact_descriptor_keys",
+            fixtureSuffix: "CompactDescriptorResources"
+        ),
+        Api(
+            "Api/CompactDescriptorResources/LookupBatching",
+            "Repeated root/collection descriptor occurrences share one lookup in the existing two-command create/update stream without an additional ID lookup round trip.",
+            "CompactDescriptorResourceScenario.It_batches_repeated_descriptor_lookups_in_the_existing_write_command_stream",
+            "It_batches_repeated_descriptor_lookups_in_the_existing_write_command_stream",
+            fixtureSuffix: "CompactDescriptorResources"
+        ),
+        Api(
+            "Api/CompactDescriptorResources/CustomViewDocumentBridge",
+            "Direct and transitive custom-view bases bridge compact keys to owning bigint document membership; stored/proposed/page denials preserve data and stamps.",
+            "CompactDescriptorResourceScenario.It_authorizes_custom_view_membership_by_the_owning_descriptor_document",
+            "It_authorizes_custom_view_membership_by_the_owning_descriptor_document",
+            fixtureSuffix: "CompactDescriptorCustomView"
+        ),
     ];
 
     private static ParityScenario Api(
