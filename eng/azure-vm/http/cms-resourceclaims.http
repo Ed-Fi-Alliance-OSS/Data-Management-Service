@@ -1,0 +1,88 @@
+# Configuration Service (the Admin API replacement): read the claims behind the DMS walkthroughs.
+#
+# - Resource claims group API resources into domains (edFiTypes, systemDescriptors,
+#   educationOrganizations, relationshipBasedData, ...). `?name=` matches a top-level domain.
+# - Authorization metadata shows, per claim set, which actions each resource claim grants and with
+#   which authorization strategy (NoFurtherAuthorizationRequired, RelationshipsWithEdOrgsAndPeople,
+#   NamespaceBased, ...). Compare it with dms-sis-relationship.http and dms-assessment-namespace.http.
+#
+# Credentials: the bootstrap admin client (from .env). For the multi-tenant Configuration Service,
+# use {{base}}/mt-config and add a `Tenant: tenant1` header to every /v3 request.
+
+@base = https://your-label.eastus.cloudapp.azure.com
+@cms = {{base}}/st-config
+@adminKey = dms-bootstrap-admin
+@adminSecret = REPLACE_WITH_BOOTSTRAP_ADMIN_SECRET
+
+### Get a Configuration Service token
+# @name tokenRequest
+# client_secret is sent form-urlencoded below: '+' decodes to a space and '%' starts an escape,
+# so if the secret contains either, percent-encode those characters in this body.
+POST {{cms}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{adminKey}}&client_secret={{adminSecret}}&grant_type=client_credentials&scope=edfi_admin_api/full_access
+
+###
+@token = {{tokenRequest.response.body.access_token}}
+
+### Get the definition for which resources are in "edFiTypes"
+GET {{cms}}/v3/resourceClaims?name=edFiTypes
+Authorization: Bearer {{token}}
+
+### Get the definition for which resources are in "managedDescriptors"
+GET {{cms}}/v3/resourceClaims?name=managedDescriptors
+Authorization: Bearer {{token}}
+
+### Get the definition for which resources are in "systemDescriptors"
+GET {{cms}}/v3/resourceClaims?name=systemDescriptors
+Authorization: Bearer {{token}}
+
+### Get the definition for which resources are in "educationOrganizations"
+GET {{cms}}/v3/resourceClaims?name=educationOrganizations
+Authorization: Bearer {{token}}
+
+### Get the definition for which resources are in "people"
+GET {{cms}}/v3/resourceClaims?name=people
+Authorization: Bearer {{token}}
+
+### Get the definition for which resources are in "primaryRelationships"
+GET {{cms}}/v3/resourceClaims?name=primaryRelationships
+Authorization: Bearer {{token}}
+
+### Get the definition for which resources are in "relationshipBasedData"
+GET {{cms}}/v3/resourceClaims?name=relationshipBasedData
+Authorization: Bearer {{token}}
+
+### Get the definition for which resources are in "assessmentMetadata"
+GET {{cms}}/v3/resourceClaims?name=assessmentMetadata
+Authorization: Bearer {{token}}
+
+#
+# Claim sets used by the review-variant applications
+#
+
+### List claim sets
+GET {{cms}}/v3/claimSets
+Authorization: Bearer {{token}}
+
+### Actions and authorization strategies granted by SISVendor
+GET {{cms}}/v3/authorizationMetadata?claimSetName=SISVendor
+Authorization: Bearer {{token}}
+
+### Actions and authorization strategies granted by AssessmentVendor
+GET {{cms}}/v3/authorizationMetadata?claimSetName=AssessmentVendor
+Authorization: Bearer {{token}}
+
+### Actions and authorization strategies granted by EdFiSandbox
+GET {{cms}}/v3/authorizationMetadata?claimSetName=EdFiSandbox
+Authorization: Bearer {{token}}
+
+### Look up the SISVendor claim set by name
+# @name sisVendorClaimSet
+GET {{cms}}/v3/claimSets?name=SISVendor
+Authorization: Bearer {{token}}
+
+### Export it: every resource claim with the actions it grants
+GET {{cms}}/v3/claimSets/{{sisVendorClaimSet.response.body.$[0].id}}/export
+Authorization: Bearer {{token}}

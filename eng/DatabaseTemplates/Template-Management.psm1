@@ -5,9 +5,11 @@
 
 #Requires -Version 7
 
-Import-Module ../Package-Management.psm1 -Force
-Import-Module ../Dms-Management.psm1 -Force
-Import-Module ../SchoolYear-Loader.psm1 -Force -Global
+# Resolve sibling modules from this file's directory, not the caller's working directory, so the
+# module also imports from scripts that run elsewhere (e.g. eng/azure-vm/compose/seed).
+Import-Module (Join-Path $PSScriptRoot "../Package-Management.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "../Dms-Management.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "../SchoolYear-Loader.psm1") -Force -Global
 
 <#
 .SYNOPSIS
@@ -1594,4 +1596,4 @@ function Build-Template {
     Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas -DatabaseEngine $DatabaseEngine -MssqlPassword $MssqlPassword
 }
 
-Export-ModuleMember -Function Build-Template, Get-UserSchemaNames, Restore-TemplatePackage
+Export-ModuleMember -Function Build-Template, Get-UserSchemaNames, Restore-TemplatePackage, Get-EducatorPreparationSampleFileName, Get-EducationOrganizationIdsFromSampleData, Get-TemplateBulkLoadTuning

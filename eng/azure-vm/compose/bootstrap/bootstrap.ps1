@@ -10,6 +10,8 @@
 #      application -> emit API key/secret.
 #   3. Multi-tenant: create two tenants; per tenant create a data store (+ schoolYear
 #      route context), vendor, and application -> emit API key/secret.
+#   4. Review variants: four claim-set / EdOrg / namespace applications per deployment
+#      (review-variants.psm1) -> emit 12 more API key/secret pairs.
 #
 # All traffic goes through the gateway (PUBLIC_BASE_URL + path). For local runs
 # with a self-signed cert, pass -Insecure.
@@ -34,13 +36,15 @@ param(
 $ErrorActionPreference = "Stop"
 # Reuse the repo's canonical management module (no vendored copy).
 Import-Module "$PSScriptRoot/../../../Dms-Management.psm1" -Force
+Import-Module "$PSScriptRoot/review-variants.psm1" -Force
 
 # Self-signed / loopback cert support for local runs (e.g. -BaseUrl https://localhost behind a
 # cert issued for the public FQDN). -SkipCertificateCheck must be applied in TWO session states:
 #   1. Global - for setup-keycloak.ps1, which is &-invoked in this script's scope.
-#   2. The Dms-Management module - its Invoke-RestMethod/Invoke-WebRequest calls run in the
-#      module's OWN session state and do NOT inherit $global:PSDefaultParameterValues. Without
-#      this, every CMS call after Keycloak fails with RemoteCertificateNameMismatch.
+#   2. The Dms-Management and review-variants modules - their Invoke-RestMethod/Invoke-WebRequest
+#      calls run in each module's OWN session state and do NOT inherit
+#      $global:PSDefaultParameterValues. Without this, every CMS call after Keycloak fails with
+#      RemoteCertificateNameMismatch.
 if ($Insecure) {
     $global:PSDefaultParameterValues['Invoke-RestMethod:SkipCertificateCheck'] = $true
     $global:PSDefaultParameterValues['Invoke-WebRequest:SkipCertificateCheck'] = $true
@@ -52,6 +56,7 @@ if ($Insecure) {
             $PSDefaultParameterValues['Invoke-WebRequest:SkipCertificateCheck'] = $true
         }
     }
+    Disable-ReviewCertificateCheck -Module (Get-Module review-variants)
 }
 
 # --- Parse .env -------------------------------------------------------------
@@ -220,8 +225,6 @@ $stDataStoreId = Add-DataStore -CmsUrl $stConfig -AccessToken $stToken -Name "Si
 # bound to the Grand Bend EdOrgs) so an override applies consistently across all three.
 New-ReviewApplication -CmsUrl $stConfig -Label "single-tenant/full" -Token $stToken `
     -DataStoreIds @([long]$stDataStoreId)
-# To demo school-level authorization, add a client bound to a single school, e.g.
-# New-ReviewApplication ... -ClaimSet "EdFiSandbox" -EducationOrganizationIds @([long]255901001)
 
 # --- 3. Multi-tenant --------------------------------------------------------
 Write-Output "== Bootstrapping multi-tenant stack ($mtConfig) =="
@@ -257,6 +260,23 @@ foreach ($t in @($tenant1, $tenant2)) {
         -ContextKey "schoolYear" -ContextValue $schoolYear -Tenant $t | Out-Null
     New-ReviewApplication -CmsUrl $mtConfig -Label "multi-tenant/$t" -Token $mtToken `
         -DataStoreIds @([long]$dsId) -Tenant $t
+}
+
+# --- 4. Review variants -----------------------------------------------------
+# District-, school- and namespace-scoped clients alongside the full-access ones above. The same
+# step runs standalone (add-review-variants.ps1) for environments bootstrapped before it existed.
+Write-Output "== Adding review-variant applications =="
+$variantDeployments = Get-ReviewDeployment -BaseUrl $publicBaseUrl -SchoolYear $schoolYear -Tenant1 $tenant1 -Tenant2 $tenant2
+foreach ($variant in Add-ReviewVariantSet -Deployment $variantDeployments -AdminClientId $adminClientId -AdminClientSecret $adminClientSecret) {
+    $created.Add([pscustomobject]@{
+            Environment = $variant.Environment
+            Application = $variant.Application
+            ClaimSet    = $variant.ClaimSet
+            Key         = $variant.Key
+            Secret      = $variant.Secret
+            EdOrgIds    = $variant.EdOrgIds
+            Namespace   = $variant.Namespace
+        })
 }
 
 # --- Summary ----------------------------------------------------------------

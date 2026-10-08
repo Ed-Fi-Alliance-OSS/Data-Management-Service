@@ -239,7 +239,7 @@ exit 17
         $LASTEXITCODE | Should -Be 0
         $output | Out-String | Should -Match "Keycloak \+ config services ready"
         $stop = Select-String -LiteralPath $script:dockerLog -Pattern "stop st-dms mt-dms"
-        $infra = Select-String -LiteralPath $script:dockerLog -Pattern "up -d --no-deps postgres keycloak st-config mt-config pgadmin gateway"
+        $infra = Select-String -LiteralPath $script:dockerLog -Pattern "up -d --no-deps postgres keycloak st-config mt-config pgadmin swagger-ui gateway"
         $dms = Select-String -LiteralPath $script:dockerLog -Pattern "up -d st-dms mt-dms"
         $stop.LineNumber | Should -BeLessThan $infra.LineNumber
         $infra.LineNumber | Should -BeLessThan $dms.LineNumber
@@ -275,6 +275,23 @@ exit 17
         $LASTEXITCODE | Should -Be 0
         $output | Out-String | Should -Match "Update complete"
         Get-Content -LiteralPath $script:dockerLog -Raw | Should -Match "compose .* pull"
+    }
+
+    It "restarts the gateway and Swagger UI after an update so pulled template changes apply" {
+        & bash (Join-Path $script:composeRoot "up.sh") 2>&1 | Out-Null
+        $LASTEXITCODE | Should -Be 0
+        $env:SKIP_GIT = "1"
+        Set-Content -LiteralPath $script:dockerLog -Value "" -NoNewline
+
+        $output = & bash (Join-Path $script:composeRoot "update.sh") 2>&1
+
+        $LASTEXITCODE | Should -Be 0 -Because ($output | Out-String)
+        # Both render bind-mounted files only at container start, and Compose does not recreate a
+        # container whose definition is unchanged, so only a restart picks up a pulled change.
+        $dms = Select-String -LiteralPath $script:dockerLog -Pattern "up -d st-dms mt-dms"
+        $restart = Select-String -LiteralPath $script:dockerLog -Pattern "compose .* restart gateway swagger-ui"
+        $restart | Should -Not -BeNullOrEmpty
+        $dms.LineNumber | Should -BeLessThan $restart.LineNumber
     }
 
     It "rejects a changed Keycloak pin after a plain down before pulling images" {
@@ -436,5 +453,582 @@ PY
         $LASTEXITCODE | Should -Be 1
         $output | Out-String | Should -Match "edfi_dms_enqueue_owner"
         Get-Content -LiteralPath $script:dockerLog -Raw | Should -Not -Match "-f /tmp/grandbend.sql"
+    }
+}
+
+Describe "Azure VM Data Standard selection" {
+    BeforeAll {
+        $script:composeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm/compose"))
+    }
+
+    It "passes DMS_CONFIG_DATA_STANDARD_VERSION to both config services, defaulting to 5.2" {
+        $compose = Get-Content -LiteralPath (Join-Path $script:composeRoot "docker-compose.yml") -Raw
+
+        $sharedEnvironment = [regex]::Match($compose, '(?ms)^x-cms-common-env: &cms-common-env\s*\n(.*?)(?=^\S)').Groups[1].Value
+        $sharedEnvironment | Should -Match 'ClaimsOptions__DataStandardVersion:\s*"\$\{DMS_CONFIG_DATA_STANDARD_VERSION:-5\.2\}"'
+        foreach ($service in @("st-config", "mt-config")) {
+            $serviceBlock = [regex]::Match($compose, "(?ms)^  ${service}:\s*\n(.*?)(?=^  \S)").Groups[1].Value
+            $serviceBlock | Should -Match '<<: \*cms-common-env' -Because "$service must inherit the shared claims settings"
+        }
+    }
+
+    It "declares the Data Standard 5.2 default in .env.example" {
+        Get-Content -LiteralPath (Join-Path $script:composeRoot ".env.example") -Raw |
+            Should -Match '(?m)^DMS_CONFIG_DATA_STANDARD_VERSION=5\.2\r?$'
+    }
+}
+
+Describe "Azure VM review variant applications" {
+    BeforeAll {
+        Import-Module ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm/compose/bootstrap/review-variants.psm1"))) -Force
+    }
+
+    AfterAll {
+        Remove-Module review-variants -ErrorAction SilentlyContinue
+    }
+
+    BeforeEach {
+        $script:existingApplications = @()
+        $script:existingVendors = @()
+        $script:dataStores = @(
+            [pscustomobject]@{ id = 3; name = "Some Other Store" },
+            [pscustomobject]@{ id = 7; name = "Single-Tenant Data Store" },
+            [pscustomobject]@{ id = 8; name = "MT Data Store (tenant1 2025)" },
+            [pscustomobject]@{ id = 9; name = "MT Data Store (tenant2 2025)" }
+        )
+        Mock Get-CmsToken -ModuleName review-variants { "token" }
+        # Invoke-RestMethod emits a JSON array as ONE object; the mocks reproduce that.
+        Mock Invoke-RestMethod -ModuleName review-variants -ParameterFilter { $Uri -like "*v3/dataStores*" } {
+            Write-Output -NoEnumerate -InputObject @($script:dataStores)
+        }
+        Mock Invoke-RestMethod -ModuleName review-variants -ParameterFilter { $Uri -like "*v3/applications*" } {
+            Write-Output -NoEnumerate -InputObject @($script:existingApplications)
+        }
+        Mock Invoke-RestMethod -ModuleName review-variants -ParameterFilter { $Uri -like "*v3/vendors*" } {
+            Write-Output -NoEnumerate -InputObject @($script:existingVendors)
+        }
+        Mock Add-Vendor -ModuleName review-variants { 100 }
+        Mock Add-Application -ModuleName review-variants { @{ Id = 1; Key = "key"; Secret = "secret" } }
+    }
+
+    It "defines the four requested claim-set, EdOrg and namespace variants" {
+        $variants = @(Get-ReviewVariant)
+
+        @($variants | ForEach-Object { "$($_.ClaimSet)|$($_.EducationOrganizationIds -join ',')|$($_.NamespacePrefixes)" }) | Should -Be @(
+            "SISVendor|255901|uri://ed-fi.org",
+            "SISVendor|255901107|uri://ed-fi.org",
+            "AssessmentVendor|255901|uri://one.example.com",
+            "EdFiSandbox|255901|uri://ed-fi.org"
+        )
+    }
+
+    It "gives the Ed-Fi namespace variants the full-access applications' namespace prefix" {
+        # Namespace authorization is a starts-with match, and the sample data stores some records
+        # under exactly uri://ed-fi.org, so a trailing slash would hide them from these keys only.
+        $bootstrap = Get-Content -LiteralPath (Join-Path $PSScriptRoot "../../azure-vm/compose/bootstrap/bootstrap.ps1") -Raw
+        $fullAccess = [regex]::Match($bootstrap, '(?s)function New-ReviewApplication\b.*?-NamespacePrefixes "([^"]+)"').Groups[1].Value
+        $fullAccess | Should -Be "uri://ed-fi.org"
+
+        @(Get-ReviewVariant | Where-Object { $_.ClaimSet -ne "AssessmentVendor" } | ForEach-Object { $_.NamespacePrefixes } | Sort-Object -Unique) |
+            Should -Be @($fullAccess)
+    }
+
+    It "creates every variant in all three deployments, bound to each deployment's data store" {
+        $created = @(Add-ReviewVariantSet -Deployment (Get-ReviewDeployment -BaseUrl "https://host/") -AdminClientId "admin" -AdminClientSecret "secret")
+
+        $created.Count | Should -Be 12
+        foreach ($expected in @(@{ Tenant = ""; DataStoreId = 7 }, @{ Tenant = "tenant1"; DataStoreId = 8 }, @{ Tenant = "tenant2"; DataStoreId = 9 })) {
+            Should -Invoke Add-Application -ModuleName review-variants -Times 4 -Exactly -ParameterFilter {
+                $Tenant -eq $expected.Tenant -and $DataStoreIds.Count -eq 1 -and $DataStoreIds[0] -eq $expected.DataStoreId
+            }
+        }
+        Should -Invoke Add-Application -ModuleName review-variants -Times 1 -Exactly -ParameterFilter {
+            $Tenant -eq "tenant2" -and $ClaimSetName -eq "SISVendor" -and $EducationOrganizationIds -contains 255901107
+        }
+        Should -Invoke Add-Vendor -ModuleName review-variants -Times 3 -Exactly -ParameterFilter { $NamespacePrefixes -eq "uri://one.example.com" }
+    }
+
+    It "keeps every application name within the 50-character API client name limit" {
+        $created = @(Add-ReviewVariantSet -Deployment (Get-ReviewDeployment -BaseUrl "https://host") -AdminClientId "admin" -AdminClientSecret "secret")
+
+        foreach ($name in $created.Application) {
+            $name.Length | Should -BeLessOrEqual 50 -Because $name
+        }
+    }
+
+    It "reuses an existing vendor, because vendor creation is create-only" {
+        $script:existingVendors = @([pscustomobject]@{ id = 55; company = "Security Review Vendor (ST SISVendor School)" })
+
+        Add-ReviewVariantSet -Deployment (Get-ReviewDeployment -BaseUrl "https://host") -AdminClientId "admin" -AdminClientSecret "secret" | Out-Null
+
+        Should -Invoke Add-Vendor -ModuleName review-variants -Times 11 -Exactly
+        Should -Invoke Add-Application -ModuleName review-variants -Times 1 -Exactly -ParameterFilter { $VendorId -eq 55 }
+    }
+
+    It "skips a variant whose application already exists" {
+        $script:existingApplications = @([pscustomobject]@{ id = 4; applicationName = "Security Review ST EdFiSandbox District" })
+
+        $created = @(Add-ReviewVariantSet -Deployment (Get-ReviewDeployment -BaseUrl "https://host") -AdminClientId "admin" -AdminClientSecret "secret" 3>$null)
+
+        $created.Count | Should -Be 11
+        Should -Invoke Add-Application -ModuleName review-variants -Times 0 -Exactly -ParameterFilter { $ApplicationName -eq "Security Review ST EdFiSandbox District" }
+    }
+
+    It "fails before creating anything when a deployment's data store is missing" {
+        $script:dataStores = @([pscustomobject]@{ id = 7; name = "Single-Tenant Data Store" })
+
+        { Add-ReviewVariantSet -Deployment (Get-ReviewDeployment -BaseUrl "https://host") -AdminClientId "admin" -AdminClientSecret "secret" } |
+            Should -Throw "*MT Data Store (tenant1 2025)*"
+        Should -Invoke Add-Application -ModuleName review-variants -Times 0 -Exactly
+    }
+
+    It "prints the credentials it created before a failure, because a re-run skips those applications" {
+        $script:applicationCalls = 0
+        Mock Add-Application -ModuleName review-variants {
+            $script:applicationCalls++
+            if ($script:applicationCalls -eq 2) { throw "CMS answered 500" }
+            @{ Id = $script:applicationCalls; Key = "key-$script:applicationCalls"; Secret = "secret-$script:applicationCalls" }
+        }
+
+        $failure = $null
+        $printed = try {
+            Add-ReviewVariantSet -Deployment (Get-ReviewDeployment -BaseUrl "https://host") -AdminClientId "admin" -AdminClientSecret "secret" 6>&1
+        }
+        catch { $failure = $_ }
+
+        "$failure" | Should -BeLike "*CMS answered 500*"
+        $text = $printed | Out-String
+        $text | Should -Match "Security Review ST SISVendor District"
+        $text | Should -Match "key-1"
+        $text | Should -Match "secret-1"
+    }
+}
+
+Describe "Azure VM educator-prep load" {
+    BeforeAll {
+        Import-Module ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm/compose/seed/educator-prep.psm1"))) -Force
+    }
+
+    AfterAll {
+        Remove-Module educator-prep -ErrorAction SilentlyContinue
+    }
+
+    BeforeEach {
+        $script:work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-azure-vm-edprep-$([Guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $script:work -Force | Out-Null
+    }
+
+    AfterEach {
+        if (Test-Path -LiteralPath $script:work) {
+            Remove-Item -LiteralPath $script:work -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "selects exactly the educator-prep files the populated template excludes" {
+        foreach ($name in @(
+                "Candidate.xml", "Path.xml", "PerformanceEvaluation.xml", "ProfessionalDevelopment.xml", "RecruitmentAndStaffing.xml",
+                "EducationOrganization-EdPrep.xml", "Survey-EdPrep.xml", "AssessmentMetadata-EdPrep.xml", "Student.xml", "StudentAssessmentSample.xml")) {
+            Set-Content -LiteralPath (Join-Path $script:work $name) -Value "<x/>"
+        }
+
+        @(Get-EducatorPrepLoadFile -SampleDataDirectory $script:work) | Should -Be @(
+            "Candidate.xml", "EducationOrganization-EdPrep.xml", "Path.xml", "PerformanceEvaluation.xml",
+            "ProfessionalDevelopment.xml", "RecruitmentAndStaffing.xml", "Survey-EdPrep.xml"
+        )
+    }
+
+    It "re-posts only kept files that reference students defined in the educator-prep files" {
+        Set-Content -LiteralPath (Join-Path $script:work "Candidate.xml") -Value "<Student><StudentUniqueId>C1</StudentUniqueId></Student>"
+        Set-Content -LiteralPath (Join-Path $script:work "Student.xml") -Value "<Student><StudentUniqueId>S1</StudentUniqueId></Student>"
+        Set-Content -LiteralPath (Join-Path $script:work "StudentAssessmentSample.xml") -Value "<StudentReference><StudentIdentity><StudentUniqueId>C1</StudentUniqueId></StudentIdentity></StudentReference>"
+        Set-Content -LiteralPath (Join-Path $script:work "StudentAssessment-ACT.xml") -Value "<StudentReference><StudentIdentity><StudentUniqueId>S1</StudentUniqueId></StudentIdentity></StudentReference>"
+
+        @(Get-EducatorPrepRepostFile -SampleDataDirectory $script:work) | Should -Be @("StudentAssessmentSample.xml")
+    }
+
+    It "removes the loader application by the id it created, never from a listing" {
+        Mock Invoke-RestMethod -ModuleName educator-prep -ParameterFilter { $Method -ne "Delete" } {
+            [pscustomobject]@{ id = 42; applicationName = "EdPrep Loader (tenant1)" }
+        }
+        Mock Invoke-RestMethod -ModuleName educator-prep -ParameterFilter { $Method -eq "Delete" } { }
+
+        Remove-ReviewLoaderApplication -CmsUrl "https://host/mt-config/" -Headers @{} -ApplicationId 42 -ExpectedName "EdPrep Loader (tenant1)" -Confirm:$false
+
+        Should -Invoke Invoke-RestMethod -ModuleName educator-prep -Times 1 -Exactly -ParameterFilter {
+            $Method -eq "Delete" -and $Uri -eq "https://host/mt-config/v3/applications/42"
+        }
+        Should -Invoke Invoke-RestMethod -ModuleName educator-prep -Times 0 -Exactly -ParameterFilter { $Uri -match 'v3/applications\?' }
+    }
+
+    It "refuses to delete when the id no longer names the loader application" {
+        Mock Invoke-RestMethod -ModuleName educator-prep -ParameterFilter { $Method -ne "Delete" } {
+            [pscustomobject]@{ id = 42; applicationName = "Security Review (multi-tenant/tenant1)" }
+        }
+        Mock Invoke-RestMethod -ModuleName educator-prep -ParameterFilter { $Method -eq "Delete" } { }
+
+        { Remove-ReviewLoaderApplication -CmsUrl "https://host/mt-config/" -Headers @{} -ApplicationId 42 -ExpectedName "EdPrep Loader (tenant1)" -Confirm:$false } |
+            Should -Throw "*refusing to delete*"
+        Should -Invoke Invoke-RestMethod -ModuleName educator-prep -Times 0 -Exactly -ParameterFilter { $Method -eq "Delete" }
+    }
+
+    It "skips certificate checks for its CMS calls under -Insecure but never for the BulkLoadClient download" {
+        # Template-Management force-reimports Dms-Management, so the instance educator-prep calls can be
+        # one that Get-Module no longer lists; only resolving the commands themselves reaches it. The
+        # download comes from the public package feed with no hash check, so it keeps TLS verification.
+        Import-Module ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm/compose/bootstrap/review-variants.psm1"))) -Force
+        $educatorPrep = Get-Module educator-prep
+
+        try {
+            Disable-ReviewCertificateCheck -Module $educatorPrep
+
+            $skips = & $educatorPrep {
+                $result = @{ "educator-prep" = [bool]$PSDefaultParameterValues["Invoke-RestMethod:SkipCertificateCheck"] }
+                foreach ($name in @("Get-CmsToken", "Add-Vendor", "Add-Application", "Get-BulkLoadClient")) {
+                    $result[$name] = & (Get-Command $name).Module {
+                        "{0}/{1}" -f [bool]$PSDefaultParameterValues["Invoke-RestMethod:SkipCertificateCheck"], [bool]$PSDefaultParameterValues["Invoke-WebRequest:SkipCertificateCheck"]
+                    }
+                }
+                $result
+            }
+            $skips["educator-prep"] | Should -BeTrue
+            foreach ($name in @("Get-CmsToken", "Add-Vendor", "Add-Application")) {
+                $skips[$name] | Should -Be "True/True" -Because "$name calls the CMS through the gateway"
+            }
+            $skips["Get-BulkLoadClient"] | Should -Be "False/False"
+        }
+        finally {
+            $global:PSDefaultParameterValues.Remove("Invoke-RestMethod:SkipCertificateCheck")
+            $global:PSDefaultParameterValues.Remove("Invoke-WebRequest:SkipCertificateCheck")
+            Remove-Module review-variants -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "clears the BulkLoadClient's record cache before every pass so a re-run sends every record" {
+        # The client skips every record listed in the newest *.hash file in its working folder, so a
+        # re-run into recreated databases would silently miss records; Build-Template's -ForceReloadData
+        # clears the same files.
+        $script:clientWork = (New-Item -ItemType Directory -Path (Join-Path $script:work "work-ST/client") -Force).FullName
+        foreach ($name in @("639269944027118911.hash", "639269945459902762.hash", "metadata.json")) {
+            Set-Content -LiteralPath (Join-Path $script:clientWork $name) -Value "cached"
+        }
+        $script:hashesAtRun = $null
+        Mock docker -ModuleName educator-prep {
+            $script:hashesAtRun = @(Get-ChildItem -LiteralPath $script:clientWork -Filter "*.hash")
+            $global:LASTEXITCODE = 0
+        }
+
+        $exitCode = Invoke-BulkLoadClientContainer -ClientDirectory (Join-Path $script:work "client/tools/net10.0/any") -DataDirectory $script:work `
+            -WorkDirectory (Join-Path $script:work "work-ST") -DmsUrl "http://st-dms:8080/st-dms" -Key "key" -Secret "secret" `
+            -LogPath (Join-Path $script:work "bulkload.log") -MaxConcurrentConnections 5 -MaxSimultaneousRequests 5 -MaxBufferedTasks 2 -RetryCount 5
+
+        $exitCode | Should -Be 0
+        Should -Invoke docker -ModuleName educator-prep -Times 1 -Exactly
+        $script:hashesAtRun | Should -BeNullOrEmpty
+        Test-Path -LiteralPath (Join-Path $script:clientWork "metadata.json") | Should -BeTrue
+    }
+
+    It "passes the bulk-load tuning to the client's -c, -l, -t and -r flags" {
+        $script:dockerArgs = $null
+        Mock docker -ModuleName educator-prep {
+            $script:dockerArgs = @($args)
+            $global:LASTEXITCODE = 0
+        }
+
+        Invoke-BulkLoadClientContainer -ClientDirectory (Join-Path $script:work "client/tools/net10.0/any") -DataDirectory $script:work `
+            -WorkDirectory (Join-Path $script:work "work-ST") -DmsUrl "http://st-dms:8080/st-dms" -Key "key" -Secret "secret" `
+            -LogPath (Join-Path $script:work "bulkload.log") -MaxConcurrentConnections 3 -MaxSimultaneousRequests 4 -MaxBufferedTasks 2 -RetryCount 6 | Out-Null
+
+        $flags = @{}
+        for ($i = 0; $i -lt $script:dockerArgs.Count - 1; $i++) {
+            if ("$($script:dockerArgs[$i])" -in @("-c", "-l", "-t", "-r")) { $flags["$($script:dockerArgs[$i])"] = "$($script:dockerArgs[$i + 1])" }
+        }
+        $flags["-c"] | Should -Be "3"
+        $flags["-l"] | Should -Be "4"
+        $flags["-t"] | Should -Be "2"
+        $flags["-r"] | Should -Be "6"
+    }
+
+    It "loads with Build-Template's bulk-load tuning so the two loaders cannot drift" {
+        $script:tuning = & (Get-Module educator-prep) { Get-TemplateBulkLoadTuning -DatabaseEngine "postgresql" }
+        @($script:tuning.Keys | Sort-Object) | Should -Be @("MaxBufferedTasks", "MaxConcurrentConnections", "MaxSimultaneousRequests", "RetryCount")
+        Mock Get-CmsToken -ModuleName educator-prep { "token" }
+        Mock Invoke-RestMethod -ModuleName educator-prep -ParameterFilter { $Uri -like "*v3/dataStores*" } {
+            Write-Output -NoEnumerate -InputObject @([pscustomobject]@{ id = 7; name = "Single-Tenant Data Store" })
+        }
+        Mock Invoke-RestMethod -ModuleName educator-prep -ParameterFilter { $Uri -like "*v3/vendors*" } { Write-Output -NoEnumerate -InputObject @() }
+        Mock Add-Vendor -ModuleName educator-prep { 100 }
+        Mock Add-Application -ModuleName educator-prep { @{ Id = 42; Key = "key"; Secret = "secret" } }
+        Mock Invoke-BulkLoadClientContainer -ModuleName educator-prep { 0 }
+        Mock Remove-ReviewLoaderApplication -ModuleName educator-prep { }
+        Set-Content -LiteralPath (Join-Path $script:work "Candidate.xml") -Value "<x/>"
+
+        $deployment = @{ Label = "single-tenant"; Code = "ST"; CmsUrl = "https://host/st-config/"; Tenant = ""; DataStoreName = "Single-Tenant Data Store"; DmsUrl = "http://st-dms:8080/st-dms" }
+        Invoke-EducatorPrepLoad -Deployment $deployment -DataDirectory $script:work -LogDirectory $script:work `
+            -AdminClientId "admin" -AdminClientSecret "secret" -BulkLoadClientDirectory $script:work | Out-Null
+
+        Should -Invoke Invoke-BulkLoadClientContainer -ModuleName educator-prep -Times 1 -Exactly -ParameterFilter {
+            $MaxConcurrentConnections -eq $script:tuning.MaxConcurrentConnections -and $MaxSimultaneousRequests -eq $script:tuning.MaxSimultaneousRequests -and
+            $MaxBufferedTasks -eq $script:tuning.MaxBufferedTasks -and $RetryCount -eq $script:tuning.RetryCount
+        }
+    }
+
+    It "resolves the pinned BulkLoadClient from the package it downloads" {
+        Mock Get-BulkLoadClient -ModuleName educator-prep { ".packages/edfi.suite3.bulkloadclient.console.1.2.3" }
+        $clientDirectory = Join-Path $script:work ".packages/edfi.suite3.bulkloadclient.console.1.2.3/tools/net10.0/any"
+        New-Item -ItemType Directory -Path $clientDirectory -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $clientDirectory "EdFi.BulkLoadClient.Console.dll") -Value "stub"
+
+        Get-ReviewBulkLoadClientDirectory -WorkDirectory $script:work | Should -Be (Get-Item -LiteralPath $clientDirectory).FullName
+    }
+
+    It "removes the loader application even when the bulk load fails" {
+        Mock Get-CmsToken -ModuleName educator-prep { "token" }
+        Mock Invoke-RestMethod -ModuleName educator-prep -ParameterFilter { $Uri -like "*v3/dataStores*" } {
+            Write-Output -NoEnumerate -InputObject @([pscustomobject]@{ id = 8; name = "MT Data Store (tenant1 2025)" })
+        }
+        Mock Invoke-RestMethod -ModuleName educator-prep -ParameterFilter { $Uri -like "*v3/vendors*" } { Write-Output -NoEnumerate -InputObject @() }
+        Mock Add-Vendor -ModuleName educator-prep { 100 }
+        Mock Add-Application -ModuleName educator-prep { @{ Id = 42; Key = "key"; Secret = "secret" } }
+        Mock Invoke-BulkLoadClientContainer -ModuleName educator-prep { 1 }
+        Mock Remove-ReviewLoaderApplication -ModuleName educator-prep { }
+        Set-Content -LiteralPath (Join-Path $script:work "Candidate.xml") -Value "<x/>"
+
+        $deployment = @{ Label = "multi-tenant/tenant1"; Code = "T1"; CmsUrl = "https://host/mt-config/"; Tenant = "tenant1"; DataStoreName = "MT Data Store (tenant1 2025)"; DmsUrl = "http://mt-dms:8080/mt-dms/tenant1/2025" }
+        $result = Invoke-EducatorPrepLoad -Deployment $deployment -DataDirectory $script:work -LogDirectory $script:work `
+            -AdminClientId "admin" -AdminClientSecret "secret" -BulkLoadClientDirectory $script:work
+
+        $result.ExitCode | Should -Be 1
+        Should -Invoke Remove-ReviewLoaderApplication -ModuleName educator-prep -Times 1 -Exactly -ParameterFilter { $ApplicationId -eq 42 }
+    }
+}
+
+Describe "Azure VM entry scripts" {
+    BeforeAll {
+        $script:seedRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm/compose/seed"))
+        $script:bootstrapRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm/compose/bootstrap"))
+    }
+
+    BeforeEach {
+        $script:work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-azure-vm-entry-$([Guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $script:work -Force | Out-Null
+    }
+
+    AfterEach {
+        if (Test-Path -LiteralPath $script:work) {
+            Remove-Item -LiteralPath $script:work -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "load-educator-prep.ps1 resolves every helper it calls after its imports" {
+        # Template-Management force-reimports Package-Management and Dms-Management as nested modules,
+        # which can drop copies imported earlier; the script must still resolve every helper.
+        $output = & pwsh -NoProfile -File (Join-Path $script:seedRoot "load-educator-prep.ps1") -SampleDataDirectory $script:work 2>&1
+
+        $LASTEXITCODE | Should -Not -Be 0
+        $output | Out-String | Should -Match "No educator-prep files found"
+    }
+
+    It "add-review-variants.ps1 refuses an existing -OutFile before anything else, so a re-run cannot overwrite saved secrets" {
+        # The env file is missing on purpose: the refusal must come before the script reads it.
+        $outFile = Join-Path $script:work "review-variants.json"
+        Set-Content -LiteralPath $outFile -Value '[{"Key":"saved"}]' -NoNewline
+
+        $output = & pwsh -NoProfile -File (Join-Path $script:bootstrapRoot "add-review-variants.ps1") -OutFile $outFile -EnvFile (Join-Path $script:work "missing.env") 2>&1
+
+        $LASTEXITCODE | Should -Not -Be 0
+        $output | Out-String | Should -Match "already exists"
+        Get-Content -LiteralPath $outFile -Raw | Should -Be '[{"Key":"saved"}]'
+    }
+}
+
+Describe "Azure VM Swagger UI" {
+    BeforeAll {
+        $script:azureVmRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm"))
+        $script:initializer = Join-Path $script:azureVmRoot "compose/swagger-ui/swagger-initializer.js"
+        # Loads the initializer into a bare `window`, exposes its pure helpers, and prints the JSON
+        # result of the expression in $args[1]. The Pester DMS lane runs on ubuntu-latest, which ships Node.js.
+        $script:runHelper = {
+            param([string]$Expression)
+            $program = "const fs = require('fs'); const window = {}; eval(fs.readFileSync(process.argv[1], 'utf8')); " +
+                "const h = window.EdFiReviewSwagger; console.log(JSON.stringify($Expression));"
+            $output = & node -e $program $script:initializer 2>&1
+            $LASTEXITCODE | Should -Be 0 -Because ($output | Out-String)
+            return ($output | Out-String | ConvertFrom-Json)
+        }
+    }
+
+    It "serves Swagger UI behind the gateway at /swagger/" {
+        $compose = Get-Content -LiteralPath (Join-Path $script:azureVmRoot "compose/docker-compose.yml") -Raw
+        $service = [regex]::Match($compose, "(?ms)^  swagger-ui:\s*\n(.*?)(?=^  \S|^\S)").Groups[1].Value
+        $service | Should -Match '<<: \*app-defaults' -Because "the service needs the shared logging cap and network"
+        $service | Should -Match 'image: nginx:1\.30-alpine'
+        $service | Should -Match '\.\./\.\./docker-compose/custom-swagger-ui:[^\s]*:ro'
+        $service | Should -Match '\./swagger-ui:[^\s]*:ro'
+
+        $gateway = Get-Content -LiteralPath (Join-Path $script:azureVmRoot "compose/nginx/default.conf.template") -Raw
+        $gateway | Should -Match '(?ms)location /swagger/ \{.*?set \$u_swagger swagger-ui;.*?proxy_pass http://\$u_swagger:80'
+        $gateway | Should -Match 'location = /swagger \{\s*return 301 /swagger/;'
+        $gateway | Should -Match '<a href="/swagger/">'
+    }
+
+    It "starts Swagger UI with the infrastructure in every start path" {
+        foreach ($file in @("compose/up.sh", "compose/reset.sh", "provision/setup-env.ps1", "provision/MANUAL.md")) {
+            Get-Content -LiteralPath (Join-Path $script:azureVmRoot $file) -Raw |
+                Should -Match 'postgres keycloak st-config mt-config pgadmin swagger-ui gateway' -Because $file
+        }
+    }
+
+    It "lists every DMS and Configuration Service definition, without Discovery, as same-origin paths" {
+        $stList = '[{"name":"Resources","endpointUri":"https://host.example/st-dms/metadata/specifications/resources-spec.json"},{"name":"Discovery","endpointUri":"https://host.example/st-dms/metadata/specifications/discovery-spec.json"},{"name":"Change-Queries","endpointUri":"https://host.example/st-dms/metadata/changequeries/v1/swagger.json"}]'
+        $mtList = '[{"name":"Resources","endpointUri":"https://host.example/mt-dms/t1/2025/metadata/specifications/resources-spec.json"}]'
+
+        $definitions = & $script:runHelper "h.buildDefinitions($stList, $mtList, ['t1', 't2'], '2025')"
+
+        @($definitions | ForEach-Object { "$($_.name)|$($_.url)" }) | Should -Be @(
+            "Single-tenant DMS: Resources|/st-dms/metadata/specifications/resources-spec.json",
+            "Single-tenant DMS: Change-Queries|/st-dms/metadata/changequeries/v1/swagger.json",
+            "Multi-tenant DMS: Resources|/mt-dms/t1/2025/metadata/specifications/resources-spec.json",
+            "Single-tenant Configuration Service|/st-config/openapi/v1.json",
+            "Multi-tenant Configuration Service (t1)|/mt-config/openapi/v1.json?tenant=t1",
+            "Multi-tenant Configuration Service (t2)|/mt-config/openapi/v1.json?tenant=t2"
+        )
+    }
+
+    It "falls back to the default DMS definitions when a stack's specification list is unavailable" {
+        $definitions = & $script:runHelper "h.buildDefinitions([], null, ['t1', 't2'], '2025')"
+
+        @($definitions | Select-Object -First 4 | ForEach-Object { "$($_.name)|$($_.url)" }) | Should -Be @(
+            "Single-tenant DMS: Resources|/st-dms/metadata/specifications/resources-spec.json",
+            "Single-tenant DMS: Descriptors|/st-dms/metadata/specifications/descriptors-spec.json",
+            "Multi-tenant DMS: Resources|/mt-dms/t1/2025/metadata/specifications/resources-spec.json",
+            "Multi-tenant DMS: Descriptors|/mt-dms/t1/2025/metadata/specifications/descriptors-spec.json"
+        )
+    }
+
+    It "groups a lone untagged operation under its path in both Swagger UIs (shared plugin)" {
+        $plugin = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../custom-swagger-ui/edfi-single-operation-group.js"))
+        $program = "const fs = require('fs'); const window = {}; eval(fs.readFileSync(process.argv[1], 'utf8')); " +
+            "const wrap = window.EdFiSingleOperationGroup().statePlugins.spec.wrapActions.updateSpec; let seen; " +
+            "wrap(s => { seen = s; })(JSON.stringify({ paths: { '/availableChangeVersions': { get: { description: 'Versions' } } } })); const lone = JSON.parse(seen); " +
+            "wrap(s => { seen = s; })({ paths: { '/a': { get: { tags: ['a'] } } } }); " +
+            "console.log(JSON.stringify({ tags: lone.paths['/availableChangeVersions'].get.tags, groups: lone.tags, tagged: seen.paths['/a'].get.tags }));"
+        $output = & node -e $program $plugin 2>&1
+        $LASTEXITCODE | Should -Be 0 -Because ($output | Out-String)
+        $result = $output | Out-String | ConvertFrom-Json
+
+        @($result.tags) | Should -Be @("availableChangeVersions")
+        $result.groups[0].name | Should -Be "availableChangeVersions"
+        $result.groups[0].description | Should -Be "Versions"
+        @($result.tagged) | Should -Be @("a")
+        foreach ($index in @("../custom-swagger-ui/index.html", "../../azure-vm/compose/swagger-ui/index.html")) {
+            Get-Content -LiteralPath ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $index))) -Raw |
+                Should -Match '<script src="edfi-single-operation-group\.js"></script>' -Because $index
+        }
+    }
+
+    It "adds the missing OAuth2 client-credentials scheme to the Configuration Service specs only" {
+        $patched = & $script:runHelper "h.withConfigurationServiceSecurity({openapi:'3.1.1', paths:{}}, '/mt-config/openapi/v1.json?tenant=t1', 'https://host.example')"
+        $scheme = $patched.components.securitySchemes.oauth2_client_credentials
+        $scheme.flows.clientCredentials.tokenUrl | Should -Be "https://host.example/mt-config/connect/token"
+        @($scheme.flows.clientCredentials.scopes.PSObject.Properties.Name) | Should -Be @("edfi_admin_api/full_access", "edfi_admin_api/readonly_access")
+        $patched.security[0].PSObject.Properties.Name | Should -Be "oauth2_client_credentials"
+
+        $dms = & $script:runHelper "h.withConfigurationServiceSecurity({openapi:'3.0.0', paths:{}}, '/st-dms/metadata/specifications/resources-spec.json', 'https://host.example')"
+        $dms.PSObject.Properties.Name | Should -Not -Contain "components"
+    }
+
+    It "sends the Tenant header only to the multi-tenant Configuration Service, for the selected tenant" {
+        $results = & $script:runHelper "[h.tenantForRequest('https://host.example/mt-config/openapi/v1.json?tenant=t2', null), h.tenantForRequest('https://host.example/mt-config/v3/vendors', '/mt-config/openapi/v1.json?tenant=t1'), h.tenantForRequest('https://host.example/mt-config/connect/token', '/mt-config/openapi/v1.json?tenant=t2'), h.tenantForRequest('https://host.example/st-config/v3/vendors', '/st-config/openapi/v1.json'), h.tenantForRequest('https://host.example/mt-dms/t1/2025/data/ed-fi/schools', '/mt-config/openapi/v1.json?tenant=t1')]"
+
+        @($results) | Should -Be @("t2", "t1", "t2", $null, $null)
+    }
+
+    It "moves the client credentials Swagger UI sends as HTTP Basic into the Configuration Service token form" {
+        # Swagger UI's client-credentials flow only sends an Authorization: Basic header; the Configuration
+        # Service token endpoint reads client_id and client_secret from the form body and answers 400 without them.
+        $results = & $script:runHelper ("[" +
+            "h.withClientCredentialsInBody({ url: 'https://host.example/mt-config/connect/token', headers: { Authorization: 'Basic ' + btoa('cid:se:cret'), Tenant: 't1' }, body: 'grant_type=client_credentials&scope=edfi_admin_api%2Ffull_access' }), " +
+            "h.withClientCredentialsInBody({ url: 'https://host.example/st-dms/oauth/token', headers: { Authorization: 'Basic ' + btoa('key:secret') }, body: 'grant_type=client_credentials' }), " +
+            "h.withClientCredentialsInBody({ url: 'https://host.example/st-config/v3/vendors', headers: { Authorization: 'Bearer token' } })]")
+
+        $form = [System.Web.HttpUtility]::ParseQueryString($results[0].body)
+        $form["grant_type"] | Should -Be "client_credentials"
+        $form["scope"] | Should -Be "edfi_admin_api/full_access"
+        $form["client_id"] | Should -Be "cid"
+        $form["client_secret"] | Should -Be "se:cret"
+        @($results[0].headers.PSObject.Properties.Name) | Should -Be @("Tenant")
+        $results[1].headers.Authorization | Should -BeLike "Basic *" -Because "the DMS token endpoint takes HTTP Basic"
+        $results[1].body | Should -Be "grant_type=client_credentials"
+        $results[2].headers.Authorization | Should -Be "Bearer token"
+    }
+
+    It "drops the DMS pageSize default so Try it out does not send pageSize without a pageToken" {
+        # The DMS rejects pageSize without pageToken (400), and Swagger UI sends every parameter default.
+        $spec = "{ paths: { '/ed-fi/schools': { get: { parameters: [{ `$ref: '#/components/parameters/pageSize' }, { name: 'pageSize', in: 'query', schema: { type: 'integer', default: 500 } }] } } }, " +
+            "components: { parameters: { pageSize: { name: 'pageSize', in: 'query', schema: { type: 'integer', default: 500, maximum: 500 } }, limit: { name: 'limit', in: 'query', schema: { type: 'integer', default: 500 } } } } }"
+        $results = & $script:runHelper "[h.withoutPageSizeDefault($spec, '/mt-dms/t1/2025/metadata/specifications/resources-spec.json'), h.withoutPageSizeDefault($spec, '/st-config/openapi/v1.json')]"
+
+        $dms = $results[0]
+        $dms.components.parameters.pageSize.schema.PSObject.Properties.Name | Should -Not -Contain "default"
+        $dms.components.parameters.pageSize.schema.maximum | Should -Be 500
+        $dms.paths.'/ed-fi/schools'.get.parameters[1].schema.PSObject.Properties.Name | Should -Not -Contain "default"
+        $dms.components.parameters.limit.schema.default | Should -Be 500 -Because "only pageSize conflicts"
+        $results[1].components.parameters.pageSize.schema.default | Should -Be 500 -Because "only DMS specs are changed"
+    }
+}
+
+Describe "Azure VM ODS parity check" {
+    BeforeAll {
+        $script:paritySource = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm/compose/seed/check-ods-parity.py"))
+    }
+
+    BeforeEach {
+        $script:work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-azure-vm-parity-$([Guid]::NewGuid().ToString('N'))"
+        $script:binRoot = Join-Path $script:work "bin"
+        New-Item -ItemType Directory -Path $script:binRoot -Force | Out-Null
+        $script:template = Join-Path $script:work "template.nupkg"
+        @'
+import sys, zipfile
+sql = (
+    "COPY edfi.school (schoolid) FROM stdin;\n1\n2\n\\.\n"
+    "COPY edfi.student (studentusi) FROM stdin;\n1\n2\n3\n\\.\n"
+    "COPY edfi.schoolyeartype (schoolyear) FROM stdin;\n2025\n2050\n\\.\n"
+    "COPY edfi.descriptor (descriptorid) FROM stdin;\n1\n\\.\n"
+)
+with zipfile.ZipFile(sys.argv[1], "w") as z:
+    z.writestr("EdFi.Ods.Populated.Template.sql", sql)
+'@ | & python3 - $script:template
+        $dockerStub = Join-Path $script:binRoot "docker"
+        Set-Content -LiteralPath $dockerStub -Value @'
+#!/usr/bin/env bash
+printf 'school|2\nstudent|%s\nschoolyeartype|1\n__descriptors__|1\n' "${DMS_STUDENTS:-3}"
+'@ -NoNewline
+        & chmod +x $dockerStub
+        $script:originalPath = $env:PATH
+        $env:PATH = "$script:binRoot$([IO.Path]::PathSeparator)$env:PATH"
+    }
+
+    AfterEach {
+        $env:PATH = $script:originalPath
+        Remove-Item Env:DMS_STUDENTS -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $script:work) {
+            Remove-Item -LiteralPath $script:work -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "passes when only allowed tables differ" {
+        $output = & python3 $script:paritySource --template $script:template --database edfi_st --allow-diff schoolyeartype 2>&1
+
+        $LASTEXITCODE | Should -Be 0 -Because ($output | Out-String)
+        $output | Out-String | Should -Match "schoolyeartype .*allowed"
+    }
+
+    It "fails when a table that must match differs" {
+        $env:DMS_STUDENTS = "2"
+
+        $output = & python3 $script:paritySource --template $script:template --database edfi_st --allow-diff schoolyeartype 2>&1
+
+        $LASTEXITCODE | Should -Be 1
+        $output | Out-String | Should -Match "student .*3.*2"
     }
 }
