@@ -1805,6 +1805,10 @@ function Invoke-ProvisionDmsSchema {
         [long]$Generation = 1
     )
 
+    # Refuse to run under a leaked restore-candidate override: schema provisioning writes to the
+    # live data store, and must only ever see the ACTIVE .bootstrap workspace.
+    Assert-NoBootstrapRootOverride -PhaseName "provision-dms-schema.ps1"
+
     if ($DataStoreId.Count -gt 0 -and $SchoolYear.Count -gt 0) {
         throw "-DataStoreId and -SchoolYear are mutually exclusive. Pass only one selector."
     }

@@ -213,6 +213,38 @@ Use `-SeedTemplate Populated` for the populated sample. The wrapper also accepts
 `-SeedDataPath` for developer-supplied XML interchange files; see
 `Get-Help ./bootstrap-local-dms.ps1 -Detailed` for that expert workflow.
 
+## Restore the Datastore from a Database Template Package
+
+The supported way to initialize the datastore from a database-template package
+is the bootstrap wrappers' restore mode. Set the template package ID in `.env`
+(and, for feed-based restores, the package's NuGet version):
+
+**Example:**
+
+```env
+DATABASE_TEMPLATE_PACKAGE=EdFi.Api.Minimal.Template.PostgreSql.5.2.0
+DATABASE_TEMPLATE_NUGET_VERSION=1.0.123
+```
+
+Then run one restore invocation, which authenticates the package against the
+template trust policy, validates it against a freshly prepared workspace and a
+throwaway scratch database, and only then replaces the target datastore before
+starting the stack:
+
+```powershell
+./bootstrap-local-dms.ps1 -RestoreTemplate Minimal
+```
+
+Use `-PackageDirectory <path>` to restore from a local directory holding the
+template `.nupkg` and its sibling attestation document instead of the feed (no
+NuGet version key needed). See `eng/docker-compose/README.md` for the full
+restore documentation, including the trust-policy setup for locally built
+packages.
+
+The older `setup-database-template.psm1` module remains available as a
+legacy/manual path only, pending its deletion gate; it performs none of the
+restore mode's authentication or validation.
+
 ## Stopping the Containers
 
 When you are ready to stop the containers, append the `-d` ("down") flag to the
