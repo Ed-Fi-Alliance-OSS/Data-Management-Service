@@ -149,7 +149,7 @@ public sealed class Given_TheProviderReturnsAStatusTheOperationForbids
     {
         string text = _outcomes[Key(operation, variant)].Text;
         text.Should().NotContain("The job failed.");
-        text.Should().NotContain("$.firstName");
+        text.Should().NotContain("$.FirstName");
         text.Should().NotContain("SearchResponses");
     }
 
@@ -195,13 +195,13 @@ public sealed class Given_TheProviderReturnsAStatusTheOperationForbids
     {
         string text = _resultsJobFailedWithPayload!.Text;
         text.Should().NotContain("The job failed.");
-        text.Should().NotContain("$.firstName");
+        text.Should().NotContain("$.FirstName");
         text.Should().NotContain("SearchResponses");
     }
 
     [Test]
     public void It_would_see_a_provider_error_text_if_the_host_projected_one()
     {
-        _projectedInvalid!.Text.Should().Contain("$.firstName");
+        _projectedInvalid!.Text.Should().Contain("$.FirstName");
     }
 }

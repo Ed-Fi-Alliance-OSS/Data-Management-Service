@@ -268,6 +268,7 @@ jobs:
             "eng/ci/tests/DocumentCacheAdminPackageTarget.Tests.ps1",
             "eng/ci/tests/ScheduledMergeQueueEnqueue.Tests.ps1",
             "eng/ci/tests/KeycloakNightlyNotifications.Tests.ps1",
+            "eng/ci/tests/IdentityContractPublication.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-WorkflowInputs.Tests.ps1",
             "eng/smoke_test/tests/SmokeTest.Tests.ps1",
@@ -579,7 +580,41 @@ jobs:
             -PackageId "${{ env.IDENTITY_PACKAGE_NAME }}" `
             -ExpectedPackageVersion $contractVersion
 
-      # After both packs, necessarily: this is the one check that restores both contracts, because
+      # After both packs, necessarily: this check restores both contracts, because the provider
+      # sample the identity guide publishes is registered by a plugin, and the plugin half needs
+      # EdFi.Api.Plugins. Placing it before the Identity pack, or before the Plugins pack above,
+      # would restore a package that had not been packed yet.
+      - name: Compile Identity Scratch Consumer
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Import-Module ./package-helpers.psm1
+          $identityContractVersion = Get-IdentityContractVersion
+          $pluginsContractVersion = Get-PluginsContractVersion
+
+          # Two versions from two sources, deliberately: each contract declares its own version in
+          # its own file and neither moves with the release, so neither is derived from the other
+          # or from the release version. These are the versions the two pack steps above produced.
+          # A fresh global-packages folder per run is what stops a previously extracted copy of
+          # either fixed-version package satisfying this restore in place of the one just packed.
+          #
+          # The published half reads the Ed-Fi feed anonymously, as every restore in this workflow
+          # already does, so it needs no secret and runs the same on a fork. Until the first
+          # publication of EdFi.Api.Identity at the declared version it reports that the version is
+          # not yet on the feed and the step passes; that is the expected state, not a skipped
+          # check. After publication it compiles this consumer against the feed's package, and a
+          # published package that differs from the one just packed fails the step. An unreadable
+          # feed fails the step rather than reading as "not yet published". It has its own fresh
+          # global-packages folder because the local check's already holds the same id and version.
+          $runId = [guid]::NewGuid().ToString('N')
+          ./eng/verification/Invoke-IdentityConsumerCheck.ps1 `
+            -PackageVersion $identityContractVersion `
+            -PluginsPackageVersion $pluginsContractVersion `
+            -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-identity-$runId") `
+            -PublishedServiceIndexUrl "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json" `
+            -PublishedNuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-published-identity-$runId")
+
+      # After both packs, necessarily: this check restores both contracts, because
       # the samples CUSTOM-VALIDATION.md publishes are a validator and the plugin that registers
       # it. Placing it earlier would restore an EdFi.Api.Plugins that had not been packed yet.
       - name: Compile and Run the Documented Custom Validator Samples

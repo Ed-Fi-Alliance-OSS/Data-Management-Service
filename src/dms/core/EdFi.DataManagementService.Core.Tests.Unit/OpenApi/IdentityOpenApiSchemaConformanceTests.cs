@@ -275,16 +275,16 @@ public class IdentityOpenApiSchemaConformanceTests
 
         private static readonly Dictionary<string, IReadOnlyList<IdentityError>> ExampleErrorsByName = new()
         {
-            ["createFieldError"] = [new() { Path = "$.firstName", Message = "First name is required." }],
+            ["createFieldError"] = [new() { Path = "$.FirstName", Message = "First name is required." }],
             ["searchItemError"] =
             [
-                new() { Path = "$[2].firstName", Message = "First name is required for item 2." },
+                new() { Path = "$[2].FirstName", Message = "First name is required for item 2." },
             ],
             ["pathlessError"] = [new() { Path = null, Message = "The request could not be evaluated." }],
             ["twoMessagesOneKey"] =
             [
-                new() { Path = "$.firstName", Message = "First name is required." },
-                new() { Path = "$.firstName", Message = "First name must not exceed 75 characters." },
+                new() { Path = "$.FirstName", Message = "First name is required." },
+                new() { Path = "$.FirstName", Message = "First name must not exceed 75 characters." },
             ],
         };
 

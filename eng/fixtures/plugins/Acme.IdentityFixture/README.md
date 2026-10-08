@@ -230,11 +230,11 @@ Where a variant does not apply to an operation (`success-both` has no token to c
 | `success-neither` | Same as `success-nopayload`, named for the find/search rule | `502` provider-contract-violation | `502` provider-contract-violation |
 | `success-both` | `Success` with both a payload and a token (find and search only) | find, search: `502` provider-contract-violation | unknown, so `502` upstream-failure |
 | `throw-person` | Throws an exception whose message contains person-shaped text (`Jane Doe born 1999-01-01` and the sentinel) | `502` upstream-failure | `502` upstream-failure |
-| `invalid-createFieldError` | `InvalidProperties`, one error at `$.firstName`: `First name is required.` | `400` data-validation-failed with `validationErrors` `$.firstName` | `400`, same |
-| `invalid-searchItemError` | `InvalidProperties`, one error at `$[2].firstName`: `First name is required for item 2.` | `400` data-validation-failed with `validationErrors` `$[2].firstName` | `400`, same |
+| `invalid-createFieldError` | `InvalidProperties`, one error at `$.FirstName`: `First name is required.` | `400` data-validation-failed with `validationErrors` `$.FirstName` | `400`, same |
+| `invalid-searchItemError` | `InvalidProperties`, one error at `$[2].FirstName`: `First name is required for item 2.` | `400` data-validation-failed with `validationErrors` `$[2].FirstName` | `400`, same |
 | `invalid-pathlessError` | `InvalidProperties`, one error with a blank (`""`) path: `The request could not be evaluated.` | `400` bad-request with that message in `errors` | `400`, same |
 | `invalid-pathlessNullError` | The same with a null path; projects identically to the blank path | `400` bad-request with that message in `errors` | `400`, same |
-| `invalid-twoMessagesOneKey` | `InvalidProperties`, two errors at `$.firstName`: `First name is required.` and `First name must not exceed 75 characters.` | `400` data-validation-failed, both messages under one `$.firstName` key | `400`, same |
+| `invalid-twoMessagesOneKey` | `InvalidProperties`, two errors at `$.FirstName`: `First name is required.` and `First name must not exceed 75 characters.` | `400` data-validation-failed, both messages under one `$.FirstName` key | `400`, same |
 | `lost-create` | Create only: see Lost-create reconciliation | `502` upstream-failure after the issuance is recorded | not applicable |
 | `cancel-person` | Create only: reports `awaiting-cancellation` on the control channel, waits until the operation's cancellation token is cancelled, then throws an `OperationCanceledException` of that token whose message and inner exception both contain person-shaped text (`Jane Doe born 1999-01-01` and the sentinel). A token that is never cancelled waits forever, so it is meant for an HTTP request the client cancels. | No response, because the client cancelled the request; DMS logs the exception at Debug only and rethrows a cancellation that carries none of its text | not applicable |
 

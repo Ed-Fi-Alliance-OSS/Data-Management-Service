@@ -5,9 +5,10 @@
 
 #Requires -Version 7
 
-# Assert-IdentityPackage.ps1 asserts on the id, the version, the license, the readme, the assembly,
-# its AssemblyVersion, the exported type surface, the load-bearing documentation landmarks, and the
-# dependency set of a packed EdFi.Api.Identity nupkg. The admission case below runs the whole script
+# Assert-IdentityPackage.ps1 asserts on the id, the version, the license, the readme, the source
+# commit, the assembly, its AssemblyVersion, the readme against the committed guide, the exported
+# type surface, the load-bearing documentation landmarks, and the dependency set of a packed
+# EdFi.Api.Identity nupkg. The admission case below runs the whole script
 # against the real packed artifact, and each negative control repacks that same artifact with exactly
 # one thing changed, so a failure is attributable to the one property the case mutated rather than to
 # repacking itself.
@@ -42,6 +43,26 @@ BeforeAll {
     $script:packedPackage = Join-Path $script:repositoryRoot "$($script:packageId).$($script:contractVersion).nupkg"
     $script:packedPackageAvailable = Test-Path -LiteralPath $script:packedPackage
 
+    # The commit the packed artifact records. The cases below that are not about the commit expect
+    # exactly this one, so a package packed before the latest local commit still exercises them;
+    # the commit cases set their own expectation.
+    $script:packedCommit = $null
+    if ($script:packedPackageAvailable) {
+        $archive = [System.IO.Compression.ZipFile]::OpenRead($script:packedPackage)
+        try {
+            $reader = [System.IO.StreamReader]::new($archive.GetEntry("$($script:packageId).nuspec").Open())
+            try {
+                $script:packedCommit = ([xml] $reader.ReadToEnd()).package.metadata.repository.commit
+            }
+            finally {
+                $reader.Dispose()
+            }
+        }
+        finally {
+            $archive.Dispose()
+        }
+    }
+
     $script:fixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) "dms1514-identity-package-tests-$([guid]::NewGuid().ToString('N'))"
     New-Item -ItemType Directory -Path $script:fixtureRoot -Force | Out-Null
 
@@ -69,7 +90,9 @@ BeforeAll {
         param(
             [Parameter(Mandatory)][string] $Name,
             [scriptblock] $TransformNuspec,
-            [scriptblock] $TransformXmlDocumentation
+            [scriptblock] $TransformXmlDocumentation,
+            [scriptblock] $TransformReadme,
+            [switch] $RemoveReadme
         )
 
         $stage = Join-Path $script:fixtureRoot "$Name-stage-$([guid]::NewGuid().ToString('N'))"
@@ -93,6 +116,16 @@ BeforeAll {
             [System.IO.File]::WriteAllText($xmlPath, (& $TransformXmlDocumentation $original))
         }
 
+        $readmePath = Join-Path $stage "IDENTITY.md"
+
+        if ($RemoveReadme) {
+            Remove-Item -LiteralPath $readmePath
+        }
+        elseif ($null -ne $TransformReadme) {
+            $original = [System.IO.File]::ReadAllText($readmePath)
+            [System.IO.File]::WriteAllText($readmePath, (& $TransformReadme $original))
+        }
+
         # -LiteralPath, and per entry. A nupkg carries [Content_Types].xml at its root, and square
         # brackets are a character class to Compress-Archive's wildcard -Path, so globbing the stage
         # directory would silently drop that entry.
@@ -105,16 +138,25 @@ BeforeAll {
     function Invoke-Verifier {
         param(
             [Parameter(Mandatory)][string] $PackageFile,
-            [string] $ExpectedPackageVersion = $script:contractVersion
+            [string] $ExpectedPackageVersion = $script:contractVersion,
+            [string] $GuidePath,
+            [string] $ExpectedCommit = $script:packedCommit,
+            # Omits -ExpectedCommit, so the verifier compares with the checked-out commit.
+            [switch] $DefaultExpectedCommit
         )
 
         # A fresh unique extraction directory per invocation, never a directory holding anything a
         # caller owns.
         $extractTo = Join-Path (New-FixtureDirectory -Name "extract") "package"
 
+        $guideArgument = @{}
+        if ($GuidePath) { $guideArgument.GuidePath = $GuidePath }
+        if ($ExpectedCommit -and -not $DefaultExpectedCommit) { $guideArgument.ExpectedCommit = $ExpectedCommit }
+
         try {
             & $script:verifier -PackageFile $PackageFile -ExtractTo $extractTo `
-                -PackageId $script:packageId -ExpectedPackageVersion $ExpectedPackageVersion |
+                -PackageId $script:packageId -ExpectedPackageVersion $ExpectedPackageVersion `
+                @guideArgument |
                 Out-Null
             return [pscustomobject]@{ Threw = $false; Message = "" }
         }
@@ -245,6 +287,138 @@ Describe "Assert-IdentityPackage negative controls" {
         $result.Message | Should -BeLike "*no longer contains*load-bearing rule phrase*"
         $result.Message |
             Should -BeLike "*The 1024-character ceiling bounds the escaped form because escaping only ever expands a token*"
+    }
+
+    It "refuses a packed readme that differs from the committed guide, naming the readme and the line" {
+        Test-PackedPackageAvailable
+
+        $package = New-RepackedPackage -Name "mismatched-readme" -TransformReadme {
+            param($text)
+            $text.TrimEnd() + "`nAn appended paragraph the committed guide does not carry.`n"
+        }
+
+        $result = Invoke-Verifier -PackageFile $package
+
+        $result.Threw | Should -BeTrue
+        $result.Message | Should -BeLike "*The packed IDENTITY.md is not the committed implementer guide*"
+        $result.Message | Should -BeLike "*First difference at line*package has 'An appended paragraph*"
+    }
+
+    It "admits a packed readme that differs from the committed guide only in line endings" {
+        Test-PackedPackageAvailable
+
+        $package = New-RepackedPackage -Name "crlf-readme" -TransformReadme {
+            param($text)
+            $text.Replace("`r`n", "`n").Replace("`n", "`r`n")
+        }
+
+        $result = Invoke-Verifier -PackageFile $package
+
+        $result.Threw | Should -BeFalse -Because "an autocrlf checkout must not fail the comparison: $($result.Message)"
+    }
+
+    It "refuses a readme that still carries the placeholder sentence, even when the committed guide agrees" {
+        Test-PackedPackageAvailable
+
+        # The committed guide is pointed at the same placeholder text, so the whole-file comparison
+        # would pass and only the placeholder refusal can account for the failure.
+        $placeholder = "# EdFi.Api.Identity`n`nThe implementer guide arrives in a later story.`n"
+        $guide = Join-Path (New-FixtureDirectory -Name "placeholder-guide") "IDENTITY.md"
+        [System.IO.File]::WriteAllText($guide, $placeholder)
+        $package = New-RepackedPackage -Name "placeholder-readme" -TransformReadme {
+            param($text)
+            $null = $text
+            $placeholder
+        }
+
+        $result = Invoke-Verifier -PackageFile $package -GuidePath $guide
+
+        $result.Threw | Should -BeTrue
+        $result.Message | Should -BeLike "*Packed readme IDENTITY.md still carries the placeholder sentence*"
+    }
+
+    It "still refuses a package that does not carry the readme file" {
+        Test-PackedPackageAvailable
+
+        $result = Invoke-Verifier -PackageFile (New-RepackedPackage -Name "no-readme" -RemoveReadme)
+
+        $result.Threw | Should -BeTrue
+        $result.Message | Should -BeLike "*Package does not carry the readme file itself*"
+    }
+
+    It "refuses when the committed guide cannot be found" {
+        Test-PackedPackageAvailable
+
+        $result = Invoke-Verifier -PackageFile $script:packedPackage `
+            -GuidePath (Join-Path $script:fixtureRoot "absent-guide.md")
+
+        $result.Threw | Should -BeTrue
+        $result.Message | Should -BeLike "*committed implementer guide was not found*"
+    }
+
+    It "refuses a package whose nuspec records no source commit: <Name>" -ForEach @(
+        @{ Name = "no repository element"; Pattern = '<repository [^>]*/>'; Replacement = '' }
+        @{ Name = "no commit attribute"; Pattern = ' commit="[^"]*"'; Replacement = '' }
+    ) {
+        Test-PackedPackageAvailable
+
+        # The wire gate reads its baseline at this commit for every later release, and a published
+        # version cannot be replaced, so a package without one is refused before it can publish.
+        $package = New-RepackedPackage -Name "no-commit" -TransformNuspec {
+            param($nuspec)
+            $nuspec -replace $Pattern, $Replacement
+        }
+
+        $result = Invoke-Verifier -PackageFile $package
+
+        $result.Threw | Should -BeTrue
+        $result.Message | Should -BeLike "*records no source commit*"
+    }
+
+    It "refuses a recorded commit that is not a 40-character hexadecimal id" {
+        Test-PackedPackageAvailable
+
+        $package = New-RepackedPackage -Name "short-commit" -TransformNuspec {
+            param($nuspec)
+            $nuspec -replace ' commit="[^"]*"', ' commit="25351c7d3"'
+        }
+
+        $result = Invoke-Verifier -PackageFile $package
+
+        $result.Threw | Should -BeTrue
+        $result.Message | Should -BeLike "*records commit '25351c7d3', which is not a 40-character hexadecimal commit id*"
+    }
+
+    It "refuses a recorded commit other than the expected one, naming both" {
+        Test-PackedPackageAvailable
+
+        $expected = "0" * 40
+        $result = Invoke-Verifier -PackageFile $script:packedPackage -ExpectedCommit $expected
+
+        $result.Threw | Should -BeTrue
+        $result.Message | Should -BeLike "*records commit $($script:packedCommit), but it was expected to be packed at $expected*"
+    }
+
+    It "expects the checked-out commit when no expected commit is given" {
+        Test-PackedPackageAvailable
+
+        $head = (git -C $script:repositoryRoot rev-parse HEAD).Trim()
+        $other = if ($head -eq ("a" * 40)) { "b" * 40 } else { "a" * 40 }
+        $atHead = New-RepackedPackage -Name "head-commit" -TransformNuspec {
+            param($nuspec)
+            $nuspec -replace ' commit="[^"]*"', " commit=`"$head`""
+        }
+        $elsewhere = New-RepackedPackage -Name "other-commit" -TransformNuspec {
+            param($nuspec)
+            $nuspec -replace ' commit="[^"]*"', " commit=`"$other`""
+        }
+
+        $admitted = Invoke-Verifier -PackageFile $atHead -DefaultExpectedCommit
+        $refused = Invoke-Verifier -PackageFile $elsewhere -DefaultExpectedCommit
+
+        $admitted.Threw | Should -BeFalse -Because "a package recording the checked-out commit must be admitted: $($admitted.Message)"
+        $refused.Threw | Should -BeTrue
+        $refused.Message | Should -BeLike "*records commit $other, but it was expected to be packed at $head*"
     }
 
     It "still refuses a missing package file before it touches anything" {

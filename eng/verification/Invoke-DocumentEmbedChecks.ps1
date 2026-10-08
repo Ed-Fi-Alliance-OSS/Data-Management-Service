@@ -104,6 +104,23 @@ $checkedDocument = @(
             "eng/verification/SecretsPluginExamples/ParameterStoreSecretResolver.cs#resolver"
         )
     }
+    [pscustomobject]@{
+        # Seven regions, all required. The guide teaches an implementer to write the plugin that
+        # registers the service and then the provider in six steps, one region per step, so a guide
+        # that kept the plugin and dropped a step of the provider would publish a sample that does
+        # not compile where it is read. The project they come from is compiled against the packed
+        # contract by Invoke-IdentityConsumerCheck.ps1.
+        Document = "src/dms/core/EdFi.DataManagementService.Identity/IDENTITY.md"
+        RequiredEmbed = @(
+            "eng/verification/IdentityConsumer/AcmeIdentityPlugin.cs#plugin",
+            "eng/verification/IdentityConsumer/AcmeIdentityService.cs#provider",
+            "eng/verification/IdentityConsumer/AcmeIdentityService.cs#provider-create",
+            "eng/verification/IdentityConsumer/AcmeIdentityService.cs#provider-get",
+            "eng/verification/IdentityConsumer/AcmeIdentityService.cs#provider-find-search",
+            "eng/verification/IdentityConsumer/AcmeIdentityService.cs#provider-results",
+            "eng/verification/IdentityConsumer/AcmeIdentityService.cs#provider-store"
+        )
+    }
 )
 
 if ($ListPath) {

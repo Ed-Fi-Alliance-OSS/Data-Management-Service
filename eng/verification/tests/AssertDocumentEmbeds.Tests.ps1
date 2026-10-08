@@ -104,7 +104,7 @@ Describe "Assert-DocumentEmbeds against the committed documents" {
         # verifier checks for drift either way.
         $output = @(& $script:embedChecks)
 
-        $output | Should -HaveCount 5
+        $output | Should -HaveCount 6
         $output[0] | Should -BeLike "Verified OPERATIONS.md: * match their files, including 3 required."
         $output[1] | Should -BeLike "Verified PLUGINS.md: * match their files, including 1 required."
         $output[2] |
@@ -112,6 +112,7 @@ Describe "Assert-DocumentEmbeds against the committed documents" {
         $output[3] |
             Should -BeLike "Verified UNIQUEID-VALIDATION.md: * match their files, including 3 required."
         $output[4] | Should -BeLike "Verified README.md: * match their files, including 3 required."
+        $output[5] | Should -BeLike "Verified IDENTITY.md: * match their files, including 7 required."
     }
 
     It "still requires all three plugin Compose overlays" {

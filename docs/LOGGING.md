@@ -84,6 +84,7 @@ request logging layer:
   With the flag off, or with a leading-segment shape that does not match this host's configuration, an identity-shaped path returns 404, and it is still redacted and its framework hosting start and finish events are still dropped.
   The redaction does not extend to identity provider exception detail logged at `Debug` by the Core identity provider boundary (logger category `EdFi.DataManagementService.Core.Identity.IdentityProviderBoundary`), which may quote the unique id, the results token, or submitted person data.
   Do not enable `Debug` for that category in production unless logging that detail is acceptable.
+  The operator's side of Identity Management is in [Identity Management](./IDENTITY-MANAGEMENT.md#logging).
 * `StatusCode`: HTTP response status code. An unhandled exception before a
   response is produced is logged as `500`.
 * `DurationMs`: elapsed request duration in milliseconds as a numeric `long`.
