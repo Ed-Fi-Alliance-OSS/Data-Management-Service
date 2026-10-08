@@ -5,6 +5,8 @@
 
 using System.Data.Common;
 using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Backend.Tests.Common;
+using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Npgsql;
 using Reqnroll;
@@ -34,7 +36,206 @@ public static class CustomViewStepDefinitions
         "StudentSectionAssociation"
     );
     private static readonly (string Schema, string Table) AssessmentTable = ("edfi", "Assessment");
-    private static readonly (string Schema, string Table) DescriptorTable = ("dms", "Descriptor");
+
+    [Given("descriptor document IDs are outside the compact ID range")]
+    public static async Task GivenDescriptorDocumentIdsAreOutsideTheCompactIdRange()
+    {
+        await using DbConnection connection = CreateConnection();
+        await connection.OpenAsync();
+        await ExecuteNonQueryAsync(
+            connection,
+            IsMssql
+                ? CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql
+                : CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql
+        );
+    }
+
+    [Then("the custom auth view {string} contains exactly these {string} descriptor code values")]
+    public static async Task ThenTheCustomAuthViewContainsExactlyTheseDescriptorCodeValues(
+        string strategyName,
+        string descriptorName,
+        DataTable codeValues
+    )
+    {
+        ValidateIdentifier(strategyName, nameof(strategyName));
+        ValidateIdentifier(descriptorName, nameof(descriptorName));
+        await using DbConnection connection = CreateConnection();
+        await connection.OpenAsync();
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT d.{Quote("DescriptorId")}, d.{Quote("DocumentId")}, d.{Quote("CodeValue")}
+            FROM {Quote("dms")}.{Quote("Descriptor")} d
+            INNER JOIN {Quote("dms")}.{Quote("ResourceKey")} rk
+                ON rk.{Quote("ResourceKeyId")} = d.{Quote("ResourceKeyId")}
+            WHERE rk.{Quote("ProjectName")} = {Literal("Ed-Fi")}
+                AND rk.{Quote("ResourceName")} = {Literal(descriptorName)};
+            """;
+        List<long> expectedDocumentIds = [];
+        HashSet<string> expectedCodeValues = codeValues.Rows.Select(row => row["codeValue"]).ToHashSet();
+        HashSet<string> foundCodeValues = [];
+        await using (DbDataReader reader = await command.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                int descriptorId = reader.GetInt32(0);
+                long documentId = reader.GetInt64(1);
+                documentId.Should().BeGreaterThan(int.MaxValue).And.NotBe(descriptorId);
+                string codeValue = reader.GetString(2);
+                if (expectedCodeValues.Contains(codeValue))
+                {
+                    expectedDocumentIds.Add(documentId);
+                    foundCodeValues.Add(codeValue);
+                }
+            }
+        }
+        foundCodeValues.Should().BeEquivalentTo(expectedCodeValues);
+        (await ReadViewDocumentIdsAsync(connection, strategyName))
+            .Should()
+            .BeEquivalentTo(expectedDocumentIds);
+
+        // A same-named type with identical components in another project must stay outside the view.
+        // Roll back its temporary catalog/document/descriptor rows before subsequent API requests.
+        await using DbTransaction transaction = await connection.BeginTransactionAsync();
+        command.Transaction = transaction;
+        command.CommandText = $"""
+            {(
+                IsMssql
+                    ? "SET ANSI_NULLS ON; SET ANSI_PADDING ON; SET ANSI_WARNINGS ON; SET ARITHABORT ON; SET CONCAT_NULL_YIELDS_NULL ON; SET QUOTED_IDENTIFIER ON; SET NUMERIC_ROUNDABORT OFF;"
+                    : string.Empty
+            )}
+            INSERT INTO {Quote("dms")}.{Quote("ResourceKey")}
+                ({Quote("ResourceKeyId")}, {Quote("ProjectName")}, {Quote("ResourceName")}, {Quote(
+                "ResourceVersion"
+            )})
+            SELECT MAX({Quote("ResourceKeyId")}) + 1, 'E2E-OtherProject', {Literal(descriptorName)}, '1.0.0'
+            FROM {Quote("dms")}.{Quote("ResourceKey")};
+            INSERT INTO {Quote("dms")}.{Quote("Document")} ({Quote("DocumentUuid")}, {Quote("ResourceKeyId")})
+            SELECT @documentUuid, {Quote("ResourceKeyId")}
+            FROM {Quote("dms")}.{Quote("ResourceKey")}
+            WHERE {Quote("ProjectName")} = 'E2E-OtherProject' AND {Quote("ResourceName")} = {Literal(
+                descriptorName
+            )};
+            INSERT INTO {Quote("dms")}.{Quote("Descriptor")}
+                ({Quote("DocumentId")}, {Quote("ResourceKeyId")}, {Quote("Namespace")}, {Quote(
+                "CodeValue"
+            )}, {Quote("ShortDescription")})
+            SELECT doc.{Quote("DocumentId")}, doc.{Quote("ResourceKeyId")}, d.{Quote("Namespace")}, d.{Quote(
+                "CodeValue"
+            )}, d.{Quote("ShortDescription")}
+            FROM {Quote("dms")}.{Quote("Document")} doc
+            CROSS JOIN {Quote("dms")}.{Quote("Descriptor")} d
+            WHERE doc.{Quote("DocumentUuid")} = @documentUuid AND d.{Quote("DocumentId")} = @sourceDocumentId;
+            """;
+        AddParameter(command, "@documentUuid", Guid.NewGuid());
+        AddParameter(command, "@sourceDocumentId", expectedDocumentIds[0]);
+        (await command.ExecuteNonQueryAsync()).Should().Be(3);
+        (await ReadViewDocumentIdsAsync(connection, strategyName, transaction))
+            .Should()
+            .BeEquivalentTo(expectedDocumentIds);
+        await transaction.RollbackAsync();
+    }
+
+    [Then(
+        "the custom auth view {string} uses compact category keys for School {int} and LocalEducationAgency {int}"
+    )]
+    public static async Task ThenTheCustomAuthViewUsesCompactCategoryKeys(
+        string strategyName,
+        int schoolId,
+        int localEducationAgencyId
+    )
+    {
+        ValidateIdentifier(strategyName, nameof(strategyName));
+        await using DbConnection connection = CreateConnection();
+        await connection.OpenAsync();
+        await using DbCommand command = connection.CreateCommand();
+        string SelectCategory(string resource, string table, string ownerColumn, string idParameter) =>
+            $"""
+                SELECT r.{Quote("DocumentId")}, d.{Quote("DescriptorId")}, d.{Quote("DocumentId")}
+                FROM {Quote("edfi")}.{Quote(resource)} r
+                INNER JOIN {Quote("edfi")}.{Quote(table)} c ON c.{Quote(ownerColumn)} = r.{Quote(
+                    "DocumentId"
+                )}
+                INNER JOIN {Quote("dms")}.{Quote("Descriptor")} d
+                    ON d.{Quote("DescriptorId")} = c.{Quote(
+                    "EducationOrganizationCategoryDescriptor_DescriptorId"
+                )}
+                WHERE r.{Quote(resource + "Id")} = {idParameter}
+                """;
+        command.CommandText = $"""
+            {SelectCategory(
+                "School",
+                "SchoolEducationOrganizationCategory",
+                "School_DocumentId",
+                "@schoolId"
+            )};
+            {SelectCategory(
+                "LocalEducationAgency",
+                "LocalEducationAgencyCategory",
+                "LocalEducationAgency_DocumentId",
+                "@agencyId"
+            )};
+            """;
+        AddParameter(command, "@schoolId", schoolId);
+        AddParameter(command, "@agencyId", localEducationAgencyId);
+        List<long> ownerDocumentIds = [];
+        List<int> descriptorIds = [];
+        await using (DbDataReader reader = await command.ExecuteReaderAsync())
+        {
+            do
+            {
+                (await reader.ReadAsync()).Should().BeTrue();
+                ownerDocumentIds.Add(reader.GetInt64(0));
+                int descriptorId = reader.GetInt32(1);
+                reader.GetInt64(2).Should().BeGreaterThan(int.MaxValue).And.NotBe(descriptorId);
+                descriptorIds.Add(descriptorId);
+                (await reader.ReadAsync()).Should().BeFalse();
+            } while (await reader.NextResultAsync());
+        }
+        ownerDocumentIds.Should().HaveCount(2);
+        (await ReadViewDocumentIdsAsync(connection, strategyName)).Should().Equal(ownerDocumentIds[0]);
+
+        // Exercise the LEA half of the UNION with a qualifying category as well as the School half.
+        await using DbTransaction transaction = await connection.BeginTransactionAsync();
+        command.Transaction = transaction;
+        command.Parameters.Clear();
+        AddParameter(command, "@descriptorId", descriptorIds[1]);
+        command.CommandText = $"""
+            {(IsMssql ? "SET ARITHABORT ON;" : string.Empty)}
+            UPDATE {Quote("dms")}.{Quote("Descriptor")} SET {Quote("CodeValue")} = 'State Agency'
+            WHERE {Quote("DescriptorId")} = @descriptorId;
+            """;
+        (await command.ExecuteNonQueryAsync()).Should().Be(1);
+        (await ReadViewDocumentIdsAsync(connection, strategyName, transaction))
+            .Should()
+            .BeEquivalentTo(ownerDocumentIds);
+        await transaction.RollbackAsync();
+    }
+
+    private static void AddParameter(DbCommand command, string name, object value)
+    {
+        DbParameter parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
+    }
+
+    private static async Task<List<long>> ReadViewDocumentIdsAsync(
+        DbConnection connection,
+        string strategyName,
+        DbTransaction? transaction = null
+    )
+    {
+        await using DbCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"SELECT {Quote("DocumentId")} FROM {Quote("auth")}.{Quote(strategyName)};";
+        List<long> documentIds = [];
+        await using DbDataReader reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            documentIds.Add(reader.GetInt64(0));
+        }
+        return documentIds;
+    }
 
     [Given("the custom auth view {string} authorizes Student {string}")]
     public static async Task GivenTheCustomAuthViewAuthorizesStudent(
@@ -130,7 +331,7 @@ public static class CustomViewStepDefinitions
                 SELECT DISTINCT c.{Quote(ownerColumn)} AS {Quote("DocumentId")}
                 FROM {Quote("edfi")}.{Quote(categoryTable)} c
                     INNER JOIN {Quote("dms")}.{Quote("Descriptor")} d
-                        ON d.{Quote("DocumentId")} = c.{Quote(
+                        ON d.{Quote("DescriptorId")} = c.{Quote(
                     "EducationOrganizationCategoryDescriptor_DescriptorId"
                 )}
                 WHERE {categoryPredicate}
@@ -161,15 +362,18 @@ public static class CustomViewStepDefinitions
     {
         ValidateIdentifier(descriptorName, nameof(descriptorName));
 
-        // The stored discriminator is the bare descriptor resource name; the project-qualified form is
-        // accepted as well so the view keeps working should the write path start qualifying it.
-        var discriminators = $"{Literal(descriptorName)}, {Literal($"Ed-Fi:{descriptorName}")}";
-
-        await CreateCustomAuthViewAsync(
+        // Resource keys qualify the descriptor type; membership uses its owning document key.
+        await CreateCustomAuthViewFromQueryAsync(
             strategyName,
-            selectList: Quote("DocumentId"),
-            source: DescriptorTable,
-            whereClause: $"{Quote("Discriminator")} IN ({discriminators}) AND {Quote("CodeValue")} LIKE {Literal("%" + EscapeLikePattern(codeValueFragment) + "%")}"
+            $"""
+            SELECT d.{Quote("DocumentId")}
+            FROM {Quote("dms")}.{Quote("Descriptor")} d
+                INNER JOIN {Quote("dms")}.{Quote("ResourceKey")} rk
+                    ON rk.{Quote("ResourceKeyId")} = d.{Quote("ResourceKeyId")}
+            WHERE rk.{Quote("ProjectName")} = {Literal("Ed-Fi")}
+                AND rk.{Quote("ResourceName")} = {Literal(descriptorName)}
+                AND d.{Quote("CodeValue")} LIKE {Literal("%" + EscapeLikePattern(codeValueFragment) + "%")}
+            """
         );
     }
 
