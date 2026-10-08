@@ -222,7 +222,10 @@ pwsh ./bootstrap/add-review-variants.ps1 -BaseUrl https://localhost -Insecure -O
 FQDN=<FQDN> python3 ../http/sample-variants.py ~/review-variants.json
 ```
 
-A fresh deploy already creates these (`bootstrap.ps1`); the script skips any that exist.
+A fresh deploy already creates these (`bootstrap.ps1`); the script skips any that exist, and an existing key's secret cannot be read back.
+The script refuses an `-OutFile` that already exists, because a re-run would rewrite it with only that run's pairs: keep the file until its pairs are in the private credentials doc, and give any re-run a new path.
+If the script fails part-way, it prints the pairs it already created before the error; copy them before re-running, because a re-run skips those applications.
+A secret lost anyway can be replaced with `PUT /v3/apiClients/{id}/reset-credential` on that deployment's Configuration Service (with the `Tenant` header on the multi-tenant one).
 Expected access: the district keys see every school and student, the school key sees only that school's students (400), and the AssessmentVendor key gets 403 on schools and sees no `uri://ed-fi.org` assessments.
 Copy the pairs into the private credentials doc, then delete `~/review-variants.json`.
 
