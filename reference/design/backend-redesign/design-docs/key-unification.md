@@ -432,7 +432,7 @@ Required interpretation rules:
      `DbColumnModel.Storage`. When the binding column is unified, the value is written to the class’s canonical column
      via the key-unification precompute step.
 3. **Descriptor FK constraints**:
-   - Descriptor FK constraints to `dms.Descriptor(DocumentId)` MUST be anchored on the storage column (see
+   - Descriptor FK constraints to `dms.Descriptor(DescriptorId)` MUST be anchored on the storage column (see
      “Descriptor foreign keys (`dms.Descriptor`) (normative)” below).
 
 #### Plan compiler and flattener contract (normative)
@@ -590,26 +590,23 @@ For each table row being materialized, and for each `KeyUnificationClass` on tha
    - For `Scalar` members: convert the JSON scalar to the member’s storage scalar type using the same conversion rules
      used for normal scalar columns (coercions are Core-owned; backend should treat incoming values as already
      canonicalized).
-   - For `DescriptorFk` members: resolve the JSON descriptor URI string to the descriptor `DocumentId` (BIGINT) using:
-     - the shared descriptor well-formedness assertion, which requires a previously validated
-       well-formed-without-NUL URI and never lowercases (case folding is engine-owned; the probe
-       folds the value in SQL), and
-     - the member’s `DbColumnModel.TargetResource` as part of the lookup key.
-     - recommended key shape: `DescriptorKey(RawUri, DescriptorResource)` compared ordinally, as
-       defined in `flattening-reconstitution.md` (`ResolvedReferenceSet.DescriptorIdByKey`);
-       case-variant spellings remain separate keys that resolve to the same `DocumentId`.
-     Core descriptor extraction MUST reject a NUL-bearing URI at its concrete request JSON path
-     before the resolver or this coalescing step runs (an unpaired-surrogate JSON escape cannot
-     reach a C# string; `ParseBodyMiddleware` rejects it body-wide at parse). It is a
-     path-attributed 400 validation failure, not an unresolved-reference failure. This step MUST
-     assert the well-formed-without-NUL invariant and MUST NOT lowercase the value.
-     If a descriptor URI is present but cannot be resolved to a `DocumentId`, the write MUST fail closed (descriptor
+   - For `DescriptorFk` members: obtain the resolved `int DescriptorId` using the member's
+     `DbColumnModel.TargetResource` and descriptor path from the current batched RI resolver.
+     Its descriptor result carries both `DescriptorId` and owning `bigint DocumentId`; only the
+     compact key is stored here. The normalized URI lookup map uses the existing whole-string
+     `ToLowerInvariant()` key with ordinal comparison, as in
+     [flattening-reconstitution.md](flattening-reconstitution.md#52-reference--descriptor-resolution-bulk).
+     Core extraction, RI hashing/verification, and lookup retain their existing validation and
+     transformations. Do not split on `#`, trim components, or introduce Unicode normalization.
+     The additional well-formedness validation and engine-owned equality proposals in
+     [natural-key-resolution.md](natural-key-resolution.md) belong to later work.
+     If a descriptor URI is present but cannot be resolved to a `DescriptorId`, the write MUST fail closed (descriptor
      reference validation failure).
 3. Apply conflict detection:
    - If **two or more** members are present with **non-null** values and the values are not equal after conversion,
      the write MUST fail closed (data validation error). This is a defense-in-depth re-check of `equalityConstraints`
      (Core already validates at the document level).
-     - For `DescriptorFk` members, equality comparison is `DocumentId` equality (resolved identifier equality), not raw
+     - For `DescriptorFk` members, equality comparison is `DescriptorId` equality (resolved identifier equality), not raw
        descriptor URI string equality.
    - Equality comparison MUST be stable and based on the converted storage representation (e.g., ordinal string
      equality for strings).
@@ -1111,7 +1108,7 @@ Compatibility rules:
     - `(Precision, Scale)` (for decimals).
 - DescriptorFk vs DescriptorFk:
   - `DbColumnModel.Kind` MUST be `DescriptorFk` for all members,
-  - physical storage MUST be `BIGINT` / `bigint` (as in the base redesign), and
+  - physical storage MUST be `int` / `integer` (`ScalarKind.Int32`), and
   - `DbColumnModel.TargetResource` MUST be the **same** descriptor resource type across all members.
 - Scalar and DescriptorFk MUST NOT be unified.
 
@@ -1138,7 +1135,7 @@ Notes:
 - This design does **not** attempt to “widen” or “merge” type constraints (e.g., picking the larger of two string
   `MaxLength` values). Any mismatch is treated as a schema/design error and MUST fail fast to avoid silently changing
   DDL, query behavior, or parameter binding semantics.
-- For descriptor-key unification, the canonical column stores the unified descriptor `DocumentId` (BIGINT), but retains
+- For descriptor-key unification, the canonical column stores the unified `int DescriptorId`, but retains
   the descriptor resource type in `TargetResource` so downstream consumers can remain resource-type safe.
 
 ### Canonical column nullability derivation (normative)
@@ -1161,21 +1158,26 @@ Rationale:
 ### Descriptor identity parts (`..._DescriptorId`) under unification
 
 Descriptor values are API-facing URI strings but are stored as foreign keys to `dms.Descriptor` (`..._DescriptorId`,
-`BIGINT` / `bigint`).
+`int` / `integer`, targeting `DescriptorId`). This applies equally to direct descriptor paths,
+copied descriptor-valued document-reference identities, collections, extensions, and abstract projections.
 
 Implications when descriptor identity parts participate in key unification:
 
-- Unification for descriptor endpoints is over the **resolved descriptor `DocumentId`**, not the raw URI string.
-  - Canonical descriptor columns store the single source of truth `DocumentId`.
+- Unification for descriptor endpoints is over the **resolved `int DescriptorId`**, not the raw URI string.
+  - Canonical descriptor columns store the single source of truth `DescriptorId`.
   - Per-site/path columns remain present as `UnifiedAlias` aliases (presence-gated where applicable), preserving
     query/reconstitution bindings by `SourceJsonPath`.
-- Coalescing and conflict detection operate on resolved `DocumentId`s, so the key-unification write planner depends on
+- Coalescing and conflict detection operate on resolved `DescriptorId`s, so the key-unification write planner depends on
   descriptor resolution results (the same resolved descriptor-id map used to populate normal descriptor FK columns).
 - Descriptor FK unification MUST be resource-type safe: a unification class must not mix descriptor FK members that
   target different descriptor resource types.
-- Descriptor identity/URI is immutable in this redesign, so descriptor FK columns generally do not
-  participate in `ON UPDATE CASCADE` identity propagation. Key unification still matters to prevent drift between
-  duplicated writable `..._DescriptorId` columns on the same row.
+- Both descriptor IDs remain stable across accepted updates, and descriptor FKs retain `ON UPDATE NO ACTION`.
+  Current RI-matched POSTs apply incoming components; PUT checks whole-URI text ordinally. Unification
+  prevents drift between duplicated bindings without changing either operation's behavior.
+- Hydration and RI witnesses join the canonical/alias compact value to `dms.Descriptor.DescriptorId`
+  and reconstruct the whole original-case URI before each consumer's existing transformation.
+  History snapshots keep namespace/code values; authorization-view membership bridges to the descriptor's
+  owning `DocumentId`. Document metadata, locks, cache work, and both document stamps remain document-owned.
 
 ## Canonical Column Selection and Naming
 
@@ -1639,7 +1641,7 @@ Referential actions:
 ### Descriptor foreign keys (`dms.Descriptor`) (normative)
 
 Descriptor endpoints are stored as `DescriptorFk` columns (`..._DescriptorId`) referencing
-`dms.Descriptor(DocumentId)`.
+`dms.Descriptor(DescriptorId)` using `ScalarKind.Int32` storage.
 
 Under key unification, descriptor binding columns may become `UnifiedAlias` columns and therefore be read-only. The
 descriptor FK constraint MUST be anchored on the canonical stored column, not the binding alias.
@@ -1651,7 +1653,7 @@ Normative rules:
      - `Storage = Stored` → `StorageColumn = ColumnName`
      - `Storage = UnifiedAlias(CanonicalColumn, ...)` → `StorageColumn = CanonicalColumn`
 2. **FK emission**:
-   - Emit a FK constraint from `(StorageColumn)` to `dms.Descriptor(DocumentId)` with:
+   - Emit a FK constraint from `(StorageColumn)` to `dms.Descriptor(DescriptorId)` with:
      - `ON DELETE NO ACTION`, and
      - `ON UPDATE NO ACTION`.
    - The DDL generator MUST NOT attempt to define FKs over `UnifiedAlias` columns.
@@ -2261,7 +2263,7 @@ semantics, or cascade correctness.
   - absent everywhere → canonical `NULL`.
 - Conflict detection is enforced:
   - two or more present, non-null members disagree after conversion → fail closed,
-  - descriptor members compare on resolved `DocumentId`, not raw URI string.
+  - descriptor members compare on resolved `int DescriptorId`, not raw URI string.
 - Guardrails are enforced before issuing SQL:
   - when any gated member site/path is present, canonical must be non-null,
   - when canonical is `NOT NULL`, canonical must be non-null.

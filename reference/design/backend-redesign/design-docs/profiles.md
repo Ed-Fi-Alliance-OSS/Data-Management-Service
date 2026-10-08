@@ -240,7 +240,9 @@ Core is expected to own all of the following:
 Backend is expected to own all of the following:
 
 - load the current persisted document state needed for auth, reconstitution, no-op detection, and profile-constrained merge execution,
-- resolve document references to `DocumentId` and descriptor references to `DescriptorId`,
+- resolve document references to `bigint DocumentId` and descriptor references to both
+  `int DescriptorId` and owning `bigint DocumentId` in the same RI lookup; flattened descriptor
+  bindings, including copied reference identity parts and hidden-value preservation, use `DescriptorId`,
 - flatten the `WritableRequestBody` into row candidates,
 - run post-resolution collection duplicate validation with resolved `DocumentId`/`DescriptorId` values and backend schema equality before merge/no-op/DML,
 - use compiled semantic identities to match visible stored collection rows to request candidates,
@@ -250,6 +252,12 @@ Backend is expected to own all of the following:
 - perform storage-space no-op detection using the same post-merge rules as the real write path,
 - validate Core-emitted scope/row addresses against the selected compiled-scope adapter and compiled metadata, and fail fast on contract mismatches before merge/readable-projection hand-off continues, and
 - enforce `If-Match` / `ContentVersion` concurrency behavior.
+
+Profile shaping does not change document ownership: UUID lookup, locks, concurrency/ETags,
+`DocumentCache`, `DocumentProjectionWork`, and representation restamps retain `bigint DocumentId`.
+Both `dms.Document.ContentVersion` and `ContentLastModifiedAt` remain authoritative and are mirrored
+onto descriptor rows through their document association. Hydration reconstructs original-case whole
+URIs from compact keys before Core applies readable-profile projection.
 
 ## Data Model and Compilation Prerequisites
 
@@ -855,7 +863,13 @@ Related redesign discussion:
    - produce `ProfileAppliedWriteRequest`, including `WritableRequestBody`, `RootResourceCreatable`, `RequestScopeStates`, and `VisibleRequestCollectionItems`.
 
 3. **Backend resolves references and authorization inputs**
-   - resolve references/descriptors to `DocumentId`,
+   - resolve document references to `bigint DocumentId`; descriptor results carry both independent
+     `int DescriptorId` and owning `bigint DocumentId` without another lookup,
+   - use the compact key for descriptor row candidates, semantic identity, query predicates, and
+     hydration; preserve hidden compact bindings through the same merge rules as visible bindings,
+   - descriptor-based namespace checks dereference `DescriptorId` to stored `Namespace`; custom-view
+     checks bridge `dms.Descriptor.DescriptorId` to its `DocumentId` for membership. Proposed checks
+     use the finalized merged row, including hidden values, rather than parsing request URIs,
    - perform authorization as defined in [auth.md](auth.md) using the full stored/request state required there.
 
 4. **Backend loads current state**
