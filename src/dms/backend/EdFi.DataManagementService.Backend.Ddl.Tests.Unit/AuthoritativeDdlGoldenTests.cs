@@ -392,10 +392,10 @@ public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension
         AssertTrackedChangeTableStructure("mssql.sql", mssql: true, "Descriptor", expectResourceKeyId: true);
 
         var block = ExtractTrackedChangeTableBlock(ReadActual("mssql.sql"), mssql: true, "Descriptor");
-        block.Should().Contain("[OldNamespace] nvarchar(255) NOT NULL");
-        block.Should().Contain("[NewNamespace] nvarchar(255) NULL");
-        block.Should().Contain("[OldCodeValue] nvarchar(50) NOT NULL");
-        block.Should().Contain("[NewCodeValue] nvarchar(50) NULL");
+        block.Should().Contain("[OldNamespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL");
+        block.Should().Contain("[NewNamespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL");
+        block.Should().Contain("[OldCodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL");
+        block.Should().Contain("[NewCodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL");
         block.Should().Contain("[ResourceKeyId] smallint NOT NULL");
     }
 

@@ -620,7 +620,8 @@
               "source_path": "$.parents[*].parentCode",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             },
             {
               "name": "ParentName",
@@ -875,7 +876,8 @@
               "source_path": "$.parents[*]._ext.aligned.children[*].childCode",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             },
             {
               "name": "ChildValue",
@@ -1026,7 +1028,8 @@
               "source_path": "$.parents[*]._ext.aligned.children[*].extensionChildren[*].extensionChildCode",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             },
             {
               "name": "ExtensionChildValue",

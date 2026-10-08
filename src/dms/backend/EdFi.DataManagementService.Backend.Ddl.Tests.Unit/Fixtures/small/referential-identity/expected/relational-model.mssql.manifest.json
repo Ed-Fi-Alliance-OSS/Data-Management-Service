@@ -1712,7 +1712,8 @@
             "max_length": 64
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity",
+          "uses_sql_server_identity_collation": true
         },
         {
           "old_column": "OldDecimalKeyReference_DecimalKey",
@@ -1793,7 +1794,8 @@
             "max_length": 64
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity",
+          "uses_sql_server_identity_collation": true
         },
         {
           "old_column": "OldEdOrgDependentResourceReference_EdOrgDependentResourceId",
@@ -1806,7 +1808,8 @@
             "max_length": 64
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity",
+          "uses_sql_server_identity_collation": true
         },
         {
           "old_column": "OldEdOrgDependentResourceReference_EducationOrganizationId",
@@ -1885,7 +1888,8 @@
             "max_length": 64
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity",
+          "uses_sql_server_identity_collation": true
         },
         {
           "old_column": "OldEducationOrganization_EducationOrganizationId",
@@ -1964,7 +1968,8 @@
             "max_length": 64
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity",
+          "uses_sql_server_identity_collation": true
         },
         {
           "old_column": "OldResourceAReference_ResourceAId",
@@ -1977,7 +1982,8 @@
             "max_length": 64
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity",
+          "uses_sql_server_identity_collation": true
         },
         {
           "old_column": "OldStudentUniqueId_Unified",
@@ -1991,7 +1997,8 @@
             "max_length": 32
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity",
+          "uses_sql_server_identity_collation": true
         },
         {
           "old_column": "OldResourceBReference_ResourceBId",
@@ -2004,7 +2011,8 @@
             "max_length": 64
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity",
+          "uses_sql_server_identity_collation": true
         }
       ],
       "system_columns": [
@@ -2071,7 +2079,8 @@
             "max_length": 64
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity",
+          "uses_sql_server_identity_collation": true
         },
         {
           "old_column": "OldStudentReference_StudentUniqueId",
@@ -2084,7 +2093,8 @@
             "max_length": 32
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity",
+          "uses_sql_server_identity_collation": true
         }
       ],
       "system_columns": [
@@ -2151,7 +2161,8 @@
             "max_length": 64
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity",
+          "uses_sql_server_identity_collation": true
         },
         {
           "old_column": "OldStudentReference_StudentUniqueId",
@@ -2164,7 +2175,8 @@
             "max_length": 32
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity",
+          "uses_sql_server_identity_collation": true
         }
       ],
       "system_columns": [
@@ -2297,7 +2309,8 @@
             "max_length": 32
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity",
+          "uses_sql_server_identity_collation": true
         }
       ],
       "system_columns": [
@@ -2364,7 +2377,8 @@
             "max_length": 32
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity",
+          "uses_sql_server_identity_collation": true
         },
         {
           "old_column": "OldSchoolReference_SchoolId",
@@ -2787,7 +2801,8 @@
               "source_path": "$.refResourceId",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             }
           ],
           "key_unification_classes": [],
@@ -2969,7 +2984,8 @@
               "source_path": "$.edOrgDependentResourceReference.edOrgDependentResourceId",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             },
             {
               "name": "EdOrgDependentResourceReference_EducationOrganizationId",
@@ -2994,7 +3010,8 @@
               "source_path": "$.edOrgDependentChildResourceId",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             }
           ],
           "key_unification_classes": [],
@@ -3196,7 +3213,8 @@
               "source_path": "$.edOrgDependentResourceId",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             }
           ],
           "key_unification_classes": [],
@@ -3375,7 +3393,8 @@
               "source_path": null,
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             },
             {
               "name": "ResourceAReference_DocumentId",
@@ -3400,7 +3419,8 @@
               "source_path": "$.resourceAReference.resourceAId",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             },
             {
               "name": "ResourceAReference_StudentUniqueId",
@@ -3415,7 +3435,8 @@
                 "kind": "UnifiedAlias",
                 "canonical_column": "StudentUniqueId_Unified",
                 "presence_column": "ResourceAReference_DocumentId"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             },
             {
               "name": "ResourceBReference_DocumentId",
@@ -3440,7 +3461,8 @@
               "source_path": "$.resourceBReference.resourceBId",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             },
             {
               "name": "ResourceBReference_StudentUniqueId",
@@ -3455,7 +3477,8 @@
                 "kind": "UnifiedAlias",
                 "canonical_column": "StudentUniqueId_Unified",
                 "presence_column": "ResourceBReference_DocumentId"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             },
             {
               "name": "KeyUnifiedResourceId",
@@ -3468,7 +3491,8 @@
               "source_path": "$.keyUnifiedResourceId",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             }
           ],
           "key_unification_classes": [
@@ -3735,7 +3759,8 @@
               "source_path": "$.studentReference.studentUniqueId",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             },
             {
               "name": "ResourceAId",
@@ -3748,7 +3773,8 @@
               "source_path": "$.resourceAId",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             }
           ],
           "key_unification_classes": [],
@@ -3939,7 +3965,8 @@
               "source_path": "$.studentReference.studentUniqueId",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             },
             {
               "name": "ResourceBId",
@@ -3952,7 +3979,8 @@
               "source_path": "$.resourceBId",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             }
           ],
           "key_unification_classes": [],
@@ -4296,7 +4324,8 @@
               "source_path": "$.studentUniqueId",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             }
           ],
           "key_unification_classes": [],
@@ -4448,7 +4477,8 @@
               "source_path": "$.studentUniqueId",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             }
           ],
           "key_unification_classes": [],

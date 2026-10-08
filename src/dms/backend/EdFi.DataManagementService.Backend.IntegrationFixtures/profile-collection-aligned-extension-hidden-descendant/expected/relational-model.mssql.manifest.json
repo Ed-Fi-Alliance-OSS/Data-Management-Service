@@ -473,7 +473,8 @@
               "source_path": "$.parents[*].parentCode",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             },
             {
               "name": "ParentName",
