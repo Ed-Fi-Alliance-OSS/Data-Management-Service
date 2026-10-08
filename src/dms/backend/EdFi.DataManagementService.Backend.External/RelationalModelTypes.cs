@@ -587,6 +587,14 @@ public abstract record ColumnStorage
 /// <see langword="true" /> for <see cref="ColumnStorage.Stored"/> columns and
 /// <see langword="false" /> for <see cref="ColumnStorage.UnifiedAlias"/> columns.
 /// </param>
+/// <param name="UsesSqlServerIdentityCollation">
+/// True only for generated SQL Server string columns that store or copy identity values. When true,
+/// DDL generation appends the <see cref="IdentityEqualityContract.IdentityTextCollation"/> to stored
+/// columns, and runtime comparer selection uses <see cref="IdentityEqualityContract.ComparerFor"/>.
+/// Unified aliases over a flagged canonical column carry the flag for comparer selection only; their
+/// effective collation is the canonical column's. Ordinary non-identity string payload columns leave
+/// this false and inherit the database default collation.
+/// </param>
 public sealed record DbColumnModel(
     DbColumnName ColumnName,
     ColumnKind Kind,
@@ -594,7 +602,8 @@ public sealed record DbColumnModel(
     bool IsNullable,
     JsonPathExpression? SourceJsonPath,
     QualifiedResourceName? TargetResource,
-    ColumnStorage Storage
+    ColumnStorage Storage,
+    bool UsesSqlServerIdentityCollation = false
 )
 {
     /// <summary>

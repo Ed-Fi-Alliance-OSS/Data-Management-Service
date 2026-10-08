@@ -147,3 +147,43 @@ public class Given_PgsqlDialectRules_Identity_Equality
         _contract.Should().BeSameAs(IdentityEqualityContract.Postgresql);
     }
 }
+
+[TestFixture]
+public class Given_ComparerFor
+{
+    private StringComparer _flaggedComparer = null!;
+    private StringComparer _unflaggedComparer = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var column = new DbColumnModel(
+            new DbColumnName("StudentUniqueId"),
+            ColumnKind.Scalar,
+            new RelationalScalarType(ScalarKind.String, MaxLength: 32),
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+
+        _flaggedComparer = IdentityEqualityContract.ComparerFor(
+            column with
+            {
+                UsesSqlServerIdentityCollation = true,
+            }
+        );
+        _unflaggedComparer = IdentityEqualityContract.ComparerFor(column);
+    }
+
+    [Test]
+    public void It_equates_case_variants_for_a_flagged_column()
+    {
+        _flaggedComparer.Equals("ABC", "abc").Should().BeTrue();
+    }
+
+    [Test]
+    public void It_selects_ordinal_for_an_unflagged_column()
+    {
+        _unflaggedComparer.Should().BeSameAs(StringComparer.Ordinal);
+    }
+}

@@ -458,6 +458,11 @@ public sealed record TrackedChangeSystemColumnInfo(
 /// The <see cref="TrackedChangePersonJoinInfo.PersonJoinName"/> this column resolves through, when
 /// <paramref name="Role"/> is <see cref="TrackedChangeColumnRole.PersonDocumentId"/>; null otherwise.
 /// </param>
+/// <param name="UsesSqlServerIdentityCollation">
+/// True when the dialect declares an identity text collation and this is a string column whose
+/// <paramref name="Origin"/> includes <see cref="TrackedChangeColumnOrigin.Identity"/>. DDL generation
+/// applies the collation to both the <c>Old*</c> and <c>New*</c> columns.
+/// </param>
 public sealed record TrackedChangeColumnInfo(
     DbColumnName OldColumnName,
     DbColumnName NewColumnName,
@@ -469,7 +474,8 @@ public sealed record TrackedChangeColumnInfo(
     TrackedChangeColumnRole Role,
     TrackedChangeColumnOrigin Origin,
     string? DescriptorJoinName = null,
-    string? PersonJoinName = null
+    string? PersonJoinName = null,
+    bool UsesSqlServerIdentityCollation = false
 );
 
 /// <summary>
