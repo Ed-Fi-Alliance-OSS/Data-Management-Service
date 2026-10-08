@@ -134,4 +134,75 @@ Describe "Invoke-BootstrapRestoreSmoke static contract" {
             $script:smokeContent | Should -Match 'Classification\s*=\s*\$classification'
         }
     }
+
+    Context "In-run image provenance" {
+        BeforeAll {
+            $script:repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
+            $script:probesModulePath = Join-Path $PSScriptRoot "RestoreSmokeProbes.psm1"
+
+            function script:Get-ScriptAst {
+                param([string]$Path)
+
+                $tokens = $null
+                $errors = $null
+                $ast = [System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$errors)
+                if ($errors.Count -gt 0) {
+                    throw "Failed to parse ${Path}: $($errors[0])"
+                }
+                return $ast
+            }
+        }
+
+        It "never runs a build script's DockerBuild, docker tag, or a forced image removal (<file>)" -ForEach @(
+            @{ File = "Invoke-BootstrapRestoreSmoke.ps1" }
+            @{ File = "RestoreSmokeProbes.psm1" }
+        ) {
+            $ast = Get-ScriptAst -Path (Join-Path $PSScriptRoot $File)
+            $commands = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true))
+            $commands.Count | Should -BeGreaterThan 0
+            foreach ($command in $commands) {
+                $elements = @($command.CommandElements | ForEach-Object { $_.Extent.Text })
+                $elements | Should -Not -Contain "DockerBuild"
+                ($elements -join " ") | Should -Not -Match 'build-(dms|config)\.ps1'
+                if ($command.GetCommandName() -eq "docker") {
+                    $elements[1] | Should -Not -BeIn @("tag", "rmi", "prune", "system")
+                    $elements | Should -Not -Contain "-f"
+                    $elements | Should -Not -Contain "--force"
+                }
+            }
+        }
+
+        It "builds <key> exactly as <script> DockerBuild does: source directory, Dockerfile, contexts, and the VERSION default" -ForEach @(
+            @{ Key = "Dms"; Script = "build-dms.ps1"; VersionParameter = "DMSVersion"; SourceDirectory = "src/dms" }
+            @{ Key = "Config"; Script = "build-config.ps1"; VersionParameter = "DmsCSVersion"; SourceDirectory = "src/config" }
+        ) {
+            # Drift guard: if a build script changes how it builds the image, the smoke's own
+            # command (Get-RestoreSmokeImageBuildPlan) must change with it.
+            $ast = Get-ScriptAst -Path (Join-Path $script:repoRoot $Script)
+            $versionParameterAst = @($ast.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq $VersionParameter })
+            $versionParameterAst.Count | Should -Be 1
+            $versionParameterAst[0].DefaultValue | Should -BeOfType [System.Management.Automation.Language.StringConstantExpressionAst]
+            $versionDefault = $versionParameterAst[0].DefaultValue.Value
+            $versionDefault | Should -Match '^\d+\.\d+\.\d+$'
+
+            $dockerBuild = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq "DockerBuild" }, $true))
+            $dockerBuild.Count | Should -Be 1
+            $body = $dockerBuild[0].Body.Extent.Text
+            $body | Should -Match ('Push-Location\s+' + [regex]::Escape("$SourceDirectory/"))
+            $body | Should -Match 'docker buildx build\b[^\r\n]*-f Dockerfile \. --build-context parentdir=\.\./'
+            $body | Should -Match ('"VERSION=\$' + $VersionParameter + '"')
+
+            Import-Module $script:probesModulePath -Force
+            $plan = @(Get-RestoreSmokeImageBuildPlan -RepoRoot $TestDrive -WorkDirectory $TestDrive -RunId "0123456789ab" -Wrapper local | Where-Object { $_.Key -eq $Key })
+            $plan.Count | Should -Be 1
+            $plan[0].SourceDirectory | Should -Be $SourceDirectory
+            ($plan[0].Arguments -join " ") | Should -BeLike "buildx build --load --iidfile * -f Dockerfile . --build-context parentdir=../ --build-arg VERSION=$versionDefault"
+        }
+
+        It "records the image ledger before the build step and removes only owned run tags after the failure teardown" {
+            $script:smokeContent | Should -Match 'Images\s+=\s+\(New-RestoreSmokeImageLedger\)'
+            $script:smokeContent.Contains('Register-RestoreSmokeImageTagOwnership -Plan $imagePlan -Ledger $images') | Should -BeTrue
+            $script:smokeContent | Should -Match '(?s)finally \{.*Invoke-SmokeTeardown.*Remove-RestoreSmokeOwnedImageTag -Ledger \$script:Provenance\.Images -Keep:\$SkipTeardown.*Remove-Item -LiteralPath \$script:WorkDirectory'
+        }
+    }
 }

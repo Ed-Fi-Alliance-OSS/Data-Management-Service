@@ -56,9 +56,12 @@
 
     Provenance: after the preflight the smoke builds api-schema-tools (Debug, the configuration
     the bootstrap resolver prefers) and proves the resolver returns that exact executable, builds
-    the DMS and CMS images with build-dms.ps1 / build-config.ps1 DockerBuild and forwards them to
-    the selected wrapper through a smoke-owned env file, and records what each started stack
-    actually ran (docker inspect), the built package and its attestation, the effective
+    the DMS and CMS images itself (docker buildx build --load, with the Dockerfile, contexts, and
+    VERSION argument of build-dms.ps1 / build-config.ps1 DockerBuild) under run-unique tags it
+    first proves absent, takes each image's identity from the build's own --iidfile, forwards the
+    run tags to the selected wrapper through a smoke-owned env file, removes only those tags at the
+    end, and records what each started stack actually ran (docker inspect), the built package and
+    its attestation, the effective
     SCHEMA_PACKAGES, and the worktree revision and status at start and end. The results JSON
     classifies the run: it is final evidence only when every one of those was observed and
     matched, the worktree was clean throughout, and -ExploratoryPackage was not set; otherwise it
@@ -181,7 +184,6 @@ $script:CurrentStepName = $null
 # No teardown, of any project, runs until the preflight has proven that no foreign stack exists
 # (or the caller confirmed its removal). This includes the failure teardown in the finally block.
 $script:TeardownAuthorized = $false
-$script:PublishedDmsImageTag = $null
 $script:OriginalSchemaToolPath = $env:DMS_SCHEMA_TOOL_PATH
 $script:Provenance = [ordered]@{
     RunId                        = $script:RunId
@@ -199,7 +201,9 @@ $script:Provenance = [ordered]@{
     SourceAtStart                = $null
     SourceAtEnd                  = $null
     SchemaTools                  = $null
-    Images                       = $null
+    # Exists before the build step, so tag ownership and every build record survive a later
+    # build's failure for cleanup and for the results.
+    Images                       = (New-RestoreSmokeImageLedger)
     ForwardedImageKeys           = $null
     StackObservations            = [System.Collections.Generic.List[object]]::new()
     Packages                     = [System.Collections.Generic.List[object]]::new()
@@ -639,32 +643,33 @@ try {
     }
 
     Invoke-SmokeStep -Name "build-images" -Body {
-        $images = Invoke-RestoreSmokeImageBuild -RepoRoot $script:RepoRoot
-        $script:Provenance.Images = $images
-        foreach ($image in @($images.Dms, $images.Config)) {
-            Write-Host "[restore-smoke] $($image.Command) -> exit $($image.ExitCode); $($image.Image) $($image.ImageId)"
-            if ([string]::IsNullOrWhiteSpace($image.ImageId)) {
-                throw "Image provenance could not be established: $($image.Reason)"
+        $images = $script:Provenance.Images
+        $imagePlan = Get-RestoreSmokeImageBuildPlan -RepoRoot $script:RepoRoot -WorkDirectory $script:WorkDirectory -RunId $script:RunId -Wrapper $Wrapper
+        Register-RestoreSmokeImageTagOwnership -Plan $imagePlan -Ledger $images
+        Write-Host "[restore-smoke] run tags claimed (absent before the build): $($images.OwnedTags -join ', ')"
+        try {
+            Invoke-RestoreSmokeImageBuild -Plan $imagePlan -Ledger $images
+        }
+        finally {
+            foreach ($key in @("Dms", "Config")) {
+                $record = $images[$key]
+                if ($null -ne $record) {
+                    Write-Host "[restore-smoke] $key image: exit $($record.ExitCode); verified=$($record.Verified); $($record.ImageId) $($record.Reason)"
+                }
             }
         }
 
         $imageEnvironmentFile = Join-Path $script:WorkDirectory ".env.smoke-images"
         if ($Wrapper -eq "published") {
-            # published-dms.yml pins the edfialliance/ed-fi-api repository, so the in-run image
-            # gets a run-unique tag there; it is removed again in the finally block.
-            $publishedTag = "dms-restore-smoke-$script:RunId"
-            $global:LASTEXITCODE = 0
-            docker tag $images.Dms.Image "edfialliance/ed-fi-api:$publishedTag"
-            if ($LASTEXITCODE -ne 0) {
-                throw "docker tag of the in-run DMS image for the published wrapper failed (exit $LASTEXITCODE)."
-            }
-            $script:PublishedDmsImageTag = $publishedTag
+            # published-dms.yml pins the edfialliance/ed-fi-api repository and takes only the tag.
+            $publishedReference = [string]$images.Dms.Tags[-1]
+            $publishedTag = $publishedReference.Substring($publishedReference.LastIndexOf(":") + 1)
             $forwarded = Write-RestoreSmokeImageEnvironmentFile -BaseEnvironmentFile $script:BaseEnvironmentFile -TargetPath $imageEnvironmentFile `
-                -Wrapper published -PublishedDmsTag $publishedTag -ConfigImage $images.Config.Image
+                -Wrapper published -PublishedDmsTag $publishedTag -ConfigImage $images.Config.Tags[0]
         }
         else {
             $forwarded = Write-RestoreSmokeImageEnvironmentFile -BaseEnvironmentFile $script:BaseEnvironmentFile -TargetPath $imageEnvironmentFile `
-                -Wrapper local -DmsImage $images.Dms.Image -ConfigImage $images.Config.Image
+                -Wrapper local -DmsImage $images.Dms.Tags[0] -ConfigImage $images.Config.Tags[0]
         }
         $script:Provenance.ForwardedImageKeys = $forwarded
         $script:ResolvedEnvironmentFile = $imageEnvironmentFile
@@ -964,17 +969,16 @@ finally {
         }
     }
 
-    if ($null -ne $script:PublishedDmsImageTag) {
-        if ($SkipTeardown) {
-            Write-Host "[restore-smoke] -SkipTeardown: keeping image tag edfialliance/ed-fi-api:$script:PublishedDmsImageTag"
+    if ($script:Provenance.Images.OwnedTags.Count -gt 0) {
+        # Only the run tags this run proved absent and claimed; never a shared tag or an image ID.
+        try {
+            Remove-RestoreSmokeOwnedImageTag -Ledger $script:Provenance.Images -Keep:$SkipTeardown
         }
-        else {
-            # Removes only the run-unique tag this run created; the image keeps its local/ tag.
-            $global:LASTEXITCODE = 0
-            docker rmi "edfialliance/ed-fi-api:$script:PublishedDmsImageTag" | Out-Null
-            if ($LASTEXITCODE -ne 0) {
-                Write-Warning "Could not remove the run-unique image tag edfialliance/ed-fi-api:$script:PublishedDmsImageTag."
-            }
+        catch {
+            Write-Warning "Run tag cleanup failed: $($_.Exception.Message)"
+        }
+        foreach ($cleanup in $script:Provenance.Images.Cleanup) {
+            Write-Host "[restore-smoke] run tag $($cleanup.Tag): $($cleanup.Action) $($cleanup.Detail)"
         }
     }
 

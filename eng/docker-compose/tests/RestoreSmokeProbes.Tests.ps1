@@ -53,7 +53,7 @@ AfterAll {
     if ($script:createdDockerFallback) {
         Remove-Item function:global:docker -ErrorAction SilentlyContinue
     }
-    Remove-Variable -Name RestoreSmokeTestDocker, RestoreSmokeTestTargetDir, RestoreSmokeTestPwshExit -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name RestoreSmokeTestDocker, RestoreSmokeTestTargetDir, RestoreSmokeTestPwshExit, RestoreSmokeImageTestState -Scope Global -ErrorAction SilentlyContinue
 }
 
 Describe "Get-RestoreSmokeWrapperProfile" {
@@ -254,36 +254,426 @@ Describe "Invoke-RestoreSmokeSchemaToolBuild" {
     }
 }
 
-Describe "Invoke-RestoreSmokeImageBuild" {
-    It "records each DockerBuild command, exit code, and the resulting image ID" {
-        Mock pwsh -ModuleName RestoreSmokeProbes { $global:LASTEXITCODE = 0 }
-        Mock docker -ModuleName RestoreSmokeProbes {
-            $global:LASTEXITCODE = 0
-            if ($args -contains "local/ed-fi-api") { return "sha256:dms" }
-            return "sha256:config"
+Describe "In-run image builds (plan, tag ownership, build, cleanup)" {
+    BeforeAll {
+        $script:runId = "0123456789ab"
+        $script:dmsTag = "local/ed-fi-api:dms-restore-smoke-0123456789ab"
+        $script:configTag = "local/ed-fi-api-configuration-service:dms-restore-smoke-0123456789ab"
+        $script:publishedTag = "edfialliance/ed-fi-api:dms-restore-smoke-0123456789ab"
+        $script:sharedReferences = @("local/ed-fi-api", "local/ed-fi-api:latest", "local/ed-fi-api-configuration-service", "ed-fi-api-local", "ed-fi-api-config-local", "edfialliance/ed-fi-api")
+        $script:staleId = "sha256:" + ("5" * 64)
+
+        # A fake docker with an image store: image inspect / buildx build / image rm. Per-image build
+        # behavior is keyed by the iidfile name (dms, config): ExitCode, Throw, NoIidFile,
+        # IidContent, NoTags, TagIds (tag -> ID the tag resolves to instead of the iid).
+        function script:Set-ImageDockerMock {
+            param(
+                [hashtable]$Images = @{},
+                [hashtable]$Builds = @{},
+                [hashtable]$InspectFailures = @{},
+                [int]$RemoveExitCode = 0
+            )
+
+            $global:RestoreSmokeImageTestState = @{
+                Images          = $Images
+                Builds          = $Builds
+                InspectFailures = $InspectFailures
+                RemoveExitCode  = $RemoveExitCode
+                Calls           = [System.Collections.Generic.List[string]]::new()
+            }
+            Mock docker -ModuleName RestoreSmokeProbes {
+                $state = $global:RestoreSmokeImageTestState
+                $state.Calls.Add(($args -join " "))
+                $global:LASTEXITCODE = 0
+                if ($args[0] -eq "image" -and $args[1] -eq "inspect") {
+                    $reference = [string]$args[2]
+                    if ($state.InspectFailures.ContainsKey($reference)) {
+                        $global:LASTEXITCODE = 1
+                        return $state.InspectFailures[$reference]
+                    }
+                    if ($state.Images.ContainsKey($reference)) {
+                        return $state.Images[$reference]
+                    }
+                    $global:LASTEXITCODE = 1
+                    return "Error response from daemon: No such image: $reference"
+                }
+                if ($args[0] -eq "buildx") {
+                    $iidFile = [string]$args[[array]::IndexOf($args, "--iidfile") + 1]
+                    $key = [System.IO.Path]::GetFileNameWithoutExtension($iidFile)
+                    $tags = @(for ($i = 0; $i -lt $args.Count - 1; $i++) { if ($args[$i] -eq "-t") { [string]$args[$i + 1] } })
+                    $behavior = if ($state.Builds.ContainsKey($key)) { $state.Builds[$key] } else { @{} }
+                    if ($behavior.Throw) {
+                        throw $behavior.Throw
+                    }
+                    if ($behavior.ExitCode) {
+                        $global:LASTEXITCODE = $behavior.ExitCode
+                        return "ERROR: failed to solve"
+                    }
+                    $imageId = if ($behavior.ContainsKey("ImageId")) { $behavior.ImageId } else { "sha256:" + ([string]$key[0]) * 64 }
+                    if (-not $behavior.NoIidFile) {
+                        $content = if ($behavior.ContainsKey("IidContent")) { $behavior.IidContent } else { $imageId }
+                        Set-Content -LiteralPath $iidFile -Value $content -NoNewline
+                    }
+                    if (-not $behavior.NoTags) {
+                        foreach ($tag in $tags) {
+                            $state.Images[$tag] = if ($behavior.TagIds -and $behavior.TagIds.ContainsKey($tag)) { $behavior.TagIds[$tag] } else { $imageId }
+                        }
+                    }
+                    return "built"
+                }
+                if ($args[0] -eq "image" -and $args[1] -eq "rm") {
+                    if ($state.RemoveExitCode -ne 0) {
+                        $global:LASTEXITCODE = $state.RemoveExitCode
+                        return "Error response from daemon: conflict: unable to remove repository reference"
+                    }
+                    $state.Images.Remove([string]$args[2])
+                    return "Untagged: $($args[2])"
+                }
+                throw "unexpected docker call: $($args -join ' ')"
+            }
         }
 
-        $images = Invoke-RestoreSmokeImageBuild -RepoRoot $TestDrive
+        function script:New-TestImagePlan {
+            param([string]$Wrapper = "local")
 
-        $images.Dms.Command | Should -BeLike '*build-dms.ps1" DockerBuild'
-        $images.Dms.ExitCode | Should -Be 0
-        $images.Dms.Image | Should -Be "local/ed-fi-api"
-        $images.Dms.ImageId | Should -Be "sha256:dms"
-        $images.Config.Command | Should -BeLike '*build-config.ps1" DockerBuild'
-        $images.Config.Image | Should -Be "local/ed-fi-api-configuration-service"
-        $images.Config.ImageId | Should -Be "sha256:config"
+            $repoRoot = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N"))
+            New-Item -ItemType Directory -Path (Join-Path $repoRoot "src/dms"), (Join-Path $repoRoot "src/config") -Force | Out-Null
+            $workDirectory = Join-Path $repoRoot "work"
+            return Get-RestoreSmokeImageBuildPlan -RepoRoot $repoRoot -WorkDirectory $workDirectory -RunId $script:runId -Wrapper $Wrapper
+        }
+
+        function script:Get-ImageDockerCall {
+            param([string]$Pattern)
+            return @($global:RestoreSmokeImageTestState.Calls | Where-Object { $_ -like $Pattern })
+        }
+
+        function script:Assert-NoSharedReferenceTouched {
+            foreach ($call in $global:RestoreSmokeImageTestState.Calls) {
+                $references = @($call -split " " | Where-Object { $_ -like "*ed-fi-api*" })
+                foreach ($reference in $references) {
+                    $reference | Should -Match ':dms-restore-smoke-0123456789ab$'
+                }
+            }
+        }
     }
 
-    It "records no image ID, and never inspects, when a build fails" {
-        Mock pwsh -ModuleName RestoreSmokeProbes { $global:LASTEXITCODE = 3 }
-        Mock docker -ModuleName RestoreSmokeProbes { $global:LASTEXITCODE = 0; "sha256:stale" }
+    Context "Get-RestoreSmokeImageBuildPlan" {
+        It "builds each image with the build scripts' Dockerfile, contexts, and VERSION, plus --load, a fresh iidfile, and the run tag" {
+            $plan = New-TestImagePlan
 
-        $images = Invoke-RestoreSmokeImageBuild -RepoRoot $TestDrive
+            $plan.Count | Should -Be 2
+            $plan[0].Key | Should -Be "Dms"
+            $plan[0].SourceDirectory | Should -Be "src/dms"
+            $plan[0].Tags | Should -Be @($script:dmsTag)
+            $plan[0].Arguments | Should -Be @("buildx", "build", "--load", "--iidfile", $plan[0].IidFile, "-t", $script:dmsTag, "-f", "Dockerfile", ".", "--build-context", "parentdir=../", "--build-arg", "VERSION=8.0.0")
+            $plan[0].IidFile | Should -BeLike "*work*images*dms.iid"
+            $plan[1].Key | Should -Be "Config"
+            $plan[1].SourceDirectory | Should -Be "src/config"
+            $plan[1].Arguments | Should -Be @("buildx", "build", "--load", "--iidfile", $plan[1].IidFile, "-t", $script:configTag, "-f", "Dockerfile", ".", "--build-context", "parentdir=../", "--build-arg", "VERSION=8.0.0")
+            $plan[1].IidFile | Should -BeLike "*work*images*config.iid"
+            $plan[0].WorkingDirectory | Should -BeLike "*src*dms"
+            $plan[1].WorkingDirectory | Should -BeLike "*src*config"
+        }
 
-        $images.Dms.ImageId | Should -BeNullOrEmpty
-        $images.Dms.Reason | Should -Be "build-dms.ps1 DockerBuild exited 3"
-        $images.Config.ImageId | Should -BeNullOrEmpty
-        Should -Invoke docker -ModuleName RestoreSmokeProbes -Times 0 -Exactly
+        It "adds the published repository's run tag to the same DMS build for the published wrapper" {
+            $plan = New-TestImagePlan -Wrapper published
+
+            $plan[0].Tags | Should -Be @($script:dmsTag, $script:publishedTag)
+            ($plan[0].Arguments -join " ") | Should -BeLike "*-t $script:dmsTag -t $script:publishedTag -f Dockerfile*"
+            $plan[1].Tags | Should -Be @($script:configTag)
+        }
+
+        It "rejects a run id that is not the smoke's 12-hex form" {
+            { Get-RestoreSmokeImageBuildPlan -RepoRoot $TestDrive -WorkDirectory $TestDrive -RunId "latest" -Wrapper local } | Should -Throw
+        }
+    }
+
+    Context "Get-RestoreSmokeImageTagState" {
+        It "reports <case>" -ForEach @(
+            @{ Case = "a resolving tag as Present with its ID"; Images = @{ "local/x:t" = ("sha256:" + "a" * 64) }; Failures = @{}; State = "Present" }
+            @{ Case = "the daemon's No such image message as Absent"; Images = @{}; Failures = @{}; State = "Absent" }
+            @{ Case = "the CLI's No such image message as Absent"; Images = @{}; Failures = @{ "local/x:t" = "Error: No such image: local/x:t" }; State = "Absent" }
+            @{ Case = "a daemon connection failure as Unknown"; Images = @{}; Failures = @{ "local/x:t" = "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" }; State = "Unknown" }
+            @{ Case = "a permission failure as Unknown"; Images = @{}; Failures = @{ "local/x:t" = "permission denied while trying to connect to the Docker daemon socket" }; State = "Unknown" }
+            @{ Case = "No such image for a different reference as Unknown"; Images = @{}; Failures = @{ "local/x:t" = "Error response from daemon: No such image: local/x:other" }; State = "Unknown" }
+            @{ Case = "No such image mixed with another error as Unknown"; Images = @{}; Failures = @{ "local/x:t" = @("Error response from daemon: No such image: local/x:t", "error during connect: EOF") }; State = "Unknown" }
+            @{ Case = "an unexpected inspect output as Unknown"; Images = @{ "local/x:t" = "not-an-id" }; Failures = @{}; State = "Unknown" }
+        ) {
+            Set-ImageDockerMock -Images $Images -InspectFailures $Failures
+
+            $tagState = Get-RestoreSmokeImageTagState -Reference "local/x:t"
+
+            $tagState.State | Should -Be $State
+            if ($State -eq "Present") {
+                $tagState.ImageId | Should -Be $Images["local/x:t"]
+            }
+            else {
+                $tagState.ImageId | Should -BeNullOrEmpty
+            }
+        }
+    }
+
+    Context "Register-RestoreSmokeImageTagOwnership" {
+        It "claims every planned tag together once all are proven absent, and creates the iidfile directory" {
+            Set-ImageDockerMock -Images @{ "local/ed-fi-api" = $script:staleId }
+            $plan = New-TestImagePlan -Wrapper published
+            $ledger = New-RestoreSmokeImageLedger
+
+            Register-RestoreSmokeImageTagOwnership -Plan $plan -Ledger $ledger
+
+            @($ledger.OwnedTags) | Should -Be @($script:dmsTag, $script:publishedTag, $script:configTag)
+            Test-Path -LiteralPath (Split-Path -Parent $plan[0].IidFile) | Should -BeTrue
+            Test-Path -LiteralPath $plan[0].IidFile | Should -BeFalse
+            Get-ImageDockerCall "buildx *" | Should -BeNullOrEmpty
+            Assert-NoSharedReferenceTouched
+        }
+
+        It "claims nothing when a planned tag already exists, even if only the second image's tag collides" {
+            Set-ImageDockerMock -Images @{ $script:configTag = $script:staleId }
+            $plan = New-TestImagePlan
+            $ledger = New-RestoreSmokeImageLedger
+
+            { Register-RestoreSmokeImageTagOwnership -Plan $plan -Ledger $ledger } | Should -Throw "*run tag '$script:configTag' already exists*no image tag was claimed*"
+
+            @($ledger.OwnedTags) | Should -BeNullOrEmpty
+            Get-ImageDockerCall "buildx *" | Should -BeNullOrEmpty
+        }
+
+        It "claims nothing when a tag's absence cannot be established (<case>)" -ForEach @(
+            @{ Case = "daemon unreachable"; Message = "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" }
+            @{ Case = "permission denied"; Message = "permission denied while trying to connect to the Docker daemon socket" }
+            @{ Case = "transport failure"; Message = "error during connect: Get http://docker/v1.47/images/json: EOF" }
+        ) {
+            Set-ImageDockerMock -InspectFailures @{ $script:configTag = $Message }
+            $plan = New-TestImagePlan
+            $ledger = New-RestoreSmokeImageLedger
+
+            { Register-RestoreSmokeImageTagOwnership -Plan $plan -Ledger $ledger } | Should -Throw "*Cannot establish that the run tag '$script:configTag' is absent*no image tag was claimed*"
+
+            @($ledger.OwnedTags) | Should -BeNullOrEmpty
+            Get-ImageDockerCall "buildx *" | Should -BeNullOrEmpty
+        }
+
+        It "claims nothing when an iidfile path already exists" {
+            Set-ImageDockerMock
+            $plan = New-TestImagePlan
+            New-Item -ItemType Directory -Path (Split-Path -Parent $plan[1].IidFile) -Force | Out-Null
+            Set-Content -LiteralPath $plan[1].IidFile -Value $script:staleId
+            $ledger = New-RestoreSmokeImageLedger
+
+            { Register-RestoreSmokeImageTagOwnership -Plan $plan -Ledger $ledger } | Should -Throw "*iidfile path*already exists*no image tag was claimed*"
+
+            @($ledger.OwnedTags) | Should -BeNullOrEmpty
+        }
+    }
+
+    Context "Invoke-RestoreSmokeImageBuild" {
+        BeforeEach {
+            $script:dmsId = "sha256:" + ("d" * 64)
+            $script:configId = "sha256:" + ("c" * 64)
+        }
+
+        It "verifies each image by the ID its build reported, matching every run tag, and records the command and iidfile content" {
+            Set-ImageDockerMock -Images @{ "local/ed-fi-api" = $script:staleId }
+            $plan = New-TestImagePlan -Wrapper published
+            $ledger = New-RestoreSmokeImageLedger
+            Register-RestoreSmokeImageTagOwnership -Plan $plan -Ledger $ledger
+
+            Invoke-RestoreSmokeImageBuild -Plan $plan -Ledger $ledger
+
+            $ledger.Dms.Verified | Should -BeTrue
+            $ledger.Dms.ExitCode | Should -Be 0
+            $ledger.Dms.ImageId | Should -Be $script:dmsId
+            $ledger.Dms.IidFileContent | Should -Be $script:dmsId
+            $ledger.Dms.TagImageIds[$script:dmsTag] | Should -Be $script:dmsId
+            $ledger.Dms.TagImageIds[$script:publishedTag] | Should -Be $script:dmsId
+            $ledger.Dms.Command | Should -Be (@("docker") + $plan[0].Arguments)
+            $ledger.Dms.Reason | Should -BeNullOrEmpty
+            $ledger.Config.Verified | Should -BeTrue
+            $ledger.Config.ImageId | Should -Be $script:configId
+            Assert-NoSharedReferenceTouched
+        }
+
+        It "accepts a cached build that reproduces the ID a pre-existing shared tag already has" {
+            Set-ImageDockerMock -Images @{ "local/ed-fi-api" = $script:staleId } -Builds @{ dms = @{ ImageId = $script:staleId } }
+            $plan = New-TestImagePlan
+            $ledger = New-RestoreSmokeImageLedger
+            Register-RestoreSmokeImageTagOwnership -Plan $plan -Ledger $ledger
+
+            Invoke-RestoreSmokeImageBuild -Plan $plan -Ledger $ledger
+
+            $ledger.Dms.Verified | Should -BeTrue
+            $ledger.Dms.ImageId | Should -Be $script:staleId
+        }
+
+        It "accepts a cached build that produces a new ID" {
+            $newId = "sha256:" + ("e" * 64)
+            Set-ImageDockerMock -Images @{ "local/ed-fi-api" = $script:staleId } -Builds @{ dms = @{ ImageId = $newId } }
+            $plan = New-TestImagePlan
+            $ledger = New-RestoreSmokeImageLedger
+            Register-RestoreSmokeImageTagOwnership -Plan $plan -Ledger $ledger
+
+            Invoke-RestoreSmokeImageBuild -Plan $plan -Ledger $ledger
+
+            $ledger.Dms.Verified | Should -BeTrue
+            $ledger.Dms.ImageId | Should -Be $newId
+        }
+
+        It "fails a build that exits non-zero while stale images exist, without inspecting any shared tag" {
+            Set-ImageDockerMock -Images @{ "local/ed-fi-api" = $script:staleId; "ed-fi-api-local" = $script:staleId; "edfialliance/ed-fi-api" = $script:staleId } -Builds @{ dms = @{ ExitCode = 1 } }
+            $plan = New-TestImagePlan
+            $ledger = New-RestoreSmokeImageLedger
+            Register-RestoreSmokeImageTagOwnership -Plan $plan -Ledger $ledger
+
+            { Invoke-RestoreSmokeImageBuild -Plan $plan -Ledger $ledger } | Should -Throw "*Image provenance could not be established for Dms: docker buildx build (Dms) exited 1*"
+
+            $ledger.Dms.ExitCode | Should -Be 1
+            $ledger.Dms.Verified | Should -BeFalse
+            $ledger.Dms.ImageId | Should -BeNullOrEmpty
+            $ledger.Config | Should -BeNullOrEmpty
+            Get-ImageDockerCall "buildx *" | Should -HaveCount 1
+            Assert-NoSharedReferenceTouched
+        }
+
+        It "is not verified when <case>" -ForEach @(
+            @{ Case = "the build exits 0 but writes no iidfile"; Build = @{ NoIidFile = $true }; Expected = "the build produced no image ID (no iidfile)" }
+            @{ Case = "the iidfile is empty"; Build = @{ IidContent = "" }; Expected = "the build produced no image ID (iidfile content '')" }
+            @{ Case = "the iidfile is malformed"; Build = @{ IidContent = "sha256:xyz" }; Expected = "the build produced no image ID (iidfile content 'sha256:xyz')" }
+            @{ Case = "the run tag is missing after the build"; Build = @{ NoTags = $true }; Expected = "the run tag 'local/ed-fi-api:dms-restore-smoke-0123456789ab' is missing after the build" }
+            @{ Case = "the run tag resolves to another ID than the build reported"; Build = @{ TagIds = @{ "local/ed-fi-api:dms-restore-smoke-0123456789ab" = ("sha256:" + "5" * 64) } }; Expected = "the run tag 'local/ed-fi-api:dms-restore-smoke-0123456789ab' resolves to sha256:5555*, but the build reported sha256:dddd*" }
+        ) {
+            Set-ImageDockerMock -Builds @{ dms = $Build }
+            $plan = New-TestImagePlan
+            $ledger = New-RestoreSmokeImageLedger
+            Register-RestoreSmokeImageTagOwnership -Plan $plan -Ledger $ledger
+
+            { Invoke-RestoreSmokeImageBuild -Plan $plan -Ledger $ledger } | Should -Throw "*Image provenance could not be established for Dms*"
+
+            $ledger.Dms.ExitCode | Should -Be 0
+            $ledger.Dms.Verified | Should -BeFalse
+            $ledger.Dms.ImageId | Should -BeNullOrEmpty
+            $ledger.Dms.Reason | Should -BeLike $Expected
+            $ledger.Config | Should -BeNullOrEmpty
+        }
+
+        It "is not verified when the published second tag resolves to another ID" {
+            Set-ImageDockerMock -Builds @{ dms = @{ TagIds = @{ "edfialliance/ed-fi-api:dms-restore-smoke-0123456789ab" = $script:staleId } } }
+            $plan = New-TestImagePlan -Wrapper published
+            $ledger = New-RestoreSmokeImageLedger
+            Register-RestoreSmokeImageTagOwnership -Plan $plan -Ledger $ledger
+
+            { Invoke-RestoreSmokeImageBuild -Plan $plan -Ledger $ledger } | Should -Throw "*Image provenance could not be established for Dms*"
+
+            $ledger.Dms.Reason | Should -BeLike "the run tag '$script:publishedTag' resolves to $script:staleId, but the build reported $script:dmsId"
+        }
+
+        It "refuses to build under a tag that was not claimed" {
+            Set-ImageDockerMock
+            $plan = New-TestImagePlan
+            $ledger = New-RestoreSmokeImageLedger
+
+            { Invoke-RestoreSmokeImageBuild -Plan $plan -Ledger $ledger } | Should -Throw "*was not claimed for this run*"
+
+            Get-ImageDockerCall "buildx *" | Should -BeNullOrEmpty
+        }
+
+        It "refuses an iidfile that appeared after the tags were claimed" {
+            Set-ImageDockerMock
+            $plan = New-TestImagePlan
+            $ledger = New-RestoreSmokeImageLedger
+            Register-RestoreSmokeImageTagOwnership -Plan $plan -Ledger $ledger
+            Set-Content -LiteralPath $plan[0].IidFile -Value $script:staleId
+
+            { Invoke-RestoreSmokeImageBuild -Plan $plan -Ledger $ledger } | Should -Throw "*the iidfile already existed before the build*"
+
+            Get-ImageDockerCall "buildx *" | Should -BeNullOrEmpty
+            $ledger.Dms.Verified | Should -BeFalse
+        }
+
+        It "keeps the verified DMS record and every claimed tag when the CMS build <case>, and cleanup removes only the DMS run tag" -ForEach @(
+            @{ Case = "exits non-zero"; ConfigBuild = @{ ExitCode = 2 }; Expected = "*Image provenance could not be established for Config: docker buildx build (Config) exited 2*"; ConfigExitCode = 2; ConfigReason = "docker buildx build (Config) exited 2" }
+            @{ Case = "throws"; ConfigBuild = @{ Throw = "buildx transport closed" }; Expected = "*buildx transport closed*"; ConfigExitCode = $null; ConfigReason = "the build did not complete" }
+        ) {
+            Set-ImageDockerMock -Images @{ "local/ed-fi-api-configuration-service" = $script:staleId } -Builds @{ config = $ConfigBuild }
+            $plan = New-TestImagePlan
+            $ledger = New-RestoreSmokeImageLedger
+            Register-RestoreSmokeImageTagOwnership -Plan $plan -Ledger $ledger
+
+            { Invoke-RestoreSmokeImageBuild -Plan $plan -Ledger $ledger } | Should -Throw $Expected
+
+            $ledger.Dms.Verified | Should -BeTrue
+            $ledger.Dms.ImageId | Should -Be $script:dmsId
+            $ledger.Config.Verified | Should -BeFalse
+            $ledger.Config.ExitCode | Should -Be $ConfigExitCode
+            $ledger.Config.Reason | Should -Be $ConfigReason
+            @($ledger.OwnedTags) | Should -Be @($script:dmsTag, $script:configTag)
+
+            Remove-RestoreSmokeOwnedImageTag -Ledger $ledger
+
+            Get-ImageDockerCall "image rm *" | Should -Be @("image rm $script:dmsTag")
+            @($ledger.Cleanup | ForEach-Object { "$($_.Tag)=$($_.Action)" }) | Should -Be @("$script:dmsTag=removed", "$script:configTag=absent")
+            $global:RestoreSmokeImageTestState.Images["local/ed-fi-api-configuration-service"] | Should -Be $script:staleId
+            Assert-NoSharedReferenceTouched
+        }
+    }
+
+    Context "Remove-RestoreSmokeOwnedImageTag" {
+        BeforeEach {
+            $script:ledger = New-RestoreSmokeImageLedger
+            foreach ($tag in @($script:dmsTag, $script:publishedTag, $script:configTag)) {
+                $script:ledger.OwnedTags.Add($tag)
+            }
+            $script:builtId = "sha256:" + ("d" * 64)
+            $script:images = @{
+                $script:dmsTag          = $script:builtId
+                $script:publishedTag    = $script:builtId
+                $script:configTag       = ("sha256:" + "c" * 64)
+                "local/ed-fi-api"       = $script:builtId
+                "ed-fi-api-local"       = $script:staleId
+            }
+        }
+
+        It "removes each owned tag by name, without -f, and never a shared tag or an image ID" {
+            Set-ImageDockerMock -Images $script:images
+
+            Remove-RestoreSmokeOwnedImageTag -Ledger $script:ledger
+
+            Get-ImageDockerCall "image rm *" | Should -Be @("image rm $script:dmsTag", "image rm $script:publishedTag", "image rm $script:configTag")
+            @($script:ledger.Cleanup.Action) | Should -Be @("removed", "removed", "removed")
+            $global:RestoreSmokeImageTestState.Images["local/ed-fi-api"] | Should -Be $script:builtId
+            $global:RestoreSmokeImageTestState.Images["ed-fi-api-local"] | Should -Be $script:staleId
+            @($global:RestoreSmokeImageTestState.Calls | Where-Object { $_ -match '(^|\s)(-f|--force)(\s|$)' }) | Should -BeNullOrEmpty
+            Get-ImageDockerCall "*prune*" | Should -BeNullOrEmpty
+            Assert-NoSharedReferenceTouched
+        }
+
+        It "keeps every tag under -SkipTeardown and records it" {
+            Set-ImageDockerMock -Images $script:images
+
+            Remove-RestoreSmokeOwnedImageTag -Ledger $script:ledger -Keep
+
+            $global:RestoreSmokeImageTestState.Calls | Should -BeNullOrEmpty
+            @($script:ledger.Cleanup.Action) | Should -Be @("kept", "kept", "kept")
+        }
+
+        It "warns and records a removal failure without throwing" {
+            Set-ImageDockerMock -Images $script:images -RemoveExitCode 1
+
+            Remove-RestoreSmokeOwnedImageTag -Ledger $script:ledger -WarningVariable warnings -WarningAction SilentlyContinue
+
+            @($script:ledger.Cleanup.Action) | Should -Be @("failed", "failed", "failed")
+            $script:ledger.Cleanup[0].Detail | Should -BeLike "docker image rm exited 1: *conflict*"
+            $warnings.Count | Should -Be 3
+        }
+
+        It "removes nothing for a tag whose state cannot be established" {
+            Set-ImageDockerMock -Images $script:images -InspectFailures @{ $script:configTag = "permission denied while trying to connect to the Docker daemon socket" }
+
+            Remove-RestoreSmokeOwnedImageTag -Ledger $script:ledger -WarningAction SilentlyContinue
+
+            Get-ImageDockerCall "image rm *" | Should -Be @("image rm $script:dmsTag", "image rm $script:publishedTag")
+            $script:ledger.Cleanup[2].Action | Should -Be "failed"
+        }
     }
 }
 
@@ -492,8 +882,8 @@ Describe "Get-RestoreSmokeResultClassification" {
                 SourceAtEnd          = $clean
                 SchemaTools          = [pscustomobject]@{ Verified = $true; Reason = $null; Sha256AtBuild = "aa"; Sha256AtEnd = "aa" }
                 Images               = [pscustomobject]@{
-                    Dms    = [pscustomobject]@{ ImageId = "sha256:dms"; Reason = $null }
-                    Config = [pscustomobject]@{ ImageId = "sha256:config"; Reason = $null }
+                    Dms    = [pscustomobject]@{ ImageId = "sha256:dms"; Verified = $true; Reason = $null }
+                    Config = [pscustomobject]@{ ImageId = "sha256:config"; Verified = $true; Reason = $null }
                 }
                 StackObservations    = @(
                     [pscustomobject]@{
@@ -529,7 +919,11 @@ Describe "Get-RestoreSmokeResultClassification" {
         @{ Case = "the SchemaTools executable changed during the run"; Mutate = { param($p) $p.SchemaTools.Sha256AtEnd = "bb" }; Expected = "*SchemaTools executable changed during the run*" }
         @{ Case = "images were never built"; Mutate = { param($p) $p.Images = $null }; Expected = "*images were not built in this run*" }
         @{ Case = "no started stack was observed"; Mutate = { param($p) $p.StackObservations = @() }; Expected = "*no started stack was observed*" }
-        @{ Case = "the stack ran a different DMS image"; Mutate = { param($p) $p.StackObservations[0].Services["dms"] = [pscustomobject]@{ ImageId = "sha256:stale" } }; Expected = "*leg-package-directory: dms runs image sha256:stale, not the in-run build*" }
+        @{ Case = "the stack ran a different DMS image (for example the stale shared tag's)"; Mutate = { param($p) $p.StackObservations[0].Services["dms"] = [pscustomobject]@{ ImageId = "sha256:stale" } }; Expected = "*leg-package-directory: dms runs image sha256:stale, not the in-run build (sha256:dms)*" }
+        @{ Case = "the stack ran a different config image"; Mutate = { param($p) $p.StackObservations[0].Services["config"] = [pscustomobject]@{ ImageId = "sha256:stale" } }; Expected = "*leg-package-directory: config runs image sha256:stale, not the in-run build (sha256:config)*" }
+        @{ Case = "the DMS build recorded an ID but was not verified"; Mutate = { param($p) $p.Images.Dms = [pscustomobject]@{ ImageId = "sha256:dms"; Verified = $false; Reason = "the run tag resolves elsewhere" } }; Expected = "*Dms image not verified as built in this run: the run tag resolves elsewhere*" }
+        @{ Case = "the stack matches an unverified DMS build's ID"; Mutate = { param($p) $p.Images.Dms = [pscustomobject]@{ ImageId = "sha256:dms"; Verified = $false; Reason = "x" } }; Expected = "*leg-package-directory: dms runs image sha256:dms, not the in-run build (none verified)*" }
+        @{ Case = "the CMS build never ran"; Mutate = { param($p) $p.Images.Config = $null }; Expected = "*Config image not verified as built in this run: missing*" }
         @{ Case = "no config container was observed"; Mutate = { param($p) $p.StackObservations[0].Services.Remove("config") }; Expected = "*leg-package-directory: no config container observed*" }
         @{ Case = "no package was built"; Mutate = { param($p) $p.Packages = @() }; Expected = "*no package was built in this run*" }
         @{ Case = "the package was not verified"; Mutate = { param($p) $p.Packages = @([pscustomobject]@{ TemplateKind = "Minimal"; Verified = $false; Reason = "sha mismatch" }) }; Expected = "*package (Minimal) not verified: sha mismatch*" }
@@ -550,7 +944,7 @@ Describe "Invoke-BootstrapRestoreSmoke complete preflight path (sandboxed, no Do
         $script:pwshPath = (Get-Process -Id $PID).Path
 
         function script:New-SmokeSandbox {
-            param([switch]$GitRepository)
+            param([switch]$GitRepository, [switch]$SchemaToolsSucceed)
 
             # The smoke's checkout is a subdirectory; the driver, call log, and results live
             # beside it, so a git-repository sandbox stays clean while the smoke runs.
@@ -569,17 +963,55 @@ Describe "Invoke-BootstrapRestoreSmoke complete preflight path (sandboxed, no Do
                 Set-Content -LiteralPath (Join-Path $composeRoot $scriptName) -Value ('Add-Content -LiteralPath $env:SMOKE_SANDBOX_LOG -Value ("script: ' + $scriptName + ' " + ($args -join " "))')
             }
             Set-Content -LiteralPath (Join-Path $composeRoot "bootstrap-schema-tool.psm1") -Value 'function Resolve-DmsSchemaTool { param([string]$RequestedPath) throw "the sandbox resolver must not be reached" }'
+            # The image builds run from the checkout's source directories.
+            New-Item -ItemType Directory -Path (Join-Path $checkout "src/dms"), (Join-Path $checkout "src/config") -Force | Out-Null
+
+            $toolDirectory = $null
+            if ($SchemaToolsSucceed) {
+                # A built-looking api-schema-tools: the executable, and a dll with a product version
+                # (a copy of an assembly that has one). The resolver stub returns exactly that path.
+                $toolDirectory = Join-Path $root "schema-tools"
+                New-Item -ItemType Directory -Path $toolDirectory -Force | Out-Null
+                $executableName = if ($IsWindows) { "api-schema-tools.exe" } else { "api-schema-tools" }
+                $executablePath = [System.IO.Path]::GetFullPath((Join-Path $toolDirectory $executableName))
+                Set-Content -LiteralPath $executablePath -Value "sandbox"
+                Copy-Item -LiteralPath ([System.Management.Automation.PSObject].Assembly.Location) -Destination (Join-Path $toolDirectory "api-schema-tools.dll")
+                Set-Content -LiteralPath (Join-Path $composeRoot "bootstrap-schema-tool.psm1") -Value ("function Resolve-DmsSchemaTool { param([string]`$RequestedPath) return '" + $executablePath + "' }")
+            }
 
             $driverPath = Join-Path $root "driver.ps1"
             Set-Content -LiteralPath $driverPath -Value @'
 param([string]$SmokePath, [string]$ArgumentsJson)
 $state = $env:SMOKE_SANDBOX_DOCKER_STATE | ConvertFrom-Json -AsHashtable
+if ($null -eq $state.Images) { $state.Images = @{} }
+$global:SmokeSandboxState = $state
 function global:docker {
     # The fakes run inside the smoke's strict-mode scope; they read optional keys of the state.
     Set-StrictMode -Off
+    $state = $global:SmokeSandboxState
     Add-Content -LiteralPath $env:SMOKE_SANDBOX_LOG -Value ("docker: " + ($args -join " "))
     $global:LASTEXITCODE = 0
     if ($args[0] -eq "info") { return "29.0.0" }
+    if ($args[0] -eq "image" -and $args[1] -eq "inspect") {
+        $reference = [string]$args[2]
+        if ($state.InspectFailure) { $global:LASTEXITCODE = 1; return $state.InspectFailure }
+        if ($state.Images.ContainsKey($reference)) { return $state.Images[$reference] }
+        $global:LASTEXITCODE = 1
+        return "Error response from daemon: No such image: $reference"
+    }
+    if ($args[0] -eq "buildx") {
+        $iidFile = [string]$args[[array]::IndexOf($args, "--iidfile") + 1]
+        $key = [System.IO.Path]::GetFileNameWithoutExtension($iidFile)
+        if ($state.FailBuild -eq $key) { $global:LASTEXITCODE = 1; return "ERROR: failed to solve" }
+        $imageId = "sha256:" + ([string]$key[0]) * 64
+        Set-Content -LiteralPath $iidFile -Value $imageId -NoNewline
+        for ($i = 0; $i -lt $args.Count - 1; $i++) { if ($args[$i] -eq "-t") { $state.Images[[string]$args[$i + 1]] = $imageId } }
+        return "built"
+    }
+    if ($args[0] -eq "image" -and $args[1] -eq "rm") {
+        $state.Images.Remove([string]$args[2])
+        return "Untagged: $($args[2])"
+    }
     if ($args[0] -eq "ps" -or ($args[0] -eq "volume" -and $args[1] -eq "ls")) {
         if ($state.FailInventory) { $global:LASTEXITCODE = 1; return "Cannot connect to the Docker daemon" }
         $filter = [string]($args | Where-Object { "$_" -like "label=com.docker.compose.project=*" } | Select-Object -First 1)
@@ -597,8 +1029,12 @@ function global:docker {
     }
 }
 function global:dotnet {
+    Set-StrictMode -Off
     Add-Content -LiteralPath $env:SMOKE_SANDBOX_LOG -Value ("dotnet: " + ($args -join " "))
-    $global:LASTEXITCODE = 1
+    $toolDirectory = $global:SmokeSandboxState.SchemaToolsTargetDir
+    if ([string]::IsNullOrEmpty($toolDirectory)) { $global:LASTEXITCODE = 1; return }
+    $global:LASTEXITCODE = 0
+    if ($args[0] -eq "msbuild") { return $toolDirectory }
 }
 $smokeArguments = if ([string]::IsNullOrWhiteSpace($ArgumentsJson)) { @{} } else { $ArgumentsJson | ConvertFrom-Json -AsHashtable }
 & $SmokePath @smokeArguments
@@ -613,6 +1049,7 @@ exit $LASTEXITCODE
                 Log     = Join-Path $root "calls.log"
                 Results = Join-Path $root "results.json"
                 Head    = $head
+                ToolDirectory = $toolDirectory
             }
         }
 
@@ -623,10 +1060,16 @@ exit $LASTEXITCODE
 
                 [hashtable]$Arguments = @{},
 
-                [switch]$GitRepository
+                [switch]$GitRepository,
+
+                [switch]$SchemaToolsSucceed
             )
 
-            $sandbox = New-SmokeSandbox -GitRepository:$GitRepository
+            $sandbox = New-SmokeSandbox -GitRepository:$GitRepository -SchemaToolsSucceed:$SchemaToolsSucceed
+            $DockerState = $DockerState.Clone()
+            if ($SchemaToolsSucceed) {
+                $DockerState.SchemaToolsTargetDir = $sandbox.ToolDirectory
+            }
             $smokeArguments = @{ ResultsPath = $sandbox.Results } + $Arguments
             $saved = @{ Log = $env:SMOKE_SANDBOX_LOG; State = $env:SMOKE_SANDBOX_DOCKER_STATE }
             try {
@@ -822,6 +1265,141 @@ exit $LASTEXITCODE
             $run.Results.Provenance.SourceAtStart.Clean | Should -BeTrue
             $run.Results.Provenance.SourceAtStart.Revision | Should -Be $run.Head
             @($run.Results.Steps.Name) | Should -Be @("preflight")
+        }
+    }
+
+    Context "the image builds after a passing preflight" {
+        BeforeAll {
+            $script:staleImages = @{
+                "local/ed-fi-api"                       = ("sha256:" + "5" * 64)
+                "ed-fi-api-local"                       = ("sha256:" + "5" * 64)
+                "local/ed-fi-api-configuration-service" = ("sha256:" + "6" * 64)
+                "edfialliance/ed-fi-api"                = ("sha256:" + "7" * 64)
+            }
+
+            function script:Get-RunTagSet {
+                param($Run)
+                $runId = $Run.Results.Provenance.RunId
+                $runId | Should -Match '^[0-9a-f]{12}$'
+                return [pscustomobject]@{
+                    RunId     = $runId
+                    Dms       = "local/ed-fi-api:dms-restore-smoke-$runId"
+                    Config    = "local/ed-fi-api-configuration-service:dms-restore-smoke-$runId"
+                    Published = "edfialliance/ed-fi-api:dms-restore-smoke-$runId"
+                }
+            }
+
+            # Only the authorized teardowns (selected project, -d -v -RemoveBootstrap) may run: no
+            # bootstrap wrapper and no start script without the teardown shape.
+            function script:Assert-OnlyAuthorizedTeardown {
+                param($Run, [string]$StartScript, [int]$Count)
+                $scriptCalls = @($Run.Calls | Where-Object { $_ -like "script: *" })
+                $scriptCalls.Count | Should -Be $Count
+                foreach ($call in $scriptCalls) {
+                    $call | Should -BeLike "script: $StartScript *"
+                    $call | Should -BeLike "*-d*"
+                    $call | Should -BeLike "*-v*"
+                    $call | Should -BeLike "*-RemoveBootstrap*"
+                }
+                @($Run.Calls | Where-Object { $_ -like "script: bootstrap-*" }) | Should -BeNullOrEmpty
+            }
+
+            function script:Assert-OnlyRunTagsTouched {
+                param($Run, [string]$RunId)
+                foreach ($call in @($Run.Calls | Where-Object { $_ -like "docker: *" })) {
+                    $call | Should -Not -BeLike "docker: tag *"
+                    foreach ($reference in @($call -split " " | Where-Object { $_ -like "*ed-fi-api*" })) {
+                        $reference | Should -BeLike "*:dms-restore-smoke-$RunId"
+                    }
+                }
+            }
+        }
+
+        It "fails on a DMS build error while stale shared images exist, starts nothing, and removes nothing it does not own" {
+            $run = Invoke-SandboxedSmoke -DockerState @{ Images = $script:staleImages.Clone(); FailBuild = "dms" } -SchemaToolsSucceed
+            $tags = Get-RunTagSet -Run $run
+
+            $run.ExitCode | Should -Be 1
+            $run.Output | Should -BeLike "*Image provenance could not be established for Dms: docker buildx build (Dms) exited 1*"
+            @($run.Results.Steps.Name) | Should -Be @("preflight", "build-schema-tools", "build-images")
+            @($run.Results.Steps.Status) | Should -Be @("ok", "ok", "failed")
+            Assert-OnlyAuthorizedTeardown -Run $run -StartScript "start-local-dms.ps1" -Count 2
+            $buildIndex = [array]::FindIndex([string[]]$run.Calls, [Predicate[string]] { param($line) $line -like "docker: buildx *" })
+            $teardownIndexes = @(for ($i = 0; $i -lt $run.Calls.Count; $i++) { if ($run.Calls[$i] -like "script: *") { $i } })
+            $buildIndex | Should -BeGreaterThan $teardownIndexes[0]
+            $teardownIndexes[1] | Should -BeGreaterThan $buildIndex
+            @($run.Calls | Where-Object { $_ -like "docker: buildx *" }).Count | Should -Be 1
+
+            $images = $run.Results.Provenance.Images
+            $images.Dms.ExitCode | Should -Be 1
+            $images.Dms.Verified | Should -BeFalse
+            $images.Dms.ImageId | Should -BeNullOrEmpty
+            $images.Config | Should -BeNullOrEmpty
+            @($images.OwnedTags) | Should -Be @($tags.Dms, $tags.Config)
+            @($images.Cleanup | ForEach-Object { "$($_.Tag)=$($_.Action)" }) | Should -Be @("$($tags.Dms)=absent", "$($tags.Config)=absent")
+            @($run.Calls | Where-Object { $_ -like "docker: image rm *" }) | Should -BeNullOrEmpty
+            $run.Results.Provenance.ForwardedImageKeys | Should -BeNullOrEmpty
+            $run.Results.Classification.Final | Should -BeFalse
+            @($run.Results.Classification.Reasons | Where-Object { $_ -eq "Dms image not verified as built in this run: docker buildx build (Dms) exited 1" }).Count | Should -Be 1
+            Assert-OnlyRunTagsTouched -Run $run -RunId $tags.RunId
+        }
+
+        It "keeps the DMS record and removes only the DMS run tag, after the teardown, when the CMS build fails" {
+            $run = Invoke-SandboxedSmoke -DockerState @{ Images = $script:staleImages.Clone(); FailBuild = "config" } -SchemaToolsSucceed
+            $tags = Get-RunTagSet -Run $run
+
+            $run.ExitCode | Should -Be 1
+            $images = $run.Results.Provenance.Images
+            $images.Dms.Verified | Should -BeTrue
+            $images.Dms.ImageId | Should -Be ("sha256:" + "d" * 64)
+            $images.Dms.IidFileContent | Should -Be ("sha256:" + "d" * 64)
+            $images.Config.Verified | Should -BeFalse
+            $images.Config.ExitCode | Should -Be 1
+            $removals = @($run.Calls | Where-Object { $_ -like "docker: image rm *" })
+            $removals | Should -Be @("docker: image rm $($tags.Dms)")
+            $lastTeardown = [array]::FindLastIndex([string[]]$run.Calls, [Predicate[string]] { param($line) $line -like "script: *" })
+            [array]::IndexOf([string[]]$run.Calls, $removals[0]) | Should -BeGreaterThan $lastTeardown
+            Assert-OnlyAuthorizedTeardown -Run $run -StartScript "start-local-dms.ps1" -Count 2
+            Assert-OnlyRunTagsTouched -Run $run -RunId $tags.RunId
+        }
+
+        It "forwards the run tags to the <wrapper> wrapper's env file and removes every owned tag at the end" -ForEach @(
+            @{ Wrapper = "local"; StartScript = "start-local-dms.ps1" }
+            @{ Wrapper = "published"; StartScript = "start-published-dms.ps1" }
+        ) {
+            $run = Invoke-SandboxedSmoke -DockerState @{ Images = $script:staleImages.Clone() } -Arguments @{ Wrapper = $Wrapper } -SchemaToolsSucceed
+            $tags = Get-RunTagSet -Run $run
+
+            @($run.Results.Steps.Name)[0..2] | Should -Be @("preflight", "build-schema-tools", "build-images")
+            $run.Results.Steps[2].Status | Should -Be "ok"
+            $forwarded = $run.Results.Provenance.ForwardedImageKeys
+            $forwarded.DMS_CONFIG_DOCKER_IMAGE | Should -Be $tags.Config
+            if ($Wrapper -eq "local") {
+                $forwarded.DMS_DOCKER_IMAGE | Should -Be $tags.Dms
+                @($run.Results.Provenance.Images.OwnedTags) | Should -Be @($tags.Dms, $tags.Config)
+            }
+            else {
+                $forwarded.DMS_IMAGE_TAG | Should -Be "dms-restore-smoke-$($tags.RunId)"
+                @($run.Results.Provenance.Images.OwnedTags) | Should -Be @($tags.Dms, $tags.Published, $tags.Config)
+                @($run.Calls | Where-Object { $_ -like "docker: buildx *" })[0] | Should -BeLike "*-t $($tags.Dms) -t $($tags.Published) -f Dockerfile*"
+            }
+            $run.Results.Provenance.Images.Dms.Verified | Should -BeTrue
+            $run.Results.Provenance.Images.Config.Verified | Should -BeTrue
+            @($run.Results.Provenance.Images.Cleanup.Action | Select-Object -Unique) | Should -Be @("removed")
+            @($run.Calls | Where-Object { $_ -like "docker: image rm *" }).Count | Should -Be @($run.Results.Provenance.Images.OwnedTags).Count
+            Assert-OnlyAuthorizedTeardown -Run $run -StartScript $StartScript -Count 2
+            Assert-OnlyRunTagsTouched -Run $run -RunId $tags.RunId
+        }
+
+        It "claims and builds nothing when the run tags' absence cannot be established" {
+            $run = Invoke-SandboxedSmoke -DockerState @{ Images = $script:staleImages.Clone(); InspectFailure = "permission denied while trying to connect to the Docker daemon socket" } -SchemaToolsSucceed
+
+            $run.ExitCode | Should -Be 1
+            $run.Output | Should -BeLike "*Cannot establish that the run tag*no image tag was claimed*"
+            @($run.Calls | Where-Object { $_ -like "docker: buildx *" -or $_ -like "docker: image rm *" }) | Should -BeNullOrEmpty
+            @($run.Results.Provenance.Images.OwnedTags) | Should -BeNullOrEmpty
+            @($run.Results.Provenance.Images.Cleanup) | Should -BeNullOrEmpty
+            Assert-OnlyAuthorizedTeardown -Run $run -StartScript "start-local-dms.ps1" -Count 2
         }
     }
 }

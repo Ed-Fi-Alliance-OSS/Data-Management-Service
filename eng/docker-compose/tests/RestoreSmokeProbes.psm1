@@ -39,8 +39,15 @@ $script:WrapperProfiles = @{
 # names, and a teardown with -v removes the selected project's named volumes.
 $script:GuardedComposeProjects = @("dms-local", "dms-published")
 
-$script:LocalDmsImage = "local/ed-fi-api"
-$script:LocalConfigImage = "local/ed-fi-api-configuration-service"
+# The smoke's own image builds (Get-RestoreSmokeImageBuildPlan). Repository, source directory, and
+# VERSION mirror build-dms.ps1 / build-config.ps1 DockerBuild, whose version parameters default to
+# 8.0.0; BootstrapRestoreSmoke.Tests.ps1 pins both. Tags are run-unique, never the shared local/ tags.
+$script:ImageBuildVersion = "8.0.0"
+$script:ImageRunTagPrefix = "dms-restore-smoke-"
+$script:ImageBuildDefinitions = @(
+    [pscustomobject]@{ Key = "Dms"; SourceDirectory = "src/dms"; Repository = "local/ed-fi-api" }
+    [pscustomobject]@{ Key = "Config"; SourceDirectory = "src/config"; Repository = "local/ed-fi-api-configuration-service" }
+)
 $script:PublishedDmsRepository = "edfialliance/ed-fi-api"
 
 function ConvertTo-RestoreSmokeLogSafeText {
@@ -371,58 +378,296 @@ function Invoke-RestoreSmokeSchemaToolBuild {
     return [pscustomobject]$record
 }
 
-function Invoke-RestoreSmokeImageBuild {
+function Get-RestoreSmokeImageBuildPlan {
     <#
     .SYNOPSIS
-    Builds the DMS and CMS images from the worktree with the repository build scripts and records
-    each command, exit code, image reference, and resulting image ID.
+    The smoke's own image builds: one docker buildx build per image, with the Dockerfile, context,
+    parentdir build context, and VERSION build argument that build-dms.ps1 / build-config.ps1
+    DockerBuild use, plus --load, a fresh --iidfile in the work directory, and run-unique tags.
+
+    .DESCRIPTION
+    The smoke does not call the build scripts: their fixed local/ tags are reusable, so an image
+    found under them proves nothing about this run's build, and build-dms.ps1 DockerBuild neither
+    loads the result nor propagates a docker failure. BootstrapRestoreSmoke.Tests.ps1 pins these
+    arguments against both scripts' DockerBuild so they cannot drift apart silently.
     #>
     param(
         [Parameter(Mandatory)]
-        [string]$RepoRoot
+        [string]$RepoRoot,
+
+        [Parameter(Mandatory)]
+        [string]$WorkDirectory,
+
+        [Parameter(Mandatory)]
+        [ValidatePattern('^[0-9a-f]{12}$')]
+        [string]$RunId,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("local", "published")]
+        [string]$Wrapper
     )
 
-    $images = [ordered]@{}
-    foreach ($entry in @(
-            @{ Key = "Dms"; Script = "build-dms.ps1"; Image = $script:LocalDmsImage },
-            @{ Key = "Config"; Script = "build-config.ps1"; Image = $script:LocalConfigImage }
-        )) {
-        $scriptPath = Join-Path $RepoRoot $entry.Script
-        $buildRecord = [ordered]@{
-            Command  = "pwsh -NoProfile -File `"$scriptPath`" DockerBuild"
-            ExitCode = $null
-            Image    = $entry.Image
-            ImageId  = $null
-            Reason   = $null
+    $runTag = "$script:ImageRunTagPrefix$RunId"
+    $imageDirectory = Join-Path $WorkDirectory "images"
+    $plan = foreach ($definition in $script:ImageBuildDefinitions) {
+        $tags = @("$($definition.Repository):$runTag")
+        if ($definition.Key -eq "Dms" -and $Wrapper -eq "published") {
+            # published-dms.yml pins the edfialliance/ed-fi-api repository and takes only the tag.
+            $tags += "$($script:PublishedDmsRepository):$runTag"
+        }
+        $iidFile = Join-Path $imageDirectory "$($definition.Key.ToLowerInvariant()).iid"
+        $arguments = @("buildx", "build", "--load", "--iidfile", $iidFile)
+        foreach ($tag in $tags) {
+            $arguments += @("-t", $tag)
+        }
+        $arguments += @("-f", "Dockerfile", ".", "--build-context", "parentdir=../", "--build-arg", "VERSION=$script:ImageBuildVersion")
+
+        [pscustomobject]@{
+            Key              = $definition.Key
+            SourceDirectory  = $definition.SourceDirectory
+            WorkingDirectory = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot $definition.SourceDirectory))
+            Tags             = $tags
+            IidFile          = $iidFile
+            Arguments        = $arguments
+        }
+    }
+    return @($plan)
+}
+
+function New-RestoreSmokeImageLedger {
+    <#
+    .SYNOPSIS
+    The provenance record for the in-run image builds. It exists before the first build so that tag
+    ownership and every build record survive a later build's failure or exception, for cleanup and
+    for the results JSON.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Creates an in-memory record only.')]
+    param()
+
+    return [ordered]@{
+        Version   = $script:ImageBuildVersion
+        OwnedTags = [System.Collections.Generic.List[string]]::new()
+        Dms       = $null
+        Config    = $null
+        Cleanup   = [System.Collections.Generic.List[object]]::new()
+    }
+}
+
+function Get-RestoreSmokeImageTagState {
+    <#
+    .SYNOPSIS
+    Whether an image reference resolves: Present (with its image ID), Absent, or Unknown.
+
+    .DESCRIPTION
+    A failed docker image inspect is Absent only when every line of its output is a "No such image"
+    message for exactly this reference. Any other failure (daemon unreachable, permission, transport)
+    is Unknown, and callers must not treat it as absence.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$Reference
+    )
+
+    $global:LASTEXITCODE = 0
+    $output = @(docker image inspect $Reference --format '{{.Id}}' 2>&1 | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -eq 0) {
+        if ($output.Count -eq 1 -and $output[0].Trim() -cmatch '^sha256:[0-9a-f]{64}$') {
+            return [pscustomobject]@{ State = "Present"; ImageId = $output[0].Trim(); Detail = $null }
+        }
+        return [pscustomobject]@{ State = "Unknown"; ImageId = $null; Detail = "docker image inspect $Reference returned an unexpected ID: $(ConvertTo-RestoreSmokeLogSafeText ($output -join ' '))" }
+    }
+
+    $absentPattern = '^(?:Error response from daemon: |Error: )?No such image: (?:docker\.io/)?' + [regex]::Escape($Reference) + '$'
+    if ($output.Count -gt 0 -and @($output | Where-Object { $_.Trim() -notmatch $absentPattern }).Count -eq 0) {
+        return [pscustomobject]@{ State = "Absent"; ImageId = $null; Detail = $null }
+    }
+    return [pscustomobject]@{ State = "Unknown"; ImageId = $null; Detail = "docker image inspect $Reference exited ${exitCode}: $(ConvertTo-RestoreSmokeLogSafeText ($output -join ' '))" }
+}
+
+function Register-RestoreSmokeImageTagOwnership {
+    <#
+    .SYNOPSIS
+    Claims every planned tag for this run, all together, only after proving each one absent and
+    each iidfile path unused. A present tag or an inspection failure claims nothing.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [object[]]$Plan,
+
+        [Parameter(Mandatory)]
+        [System.Collections.IDictionary]$Ledger
+    )
+
+    foreach ($entry in $Plan) {
+        if (Test-Path -LiteralPath $entry.IidFile) {
+            throw "The iidfile path '$($entry.IidFile)' already exists, so it cannot identify this run's build; no image tag was claimed."
+        }
+        foreach ($tag in $entry.Tags) {
+            $tagState = Get-RestoreSmokeImageTagState -Reference $tag
+            if ($tagState.State -eq "Present") {
+                throw "The run tag '$tag' already exists ($($tagState.ImageId)), so this run does not own it; no image tag was claimed."
+            }
+            if ($tagState.State -ne "Absent") {
+                throw "Cannot establish that the run tag '$tag' is absent ($($tagState.Detail)); no image tag was claimed."
+            }
+        }
+    }
+
+    foreach ($entry in $Plan) {
+        New-Item -ItemType Directory -Path (Split-Path -Parent $entry.IidFile) -Force | Out-Null
+        foreach ($tag in $entry.Tags) {
+            $Ledger.OwnedTags.Add($tag)
+        }
+    }
+}
+
+function Invoke-RestoreSmokeImageBuild {
+    <#
+    .SYNOPSIS
+    Runs each planned image build in order and records it in the ledger. An image is verified only
+    when docker exited 0, the build wrote an image ID to its fresh iidfile, and every run tag
+    resolves to that ID. Throws at the first build that is not verified.
+
+    .DESCRIPTION
+    Each record is stored in the ledger before docker runs, so a failure or exception in a later
+    build leaves the earlier records (and the claimed tags) in place. No comparison is made with any
+    image that existed before the run: a cached build may legitimately reproduce an existing ID, or
+    produce a new one.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [object[]]$Plan,
+
+        [Parameter(Mandatory)]
+        [System.Collections.IDictionary]$Ledger
+    )
+
+    foreach ($entry in $Plan) {
+        foreach ($tag in $entry.Tags) {
+            if (-not $Ledger.OwnedTags.Contains($tag)) {
+                throw "The run tag '$tag' was not claimed for this run; refusing to build under it."
+            }
         }
 
-        Push-Location $RepoRoot
+        $record = [ordered]@{
+            Command         = @("docker") + $entry.Arguments
+            SourceDirectory = $entry.SourceDirectory
+            Tags            = $entry.Tags
+            ExitCode        = $null
+            IidFileContent  = $null
+            ImageId         = $null
+            TagImageIds     = [ordered]@{}
+            Verified        = $false
+            Reason          = "the build did not complete"
+        }
+        $Ledger[$entry.Key] = $record
+
+        if (Test-Path -LiteralPath $entry.IidFile) {
+            $record.Reason = "the iidfile already existed before the build"
+            throw "Image provenance could not be established for $($entry.Key): $($record.Reason)"
+        }
+
+        Push-Location $entry.WorkingDirectory
         try {
+            $buildArguments = [string[]]$entry.Arguments
             $global:LASTEXITCODE = 0
-            pwsh -NoProfile -File $scriptPath DockerBuild | Out-Host
-            $buildRecord.ExitCode = $LASTEXITCODE
+            docker @buildArguments | Out-Host
+            $record.ExitCode = $LASTEXITCODE
         }
         finally {
             Pop-Location
         }
 
-        if ($buildRecord.ExitCode -ne 0) {
-            $buildRecord.Reason = "$($entry.Script) DockerBuild exited $($buildRecord.ExitCode)"
+        if ($record.ExitCode -ne 0) {
+            $record.Reason = "docker buildx build ($($entry.Key)) exited $($record.ExitCode)"
+        }
+        elseif (-not (Test-Path -LiteralPath $entry.IidFile -PathType Leaf)) {
+            $record.Reason = "the build produced no image ID (no iidfile)"
         }
         else {
-            $global:LASTEXITCODE = 0
-            $imageId = @(docker image inspect $entry.Image --format '{{.Id}}' 2>&1)
-            if ($LASTEXITCODE -eq 0 -and $imageId.Count -gt 0) {
-                $buildRecord.ImageId = ConvertTo-RestoreSmokeLogSafeText ([string]$imageId[0])
+            $record.IidFileContent = ConvertTo-RestoreSmokeLogSafeText (Get-Content -LiteralPath $entry.IidFile -Raw)
+            if ($record.IidFileContent -cnotmatch '^sha256:[0-9a-f]{64}$') {
+                $record.Reason = "the build produced no image ID (iidfile content '$($record.IidFileContent)')"
             }
             else {
-                $buildRecord.Reason = "docker image inspect $($entry.Image) failed after the build"
+                $mismatch = $null
+                foreach ($tag in $entry.Tags) {
+                    $tagState = Get-RestoreSmokeImageTagState -Reference $tag
+                    $record.TagImageIds[$tag] = $tagState.ImageId
+                    if ($null -ne $mismatch) {
+                        continue
+                    }
+                    if ($tagState.State -eq "Absent") {
+                        $mismatch = "the run tag '$tag' is missing after the build"
+                    }
+                    elseif ($tagState.State -ne "Present") {
+                        $mismatch = "the run tag '$tag' could not be inspected after the build ($($tagState.Detail))"
+                    }
+                    elseif ($tagState.ImageId -cne $record.IidFileContent) {
+                        $mismatch = "the run tag '$tag' resolves to $($tagState.ImageId), but the build reported $($record.IidFileContent)"
+                    }
+                }
+                if ($null -eq $mismatch) {
+                    $record.ImageId = $record.IidFileContent
+                    $record.Verified = $true
+                    $record.Reason = $null
+                }
+                else {
+                    $record.Reason = $mismatch
+                }
             }
         }
-        $images[$entry.Key] = [pscustomobject]$buildRecord
-    }
 
-    return [pscustomobject]$images
+        if (-not $record.Verified) {
+            throw "Image provenance could not be established for $($entry.Key): $($record.Reason)"
+        }
+    }
+}
+
+function Remove-RestoreSmokeOwnedImageTag {
+    <#
+    .SYNOPSIS
+    Removes the tags this run claimed, and nothing else: no -f, no removal by image ID, no prune.
+    Docker itself keeps an image a container still uses. Each outcome is recorded in the ledger;
+    a failure warns and never changes the run's result.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal smoke cleanup; the smoke does not expose -WhatIf.')]
+    param(
+        [Parameter(Mandatory)]
+        [System.Collections.IDictionary]$Ledger,
+
+        [switch]$Keep
+    )
+
+    foreach ($tag in @($Ledger.OwnedTags)) {
+        if ($Keep) {
+            $Ledger.Cleanup.Add([pscustomobject]@{ Tag = $tag; Action = "kept"; Detail = "-SkipTeardown" })
+            continue
+        }
+
+        $tagState = Get-RestoreSmokeImageTagState -Reference $tag
+        if ($tagState.State -eq "Absent") {
+            $Ledger.Cleanup.Add([pscustomobject]@{ Tag = $tag; Action = "absent"; Detail = $null })
+            continue
+        }
+        if ($tagState.State -ne "Present") {
+            Write-Warning "Could not inspect the run tag '$tag' for cleanup: $($tagState.Detail)"
+            $Ledger.Cleanup.Add([pscustomobject]@{ Tag = $tag; Action = "failed"; Detail = $tagState.Detail })
+            continue
+        }
+
+        $global:LASTEXITCODE = 0
+        $output = @(docker image rm $tag 2>&1 | ForEach-Object { [string]$_ })
+        if ($LASTEXITCODE -eq 0) {
+            $Ledger.Cleanup.Add([pscustomobject]@{ Tag = $tag; Action = "removed"; Detail = $null })
+        }
+        else {
+            $detail = "docker image rm exited ${LASTEXITCODE}: $(ConvertTo-RestoreSmokeLogSafeText ($output -join ' '))"
+            Write-Warning "Could not remove the run tag '$tag': $detail"
+            $Ledger.Cleanup.Add([pscustomobject]@{ Tag = $tag; Action = "failed"; Detail = $detail })
+        }
+    }
 }
 
 function Write-RestoreSmokeImageEnvironmentFile {
@@ -677,9 +922,9 @@ function Get-RestoreSmokeResultClassification {
     }
     else {
         foreach ($key in @("Dms", "Config")) {
-            if ($null -eq $images.$key -or [string]::IsNullOrWhiteSpace($images.$key.ImageId)) {
+            if ($null -eq $images.$key -or -not $images.$key.Verified -or [string]::IsNullOrWhiteSpace($images.$key.ImageId)) {
                 $reason = if ($null -ne $images.$key) { $images.$key.Reason } else { "missing" }
-                $reasons.Add("$key image not built in this run: $reason")
+                $reasons.Add("$key image not verified as built in this run: $reason")
             }
         }
     }
@@ -696,8 +941,9 @@ function Get-RestoreSmokeResultClassification {
                 if ($null -eq $observed) {
                     $reasons.Add("$($observation.Label): no $($pair.Service) container observed")
                 }
-                elseif ($null -eq $built -or $observed.ImageId -cne $built.ImageId) {
-                    $reasons.Add("$($observation.Label): $($pair.Service) runs image $($observed.ImageId), not the in-run build")
+                elseif ($null -eq $built -or -not $built.Verified -or $observed.ImageId -cne $built.ImageId) {
+                    $builtId = if ($null -ne $built -and $built.Verified) { $built.ImageId } else { "none verified" }
+                    $reasons.Add("$($observation.Label): $($pair.Service) runs image $($observed.ImageId), not the in-run build ($builtId)")
                 }
             }
             if (-not $observation.Services.Contains("db")) {
@@ -737,7 +983,12 @@ Export-ModuleMember -Function `
     Get-RestoreSmokeSourceRevision, `
     Get-RestoreSmokeFileSha256, `
     Invoke-RestoreSmokeSchemaToolBuild, `
+    Get-RestoreSmokeImageBuildPlan, `
+    New-RestoreSmokeImageLedger, `
+    Get-RestoreSmokeImageTagState, `
+    Register-RestoreSmokeImageTagOwnership, `
     Invoke-RestoreSmokeImageBuild, `
+    Remove-RestoreSmokeOwnedImageTag, `
     Write-RestoreSmokeImageEnvironmentFile, `
     Get-RestoreSmokeStackObservation, `
     Get-RestoreSmokeEffectiveSchemaPackageList, `
