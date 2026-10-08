@@ -2751,9 +2751,9 @@ internal static class SharedDescriptorTrackedChangeFixture
             ],
             [
                 new TrackedChangeSystemColumnInfo(
-                    TrackedChangeSystemColumnRole.Discriminator,
-                    new DbColumnName("Discriminator"),
-                    new RelationalScalarType(ScalarKind.String),
+                    TrackedChangeSystemColumnRole.ResourceKeyId,
+                    new DbColumnName("ResourceKeyId"),
+                    null,
                     IsNullable: false,
                     IsPrimaryKey: false
                 ),
@@ -2811,9 +2811,9 @@ public class Given_CoreDdlEmitter_With_SharedDescriptor_TrackedChange_Pgsql
     }
 
     [Test]
-    public void It_should_read_discriminator_namespace_and_code_value_from_old_image()
+    public void It_should_read_resource_key_id_namespace_and_code_value_from_old_image()
     {
-        _ddl.Should().Contain("OLD.\"Discriminator\"");
+        _ddl.Should().Contain("OLD.\"ResourceKeyId\"");
         _ddl.Should().Contain("OLD.\"Namespace\"");
         _ddl.Should().Contain("OLD.\"CodeValue\"");
     }
@@ -2891,9 +2891,9 @@ public class Given_CoreDdlEmitter_With_SharedDescriptor_TrackedChange_Mssql
     }
 
     [Test]
-    public void It_should_read_discriminator_namespace_and_code_value_from_del_alias()
+    public void It_should_read_resource_key_id_namespace_and_code_value_from_del_alias()
     {
-        _ddl.Should().Contain("del.[Discriminator]");
+        _ddl.Should().Contain("del.[ResourceKeyId]");
         _ddl.Should().Contain("del.[Namespace]");
         _ddl.Should().Contain("del.[CodeValue]");
     }

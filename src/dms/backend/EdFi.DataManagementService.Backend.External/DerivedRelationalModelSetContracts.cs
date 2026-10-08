@@ -410,7 +410,7 @@ public sealed record TrackedChangeAttachment(DbTableName TrackedChangeTable);
 
 /// <summary>
 /// Fixed-by-role system column on a tracked-change table (<c>Id</c>, <c>ChangeVersion</c>,
-/// <c>DocumentId</c>, <c>CreatedAt</c>, and—on the shared descriptor table—<c>Discriminator</c>). These are determined by
+/// <c>DocumentId</c>, <c>CreatedAt</c>, and—on the shared descriptor table—<c>ResourceKeyId</c>). These are determined by
 /// role rather than by ApiSchema value metadata; dialect emitters render the appropriate type/default.
 /// </summary>
 /// <param name="Role">The system column role.</param>
@@ -419,7 +419,8 @@ public sealed record TrackedChangeAttachment(DbTableName TrackedChangeTable);
 /// The scalar type metadata, or <c>null</c> when the type is determined entirely by
 /// <paramref name="Role"/> and has no <see cref="ScalarKind"/> representation. This is the case for
 /// <see cref="TrackedChangeSystemColumnRole.Id"/>, whose type is PostgreSQL <c>uuid</c> / SQL Server
-/// <c>uniqueidentifier</c>; dialect emitters render it by role.
+/// <c>uniqueidentifier</c>, and <see cref="TrackedChangeSystemColumnRole.ResourceKeyId"/>, whose type
+/// is <c>smallint</c> on both providers; dialect emitters render them by role.
 /// </param>
 /// <param name="IsNullable">Whether the column is nullable.</param>
 /// <param name="IsPrimaryKey">Whether the column participates in the table's primary key.</param>
@@ -481,7 +482,10 @@ public sealed record TrackedChangeColumnInfo(
 /// rather than duplicating the join definition.
 /// </summary>
 /// <param name="DescriptorJoinName">The stable join name referenced by descriptor value columns.</param>
-/// <param name="SourceColumn">The descriptor FK column on the live source table (e.g. <c>*_DescriptorId</c>).</param>
+/// <param name="SourceColumn">
+/// The compact Int32 descriptor FK column on the live source table (e.g. <c>*_DescriptorId</c>),
+/// joined to <c>dms.Descriptor.DescriptorId</c> rather than its owning <c>DocumentId</c>.
+/// </param>
 /// <param name="DescriptorResource">The descriptor resource type expected at this join.</param>
 public sealed record TrackedChangeDescriptorJoinInfo(
     string DescriptorJoinName,
@@ -536,7 +540,7 @@ public sealed record TrackedChangePersonJoinInfo(
 /// <param name="ValueColumnsInTableOrder">The tracked old/new value columns in table order.</param>
 /// <param name="SystemColumns">
 /// The fixed-by-role system columns (<c>Id</c>, <c>ChangeVersion</c>, <c>DocumentId</c>, <c>CreatedAt</c>,
-/// and <c>Discriminator</c> for the shared descriptor table).
+/// and <c>ResourceKeyId</c> for the shared descriptor table).
 /// </param>
 /// <param name="PrimaryKeyColumns">
 /// The primary-key columns. <c>[ChangeVersion]</c> in the current design; carried here so renderers do

@@ -310,7 +310,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Renders a fixed-by-role tracked-change system column. The <c>Id</c> role has no
-    /// <see cref="RelationalScalarType"/> and renders as the dialect UUID type; the <c>CreatedAt</c> role
+    /// <see cref="RelationalScalarType"/> and renders as the dialect UUID type; <c>ResourceKeyId</c>
+    /// likewise renders by role as the dialect smallint type. The <c>CreatedAt</c> role
     /// carries the current-UTC-timestamp default under a named <c>DF_*</c> constraint (consistent with the
     /// core DDL convention so SQL Server does not assign a system-generated default-constraint name); all
     /// other roles render directly from their scalar type.
@@ -320,9 +321,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         TrackedChangeSystemColumnInfo systemColumn
     )
     {
-        var type = systemColumn.ScalarType is null
-            ? _dialect.UuidColumnType
-            : _dialect.RenderColumnType(systemColumn.ScalarType);
+        var type = systemColumn.Role switch
+        {
+            TrackedChangeSystemColumnRole.Id => _dialect.UuidColumnType,
+            TrackedChangeSystemColumnRole.ResourceKeyId => _dialect.SmallintColumnType,
+            _ => systemColumn.ScalarType is null
+                ? _dialect.UuidColumnType
+                : _dialect.RenderColumnType(systemColumn.ScalarType),
+        };
 
         if (systemColumn.Role == TrackedChangeSystemColumnRole.CreatedAt)
         {

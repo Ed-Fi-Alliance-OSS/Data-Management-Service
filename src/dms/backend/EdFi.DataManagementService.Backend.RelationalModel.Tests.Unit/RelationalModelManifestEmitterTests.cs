@@ -545,7 +545,7 @@ public class Given_A_Relational_Model_Manifest_Emitter
                 descriptorConstraintName,
                 [canonicalColumn],
                 new DbTableName(new DbSchemaName("dms"), "Descriptor"),
-                [RelationalNameConventions.DocumentIdColumnName],
+                [RelationalNameConventions.DescriptorKeyColumnName],
                 OnDelete: ReferentialAction.NoAction,
                 OnUpdate: ReferentialAction.NoAction
             ),

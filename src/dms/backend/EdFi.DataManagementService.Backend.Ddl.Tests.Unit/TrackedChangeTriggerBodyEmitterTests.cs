@@ -278,7 +278,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Pgsql
         _tombstone
             .Should()
             .Contain(
-                "INNER JOIN \"dms\".\"Descriptor\" oldDj0 ON oldDj0.\"DocumentId\" = OLD.\"GradeTypeDescriptor_DescriptorId\""
+                "INNER JOIN \"dms\".\"Descriptor\" oldDj0 ON oldDj0.\"DescriptorId\" = OLD.\"GradeTypeDescriptor_DescriptorId\""
             );
         // One natural-key seek on the person root; no hop through the live association (DMS-1193 Task 44).
         _tombstone
@@ -312,7 +312,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Pgsql
         _keyChange
             .Should()
             .Contain(
-                "INNER JOIN \"dms\".\"Descriptor\" newDj0 ON newDj0.\"DocumentId\" = NEW.\"GradeTypeDescriptor_DescriptorId\""
+                "INNER JOIN \"dms\".\"Descriptor\" newDj0 ON newDj0.\"DescriptorId\" = NEW.\"GradeTypeDescriptor_DescriptorId\""
             );
         _keyChange.Should().Contain("oldDj0.\"Namespace\"");
         _keyChange.Should().Contain("oldDj0.\"CodeValue\"");
@@ -320,7 +320,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Pgsql
         _keyChange
             .Should()
             .Contain(
-                "INNER JOIN \"dms\".\"Descriptor\" oldDj0 ON oldDj0.\"DocumentId\" = OLD.\"GradeTypeDescriptor_DescriptorId\""
+                "INNER JOIN \"dms\".\"Descriptor\" oldDj0 ON oldDj0.\"DescriptorId\" = OLD.\"GradeTypeDescriptor_DescriptorId\""
             );
         _keyChange
             .Should()
@@ -381,7 +381,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Mssql
         _tombstone
             .Should()
             .Contain(
-                "INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradeTypeDescriptor_DescriptorId]"
+                "INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[GradeTypeDescriptor_DescriptorId]"
             );
         _tombstone
             .Should()
@@ -426,7 +426,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Mssql
         _keyChange
             .Should()
             .Contain(
-                "INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[GradeTypeDescriptor_DescriptorId]"
+                "INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[GradeTypeDescriptor_DescriptorId]"
             );
         _keyChange
             .Should()
@@ -439,7 +439,7 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Mssql
         _keyChange
             .Should()
             .Contain(
-                "INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradeTypeDescriptor_DescriptorId]"
+                "INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[GradeTypeDescriptor_DescriptorId]"
             );
         _keyChange
             .Should()
@@ -476,22 +476,22 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Nullable_Joins
         pgsql
             .Should()
             .Contain(
-                "LEFT JOIN \"dms\".\"Descriptor\" oldDj0 ON oldDj0.\"DocumentId\" = OLD.\"GradeTypeDescriptor_DescriptorId\""
+                "LEFT JOIN \"dms\".\"Descriptor\" oldDj0 ON oldDj0.\"DescriptorId\" = OLD.\"GradeTypeDescriptor_DescriptorId\""
             );
         pgsql
             .Should()
             .Contain(
-                "LEFT JOIN \"dms\".\"Descriptor\" newDj0 ON newDj0.\"DocumentId\" = NEW.\"GradeTypeDescriptor_DescriptorId\""
+                "LEFT JOIN \"dms\".\"Descriptor\" newDj0 ON newDj0.\"DescriptorId\" = NEW.\"GradeTypeDescriptor_DescriptorId\""
             );
         mssql
             .Should()
             .Contain(
-                "LEFT JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradeTypeDescriptor_DescriptorId]"
+                "LEFT JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[GradeTypeDescriptor_DescriptorId]"
             );
         mssql
             .Should()
             .Contain(
-                "LEFT JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[GradeTypeDescriptor_DescriptorId]"
+                "LEFT JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[GradeTypeDescriptor_DescriptorId]"
             );
     }
 
@@ -739,7 +739,7 @@ internal static class TrackedChangeEmitterFixture
     ///   DocumentId (Int64, no path),
     ///   BeginDate (Date, path "$.gradingPeriodReference.beginDate"),
     ///   SchoolId_Unified (Int64, path "$.schoolReference.schoolId"),
-    ///   GradeTypeDescriptor_DescriptorId (Int64, path "$.gradeTypeDescriptor"),
+    ///   GradeTypeDescriptor_DescriptorId (Int32, path "$.gradeTypeDescriptor"),
     ///   StudentSectionAssociation_DocumentId (Int64, no path).
     /// </summary>
     /// <param name="addDuplicateBeginDate">
@@ -776,8 +776,8 @@ internal static class TrackedChangeEmitterFixture
             ),
             new DbColumnModel(
                 new DbColumnName("GradeTypeDescriptor_DescriptorId"),
-                ColumnKind.Scalar,
-                new RelationalScalarType(ScalarKind.Int64),
+                ColumnKind.DescriptorFk,
+                new RelationalScalarType(ScalarKind.Int32),
                 IsNullable: false,
                 SourceJsonPath: new JsonPathExpression("$.gradeTypeDescriptor", []),
                 TargetResource: null
