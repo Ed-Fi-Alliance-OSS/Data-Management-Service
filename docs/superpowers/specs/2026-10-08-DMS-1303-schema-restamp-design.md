@@ -1,6 +1,6 @@
 # DMS-1303: SchemaTools schema fingerprint re-stamp
 
-**Status:** Conversational design approved on 2026-10-08; written specification awaiting approval.
+**Status:** Written specification approved on 2026-10-08.
 **Baseline:** Branch `DMS-1303`, commit `368b6cd7bca5e43ef601db5e2a488b4170236c19`.
 **Outcome:** An operator replaces the manual fingerprint re-key after an independently validated, data-preserving physical migration with one supported SchemaTools command.
 
@@ -14,7 +14,7 @@ The user approved the following choices during brainstorming:
 - Validate matching stamps without writes: valid matches succeed without confirmation; corrupt matches fail without writes. This is the explicitly approved corruption exception to AC3.
 - Keep `ddl provision` as a separate documented follow-up.
 - Preserve `AppliedAt` as the original provisioning timestamp.
-- Use the standalone, computed-target design described below. Conversational approval authorizes this specification; written approval remains the gate to its planning handoff.
+- Use the standalone, computed-target design described below. Written approval authorizes its handoff to implementation planning.
 
 ## Scope and exclusions
 
@@ -102,6 +102,6 @@ The story requires an explicit administrative exception to the older blanket cro
 
 The report's C1/C4 transaction and concurrency corrections, C5 documentation reconciliation, and C6 real-migration verification are incorporated. H/N have no substantive behavioral discrepancy. Historical v2/per-change bump guidance yields to current v3 release policy; PostgreSQL platform-reference drift remains with DMS-1447. [PR #1121](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/pull/1121) remains historical evidence, not a complete upgrade to this baseline.
 
-**Remaining gate:** approval of this written specification. No unresolved design blocker remains. Both-provider execution evidence and the fixture migration are implementation verification obligations. A complete, validated source-to-target recipe would be required before advertising any named production release upgrade; that promise is excluded here.
+**Remaining blockers:** none at the design stage. Both-provider execution evidence and the fixture migration are implementation verification obligations. A complete, validated source-to-target recipe would be required before advertising any named production release upgrade; that promise is excluded here.
 
-**Handoff:** after written approval, use `superpowers:writing-plans` with this specification, the pinned baseline, and the three supporting artifacts. The plan must preserve these decisions and map work/verification to AC1–AC4. This brainstorming task creates no implementation plan or product changes.
+**Handoff:** use `superpowers:writing-plans` with this approved specification, the pinned baseline, and the three supporting artifacts. The plan must preserve these decisions and map work/verification to AC1-AC4. Brainstorming is complete; implementation requires separate plan review and selection of an execution method.
