@@ -42,6 +42,30 @@ public sealed record DescriptorColumnContract(
 );
 
 /// <summary>
+/// The <c>dms.Descriptor</c> columns that store descriptor identity text. This is the single list read by
+/// both model derivation (identity-text role on the derived descriptor model) and core DDL emission (the
+/// SQL Server identity collation on the core-owned table), so the two cannot drift.
+/// </summary>
+public static class DescriptorIdentityTextColumns
+{
+    /// <summary>
+    /// The descriptor namespace column.
+    /// </summary>
+    public static readonly DbColumnName Namespace = new("Namespace");
+
+    /// <summary>
+    /// The descriptor code value column.
+    /// </summary>
+    public static readonly DbColumnName CodeValue = new("CodeValue");
+
+    /// <summary>
+    /// Every stored descriptor identity text column. The SQL Server computed <c>Uri</c>
+    /// (<c>namespace#codeValue</c>) is reconstructed from them and inherits their collation.
+    /// </summary>
+    public static IReadOnlyList<DbColumnName> All { get; } = [Namespace, CodeValue];
+}
+
+/// <summary>
 /// Metadata for descriptor resources stored in the shared <c>dms.Descriptor</c> table.
 /// </summary>
 /// <param name="ColumnContract">The descriptor column contract.</param>
