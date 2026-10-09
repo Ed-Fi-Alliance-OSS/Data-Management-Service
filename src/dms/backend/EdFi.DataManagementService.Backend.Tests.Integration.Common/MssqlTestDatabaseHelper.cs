@@ -65,12 +65,62 @@ public static class MssqlTestDatabaseHelper
         CreateGeneratedDdlDatabaseAsync(databaseName, useExplicitFileSizing).GetAwaiter().GetResult();
     }
 
+    /// <summary>
+    /// Creates a database for generated DDL. <paramref name="databaseCollation"/> overrides the server default
+    /// database collation, for fixtures that prove behavior independent of the database default.
+    /// </summary>
     public static Task CreateGeneratedDdlDatabaseAsync(
         string databaseName,
-        bool useExplicitFileSizing = false
+        bool useExplicitFileSizing = false,
+        string? databaseCollation = null
     )
     {
-        return CreateDatabaseAsync(databaseName, useExplicitFileSizing, applyGeneratedDdlOptions: true);
+        ValidateCollationName(databaseCollation);
+
+        return CreateDatabaseAsync(
+            databaseName,
+            useExplicitFileSizing,
+            applyGeneratedDdlOptions: true,
+            databaseCollation
+        );
+    }
+
+    /// <summary>
+    /// Whether the SQL Server instance supports the named collation.
+    /// </summary>
+    public static async Task<bool> CollationExistsAsync(string collationName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(collationName);
+
+        await using var connection = new SqlConnection(
+            BaselineDatabaseConfiguration.MssqlAdminConnectionString
+        );
+        await connection.OpenAsync();
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandTimeout = DefaultCommandTimeoutSeconds;
+        command.CommandText = "SELECT 1 FROM sys.fn_helpcollations() WHERE [name] = @name;";
+        command.Parameters.AddWithValue("name", collationName);
+
+        return await command.ExecuteScalarAsync() is not null;
+    }
+
+    /// <summary>
+    /// Collation names are interpolated into <c>CREATE DATABASE</c>, so only letters, digits and
+    /// underscores are accepted (the same allow-list as the SchemaTools helper).
+    /// </summary>
+    private static void ValidateCollationName(string? collationName)
+    {
+        if (collationName is null)
+        {
+            return;
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(collationName);
+
+        if (collationName.Any(static character => !char.IsLetterOrDigit(character) && character != '_'))
+        {
+            throw new ArgumentException("Collation name contains invalid characters.", nameof(collationName));
+        }
     }
 
     public static async Task ExecuteAdminNonQueryAsync(string sql, int commandTimeoutSeconds = 300)
@@ -316,7 +366,8 @@ public static class MssqlTestDatabaseHelper
     private static async Task CreateDatabaseAsync(
         string databaseName,
         bool useExplicitFileSizing,
-        bool applyGeneratedDdlOptions
+        bool applyGeneratedDdlOptions,
+        string? databaseCollation = null
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databaseName);
@@ -326,7 +377,7 @@ public static class MssqlTestDatabaseHelper
             MssqlGeneratedDdlDatabaseFilePaths? filePaths = useExplicitFileSizing
                 ? await BuildGeneratedDdlDatabaseFilePathsAsync(connection, databaseName)
                 : null;
-            var createDatabaseSql = BuildCreateDatabaseSql(databaseName, filePaths);
+            var createDatabaseSql = BuildCreateDatabaseSql(databaseName, filePaths, databaseCollation);
 
             await using (SqlCommand command = connection.CreateCommand())
             {
@@ -344,17 +395,19 @@ public static class MssqlTestDatabaseHelper
 
     private static string BuildCreateDatabaseSql(
         string databaseName,
-        MssqlGeneratedDdlDatabaseFilePaths? filePaths
+        MssqlGeneratedDdlDatabaseFilePaths? filePaths,
+        string? databaseCollation
     )
     {
         var escapedDatabaseName = EscapeSqlLiteral(databaseName);
         var quotedDatabaseName = QuoteIdentifier(databaseName);
+        var collationClause = databaseCollation is null ? "" : $" COLLATE {databaseCollation}";
         if (filePaths is null)
         {
             return $"""
                 IF DB_ID(N'{escapedDatabaseName}') IS NULL
                 BEGIN
-                    CREATE DATABASE {quotedDatabaseName};
+                    CREATE DATABASE {quotedDatabaseName}{collationClause};
                 END
                 """;
         }
@@ -381,7 +434,7 @@ public static class MssqlTestDatabaseHelper
                     FILENAME = N'{escapedLogFilePath}',
                     SIZE = {GeneratedDdlLogFileSizeMb}MB,
                     FILEGROWTH = {GeneratedDdlLogFileGrowthMb}MB
-                );
+                ){collationClause};
             END
             """;
     }

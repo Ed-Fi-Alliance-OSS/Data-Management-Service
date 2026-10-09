@@ -139,7 +139,8 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
     }
 
     private static async Task<MssqlGeneratedDdlTestDatabase> CreateEmptyAsync(
-        MssqlProvisioningTimingContext context
+        MssqlProvisioningTimingContext context,
+        string? databaseCollation = null
     )
     {
         var stopwatch = Stopwatch.StartNew();
@@ -160,7 +161,8 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
 
             await MssqlTestDatabaseHelper.CreateGeneratedDdlDatabaseAsync(
                 databaseName,
-                useExplicitFileSizing: IsDirectLeaseStrategy(context.LeaseStrategy)
+                useExplicitFileSizing: IsDirectLeaseStrategy(context.LeaseStrategy),
+                databaseCollation
             );
 
             return new MssqlGeneratedDdlTestDatabase(
@@ -209,12 +211,17 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Creates a database and applies <paramref name="generatedDdl"/>. <paramref name="databaseCollation"/>
+    /// optionally overrides the server default database collation.
+    /// </summary>
     public static async Task<MssqlGeneratedDdlTestDatabase> CreateProvisionedAsync(
         string generatedDdl,
         int commandTimeoutSeconds = DefaultCommandTimeoutSeconds,
         string fixtureSignature = "",
         string generatedDdlHash = "",
         string leaseStrategy = MssqlProvisioningTimingRecorder.DirectLeaseStrategy,
+        string? databaseCollation = null,
         [CallerMemberName] string callerMemberName = "",
         [CallerFilePath] string callerFilePath = "",
         [CallerLineNumber] int callerLineNumber = 0
@@ -234,13 +241,14 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
             callerLineNumber
         );
 
-        return await CreateProvisionedAsync(generatedDdl, commandTimeoutSeconds, context);
+        return await CreateProvisionedAsync(generatedDdl, commandTimeoutSeconds, context, databaseCollation);
     }
 
     internal static async Task<MssqlGeneratedDdlTestDatabase> CreateProvisionedAsync(
         string generatedDdl,
         int commandTimeoutSeconds,
-        MssqlProvisioningTimingContext context
+        MssqlProvisioningTimingContext context,
+        string? databaseCollation = null
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(generatedDdl);
@@ -254,7 +262,7 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         {
             await using var provisionSlot = await AcquireGeneratedDdlProvisionSlotAsync();
 
-            database = await CreateEmptyAsync(context);
+            database = await CreateEmptyAsync(context, databaseCollation);
             databaseName = database.DatabaseName;
             await database.ApplyGeneratedDdlAsync(generatedDdl, commandTimeoutSeconds, context);
             return database;

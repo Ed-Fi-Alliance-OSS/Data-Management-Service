@@ -167,6 +167,11 @@ public class Given_Identifier_Shortening_Collision_In_Derived_Model_Set
         public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
 
         /// <summary>
+        /// Gets the identity-equality contract.
+        /// </summary>
+        public IdentityEqualityContract IdentityEquality => IdentityEqualityContract.Postgresql;
+
+        /// <summary>
         /// Shorten identifier.
         /// </summary>
         public string ShortenIdentifier(string identifier)
@@ -332,6 +337,11 @@ public class Given_Primary_Key_Identifier_Shortening_Collision_In_Derived_Model_
         /// Gets the scalar type defaults reused by this fixture rules implementation.
         /// </summary>
         public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
+
+        /// <summary>
+        /// Gets the identity-equality contract.
+        /// </summary>
+        public IdentityEqualityContract IdentityEquality => IdentityEqualityContract.Postgresql;
 
         /// <summary>
         /// Shortens primary key identifiers to a fixed collision string to trigger a collision error.
@@ -506,6 +516,11 @@ public class Given_Abstract_Union_Arm_Source_Table_Shortening_Collision
         public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
 
         /// <summary>
+        /// Gets the identity-equality contract.
+        /// </summary>
+        public IdentityEqualityContract IdentityEquality => IdentityEqualityContract.Postgresql;
+
+        /// <summary>
         /// Shortens identifiers by applying the configured mapping.
         /// </summary>
         public string ShortenIdentifier(string identifier)
@@ -638,6 +653,11 @@ public class Given_Tracked_Change_Schema_Shortening_Collision
         /// Gets the scalar type defaults reused by this fixture rules implementation.
         /// </summary>
         public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
+
+        /// <summary>
+        /// Gets the identity-equality contract.
+        /// </summary>
+        public IdentityEqualityContract IdentityEquality => IdentityEqualityContract.Postgresql;
 
         /// <summary>
         /// Shortens identifiers by applying the configured mapping.
@@ -887,6 +907,14 @@ internal sealed class TrackedChangeConstraintCollisionDialectRules : ISqlDialect
         Dialect == SqlDialect.Mssql ? MssqlDefaults : PgsqlDefaults;
 
     /// <summary>
+    /// Gets the identity-equality contract for the configured dialect.
+    /// </summary>
+    public IdentityEqualityContract IdentityEquality =>
+        Dialect == SqlDialect.Mssql
+            ? IdentityEqualityContract.SqlServer
+            : IdentityEqualityContract.Postgresql;
+
+    /// <summary>
     /// Shortens identifiers by applying the configured mapping.
     /// </summary>
     public string ShortenIdentifier(string identifier)
@@ -1059,6 +1087,11 @@ public class Given_Abstract_Union_Arm_Source_Column_Shortening_Collision
         /// Gets the scalar type defaults reused by this fixture rules implementation.
         /// </summary>
         public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
+
+        /// <summary>
+        /// Gets the identity-equality contract.
+        /// </summary>
+        public IdentityEqualityContract IdentityEquality => IdentityEqualityContract.Postgresql;
 
         /// <summary>
         /// Shortens identifiers by applying the configured mapping.

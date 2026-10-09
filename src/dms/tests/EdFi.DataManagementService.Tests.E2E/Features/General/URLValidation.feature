@@ -391,6 +391,37 @@ Feature: Validation of the structure of the URLs
                     }
                   """
 
+        # ClassPeriodName is ClassPeriod identity. SQL Server pins identity columns to a case-insensitive
+        # collation, so the case-variant value matches; PostgreSQL identity storage is case-sensitive.
+        @API-235 @DMS-1443
+        @e2e-ci-shard-4 @MssqlOnly @MssqlRepresentative
+        Scenario: 12 Ensure client can retrieve information through a case insensitive query on SQL Server
+             When a GET request is made to "/ed-fi/classPeriods?classPeriodName=CLASS+pERIOD+test"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                      {
+                          "id": "{id}",
+                          "schoolReference": {
+                              "schoolId": 255901044
+                          },
+                          "classPeriodName": "Class Period Test",
+                          "officialAttendancePeriod": true
+                      }
+                  ]
+                  """
+
+        @API-235 @DMS-1443
+        @e2e-ci-shard-4 @PostgresqlOnly
+        Scenario: 12.1 Ensure client gets no match for a case-variant query value on PostgreSQL
+             When a GET request is made to "/ed-fi/classPeriods?classPeriodName=CLASS+pERIOD+test"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  []
+                  """
+
         @API-250
         @e2e-ci-shard-4
         Scenario: 13 Ensure client can retrieve information through a case insensitive query parameter

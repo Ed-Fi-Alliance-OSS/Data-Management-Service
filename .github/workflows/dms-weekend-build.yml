@@ -173,7 +173,7 @@ jobs:
         # under which a collection an E2E scenario can seed over HTTP is cut into more than one
         # partition, and runs per-PR in run-e2e-tests-partition-sizing.
         # The non-empty filter writes the filtered TRX uploaded by the following step.
-        run: ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)'
+        run: ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)&(Category!=@MssqlOnly)'
 
       - name: Export DMS E2E Docker Logs
         if: always() && steps.e2e.outcome == 'failure'

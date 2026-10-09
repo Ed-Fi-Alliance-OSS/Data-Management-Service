@@ -473,7 +473,7 @@ public class Given_DescriptorQueryPageKeysetPlanner
 
     [Test]
     [TestCase(SqlDialect.Pgsql, "r.\"CodeValue\" = @codeValue")]
-    [TestCase(SqlDialect.Mssql, "r.[CodeValue] COLLATE Latin1_General_100_BIN2 = @codeValue")]
+    [TestCase(SqlDialect.Mssql, "r.[CodeValue] = @codeValue")]
     public void It_should_preserve_mixed_case_string_filter_values_and_reuse_them_in_total_count_sql(
         SqlDialect dialect,
         string expectedPredicateFragment

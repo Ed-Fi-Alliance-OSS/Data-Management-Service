@@ -711,6 +711,14 @@ file sealed class MappedDialectRules : ISqlDialectRules
     public SqlScalarTypeDefaults ScalarTypeDefaults => _defaults;
 
     /// <summary>
+    /// Gets the identity-equality contract.
+    /// </summary>
+    public IdentityEqualityContract IdentityEquality =>
+        _dialect == SqlDialect.Mssql
+            ? IdentityEqualityContract.SqlServer
+            : IdentityEqualityContract.Postgresql;
+
+    /// <summary>
     /// Shorten identifier.
     /// </summary>
     public string ShortenIdentifier(string identifier)

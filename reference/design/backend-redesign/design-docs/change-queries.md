@@ -1181,11 +1181,17 @@ Tracked-change system columns are fixed by role, not by ApiSchema value metadata
 
 The `TrackedChangeColumnInfo` value-column list should include the corresponding columns that result from combining the `IdentityJsonPaths` and `SecurableElements` paths from the resource's ApiSchema.json. They should be included twice, with `Old` and `New` prefixes applied directly to the source column name, for example `OldSchoolId_Unified` and `NewStudent_DocumentId`.
 
-DMS-1404 retains each provider's existing collation for historical identity/component strings.
-Current descriptor recreation and history custom-view seeks compare retained `Namespace` and
-`CodeValue` components separately. They do not adopt the future lowered-whole-URI equality or a
-new identity collation. Explicit SQL Server identity collation and whole-URI recreation probes are
-later Epic 21 work (DMS-1443 and DMS-1455); they do not gate this compact schema.
+On SQL Server, every string `TrackedChangeColumnInfo` whose origin includes identity is a copied
+identity value and must be emitted with the DMS identity collation,
+`COLLATE SQL_Latin1_General_CP1_CI_AS`. This includes descriptor `Namespace`/`CodeValue`
+projections and the shared descriptor table's `Old*`/`New*` `Namespace`/`CodeValue`. Change Query
+`/deletes` anti-joins compare these historical `Old*` values to live identity columns to detect
+recreated rows; letting them inherit a case-sensitive database default would make those probes
+default-dependent or collation-conflicted. Routing-only values such as the shared descriptor
+`ResourceKeyId` are not identity text. Current descriptor recreation and history custom-view seeks
+compare the retained `Namespace` and `CodeValue` components separately; whole-URI recreation probes
+are later work. This identity-collation contract is owned by Epic 21 (DMS-1443, SQL Server identity
+collation contract; DMS-1455 for the Change Query descriptor probes).
 
 Each `TrackedChangeColumnInfo` carries `IsOldColumnNullable` and `IsNewColumnNullable` separately because tombstones populate only old values. `IsOldColumnNullable` follows the tracked source value's nullability. `IsNewColumnNullable` is normally `true` because delete tombstones leave `New*` columns null; key-change rows populate the new values when present.
 
@@ -1215,30 +1221,30 @@ MSSQL table definition example for the Grade resource:
 ```sql
 CREATE TABLE [tracked_changes_edfi].[Grade]
 (
-    [OldGradeTypeDescriptor_Namespace] nvarchar(255) NOT NULL,
-    [NewGradeTypeDescriptor_Namespace] nvarchar(255) NULL,
-    [OldGradeTypeDescriptor_CodeValue] nvarchar(50) NOT NULL,
-    [NewGradeTypeDescriptor_CodeValue] nvarchar(50) NULL,
-    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) NOT NULL,
-    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) NULL,
-    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) NOT NULL,
-    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) NULL,
-    [OldGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) NOT NULL,
-    [NewGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) NULL,
+    [OldGradeTypeDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewGradeTypeDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldGradeTypeDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewGradeTypeDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [OldSchoolId_Unified] bigint NOT NULL,
     [NewSchoolId_Unified] bigint NULL,
     [OldSchoolYear_Unified] int NOT NULL,
     [NewSchoolYear_Unified] int NULL,
     [OldStudentSectionAssociation_BeginDate] date NOT NULL,
     [NewStudentSectionAssociation_BeginDate] date NULL,
-    [OldStudentSectionAssociation_LocalCourseCode] nvarchar(60) NOT NULL,
-    [NewStudentSectionAssociation_LocalCourseCode] nvarchar(60) NULL,
-    [OldStudentSectionAssociation_SectionIdentifier] nvarchar(255) NOT NULL,
-    [NewStudentSectionAssociation_SectionIdentifier] nvarchar(255) NULL,
-    [OldStudentSectionAssociation_SessionName] nvarchar(60) NOT NULL,
-    [NewStudentSectionAssociation_SessionName] nvarchar(60) NULL,
-    [OldStudentSectionAssociation_StudentUniqueId] nvarchar(32) NOT NULL,
-    [NewStudentSectionAssociation_StudentUniqueId] nvarchar(32) NULL,
+    [OldStudentSectionAssociation_LocalCourseCode] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewStudentSectionAssociation_LocalCourseCode] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldStudentSectionAssociation_SectionIdentifier] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewStudentSectionAssociation_SectionIdentifier] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldStudentSectionAssociation_SessionName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewStudentSectionAssociation_SessionName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldStudentSectionAssociation_StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewStudentSectionAssociation_StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [OldStudentSectionAssociation_Student_DocumentId] bigint NOT NULL,
     [NewStudentSectionAssociation_Student_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
@@ -1256,10 +1262,10 @@ MSSQL table definition example for the shared `tracked_changes_edfi.Descriptor`:
 ```sql
 CREATE TABLE [tracked_changes_edfi].[Descriptor]
 (
-    [OldNamespace] nvarchar(255) NOT NULL,
-    [NewNamespace] nvarchar(255) NULL,
-    [OldCodeValue] nvarchar(50) NOT NULL,
-    [NewCodeValue] nvarchar(50) NULL,
+    [OldNamespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewNamespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldCodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewCodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [ResourceKeyId] smallint NOT NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
@@ -1346,7 +1352,8 @@ Both live and historical descriptor type predicates use the qualified `ResourceK
 primary key is independently allocated `int DescriptorId`; `bigint DocumentId` is its unique,
 non-null document association and remains the paging key when that anchor is selected. Uniqueness
 uses `UX_Descriptor_ResourceKeyId_Uri`: PostgreSQL indexes the unlowered whole-URI expression,
-and SQL Server indexes a non-persisted computed Uri under existing collation. Current recreation
+and SQL Server indexes a non-persisted computed Uri that inherits the DMS identity collation
+(`SQL_Latin1_General_CP1_CI_AS`) of its `Namespace` and `CodeValue` components. Current recreation
 probes retain component comparisons and must not be described as lowered-URI index seeks.
 
 **Compiled-mapping-set additions** (defined in [compiled-mapping-set.md](compiled-mapping-set.md)):
@@ -1968,11 +1975,12 @@ For DMS, emit `*_RefKey` with `DocumentId` last: `(<identity storage columns...>
 
 `*_RefKey` is emitted only for resources that some other resource references (`EnsureTargetUnique`). Never-referenced resources have no RefKey; their recreated-row anti-join keeps the plan available from `UX_<Table>_NK` (a partial seek on leading scalar identity parts plus a residual filter). That is the pre-existing behavior and is not changed by the natural-key design. If measurement shows it is too slow on high-volume never-referenced tables, the agreed remedy is to re-shape the anti-join onto the resource's own natural key using the compiled `OwnNaturalKeyProbe` in the future natural-key workstream (reference-sourced parts resolved by scalar subselects over the referenced targets' `RefKey`s, bound from the tombstone `Old*` scalars; descriptor parts via the lowered-URI + `ResourceKeyId` subselect), so the outer join seeks `UX_<Table>_NK`. See `natural-key-resolution.md` § "`/deletes` recreated-row detection on never-referenced resources".
 
-Descriptor `/deletes` retains its component-wise anti-join under existing provider collation:
-`ResourceKeyId`, `Namespace`, and `CodeValue`. Exact same-type component recreation suppresses
-the old tombstone; a different qualified descriptor type does not. The required regressions show
-case-only and trailing-namespace-space recreation suppressed on the tested SQL Server collation,
-but retained on PostgreSQL. Different component pairs that reconstruct the exact same URI remain
+Descriptor `/deletes` retains its component-wise anti-join: `ResourceKeyId`, `Namespace`, and
+`CodeValue`. On SQL Server both sides of the component comparison carry the DMS identity collation
+(`SQL_Latin1_General_CP1_CI_AS`), independent of the database default; PostgreSQL compares under its
+existing collation. Exact same-type component recreation suppresses the old tombstone; a different
+qualified descriptor type does not. The required regressions show case-only and
+trailing-namespace-space recreation suppressed on SQL Server, but retained on PostgreSQL. Different component pairs that reconstruct the exact same URI remain
 distinct for this history comparison on both providers. Responses still reconstruct the whole
 original-case URI from old components. Later DMS-1455 owns lowered-whole-URI recreation equality.
 
@@ -2320,8 +2328,9 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
 
 - `TrackedChangeTableInfo` creation for regular resources, concrete abstract resources, and the shared descriptor table.
 - `TrackedChangeColumnInfo` old/new column pairs and separate old/new nullability for identity paths, securable element paths, canonical key-unification storage columns, descriptor `Namespace`/`CodeValue` projections, and person `DocumentId` projections.
-- DMS-1404 emitted history strings and recreation predicates retain existing provider collation;
-  routing uses `smallint ResourceKeyId`. Explicit identity collation/lowered-URI probes remain future work.
+- SQL Server tracked-change `Old*`/`New*` string columns whose origin includes identity carry
+  `COLLATE SQL_Latin1_General_CP1_CI_AS`; PostgreSQL history strings keep the database collation.
+  Routing uses `smallint ResourceKeyId`. Lowered-URI probes remain future work.
 - `TrackedChangeDescriptorJoinInfo` and `TrackedChangePersonJoinInfo` paths used by trigger emitters, with value columns referencing them by join name rather than duplicating join definitions.
 - `DocumentStamping.ChangeTracking` attachment to the correct `TriggerKindParameters.DocumentStamping` trigger entries.
 - ChangeTracking key-change rows using the owning `DbTriggerInfo.IdentityProjectionColumns` workset, including key-unification cases where canonical storage columns change without direct alias-column updates, and presence-only alias changes do not emit key-change rows when the canonical identity storage values are unchanged.

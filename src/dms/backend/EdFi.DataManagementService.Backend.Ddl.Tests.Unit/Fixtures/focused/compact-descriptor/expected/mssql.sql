@@ -236,8 +236,8 @@ CREATE TABLE [dms].[Descriptor]
     [DescriptorId] int IDENTITY(1,1) NOT NULL,
     [DocumentId] bigint NOT NULL,
     [ResourceKeyId] smallint NOT NULL,
-    [Namespace] nvarchar(255) NOT NULL,
-    [CodeValue] nvarchar(50) NOT NULL,
+    [Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     [ShortDescription] nvarchar(75) NOT NULL,
     [Description] nvarchar(1024) NULL,
     [EffectiveBeginDate] date NULL,
@@ -767,7 +767,7 @@ CREATE TABLE [edfi].[ProfileRootOnlyMergeItem]
     [PrimarySchoolTypeDescriptor_Unified_DescriptorId] int NULL,
     [SecondarySchoolTypeDescriptor_DescriptorId_Present] bit NULL,
     [StudentReference_DocumentId] bigint NULL,
-    [StudentReference_StudentUniqueId] nvarchar(32) NULL,
+    [StudentReference_StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [StudentReference_SchoolTypeDescriptor_DescriptorId] int NULL,
     [PrimarySchoolTypeDescriptor_DescriptorId] AS (CASE WHEN [PrimarySchoolTypeDescriptor_DescriptorId_Present] IS NULL THEN NULL ELSE [PrimarySchoolTypeDescriptor_Unified_DescriptorId] END) PERSISTED,
     [SecondarySchoolTypeDescriptor_DescriptorId] AS (CASE WHEN [SecondarySchoolTypeDescriptor_DescriptorId_Present] IS NULL THEN NULL ELSE [PrimarySchoolTypeDescriptor_Unified_DescriptorId] END) PERSISTED,
@@ -822,7 +822,7 @@ CREATE TABLE [edfi].[Student]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Student_ContentVersion] DEFAULT 0,
     [SchoolTypeDescriptor_DescriptorId] int NOT NULL,
     [FirstName] nvarchar(75) NOT NULL,
-    [StudentUniqueId] nvarchar(32) NOT NULL,
+    [StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     CONSTRAINT [PK_Student] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_Student_NK] UNIQUE ([StudentUniqueId], [SchoolTypeDescriptor_DescriptorId]),
     CONSTRAINT [UX_Student_RefKey] UNIQUE ([StudentUniqueId], [SchoolTypeDescriptor_DescriptorId], [DocumentId])
@@ -831,10 +831,10 @@ CREATE TABLE [edfi].[Student]
 IF OBJECT_ID(N'tracked_changes_edfi.Descriptor', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[Descriptor]
 (
-    [OldNamespace] nvarchar(255) NOT NULL,
-    [NewNamespace] nvarchar(255) NULL,
-    [OldCodeValue] nvarchar(50) NOT NULL,
-    [NewCodeValue] nvarchar(50) NULL,
+    [OldNamespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewNamespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldCodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewCodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [ResourceKeyId] smallint NOT NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
@@ -858,12 +858,12 @@ CREATE TABLE [tracked_changes_edfi].[ProfileRootOnlyMergeItem]
 IF OBJECT_ID(N'tracked_changes_edfi.Student', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[Student]
 (
-    [OldStudentUniqueId] nvarchar(32) NOT NULL,
-    [NewStudentUniqueId] nvarchar(32) NULL,
-    [OldSchoolTypeDescriptor_Namespace] nvarchar(255) NOT NULL,
-    [NewSchoolTypeDescriptor_Namespace] nvarchar(255) NULL,
-    [OldSchoolTypeDescriptor_CodeValue] nvarchar(50) NOT NULL,
-    [NewSchoolTypeDescriptor_CodeValue] nvarchar(50) NULL,
+    [OldStudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewStudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldSchoolTypeDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewSchoolTypeDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldSchoolTypeDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewSchoolTypeDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [DocumentId] bigint NOT NULL,

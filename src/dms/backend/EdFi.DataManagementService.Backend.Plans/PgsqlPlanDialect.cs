@@ -206,8 +206,7 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
         string tableAlias,
         DbColumnName column,
         string operatorToken,
-        string parameterName,
-        ScalarKind? scalarKind
+        string parameterName
     )
     {
         ArgumentNullException.ThrowIfNull(writer);

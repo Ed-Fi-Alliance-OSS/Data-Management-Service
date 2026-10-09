@@ -135,6 +135,16 @@ public sealed class CoreDdlEmitter
         $"{_dialect.Rules.ScalarTypeDefaults.StringType}({maxLength})";
 
     /// <summary>
+    /// Builds the string type for a descriptor identity text column
+    /// (<see cref="DescriptorIdentityTextColumns.All"/>), pinned to the dialect's identity text collation
+    /// when it declares one.
+    /// </summary>
+    private string IdentityTextType(int maxLength) =>
+        _dialect.Rules.IdentityEquality.IdentityTextCollation is { } collation
+            ? $"{StringType(maxLength)} COLLATE {collation}"
+            : StringType(maxLength);
+
+    /// <summary>
     /// Gets the exact ASCII lifecycle-token type. SQL Server intentionally uses varchar plus
     /// binary collation so DATALENGTH checks match the fixed token byte lengths.
     /// </summary>
@@ -437,9 +447,11 @@ public sealed class CoreDdlEmitter
                 $"{_dialect.RenderColumnDefinition(Col("ResourceKeyId"), _dialect.SmallintColumnType, false)},"
             );
             writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("Namespace"), StringType(255), false)},"
+                $"{_dialect.RenderColumnDefinition(DescriptorIdentityTextColumns.Namespace, IdentityTextType(255), false)},"
             );
-            writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("CodeValue"), StringType(50), false)},");
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinition(DescriptorIdentityTextColumns.CodeValue, IdentityTextType(50), false)},"
+            );
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinition(Col("ShortDescription"), StringType(75), false)},"
             );
@@ -453,7 +465,7 @@ public sealed class CoreDdlEmitter
             if (_dialect.Rules.Dialect == SqlDialect.Mssql)
             {
                 // The index stores the reconstructed URI; the base row does not. Both components
-                // inherit the database collation, just as the former stored Uri column did.
+                // carry the identity text collation, which the computed Uri inherits.
                 writer.AppendLine($"{Quote("Uri")} AS ({Quote("Namespace")} + N'#' + {Quote("CodeValue")}),");
             }
             writer.AppendLine(

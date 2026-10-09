@@ -69,8 +69,10 @@ The build script performs the Docker setup, provisions `E2E_DATABASE_NAME` with 
 Example shard run from the repository root:
 
 ```powershell
-./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-3'
+./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category=@e2e-ci-shard-3)&(Category!=@MssqlOnly)'
 ```
+
+PostgreSQL runs exclude `@MssqlOnly` and SQL Server runs exclude `@PostgresqlOnly`; see the E2E README for each lane's filter.
 
 The direct setup path is also valid for local relational E2E testing. `pwsh ./setup-local-dms.ps1 -EnvironmentFile ./.env.e2e` configures the CMS data store to use `E2E_DATABASE_NAME`, provisions that database with generated DDL including `dms."EffectiveSchema"`, and starts DMS after provisioning. Direct `dotnet test` is valid after this setup when the test process is configured for the same database; the default `.env.e2e` and E2E `appsettings.json` both use `edfi_datamanagementservice_e2e`. If a custom environment file changes `E2E_DATABASE_NAME`, also set `AppSettings__DataStoreDatabaseName` to that value for direct `dotnet test` runs.
 

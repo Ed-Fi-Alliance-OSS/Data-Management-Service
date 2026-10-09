@@ -136,6 +136,11 @@ public class Given_Identifier_Collision_Detector_With_Duplicate_Origins
         public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
 
         /// <summary>
+        /// Gets the identity-equality contract.
+        /// </summary>
+        public IdentityEqualityContract IdentityEquality => IdentityEqualityContract.Postgresql;
+
+        /// <summary>
         /// Shorten identifier.
         /// </summary>
         public string ShortenIdentifier(string identifier)

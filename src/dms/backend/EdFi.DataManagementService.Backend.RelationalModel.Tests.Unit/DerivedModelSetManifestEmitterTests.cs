@@ -990,3 +990,122 @@ public class Given_A_Model_Set_With_People_Auth_Availability_When_Emitting_Manif
         );
     }
 }
+
+[TestFixture]
+public class Given_A_Mssql_Model_Set_With_Identity_Collation_When_Emitting_Detailed_Manifest
+{
+    private const string FlagProperty = "uses_sql_server_identity_collation";
+    private JsonObject[] _manifestObjects = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var derivedSet = IdentityCollationTestHelpers.BuildSet(
+            new MssqlDialectRules(),
+            IdentityCollationTestSchemaBuilder.BuildCoreProjectSchema()
+        );
+        var manifest = DerivedModelSetManifestEmitter.Emit(
+            derivedSet,
+            new HashSet<QualifiedResourceName> { new("Ed-Fi", "School") }
+        );
+
+        _manifestObjects = IdentityCollationManifestTestHelpers
+            .EnumerateObjects(JsonNode.Parse(manifest)!)
+            .ToArray();
+    }
+
+    [Test]
+    public void It_writes_the_flag_on_a_flagged_column()
+    {
+        _manifestObjects.Single(node => node["name"]?.GetValue<string>() == "SchoolCode")[FlagProperty]!
+            .GetValue<bool>()
+            .Should()
+            .BeTrue();
+    }
+
+    [Test]
+    public void It_omits_the_flag_on_an_unflagged_column()
+    {
+        _manifestObjects
+            .Single(node => node["name"]?.GetValue<string>() == "NameOfInstitution")
+            .ContainsKey(FlagProperty)
+            .Should()
+            .BeFalse();
+    }
+
+    [Test]
+    public void It_writes_the_flag_on_a_flagged_tracked_change_value_column()
+    {
+        _manifestObjects.Single(node => node["old_column"]?.GetValue<string>() == "OldSchoolCode")[
+            FlagProperty
+        ]!
+            .GetValue<bool>()
+            .Should()
+            .BeTrue();
+    }
+
+    [Test]
+    public void It_omits_the_flag_on_an_unflagged_tracked_change_value_column()
+    {
+        _manifestObjects
+            .Single(node => node["old_column"]?.GetValue<string>() == "OldOfferingNumber")
+            .ContainsKey(FlagProperty)
+            .Should()
+            .BeFalse();
+    }
+}
+
+[TestFixture]
+public class Given_A_Pgsql_Model_Set_With_Identity_Columns_When_Emitting_Detailed_Manifest
+{
+    private string _manifest = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var derivedSet = IdentityCollationTestHelpers.BuildSet(
+            new PgsqlDialectRules(),
+            IdentityCollationTestSchemaBuilder.BuildCoreProjectSchema()
+        );
+
+        _manifest = DerivedModelSetManifestEmitter.Emit(
+            derivedSet,
+            new HashSet<QualifiedResourceName> { new("Ed-Fi", "School") }
+        );
+    }
+
+    [Test]
+    public void It_writes_no_identity_collation_flag()
+    {
+        _manifest.Should().NotContain("uses_sql_server_identity_collation");
+    }
+}
+
+internal static class IdentityCollationManifestTestHelpers
+{
+    internal static IEnumerable<JsonObject> EnumerateObjects(JsonNode node)
+    {
+        switch (node)
+        {
+            case JsonObject jsonObject:
+                yield return jsonObject;
+                foreach (var child in jsonObject.Select(property => property.Value).OfType<JsonNode>())
+                {
+                    foreach (var nested in EnumerateObjects(child))
+                    {
+                        yield return nested;
+                    }
+                }
+                break;
+            case JsonArray jsonArray:
+                foreach (var child in jsonArray.OfType<JsonNode>())
+                {
+                    foreach (var nested in EnumerateObjects(child))
+                    {
+                        yield return nested;
+                    }
+                }
+                break;
+        }
+    }
+}

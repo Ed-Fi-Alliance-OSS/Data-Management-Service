@@ -676,7 +676,8 @@
             "max_length": 20
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity",
+          "uses_sql_server_identity_collation": true
         }
       ],
       "system_columns": [
@@ -852,7 +853,8 @@
               "source_path": "$.programName",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             }
           ],
           "key_unification_classes": [],
@@ -1243,7 +1245,8 @@
               "source_path": "$._ext.sample.interventions[*].interventionCode",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             }
           ],
           "key_unification_classes": [],
@@ -1367,7 +1370,8 @@
               "source_path": "$.addresses[*].city",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             }
           ],
           "key_unification_classes": [],
@@ -1515,7 +1519,8 @@
               "source_path": "$._ext.sample.addresses[*]._ext.sample.sponsorReferences[*].programReference.programName",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             }
           ],
           "key_unification_classes": [],
@@ -1671,7 +1676,8 @@
               "source_path": "$._ext.sample.interventions[*].visits[*].visitCode",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             }
           ],
           "key_unification_classes": [],
@@ -1801,7 +1807,8 @@
               "source_path": "$.addresses[*].periods[*].periodName",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             }
           ],
           "key_unification_classes": [],

@@ -340,7 +340,8 @@
             "max_length": 60
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity",
+          "uses_sql_server_identity_collation": true
         }
       ],
       "system_columns": [
@@ -541,7 +542,8 @@
               "source_path": "$.programName",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             }
           ],
           "key_unification_classes": [],
@@ -794,7 +796,8 @@
               "source_path": "$.programs[*].programReference.programName",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             },
             {
               "name": "PrimaryIndicator",

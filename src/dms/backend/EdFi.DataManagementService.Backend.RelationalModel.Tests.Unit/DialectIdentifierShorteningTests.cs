@@ -582,6 +582,11 @@ public class Given_Short_Identifier_Limit
         public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
 
         /// <summary>
+        /// Gets the identity-equality contract.
+        /// </summary>
+        public IdentityEqualityContract IdentityEquality => IdentityEqualityContract.Postgresql;
+
+        /// <summary>
         /// Shortens an identifier by truncating it to <see cref="MaxIdentifierLength"/>.
         /// </summary>
         public string ShortenIdentifier(string identifier)
