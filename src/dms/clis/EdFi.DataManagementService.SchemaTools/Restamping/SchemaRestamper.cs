@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Runtime.ExceptionServices;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.SchemaTools.Provisioning;
 using Microsoft.Data.SqlClient;
@@ -261,17 +262,19 @@ public sealed class SchemaRestamper : ISchemaRestamper
         CancellationToken cancellationToken
     )
     {
-        using var command = CreateCommand(connection, transaction, sql, timeout);
-        if (dialect == SqlDialect.Pgsql)
-        {
-            await command.ExecuteNonQueryAsync(cancellationToken);
-            return;
-        }
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            _ = reader.GetValue(0);
-        }
+        var command = CreateCommand(connection, transaction, sql, timeout);
+        await WithReaderAsync(
+            command,
+            cancellationToken,
+            async reader =>
+            {
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    _ = reader.GetValue(0);
+                }
+            },
+            executeWithoutReader: dialect == SqlDialect.Pgsql
+        );
     }
 
     private static async Task<SchemaRestampSnapshot> ReadSnapshotAsync(
@@ -283,80 +286,68 @@ public sealed class SchemaRestamper : ISchemaRestamper
     )
     {
         List<SchemaRestampFingerprint> fingerprints = [];
-        using (
-            var command = CreateCommand(
-                connection,
-                transaction,
-                SchemaRestampSql.ReadFingerprint(dialect),
-                timeout
-            )
-        )
-        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
-        {
-            while (await reader.ReadAsync(cancellationToken))
+        await WithReaderAsync(
+            CreateCommand(connection, transaction, SchemaRestampSql.ReadFingerprint(dialect), timeout),
+            cancellationToken,
+            async reader =>
             {
-                fingerprints.Add(
-                    new SchemaRestampFingerprint(
-                        Required<short>(reader, 0, "dms.EffectiveSchema"),
-                        Required<string>(reader, 1, "dms.EffectiveSchema"),
-                        Required<string>(reader, 2, "dms.EffectiveSchema"),
-                        Required<short>(reader, 3, "dms.EffectiveSchema"),
-                        Required<byte[]>(reader, 4, "dms.EffectiveSchema")
-                    )
-                );
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    fingerprints.Add(
+                        new SchemaRestampFingerprint(
+                            Required<short>(reader, 0, "dms.EffectiveSchema"),
+                            Required<string>(reader, 1, "dms.EffectiveSchema"),
+                            Required<string>(reader, 2, "dms.EffectiveSchema"),
+                            Required<short>(reader, 3, "dms.EffectiveSchema"),
+                            Required<byte[]>(reader, 4, "dms.EffectiveSchema")
+                        )
+                    );
+                }
             }
-        }
+        );
 
         List<ResourceKeyRow> resourceKeys = [];
-        using (
-            var command = CreateCommand(
-                connection,
-                transaction,
-                SchemaRestampSql.ReadResourceKeys(dialect),
-                timeout
-            )
-        )
-        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
-        {
-            while (await reader.ReadAsync(cancellationToken))
+        await WithReaderAsync(
+            CreateCommand(connection, transaction, SchemaRestampSql.ReadResourceKeys(dialect), timeout),
+            cancellationToken,
+            async reader =>
             {
-                resourceKeys.Add(
-                    new ResourceKeyRow(
-                        Required<short>(reader, 0, "dms.ResourceKey"),
-                        Required<string>(reader, 1, "dms.ResourceKey"),
-                        Required<string>(reader, 2, "dms.ResourceKey"),
-                        Required<string>(reader, 3, "dms.ResourceKey")
-                    )
-                );
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    resourceKeys.Add(
+                        new ResourceKeyRow(
+                            Required<short>(reader, 0, "dms.ResourceKey"),
+                            Required<string>(reader, 1, "dms.ResourceKey"),
+                            Required<string>(reader, 2, "dms.ResourceKey"),
+                            Required<string>(reader, 3, "dms.ResourceKey")
+                        )
+                    );
+                }
             }
-        }
+        );
 
         List<SchemaRestampComponent> components = [];
-        using (
-            var command = CreateCommand(
-                connection,
-                transaction,
-                SchemaRestampSql.ReadComponents(dialect),
-                timeout
-            )
-        )
-        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
-        {
-            while (await reader.ReadAsync(cancellationToken))
+        await WithReaderAsync(
+            CreateCommand(connection, transaction, SchemaRestampSql.ReadComponents(dialect), timeout),
+            cancellationToken,
+            async reader =>
             {
-                components.Add(
-                    new SchemaRestampComponent(
-                        Required<string>(reader, 0, "dms.SchemaComponent"),
-                        new SchemaComponentRow(
-                            Required<string>(reader, 1, "dms.SchemaComponent"),
-                            Required<string>(reader, 2, "dms.SchemaComponent"),
-                            Required<string>(reader, 3, "dms.SchemaComponent"),
-                            Required<bool>(reader, 4, "dms.SchemaComponent")
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    components.Add(
+                        new SchemaRestampComponent(
+                            Required<string>(reader, 0, "dms.SchemaComponent"),
+                            new SchemaComponentRow(
+                                Required<string>(reader, 1, "dms.SchemaComponent"),
+                                Required<string>(reader, 2, "dms.SchemaComponent"),
+                                Required<string>(reader, 3, "dms.SchemaComponent"),
+                                Required<bool>(reader, 4, "dms.SchemaComponent")
+                            )
                         )
-                    )
-                );
+                    );
+                }
             }
-        }
+        );
         return new SchemaRestampSnapshot(fingerprints, resourceKeys, components);
     }
 
@@ -378,7 +369,7 @@ public sealed class SchemaRestamper : ISchemaRestamper
         params (string Name, object Value)[] parameters
     )
     {
-        using var command = CreateCommand(connection, transaction, sql, timeout);
+        var command = CreateCommand(connection, transaction, sql, timeout);
         foreach (var (name, value) in parameters)
         {
             var parameter = command.CreateParameter();
@@ -386,7 +377,71 @@ public sealed class SchemaRestamper : ISchemaRestamper
             parameter.Value = value;
             command.Parameters.Add(parameter);
         }
-        return await command.ExecuteNonQueryAsync(cancellationToken);
+        return await WithAsyncResource(
+            command,
+            currentCommand => currentCommand.ExecuteNonQueryAsync(cancellationToken)
+        );
+    }
+
+    private static async Task WithReaderAsync(
+        DbCommand command,
+        CancellationToken cancellationToken,
+        Func<DbDataReader, Task> read,
+        bool executeWithoutReader = false
+    )
+    {
+        await WithAsyncResource(
+            command,
+            async currentCommand =>
+            {
+                if (executeWithoutReader)
+                {
+                    await currentCommand.ExecuteNonQueryAsync(cancellationToken);
+                    return true;
+                }
+
+                var reader = await currentCommand.ExecuteReaderAsync(cancellationToken);
+                await WithAsyncResource(
+                    reader,
+                    async currentReader =>
+                    {
+                        await read(currentReader);
+                        return true;
+                    }
+                );
+                return true;
+            }
+        );
+    }
+
+    private static async Task<TResult> WithAsyncResource<TResource, TResult>(
+        TResource resource,
+        Func<TResource, Task<TResult>> operation
+    )
+        where TResource : IAsyncDisposable
+    {
+        TResult result;
+        try
+        {
+            result = await operation(resource);
+        }
+        catch (Exception exception)
+        {
+            try
+            {
+                await resource.DisposeAsync();
+            }
+            catch
+            {
+                // Keep cleanup from replacing the operation's primary failure.
+            }
+
+            ExceptionDispatchInfo.Capture(exception).Throw();
+            throw;
+        }
+
+        await resource.DisposeAsync();
+        return result;
     }
 
     private static DbCommand CreateCommand(
@@ -435,6 +490,13 @@ public sealed class SchemaRestamper : ISchemaRestamper
                 _ => new(SchemaRestampFailure.TransactionFailed, "The re-stamp database transaction failed."),
             };
         }
+        if (exception is NpgsqlException && HasInnerTimeoutException(exception))
+        {
+            return new SchemaRestampException(
+                SchemaRestampFailure.Timeout,
+                "The re-stamp database command timed out."
+            );
+        }
         if (exception is SqlException ms)
         {
             return ms.Number switch
@@ -469,5 +531,22 @@ public sealed class SchemaRestamper : ISchemaRestamper
             SchemaRestampFailure.TransactionFailed,
             "The re-stamp database transaction failed."
         );
+    }
+
+    private static bool HasInnerTimeoutException(Exception exception)
+    {
+        for (
+            Exception? current = exception.InnerException;
+            current is not null;
+            current = current.InnerException
+        )
+        {
+            if (current is TimeoutException)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

@@ -20,6 +20,7 @@ public class Given_SchemaRestamp_Pgsql_Compatible_Transition
     private string _databaseName = null!;
     private string _connectionString = null!;
     private EffectiveSchemaInfo _target = null!;
+    private string? _restrictedRole;
     private readonly string _oldHash = new('a', 64);
 
     [SetUp]
@@ -45,14 +46,32 @@ public class Given_SchemaRestamp_Pgsql_Compatible_Transition
     }
 
     [TearDown]
-    public void TearDown() => PostgresTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+    public void TearDown()
+    {
+        PostgresTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        if (_restrictedRole is not null)
+        {
+            using var connection = new NpgsqlConnection(
+                PostgresTestDatabaseHelper.BuildConnectionString("postgres")
+            );
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = $"DROP ROLE IF EXISTS \"{_restrictedRole}\";";
+            command.ExecuteNonQuery();
+        }
+    }
 
     [Test]
     public async Task It_commits_only_the_parent_and_child_hash_changes()
     {
         using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync();
+        ProvisionTestHelper.InsertRowsThatMustSurviveRerun(connection, "pgsql");
         var before = SchemaRestampTestHelper.Capture(connection, "pgsql");
+        var mutableStateBefore = ProvisionTestHelper.ReadDocumentCacheMutableStateSnapshot(
+            connection,
+            "pgsql"
+        );
         var result = await new SchemaRestamper(NullLogger.Instance).RestampAsync(
             SqlDialect.Pgsql,
             _connectionString,
@@ -70,6 +89,13 @@ public class Given_SchemaRestamp_Pgsql_Compatible_Transition
         after.Seed.Should().Be(before.Seed);
         after.AppliedAt.Should().Be(before.AppliedAt);
         after.Keys.Should().Equal(before.Keys);
+        after.Documents.Should().Equal(before.Documents);
+        after.CacheRows.Should().Equal(before.CacheRows);
+        after.ProjectionWork.Should().Equal(before.ProjectionWork);
+        ProvisionTestHelper
+            .ReadDocumentCacheMutableStateSnapshot(connection, "pgsql")
+            .Should()
+            .BeEquivalentTo(mutableStateBefore);
         after
             .Components.Should()
             .Equal(
@@ -189,6 +215,174 @@ public class Given_SchemaRestamp_Pgsql_Compatible_Transition
             .Which.Failure.Should()
             .Be(SchemaRestampFailure.TransactionFailed);
         SchemaRestampTestHelper.Capture(connection, "pgsql").Should().BeEquivalentTo(before);
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_restores_the_complete_metadata_snapshot_when_component_reinsertion_fails(
+        bool rejectLaterComponent
+    )
+    {
+        using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        var components = _target.SchemaComponentsInEndpointOrder;
+        var rejected = rejectLaterComponent ? components[^1] : components[0];
+        SchemaRestampTestHelper.InstallComponentInsertRejectingTrigger(
+            connection,
+            "pgsql",
+            rejected.ProjectEndpointName
+        );
+        var before = SchemaRestampTestHelper.Capture(connection, "pgsql");
+
+        Func<Task> action = () =>
+            new SchemaRestamper(NullLogger.Instance).RestampAsync(
+                SqlDialect.Pgsql,
+                _connectionString,
+                30,
+                _target,
+                true,
+                CancellationToken.None
+            );
+
+        (await action.Should().ThrowAsync<SchemaRestampException>())
+            .Which.Failure.Should()
+            .Be(SchemaRestampFailure.TransactionFailed);
+        SchemaRestampTestHelper.Capture(connection, "pgsql").Should().BeEquivalentTo(before);
+    }
+
+    [Test]
+    public async Task It_serializes_competing_same_target_transitions()
+    {
+        var restamper = new SchemaRestamper(NullLogger.Instance);
+        var results = await Task.WhenAll(
+            restamper.RestampAsync(
+                SqlDialect.Pgsql,
+                _connectionString,
+                30,
+                _target,
+                true,
+                CancellationToken.None
+            ),
+            restamper.RestampAsync(
+                SqlDialect.Pgsql,
+                _connectionString,
+                30,
+                _target,
+                true,
+                CancellationToken.None
+            )
+        );
+
+        results.Count(result => result.Changed).Should().Be(1);
+        results.Count(result => !result.Changed).Should().Be(1);
+        using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        SchemaRestampTestHelper.Capture(connection, "pgsql").Hash.Should().Be(_target.EffectiveSchemaHash);
+    }
+
+    [TestCase("format")]
+    [TestCase("count")]
+    [TestCase("component")]
+    public async Task It_rejects_corrupt_compatibility_metadata_without_mutating_it(string field)
+    {
+        using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        SchemaRestampTestHelper.CorruptMetadata(connection, "pgsql", field);
+        var before = SchemaRestampTestHelper.Capture(connection, "pgsql");
+
+        Func<Task> action = () =>
+            new SchemaRestamper(NullLogger.Instance).RestampAsync(
+                SqlDialect.Pgsql,
+                _connectionString,
+                30,
+                _target,
+                true,
+                CancellationToken.None
+            );
+
+        (await action.Should().ThrowAsync<SchemaRestampException>())
+            .Which.Failure.Should()
+            .Be(SchemaRestampFailure.Validation);
+        SchemaRestampTestHelper.Capture(connection, "pgsql").Should().BeEquivalentTo(before);
+    }
+
+    [Test]
+    public async Task It_times_out_while_another_transaction_holds_the_metadata_lock()
+    {
+        using var blocker = new NpgsqlConnection(_connectionString);
+        await blocker.OpenAsync();
+        await using var transaction = await blocker.BeginTransactionAsync();
+        await using (var lockCommand = blocker.CreateCommand())
+        {
+            lockCommand.Transaction = transaction;
+            lockCommand.CommandText = "LOCK TABLE dms.\"EffectiveSchema\" IN ACCESS EXCLUSIVE MODE;";
+            await lockCommand.ExecuteNonQueryAsync();
+        }
+
+        Func<Task> action = () =>
+            new SchemaRestamper(NullLogger.Instance).RestampAsync(
+                SqlDialect.Pgsql,
+                _connectionString,
+                1,
+                _target,
+                true,
+                CancellationToken.None
+            );
+
+        try
+        {
+            (await action.Should().ThrowAsync<SchemaRestampException>())
+                .Which.Failure.Should()
+                .Be(SchemaRestampFailure.Timeout);
+        }
+        finally
+        {
+            await transaction.RollbackAsync();
+        }
+        using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        SchemaRestampTestHelper.Capture(connection, "pgsql").Hash.Should().Be(_oldHash);
+    }
+
+    [Test]
+    public async Task It_reports_restricted_metadata_privileges_without_committing_a_transition()
+    {
+        _restrictedRole = $"restamp_reader_{Guid.NewGuid():N}";
+        var password = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
+        using (var admin = new NpgsqlConnection(_connectionString))
+        {
+            await admin.OpenAsync();
+            using var command = admin.CreateCommand();
+            command.CommandText = $"""
+                CREATE ROLE "{_restrictedRole}" LOGIN PASSWORD '{password}';
+                GRANT CONNECT ON DATABASE "{_databaseName}" TO "{_restrictedRole}";
+                GRANT USAGE ON SCHEMA dms TO "{_restrictedRole}";
+                GRANT SELECT ON ALL TABLES IN SCHEMA dms TO "{_restrictedRole}";
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+        var restricted = new NpgsqlConnectionStringBuilder(_connectionString)
+        {
+            Username = _restrictedRole,
+            Password = password,
+        };
+
+        Func<Task> action = () =>
+            new SchemaRestamper(NullLogger.Instance).RestampAsync(
+                SqlDialect.Pgsql,
+                restricted.ConnectionString,
+                30,
+                _target,
+                true,
+                CancellationToken.None
+            );
+
+        (await action.Should().ThrowAsync<SchemaRestampException>())
+            .Which.Failure.Should()
+            .Be(SchemaRestampFailure.PermissionDenied);
+        using var verify = new NpgsqlConnection(_connectionString);
+        await verify.OpenAsync();
+        SchemaRestampTestHelper.Capture(verify, "pgsql").Hash.Should().Be(_oldHash);
     }
 
     [Test]

@@ -165,6 +165,40 @@ api-schema-tools ddl provision -s core/ApiSchema.json -s extensions/tpdm/ApiSche
 SQL Server RCSI configuration for newly created databases, and RCSI warnings for
 existing databases, run outside and before the generated DDL transaction.
 
+Provisioning always creates the fixed `dms.DataStoreIdentity`, `dms.DocumentCache`,
+`dms.DocumentProjectionWork`, and `dms.DocumentCacheState` objects. Their physical shape
+is owned by
+[`data-model.md`](../../../../reference/design/backend-redesign/design-docs/data-model.md);
+cached-document semantics are owned by the
+[`Cached Document Contract`](../../../../reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract);
+transactional-enqueue semantics are owned by
+[`Transactional Enqueue`](../../../../reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#transactional-enqueue);
+create-only DDL behavior is owned by
+[`ddl-generation.md`](../../../../reference/design/backend-redesign/design-docs/ddl-generation.md#provision-semantics-create-only-no-migrations);
+schema/query integration is owned by
+[`cdc-streaming.md`](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#schema-and-query-integration);
+and the `CDC-INV-02` / `CDC-INV-03` traceability rows live under
+[`Contract-to-Evidence Traceability`](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-to-evidence-traceability).
+
+Provisioning is create-only. Its phase-zero checks are limited to the effective-schema
+hash, `dms.DataStoreIdentity` and `dms.DocumentCacheState` singleton safety, known legacy
+DocumentCache artifacts (`DocumentCache.Etag`, `UX_DocumentCache_DocumentUuid`, and
+`IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt`), and PostgreSQL
+enqueue-owner prerequisites. It does not migrate old cache shapes, reconcile arbitrary
+drift, or classify every partial database state. A completed same-hash rerun preserves
+`SourceIdentity`, projection lifecycle, `CacheAheadRecoveryRequired`, cache rows, pending
+work, and enqueue timestamps, while compatible existence checks and replaceable
+functions/triggers can finish or refresh generated definitions. Known legacy cache
+artifacts require dropping and recreating the database.
+
+PostgreSQL provisioning requires capability to create or refresh the locked-down
+`NOLOGIN` `edfi_dms_enqueue_owner` role used to own the security-definer enqueue
+functions. That role is not a runtime DMS credential. SQL Server uses same-owner trigger
+execution over the referenced `dms` tables and emits no `EXECUTE AS`, enqueue user, or
+enqueue role. Runtime projection, projection administration, health/readiness,
+cache-backed reads, complete target eligibility validation, CDC capture objects, and CDC
+reader grants are outside this CLI provisioning contract.
+
 ### `ddl re-stamp` — Record a validated physical schema migration
 
 This administrative operation changes the effective schema fingerprint metadata
@@ -192,40 +226,6 @@ provider-specific physical migration, run `ddl re-stamp`, run ordinary
 create-only and rejects an ordinary mismatched fingerprint. The operation does
 not guarantee rollback of the physical migration and makes no claim about CDC
 continuity. See the [schema fingerprint operations guide](../../../../docs/RELATIONAL-BACKEND.md#re-stamping-after-a-validated-physical-migration).
-
-Provisioning always creates the fixed `dms.DataStoreIdentity`, `dms.DocumentCache`,
-`dms.DocumentProjectionWork`, and `dms.DocumentCacheState` objects. Their physical shape
-is owned by
-[`data-model.md`](../../../../reference/design/backend-redesign/design-docs/data-model.md);
-cached-document semantics are owned by the
-[`Cached Document Contract`](../../../../reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cached-document-contract);
-transactional-enqueue semantics are owned by
-[`Transactional Enqueue`](../../../../reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#transactional-enqueue);
-create-only DDL behavior is owned by
-[`ddl-generation.md`](../../../../reference/design/backend-redesign/design-docs/ddl-generation.md#provision-semantics-create-only-no-migrations);
-schema/query integration is owned by
-[`cdc-streaming.md`](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#schema-and-query-integration);
-and the `CDC-INV-02` / `CDC-INV-03` traceability rows live under
-[`Contract-to-Evidence Traceability`](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-to-evidence-traceability).
-
-This command is create-only. Its phase-zero checks are limited to the effective-schema
-hash, `dms.DataStoreIdentity` and `dms.DocumentCacheState` singleton safety, known legacy
-DocumentCache artifacts (`DocumentCache.Etag`, `UX_DocumentCache_DocumentUuid`, and
-`IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt`), and PostgreSQL
-enqueue-owner prerequisites. It does not migrate old cache shapes, reconcile arbitrary
-drift, or classify every partial database state. A completed same-hash rerun preserves
-`SourceIdentity`, projection lifecycle, `CacheAheadRecoveryRequired`, cache rows, pending
-work, and enqueue timestamps, while compatible existence checks and replaceable
-functions/triggers can finish or refresh generated definitions. Known legacy cache
-artifacts require dropping and recreating the database.
-
-PostgreSQL provisioning requires capability to create or refresh the locked-down
-`NOLOGIN` `edfi_dms_enqueue_owner` role used to own the security-definer enqueue
-functions. That role is not a runtime DMS credential. SQL Server uses same-owner trigger
-execution over the referenced `dms` tables and emits no `EXECUTE AS`, enqueue user, or
-enqueue role. Runtime projection, projection administration, health/readiness,
-cache-backed reads, complete target eligibility validation, CDC capture objects, and CDC
-reader grants are outside this CLI provisioning contract.
 
 ## Determinism guarantee
 
