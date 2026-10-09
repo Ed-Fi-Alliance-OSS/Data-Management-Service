@@ -20,6 +20,7 @@ public class Given_SchemaRestamp_Mssql_Compatible_Transition
     private string _databaseName = null!;
     private string _connectionString = null!;
     private EffectiveSchemaInfo _target = null!;
+    private string? _restrictedLogin;
     private readonly string _oldHash = new('a', 64);
 
     [SetUp]
@@ -55,6 +56,16 @@ public class Given_SchemaRestamp_Mssql_Compatible_Transition
         {
             MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
         }
+        if (_restrictedLogin is not null)
+        {
+            var master = new SqlConnectionStringBuilder(_connectionString) { InitialCatalog = "master" };
+            using var connection = new SqlConnection(master.ConnectionString);
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                $"IF EXISTS (SELECT 1 FROM sys.server_principals WHERE [name] = N'{_restrictedLogin}') DROP LOGIN [{_restrictedLogin}];";
+            command.ExecuteNonQuery();
+        }
     }
 
     [Test]
@@ -62,7 +73,12 @@ public class Given_SchemaRestamp_Mssql_Compatible_Transition
     {
         using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
+        ProvisionTestHelper.InsertRowsThatMustSurviveRerun(connection, "mssql");
         var before = SchemaRestampTestHelper.Capture(connection, "mssql");
+        var mutableStateBefore = ProvisionTestHelper.ReadDocumentCacheMutableStateSnapshot(
+            connection,
+            "mssql"
+        );
         var result = await new SchemaRestamper(NullLogger.Instance).RestampAsync(
             SqlDialect.Mssql,
             _connectionString,
@@ -80,6 +96,13 @@ public class Given_SchemaRestamp_Mssql_Compatible_Transition
         after.Seed.Should().Be(before.Seed);
         after.AppliedAt.Should().Be(before.AppliedAt);
         after.Keys.Should().Equal(before.Keys);
+        after.Documents.Should().Equal(before.Documents);
+        after.CacheRows.Should().Equal(before.CacheRows);
+        after.ProjectionWork.Should().Equal(before.ProjectionWork);
+        ProvisionTestHelper
+            .ReadDocumentCacheMutableStateSnapshot(connection, "mssql")
+            .Should()
+            .BeEquivalentTo(mutableStateBefore);
         after
             .Components.Should()
             .Equal(
@@ -176,6 +199,179 @@ public class Given_SchemaRestamp_Mssql_Compatible_Transition
             .Which.Failure.Should()
             .Be(SchemaRestampFailure.TransactionFailed);
         SchemaRestampTestHelper.Capture(connection, "mssql").Should().BeEquivalentTo(before);
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_restores_the_complete_metadata_snapshot_when_component_reinsertion_fails(
+        bool rejectLaterComponent
+    )
+    {
+        using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        var components = _target.SchemaComponentsInEndpointOrder;
+        var rejected = rejectLaterComponent ? components[^1] : components[0];
+        SchemaRestampTestHelper.InstallComponentInsertRejectingTrigger(
+            connection,
+            "mssql",
+            rejected.ProjectEndpointName
+        );
+        var before = SchemaRestampTestHelper.Capture(connection, "mssql");
+
+        Func<Task> action = () =>
+            new SchemaRestamper(NullLogger.Instance).RestampAsync(
+                SqlDialect.Mssql,
+                _connectionString,
+                30,
+                _target,
+                true,
+                CancellationToken.None
+            );
+
+        (await action.Should().ThrowAsync<SchemaRestampException>())
+            .Which.Failure.Should()
+            .Be(SchemaRestampFailure.TransactionFailed);
+        SchemaRestampTestHelper.Capture(connection, "mssql").Should().BeEquivalentTo(before);
+    }
+
+    [Test]
+    public async Task It_serializes_competing_same_target_transitions()
+    {
+        var restamper = new SchemaRestamper(NullLogger.Instance);
+        var results = await Task.WhenAll(
+            restamper.RestampAsync(
+                SqlDialect.Mssql,
+                _connectionString,
+                30,
+                _target,
+                true,
+                CancellationToken.None
+            ),
+            restamper.RestampAsync(
+                SqlDialect.Mssql,
+                _connectionString,
+                30,
+                _target,
+                true,
+                CancellationToken.None
+            )
+        );
+
+        results.Count(result => result.Changed).Should().Be(1);
+        results.Count(result => !result.Changed).Should().Be(1);
+        using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        SchemaRestampTestHelper.Capture(connection, "mssql").Hash.Should().Be(_target.EffectiveSchemaHash);
+    }
+
+    [TestCase("format")]
+    [TestCase("count")]
+    [TestCase("component")]
+    public async Task It_rejects_corrupt_compatibility_metadata_without_mutating_it(string field)
+    {
+        using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        SchemaRestampTestHelper.CorruptMetadata(connection, "mssql", field);
+        var before = SchemaRestampTestHelper.Capture(connection, "mssql");
+
+        Func<Task> action = () =>
+            new SchemaRestamper(NullLogger.Instance).RestampAsync(
+                SqlDialect.Mssql,
+                _connectionString,
+                30,
+                _target,
+                true,
+                CancellationToken.None
+            );
+
+        (await action.Should().ThrowAsync<SchemaRestampException>())
+            .Which.Failure.Should()
+            .Be(SchemaRestampFailure.Validation);
+        SchemaRestampTestHelper.Capture(connection, "mssql").Should().BeEquivalentTo(before);
+    }
+
+    [Test]
+    public async Task It_times_out_while_another_transaction_holds_the_metadata_lock()
+    {
+        using var blocker = new SqlConnection(_connectionString);
+        await blocker.OpenAsync();
+        await using var transaction = (SqlTransaction)await blocker.BeginTransactionAsync();
+        await using (var lockCommand = blocker.CreateCommand())
+        {
+            lockCommand.Transaction = transaction;
+            lockCommand.CommandText =
+                "SELECT COUNT_BIG(*) FROM [dms].[EffectiveSchema] WITH (TABLOCKX, HOLDLOCK);";
+            await lockCommand.ExecuteNonQueryAsync();
+        }
+
+        Func<Task> action = () =>
+            new SchemaRestamper(NullLogger.Instance).RestampAsync(
+                SqlDialect.Mssql,
+                _connectionString,
+                1,
+                _target,
+                true,
+                CancellationToken.None
+            );
+
+        try
+        {
+            (await action.Should().ThrowAsync<SchemaRestampException>())
+                .Which.Failure.Should()
+                .Be(SchemaRestampFailure.Timeout);
+        }
+        finally
+        {
+            await transaction.RollbackAsync();
+        }
+        using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        SchemaRestampTestHelper.Capture(connection, "mssql").Hash.Should().Be(_oldHash);
+    }
+
+    [Test]
+    public async Task It_reports_restricted_metadata_privileges_without_committing_a_transition()
+    {
+        _restrictedLogin = $"restamp_reader_{Guid.NewGuid():N}";
+        var password = $"{Guid.NewGuid():N}Aa1!";
+        var master = new SqlConnectionStringBuilder(_connectionString) { InitialCatalog = "master" };
+        using (var admin = new SqlConnection(master.ConnectionString))
+        {
+            await admin.OpenAsync();
+            using var command = admin.CreateCommand();
+            command.CommandText = $"CREATE LOGIN [{_restrictedLogin}] WITH PASSWORD = '{password}';";
+            await command.ExecuteNonQueryAsync();
+        }
+        using (var admin = new SqlConnection(_connectionString))
+        {
+            await admin.OpenAsync();
+            using var command = admin.CreateCommand();
+            command.CommandText =
+                $"CREATE USER [{_restrictedLogin}] FOR LOGIN [{_restrictedLogin}]; GRANT SELECT ON SCHEMA::[dms] TO [{_restrictedLogin}];";
+            await command.ExecuteNonQueryAsync();
+        }
+        var restricted = new SqlConnectionStringBuilder(_connectionString)
+        {
+            UserID = _restrictedLogin,
+            Password = password,
+        };
+
+        Func<Task> action = () =>
+            new SchemaRestamper(NullLogger.Instance).RestampAsync(
+                SqlDialect.Mssql,
+                restricted.ConnectionString,
+                30,
+                _target,
+                true,
+                CancellationToken.None
+            );
+
+        (await action.Should().ThrowAsync<SchemaRestampException>())
+            .Which.Failure.Should()
+            .Be(SchemaRestampFailure.PermissionDenied);
+        using var verify = new SqlConnection(_connectionString);
+        await verify.OpenAsync();
+        SchemaRestampTestHelper.Capture(verify, "mssql").Hash.Should().Be(_oldHash);
     }
 
     [Test]

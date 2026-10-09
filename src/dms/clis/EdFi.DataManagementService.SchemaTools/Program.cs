@@ -17,12 +17,13 @@ using Serilog.Events;
 // created before System.CommandLine parses the full command tree.
 var verbose = Array.Exists(args, a => a is "--verbose" or "-v");
 var cdcInvocation = Array.Find(args, argument => argument is "cdc" or "ddl" or "hash") == "cdc";
+var restampInvocation = args.Contains("re-stamp", StringComparer.Ordinal);
 
 var serviceCollection = new ServiceCollection();
-ConfigureServices(serviceCollection, verbose && !cdcInvocation);
-if (cdcInvocation)
+ConfigureServices(serviceCollection, verbose && !cdcInvocation && !restampInvocation);
+if (cdcInvocation || restampInvocation)
 {
-    // Shared schema loaders can log paths/provider details; CDC emits only typed diagnostics.
+    // Shared schema loaders can log paths/provider details; these commands emit typed diagnostics.
     serviceCollection.AddLogging(logging => logging.ClearProviders());
 }
 await using var serviceProvider = serviceCollection.BuildServiceProvider();

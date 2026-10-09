@@ -144,6 +144,59 @@ internal static class SchemaRestampTestHelper
         command.ExecuteNonQuery();
     }
 
+    internal static void InstallComponentInsertRejectingTrigger(
+        DbConnection connection,
+        string dialect,
+        string endpointName
+    )
+    {
+        using var command = connection.CreateCommand();
+        var endpoint = endpointName.Replace("'", "''", StringComparison.Ordinal);
+        command.CommandText = dialect switch
+        {
+            "pgsql" => $"""
+                CREATE FUNCTION dms.reject_restamp_component_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN
+                    IF NEW."ProjectEndpointName" = '{endpoint}' THEN
+                        RAISE EXCEPTION 'component insert rejected by re-stamp rollback test';
+                    END IF;
+                    RETURN NEW;
+                END; $$;
+                CREATE TRIGGER reject_restamp_component_insert BEFORE INSERT ON dms."SchemaComponent" FOR EACH ROW EXECUTE FUNCTION dms.reject_restamp_component_insert();
+                """,
+            "mssql" => $"""
+                CREATE TRIGGER [dms].[reject_restamp_component_insert] ON [dms].[SchemaComponent] AFTER INSERT AS
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM inserted WHERE [ProjectEndpointName] = '{endpoint}')
+                        THROW 51001, 'Component insert rejected by re-stamp rollback test', 1;
+                END;
+                """,
+            _ => throw new ArgumentOutOfRangeException(nameof(dialect)),
+        };
+        command.ExecuteNonQuery();
+    }
+
+    internal static void CorruptMetadata(DbConnection connection, string dialect, string field)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = (dialect, field) switch
+        {
+            ("pgsql", "format") =>
+                "UPDATE dms.\"EffectiveSchema\" SET \"ApiSchemaFormatVersion\" = 'invalid';",
+            ("mssql", "format") => "UPDATE [dms].[EffectiveSchema] SET [ApiSchemaFormatVersion] = 'invalid';",
+            ("pgsql", "count") =>
+                "UPDATE dms.\"EffectiveSchema\" SET \"ResourceKeyCount\" = \"ResourceKeyCount\" + 1;",
+            ("mssql", "count") =>
+                "UPDATE [dms].[EffectiveSchema] SET [ResourceKeyCount] = [ResourceKeyCount] + 1;",
+            ("pgsql", "component") =>
+                "UPDATE dms.\"SchemaComponent\" SET \"ProjectVersion\" = 'invalid' WHERE \"ProjectEndpointName\" = (SELECT MIN(\"ProjectEndpointName\") FROM dms.\"SchemaComponent\");",
+            ("mssql", "component") =>
+                "UPDATE [dms].[SchemaComponent] SET [ProjectVersion] = 'invalid' WHERE [ProjectEndpointName] = (SELECT MIN([ProjectEndpointName]) FROM [dms].[SchemaComponent]);",
+            _ => throw new ArgumentOutOfRangeException(nameof(field)),
+        };
+        command.ExecuteNonQuery();
+    }
+
     internal static (
         string Hash,
         string Format,
@@ -151,7 +204,10 @@ internal static class SchemaRestampTestHelper
         string Seed,
         DateTime AppliedAt,
         string[] Components,
-        string[] Keys
+        string[] Keys,
+        string[] Documents,
+        string[] CacheRows,
+        string[] ProjectionWork
     ) Capture(DbConnection connection, string dialect)
     {
         var parent = Table(dialect, "EffectiveSchema");
@@ -222,6 +278,50 @@ internal static class SchemaRestampTestHelper
             ),
             Column(dialect, "ResourceKeyId")
         );
+        var documents = ReadRows(
+            "Document",
+            string.Join(
+                ", ",
+                new[]
+                {
+                    "DocumentId",
+                    "DocumentUuid",
+                    "ResourceKeyId",
+                    "ContentVersion",
+                    "ContentLastModifiedAt",
+                }.Select(name => Column(dialect, name))
+            ),
+            Column(dialect, "DocumentId")
+        );
+        var cacheRows = ReadRows(
+            "DocumentCache",
+            string.Join(
+                ", ",
+                new[]
+                {
+                    "DocumentId",
+                    "DocumentUuid",
+                    "ProjectName",
+                    "ResourceName",
+                    "ResourceVersion",
+                    "ContentVersion",
+                    "StreamEtag",
+                    "LastModifiedAt",
+                    "DocumentJson",
+                }.Select(name => Column(dialect, name))
+            ),
+            Column(dialect, "DocumentId")
+        );
+        var projectionWork = ReadRows(
+            "DocumentProjectionWork",
+            string.Join(
+                ", ",
+                new[] { "DocumentId", "RequiredContentVersion", "FirstEnqueuedAt", "LastEnqueuedAt" }.Select(
+                    name => Column(dialect, name)
+                )
+            ),
+            Column(dialect, "DocumentId")
+        );
         return (
             snapshot.Hash,
             snapshot.Format,
@@ -229,7 +329,10 @@ internal static class SchemaRestampTestHelper
             snapshot.Seed,
             snapshot.AppliedAt,
             components,
-            keys
+            keys,
+            documents,
+            cacheRows,
+            projectionWork
         );
     }
 

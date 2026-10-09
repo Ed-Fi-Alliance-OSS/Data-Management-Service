@@ -164,6 +164,59 @@ public class SchemaToolsTests
     }
 
     [TestFixture]
+    public class Given_Ddl_Restamp_With_Invalid_Schema : SchemaToolsTests
+    {
+        private string _path = null!;
+        private int _exitCode;
+        private string _output = null!;
+        private string _error = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _path = Path.Combine(Path.GetTempPath(), $"schema-loader-secret-{Guid.NewGuid():N}.json");
+            File.WriteAllText(_path, "{ invalid");
+            (_exitCode, _output, _error) = CliTestHelper.RunCli(
+                "ddl",
+                "re-stamp",
+                "--schema",
+                _path,
+                "--connection-string",
+                "Host=localhost;Database=database-secret-sentinel",
+                "--dialect",
+                "pgsql",
+                "--migration-completed",
+                "--verbose"
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            if (File.Exists(_path))
+            {
+                File.Delete(_path);
+            }
+        }
+
+        [Test]
+        public void It_returns_a_controlled_failure()
+        {
+            _exitCode.Should().Be(1);
+            _error.Should().Contain("The schema inputs could not be loaded or normalized.");
+        }
+
+        [Test]
+        public void It_does_not_log_schema_path_or_connection_details()
+        {
+            var diagnostics = _output + _error;
+            diagnostics.Should().NotContain(_path);
+            diagnostics.Should().NotContain("schema-loader-secret-");
+            diagnostics.Should().NotContain("database-secret-sentinel");
+        }
+    }
+
+    [TestFixture]
     [Category("Authoritative")]
     public class Given_Ddl_Emit_With_Valid_Schema : SchemaToolsTests
     {

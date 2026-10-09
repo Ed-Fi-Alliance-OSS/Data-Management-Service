@@ -2,6 +2,20 @@
 
 This fixture demonstrates the metadata transition for one additive, nullable field. The source and target `api-schema.json` inputs share project/resource identities and ResourceKey inputs. The target adds optional `widgetNote` to Widget with a maximum length of 120. Its generated relational model maps to `testproject.Widget.WidgetNote` (`varchar(120)` on PostgreSQL and `nvarchar(120)` on SQL Server).
 
-The migration scripts are examples for this fixture only. An operator must design and validate a production migration, preserve a recoverable backup, stop DMS/workers and other metadata writers, apply the physical migration, verify it independently, run `api-schema-tools ddl re-stamp` with the target schemas and `--migration-completed`, run ordinary `ddl provision` separately, then restart and verify runtime admission and API behavior. The re-stamp command changes metadata only. It cannot prove physical shape, guarantee rollback, or certify CDC continuity. A failure after the metadata transaction commits is handled as a separate provisioning/recovery step.
+The migration scripts are examples for this fixture only. An operator must design and validate a production migration, preserve a recoverable backup, stop DMS/workers and other metadata writers, apply the physical migration, verify it independently, run `api-schema-tools ddl re-stamp` with the target schema and `--migration-completed`, run ordinary `ddl provision` separately, then restart and verify runtime admission and API behavior. The re-stamp command changes metadata only. It cannot prove physical shape, guarantee rollback, or certify CDC continuity. A failure after the metadata transaction commits is handled as a separate provisioning/recovery step.
+
+For a PostgreSQL fixture database, apply `migration.pgsql.sql` through the normal migration connection, then run both commands:
+
+```powershell
+api-schema-tools ddl re-stamp --schema 'src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/schema-restamp/target/api-schema.json' --connection-string '<postgresql connection string>' --dialect pgsql --migration-completed
+api-schema-tools ddl provision --schema 'src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/schema-restamp/target/api-schema.json' --connection-string '<postgresql connection string>' --dialect pgsql
+```
+
+For SQL Server, apply `migration.mssql.sql` through the normal migration connection and use the same target schema with `--dialect mssql` for each command:
+
+```powershell
+api-schema-tools ddl re-stamp --schema 'src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/schema-restamp/target/api-schema.json' --connection-string '<SQL Server connection string>' --dialect mssql --migration-completed
+api-schema-tools ddl provision --schema 'src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/schema-restamp/target/api-schema.json' --connection-string '<SQL Server connection string>' --dialect mssql
+```
 
 Use core schema inputs first. Do not glob paths because input order is part of the effective schema assembly contract. For the fixture target, run the command with the target `api-schema.json` path, the intended connection string, and `--dialect pgsql` or `--dialect mssql`. Omitting `--migration-completed` is a safe preflight for an already matching fingerprint; it does not authorize a changed stamp.

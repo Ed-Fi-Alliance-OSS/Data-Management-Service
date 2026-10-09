@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.SchemaTools.Restamping;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.SchemaTools.Tests.Unit;
@@ -76,5 +77,28 @@ public class Given_SchemaRestamper_Invalid_Inputs
         failure.Failure.Should().Be(SchemaRestampFailure.Connection);
         failure.Message.Should().NotContain("credential-sentinel");
         _connectionsCreated.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_classifies_a_postgresql_timeout_wrapped_by_the_provider()
+    {
+        _service = new SchemaRestamper(
+            NullLogger.Instance,
+            (_, _) => throw new NpgsqlException("provider timeout", new TimeoutException())
+        );
+
+        Func<Task> action = () =>
+            _service.RestampAsync(
+                SqlDialect.Pgsql,
+                "Host=localhost;Database=sample",
+                30,
+                _target,
+                true,
+                CancellationToken.None
+            );
+
+        (await action.Should().ThrowAsync<SchemaRestampException>())
+            .Which.Failure.Should()
+            .Be(SchemaRestampFailure.Timeout);
     }
 }
