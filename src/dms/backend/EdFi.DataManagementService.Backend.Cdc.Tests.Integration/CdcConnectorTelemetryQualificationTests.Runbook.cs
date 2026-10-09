@@ -291,12 +291,9 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
                 token
             );
 
-            await QualifyRunbookDiskAsync(
-                "/var/lib/postgresql/data",
-                "/var/lib/postgresql/data/pg_wal",
-                environment,
-                token
-            );
+            // The data directory moves with the image's PGDATA layout, so ask the running server for it.
+            string dataPath = (await ReadPostgresqlScalarAsync("SHOW data_directory;", token)).Trim();
+            await QualifyRunbookDiskAsync(dataPath, dataPath + "/pg_wal", environment, token);
         }
         finally
         {

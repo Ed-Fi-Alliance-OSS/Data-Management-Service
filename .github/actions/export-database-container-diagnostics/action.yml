@@ -11,8 +11,11 @@ inputs:
     description: The database container name or id.
     required: true
   data-path:
-    description: The database data directory inside the container.
-    required: true
+    description: >-
+      The database data directory inside the container. Omit it for a PostgreSQL container: the
+      action then reads the directory from the container's PGDATA, which moves between image majors.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -23,7 +26,12 @@ runs:
         CONTAINER_NAME: ${{ inputs.container-name }}
         DATA_PATH: ${{ inputs.data-path }}
       run: |
+        $dataPath = $env:DATA_PATH
+        if (-not $dataPath) {
+          # docker exec runs no shell, so $PGDATA cannot expand in the df/du arguments; read it first.
+          $dataPath = docker exec $env:CONTAINER_NAME printenv PGDATA 2>$null
+        }
         docker stats $env:CONTAINER_NAME --no-stream 2>$null
-        docker exec $env:CONTAINER_NAME df -h $env:DATA_PATH 2>$null
-        docker exec $env:CONTAINER_NAME du -sh $env:DATA_PATH 2>$null
+        docker exec $env:CONTAINER_NAME df -h $dataPath 2>$null
+        docker exec $env:CONTAINER_NAME du -sh $dataPath 2>$null
         docker logs $env:CONTAINER_NAME

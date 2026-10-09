@@ -371,7 +371,7 @@ The step downloads the `.nupkg`, verifies it against a digest the operator pinne
 services:
   fetch-plugins:
     # Pinned by digest, as every third-party image in eng/docker-compose/ already is
-    # (postgresql.yml:8 pins postgres:16.8-alpine by digest). The committed file carries a
+    # (postgresql.yml:8 pins postgres:18.6-alpine by digest). The committed file carries a
     # real, pullable alpine 3 digest, chosen when the implementing story lands; the
     # 3.XX@sha256:<digest> written here is a placeholder of this design sketch only, since a
     # digest chosen now would be stale by then. An operator may re-pin to an image they have

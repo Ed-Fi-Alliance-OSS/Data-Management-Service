@@ -3405,7 +3405,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             $root = New-ComposeFixtureRoot -Engine 'postgresql' -Line @(
                 'services:',
                 '  datastore:',
-                '    image: postgres:16',
+                '    image: postgres:18',
                 '    container_name: renamed-database',
                 '    hostname: renamed-host'
             )
@@ -3423,7 +3423,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             $root = New-ComposeFixtureRoot -Engine 'postgresql' -Line @(
                 'services:',
                 '  db:',
-                '    image: postgres:16',
+                '    image: postgres:18',
                 '    container_name: dms-postgresql',
                 '    environment:',
                 '      hostname: env-unrelated-host',
@@ -3507,7 +3507,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 @{ Label = 'alias'; Header = '  db: *database' },
                 @{ Label = 'double-quoted key'; Header = '  "db":' },
                 @{ Label = 'single-quoted key'; Header = "  'db':" },
-                @{ Label = 'inline mapping'; Header = '  db: {image: postgres:16}' },
+                @{ Label = 'inline mapping'; Header = '  db: {image: postgres:18}' },
                 @{ Label = 'sequence entry'; Header = '  - db' },
                 @{ Label = 'scalar value'; Header = '  db: postgres' }
             )) {
