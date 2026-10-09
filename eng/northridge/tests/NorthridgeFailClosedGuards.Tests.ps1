@@ -865,7 +865,7 @@ Describe "Copy-NorthridgeDataForward.ps1 re-points only the Descriptor COPY head
 
 Describe "Copy-NorthridgeDataForward.ps1 inserts dms.Document by the columns the archive and the target share" {
     BeforeAll {
-        foreach ($name in @("Get-CopyHeaderColumn", "ConvertTo-TargetColumnList", "Resolve-StagedInsertColumn")) {
+        foreach ($name in @("Get-CopyHeaderColumn", "ConvertTo-TargetColumnList", "Resolve-StagedInsertColumn", "Assert-CopyColumnShape")) {
             . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:copyScript -FunctionName $name)))
         }
         foreach ($name in @("DmsDataTable", "DmsStagedTable")) {
@@ -909,6 +909,34 @@ Describe "Copy-NorthridgeDataForward.ps1 inserts dms.Document by the columns the
         $plan.Insert | Should -Not -Contain "IdentityLastModifiedAt"
         $plan.SourceOnly | Should -Be @("IdentityVersion", "IdentityLastModifiedAt") -Because "they are staged as text and go no further"
         $plan.OverridingSystemValue | Should -BeTrue -Because "DocumentId is GENERATED ALWAYS AS IDENTITY and the archive's values must survive the insert"
+    }
+
+    It "allows source-only document columns through preflight for the staging insert to omit" {
+        $targetShape = @([pscustomobject]@{ Name = 'DocumentId'; Type = 'bigint'; Generated = $false })
+        $sourceShape = $targetShape + @([pscustomobject]@{ Name = 'IdentityVersion'; Type = 'bigint'; Generated = $false })
+        { Assert-CopyColumnShape -QualifiedTable 'dms.Document' -Source $sourceShape -Target $targetShape -Inventory @{ columns = @(); aliases = @() } } |
+            Should -Not -Throw
+        $target = ConvertTo-TargetColumnList -Row @('DocumentId|NO|NO|YES|NEVER') -QualifiedTable 'dms.Document'
+        $plan = Resolve-StagedInsertColumn -SourceColumn $sourceShape.Name -TargetColumn $target -QualifiedTable 'dms.Document'
+        $plan.Insert | Should -Be @('DocumentId')
+        $plan.SourceOnly | Should -Be @('IdentityVersion')
+        $plan.OverridingSystemValue | Should -BeTrue
+    }
+
+    It "allows a target-supplied document <Name> column through preflight and staging" -ForEach @(
+        @{ Name = 'Note'; Row = 'Note|YES|NO|NO|NEVER'; Generated = $false },
+        @{ Name = 'Stamp'; Row = 'Stamp|NO|YES|NO|NEVER'; Generated = $false },
+        @{ Name = 'Seq'; Row = 'Seq|NO|NO|YES|NEVER'; Generated = $false },
+        @{ Name = 'Derived'; Row = 'Derived|NO|NO|NO|ALWAYS'; Generated = $true }
+    ) {
+        $sourceShape = @([pscustomobject]@{ Name = 'DocumentId'; Type = 'bigint'; Generated = $false })
+        $targetShape = $sourceShape + @([pscustomobject]@{ Name = $Name; Type = 'bigint'; Generated = $Generated })
+        { Assert-CopyColumnShape -QualifiedTable 'dms.Document' -Source $sourceShape -Target $targetShape -Inventory @{ columns = @(); aliases = @() } } |
+            Should -Not -Throw
+        $target = ConvertTo-TargetColumnList -Row @('DocumentId|NO|NO|YES|NEVER', $Row) -QualifiedTable 'dms.Document'
+        $plan = Resolve-StagedInsertColumn -SourceColumn $sourceShape.Name -TargetColumn $target -QualifiedTable 'dms.Document'
+        $plan.Insert | Should -Be @('DocumentId')
+        $plan.SourceOnly.Count | Should -Be 0
     }
 
     It "refuses a target NOT NULL column with no default, identity or generation that the archive does not carry" {
@@ -1758,6 +1786,18 @@ Describe 'Compact descriptor carry-forward contracts and independent allocator g
         $omitted = $compactInventory.Clone()
         $omitted.columns = @($omitted.columns | Where-Object { $_.table -cne 'Student' })
         { Assert-CopyColumnShape -QualifiedTable 'edfi.Student' -Source $source -Target $target -Inventory $omitted } | Should -Throw '*legacy source type*'
+    }
+    It 'Keeps source and target column coverage exact for <QualifiedTable>' -ForEach @(
+        @{ QualifiedTable = 'dms.ReferentialIdentity' },
+        @{ QualifiedTable = 'auth.CarryForwardWitness' },
+        @{ QualifiedTable = 'edfi.Student' }
+    ) {
+        $shape = @([pscustomobject]@{ Name = 'DocumentId'; Type = 'bigint'; Generated = $false })
+        $extra = $shape + @([pscustomobject]@{ Name = 'Extra'; Type = 'bigint'; Generated = $false })
+        { Assert-CopyColumnShape -QualifiedTable $QualifiedTable -Source $extra -Target $shape -Inventory $compactInventory } |
+            Should -Throw "*Unexpected source column outside conversion coverage: $QualifiedTable/Extra*"
+        { Assert-CopyColumnShape -QualifiedTable $QualifiedTable -Source $shape -Target $extra -Inventory $compactInventory } |
+            Should -Throw "*Missing/mismatched source-shape coverage: $QualifiedTable/Extra*"
     }
     It 'Requires generated aliases to retain their compact target type and skips remapping them' {
         $source = @([pscustomobject]@{ Name = 'PrimarySchoolTypeDescriptor_DescriptorId'; Type = 'bigint'; Generated = $true })

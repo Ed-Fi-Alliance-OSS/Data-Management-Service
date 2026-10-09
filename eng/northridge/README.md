@@ -121,9 +121,12 @@ $baseline = './src/dms/backend/Fixtures/authoritative/ds-5.2/expected/relational
 ```
 
 The copied schemas include every resource and tracked-history schema in the baseline, plus `auth`.
-The preflight verifies the compact target against that baseline, complete source/target table and
-column coverage, and unchanged resource-key seeds. Source descriptor keys and stored descriptor
-references must be legacy bigint document keys. Descriptor rows keep their bigint `DocumentId`
+The preflight verifies the compact target against that baseline, complete source/target table
+coverage, exact column shapes for descriptor conversion and directly restored tables, and unchanged
+resource-key seeds. `dms.Document` retains its staging rules: source-only columns are omitted from
+the target insert, and target columns absent from the source must be nullable, defaulted, identity
+or generated. Source descriptor keys and stored descriptor references must be legacy bigint
+document keys. Descriptor rows keep their bigint `DocumentId`
 and receive native independent int `DescriptorId` values. The exact mapping is saved as
 `descriptor-key-map.<target>.tsv` beside the copy evidence. Descriptor-bearing tables load through
 source-shaped staging and are remapped before target insertion; a non-null reference with no

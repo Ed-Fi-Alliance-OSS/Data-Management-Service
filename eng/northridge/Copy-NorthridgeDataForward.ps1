@@ -1541,6 +1541,10 @@ function Assert-CopyColumnShape {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$QualifiedTable, [Parameter(Mandatory)][object[]]$Source,
         [Parameter(Mandatory)][object[]]$Target, [Parameter(Mandatory)][System.Collections.IDictionary]$Inventory)
+    # Document staging omits source-only columns and lets the target supply missing columns.
+    # Resolve-StagedInsertColumn validates the actual COPY header against the target catalog.
+    if ($QualifiedTable -ceq 'dms.Document') { return }
+
     $descriptorNames = @($Inventory.columns | Where-Object { "$($_.schema).$($_.table)" -ceq $QualifiedTable } | ForEach-Object { $_.name })
     $descriptorAliasNames = @($Inventory.aliases | Where-Object { "$($_.schema).$($_.table)" -ceq $QualifiedTable } | ForEach-Object { $_.name })
     $removed = switch -CaseSensitive ($QualifiedTable) {
