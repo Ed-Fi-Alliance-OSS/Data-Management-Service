@@ -28,6 +28,13 @@ public class Given_E2E_Feature_File_Guardrails
     /// </summary>
     private const string DedicatedIdentityPluginLaneTag = "@instance-management-identity-plugin";
     private const string InstanceManagementShardTagPrefix = "@instance-management-ci-shard-";
+
+    /// <summary>
+    /// Engine-category tags. Every PostgreSQL lane excludes @MssqlOnly and every SQL Server lane
+    /// excludes @PostgresqlOnly, so each tag confines a scenario to one engine.
+    /// </summary>
+    private const string MssqlOnlyTag = "@MssqlOnly";
+    private const string PostgresqlOnlyTag = "@PostgresqlOnly";
     private static readonly string RemovedBackendLaneTag = "@relational-" + "backend";
     private static readonly string RemovedRelationalShardTagPrefix = "@relational-" + "ci-shard-";
 
@@ -161,6 +168,26 @@ public class Given_E2E_Feature_File_Guardrails
             .Should()
             .BeEmpty(
                 "each @CursorPartitionSizing scenario must carry neither an @e2e-ci-shard-N nor a @StandardVersion-<NN> tag, since it runs in its own lane against a differently configured deployment"
+            );
+    }
+
+    [Test]
+    public void It_never_tags_a_scenario_for_both_database_engines()
+    {
+        // The PostgreSQL lanes filter out @MssqlOnly and the SQL Server lanes filter out
+        // @PostgresqlOnly, so a scenario carrying both is selected by no lane and silently never runs.
+        string[] offendingScenarios = EnumerateScenariosWithTags(_dmsFeaturesDirectory)
+            .Where(s =>
+                s.Tags.Contains(MssqlOnlyTag, StringComparer.OrdinalIgnoreCase)
+                && s.Tags.Contains(PostgresqlOnlyTag, StringComparer.OrdinalIgnoreCase)
+            )
+            .Select(s => $"{s.RelativePath}:{s.LineNumber} ({s.Title})")
+            .ToArray();
+
+        offendingScenarios
+            .Should()
+            .BeEmpty(
+                "a scenario tagged both @MssqlOnly and @PostgresqlOnly is excluded by every E2E lane and never runs"
             );
     }
 
