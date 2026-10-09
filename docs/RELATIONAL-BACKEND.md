@@ -57,8 +57,10 @@ the unlowered whole `Namespace + '#' + CodeValue` within a type:
 - SQL Server defines non-persisted `Uri AS ([Namespace] + N'#' + [CodeValue])` and indexes
   `(ResourceKeyId, Uri)`.
 
-Both expressions retain the former stored URI's database-default provider collation.
-They introduce no component-wise uniqueness, lowered URI column, or new identity collation.
+On SQL Server, `Namespace` and `CodeValue` carry the DMS identity collation
+(`SQL_Latin1_General_CP1_CI_AS`) independent of the database default, and the computed `Uri`
+and its index inherit it. PostgreSQL uses the database-default collation. Neither expression
+introduces component-wise uniqueness or a lowered URI column.
 The current runtime still calculates and maintains RI: its existing descriptor join returns
 both IDs in one lookup, and URI witnesses and original-case responses reconstruct the whole
 string. Lowered-URI natural-key probes, RI removal, new validation/equality rules, platform

@@ -1522,13 +1522,13 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
     tombstone; generated live-descriptor probes use lowered URI plus compile-time `ResourceKeyId`
     and never `Discriminator`; PostgreSQL probes lower both the live URI and any tombstoned
     namespace/codeValue expression under `COLLATE "pg_c_utf8"`.
-- **E2E** will gate the merge in CI. The PostgreSQL lane runs the full DS 5.2 suite; the SQL Server
-  lane runs only the bounded `@MssqlRepresentative` cross-section (23 scenarios across 18 features
-  today, by design). Therefore every E2E scenario this design adds that must gate SQL Server carries
-  `@MssqlRepresentative`, and engine-divergent outcomes are pinned at the integration level or as
-  engine-tagged scenario pairs (`@PostgresqlOnly` / `@MssqlOnly` categories that the respective lanes
-  include or exclude — a mechanism DMS-1443 introduces; today features carry no engine tag and steps
-  have no engine conditional). The representative set grows by roughly half a dozen scenarios, an
+- **E2E** will gate the merge in CI. The PostgreSQL lane runs the full DS 5.2 suite excluding
+  `@MssqlOnly`; the SQL Server lane runs only the bounded `@MssqlRepresentative` or `@MssqlOnly`
+  cross-section, excluding `@PostgresqlOnly`, by design. Therefore every E2E scenario this design
+  adds that must gate SQL Server carries `@MssqlRepresentative` or `@MssqlOnly`, and engine-divergent
+  outcomes are pinned at the integration level or as engine-tagged scenario pairs (`@PostgresqlOnly`
+  / `@MssqlOnly` categories that the respective lanes include or exclude — a mechanism DMS-1443
+  introduces; steps have no engine conditional). The representative set grows by roughly half a dozen scenarios, an
   accepted lane-time cost. HTTP-visible contract points will be pinned at the E2E level where
   possible; in particular, the case-variant duplicate descriptor-item scenario will be a dedicated
   E2E test (`EdFi.DataManagementService.Tests.E2E`): POST a resource whose collection carries two
