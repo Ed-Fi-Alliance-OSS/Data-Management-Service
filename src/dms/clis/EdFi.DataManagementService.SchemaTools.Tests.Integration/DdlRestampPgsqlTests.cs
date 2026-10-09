@@ -80,6 +80,48 @@ public class Given_SchemaRestamp_Pgsql_Compatible_Transition
     }
 
     [Test]
+    public async Task It_re_stamps_through_the_shipped_cli_process()
+    {
+        var result = SchemaRestampTestHelper.RunRestamp(
+            _connectionString,
+            "pgsql",
+            true,
+            CliTestHelper.GetMinimalSchemaPath(),
+            SchemaRestampTestHelper.ExtensionPath
+        );
+
+        result.ExitCode.Should().Be(0, result.Error);
+        result.Output.Should().Contain("Effective schema re-stamp committed.");
+        result.Output.Should().Contain(_target.EffectiveSchemaHash);
+        result.Output.Should().Contain("Run 'ddl provision' separately");
+        result.Error.Should().NotContain(_connectionString);
+        using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        SchemaRestampTestHelper.Capture(connection, "pgsql").Hash.Should().Be(_target.EffectiveSchemaHash);
+    }
+
+    [Test]
+    public void It_shows_re_stamp_help_and_contains_parser_values_in_the_process()
+    {
+        var help = CliTestHelper.RunCli("ddl", "re-stamp", "--help");
+        help.ExitCode.Should().Be(0, help.Error);
+        help.Output.Should().Contain("--migration-completed");
+        help.Output.Should().Contain("--connection-string");
+
+        const string secret = "process-secret-sentinel";
+        var invalid = CliTestHelper.RunCli(
+            "ddl",
+            "re-stamp",
+            "--connection-string",
+            secret,
+            "--unknown-option",
+            secret
+        );
+        invalid.ExitCode.Should().Be(1);
+        (invalid.Output + invalid.Error).Should().NotContain(secret);
+    }
+
+    [Test]
     public async Task It_validates_a_match_without_confirmation_or_dml()
     {
         using var connection = new NpgsqlConnection(_connectionString);

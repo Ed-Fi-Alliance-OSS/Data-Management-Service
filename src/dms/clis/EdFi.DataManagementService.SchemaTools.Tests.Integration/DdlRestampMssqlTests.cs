@@ -90,6 +90,27 @@ public class Given_SchemaRestamp_Mssql_Compatible_Transition
     }
 
     [Test]
+    public async Task It_re_stamps_through_the_shipped_cli_process()
+    {
+        var result = SchemaRestampTestHelper.RunRestamp(
+            _connectionString,
+            "mssql",
+            true,
+            CliTestHelper.GetMinimalSchemaPath(),
+            SchemaRestampTestHelper.ExtensionPath
+        );
+
+        result.ExitCode.Should().Be(0, result.Error);
+        result.Output.Should().Contain("Effective schema re-stamp committed.");
+        result.Output.Should().Contain(_target.EffectiveSchemaHash);
+        result.Output.Should().Contain("Run 'ddl provision' separately");
+        result.Error.Should().NotContain(_connectionString);
+        using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        SchemaRestampTestHelper.Capture(connection, "mssql").Hash.Should().Be(_target.EffectiveSchemaHash);
+    }
+
+    [Test]
     public async Task It_validates_a_match_without_confirmation_or_dml()
     {
         using var connection = new SqlConnection(_connectionString);
