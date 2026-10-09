@@ -1027,16 +1027,47 @@ Describe "Assert-DmsOnlyInventory" {
             return @{ schemas = @($Schema); principals = $Principal }
         }
 
-        $script:cleanSchemas = @(
-            @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
-            @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
-            @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) },
-            @{ schemaName = "public"; objects = @() }
-        )
+        function script:New-CleanGateSchema {
+            # A clean full-database inventory for one engine. The always-present schema differs
+            # (public on PostgreSQL, dbo on SQL Server). On the other engine it would partition as
+            # an unpaired resource schema and add its own violation.
+            param (
+                [Parameter(Mandatory)]
+                [string]$AlwaysPresent
+            )
+            return @(
+                @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
+                @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                @{ schemaName = $AlwaysPresent; objects = @() }
+            )
+        }
+
+        function script:Get-GateFailureMessage {
+            # The gate's complete failure message, or $null when it accepts. Tests compare the
+            # whole message, so a case fails on exactly the violation it plants and nothing else.
+            param (
+                [Parameter(Mandatory)]
+                [string]$DatabaseEngine,
+
+                [Parameter(Mandatory)]
+                $Inventory
+            )
+            try {
+                $null = Assert-DmsOnlyInventory -DatabaseEngine $DatabaseEngine -Inventory $Inventory
+                return $null
+            }
+            catch {
+                return $_.Exception.Message
+            }
+        }
     }
 
-    It "accepts a clean full-database inventory and returns the partition" {
-        $partition = Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $script:cleanSchemas)
+    It "accepts a clean full-database inventory and returns the partition (<Engine>)" -ForEach @(
+        @{ Engine = "postgresql"; AlwaysPresent = "public" }
+        @{ Engine = "mssql"; AlwaysPresent = "dbo" }
+    ) {
+        $partition = Assert-DmsOnlyInventory -DatabaseEngine $Engine -Inventory (New-GateInventory -Schema (New-CleanGateSchema -AlwaysPresent $AlwaysPresent))
         $partition.ProjectSchemaNames | Should -Be @("edfi")
     }
 
@@ -1048,33 +1079,42 @@ Describe "Assert-DmsOnlyInventory" {
         { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $schemas) } | Should -Not -Throw
     }
 
-    It "rejects the Configuration Service schema dmscs" {
-        $schemas = $script:cleanSchemas + @(@{ schemaName = "dmscs"; objects = @(@{ name = "Application"; type = "table" }) })
-        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $schemas) } |
-            Should -Throw "*contains the Configuration Service schema 'dmscs'*"
+    It "rejects the Configuration Service schema dmscs (<Engine>)" -ForEach @(
+        @{ Engine = "postgresql"; AlwaysPresent = "public" }
+        @{ Engine = "mssql"; AlwaysPresent = "dbo" }
+    ) {
+        $schemas = (New-CleanGateSchema -AlwaysPresent $AlwaysPresent) + @(@{ schemaName = "dmscs"; objects = @(@{ name = "Application"; type = "table" }) })
+        Get-GateFailureMessage -DatabaseEngine $Engine -Inventory (New-GateInventory -Schema $schemas) |
+            Should -BeExactly "The database is not a dedicated DMS datastore: it contains the Configuration Service schema 'dmscs'."
     }
 
-    It "rejects OpenIddict identity-state objects anywhere, case-insensitively" {
+    It "rejects OpenIddict identity-state objects anywhere, case-insensitively (<Engine>)" -ForEach @(
+        @{ Engine = "postgresql"; AlwaysPresent = "public" }
+        @{ Engine = "mssql"; AlwaysPresent = "dbo" }
+    ) {
         $schemas = @(
             @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }, @{ name = "OPENIDDICTKey"; type = "table" }) },
-            @{ schemaName = "public"; objects = @() }
+            @{ schemaName = $AlwaysPresent; objects = @() }
         )
-        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $schemas) } |
-            Should -Throw "*identity-state object 'dms.OPENIDDICTKey'*"
+        Get-GateFailureMessage -DatabaseEngine $Engine -Inventory (New-GateInventory -Schema $schemas) |
+            Should -BeExactly "The database is not a dedicated DMS datastore: it contains identity-state object 'dms.OPENIDDICTKey'."
     }
 
-    It "rejects lookalike and unpaired schemas through companion pairing" {
-        $auth2 = $script:cleanSchemas + @(@{ schemaName = "auth2"; objects = @() })
-        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $auth2) } |
-            Should -Throw "*schema 'auth2' has no tracked_changes_auth2 companion*"
+    It "rejects lookalike and unpaired schemas through companion pairing (<Engine>)" -ForEach @(
+        @{ Engine = "postgresql"; AlwaysPresent = "public" }
+        @{ Engine = "mssql"; AlwaysPresent = "dbo" }
+    ) {
+        $auth2 = (New-CleanGateSchema -AlwaysPresent $AlwaysPresent) + @(@{ schemaName = "auth2"; objects = @() })
+        Get-GateFailureMessage -DatabaseEngine $Engine -Inventory (New-GateInventory -Schema $auth2) |
+            Should -BeExactly "The database is not a dedicated DMS datastore: schema 'auth2' has no tracked_changes_auth2 companion, so it is not an authoritative DMS resource schema."
 
-        $lookalikeCompanion = $script:cleanSchemas + @(@{ schemaName = "tracked_changesx"; objects = @() })
-        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $lookalikeCompanion) } |
-            Should -Throw "*schema 'tracked_changesx' has no tracked_changes_tracked_changesx companion*"
+        $lookalikeCompanion = (New-CleanGateSchema -AlwaysPresent $AlwaysPresent) + @(@{ schemaName = "tracked_changesx"; objects = @() })
+        Get-GateFailureMessage -DatabaseEngine $Engine -Inventory (New-GateInventory -Schema $lookalikeCompanion) |
+            Should -BeExactly "The database is not a dedicated DMS datastore: schema 'tracked_changesx' has no tracked_changes_tracked_changesx companion, so it is not an authoritative DMS resource schema."
 
-        $orphanCompanion = $script:cleanSchemas + @(@{ schemaName = "tracked_changes_ghost"; objects = @() })
-        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $orphanCompanion) } |
-            Should -Throw "*companion schema 'tracked_changes_ghost' has no matching resource schema*"
+        $orphanCompanion = (New-CleanGateSchema -AlwaysPresent $AlwaysPresent) + @(@{ schemaName = "tracked_changes_ghost"; objects = @() })
+        Get-GateFailureMessage -DatabaseEngine $Engine -Inventory (New-GateInventory -Schema $orphanCompanion) |
+            Should -BeExactly "The database is not a dedicated DMS datastore: companion schema 'tracked_changes_ghost' has no matching resource schema 'ghost'."
     }
 
     It "rejects content hidden in the always-present public/dbo schemas" {
@@ -1093,9 +1133,13 @@ Describe "Assert-DmsOnlyInventory" {
             Should -Throw "*always-present 'dbo' schema contains unexpected objects*evil*"
     }
 
-    It "rejects unexpected database principals" {
-        { Assert-DmsOnlyInventory -DatabaseEngine mssql -Inventory (New-GateInventory -Schema $script:cleanSchemas -Principal @("copied_cms_user")) } |
-            Should -Throw "*unexpected database principals: copied_cms_user*"
+    It "rejects unexpected database principals on an otherwise clean SQL Server inventory, on the principal alone" {
+        $sqlServerSchemas = New-CleanGateSchema -AlwaysPresent "dbo"
+        Get-GateFailureMessage -DatabaseEngine mssql -Inventory (New-GateInventory -Schema $sqlServerSchemas) |
+            Should -BeNullOrEmpty -Because "the same inventory without the principal is clean"
+
+        Get-GateFailureMessage -DatabaseEngine mssql -Inventory (New-GateInventory -Schema $sqlServerSchemas -Principal @("copied_cms_user")) |
+            Should -BeExactly "The database is not a dedicated DMS datastore: it carries unexpected database principals: copied_cms_user."
     }
 
     It "rejects a missing or empty dms schema" {
@@ -1105,15 +1149,18 @@ Describe "Assert-DmsOnlyInventory" {
             Should -Throw "*the 'dms' schema contains no objects*"
     }
 
-    It "rejects resource schemas without the core edfi schema" {
+    It "rejects resource schemas without the core edfi schema (<Engine>)" -ForEach @(
+        @{ Engine = "postgresql"; AlwaysPresent = "public" }
+        @{ Engine = "mssql"; AlwaysPresent = "dbo" }
+    ) {
         $schemas = @(
             @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
             @{ schemaName = "tpdm"; objects = @() },
             @{ schemaName = "tracked_changes_tpdm"; objects = @() },
-            @{ schemaName = "public"; objects = @() }
+            @{ schemaName = $AlwaysPresent; objects = @() }
         )
-        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $schemas) } |
-            Should -Throw "*the core resource schema 'edfi' is missing*"
+        Get-GateFailureMessage -DatabaseEngine $Engine -Inventory (New-GateInventory -Schema $schemas) |
+            Should -BeExactly "The database is not a dedicated DMS datastore: the core resource schema 'edfi' is missing."
     }
 
     It "aggregates multiple violations into one message with the source description" {

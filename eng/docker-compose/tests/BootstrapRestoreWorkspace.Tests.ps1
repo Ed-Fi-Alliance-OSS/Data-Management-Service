@@ -1488,15 +1488,17 @@ Describe "Invoke-RestoreScratchValidation" {
             Should -Throw "*templateKind 'Populated'*no non-descriptor, non-school-year documents*"
     }
 
-    It "refuses a self-consistent contaminated package: manifest and scratch agree, the candidate schema does not (<SchemaName>.ExtraTable)" -ForEach @(
-        @{ SchemaName = "dms" }
-        @{ SchemaName = "edfi" }
+    It "refuses a self-consistent contaminated package on <Engine>: manifest and scratch agree, the candidate schema does not (<SchemaName>.ExtraTable)" -ForEach @(
+        @{ Engine = "postgresql"; SchemaName = "dms"; AdminDatabase = "postgres"; ScratchDropPattern = 'DROP DATABASE IF EXISTS "edfi_dms_restore_scratch_*'; ScratchDropCount = 2; ArtifactRemovalPattern = "exec dms-postgresql rm -f /tmp/restore-scratch-*.sql" }
+        @{ Engine = "postgresql"; SchemaName = "edfi"; AdminDatabase = "postgres"; ScratchDropPattern = 'DROP DATABASE IF EXISTS "edfi_dms_restore_scratch_*'; ScratchDropCount = 2; ArtifactRemovalPattern = "exec dms-postgresql rm -f /tmp/restore-scratch-*.sql" }
+        @{ Engine = "mssql"; SchemaName = "dms"; AdminDatabase = "master"; ScratchDropPattern = "IF DB_ID(N'edfi_dms_restore_scratch_*DROP DATABASE*"; ScratchDropCount = 1; ArtifactRemovalPattern = "exec dms-mssql rm -f /var/opt/mssql/data/restore-scratch-*.bak" }
+        @{ Engine = "mssql"; SchemaName = "edfi"; AdminDatabase = "master"; ScratchDropPattern = "IF DB_ID(N'edfi_dms_restore_scratch_*DROP DATABASE*"; ScratchDropCount = 1; ArtifactRemovalPattern = "exec dms-mssql rm -f /var/opt/mssql/data/restore-scratch-*.bak" }
     ) {
         # The attack this closes: a signed package whose ARTIFACT carries an extra object and
         # whose MANIFEST inventory declares that same object. Every manifest-versus-database
         # comparison is then satisfied, because the package is being checked against its own
         # claims.
-        $contaminatedFact = New-ScratchCatalogFact
+        $contaminatedFact = New-ScratchCatalogFact -DatabaseEngine $Engine
         foreach ($inventory in @($contaminatedFact.FullInventory, $contaminatedFact.ArtifactInventory)) {
             $targetSchema = @($inventory.schemas | Where-Object { $_.schemaName -eq $SchemaName })[0]
             $targetSchema.objects += @{ name = "ExtraTable"; type = "table" }
@@ -1504,24 +1506,36 @@ Describe "Invoke-RestoreScratchValidation" {
         $global:ScratchFactToReturn = $contaminatedFact
 
         # The manifest records the contaminated inventory, so its hash matches the database.
-        $stage = New-ScratchStage -Directory $script:scratchRoot -ManifestOverride @{
+        $stage = New-ScratchStage -Directory $script:scratchRoot -DatabaseEngine $Engine -ManifestOverride @{
             inventorySha256 = (Get-CanonicalInventoryHash -Inventory $contaminatedFact.ArtifactInventory)
         }
 
         # Control: prove the self-referential comparison is NOT enough - it passes outright.
-        { Assert-RestoreManifestMatchesDatabase -Manifest $stage.Manifest -Facts $contaminatedFact -DatabaseEngine postgresql } |
+        { Assert-RestoreManifestMatchesDatabase -Manifest $stage.Manifest -Facts $contaminatedFact -DatabaseEngine $Engine } |
             Should -Not -Throw
 
         # The authoritative inventory comes from the candidate schema's own DDL, which defines
         # no ExtraTable anywhere.
-        $global:AuthoritativeInventoryOverride = New-ScratchInventory
+        $global:AuthoritativeInventoryOverride = New-ScratchInventory -DatabaseEngine $Engine
 
-        { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine postgresql } |
+        { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine $Engine } |
             Should -Throw "*does not match the authoritative inventory derived from the candidate schema*$SchemaName.ExtraTable (table)*"
 
-        # The gate fires before the identity capture, and the scratch is still dropped.
+        # The gate fires before the identity capture, and the scratch and its in-container
+        # artifact copy are still removed.
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*SourceIdentity*" }
-        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 2 -Exactly -ParameterFilter { $Query -like 'DROP DATABASE IF EXISTS "edfi_dms_restore_scratch_*' }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times $ScratchDropCount -Exactly -ParameterFilter { $Query -like $ScratchDropPattern }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like $ArtifactRemovalPattern }
+
+        # No call reached any database other than the engine's admin database and the
+        # generated scratch: the refusal comes before anything could touch a target.
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter {
+            $DatabaseName -cne $AdminDatabase -and $DatabaseName -cnotmatch '^edfi_dms_restore_scratch_[0-9a-f]{12}\z'
+        }
+        Should -Invoke Get-RestoreDatabaseCatalogFact -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            $DatabaseEngine -ceq $Engine -and $DatabaseName -cmatch '^edfi_dms_restore_scratch_[0-9a-f]{12}\z'
+        }
+        Should -Invoke Get-RestoreDatabaseCatalogFact -ModuleName bootstrap-restore -Times 1 -Exactly
     }
 
     It "refuses an artifact missing an object the candidate schema defines" {
