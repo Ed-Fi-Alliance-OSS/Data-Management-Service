@@ -242,3 +242,32 @@ targets 18.
   upgrade fixtures are not part of this story; the index arrives with DMS-1448.
 - The upgrade playbook documents expected cross-engine Unicode differences as per-engine verdicts,
   never as parity; the executable pins are DMS-1455 acceptance criteria.
+
+## Post-Merge Closure Checklist
+
+These steps happen after the pull request merges. Record each result on the merged pull request.
+They are closure evidence, not merge gates.
+
+1. Right after the merge, and before the next scheduled run of
+   `.github/workflows/nightly-cdc-qualification.yml`, a repository administrator sets the
+   `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE` repository variable to a digest-pinned PostgreSQL 18
+   image, for example the compose pin
+   `postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873`.
+   Set earlier, the nightly fails on `main`'s PostgreSQL 16 data layout; set later, it fails the
+   SchemaTools version guard.
+2. A second person reads the variable back, for example with
+   `gh variable get CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE --repo Ed-Fi-Alliance-OSS/Data-Management-Service`,
+   and records the value they saw.
+3. A `workflow_dispatch` run of `nightly-cdc-qualification.yml` on `main` with the new value
+   passes. Record its link.
+4. The first `main` runs of `.github/workflows/EdFi.Api.Minimal.Template.PostgreSQL.yml` and
+   `.github/workflows/EdFi.Api.Populated.Template.PostgreSQL.yml` after the merge publish template
+   packages built on PostgreSQL 18. Record their links.
+5. The first scheduled run of `.github/workflows/scheduled-smoke-test.yml` after the merge passes.
+   Record its link.
+
+Before the merge, the pull request itself carries the pull-request runs of the two template
+workflows and the smoke test (build and restore on PostgreSQL 18, no publishing), and the manual
+compose check that `eng/docker-compose/postgresql-init.sh` took effect on PostgreSQL 18:
+`SHOW wal_level` returns `logical`, and `pg_hba_file_rules` contains the replication entry for
+`kafka-postgresql-source`.
