@@ -1064,43 +1064,618 @@ Describe "Get-RestoreSmokeStackObservation" {
     }
 }
 
-Describe "Get-RestoreSmokeEffectiveSchemaPackageList" {
-    It "reads SCHEMA_PACKAGES from the derived env file" {
-        $file = Join-Path $TestDrive ".env.derived"
-        Set-Content -LiteralPath $file -Value @("A=1", 'SCHEMA_PACKAGES=[{"name":"core"}]')
+Describe "Read-RestoreSmokeStagedSelection" {
+    BeforeAll {
+        function script:Write-TestManifest {
+            param([string]$Root, [string]$Content)
 
-        (Get-RestoreSmokeEffectiveSchemaPackageList -DerivedEnvironmentFile $file).Value | Should -Be '[{"name":"core"}]'
+            New-Item -ItemType Directory -Path $Root -Force | Out-Null
+            $path = Join-Path $Root "bootstrap-manifest.json"
+            [System.IO.File]::WriteAllText($path, $Content, [System.Text.UTF8Encoding]::new($false))
+            return $path
+        }
     }
 
-    It "reports a missing derived file instead of a value" {
-        $result = Get-RestoreSmokeEffectiveSchemaPackageList -DerivedEnvironmentFile (Join-Path $TestDrive "absent.env")
+    It "reads the staged identities with the SHA-256 and write time of the same manifest" {
+        $root = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N"))
+        $path = Write-TestManifest -Root $root -Content '{"version":1,"schema":{"selectionMode":"Standard","selectedPackages":["EdFi.DataStandard52.ApiSchema@1.0.335","EdFi.DataStandard52.TPDM.ApiSchema@1.0.335"]}}'
+        [System.IO.File]::SetLastWriteTimeUtc($path, [System.DateTime]::new(2026, 10, 8, 11, 1, 0, [System.DateTimeKind]::Utc))
 
-        $result.Value | Should -BeNullOrEmpty
-        $result.Reason | Should -Be "derived env file not present"
+        $result = Read-RestoreSmokeStagedSelection -BootstrapRoot $root
+
+        $result.Reason | Should -BeNullOrEmpty
+        $result.Source | Should -BeExactly "bootstrap-manifest.json schema.selectedPackages"
+        @($result.StagedPackages) | Should -Be @("EdFi.DataStandard52.ApiSchema@1.0.335", "EdFi.DataStandard52.TPDM.ApiSchema@1.0.335")
+        $result.ManifestSha256 | Should -BeExactly (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        $result.ManifestLastWriteTimeUtc | Should -BeExactly "2026-10-08T11:01:00.0000000Z"
     }
 
-    It "reports <case> as a reason, not as a value" -ForEach @(
-        @{ Case = "a blank SCHEMA_PACKAGES"; Lines = @("A=1", "SCHEMA_PACKAGES=   "); Expected = "SCHEMA_PACKAGES is blank in the derived env file" }
-        @{ Case = "an absent SCHEMA_PACKAGES"; Lines = @("A=1"); Expected = "SCHEMA_PACKAGES not set in the derived env file" }
+    It "records an empty selection as an empty list, not as a reason" {
+        $root = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N"))
+        $null = Write-TestManifest -Root $root -Content '{"schema":{"selectedPackages":[]}}'
+
+        $result = Read-RestoreSmokeStagedSelection -BootstrapRoot $root
+
+        $result.Reason | Should -BeNullOrEmpty
+        $result.StagedPackages.Count | Should -Be 0
+    }
+
+    It "reads a manifest that starts with a byte-order mark" {
+        $root = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N"))
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $root "bootstrap-manifest.json"), '{"schema":{"selectedPackages":["EdFi.DataStandard52.ApiSchema@1.0.335"]}}', [System.Text.UTF8Encoding]::new($true))
+
+        $result = Read-RestoreSmokeStagedSelection -BootstrapRoot $root
+
+        $result.Reason | Should -BeNullOrEmpty
+        @($result.StagedPackages) | Should -Be @("EdFi.DataStandard52.ApiSchema@1.0.335")
+    }
+
+    It "makes every staged entry log-safe" {
+        $root = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N"))
+        $null = Write-TestManifest -Root $root -Content '{"schema":{"selectedPackages":["EdFi\u0007.DataStandard52.ApiSchema@1.0.335",null]}}'
+
+        $result = Read-RestoreSmokeStagedSelection -BootstrapRoot $root
+
+        @($result.StagedPackages) | Should -Be @("EdFi?.DataStandard52.ApiSchema@1.0.335", "")
+    }
+
+    It "reports <case> as a reason, keeping the manifest's SHA-256" -ForEach @(
+        @{ Case = "malformed JSON"; Content = '{"schema":'; Expected = "bootstrap-manifest.json is not valid JSON: *" }
+        @{ Case = "a JSON array"; Content = '[]'; Expected = "bootstrap-manifest.json has no schema section" }
+        @{ Case = "no schema section"; Content = '{"claims":{}}'; Expected = "bootstrap-manifest.json has no schema section" }
+        @{ Case = "a schema section that is not an object"; Content = '{"schema":"Standard"}'; Expected = "bootstrap-manifest.json has no schema section" }
+        @{ Case = "no selectedPackages"; Content = '{"schema":{"selectionMode":"Standard","selectedExtensions":[]}}'; Expected = "bootstrap-manifest.json records no schema.selectedPackages" }
+        @{ Case = "a null selectedPackages"; Content = '{"schema":{"selectedPackages":null}}'; Expected = "bootstrap-manifest.json records no schema.selectedPackages" }
+        @{ Case = "a string selectedPackages"; Content = '{"schema":{"selectedPackages":"EdFi.DataStandard52.ApiSchema@1.0.335"}}'; Expected = "schema.selectedPackages in bootstrap-manifest.json is not an array" }
+        @{ Case = "an object selectedPackages"; Content = '{"schema":{"selectedPackages":{"core":"EdFi.DataStandard52.ApiSchema@1.0.335"}}}'; Expected = "schema.selectedPackages in bootstrap-manifest.json is not an array" }
     ) {
-        $file = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N") + ".env")
-        Set-Content -LiteralPath $file -Value $Lines
+        $root = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N"))
+        $path = Write-TestManifest -Root $root -Content $Content
 
-        $result = Get-RestoreSmokeEffectiveSchemaPackageList -DerivedEnvironmentFile $file
+        $result = Read-RestoreSmokeStagedSelection -BootstrapRoot $root
 
-        $result.Value | Should -BeNullOrEmpty
-        $result.Reason | Should -Be $Expected
+        $result.Reason | Should -BeLike $Expected
+        $result.StagedPackages | Should -BeNullOrEmpty
+        $result.ManifestSha256 | Should -BeExactly (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
     }
 
-    It "reports an unreadable derived file as a reason instead of throwing" {
-        $file = Join-Path $TestDrive "unreadable.env"
-        Set-Content -LiteralPath $file -Value "SCHEMA_PACKAGES=x"
-        Mock Get-Content -ModuleName RestoreSmokeProbes { throw "access denied" }
+    It "reports a workspace without a manifest (<case>)" -ForEach @(
+        @{ Case = "no workspace"; Prepare = { param($root) $null = $root } }
+        @{ Case = "an empty workspace"; Prepare = { param($root) New-Item -ItemType Directory -Path $root -Force | Out-Null } }
+        @{ Case = "only a derived env file, as a plain start leaves beside the manifest"; Prepare = { param($root) New-Item -ItemType Directory -Path $root -Force | Out-Null; Set-Content -LiteralPath (Join-Path $root ".env.derived") -Value "SCHEMA_PACKAGES='[]'" } }
+        @{ Case = "a directory in the manifest's place"; Prepare = { param($root) New-Item -ItemType Directory -Path (Join-Path $root "bootstrap-manifest.json") -Force | Out-Null } }
+    ) {
+        $root = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N"))
+        & $Prepare $root
 
-        $result = Get-RestoreSmokeEffectiveSchemaPackageList -DerivedEnvironmentFile $file
+        $result = Read-RestoreSmokeStagedSelection -BootstrapRoot $root
 
-        $result.Value | Should -BeNullOrEmpty
-        $result.Reason | Should -Be "derived env file could not be read: access denied"
+        $result.Reason | Should -BeExactly "the active workspace has no bootstrap-manifest.json"
+        $result.ManifestSha256 | Should -BeNullOrEmpty
+        $result.ManifestLastWriteTimeUtc | Should -BeNullOrEmpty
+        $result.StagedPackages | Should -BeNullOrEmpty
+    }
+}
+
+Describe "New-RestoreSmokeStackStart" {
+    BeforeAll {
+        function script:New-StackStartEnv {
+            param([string[]]$Lines)
+
+            $path = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N") + ".env")
+            Set-Content -LiteralPath $path -Value $Lines
+            return $path
+        }
+    }
+
+    It "records the start with no workspace before it" {
+        $environment = New-StackStartEnv -Lines @("A=1", "SCHEMA_PACKAGES='[{""name"":""EdFi.DataStandard52.ApiSchema"",""version"":""1.0.335""},{""name"":""EdFi.DataStandard52.TPDM.ApiSchema"",""version"":""1.0.335"",""feedUrl"":""https://example.invalid/feed""}]'")
+        $before = [System.DateTime]::UtcNow
+
+        $start = New-RestoreSmokeStackStart -Sequence 3 -Label "leg-package-directory" -Selection "default" -EnvironmentFile $environment -BootstrapRoot (Join-Path $TestDrive "absent-bootstrap")
+
+        $after = [System.DateTime]::UtcNow
+        $start.StackStart | Should -BeExactly "stack-start#3"
+        $start.Label | Should -BeExactly "leg-package-directory"
+        $start.Restore | Should -BeFalse
+        $start.Selection | Should -BeExactly "default"
+        $start.EnvironmentFile | Should -BeExactly ([System.IO.Path]::GetFileName($environment))
+        @($start.RequestedPackages) | Should -Be @("EdFi.DataStandard52.ApiSchema@1.0.335", "EdFi.DataStandard52.TPDM.ApiSchema@1.0.335")
+        $start.RequestedReason | Should -BeNullOrEmpty
+        $start.WorkspaceBefore.Present | Should -BeFalse
+        $start.WorkspaceBefore.Sha256 | Should -BeNullOrEmpty
+        $start.WorkspaceBefore.Reason | Should -BeExactly "the active workspace has no bootstrap-manifest.json"
+        $started = [System.DateTimeOffset]::Parse($start.StartedUtc, [System.Globalization.CultureInfo]::InvariantCulture).UtcDateTime
+        $started | Should -BeGreaterOrEqual $before
+        $started | Should -BeLessOrEqual $after
+    }
+
+    It "captures the manifest present before a restore start" {
+        $root = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N"))
+        New-Item -ItemType Directory -Path $root -Force | Out-Null
+        $manifest = Join-Path $root "bootstrap-manifest.json"
+        Set-Content -LiteralPath $manifest -Value '{"schema":{"selectedPackages":["EdFi.DataStandard52.ApiSchema@1.0.335"]}}'
+        [System.IO.File]::SetLastWriteTimeUtc($manifest, [System.DateTime]::new(2026, 10, 8, 9, 0, 0, [System.DateTimeKind]::Utc))
+        $environment = New-StackStartEnv -Lines @("SCHEMA_PACKAGES='[{""name"":""EdFi.DataStandard52.ApiSchema"",""version"":""1.0.335""}]'")
+
+        $start = New-RestoreSmokeStackStart -Sequence 1 -Label "leg-extension-selection" -Selection "core-only" -EnvironmentFile $environment -BootstrapRoot $root -Restore
+
+        $start.Restore | Should -BeTrue
+        $start.Selection | Should -BeExactly "core-only"
+        $start.WorkspaceBefore.Present | Should -BeTrue
+        $start.WorkspaceBefore.Sha256 | Should -BeExactly (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant()
+        $start.WorkspaceBefore.LastWriteTimeUtc | Should -BeExactly "2026-10-08T09:00:00.0000000Z"
+        $start.WorkspaceBefore.Reason | Should -BeNullOrEmpty
+    }
+
+    It "records an env whose SCHEMA_PACKAGES cannot be parsed (<case>) as a reason, not a throw" -ForEach @(
+        @{ Case = "no SCHEMA_PACKAGES"; Lines = @("A=1") }
+        @{ Case = "malformed JSON"; Lines = @("SCHEMA_PACKAGES='[{'") }
+        @{ Case = "an empty array"; Lines = @("SCHEMA_PACKAGES='[]'") }
+    ) {
+        $environment = New-StackStartEnv -Lines $Lines
+
+        $start = New-RestoreSmokeStackStart -Sequence 1 -Label "x" -Selection "default" -EnvironmentFile $environment -BootstrapRoot (Join-Path $TestDrive "absent-bootstrap")
+
+        $start.RequestedPackages | Should -BeNullOrEmpty
+        $start.RequestedReason | Should -BeLike "SCHEMA_PACKAGES in the env file could not be parsed: *"
+        $start.StackStart | Should -BeExactly "stack-start#1"
+    }
+}
+
+Describe "Get-RestoreSmokeStagedSelectionReason" {
+    BeforeAll {
+        $script:selCore = "EdFi.DataStandard52.ApiSchema@1.0.335"
+        $script:selTpdm = "EdFi.DataStandard52.TPDM.ApiSchema@1.0.335"
+        $script:selSha = "e1" * 32
+
+        # A context of one observation (step leg-separate-config, bound to stack-start#2, a
+        # default-selection restore that began at 11:00 into an empty workspace), the recorded
+        # stack starts, and the recorded selection envs. The manifest was written at 11:01.
+        function script:New-ReasonContext {
+            $starts = [System.Collections.Generic.List[object]]::new()
+            $starts.Add([pscustomobject]@{
+                    StackStart        = "stack-start#2"
+                    Label             = "leg-separate-config"
+                    Restore           = $true
+                    Selection         = "default"
+                    EnvironmentFile   = ".env.smoke-images"
+                    RequestedPackages = @($script:selCore, $script:selTpdm)
+                    RequestedReason   = $null
+                    WorkspaceBefore   = [pscustomobject]@{ Present = $false; Sha256 = $null; LastWriteTimeUtc = $null; Reason = "the active workspace has no bootstrap-manifest.json" }
+                    StartedUtc        = "2026-10-08T11:00:00.0000000Z"
+                })
+            return [pscustomobject]@{
+                Observation  = [pscustomobject]@{
+                    Label           = "leg-separate-config"
+                    StackStart      = "stack-start#2"
+                    StagedSelection = [pscustomobject]@{ Source = "bootstrap-manifest.json schema.selectedPackages"; ManifestSha256 = $script:selSha; ManifestLastWriteTimeUtc = "2026-10-08T11:01:00.0000000Z"; StagedPackages = @($script:selCore, $script:selTpdm); Reason = $null }
+                }
+                Starts       = $starts
+                Environments = [System.Collections.Generic.List[object]]::new()
+            }
+        }
+
+        function script:Get-ContextReason {
+            param($Context)
+
+            return @(Get-RestoreSmokeStagedSelectionReason -Observation $Context.Observation -Label "leg-separate-config" -StackStart @($Context.Starts) -SelectionEnvironment @($Context.Environments))
+        }
+
+        function script:Set-KeptWorkspace {
+            # The manifest the start found is the one observed: same SHA-256 and write time (10:30).
+            param($Context)
+
+            $Context.Starts[0].WorkspaceBefore = [pscustomobject]@{ Present = $true; Sha256 = $script:selSha; LastWriteTimeUtc = "2026-10-08T10:30:00.0000000Z"; Reason = $null }
+            $Context.Observation.StagedSelection.ManifestLastWriteTimeUtc = "2026-10-08T10:30:00.0000000Z"
+        }
+
+        function script:Add-CoreOnlyEnvironment {
+            param($Context)
+
+            $Context.Environments.Add([pscustomobject]@{ Selection = "core-only"; FileName = ".env.smoke-core-only"; SelectedPackages = @($script:selCore); RemovedPackages = @($script:selTpdm) })
+        }
+    }
+
+    It "is empty when <case>" -ForEach @(
+        @{ Case = "the default-selection observation is complete"; Mutate = { param($c) $null = $c } }
+        @{ Case = "a restore kept the workspace it found, unchanged (byte-identical candidate)"; Mutate = { param($c) Set-KeptWorkspace $c } }
+        @{ Case = "the requested packages differ from the staged ones on a default-selection stack (a Data Standard overlay)"; Mutate = { param($c) $c.Starts[0].RequestedPackages = @("EdFi.DataStandard61.ApiSchema@1.0.0"); $c.Observation.StagedSelection.StagedPackages = @("EdFi.DataStandard52.ApiSchema@1.0.335") } }
+        @{ Case = "the requested packages could not be parsed"; Mutate = { param($c) $c.Starts[0].RequestedPackages = $null; $c.Starts[0].RequestedReason = "SCHEMA_PACKAGES in the env file could not be parsed: x" } }
+        @{ Case = "a core-only stack staged exactly its env's packages"; Mutate = { param($c) Add-CoreOnlyEnvironment $c; $c.Starts[0].Selection = "core-only"; $c.Observation.StagedSelection.StagedPackages = @($script:selCore) } }
+        @{ Case = "the manifest was written at the very instant the start began"; Mutate = { param($c) $c.Observation.StagedSelection.ManifestLastWriteTimeUtc = "2026-10-08T11:00:00.0000000Z" } }
+        @{ Case = "the times came back from JSON as DateTime and DateTimeOffset values"; Mutate = { param($c) $c.Observation.StagedSelection.ManifestLastWriteTimeUtc = [System.DateTime]::new(2026, 10, 8, 11, 1, 0, [System.DateTimeKind]::Utc); $c.Starts[0].StartedUtc = [System.DateTimeOffset]::new(2026, 10, 8, 12, 0, 0, [System.TimeSpan]::FromHours(1)) } }
+    ) {
+        $context = New-ReasonContext
+        & $Mutate $context
+
+        $reasons = Get-ContextReason $context
+
+        $reasons.Count | Should -Be 0
+    }
+
+    It "reports exactly the expected reasons when <case>" -ForEach @(
+        # Binding.
+        @{ Case = "the observation names no stack start"; Mutate = { param($c) $c.Observation.StackStart = $null }; Expected = @("leg-separate-config: the observation names no stack start, so its staged selection is not bound to the stack it observed") }
+        @{ Case = "the observation has no StackStart field"; Mutate = { param($c) $c.Observation.PSObject.Properties.Remove("StackStart") }; Expected = @("leg-separate-config: the observation names no stack start, so its staged selection is not bound to the stack it observed") }
+        @{ Case = "the named stack start was never recorded"; Mutate = { param($c) $c.Observation.StackStart = "stack-start#9" }; Expected = @("leg-separate-config: 0 recorded stack starts are named 'stack-start#9'; expected exactly one") }
+        @{ Case = "no stack start was recorded at all"; Mutate = { param($c) $c.Starts.Clear() }; Expected = @("leg-separate-config: 0 recorded stack starts are named 'stack-start#2'; expected exactly one") }
+        @{ Case = "the stack start was recorded twice"; Mutate = { param($c) $c.Starts.Add($c.Starts[0]) }; Expected = @("leg-separate-config: 2 recorded stack starts are named 'stack-start#2'; expected exactly one") }
+        @{ Case = "the stack start belongs to another step"; Mutate = { param($c) $c.Starts[0].Label = "build-source-datastore-default-minimal" }; Expected = @("leg-separate-config: stack start 'stack-start#2' belongs to step 'build-source-datastore-default-minimal'") }
+        # Evidence.
+        @{ Case = "no staged selection was recorded"; Mutate = { param($c) $c.Observation.PSObject.Properties.Remove("StagedSelection") }; Expected = @("leg-separate-config: the staged schema selection was not observed") }
+        @{ Case = "the staged selection is null"; Mutate = { param($c) $c.Observation.StagedSelection = $null }; Expected = @("leg-separate-config: the staged schema selection was not observed") }
+        @{ Case = "the workspace had no manifest"; Mutate = { param($c) $c.Observation.StagedSelection = [pscustomobject]@{ Source = "bootstrap-manifest.json schema.selectedPackages"; ManifestSha256 = $null; ManifestLastWriteTimeUtc = $null; StagedPackages = $null; Reason = "the active workspace has no bootstrap-manifest.json" } }; Expected = @("leg-separate-config: the staged schema selection was not observed: the active workspace has no bootstrap-manifest.json") }
+        @{ Case = "the manifest was malformed"; Mutate = { param($c) $c.Observation.StagedSelection.StagedPackages = $null; $c.Observation.StagedSelection.Reason = "bootstrap-manifest.json is not valid JSON: bad" }; Expected = @("leg-separate-config: the staged schema selection was not observed: bootstrap-manifest.json is not valid JSON: bad") }
+        @{ Case = "the manifest staged no package"; Mutate = { param($c) $c.Observation.StagedSelection.StagedPackages = @() }; Expected = @("leg-separate-config: the workspace manifest records no staged package") }
+        @{ Case = "the record has no StagedPackages field"; Mutate = { param($c) $c.Observation.StagedSelection.PSObject.Properties.Remove("StagedPackages") }; Expected = @("leg-separate-config: the workspace manifest records no staged package") }
+        @{ Case = "an identity has no version"; Mutate = { param($c) $c.Observation.StagedSelection.StagedPackages = @($script:selCore, "EdFi.DataStandard52.TPDM.ApiSchema") }; Expected = @("leg-separate-config: staged package 'EdFi.DataStandard52.TPDM.ApiSchema' is not a <name>@<version> identity") }
+        @{ Case = "an identity is blank"; Mutate = { param($c) $c.Observation.StagedSelection.StagedPackages = @($script:selCore, "") }; Expected = @("leg-separate-config: staged package '' is not a <name>@<version> identity") }
+        @{ Case = "an identity contains whitespace"; Mutate = { param($c) $c.Observation.StagedSelection.StagedPackages = @($script:selCore, "EdFi.DataStandard52.TPDM.ApiSchema @1.0.335") }; Expected = @("leg-separate-config: staged package 'EdFi.DataStandard52.TPDM.ApiSchema @1.0.335' is not a <name>@<version> identity") }
+        @{ Case = "an identity has two separators"; Mutate = { param($c) $c.Observation.StagedSelection.StagedPackages = @($script:selCore, "a@b@c") }; Expected = @("leg-separate-config: staged package 'a@b@c' is not a <name>@<version> identity") }
+        @{ Case = "an identity is repeated in another case"; Mutate = { param($c) $c.Observation.StagedSelection.StagedPackages = @($script:selCore, $script:selTpdm, $script:selTpdm.ToLowerInvariant()) }; Expected = @("leg-separate-config: the staged packages repeat an identity") }
+        @{ Case = "no core package was staged"; Mutate = { param($c) $c.Observation.StagedSelection.StagedPackages = @($script:selTpdm) }; Expected = @("leg-separate-config: the staged packages list 0 core packages (EdFi.DataStandard<NN>.ApiSchema); expected exactly one") }
+        @{ Case = "two core packages were staged"; Mutate = { param($c) $c.Observation.StagedSelection.StagedPackages = @($script:selCore, "EdFi.DataStandard61.ApiSchema@1.0.0") }; Expected = @("leg-separate-config: the staged packages list 2 core packages (EdFi.DataStandard<NN>.ApiSchema); expected exactly one") }
+        # Freshness.
+        @{ Case = "the manifest was written before the start began"; Mutate = { param($c) $c.Observation.StagedSelection.ManifestLastWriteTimeUtc = "2026-10-08T10:30:00.0000000Z" }; Expected = @("leg-separate-config: the workspace manifest was written at 2026-10-08T10:30:00.0000000Z, before stack start 'stack-start#2' began at 2026-10-08T11:00:00.0000000Z, so its selection is not this stack's") }
+        @{ Case = "the manifest's write time is missing"; Mutate = { param($c) $c.Observation.StagedSelection.ManifestLastWriteTimeUtc = $null }; Expected = @("leg-separate-config: the workspace manifest's write time or the start time of stack start 'stack-start#2' is not recorded") }
+        @{ Case = "the start time is unparseable"; Mutate = { param($c) $c.Starts[0].StartedUtc = "soon" }; Expected = @("leg-separate-config: the workspace manifest's write time or the start time of stack start 'stack-start#2' is not recorded") }
+        @{ Case = "a non-restore start left the manifest it found unchanged"; Mutate = { param($c) Set-KeptWorkspace $c; $c.Starts[0].Restore = $false }; Expected = @("leg-separate-config: the workspace manifest is the one present before stack start 'stack-start#2', which is not a restore, so the stack staged no selection of its own") }
+        @{ Case = "a restore's manifest has the content found before it but an older write time"; Mutate = { param($c) Set-KeptWorkspace $c; $c.Starts[0].WorkspaceBefore.LastWriteTimeUtc = "2026-10-08T10:20:00.0000000Z" }; Expected = @("leg-separate-config: the workspace manifest was written at 2026-10-08T10:30:00.0000000Z, before stack start 'stack-start#2' began at 2026-10-08T11:00:00.0000000Z, so its selection is not this stack's") }
+        @{ Case = "a restore's manifest has the write time found before it but other content"; Mutate = { param($c) Set-KeptWorkspace $c; $c.Starts[0].WorkspaceBefore.Sha256 = "f0" * 32 }; Expected = @("leg-separate-config: the workspace manifest was written at 2026-10-08T10:30:00.0000000Z, before stack start 'stack-start#2' began at 2026-10-08T11:00:00.0000000Z, so its selection is not this stack's") }
+        @{ Case = "a restore found no manifest but one older than the start is observed"; Mutate = { param($c) Set-KeptWorkspace $c; $c.Starts[0].WorkspaceBefore.Present = $false }; Expected = @("leg-separate-config: the workspace manifest was written at 2026-10-08T10:30:00.0000000Z, before stack start 'stack-start#2' began at 2026-10-08T11:00:00.0000000Z, so its selection is not this stack's") }
+        # Agreement.
+        @{ Case = "the start records no selection"; Mutate = { param($c) $c.Starts[0].Selection = "" }; Expected = @("leg-separate-config: stack start 'stack-start#2' records no schema selection") }
+        @{ Case = "a core-only start has no recorded env"; Mutate = { param($c) $c.Starts[0].Selection = "core-only"; $c.Observation.StagedSelection.StagedPackages = @($script:selCore) }; Expected = @("leg-separate-config: stack start 'stack-start#2' used the 'core-only' selection, which has 0 recorded envs; expected exactly one") }
+        @{ Case = "a core-only start has two recorded envs"; Mutate = { param($c) Add-CoreOnlyEnvironment $c; Add-CoreOnlyEnvironment $c; $c.Starts[0].Selection = "core-only"; $c.Observation.StagedSelection.StagedPackages = @($script:selCore) }; Expected = @("leg-separate-config: stack start 'stack-start#2' used the 'core-only' selection, which has 2 recorded envs; expected exactly one") }
+        @{ Case = "a core-only stack observed the default selection, freshly written"; Mutate = { param($c) Add-CoreOnlyEnvironment $c; $c.Starts[0].Selection = "core-only" }; Expected = @("leg-separate-config: the workspace staged [EdFi.DataStandard52.ApiSchema@1.0.335, EdFi.DataStandard52.TPDM.ApiSchema@1.0.335], but stack start 'stack-start#2' used the core-only selection [EdFi.DataStandard52.ApiSchema@1.0.335]") }
+        @{ Case = "a core-only restore kept a default-selection workspace"; Mutate = { param($c) Add-CoreOnlyEnvironment $c; Set-KeptWorkspace $c; $c.Starts[0].Selection = "core-only" }; Expected = @("leg-separate-config: the workspace staged [EdFi.DataStandard52.ApiSchema@1.0.335, EdFi.DataStandard52.TPDM.ApiSchema@1.0.335], but stack start 'stack-start#2' used the core-only selection [EdFi.DataStandard52.ApiSchema@1.0.335]") }
+    ) {
+        $context = New-ReasonContext
+        & $Mutate $context
+
+        $reasons = Get-ContextReason $context
+
+        $reasons | Should -Be $Expected
+    }
+}
+
+Describe "Staged-selection wiring in the smoke (real smoke functions, stub wrapper, no Docker)" {
+    BeforeAll {
+        # The smoke's own wrapper, observation, and teardown functions, run against stub wrapper and
+        # teardown scripts that write the workspace the way production does.
+        $smokePath = Join-Path $PSScriptRoot "Invoke-BootstrapRestoreSmoke.ps1"
+        $tokens = $null
+        $errors = $null
+        $smokeAst = [System.Management.Automation.Language.Parser]::ParseFile($smokePath, [ref]$tokens, [ref]$errors)
+        if ($errors.Count -gt 0) {
+            throw "The smoke did not parse: $($errors[0])"
+        }
+        foreach ($name in @("Invoke-RestoreWrapper", "Add-SmokeStackObservation", "Invoke-SmokeTeardown", "Get-SmokeEnvironmentSelection")) {
+            $definitions = @($smokeAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $true))
+            if ($definitions.Count -ne 1) {
+                throw "Expected one definition of $name in the smoke, found $($definitions.Count)."
+            }
+            . ([scriptblock]::Create($definitions[0].Extent.Text))
+        }
+
+        $script:WiringCore52 = "EdFi.DataStandard52.ApiSchema@1.0.335"
+        $script:WiringTpdm52 = "EdFi.DataStandard52.TPDM.ApiSchema@1.0.335"
+        $script:WiringCore61 = "EdFi.DataStandard61.ApiSchema@1.0.0"
+
+        # Plain start: writes the manifest of the packages it staged plus .bootstrap/.env.derived.
+        # Restore: stages a candidate (no derived env file) and commits it as
+        # Publish-RestoreCandidateWorkspace does - kept when byte-identical to the active tree,
+        # otherwise moved in. Production staging runs seconds after the wrapper starts; the stub
+        # stamps its write one second ahead so a coarse filesystem clock cannot order this
+        # immediate write before the recorded start.
+        $script:WiringStub = @'
+param(
+    [string]$EnvironmentFile,
+    [string]$DatabaseEngine,
+    [string]$RestoreTemplate,
+    [string]$PackageDirectory,
+    [switch]$SeparateConfigDatabase,
+    [switch]$LoadSeedData,
+    [string]$SeedTemplate,
+    [string]$DataStandardVersion
+)
+$ErrorActionPreference = "Stop"
+$plan = Get-Content -LiteralPath (Join-Path $PSScriptRoot "stub-plan.json") -Raw | ConvertFrom-Json
+$bootstrapRoot = Join-Path $PSScriptRoot ".bootstrap"
+
+function Write-StubManifest {
+    param([string]$Root, [string[]]$Packages)
+
+    New-Item -ItemType Directory -Path $Root -Force | Out-Null
+    $path = Join-Path $Root "bootstrap-manifest.json"
+    $manifest = [ordered]@{ version = 1; schema = [ordered]@{ selectionMode = "Standard"; selectedExtensions = @(); selectedPackages = @($Packages); effectiveSchemaHash = ("ab" * 32) } }
+    [System.IO.File]::WriteAllText($path, ($manifest | ConvertTo-Json -Depth 5), [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::SetLastWriteTimeUtc($path, [System.DateTime]::UtcNow.AddSeconds(1))
+}
+
+function Get-StubTree {
+    param([string]$Root)
+
+    return @(Get-ChildItem -LiteralPath $Root -Recurse -File -Force | ForEach-Object {
+            [System.IO.Path]::GetRelativePath($Root, $_.FullName).Replace("\", "/") + "=" + (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
+        } | Sort-Object) -join "|"
+}
+
+$outcome = $plan.Action
+switch ($plan.Action) {
+    "stage" {
+        Write-StubManifest -Root $bootstrapRoot -Packages @($plan.Packages)
+        Set-Content -LiteralPath (Join-Path $bootstrapRoot ".env.derived") -Value "SCHEMA_PACKAGES='$($plan.DerivedSchemaPackages)'"
+    }
+    "restore" {
+        $candidate = Join-Path $PSScriptRoot ".bootstrap-restore/candidate-$([Guid]::NewGuid().ToString('N'))"
+        Write-StubManifest -Root $candidate -Packages @($plan.Packages)
+        if ((Test-Path -LiteralPath $bootstrapRoot) -and (Get-StubTree $bootstrapRoot) -ceq (Get-StubTree $candidate)) {
+            Remove-Item -LiteralPath $candidate -Recurse -Force
+            $outcome = "restore-kept"
+        }
+        else {
+            if (Test-Path -LiteralPath $bootstrapRoot) {
+                Remove-Item -LiteralPath $bootstrapRoot -Recurse -Force
+            }
+            Move-Item -LiteralPath $candidate -Destination $bootstrapRoot
+            $outcome = "restore-replaced"
+        }
+        if ($plan.PostCommitFile) {
+            Set-Content -LiteralPath (Join-Path $bootstrapRoot $plan.PostCommitFile) -Value "written by a later phase"
+        }
+    }
+    "nothing" { }
+    "remove" { Remove-Item -LiteralPath $bootstrapRoot -Recurse -Force }
+    "malformed" { Set-Content -LiteralPath (Join-Path $bootstrapRoot "bootstrap-manifest.json") -Value '{"schema":' }
+    default { throw "unknown stub action $($plan.Action)" }
+}
+Add-Content -LiteralPath (Join-Path $PSScriptRoot "stub-calls.log") -Value "$outcome $RestoreTemplate"
+'@
+
+        $script:WiringTeardownStub = @'
+param([switch]$d, [switch]$v, [switch]$RemoveBootstrap, [string]$EnvironmentFile, [string]$DatabaseEngine)
+if ($RemoveBootstrap) {
+    Remove-Item -LiteralPath (Join-Path $PSScriptRoot ".bootstrap") -Recurse -Force -ErrorAction SilentlyContinue
+}
+Add-Content -LiteralPath (Join-Path $PSScriptRoot "stub-calls.log") -Value "teardown $([bool]$RemoveBootstrap)"
+'@
+
+        function script:Set-WiringPlan {
+            param([string]$Action, [string[]]$Packages = @(), [string]$DerivedSchemaPackages = "", [string]$PostCommitFile = "")
+
+            [ordered]@{ Action = $Action; Packages = @($Packages); DerivedSchemaPackages = $DerivedSchemaPackages; PostCommitFile = $PostCommitFile } |
+                ConvertTo-Json -Depth 3 |
+                Set-Content -LiteralPath (Join-Path $script:DockerComposeRoot "stub-plan.json")
+        }
+
+        function script:Get-WiringCall {
+            return @(Get-Content -LiteralPath (Join-Path $script:DockerComposeRoot "stub-calls.log"))
+        }
+
+        function script:Invoke-WiringStart {
+            # One stack start in the current step, then the observation Wait-SmokeDmsHealth takes.
+            param([hashtable]$Arguments, [switch]$NoObservation)
+
+            Invoke-RestoreWrapper -Arguments $Arguments
+            if (-not $NoObservation) {
+                Add-SmokeStackObservation
+            }
+        }
+
+        function script:Get-WiringReason {
+            # The staged-selection reasons the classifier gives one observation of this run.
+            param([int]$Index)
+
+            $observation = $script:Provenance.StackObservations[$Index]
+            return @(Get-RestoreSmokeStagedSelectionReason -Observation $observation -Label $observation.Label -StackStart @($script:Provenance.StackStarts) -SelectionEnvironment @($script:Provenance.SelectionEnvironments))
+        }
+
+        function script:Set-ManifestWrittenEarlier {
+            # Time passes between two starts (a stop, the next step): the workspace the next start
+            # finds was written an hour before it.
+            $manifest = Join-Path $script:BootstrapRoot "bootstrap-manifest.json"
+            [System.IO.File]::SetLastWriteTimeUtc($manifest, [System.DateTime]::UtcNow.AddHours(-1))
+        }
+    }
+
+    BeforeEach {
+        $script:DockerComposeRoot = Join-Path $TestDrive ("compose-" + [Guid]::NewGuid().ToString("N"))
+        New-Item -ItemType Directory -Path $script:DockerComposeRoot -Force | Out-Null
+        foreach ($name in @("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1")) {
+            Set-Content -LiteralPath (Join-Path $script:DockerComposeRoot $name) -Value $script:WiringStub
+        }
+        foreach ($name in @("start-local-dms.ps1", "start-published-dms.ps1")) {
+            Set-Content -LiteralPath (Join-Path $script:DockerComposeRoot $name) -Value $script:WiringTeardownStub
+        }
+        $script:BootstrapRoot = Join-Path $script:DockerComposeRoot ".bootstrap"
+
+        # The base env requests Core+TPDM 5.2; the core-only env requests the core package alone.
+        $script:ResolvedEnvironmentFile = Join-Path $script:DockerComposeRoot ".env.smoke-images"
+        Set-Content -LiteralPath $script:ResolvedEnvironmentFile -Value @("DMS_IMAGE_TAG=dms-restore-smoke-0123456789ab", "SCHEMA_PACKAGES='[{""name"":""EdFi.DataStandard52.ApiSchema"",""version"":""1.0.335""},{""name"":""EdFi.DataStandard52.TPDM.ApiSchema"",""version"":""1.0.335""}]'")
+        $script:CoreOnlyEnvironmentFile = Join-Path $script:DockerComposeRoot ".env.smoke-core-only"
+        Set-Content -LiteralPath $script:CoreOnlyEnvironmentFile -Value @("DMS_IMAGE_TAG=dms-restore-smoke-0123456789ab", "SCHEMA_PACKAGES='[{""name"":""EdFi.DataStandard52.ApiSchema"",""version"":""1.0.335""}]'")
+        $script:SelectionEnvironmentFiles = @{}
+
+        $script:Wrapper = "published"
+        $script:DataStandardVersion = "5.2"
+        $script:DataStandardVersionSupplied = $false
+        $script:DatabaseEngine = "postgresql"
+        $script:WrapperProfile = Get-RestoreSmokeWrapperProfile -Wrapper $script:Wrapper
+        $script:ApiSession = New-RestoreSmokeApiSession
+        $script:TeardownAuthorized = $true
+        $script:CurrentStepName = $null
+        $script:CurrentStackStart = $null
+        $script:Provenance = [ordered]@{
+            StackStarts           = [System.Collections.Generic.List[object]]::new()
+            StackObservations     = [System.Collections.Generic.List[object]]::new()
+            SelectionEnvironments = [System.Collections.Generic.List[object]]::new()
+        }
+
+        Mock Get-RestoreSmokeStackObservation { [pscustomobject]@{ Label = $Label; Services = [ordered]@{}; Reason = $null } }
+    }
+
+    It "records the staged overlay packages of a local start, not the base env's request or its derived env file" {
+        $script:Wrapper = "local"
+        $script:WrapperProfile = Get-RestoreSmokeWrapperProfile -Wrapper "local"
+        $script:DataStandardVersion = "6.1"
+        $script:CurrentStepName = "build-source-datastore-default-minimal"
+        Set-WiringPlan -Action "stage" -Packages @($script:WiringCore61) -DerivedSchemaPackages '[{"name":"Unrelated.Derived.Package","version":"9.9.9"}]'
+
+        Invoke-WiringStart -Arguments @{ EnvironmentFile = $script:ResolvedEnvironmentFile; DatabaseEngine = "postgresql" }
+
+        Test-Path -LiteralPath (Join-Path $script:BootstrapRoot ".env.derived") | Should -BeTrue
+        $start = $script:Provenance.StackStarts[0]
+        $observation = $script:Provenance.StackObservations[0]
+        @($start.RequestedPackages) | Should -Be @($script:WiringCore52, $script:WiringTpdm52)
+        $start.Restore | Should -BeFalse
+        $start.Selection | Should -BeExactly "default"
+        $observation.StackStart | Should -BeExactly "stack-start#1"
+        @($observation.StagedSelection.StagedPackages) | Should -Be @($script:WiringCore61)
+        (Get-WiringReason 0).Count | Should -Be 0
+    }
+
+    It "binds a published core-only restore that replaced a default workspace, with no derived env file left" {
+        $script:CurrentStepName = "leg-separate-config"
+        Set-WiringPlan -Action "stage" -Packages @($script:WiringCore52, $script:WiringTpdm52) -DerivedSchemaPackages "[]"
+        Invoke-WiringStart -Arguments @{ EnvironmentFile = $script:ResolvedEnvironmentFile; DatabaseEngine = "postgresql" }
+        Invoke-SmokeTeardown -KeepVolumes
+
+        $script:SelectionEnvironmentFiles["core-only"] = $script:CoreOnlyEnvironmentFile
+        $script:Provenance.SelectionEnvironments.Add([pscustomobject]@{ Selection = "core-only"; FileName = ".env.smoke-core-only"; SelectedPackages = @($script:WiringCore52); RemovedPackages = @($script:WiringTpdm52) })
+        $script:CurrentStepName = "leg-extension-selection"
+        Set-WiringPlan -Action "restore" -Packages @($script:WiringCore52)
+        Invoke-WiringStart -Arguments @{ EnvironmentFile = $script:CoreOnlyEnvironmentFile; DatabaseEngine = "postgresql"; RestoreTemplate = "Minimal"; PackageDirectory = "package-core-only-minimal" }
+
+        Get-WiringCall | Should -Be @("stage ", "teardown False", "restore-replaced Minimal")
+        Test-Path -LiteralPath (Join-Path $script:BootstrapRoot ".env.derived") | Should -BeFalse
+        $start = $script:Provenance.StackStarts[1]
+        $start.Restore | Should -BeTrue
+        $start.Selection | Should -BeExactly "core-only"
+        $start.WorkspaceBefore.Present | Should -BeTrue
+        $script:Provenance.StackObservations[1].StackStart | Should -BeExactly "stack-start#2"
+        @($script:Provenance.StackObservations[1].StagedSelection.StagedPackages) | Should -Be @($script:WiringCore52)
+        (Get-WiringReason 0).Count | Should -Be 0
+        (Get-WiringReason 1).Count | Should -Be 0
+    }
+
+    It "accepts a repeated restore that kept the workspace byte-identical to its candidate" {
+        $script:CurrentStepName = "leg-package-directory"
+        Set-WiringPlan -Action "restore" -Packages @($script:WiringCore52, $script:WiringTpdm52)
+        Invoke-WiringStart -Arguments @{ EnvironmentFile = $script:ResolvedEnvironmentFile; DatabaseEngine = "postgresql"; RestoreTemplate = "Minimal"; PackageDirectory = "package-default-minimal" }
+        Invoke-SmokeTeardown -KeepVolumes
+        Set-ManifestWrittenEarlier
+
+        $script:CurrentStepName = "leg-package-directory-repeat"
+        Invoke-WiringStart -Arguments @{ EnvironmentFile = $script:ResolvedEnvironmentFile; DatabaseEngine = "postgresql"; RestoreTemplate = "Minimal"; PackageDirectory = "package-default-minimal" }
+
+        Get-WiringCall | Should -Be @("restore-replaced Minimal", "teardown False", "restore-kept Minimal")
+        $second = $script:Provenance.StackObservations[1]
+        $second.StackStart | Should -BeExactly "stack-start#2"
+        $second.StagedSelection.ManifestSha256 | Should -BeExactly $script:Provenance.StackStarts[1].WorkspaceBefore.Sha256
+        $second.StagedSelection.ManifestLastWriteTimeUtc | Should -BeExactly $script:Provenance.StackStarts[1].WorkspaceBefore.LastWriteTimeUtc
+        (Get-WiringReason 0).Count | Should -Be 0
+        (Get-WiringReason 1).Count | Should -Be 0
+    }
+
+    It "binds each of two restores that replaced the workspace to its own start" {
+        $script:CurrentStepName = "leg-package-directory"
+        Set-WiringPlan -Action "restore" -Packages @($script:WiringCore52, $script:WiringTpdm52) -PostCommitFile "seed-delivered.txt"
+        Invoke-WiringStart -Arguments @{ EnvironmentFile = $script:ResolvedEnvironmentFile; DatabaseEngine = "postgresql"; RestoreTemplate = "Minimal"; PackageDirectory = "package-default-minimal" }
+        Invoke-SmokeTeardown -KeepVolumes
+        Set-ManifestWrittenEarlier
+
+        $script:CurrentStepName = "leg-package-directory-repeat"
+        Invoke-WiringStart -Arguments @{ EnvironmentFile = $script:ResolvedEnvironmentFile; DatabaseEngine = "postgresql"; RestoreTemplate = "Minimal"; PackageDirectory = "package-default-minimal" }
+
+        Get-WiringCall | Should -Be @("restore-replaced Minimal", "teardown False", "restore-replaced Minimal")
+        @($script:Provenance.StackObservations | ForEach-Object { $_.StackStart }) | Should -Be @("stack-start#1", "stack-start#2")
+        $script:Provenance.StackObservations[1].StagedSelection.ManifestLastWriteTimeUtc | Should -Not -Be $script:Provenance.StackStarts[1].WorkspaceBefore.LastWriteTimeUtc
+        (Get-WiringReason 0).Count | Should -Be 0
+        (Get-WiringReason 1).Count | Should -Be 0
+    }
+
+    It "binds the two starts of one step (the separate-config shape) each to its own observation" {
+        $script:CurrentStepName = "leg-separate-config"
+        Set-WiringPlan -Action "stage" -Packages @($script:WiringCore52, $script:WiringTpdm52) -DerivedSchemaPackages "[]"
+        Invoke-WiringStart -Arguments @{ EnvironmentFile = $script:ResolvedEnvironmentFile; DatabaseEngine = "postgresql"; SeparateConfigDatabase = $true }
+        Invoke-SmokeTeardown -KeepVolumes
+        Set-ManifestWrittenEarlier
+        Set-WiringPlan -Action "restore" -Packages @($script:WiringCore52, $script:WiringTpdm52)
+        Invoke-WiringStart -Arguments @{ EnvironmentFile = $script:ResolvedEnvironmentFile; DatabaseEngine = "postgresql"; RestoreTemplate = "Minimal"; PackageDirectory = "package-default-minimal"; SeparateConfigDatabase = $true }
+
+        @($script:Provenance.StackStarts | ForEach-Object { $_.Label }) | Should -Be @("leg-separate-config", "leg-separate-config")
+        @($script:Provenance.StackObservations | ForEach-Object { $_.StackStart }) | Should -Be @("stack-start#1", "stack-start#2")
+        (Get-WiringReason 0).Count | Should -Be 0
+        (Get-WiringReason 1).Count | Should -Be 0
+    }
+
+    It "rejects a non-restore start that left the workspace it found unchanged" {
+        $script:CurrentStepName = "leg-running-stack"
+        Set-WiringPlan -Action "stage" -Packages @($script:WiringCore52, $script:WiringTpdm52) -DerivedSchemaPackages "[]"
+        Invoke-WiringStart -Arguments @{ EnvironmentFile = $script:ResolvedEnvironmentFile; DatabaseEngine = "postgresql" }
+        Invoke-SmokeTeardown -KeepVolumes
+        Set-ManifestWrittenEarlier
+        Set-WiringPlan -Action "nothing"
+
+        Invoke-WiringStart -Arguments @{ EnvironmentFile = $script:ResolvedEnvironmentFile; DatabaseEngine = "postgresql" }
+
+        Get-WiringReason 1 | Should -Be @("leg-running-stack: the workspace manifest is the one present before stack start 'stack-start#2', which is not a restore, so the stack staged no selection of its own")
+    }
+
+    It "keeps default-selection evidence out of the core-only restore when <case>" -ForEach @(
+        @{ Case = "the restore left the default workspace in place"; Action = "nothing" }
+        @{ Case = "the restore rewrote the default selection"; Action = "restore-default" }
+    ) {
+        $script:CurrentStepName = "build-source-datastore-default-minimal"
+        Set-WiringPlan -Action "stage" -Packages @($script:WiringCore52, $script:WiringTpdm52) -DerivedSchemaPackages "[]"
+        Invoke-WiringStart -Arguments @{ EnvironmentFile = $script:ResolvedEnvironmentFile; DatabaseEngine = "postgresql" }
+        Invoke-SmokeTeardown -KeepVolumes
+        Set-ManifestWrittenEarlier
+
+        $script:SelectionEnvironmentFiles["core-only"] = $script:CoreOnlyEnvironmentFile
+        $script:Provenance.SelectionEnvironments.Add([pscustomobject]@{ Selection = "core-only"; FileName = ".env.smoke-core-only"; SelectedPackages = @($script:WiringCore52); RemovedPackages = @($script:WiringTpdm52) })
+        $script:CurrentStepName = "leg-extension-selection"
+        if ($Action -eq "nothing") {
+            Set-WiringPlan -Action "nothing"
+        }
+        else {
+            Set-WiringPlan -Action "restore" -Packages @($script:WiringCore52, $script:WiringTpdm52)
+        }
+        Invoke-WiringStart -Arguments @{ EnvironmentFile = $script:CoreOnlyEnvironmentFile; DatabaseEngine = "postgresql"; RestoreTemplate = "Minimal"; PackageDirectory = "package-core-only-minimal" }
+
+        $script:Provenance.StackStarts[1].Selection | Should -BeExactly "core-only"
+        Get-WiringReason 1 | Should -Be @("leg-extension-selection: the workspace staged [EdFi.DataStandard52.ApiSchema@1.0.335, EdFi.DataStandard52.TPDM.ApiSchema@1.0.335], but stack start 'stack-start#2' used the core-only selection [EdFi.DataStandard52.ApiSchema@1.0.335]")
+    }
+
+    It "leaves an observation taken after a teardown unbound" {
+        $script:CurrentStepName = "leg-package-directory"
+        Set-WiringPlan -Action "restore" -Packages @($script:WiringCore52, $script:WiringTpdm52)
+        Invoke-WiringStart -Arguments @{ EnvironmentFile = $script:ResolvedEnvironmentFile; DatabaseEngine = "postgresql"; RestoreTemplate = "Minimal"; PackageDirectory = "package-default-minimal" }
+        Invoke-SmokeTeardown -KeepVolumes
+
+        Add-SmokeStackObservation
+
+        $script:Provenance.StackObservations[1].StackStart | Should -BeNullOrEmpty
+        Get-WiringReason 1 | Should -Be @("leg-package-directory: the observation names no stack start, so its staged selection is not bound to the stack it observed")
+    }
+
+    It "reports a start whose workspace is <case> afterwards" -ForEach @(
+        @{ Case = "missing"; Action = "remove"; Expected = "leg-populated: the staged schema selection was not observed: the active workspace has no bootstrap-manifest.json" }
+        @{ Case = "malformed"; Action = "malformed"; Expected = "leg-populated: the staged schema selection was not observed: bootstrap-manifest.json is not valid JSON: *" }
+    ) {
+        $script:CurrentStepName = "leg-populated"
+        Set-WiringPlan -Action "stage" -Packages @($script:WiringCore52, $script:WiringTpdm52) -DerivedSchemaPackages "[]"
+        Invoke-WiringStart -Arguments @{ EnvironmentFile = $script:ResolvedEnvironmentFile; DatabaseEngine = "postgresql" } -NoObservation
+        Set-WiringPlan -Action $Action
+
+        Invoke-WiringStart -Arguments @{ EnvironmentFile = $script:ResolvedEnvironmentFile; DatabaseEngine = "postgresql" }
+
+        $reasons = @(Get-WiringReason 0)
+        $reasons.Count | Should -Be 1
+        $reasons[0] | Should -BeLike $Expected
     }
 }
 
@@ -3067,8 +3642,11 @@ Describe "Get-RestoreSmokeResultClassification for extension-selection" {
                         config = [pscustomobject]@{ Container = "dms-config-service"; ImageId = "sha256:config"; ImageRef = "local/ed-fi-api-configuration-service:dms-restore-smoke-0123456789ab"; RepoDigests = @(); RepoDigestsReason = $null }
                         db     = [pscustomobject]@{ Container = "dms-postgresql"; ImageId = "sha256:pg"; ImageRef = "postgres:16"; RepoDigests = @("postgres@sha256:" + ("a" * 64)); RepoDigestsReason = $null }
                     }
-                    EffectiveSchemaPackages = [pscustomobject]@{ Source = ".bootstrap/.env.derived"; Value = '[{"name":"EdFi.DataStandard52.ApiSchema"}]'; Reason = $null }
+                    StackStart              = "stack-start#1"
+                    StagedSelection         = [pscustomobject]@{ Source = "bootstrap-manifest.json schema.selectedPackages"; ManifestSha256 = ("e1" * 32); ManifestLastWriteTimeUtc = "2026-10-08T11:01:00.0000000Z"; StagedPackages = @($script:corePackageId); Reason = $null }
                 })
+            $stackStarts = [System.Collections.Generic.List[object]]::new()
+            $stackStarts.Add([pscustomobject]@{ StackStart = "stack-start#1"; Label = "leg-extension-selection"; Restore = $true; Selection = "core-only"; EnvironmentFile = ".env.smoke-core-only"; RequestedPackages = @($script:corePackageId); RequestedReason = $null; WorkspaceBefore = [pscustomobject]@{ Present = $false; Sha256 = $null; LastWriteTimeUtc = $null; Reason = "the active workspace has no bootstrap-manifest.json" }; StartedUtc = "2026-10-08T11:00:00.0000000Z" })
             $apiReads = [System.Collections.Generic.List[object]]::new()
             $apiReads.Add([pscustomobject]@{ Mode = "seeded"; DataStoreId = 1; Reads = @([pscustomobject]@{ Resource = "academicSubjectDescriptors"; StatusCode = 200; Count = 5 }); RestoreExecution = "extension-selection#1"; Label = "leg-extension-selection" })
             $restored = [System.Collections.Generic.List[object]]::new()
@@ -3084,6 +3662,7 @@ Describe "Get-RestoreSmokeResultClassification for extension-selection" {
                     Dms    = [ordered]@{ ImageId = "sha256:dms"; Verified = $true; Reason = $null }
                     Config = [ordered]@{ ImageId = "sha256:config"; Verified = $true; Reason = $null }
                 }
+                StackStarts            = $stackStarts
                 StackObservations      = $observations
                 Packages               = @((New-ExtensionPackage "default-minimal"), (New-ExtensionPackage "core-only-minimal"))
                 ApiReads               = $apiReads
@@ -3125,7 +3704,9 @@ Describe "Get-RestoreSmokeResultClassification for extension-selection" {
         @{ Case = "the catalog holds TPDM"; Mutate = { param($p) $p.SelectionProofs[0].Catalog.ProjectSchemas = @("edfi", "tpdm") }; Expected = @("restore extension-selection#1: the target catalog holds project schemas [edfi, tpdm], expected [edfi]") }
         @{ Case = "the proof names the default package"; Mutate = { param($p) $p.SelectionProofs[0].PackageSha256 = "d1" * 32 }; Expected = @("restore extension-selection#1: the selection proof's package SHA-256 '$("d1" * 32)' is not a core-only-minimal package built in this run", "restore extension-selection#1: no package record exists for the restored package, so its restore manifest is unknown") }
         @{ Case = "a proof names a restore no leg requires"; Mutate = { param($p) $p.SelectionProofs = @($p.SelectionProofs[0], [pscustomobject]@{ RestoreExecution = "package-directory#1" }) }; Expected = @("a selection proof was recorded for restore package-directory#1, which no selected leg requires") }
-        @{ Case = "the core-only env was not recorded"; Mutate = { param($p) $p.SelectionEnvironments = @() }; Expected = @("restore extension-selection#1: expected one recorded core-only env, found 0", "restore extension-selection#1: the selection env records no selected packages") }
+        @{ Case = "the core-only env was not recorded"; Mutate = { param($p) $p.SelectionEnvironments = @() }; Expected = @("leg-extension-selection: stack start 'stack-start#1' used the 'core-only' selection, which has 0 recorded envs; expected exactly one", "restore extension-selection#1: expected one recorded core-only env, found 0", "restore extension-selection#1: the selection env records no selected packages") }
+        @{ Case = "the core-only restore's stack staged the default selection"; Mutate = { param($p) $p.StackObservations[0].StagedSelection.StagedPackages = @("EdFi.DataStandard52.ApiSchema@1.0.335", "EdFi.DataStandard52.TPDM.ApiSchema@1.0.335") }; Expected = @("leg-extension-selection: the workspace staged [EdFi.DataStandard52.ApiSchema@1.0.335, EdFi.DataStandard52.TPDM.ApiSchema@1.0.335], but stack start 'stack-start#1' used the core-only selection [EdFi.DataStandard52.ApiSchema@1.0.335]") }
+        @{ Case = "the core-only restore's observation is bound to the default source build's start"; Mutate = { param($p) $p.StackStarts.Add([pscustomobject]@{ StackStart = "stack-start#0"; Label = "build-source-datastore-default-minimal"; Restore = $false; Selection = "default"; WorkspaceBefore = $null; StartedUtc = "2026-10-08T10:00:00.0000000Z" }); $p.StackObservations[0].StackStart = "stack-start#0" }; Expected = @("leg-extension-selection: stack start 'stack-start#0' belongs to step 'build-source-datastore-default-minimal'") }
         @{ Case = "the core-only env removed nothing"; Mutate = { param($p) $p.SelectionEnvironments[0].RemovedPackages = @() }; Expected = @("restore extension-selection#1: the core-only env removed no package, so it does not differ from the default selection") }
         @{ Case = "no refusal was recorded"; Mutate = { param($p) $p.SelectionRefusals = @() }; Expected = @("leg extension-selection: no refusal of the default package under the core-only env was recorded") }
         @{ Case = "two refusals were recorded"; Mutate = { param($p) $p.SelectionRefusals = @($p.SelectionRefusals[0], $p.SelectionRefusals[0]) }; Expected = @("leg extension-selection: 2 refusals were recorded; expected exactly one") }
@@ -3282,8 +3863,26 @@ Describe "Get-RestoreSmokeResultClassification" {
             }
         }
 
+        # The stack start Invoke-RestoreWrapper records: a default-selection restore into an empty
+        # workspace, begun at -StartedUtc.
+        function script:New-CompleteStackStart {
+            param([string]$Id, [string]$Label, [string]$StartedUtc)
+
+            return [pscustomobject]@{
+                StackStart        = $Id
+                Label             = $Label
+                Restore           = $true
+                Selection         = "default"
+                EnvironmentFile   = ".env.smoke-images"
+                RequestedPackages = @("EdFi.DataStandard52.ApiSchema@1.0.335", "EdFi.DataStandard52.TPDM.ApiSchema@1.0.335")
+                RequestedReason   = $null
+                WorkspaceBefore   = [pscustomobject]@{ Present = $false; Sha256 = $null; LastWriteTimeUtc = $null; Reason = "the active workspace has no bootstrap-manifest.json" }
+                StartedUtc        = $StartedUtc
+            }
+        }
+
         function script:New-CompleteObservation {
-            param([string]$Label)
+            param([string]$Label, [string]$StackStart, [string]$WrittenUtc)
 
             return [pscustomobject]@{
                 Label                   = $Label
@@ -3293,7 +3892,8 @@ Describe "Get-RestoreSmokeResultClassification" {
                     config = [pscustomobject]@{ Container = "dms-config-service"; ImageId = "sha256:config"; ImageRef = "local/ed-fi-api-configuration-service:dms-restore-smoke-0123456789ab"; RepoDigests = @(); RepoDigestsReason = $null }
                     db     = [pscustomobject]@{ Container = "dms-postgresql"; ImageId = "sha256:pg"; ImageRef = "postgres:16"; RepoDigests = @($script:engineDigest); RepoDigestsReason = $null }
                 }
-                EffectiveSchemaPackages = [pscustomobject]@{ Source = ".bootstrap/.env.derived"; Value = '[{"name":"EdFi.DataStandard52.ApiSchema"}]'; Reason = $null }
+                StackStart              = $StackStart
+                StagedSelection         = [pscustomobject]@{ Source = "bootstrap-manifest.json schema.selectedPackages"; ManifestSha256 = ("e1" * 32); ManifestLastWriteTimeUtc = $WrittenUtc; StagedPackages = @("EdFi.DataStandard52.ApiSchema@1.0.335", "EdFi.DataStandard52.TPDM.ApiSchema@1.0.335"); Reason = $null }
             }
         }
 
@@ -3336,8 +3936,11 @@ Describe "Get-RestoreSmokeResultClassification" {
         # order package-directory#1, separate-config#1, package-directory#2.
         function script:New-CompleteProvenance {
             $observations = [System.Collections.Generic.List[object]]::new()
-            $observations.Add((New-CompleteObservation -Label "leg-package-directory"))
-            $observations.Add((New-CompleteObservation -Label "leg-separate-config"))
+            $observations.Add((New-CompleteObservation -Label "leg-package-directory" -StackStart "stack-start#1" -WrittenUtc "2026-10-08T10:01:00.0000000Z"))
+            $observations.Add((New-CompleteObservation -Label "leg-separate-config" -StackStart "stack-start#2" -WrittenUtc "2026-10-08T11:01:00.0000000Z"))
+            $stackStarts = [System.Collections.Generic.List[object]]::new()
+            $stackStarts.Add((New-CompleteStackStart -Id "stack-start#1" -Label "leg-package-directory" -StartedUtc "2026-10-08T10:00:00.0000000Z"))
+            $stackStarts.Add((New-CompleteStackStart -Id "stack-start#2" -Label "leg-separate-config" -StartedUtc "2026-10-08T11:00:00.0000000Z"))
             $apiReads = [System.Collections.Generic.List[object]]::new()
             $apiReads.Add((New-CompleteApiRead -RestoreExecution "package-directory#1"))
             $apiReads.Add((New-CompleteApiRead -RestoreExecution "separate-config#1"))
@@ -3357,6 +3960,7 @@ Describe "Get-RestoreSmokeResultClassification" {
                     Dms    = [ordered]@{ ImageId = "sha256:dms"; Verified = $true; Reason = $null }
                     Config = [ordered]@{ ImageId = "sha256:config"; Verified = $true; Reason = $null }
                 }
+                StackStarts          = $stackStarts
                 StackObservations    = $observations
                 Packages             = @(New-CompletePackage)
                 SourceIdentityBindings = @(New-CompleteBinding)
@@ -3426,12 +4030,14 @@ Describe "Get-RestoreSmokeResultClassification" {
         @{ Case = "no run-end check was recorded for an allowed leftover volume"; Mutate = { param($p) $p.ForeignStack = (New-AllowedLeftoverForeignStack -EndStates $null) }; Expected = "leftover volume 'dms-local_dms-mssql-2025' was allowed by the preflight, but no run-end check was recorded" }
         @{ Case = "the run-end check covered a different volume"; Mutate = { param($p) $p.ForeignStack = (New-AllowedLeftoverForeignStack -EndStates @([pscustomobject]@{ Name = "dms-published_dms-mssql-2025"; Present = $true; Preserved = $true; Reason = $null })) }; Expected = "leftover volume 'dms-local_dms-mssql-2025' was allowed by the preflight, but no run-end check was recorded" }
 
-        # Effective SCHEMA_PACKAGES, only the second observation lacking it (2.1c).
-        @{ Case = "the second observation has no SCHEMA_PACKAGES field"; Mutate = { param($p) $p.StackObservations[1].PSObject.Properties.Remove("EffectiveSchemaPackages") }; Expected = "leg-separate-config: effective SCHEMA_PACKAGES was not observed" }
-        @{ Case = "the second observation's SCHEMA_PACKAGES record is null"; Mutate = { param($p) $p.StackObservations[1].EffectiveSchemaPackages = $null }; Expected = "leg-separate-config: effective SCHEMA_PACKAGES was not observed" }
-        @{ Case = "the second observation's SCHEMA_PACKAGES value is blank"; Mutate = { param($p) $p.StackObservations[1].EffectiveSchemaPackages.Value = "   " }; Expected = "leg-separate-config: effective SCHEMA_PACKAGES not observed: the value is blank" }
-        @{ Case = "the second observation's SCHEMA_PACKAGES read failed"; Mutate = { param($p) $p.StackObservations[1].EffectiveSchemaPackages = [pscustomobject]@{ Source = "x"; Value = $null; Reason = "derived env file not present" } }; Expected = "leg-separate-config: effective SCHEMA_PACKAGES not observed: derived env file not present" }
-        @{ Case = "the second observation's SCHEMA_PACKAGES record has no Value field"; Mutate = { param($p) $p.StackObservations[1].EffectiveSchemaPackages = [pscustomobject]@{ Source = "x" } }; Expected = "leg-separate-config: effective SCHEMA_PACKAGES not observed: the value is blank" }
+        # Staged selection bound to its stack start, only the second observation lacking it (2.4a).
+        @{ Case = "the second observation has no staged selection"; Mutate = { param($p) $p.StackObservations[1].PSObject.Properties.Remove("StagedSelection") }; Expected = "leg-separate-config: the staged schema selection was not observed" }
+        @{ Case = "the second observation's workspace had no manifest"; Mutate = { param($p) $p.StackObservations[1].StagedSelection.StagedPackages = $null; $p.StackObservations[1].StagedSelection.Reason = "the active workspace has no bootstrap-manifest.json" }; Expected = "leg-separate-config: the staged schema selection was not observed: the active workspace has no bootstrap-manifest.json" }
+        @{ Case = "the second observation's workspace staged no package"; Mutate = { param($p) $p.StackObservations[1].StagedSelection.StagedPackages = @() }; Expected = "leg-separate-config: the workspace manifest records no staged package" }
+        @{ Case = "the second observation names no stack start"; Mutate = { param($p) $p.StackObservations[1].StackStart = $null }; Expected = "leg-separate-config: the observation names no stack start, so its staged selection is not bound to the stack it observed" }
+        @{ Case = "the second observation's manifest predates its stack start"; Mutate = { param($p) $p.StackObservations[1].StagedSelection.ManifestLastWriteTimeUtc = "2026-10-08T10:01:00.0000000Z" }; Expected = "leg-separate-config: the workspace manifest was written at 2026-10-08T10:01:00.0000000Z, before stack start 'stack-start#2' began at 2026-10-08T11:00:00.0000000Z, so its selection is not this stack's" }
+        @{ Case = "the stack starts were not recorded"; Mutate = { param($p) $p.Remove("StackStarts") }; Expected = @("leg-package-directory: 0 recorded stack starts are named 'stack-start#1'; expected exactly one", "leg-separate-config: 0 recorded stack starts are named 'stack-start#2'; expected exactly one") }
+        @{ Case = "the second observation is bound to the first stack start"; Mutate = { param($p) $p.StackObservations[1].StackStart = "stack-start#1" }; Expected = @("leg-separate-config: stack start 'stack-start#1' belongs to step 'leg-package-directory'", "stack start 'stack-start#1' is named by 2 observations; each started stack is observed once") }
 
         # Served-data evidence per restore (2.2a).
         @{ Case = "only the first of two restore executions has a served-data record"; Mutate = { param($p) $p.ApiReads.RemoveAt(1) }; Expected = "restore separate-config#1: no served-data API read was recorded" }
@@ -3665,7 +4271,8 @@ Describe "Get-RestoreSmokeResultClassification" {
             "leg-separate-config: no dms container observed"
             "leg-separate-config: no config container observed"
             "leg-separate-config: no db container observed"
-            "leg-separate-config: effective SCHEMA_PACKAGES was not observed"
+            "leg-separate-config: the observation names no stack start, so its staged selection is not bound to the stack it observed"
+            "leg-separate-config: the staged schema selection was not observed"
         )
     }
 
@@ -3673,12 +4280,13 @@ Describe "Get-RestoreSmokeResultClassification" {
         $provenance = New-CompleteProvenance
         $provenance.StackObservations.Add($null)
         $provenance.StackObservations[1].Label = ""
-        $provenance.StackObservations[1].PSObject.Properties.Remove("EffectiveSchemaPackages")
+        $provenance.StackObservations[1].PSObject.Properties.Remove("StagedSelection")
 
         $classification = Get-RestoreSmokeResultClassification -Provenance $provenance
 
         @($classification.Reasons) | Should -Be @(
-            "stack observation 2: effective SCHEMA_PACKAGES was not observed"
+            "stack observation 2: stack start 'stack-start#2' belongs to step 'leg-separate-config'"
+            "stack observation 2: the staged schema selection was not observed"
             "stack observation 3: the observation record is missing"
         )
     }

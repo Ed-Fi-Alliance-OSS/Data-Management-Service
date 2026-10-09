@@ -1289,35 +1289,161 @@ function Get-RestoreSmokeStackObservation {
     return [pscustomobject]@{ Label = $Label; Services = $services; Reason = $null }
 }
 
-function Get-RestoreSmokeEffectiveSchemaPackageList {
+function Get-RestoreSmokeWorkspaceManifestFile {
     <#
     .SYNOPSIS
-    SCHEMA_PACKAGES from the derived env file the wrapper handed to the start phase, or null with a reason.
+    One read of the active workspace's bootstrap-manifest.json: whether it is present, its bytes,
+    their SHA-256, and its last-write time as round-trip UTC text, or the reason it could not be
+    read. Never throws. The bytes stay inside the module; callers record the rest.
     #>
     param(
         [Parameter(Mandatory)]
-        [string]$DerivedEnvironmentFile
+        [string]$BootstrapRoot
     )
 
-    if (-not (Test-Path -LiteralPath $DerivedEnvironmentFile -PathType Leaf)) {
-        return [pscustomobject]@{ Source = $DerivedEnvironmentFile; Value = $null; Reason = "derived env file not present" }
-    }
+    $record = [ordered]@{ Present = $false; Sha256 = $null; LastWriteTimeUtc = $null; Bytes = $null; Reason = $null }
+    $manifestPath = Join-Path $BootstrapRoot "bootstrap-manifest.json"
     try {
-        $lines = @(Get-Content -LiteralPath $DerivedEnvironmentFile -ErrorAction Stop)
+        if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+            $record.Reason = "the active workspace has no bootstrap-manifest.json"
+            return [pscustomobject]$record
+        }
+        $lastWrite = [System.IO.File]::GetLastWriteTimeUtc($manifestPath)
+        $bytes = [System.IO.File]::ReadAllBytes($manifestPath)
+        $record.Present = $true
+        $record.Bytes = $bytes
+        $record.Sha256 = [System.Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
+        $record.LastWriteTimeUtc = $lastWrite.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
     }
     catch {
-        return [pscustomobject]@{ Source = $DerivedEnvironmentFile; Value = $null; Reason = "derived env file could not be read: $(ConvertTo-RestoreSmokeLogSafeText $_.Exception.Message)" }
+        $record.Present = $false
+        $record.Bytes = $null
+        $record.Sha256 = $null
+        $record.Reason = "bootstrap-manifest.json could not be read: $(ConvertTo-RestoreSmokeLogSafeText $_.Exception.Message)"
     }
-    foreach ($line in $lines) {
-        if ($line -match '^\s*SCHEMA_PACKAGES\s*=\s*(.*)$') {
-            $value = $matches[1].Trim()
-            if ([string]::IsNullOrWhiteSpace($value)) {
-                return [pscustomobject]@{ Source = $DerivedEnvironmentFile; Value = $null; Reason = "SCHEMA_PACKAGES is blank in the derived env file" }
-            }
-            return [pscustomobject]@{ Source = $DerivedEnvironmentFile; Value = $value; Reason = $null }
+    return [pscustomobject]$record
+}
+
+function Read-RestoreSmokeStagedSelection {
+    <#
+    .SYNOPSIS
+    The package selection the active workspace actually staged: bootstrap-manifest.json's
+    schema.selectedPackages ("<packageId>@<version>", which prepare-dms-schema.ps1 records for the
+    packages it staged from the effective SCHEMA_PACKAGES, after any wrapper Data Standard overlay),
+    with the manifest's SHA-256 and last-write time taken from the same read. This is staged
+    evidence, never the raw SCHEMA_PACKAGES input. Never throws: anything unreadable is a Reason.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$BootstrapRoot
+    )
+
+    $record = [ordered]@{
+        Source                   = "bootstrap-manifest.json schema.selectedPackages"
+        ManifestSha256           = $null
+        ManifestLastWriteTimeUtc = $null
+        StagedPackages           = $null
+        Reason                   = $null
+    }
+    $file = Get-RestoreSmokeWorkspaceManifestFile -BootstrapRoot $BootstrapRoot
+    if ($null -ne $file.Reason) {
+        $record.Reason = $file.Reason
+        return [pscustomobject]$record
+    }
+    $record.ManifestSha256 = $file.Sha256
+    $record.ManifestLastWriteTimeUtc = $file.LastWriteTimeUtc
+
+    try {
+        $text = [System.Text.Encoding]::UTF8.GetString($file.Bytes).TrimStart([char]0xFEFF)
+        $manifest = $text | ConvertFrom-Json -AsHashtable -ErrorAction Stop
+    }
+    catch {
+        $record.Reason = "bootstrap-manifest.json is not valid JSON: $(ConvertTo-RestoreSmokeLogSafeText $_.Exception.Message)"
+        return [pscustomobject]$record
+    }
+    if ($manifest -isnot [System.Collections.IDictionary] -or -not $manifest.Contains("schema") -or $manifest["schema"] -isnot [System.Collections.IDictionary]) {
+        $record.Reason = "bootstrap-manifest.json has no schema section"
+        return [pscustomobject]$record
+    }
+    $schema = $manifest["schema"]
+    if (-not $schema.Contains("selectedPackages") -or $null -eq $schema["selectedPackages"]) {
+        $record.Reason = "bootstrap-manifest.json records no schema.selectedPackages"
+        return [pscustomobject]$record
+    }
+    if ($schema["selectedPackages"] -isnot [System.Collections.IList]) {
+        $record.Reason = "schema.selectedPackages in bootstrap-manifest.json is not an array"
+        return [pscustomobject]$record
+    }
+    $packages = [System.Collections.Generic.List[string]]::new()
+    foreach ($item in $schema["selectedPackages"]) {
+        $packages.Add((ConvertTo-RestoreSmokeLogSafeText ([string]$item)))
+    }
+    $record.StagedPackages = $packages.ToArray()
+    return [pscustomobject]$record
+}
+
+function New-RestoreSmokeStackStart {
+    <#
+    .SYNOPSIS
+    The record of one wrapper run that may start a stack, taken just before the wrapper runs, so
+    each stack observation can be bound to the start that produced it: run-wide id
+    "stack-start#<Sequence>", step label, whether it restores, the schema selection whose env it
+    passed, the active workspace manifest before it (presence, SHA-256, last-write time), and its
+    start time, taken after that capture.
+
+    .DESCRIPTION
+    RequestedPackages is the env file's raw SCHEMA_PACKAGES input as "<name>@<version>", before any
+    wrapper Data Standard overlay. It is recorded for comparison only and never classifies a
+    stack; a parse failure is RequestedReason, not an exception.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Creates an in-memory record only.')]
+    param(
+        [Parameter(Mandatory)]
+        [int]$Sequence,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$Label,
+
+        [Parameter(Mandatory)]
+        [string]$Selection,
+
+        [Parameter(Mandatory)]
+        [string]$EnvironmentFile,
+
+        [Parameter(Mandatory)]
+        [string]$BootstrapRoot,
+
+        [switch]$Restore
+    )
+
+    $requested = $null
+    $requestedReason = $null
+    try {
+        $entries = @(Get-SchemaPackagesFromEnvironmentFile -EnvironmentFilePath $EnvironmentFile)
+        $identities = [System.Collections.Generic.List[string]]::new()
+        foreach ($entry in $entries) {
+            $identities.Add((ConvertTo-RestoreSmokeLogSafeText "$(Get-RestoreSmokeEvidenceValue $entry 'name')@$(Get-RestoreSmokeEvidenceValue $entry 'version')"))
         }
+        $requested = $identities.ToArray()
     }
-    return [pscustomobject]@{ Source = $DerivedEnvironmentFile; Value = $null; Reason = "SCHEMA_PACKAGES not set in the derived env file" }
+    catch {
+        $requestedReason = "SCHEMA_PACKAGES in the env file could not be parsed: $(ConvertTo-RestoreSmokeLogSafeText $_.Exception.Message)"
+    }
+
+    $before = Get-RestoreSmokeWorkspaceManifestFile -BootstrapRoot $BootstrapRoot
+    $startedUtc = [System.DateTime]::UtcNow.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
+    return [pscustomobject]@{
+        StackStart        = "stack-start#$Sequence"
+        Label             = ConvertTo-RestoreSmokeLogSafeText $Label
+        Restore           = [bool]$Restore
+        Selection         = ConvertTo-RestoreSmokeLogSafeText $Selection
+        EnvironmentFile   = ConvertTo-RestoreSmokeLogSafeText ([System.IO.Path]::GetFileName($EnvironmentFile))
+        RequestedPackages = $requested
+        RequestedReason   = $requestedReason
+        WorkspaceBefore   = [pscustomobject]@{ Present = $before.Present; Sha256 = $before.Sha256; LastWriteTimeUtc = $before.LastWriteTimeUtc; Reason = $before.Reason }
+        StartedUtc        = $startedUtc
+    }
 }
 
 function Get-RestoreSmokePackageProvenance {
@@ -3291,6 +3417,160 @@ function Get-RestoreSmokeEvidenceList {
     return , @(@($value) | Where-Object { $null -ne $_ })
 }
 
+function ConvertTo-RestoreSmokeUtcInstant {
+    # A recorded time (round-trip text, or a DateTime/DateTimeOffset after a JSON round trip) as a
+    # UTC DateTime, or null when it is missing or unparseable.
+    param(
+        [AllowNull()]
+        [object]$Value
+    )
+
+    if ($Value -is [System.DateTime]) {
+        return $Value.ToUniversalTime()
+    }
+    if ($Value -is [System.DateTimeOffset]) {
+        return $Value.UtcDateTime
+    }
+    $parsed = [System.DateTimeOffset]::MinValue
+    if (-not [string]::IsNullOrWhiteSpace([string]$Value) -and
+        [System.DateTimeOffset]::TryParse([string]$Value, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AssumeUniversal, [ref]$parsed)) {
+        return $parsed.UtcDateTime
+    }
+    return $null
+}
+
+function Get-RestoreSmokeStagedSelectionReason {
+    <#
+    .SYNOPSIS
+    Why one stack observation's staged-selection evidence is not final evidence; empty when it is.
+
+    .DESCRIPTION
+    Binding: the observation names exactly one recorded stack start, of its own step. Evidence:
+    the staged selection was read, lists at least one "<name>@<version>" identity, repeats none,
+    and has exactly one core package. Freshness: the workspace manifest was written at or after
+    the stack start began, or - for a restore only - it is the manifest present before the start
+    (same SHA-256 and write time), which the restore commit keeps only when the candidate that
+    start staged and cross-checked is byte-identical. Agreement, for a non-default selection only:
+    the staged identities equal the one recorded env of that selection. Default-selection stacks
+    are not compared with any requested set (the local wrapper's Data Standard overlay
+    legitimately stages packages other than the base env's).
+    #>
+    param(
+        [AllowNull()]
+        [object]$Observation,
+
+        [Parameter(Mandatory)]
+        [string]$Label,
+
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [object[]]$StackStart,
+
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [object[]]$SelectionEnvironment
+    )
+
+    $reasons = [System.Collections.Generic.List[string]]::new()
+    $start = $null
+    $startId = [string](Get-RestoreSmokeEvidenceValue $Observation "StackStart")
+    $safeStartId = ConvertTo-RestoreSmokeLogSafeText $startId
+    if ([string]::IsNullOrWhiteSpace($startId)) {
+        $reasons.Add("${Label}: the observation names no stack start, so its staged selection is not bound to the stack it observed")
+    }
+    else {
+        $matching = @($StackStart | Where-Object { $null -ne $_ -and [string](Get-RestoreSmokeEvidenceValue $_ "StackStart") -ceq $startId })
+        if ($matching.Count -ne 1) {
+            $reasons.Add("${Label}: $($matching.Count) recorded stack starts are named '$safeStartId'; expected exactly one")
+        }
+        else {
+            $start = $matching[0]
+            $startLabel = [string](Get-RestoreSmokeEvidenceValue $start "Label")
+            if ($startLabel -cne [string](Get-RestoreSmokeEvidenceValue $Observation "Label")) {
+                $reasons.Add("${Label}: stack start '$safeStartId' belongs to step '$(ConvertTo-RestoreSmokeLogSafeText $startLabel)'")
+            }
+        }
+    }
+
+    $staged = Get-RestoreSmokeEvidenceValue $Observation "StagedSelection"
+    if ($null -eq $staged) {
+        $reasons.Add("${Label}: the staged schema selection was not observed")
+        return @($reasons)
+    }
+    $stagedReason = [string](Get-RestoreSmokeEvidenceValue $staged "Reason")
+    if (-not [string]::IsNullOrWhiteSpace($stagedReason)) {
+        $reasons.Add("${Label}: the staged schema selection was not observed: $(ConvertTo-RestoreSmokeLogSafeText $stagedReason)")
+        return @($reasons)
+    }
+
+    $identities = Get-RestoreSmokeEvidenceList $staged "StagedPackages"
+    if ($identities.Count -eq 0) {
+        $reasons.Add("${Label}: the workspace manifest records no staged package")
+    }
+    else {
+        foreach ($identity in $identities) {
+            if ([string]$identity -cnotmatch '^[^@\s]+@[^@\s]+$') {
+                $reasons.Add("${Label}: staged package '$(ConvertTo-RestoreSmokeLogSafeText ([string]$identity))' is not a <name>@<version> identity")
+            }
+        }
+        $distinct = [System.Collections.Generic.HashSet[string]]::new([string[]]@($identities | ForEach-Object { [string]$_ }), [System.StringComparer]::OrdinalIgnoreCase)
+        if ($distinct.Count -ne $identities.Count) {
+            $reasons.Add("${Label}: the staged packages repeat an identity")
+        }
+        $cores = @($identities | Where-Object { ([string]$_).Split("@")[0] -match $script:CoreSchemaPackagePattern })
+        if ($cores.Count -ne 1) {
+            $reasons.Add("${Label}: the staged packages list $($cores.Count) core packages (EdFi.DataStandard<NN>.ApiSchema); expected exactly one")
+        }
+    }
+
+    if ($null -eq $start) {
+        return @($reasons)
+    }
+
+    $before = Get-RestoreSmokeEvidenceValue $start "WorkspaceBefore"
+    $manifestSha = [string](Get-RestoreSmokeEvidenceValue $staged "ManifestSha256")
+    $writtenAt = ConvertTo-RestoreSmokeUtcInstant (Get-RestoreSmokeEvidenceValue $staged "ManifestLastWriteTimeUtc")
+    $beforeWrittenAt = ConvertTo-RestoreSmokeUtcInstant (Get-RestoreSmokeEvidenceValue $before "LastWriteTimeUtc")
+    $unchanged = (Get-RestoreSmokeEvidenceValue $before "Present") -eq $true -and
+        -not [string]::IsNullOrWhiteSpace($manifestSha) -and
+        [string](Get-RestoreSmokeEvidenceValue $before "Sha256") -ceq $manifestSha -and
+        $null -ne $writtenAt -and $writtenAt -eq $beforeWrittenAt
+    if ($unchanged) {
+        if ((Get-RestoreSmokeEvidenceValue $start "Restore") -ne $true) {
+            $reasons.Add("${Label}: the workspace manifest is the one present before stack start '$safeStartId', which is not a restore, so the stack staged no selection of its own")
+        }
+    }
+    else {
+        $startedAt = ConvertTo-RestoreSmokeUtcInstant (Get-RestoreSmokeEvidenceValue $start "StartedUtc")
+        if ($null -eq $writtenAt -or $null -eq $startedAt) {
+            $reasons.Add("${Label}: the workspace manifest's write time or the start time of stack start '$safeStartId' is not recorded")
+        }
+        elseif ($writtenAt -lt $startedAt) {
+            $invariant = [System.Globalization.CultureInfo]::InvariantCulture
+            $reasons.Add("${Label}: the workspace manifest was written at $($writtenAt.ToString('o', $invariant)), before stack start '$safeStartId' began at $($startedAt.ToString('o', $invariant)), so its selection is not this stack's")
+        }
+    }
+
+    $selection = [string](Get-RestoreSmokeEvidenceValue $start "Selection")
+    if ([string]::IsNullOrWhiteSpace($selection)) {
+        $reasons.Add("${Label}: stack start '$safeStartId' records no schema selection")
+    }
+    elseif ($selection -cne "default") {
+        $safeSelection = ConvertTo-RestoreSmokeLogSafeText $selection
+        $environments = @($SelectionEnvironment | Where-Object { $null -ne $_ -and [string](Get-RestoreSmokeEvidenceValue $_ "Selection") -ceq $selection })
+        if ($environments.Count -ne 1) {
+            $reasons.Add("${Label}: stack start '$safeStartId' used the '$safeSelection' selection, which has $($environments.Count) recorded envs; expected exactly one")
+        }
+        elseif ($identities.Count -gt 0) {
+            $expected = Get-RestoreSmokeEvidenceList $environments[0] "SelectedPackages"
+            if (-not (Test-RestoreSmokeNameSetEqual -Actual $identities -Expected $expected -IgnoreCase)) {
+                $reasons.Add("${Label}: the workspace staged $(Format-RestoreSmokeNameSet $identities), but stack start '$safeStartId' used the $safeSelection selection $(Format-RestoreSmokeNameSet $expected)")
+            }
+        }
+    }
+    return @($reasons)
+}
+
 function Get-RestoreSmokeResultClassification {
     <#
     .SYNOPSIS
@@ -3302,8 +3582,9 @@ function Get-RestoreSmokeResultClassification {
     Final requires, besides the build, package, and SourceIdentity evidence: observed, non-empty,
     equal start and end revisions with a clean tree at both points; and for EVERY stack observation
     the dms/config containers running the verified in-run image IDs, a db container whose image has
-    an observed repository digest (an image ID alone is not a digest), and an observed, non-blank
-    effective SCHEMA_PACKAGES value. Every leftover volume the preflight allowed must be shown
+    an observed repository digest (an image ID alone is not a digest), and staged-selection evidence
+    bound to its own stack start (Get-RestoreSmokeStagedSelectionReason); no stack start may be
+    observed twice. Every leftover volume the preflight allowed must be shown
     preserved at run end. Every successful restore the selected legs perform must have exactly one
     served-data API record of its own, complete for its template kind (schema-only reads never are).
     Every built package needs its pre-backup SourceIdentity capture bound to its SHA-256, and every
@@ -3396,6 +3677,9 @@ function Get-RestoreSmokeResultClassification {
     if ($observations.Count -eq 0) {
         $reasons.Add("no started stack was observed, so the images actually used are unknown")
     }
+    $stackStarts = Get-RestoreSmokeEvidenceList $Provenance "StackStarts"
+    $selectionEnvironmentRecords = Get-RestoreSmokeEvidenceList $Provenance "SelectionEnvironments"
+    $observationsPerStart = [System.Collections.Generic.Dictionary[string, int]]::new([System.StringComparer]::Ordinal)
     for ($index = 0; $index -lt $observations.Count; $index++) {
         $observation = $observations[$index]
         $label = [string](Get-RestoreSmokeEvidenceValue $observation "Label")
@@ -3444,17 +3728,25 @@ function Get-RestoreSmokeResultClassification {
             }
         }
 
-        $schemaPackages = Get-RestoreSmokeEvidenceValue $observation "EffectiveSchemaPackages"
-        if ($null -eq $schemaPackages) {
-            $reasons.Add("${label}: effective SCHEMA_PACKAGES was not observed")
+        foreach ($selectionReason in (Get-RestoreSmokeStagedSelectionReason -Observation $observation -Label $label -StackStart $stackStarts -SelectionEnvironment $selectionEnvironmentRecords)) {
+            $reasons.Add($selectionReason)
         }
-        elseif ([string]::IsNullOrWhiteSpace([string](Get-RestoreSmokeEvidenceValue $schemaPackages "Value"))) {
-            $packageReason = [string](Get-RestoreSmokeEvidenceValue $schemaPackages "Reason")
-            if ([string]::IsNullOrWhiteSpace($packageReason)) {
-                $packageReason = "the value is blank"
-            }
-            $reasons.Add("${label}: effective SCHEMA_PACKAGES not observed: $packageReason")
+        $startId = [string](Get-RestoreSmokeEvidenceValue $observation "StackStart")
+        if (-not [string]::IsNullOrWhiteSpace($startId)) {
+            $count = 0
+            $null = $observationsPerStart.TryGetValue($startId, [ref]$count)
+            $observationsPerStart[$startId] = $count + 1
         }
+    }
+    $observedTwice = [System.Collections.Generic.List[string]]::new()
+    foreach ($pair in $observationsPerStart.GetEnumerator()) {
+        if ($pair.Value -gt 1) {
+            $observedTwice.Add($pair.Key)
+        }
+    }
+    $observedTwice.Sort([System.StringComparer]::Ordinal)
+    foreach ($startId in $observedTwice) {
+        $reasons.Add("stack start '$(ConvertTo-RestoreSmokeLogSafeText $startId)' is named by $($observationsPerStart[$startId]) observations; each started stack is observed once")
     }
 
     $packageList = Get-RestoreSmokeEvidenceValue $Provenance "Packages"
@@ -3603,7 +3895,9 @@ Export-ModuleMember -Function `
     Write-RestoreSmokeImageEnvironmentFile, `
     Write-RestoreSmokeCoreOnlyEnvironmentFile, `
     Get-RestoreSmokeStackObservation, `
-    Get-RestoreSmokeEffectiveSchemaPackageList, `
+    Read-RestoreSmokeStagedSelection, `
+    New-RestoreSmokeStackStart, `
+    Get-RestoreSmokeStagedSelectionReason, `
     Get-RestoreSmokePackageProvenance, `
     Resolve-RestoreSmokeApiEndpoint, `
     New-RestoreSmokeApiSession, `

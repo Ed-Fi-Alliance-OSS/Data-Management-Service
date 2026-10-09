@@ -237,6 +237,8 @@ $script:WrapperProfile = Get-RestoreSmokeWrapperProfile -Wrapper $Wrapper
 $script:DataStandardVersionSupplied = $PSBoundParameters.ContainsKey("DataStandardVersion")
 $script:ResolvedStandardVersion = Resolve-RestoreSmokeStandardVersion -StandardVersion $StandardVersion -DataStandardVersion $DataStandardVersion
 $script:CurrentStepName = $null
+# The stack start the next observation belongs to: set by every wrapper run, cleared by every teardown.
+$script:CurrentStackStart = $null
 # No teardown, of any project, runs until the preflight has proven that no foreign stack exists
 # (or the caller confirmed its removal). This includes the failure teardown in the finally block.
 $script:TeardownAuthorized = $false
@@ -262,6 +264,9 @@ $script:Provenance = [ordered]@{
     # build's failure for cleanup and for the results.
     Images                       = (New-RestoreSmokeImageLedger)
     ForwardedImageKeys           = $null
+    # One record per wrapper run (stack start), taken before the wrapper runs; each stack observation
+    # names the start it belongs to.
+    StackStarts                  = [System.Collections.Generic.List[object]]::new()
     StackObservations            = [System.Collections.Generic.List[object]]::new()
     Packages                     = [System.Collections.Generic.List[object]]::new()
     ApiReads                     = [System.Collections.Generic.List[object]]::new()
@@ -359,6 +364,7 @@ function Invoke-SmokeTeardown {
         throw "Teardown of '$($WrapperProfile.ComposeProject)' was requested before the foreign-stack preflight authorized any Docker change."
     }
     Reset-RestoreSmokeApiSession -Session $script:ApiSession
+    $script:CurrentStackStart = $null
 
     Push-Location $script:DockerComposeRoot
     try {
@@ -443,13 +449,36 @@ function Wait-SmokeDmsHealth {
 function Add-SmokeStackObservation {
     <#
     .SYNOPSIS
-    Records what the healthy stack actually runs (images per service) and the SCHEMA_PACKAGES the
-    wrapper forwarded to its start phase, labelled with the current step.
+    Records what the healthy stack actually runs (images per service) and the package selection
+    its active workspace staged (Read-RestoreSmokeStagedSelection), labelled with the current step
+    and bound to the stack start that produced it. A restore leaves no derived env file in the
+    workspace, so the staged selection is read from the committed workspace manifest.
     #>
     $observation = Get-RestoreSmokeStackObservation -ComposeProject $script:WrapperProfile.ComposeProject -Label ([string]$script:CurrentStepName)
-    $schemaPackages = Get-RestoreSmokeEffectiveSchemaPackageList -DerivedEnvironmentFile (Join-Path $script:BootstrapRoot ".env.derived")
-    $observation | Add-Member -NotePropertyName EffectiveSchemaPackages -NotePropertyValue $schemaPackages
+    $stackStart = $null
+    if ($null -ne $script:CurrentStackStart) {
+        $stackStart = $script:CurrentStackStart.StackStart
+    }
+    $observation | Add-Member -NotePropertyName StackStart -NotePropertyValue $stackStart
+    $observation | Add-Member -NotePropertyName StagedSelection -NotePropertyValue (Read-RestoreSmokeStagedSelection -BootstrapRoot $script:BootstrapRoot)
     $script:Provenance.StackObservations.Add($observation)
+}
+
+function Get-SmokeEnvironmentSelection {
+    # The schema selection whose env file a wrapper run passes: a non-default selection's own file,
+    # otherwise "default" (the image env and the files derived from it with its SCHEMA_PACKAGES).
+    param(
+        [Parameter(Mandatory)]
+        [string]$EnvironmentFile
+    )
+
+    $fullPath = [System.IO.Path]::GetFullPath($EnvironmentFile)
+    foreach ($pair in $script:SelectionEnvironmentFiles.GetEnumerator()) {
+        if ([System.IO.Path]::GetFullPath([string]$pair.Value) -eq $fullPath) {
+            return [string]$pair.Key
+        }
+    }
+    return "default"
 }
 
 function Invoke-RestoreWrapper {
@@ -468,6 +497,21 @@ function Invoke-RestoreWrapper {
         -Wrapper $Wrapper `
         -DataStandardVersion $DataStandardVersion `
         -DataStandardVersionSupplied $script:DataStandardVersionSupplied
+
+    # Recorded before the wrapper runs, so the workspace it finds and the start time precede
+    # anything this run stages; the stack observation that follows is bound to it.
+    $environmentFile = $script:ResolvedEnvironmentFile
+    if ($Arguments.ContainsKey("EnvironmentFile")) {
+        $environmentFile = [string]$Arguments.EnvironmentFile
+    }
+    $script:CurrentStackStart = New-RestoreSmokeStackStart `
+        -Sequence ($script:Provenance.StackStarts.Count + 1) `
+        -Label ([string]$script:CurrentStepName) `
+        -Selection (Get-SmokeEnvironmentSelection -EnvironmentFile $environmentFile) `
+        -EnvironmentFile $environmentFile `
+        -BootstrapRoot $script:BootstrapRoot `
+        -Restore:($Arguments.ContainsKey("RestoreTemplate"))
+    $script:Provenance.StackStarts.Add($script:CurrentStackStart)
 
     Reset-RestoreSmokeApiSession -Session $script:ApiSession
     Push-Location $script:DockerComposeRoot

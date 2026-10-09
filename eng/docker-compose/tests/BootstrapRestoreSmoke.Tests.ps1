@@ -405,6 +405,53 @@ Describe "Invoke-BootstrapRestoreSmoke static contract" {
         }
     }
 
+    Context "Staged-selection evidence" {
+        BeforeAll {
+            function script:Get-StagedSelectionFunctionBody {
+                param([string]$Name)
+
+                $tokens = $null
+                $errors = $null
+                $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:smokeScriptPath, [ref]$tokens, [ref]$errors)
+                $definitions = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) | Where-Object { $_.Name -eq $Name })
+                $definitions.Count | Should -Be 1
+                return $definitions[0].Body.Extent.Text
+            }
+        }
+
+        It "never reads a derived env file, which a restore does not leave" {
+            $script:smokeContent | Should -Not -Match '\.env\.derived'
+            $script:smokeContent.Contains("EffectiveSchemaPackage") | Should -BeFalse
+        }
+
+        It "records the stack start before the wrapper runs" {
+            $body = Get-StagedSelectionFunctionBody -Name "Invoke-RestoreWrapper"
+            $recordIndex = $body.IndexOf('$script:CurrentStackStart = New-RestoreSmokeStackStart')
+            $addIndex = $body.IndexOf('$script:Provenance.StackStarts.Add($script:CurrentStackStart)')
+            $invocationIndex = $body.IndexOf('& "$script:DockerComposeRoot/$($script:WrapperProfile.BootstrapScriptName)"')
+
+            $recordIndex | Should -BeGreaterThan 0
+            $addIndex | Should -BeGreaterThan $recordIndex
+            $invocationIndex | Should -BeGreaterThan $addIndex
+        }
+
+        It "unbinds the stack start before every teardown" {
+            $body = Get-StagedSelectionFunctionBody -Name "Invoke-SmokeTeardown"
+            $clearIndex = $body.IndexOf('$script:CurrentStackStart = $null')
+
+            $clearIndex | Should -BeGreaterThan 0
+            $body.IndexOf('& "$script:DockerComposeRoot/$($WrapperProfile.TeardownScriptName)"') | Should -BeGreaterThan $clearIndex
+        }
+
+        It "reads each observation's staged selection from the workspace and binds it to the current stack start" {
+            $body = Get-StagedSelectionFunctionBody -Name "Add-SmokeStackObservation"
+
+            $body.Contains('Read-RestoreSmokeStagedSelection -BootstrapRoot $script:BootstrapRoot') | Should -BeTrue
+            $body.Contains('$stackStart = $script:CurrentStackStart.StackStart') | Should -BeTrue
+            $body.Contains('-NotePropertyName StackStart -NotePropertyValue $stackStart') | Should -BeTrue
+        }
+    }
+
     Context "In-run image provenance" {
         BeforeAll {
             $script:repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
