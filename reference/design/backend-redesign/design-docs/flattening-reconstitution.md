@@ -276,7 +276,7 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
    - Use `{schema}.{A}Identity` as the composite-FK target for abstract reference sites; FKs use `ON UPDATE CASCADE` (identity tables are trigger-maintained) to propagate identity changes and enforce membership/type at the DB level.
    - (Optional) also emit `{schema}.{A}_View` as a narrow `UNION ALL` projection for diagnostics/ad-hoc querying.
 
-8. Future natural-key work proposes SQL Server identity-collation metadata (DMS-1404 retains existing collation):
+8. Derive SQL Server identity-collation metadata:
    - For each `DbColumnModel` whose `ScalarType.Kind` is `String`, set
      `UsesSqlServerIdentityCollation = true` when the column stores or copies an identity value:
      canonical root natural-key strings, flattened `RefKey` string copies, abstract-identity string
@@ -1192,15 +1192,15 @@ Rules:
     - Descriptor URI strings, including descriptor collections and descriptor identity parts inside scalar references, are not stored as strings (e.g., `$.gradeLevelDescriptor`, `$.programDescriptors[*]`, `$.courseOfferingReference.termDescriptor`).
 - `ScalarKind.Decimal` requires a matching entry in `decimalPropertyValidationInfos` (`totalDigits`, `decimalPlaces`); missing info is a schema compilation error.
 - `ScalarKind.DateTime` uses SQL Server `datetime2(7)` (no timezone) to align with Ed-Fi ODS SQL Server conventions; any incoming offsets are normalized to a UTC instant at write time.
-- The SQL Server string entries below are base types only. Future natural-key work proposes column-role
-  metadata so generated string columns that store or copy identity values emit
-  `COLLATE SQL_Latin1_General_CP1_CI_AS` after the base `nvarchar(...)` type. This covers canonical
+- The SQL Server string entries below are base types only. Column-role metadata
+  (`DbColumnModel.UsesSqlServerIdentityCollation`) makes generated string columns that store or copy
+  identity values emit `COLLATE SQL_Latin1_General_CP1_CI_AS` after the base `nvarchar(...)` type. This covers canonical
   natural-key string columns, flattened `RefKey` string copies, abstract-identity string columns,
   descriptor component/history string columns, tracked-change old/new string identity copies, and local
   string identity members used by child or extension collection uniqueness. Ordinary non-identity
   scalar payload strings inherit the database default unless another explicit contract applies.
-  DMS-1404 retains the existing provider collation for descriptor components/history and unlowered
-  reconstructed-URI uniqueness; compact descriptor copies are `Int32`, not string columns.
+  The SQL Server computed descriptor `Uri` inherits the collation of its `Namespace` and `CodeValue`
+  components; compact descriptor copies are `Int32`, not string columns.
 
 | `ScalarKind` | ApiSchema JSON schema source | PostgreSQL type | SQL Server base type |
 | --- | --- | --- | --- |
