@@ -2363,6 +2363,105 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
             Test-Path -LiteralPath (Join-Path $script:repo.RepoRoot "restore-candidate") | Should -BeFalse
         }
 
+        It "<Engine>: a scratch-validation failure leaves the existing target and active workspace untouched, removes every transient, and starts neither CMS nor DMS" -ForEach @(
+            @{ Engine = "postgresql" }
+            @{ Engine = "mssql" }
+        ) {
+            # Wrapper behavior only. The scratch step is a recording stub that throws, so this
+            # proves what the wrapper does around a scratch failure. The scratch function's own
+            # cleanup is covered by the Invoke-RestoreScratchValidation suite.
+
+            # An existing active workspace from an earlier bootstrap, with nested content.
+            New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            $activeRoot = $script:repo.BootstrapRoot
+            New-Item -ItemType Directory -Path (Join-Path $activeRoot "ApiSchema") -Force | Out-Null
+            New-Item -ItemType Directory -Path (Join-Path $activeRoot "claims") -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $activeRoot "ApiSchema/bootstrap-api-schema-manifest.json") -Value '{"existing":"schema"}' -Encoding utf8
+            Set-Content -LiteralPath (Join-Path $activeRoot "claims/claims.json") -Value '{"existing":"claims"}' -Encoding utf8
+            $snapshotActiveTree = {
+                Get-ChildItem -LiteralPath $activeRoot -Recurse -Force | Sort-Object FullName | ForEach-Object {
+                    $relativePath = [IO.Path]::GetRelativePath($activeRoot, $_.FullName).Replace('\', '/')
+                    if ($_.PSIsContainer) { "dir $relativePath" }
+                    else { "file $relativePath $((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)" }
+                }
+            }.GetNewClosure()
+            $activeTreeBefore = @(& $snapshotActiveTree)
+            $activeTreeBefore.Count | Should -Be 5
+
+            New-OverrideRecordingStartScriptStub -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreLog
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot -ThrowAt @("Invoke-RestoreScratchValidation")
+            $realModule = Install-RealRestoreCandidateAndTarget -LogPath $script:restoreLog -DockerComposeRoot $script:repo.DockerComposeRoot
+            # The two database-touching calls around the scratch step record the engine and the
+            # database they act on, so the trace shows which database each one touched.
+            $log = $script:restoreLog
+            Set-Item function:global:Assert-RestoreTargetSafety {
+                param($DatabaseEngine, $TargetDatabaseName, $Manifest, $ContainerName, [switch]$SeparateConfigDatabase, $EffectiveConfigDatabaseName)
+                Add-Content -LiteralPath $log -Value "restore:target-safety engine=$DatabaseEngine target=$TargetDatabaseName"
+            }.GetNewClosure()
+            Set-Item function:global:Remove-RestorePreflightDatabase {
+                param($DatabaseEngine, $PreflightDatabaseName, $ContainerName)
+                Add-Content -LiteralPath $log -Value "restore:preflight-drop engine=$DatabaseEngine name=[$PreflightDatabaseName]"
+            }.GetNewClosure()
+            try {
+                { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -DatabaseEngine $Engine -RestoreTemplate Minimal } |
+                    Should -Throw "*injected Invoke-RestoreScratchValidation failure*"
+
+                $lines = @(Get-Content -LiteralPath $script:restoreLog)
+
+                # The complete trace: the D12 order up to the scratch step, then only the cleanup.
+                # Nothing stops the database slice, re-proves the stop, publishes, restarts the
+                # database, replaces the target, or starts CMS (-InfraOnly, configure) or DMS.
+                $expectedTrace = @(
+                    "restore:resolve-target engine=$Engine target=edfi_datamanagementservice"
+                    "restore:name-safety target=edfi_datamanagementservice"
+                    "restore:find template=Minimal*"
+                    "restore:trust"
+                    "restore:stage"
+                    "restore:candidate"
+                    "candidate-prepare-schema override=*"
+                    "candidate-prepare-claims override=*"
+                    "restore:crosscheck"
+                    "restore:stop-proof project=dms-local override=[[]]"
+                    "restore:stop-proof project=dms-published override=[[]]"
+                    "restore:preflight-env"
+                    "start-db-only env=*preflight.env override=[[]]"
+                    "restore:target-safety engine=$Engine target=edfi_datamanagementservice"
+                    "restore:scratch template=Minimal"
+                    "restore:remove-stage"
+                    "restore:preflight-drop engine=$Engine name=[[]edfi_dms_restore_preflight_0123456789ab]"
+                )
+                $lines.Count | Should -Be $expectedTrace.Count -Because "the run must stop at the scratch failure: [$($lines -join ' | ')]"
+                for ($lineIndex = 0; $lineIndex -lt $expectedTrace.Count; $lineIndex++) {
+                    $lines[$lineIndex] | Should -BeLike $expectedTrace[$lineIndex] -Because "trace line $lineIndex"
+                }
+                $lines | Should -Not -Contain "restore:publish"
+                @($lines | Where-Object { $_ -like "restore:replacement*" }) | Should -BeNullOrEmpty
+                @($lines | Where-Object { $_ -like "start-*" }).Count | Should -Be 1 -Because "only the preflight database slice may start"
+
+                # The existing target is named only by the resolver and the two safety checks.
+                # The one database the run dropped is the generated preflight database.
+                @($lines | Where-Object { $_ -like "*edfi_datamanagementservice*" }).Count | Should -Be 3
+
+                # The active workspace is byte-for-byte what it was before the run.
+                @(& $snapshotActiveTree) | Should -Be $activeTreeBefore
+
+                # Every transient is gone: the real candidate the prepare phases wrote, the
+                # preflight env file, the restore-effective env file, and the root override.
+                $workspaceRoot = Join-Path $script:repo.DockerComposeRoot ".bootstrap-restore"
+                $lines[6] | Should -BeLike "candidate-prepare-schema override=[[]$workspaceRoot*candidate-*]"
+                $candidateDirectory = $lines[6].Substring("candidate-prepare-schema override=[".Length).TrimEnd("]")
+                Test-Path -LiteralPath $candidateDirectory | Should -BeFalse
+                @(Get-ChildItem -LiteralPath $workspaceRoot -Directory -Filter "candidate-*" -ErrorAction SilentlyContinue) | Should -BeNullOrEmpty
+                Test-Path -LiteralPath (Join-Path $script:repo.RepoRoot "preflight.env") | Should -BeFalse
+                Test-Path -LiteralPath (Join-Path $workspaceRoot "derived/.env.restore-effective") | Should -BeFalse
+                Test-Path Env:\DMS_BOOTSTRAP_ROOT_OVERRIDE | Should -BeFalse
+            }
+            finally {
+                Remove-Module -ModuleInfo $realModule -Force -ErrorAction SilentlyContinue
+                Remove-Item Env:\DMS_BOOTSTRAP_ROOT_OVERRIDE -ErrorAction SilentlyContinue
+            }
+        }
+
         It "bypasses the stale-workspace fail-fast in restore mode, while non-restore keeps the reworded terminal error" {
             # A Standard manifest whose recorded packages can never match the effective env.
             $bootstrapRoot = Join-Path $script:repo.DockerComposeRoot ".bootstrap"

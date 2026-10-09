@@ -1448,7 +1448,7 @@ Describe "Invoke-RestoreScratchValidation" {
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*SourceIdentity*" }
     }
 
-    It "on <Name> (SQL Server): fails naming the defect and drops the scratch" -ForEach @(
+    It "on <Name> (SQL Server): fails naming the defect, drops the scratch, and removes the in-container backup copy" -ForEach @(
         @{ Name = "a mismatched compatibility level"; FactMutation = { param($fact) $fact.DatabaseCompatibilityLevel = 160 }; Expected = "*databaseCompatibilityLevel*" }
         @{ Name = "a mismatched DocumentJson storage type"; FactMutation = { param($fact) $fact.DocumentJsonColumnType = "varchar" }; Expected = "*documentJsonColumnType*" }
     ) {
@@ -1461,6 +1461,8 @@ Describe "Invoke-RestoreScratchValidation" {
 
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "IF DB_ID(N'edfi_dms_restore_scratch_*DROP DATABASE*" }
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*SourceIdentity*" }
+        # The .bak copied into the SQL Server data directory is removed on the failure path too.
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-mssql rm -f /var/opt/mssql/data/restore-scratch-*.bak" }
     }
 
     It "fails when the manifest and the candidate workspace disagree" {
