@@ -314,24 +314,26 @@ internal static class CompactDescriptorResourceScenario
         (await QueryAsync(harness, Consumers, afterDescriptor.Uri)).Count.Should().Be(1);
     }
 
-    public static async Task It_authorizes_stored_and_proposed_namespaces_through_compact_descriptor_keys(
+    public static async Task It_preserves_scalar_namespace_authorization_with_compact_descriptor_references(
         ApiIntegrationHarness harness,
         MutableNamespacePrefixJwtValidationService identity
     )
     {
         DescriptorSeed allowed = await SeedDescriptorAsync(harness);
         DescriptorSeed denied = await SeedDescriptorAsync(harness, namespaceSuffix: "Denied");
-        string item = await PostAsync(harness, Items, Item("item", allowed.Uri));
+        string allowedNamespace = "uri://ed-fi.org/DMS-1404/allowed/";
+        string deniedNamespace = "uri://ed-fi.org/DMS-1404/denied/";
+        string item = await PostAsync(harness, Items, Item("item", allowed.Uri, allowedNamespace));
         var before = await ReadStampAsync(harness, item);
-        identity.SetNamespacePrefixes([allowed.Uri.Split('#')[0]]);
+        identity.SetNamespacePrefixes([allowedNamespace]);
         using HttpResponseMessage proposed = await SendAsync(
             harness,
             HttpMethod.Post,
             Items,
-            Item("new", denied.Uri)
+            Item("new", denied.Uri, deniedNamespace)
         );
         proposed.StatusCode.Should().Be(HttpStatusCode.Forbidden, await proposed.Content.ReadAsStringAsync());
-        JsonObject putPayload = Item("item", denied.Uri);
+        JsonObject putPayload = Item("item", denied.Uri, deniedNamespace);
         putPayload["id"] = item.Split('/')[^1];
         using HttpResponseMessage put = await SendAsync(harness, HttpMethod.Put, item, putPayload);
         put.StatusCode.Should().Be(HttpStatusCode.Forbidden, await put.Content.ReadAsStringAsync());
@@ -345,7 +347,7 @@ internal static class CompactDescriptorResourceScenario
             harness,
             HttpMethod.Post,
             Items,
-            Item("item", allowed.Uri)
+            Item("item", allowed.Uri, allowedNamespace)
         );
         post.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await QueryAsync(harness, Items, allowed.Uri)).Should().BeEmpty();
@@ -520,12 +522,13 @@ internal static class CompactDescriptorResourceScenario
             .Be(1, "root and collection occurrences must share one batched descriptor lookup");
     }
 
-    private static JsonObject Item(string code, string uri) =>
+    private static JsonObject Item(string code, string uri, string ns = "uri://ed-fi.org/DMS-1404/items") =>
         new()
         {
             ["itemCode"] = code,
             ["displayName"] = "Compact descriptor resource test",
             ["schoolTypeDescriptor"] = uri,
+            ["namespace"] = ns,
         };
 
     private static JsonObject Bridge(string code, string item, string uri) =>

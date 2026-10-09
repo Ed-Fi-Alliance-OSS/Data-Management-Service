@@ -503,7 +503,6 @@
         },
         "securableElements": {
           "Namespace": [
-            "$.schoolTypeDescriptor",
             "$.namespace"
           ],
           "EducationOrganization": [],

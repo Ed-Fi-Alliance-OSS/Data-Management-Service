@@ -86,8 +86,8 @@ public sealed class Given_Mssql_CompactDescriptorResources : MssqlApiIntegration
         );
 
     [Test]
-    public Task It_authorizes_stored_and_proposed_namespaces_through_compact_descriptor_keys() =>
-        CompactDescriptorResourceScenario.It_authorizes_stored_and_proposed_namespaces_through_compact_descriptor_keys(
+    public Task It_preserves_scalar_namespace_authorization_with_compact_descriptor_references() =>
+        CompactDescriptorResourceScenario.It_preserves_scalar_namespace_authorization_with_compact_descriptor_references(
             Harness,
             _identity
         );

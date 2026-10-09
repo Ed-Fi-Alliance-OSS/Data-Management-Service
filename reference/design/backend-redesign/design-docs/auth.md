@@ -314,12 +314,12 @@ Descriptor POST must authorize the proposed namespace before inserting `dms.Docu
 proposed namespace before changing descriptor data; descriptor DELETE must authorize the stored
 namespace before deletion.
 
-When a regular resource's root namespace basis traverses a descriptor reference, the planner joins
-its `int ..._DescriptorId` to `dms.Descriptor.DescriptorId` and reads stored `Namespace`. A copied
-descriptor-valued reference identity follows the same compact binding. Stored, proposed, page,
-and total-count checks share this join; proposed checks use the finalized merged row, including
-hidden profile values. They do not infer namespace by splitting a URI. A descriptor's own namespace
-check still reads its own component directly. Root-only authorization eligibility remains unchanged.
+For regular resources, NamespaceBased requires a namespace value on the concrete root table.
+Descriptor-reference namespace bases, including copied descriptor-valued reference identities,
+are unsupported and fail closed with a Security Configuration Error before executing SQL.
+Namespace dereferencing through a descriptor reference is deferred to a separate story.
+This restriction does not affect a descriptor resource's own `Namespace` column or the
+custom-view bridge from `DescriptorId` to the owning `DocumentId`.
 
 Similar to the Ownership-based strategy, GET-by-ID, Update, Create, and Delete are authorized by retrieving the resource from the DB and materializing it in C#, then checking whether the ApiClient has a namespace prefix that matches the resource's. This consumes resources unnecessarily if the client is not authorized.
 

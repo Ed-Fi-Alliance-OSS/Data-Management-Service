@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Data;
 using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
@@ -16,8 +15,7 @@ public sealed record NamespaceAuthorizationExecutionRequest(
     long DocumentId,
     string? ProposedNamespace,
     IReadOnlyList<NamespaceAuthorizationCheckSpec> Checks,
-    NamespacePrefixParameterization NamespacePrefixParameterization,
-    int? ProposedDescriptorId = null
+    NamespacePrefixParameterization NamespacePrefixParameterization
 );
 
 public abstract record NamespaceAuthorizationExecutionResult
@@ -171,32 +169,14 @@ internal sealed class NamespaceAuthorizationExecutor(
             request.ProposedNamespace
         );
 
-        var usesDescriptorKey = request.Checks.Any(check =>
-            check.ValueSource is NamespaceAuthorizationCheckValueSource.Proposed
-            && check.IsDescriptorReference
-        );
-        if (usesDescriptorKey)
-        {
-            valuesByParameterName[NamespaceAuthorizationSqlSpecDefaults.ProposedNamespaceParameterName] =
-                request.ProposedDescriptorId;
-        }
-
         return new RelationalCommand(
             sqlPlan.AuthorizationSql,
             [
                 .. sqlPlan.ParametersInOrder.Select(parameter =>
-                    usesDescriptorKey
-                    && parameter.ParameterName
-                        == NamespaceAuthorizationSqlSpecDefaults.ProposedNamespaceParameterName
-                        ? new RelationalParameter(
-                            $"@{parameter.ParameterName}",
-                            request.ProposedDescriptorId,
-                            static dbParameter => dbParameter.DbType = DbType.Int32
-                        )
-                        : NamespaceAuthorizationCommandParameterBuilder.BuildParameter(
-                            parameter,
-                            valuesByParameterName[parameter.ParameterName]
-                        )
+                    NamespaceAuthorizationCommandParameterBuilder.BuildParameter(
+                        parameter,
+                        valuesByParameterName[parameter.ParameterName]
+                    )
                 ),
             ]
         );

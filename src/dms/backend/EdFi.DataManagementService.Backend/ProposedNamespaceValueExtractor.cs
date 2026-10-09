@@ -15,14 +15,11 @@ internal abstract record ProposedNamespaceValueExtractionResult
     private ProposedNamespaceValueExtractionResult() { }
 
     /// <summary>
-    /// The proposed namespace value was extracted. Descriptor references carry the compact key in
-    /// <paramref name="ProposedDescriptorId"/> for SQL to read the canonical stored namespace.
-    /// <paramref name="ProposedNamespace"/> is
+    /// The proposed namespace value was extracted. <paramref name="ProposedNamespace"/> is
     /// <see langword="null"/> when the finalized value is null/empty, which the SQL maps to a
     /// proposed-namespace-missing failure.
     /// </summary>
-    public sealed record Ready(string? ProposedNamespace, int? ProposedDescriptorId = null)
-        : ProposedNamespaceValueExtractionResult;
+    public sealed record Ready(string? ProposedNamespace) : ProposedNamespaceValueExtractionResult;
 
     /// <summary>
     /// The planned namespace checks could not be reconciled with the finalized root row. The write
@@ -79,13 +76,6 @@ internal static class ProposedNamespaceValueExtractor
                         + $"Found '{check.NamespaceColumn.Value}' and '{namespaceColumn.Value}'."
                 );
             }
-
-            if (check.IsDescriptorReference != checks[0].IsDescriptorReference)
-            {
-                return Invalid(
-                    "Proposed namespace authorization checks must share one namespace value kind."
-                );
-            }
         }
 
         var bindings = rootRow.TableWritePlan.ColumnBindings;
@@ -108,18 +98,6 @@ internal static class ProposedNamespaceValueExtractor
         }
 
         var boundValue = GetBoundSqlValue(rootRow.Values[bindingIndex]);
-
-        if (checks[0].IsDescriptorReference)
-        {
-            return boundValue switch
-            {
-                null => new ProposedNamespaceValueExtractionResult.Ready(null),
-                int descriptorId => new ProposedNamespaceValueExtractionResult.Ready(null, descriptorId),
-                _ => Invalid(
-                    $"Proposed namespace authorization expected an Int32 descriptor key for column '{namespaceColumn.Value}' but found '{boundValue.GetType().Name}'."
-                ),
-            };
-        }
 
         return boundValue switch
         {

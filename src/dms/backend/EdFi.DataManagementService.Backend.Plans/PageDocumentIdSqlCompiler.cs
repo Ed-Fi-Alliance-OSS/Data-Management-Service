@@ -1000,27 +1000,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     {
         var tableAlias = ResolveNamespaceCheckAlias(check.RootTable, rootTable);
 
-        if (check.IsDescriptorReference)
-        {
-            writer.Append("EXISTS (SELECT 1 FROM ");
-            writer.AppendRelation(new SqlRelationRef.PhysicalTable(DescriptorNamespaceSqlHelper.Table));
-            writer.Append(
-                $" {DescriptorNamespaceSqlHelper.Alias} WHERE {DescriptorNamespaceSqlHelper.Alias}."
-            );
-            writer.AppendQuoted("DescriptorId");
-            writer.Append($" = {tableAlias}.");
-            writer.AppendQuoted(check.NamespaceColumn.Value);
-            writer.Append(" AND ");
-            NamespacePrefixSqlHelper.AppendRootTableNamespacePredicate(
-                writer,
-                DescriptorNamespaceSqlHelper.Alias,
-                DescriptorNamespaceSqlHelper.NamespaceColumn,
-                namespacePrefixParameterization
-            );
-            writer.Append(")");
-            return;
-        }
-
         NamespacePrefixSqlHelper.AppendRootTableNamespacePredicate(
             writer,
             tableAlias,

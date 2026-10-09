@@ -17,22 +17,12 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 [TestFixture(SqlDialect.Pgsql)]
 [TestFixture(SqlDialect.Mssql)]
-public class Given_CompactDescriptor_NamespaceAuthorization_And_CustomViewAuthorization_Values(
-    SqlDialect dialect
-)
+public class Given_CompactDescriptor_CustomViewAuthorization_Values(SqlDialect dialect)
 {
     private CompactDescriptorAuthorizationFixture _fixture = null!;
     private IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> _customChecks = null!;
-    private IReadOnlyList<NamespaceAuthorizationCheckSpec> _namespaceChecks = null!;
     private ProposedCustomViewRuntimeWork _work = null!;
     private RelationalCommand _customCommand = null!;
-    private RelationalCommand _namespaceCommand = null!;
-    private NamespacePrefixParameterization Prefixes =>
-        NamespacePrefixParameterizationFactory.Create(
-            dialect,
-            ["uri://Example.org/Kind "],
-            "namespacePrefixes"
-        );
 
     [SetUp]
     public void Setup()
@@ -51,14 +41,6 @@ public class Given_CompactDescriptor_NamespaceAuthorization_And_CustomViewAuthor
                     NamespaceAuthorizationOperation.Update
                 )
         ).Checks;
-        _namespaceChecks = (
-            (NamespaceAuthorizationPlanOutcome.Plan)
-                NamespaceAuthorizationPlanner.Plan(
-                    _fixture.Subject,
-                    NamespaceAuthorizationOperation.Update,
-                    new([], ["uri://Example.org/Kind "])
-                )
-        ).Checks;
         _work = (
             (ProposedCustomViewExtractionResult.Ready)
                 ProposedCustomViewValueExtractor.Extract(
@@ -69,53 +51,18 @@ public class Given_CompactDescriptor_NamespaceAuthorization_And_CustomViewAuthor
         _customCommand = ProposedCustomViewAuthorizationCommand
             .Build(_fixture.MappingSet, new(_customChecks, _work.SqlValues))!
             .Command;
-        var ready = (
-            (ProposedNamespaceValueExtractionResult.Ready)
-                ProposedNamespaceValueExtractor.Extract(
-                    [_namespaceChecks[1]],
-                    _fixture.RootRow(CompactDescriptorAuthorizationFixture.DescriptorId)
-                )
-        );
-        var plan = new NamespaceAuthorizationSqlCompiler(dialect).Compile(
-            new(_namespaceChecks, Prefixes, "documentId", "proposedNamespace")
-        );
-        _namespaceCommand = NamespaceAuthorizationExecutor.BuildCommand(
-            plan,
-            new(
-                _fixture.MappingSet,
-                CompactDescriptorAuthorizationFixture.DocumentId,
-                ready.ProposedNamespace,
-                _namespaceChecks,
-                Prefixes,
-                ready.ProposedDescriptorId
-            )
-        );
     }
 
     [Test]
-    public void It_extracts_and_binds_the_actual_compact_key_without_narrowing_the_owning_document_id()
+    public void It_extracts_and_binds_the_actual_compact_descriptor_key()
     {
         _work.SqlValues[0].BasisValue.Should().BeOfType<int>().Which.Should().Be(42);
         _customCommand.Parameters.Single().Value.Should().Be(42);
-        _namespaceCommand
-            .Parameters.Single(p => p.Name == "@proposedNamespace")
-            .Value.Should()
-            .BeOfType<int>()
-            .Which.Should()
-            .Be(42);
-        _namespaceCommand
-            .Parameters.Single(p => p.Name == "@documentId")
-            .Value.Should()
-            .BeOfType<long>()
-            .Which.Should()
-            .Be(5000000042L);
         VerifyType(_customCommand.Parameters.Single(), DbType.Int32);
-        VerifyType(_namespaceCommand.Parameters.Single(p => p.Name == "@proposedNamespace"), DbType.Int32);
-        VerifyType(_namespaceCommand.Parameters.Single(p => p.Name == "@documentId"), DbType.Int64);
     }
 
     [Test]
-    public void It_binds_a_missing_proposed_descriptor_as_a_typed_int_null_for_both_authorizers()
+    public void It_binds_a_missing_proposed_descriptor_as_a_typed_int_null()
     {
         var work = (
             (ProposedCustomViewExtractionResult.Ready)
@@ -126,15 +73,6 @@ public class Given_CompactDescriptor_NamespaceAuthorization_And_CustomViewAuthor
             .Command;
         command.Parameters.Single().Value.Should().BeNull();
         VerifyType(command.Parameters.Single(), DbType.Int32);
-        var nsPlan = new NamespaceAuthorizationSqlCompiler(dialect).Compile(
-            new([_namespaceChecks[1]], Prefixes, "documentId", "proposedNamespace")
-        );
-        var ns = NamespaceAuthorizationExecutor.BuildCommand(
-            nsPlan,
-            new(_fixture.MappingSet, 0, null, [_namespaceChecks[1]], Prefixes)
-        );
-        ns.Parameters.Single(p => p.Name == "@proposedNamespace").Value.Should().BeNull();
-        VerifyType(ns.Parameters.Single(p => p.Name == "@proposedNamespace"), DbType.Int32);
     }
 
     [Test]
@@ -145,10 +83,6 @@ public class Given_CompactDescriptor_NamespaceAuthorization_And_CustomViewAuthor
             .Extract([_customChecks[1]], row)
             .Should()
             .BeOfType<ProposedCustomViewExtractionResult.InvalidAuthorizationPlan>();
-        ProposedNamespaceValueExtractor
-            .Extract([_namespaceChecks[1]], row)
-            .Should()
-            .BeOfType<ProposedNamespaceValueExtractionResult.InvalidAuthorizationPlan>();
     }
 
     [Test]
@@ -179,50 +113,10 @@ public class Given_CompactDescriptor_NamespaceAuthorization_And_CustomViewAuthor
 
     [TestCase(false)]
     [TestCase(true)]
-    public async Task It_preserves_stored_and_proposed_namespace_permission_results(bool proposed)
-    {
-        var check = _namespaceChecks[proposed ? 1 : 0] with { Index = 0 };
-        var executor = new RecordingExecutor(dialect);
-        var result = await new NamespaceAuthorizationExecutor(executor).ExecuteAsync(
-            new(_fixture.MappingSet, 5000000042L, null, [check], Prefixes, 42)
-        );
-        result.Should().BeOfType<NamespaceAuthorizationExecutionResult.Authorized>();
-        executor
-            .Command!.CommandText.Should()
-            .Contain(dialect is SqlDialect.Pgsql ? "dn.\"DescriptorId\"" : "dn.[DescriptorId]");
-    }
-
-    [TestCase(false)]
-    [TestCase(true)]
-    public async Task It_preserves_stored_and_proposed_namespace_denials(bool proposed)
-    {
-        var check = _namespaceChecks[proposed ? 1 : 0] with { Index = 0 };
-        var executor = new RecordingExecutor(dialect, true);
-        var payload = $"ns1|{check.Index}|m";
-        var result = await new NamespaceAuthorizationExecutor(
-            executor,
-            new FailureExtractor(dialect, payload)
-        ).ExecuteAsync(new(_fixture.MappingSet, 5000000042L, null, [check], Prefixes, 42));
-        var failure = result
-            .Should()
-            .BeOfType<NamespaceAuthorizationExecutionResult.NotAuthorized>()
-            .Which.Failure;
-        failure
-            .ValueSource.Should()
-            .Be(
-                proposed
-                    ? Core.External.Backend.NamespaceAuthorizationFailureValueSource.Proposed
-                    : Core.External.Backend.NamespaceAuthorizationFailureValueSource.Stored
-            );
-        failure.ConfiguredNamespacePrefixes.Should().Equal("uri://Example.org/Kind ");
-    }
-
-    [TestCase(false)]
-    [TestCase(true)]
     public async Task It_preserves_stored_and_proposed_custom_view_denials(bool proposed)
     {
         var check = _customChecks[proposed ? 1 : 0];
-        var executor = new RecordingExecutor(dialect, true);
+        var executor = new ThrowingExecutor(dialect);
         var payload = $"cv1|{check.Index}|n";
         if (proposed)
         {
@@ -297,26 +191,14 @@ public class Given_CompactDescriptor_NamespaceAuthorization_And_CustomViewAuthor
             );
     }
 
-    private sealed class RecordingExecutor(SqlDialect dialect, bool deny = false) : IRelationalCommandExecutor
+    private sealed class ThrowingExecutor(SqlDialect dialect) : IRelationalCommandExecutor
     {
         public SqlDialect Dialect => dialect;
-        public RelationalCommand? Command { get; private set; }
 
-        public async Task<TResult> ExecuteReaderAsync<TResult>(
+        public Task<TResult> ExecuteReaderAsync<TResult>(
             RelationalCommand command,
             Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
             CancellationToken cancellationToken = default
-        )
-        {
-            Command = command;
-            if (deny)
-            {
-                throw new ProviderException();
-            }
-            await using var reader = new InMemoryRelationalCommandReader([
-                InMemoryRelationalResultSet.Create(),
-            ]);
-            return await readAsync(reader, cancellationToken);
-        }
+        ) => throw new ProviderException();
     }
 }

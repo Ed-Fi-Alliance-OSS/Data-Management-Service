@@ -17,9 +17,7 @@ public class Given_CompactDescriptor_CustomViewAuthorization_And_NamespaceAuthor
 {
     private CompactDescriptorAuthorizationFixture _fixture = null!;
     private IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> _customChecks = null!;
-    private IReadOnlyList<NamespaceAuthorizationCheckSpec> _namespaceChecks = null!;
     private string _customSql = null!;
-    private string _namespaceSql = null!;
 
     private string Quote(string name) => dialect is SqlDialect.Pgsql ? $"\"{name}\"" : $"[{name}]";
 
@@ -49,17 +47,6 @@ public class Given_CompactDescriptor_CustomViewAuthorization_And_NamespaceAuthor
         ).Checks;
         _customSql = new SingleRecordCustomViewAuthorizationSqlCompiler(dialect)
             .Compile(new(_customChecks, "documentId"))
-            .AuthorizationSql;
-        _namespaceChecks = (
-            (NamespaceAuthorizationPlanOutcome.Plan)
-                NamespaceAuthorizationPlanner.Plan(
-                    _fixture.Subject,
-                    NamespaceAuthorizationOperation.Update,
-                    new([], ["uri://Example.org/Kind "])
-                )
-        ).Checks;
-        _namespaceSql = new NamespaceAuthorizationSqlCompiler(dialect)
-            .Compile(new(_namespaceChecks, Prefixes, "documentId", "proposedNamespace"))
             .AuthorizationSql;
     }
 
@@ -110,47 +97,15 @@ public class Given_CompactDescriptor_CustomViewAuthorization_And_NamespaceAuthor
                 CustomViewAuthorizationCheckValueSource.Stored,
                 CustomViewAuthorizationCheckValueSource.Proposed
             );
-        _namespaceChecks
-            .Select(c => c.ValueSource)
-            .Should()
-            .Equal(
-                NamespaceAuthorizationCheckValueSource.Stored,
-                NamespaceAuthorizationCheckValueSource.Proposed
-            );
         _customSql
             .IndexOf("cv1|0|", StringComparison.Ordinal)
             .Should()
             .BeLessThan(_customSql.IndexOf("cv1|1|", StringComparison.Ordinal));
-        _namespaceSql
-            .IndexOf("ns1|0|", StringComparison.Ordinal)
-            .Should()
-            .BeLessThan(_namespaceSql.IndexOf("ns1|1|", StringComparison.Ordinal));
         _customSql.Should().Contain("THEN 1").And.Contain("cv1|0|n").And.Contain("cv1|1|n");
-        _namespaceSql.Should().Contain("THEN 1").And.Contain("ns1|0|m").And.Contain("ns1|1|m");
     }
 
     [Test]
-    public void It_uses_the_canonical_stored_namespace_for_stored_and_proposed_descriptor_references()
-    {
-        _namespaceChecks.Should().OnlyContain(c => c.IsDescriptorReference);
-        _namespaceSql.Should().Contain($"dn.{Quote("DescriptorId")} = r.{Quote("Kind_DescriptorId")}");
-        _namespaceSql.Should().Contain($"dn.{Quote("Namespace")} LIKE");
-        _namespaceSql.Should().Contain($"WHERE dn.{Quote("DescriptorId")} = @proposedNamespace");
-        _namespaceSql
-            .Should()
-            .NotContain($"r.{Quote("Kind_DescriptorId")} LIKE")
-            .And.NotContain("CodeValue")
-            .And.NotContain("LOWER");
-        // A missing descriptor does not imply that the owning resource row disappeared.
-        _namespaceSql
-            .Should()
-            .Contain(
-                $"WHEN NOT EXISTS (SELECT 1 FROM {Quote("edfi")}.{Quote("DescriptorOwner")} r WHERE r.{Quote("DocumentId")} = @documentId)"
-            );
-    }
-
-    [Test]
-    public void It_applies_both_descriptor_bridges_to_page_and_total_count_sql()
+    public void It_applies_the_custom_view_descriptor_bridge_to_page_and_total_count_sql()
     {
         var custom = (
             (CustomViewAuthorizationPlanOutcome.Plan)
@@ -172,8 +127,6 @@ public class Given_CompactDescriptor_CustomViewAuthorization_And_NamespaceAuthor
                 Mode: new PageCandidateMode.Traditional(IncludeTotalCountSql: true),
                 Authorization: new(
                     [],
-                    NamespaceChecks: [_namespaceChecks[0]],
-                    NamespacePrefixParameterization: Prefixes,
                     CustomViewChecks: PageDocumentIdCustomViewAdapter.AdaptFromChecks(custom)
                 )
             )
@@ -182,8 +135,6 @@ public class Given_CompactDescriptor_CustomViewAuthorization_And_NamespaceAuthor
         {
             sql.Should().Contain($"{Quote("DescriptorId")} = t0.{Quote("Kind_DescriptorId")}");
             sql.Should().Contain($"{Quote("DocumentId")} IN (SELECT");
-            sql.Should().Contain($"dn.{Quote("DescriptorId")} = r.{Quote("Kind_DescriptorId")}");
-            sql.Should().Contain($"dn.{Quote("Namespace")} LIKE");
         }
     }
 
@@ -246,6 +197,33 @@ public class Given_CompactDescriptor_CustomViewAuthorization_And_NamespaceAuthor
     }
 
     [Test]
+    public void It_fails_closed_for_descriptor_reference_namespace_bases(
+        [Values(
+            NamespaceAuthorizationOperation.ReadSingle,
+            NamespaceAuthorizationOperation.ReadMany,
+            NamespaceAuthorizationOperation.Update,
+            NamespaceAuthorizationOperation.Delete
+        )]
+            NamespaceAuthorizationOperation operation,
+        [Values(false, true)] bool hasPrefixes
+    )
+    {
+        var outcome = NamespaceAuthorizationPlanner.Plan(
+            _fixture.Subject,
+            operation,
+            new([], hasPrefixes ? ["uri://Example.org/"] : [])
+        );
+
+        outcome
+            .Should()
+            .Be(
+                new NamespaceAuthorizationPlanOutcome.NoUsableRootColumn(
+                    _fixture.Subject.ResourceKey.Resource
+                )
+            );
+    }
+
+    [Test]
     public void It_keeps_descriptor_self_basis_and_namespace_checks_document_keyed()
     {
         var descriptor = _fixture.MappingSet.Model.ConcreteResourcesInNameOrder.Single(r =>
@@ -285,8 +263,7 @@ public class Given_CompactDescriptor_CustomViewAuthorization_And_NamespaceAuthor
                     new([], ["uri://Example.org/"])
                 )
         ).Checks;
-        ns.Should()
-            .OnlyContain(c => !c.IsDescriptorReference && c.NamespaceColumn == new DbColumnName("Namespace"));
+        ns.Should().OnlyContain(c => c.NamespaceColumn == new DbColumnName("Namespace"));
         var sql = new NamespaceAuthorizationSqlCompiler(dialect)
             .Compile(new(ns, Prefixes, "documentId", "proposedNamespace"))
             .AuthorizationSql;

@@ -103,6 +103,10 @@ requires compatible templates to be rebuilt and verified before use.
 ### 6. Behavior preserved on both database engines
 
 - PostgreSQL and SQL Server tests cover descriptor CRUD, referenced-descriptor deletion protection, resource writes and reads, descriptor query filters, namespace authorization, and cache materialization.
+- Namespace authorization preserves descriptor resources' own `Namespace` and regular resources'
+  root namespace values. Dereferencing a descriptor reference for NamespaceBased is deferred to a
+  separate story and fails closed with a Security Configuration Error. The custom-view
+  `DescriptorId` to owning `DocumentId` bridge remains in scope.
 - An authorized descriptor POST matching an existing descriptor through RI preserves both IDs and applies the incoming Namespace and CodeValue. Changed components, including casing changes, receive normal update stamps and ETag changes even when descriptive fields are unchanged.
 - Database equality alone does not establish a successful RI POST match. Preserve existing conflict behavior.
 - Descriptor PUT retains its ordinal whole-URI identity guard. Different URI text, including case-only changes, returns 400 for immutable identity, with stored values and stamps unchanged.

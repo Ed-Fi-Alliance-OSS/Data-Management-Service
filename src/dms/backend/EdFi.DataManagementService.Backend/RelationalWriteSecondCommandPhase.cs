@@ -2000,8 +2000,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
     private sealed record NamespaceStatementPlan(
         IReadOnlyList<NamespaceAuthorizationCheckSpec> Checks,
         NamespacePrefixParameterization PrefixParameterization,
-        string? ProposedNamespace,
-        int? ProposedDescriptorId
+        string? ProposedNamespace
     );
 
     /// <summary>
@@ -2052,8 +2051,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         statementPlan = new NamespaceStatementPlan(
             namespaceAuthorization.Checks,
             namespaceAuthorization.NamespacePrefixParameterization,
-            ready.ProposedNamespace,
-            ready.ProposedDescriptorId
+            ready.ProposedNamespace
         );
 
         return null;
@@ -2081,8 +2079,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                 DocumentId: 0L,
                 statementPlan.ProposedNamespace,
                 statementPlan.Checks,
-                statementPlan.PrefixParameterization,
-                statementPlan.ProposedDescriptorId
+                statementPlan.PrefixParameterization
             )
         );
     }

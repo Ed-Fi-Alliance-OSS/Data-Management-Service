@@ -867,9 +867,10 @@ Related redesign discussion:
      `int DescriptorId` and owning `bigint DocumentId` without another lookup,
    - use the compact key for descriptor row candidates, semantic identity, query predicates, and
      hydration; preserve hidden compact bindings through the same merge rules as visible bindings,
-   - descriptor-based namespace checks dereference `DescriptorId` to stored `Namespace`; custom-view
-     checks bridge `dms.Descriptor.DescriptorId` to its `DocumentId` for membership. Proposed checks
-     use the finalized merged row, including hidden values, rather than parsing request URIs,
+   - custom-view checks bridge `dms.Descriptor.DescriptorId` to its `DocumentId` for membership.
+     Proposed checks use the finalized merged row, including hidden values, rather than parsing
+     request URIs. NamespaceBased checks require a root namespace value; descriptor-reference
+     namespace bases fail closed as unsupported,
    - perform authorization as defined in [auth.md](auth.md) using the full stored/request state required there.
 
 4. **Backend loads current state**

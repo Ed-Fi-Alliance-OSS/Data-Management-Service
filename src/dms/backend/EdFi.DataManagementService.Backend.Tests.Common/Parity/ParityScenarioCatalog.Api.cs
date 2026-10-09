@@ -172,9 +172,9 @@ public static partial class ParityScenarioCatalog
         ),
         Api(
             "Api/CompactDescriptorResources/NamespaceAuthorization",
-            "Stored/proposed namespace authorization dereferences compact keys for read/write/delete and paging; denied operations preserve rows and stamps.",
-            "CompactDescriptorResourceScenario.It_authorizes_stored_and_proposed_namespaces_through_compact_descriptor_keys",
-            "It_authorizes_stored_and_proposed_namespaces_through_compact_descriptor_keys",
+            "Scalar root namespace authorization is preserved on resources with compact descriptor references; denied read/write/delete and paging operations preserve rows and stamps.",
+            "CompactDescriptorResourceScenario.It_preserves_scalar_namespace_authorization_with_compact_descriptor_references",
+            "It_preserves_scalar_namespace_authorization_with_compact_descriptor_references",
             fixtureSuffix: "CompactDescriptorResources"
         ),
         Api(
