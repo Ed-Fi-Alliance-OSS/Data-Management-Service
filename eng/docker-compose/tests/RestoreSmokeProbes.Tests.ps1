@@ -2658,6 +2658,48 @@ Describe "SourceIdentity evidence (capture, inspection, restored identity)" {
             $result.Binding | Should -Be $binding
         }
 
+        It "returns only its result object when the build block writes to the pipeline (StrictMode)" {
+            # Build-TemplateNuGetPackage leaks `dotnet pack` stdout to the pipeline; the live smoke
+            # reads $bound.Binding under StrictMode Latest, so a leaked line must never join the result.
+            Set-StrictMode -Version Latest
+            Reset-IdentityDocker -SelectQueue @($script:sourceIdentity, $script:sourceIdentity)
+            $script:buildArguments.BuildPackage = {
+                $global:RestoreSmokeIdentityTest.Steps.Add("build")
+                "Successfully created package 'EdFi.Api.Minimal.Template.PostgreSql.5.2.0.1.0.999.nupkg'."
+                $null = New-FakeIdentityPackage -Directory $script:directory
+            }
+
+            $result = Invoke-RestoreSmokeIdentityBoundPackageBuild @script:buildArguments
+
+            @($result).Count | Should -Be 1
+            $result.Binding | Should -Be $script:bindings[0]
+            $result.Package | Should -Be $script:packages[0]
+            $result.Binding.Bound | Should -BeTrue
+            $result.Binding.BeforeBackup.Identity | Should -BeExactly $script:sourceIdentity
+            $packageFile = @(Get-ChildItem -LiteralPath $script:directory -Filter "*.nupkg")
+            $result.Package.Sha256 | Should -BeExactly (Get-FileHash -LiteralPath $packageFile[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $result.Binding.PackageSha256 | Should -BeExactly $result.Package.Sha256
+        }
+
+        It "propagates a build failure after pipeline text and leaves the binding unbound" {
+            Set-StrictMode -Version Latest
+            Reset-IdentityDocker -SelectQueue @($script:sourceIdentity, $script:sourceIdentity)
+            $script:buildArguments.BuildPackage = {
+                $global:RestoreSmokeIdentityTest.Steps.Add("build")
+                "Successfully created package 'EdFi.Api.Minimal.Template.PostgreSql.5.2.0.1.0.999.nupkg'."
+                throw "simulated pack failure"
+            }
+
+            { Invoke-RestoreSmokeIdentityBoundPackageBuild @script:buildArguments } | Should -Throw -ExpectedMessage "simulated pack failure"
+
+            @($global:RestoreSmokeIdentityTest.Steps) | Should -Be @("select", "build")
+            $script:packages.Count | Should -Be 0
+            $script:bindings.Count | Should -Be 1
+            $script:bindings[0].Bound | Should -BeFalse
+            $script:bindings[0].PackageSha256 | Should -BeNullOrEmpty
+            $script:bindings[0].Reason | Should -BeExactly "the capture did not complete"
+        }
+
         It "builds nothing when the source identity before the backup <case>" -ForEach @(
             @{ Case = "has no row"; Queue = @(""); Fail = @{}; Expected = "dms.DataStoreIdentity.SourceIdentity in 'edfi_datamanagementservice' has 0 rows; expected exactly one" }
             @{ Case = "has two rows"; Queue = @("6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11|7a2d2d44-1e5f-4e1a-8c0f-5a6c9b4e3d22"); Fail = @{}; Expected = "dms.DataStoreIdentity.SourceIdentity in 'edfi_datamanagementservice' has 2 rows; expected exactly one" }

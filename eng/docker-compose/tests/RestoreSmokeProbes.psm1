@@ -2291,7 +2291,9 @@ function Invoke-RestoreSmokeIdentityBoundPackageBuild {
         throw "Cannot bind the $($fixture.Name) package to its source's SourceIdentity: $($binding.Reason). Nothing was built."
     }
 
-    & $BuildPackage
+    # The build's own output (for example `dotnet pack` stdout) goes to the host, so it stays in
+    # the log but never becomes part of this function's result.
+    & $BuildPackage | Out-Host
 
     $package = Get-RestoreSmokePackageProvenance -PackageDirectory $PackageDirectory -RestoreManifestFileName $RestoreManifestFileName -PackageFixture $fixture.Name
     $PackageList.Add($package)
