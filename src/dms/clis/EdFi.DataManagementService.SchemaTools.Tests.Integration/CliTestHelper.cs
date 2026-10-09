@@ -55,7 +55,6 @@ public static class CliTestHelper
 
             Assert.Fail(
                 $"Process '{fileName}' timed out after {effectiveTimeout.TotalSeconds}s."
-                    + $"\nArgs: {string.Join(" ", arguments)}"
                     + $"\nstdout: {partialOut}\nstderr: {partialErr}"
             );
         }

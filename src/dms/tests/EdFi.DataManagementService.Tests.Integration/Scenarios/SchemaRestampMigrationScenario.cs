@@ -297,6 +297,8 @@ internal static class SchemaRestampMigrationScenario
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
         };
         startInfo.ArgumentList.Add(assemblyPath);
         foreach (string argument in arguments)
@@ -308,7 +310,56 @@ internal static class SchemaRestampMigrationScenario
             ?? throw new InvalidOperationException("Could not start api-schema-tools.");
         Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
         Task<string> errorTask = process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        return new ProcessResult(process.ExitCode, await outputTask, await errorTask);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        try
+        {
+            await WaitForToolExitAsync(process, deadline.Token);
+            await Task.WhenAll(outputTask, errorTask).WaitAsync(deadline.Token);
+            return new ProcessResult(process.ExitCode, await outputTask, await errorTask);
+        }
+        catch (Exception exception) when (exception is OperationCanceledException or TimeoutException)
+        {
+            // Give redirected pipes a bounded opportunity to drain after process termination.
+            try
+            {
+                await Task.WhenAll(outputTask, errorTask).WaitAsync(TimeSpan.FromSeconds(10));
+            }
+            catch (TimeoutException) { }
+
+            string output = outputTask.IsCompletedSuccessfully ? outputTask.Result : "(not captured)";
+            string error = errorTask.IsCompletedSuccessfully ? errorTask.Result : "(not captured)";
+            for (int index = 0; index + 1 < arguments.Length; index++)
+            {
+                if (arguments[index] is "--connection-string" or "-c")
+                {
+                    output = output.Replace(arguments[index + 1], "[redacted]", StringComparison.Ordinal);
+                    error = error.Replace(arguments[index + 1], "[redacted]", StringComparison.Ordinal);
+                }
+            }
+            throw new TimeoutException(
+                $"api-schema-tools exceeded its five-minute process deadline.\nstdout: {output}\nstderr: {error}"
+            );
+        }
+    }
+
+    internal static async Task WaitForToolExitAsync(Process process, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            try
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException) when (process.HasExited)
+            {
+                // The child may have exited between cancellation and termination.
+            }
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            throw;
+        }
     }
 }
