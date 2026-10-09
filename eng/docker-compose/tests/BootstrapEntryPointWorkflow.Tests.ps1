@@ -1935,6 +1935,147 @@ $resultStatement
     # skipped, preflight drop before the real-env -InfraOnly, cleanup on failure.
     # =========================================================================
     Context "restore-mode sequencing" {
+        BeforeAll {
+            function script:Install-RealRestoreCandidateAndTarget {
+                # Replaces two recording stubs with the REAL functions: New-RestoreCandidateWorkspace
+                # (it sets DMS_BOOTSTRAP_ROOT_OVERRIDE, builds the candidate, and clears the override)
+                # and Resolve-RestoreTargetDatabaseName. Both run inside a privately imported copy of
+                # the source module. The copy is prefixed, so none of its other exports shadow the
+                # remaining stubs. The prepare phases are stubs that record the override they see and
+                # write the candidate manifest through it. Every compose-shaped call (docker, the stop
+                # proofs, the database-only stop) is re-stubbed to record the override as well.
+                # Returns the module so the caller can remove it.
+                param(
+                    [Parameter(Mandatory)]
+                    [string]$LogPath,
+
+                    [Parameter(Mandatory)]
+                    [string]$DockerComposeRoot
+                )
+
+                $realModule = Import-Module (Join-Path $script:sourceDockerComposeRoot "bootstrap-restore.psm1") -Force -PassThru -Prefix RealT1
+                $log = $LogPath
+                $workspaceRoot = Join-Path $DockerComposeRoot ".bootstrap-restore"
+                $fixtureManifestModule = Join-Path $DockerComposeRoot "bootstrap-manifest.psm1"
+                $schemaStub = Join-Path $DockerComposeRoot "t1-prepare-dms-schema.ps1"
+                $claimsStub = Join-Path $DockerComposeRoot "t1-prepare-dms-claims.ps1"
+                @"
+param([string]`$EnvironmentFile)
+Add-Content -LiteralPath '$log' -Value "candidate-prepare-schema override=[`$env:DMS_BOOTSTRAP_ROOT_OVERRIDE]"
+New-Item -ItemType Directory -Path `$env:DMS_BOOTSTRAP_ROOT_OVERRIDE -Force | Out-Null
+Set-Content -LiteralPath (Join-Path `$env:DMS_BOOTSTRAP_ROOT_OVERRIDE 'bootstrap-manifest.json') -Value '{"version":1}'
+"@ | Set-Content -LiteralPath $schemaStub -Encoding utf8
+                @"
+Add-Content -LiteralPath '$log' -Value "candidate-prepare-claims override=[`$env:DMS_BOOTSTRAP_ROOT_OVERRIDE]"
+"@ | Set-Content -LiteralPath $claimsStub -Encoding utf8
+
+                Set-Item function:global:New-RestoreCandidateWorkspace {
+                    param($EnvironmentFile)
+                    Add-Content -LiteralPath $log -Value "restore:candidate"
+                    try {
+                        & $realModule {
+                            param($candidateEnvironmentFile, $candidateWorkspaceRoot, $schemaScriptPath, $claimsScriptPath)
+                            New-RestoreCandidateWorkspace `
+                                -EnvironmentFile $candidateEnvironmentFile `
+                                -WorkspaceRoot $candidateWorkspaceRoot `
+                                -PrepareSchemaScriptPath $schemaScriptPath `
+                                -PrepareClaimsScriptPath $claimsScriptPath
+                        } $EnvironmentFile $workspaceRoot $schemaStub $claimsStub
+                    }
+                    finally {
+                        # Test plumbing only. Production's finally re-imports the bootstrap-manifest
+                        # module that sits beside the real module, which is the source tree's copy.
+                        # Point the session back at this fixture's copy so later phases resolve the
+                        # fixture workspace.
+                        Import-Module $fixtureManifestModule -Force -Global
+                    }
+                }.GetNewClosure()
+                Set-Item function:global:Resolve-RestoreTargetDatabaseName {
+                    param($EnvironmentValues, $DatabaseEngine)
+                    $target = & $realModule {
+                        param($values, $engine)
+                        Resolve-RestoreTargetDatabaseName -EnvironmentValues $values -DatabaseEngine $engine
+                    } $EnvironmentValues $DatabaseEngine
+                    Add-Content -LiteralPath $log -Value "restore:resolve-target engine=$DatabaseEngine target=$target"
+                    $target
+                }.GetNewClosure()
+                Set-Item function:global:docker {
+                    Add-Content -LiteralPath $log -Value "docker $($args -join ' ') override=[$env:DMS_BOOTSTRAP_ROOT_OVERRIDE]"
+                    $global:LASTEXITCODE = 0
+                }.GetNewClosure()
+                Set-Item function:global:Assert-DmsComposeProjectStopped {
+                    param($ProjectName)
+                    Add-Content -LiteralPath $log -Value "restore:stop-proof project=$ProjectName override=[$env:DMS_BOOTSTRAP_ROOT_OVERRIDE]"
+                }.GetNewClosure()
+                Set-Item function:global:Stop-RestoreDatabaseOnlySlice {
+                    param($ProjectName, $DatabaseEngine, $EnvironmentFile)
+                    Add-Content -LiteralPath $log -Value "restore:stop-db project=$ProjectName engine=$DatabaseEngine override=[$env:DMS_BOOTSTRAP_ROOT_OVERRIDE]"
+                }.GetNewClosure()
+                return $realModule
+            }
+
+            function script:New-OverrideRecordingStartScriptStub {
+                # The restore start-script stub (-DbOnly aware) that also records the root override
+                # each invocation sees: every start script runs docker compose in production.
+                param(
+                    [Parameter(Mandatory)]
+                    [string]$Directory,
+
+                    [Parameter(Mandatory)]
+                    [string]$CallLogPath
+                )
+
+                @"
+param(
+    [switch] `$InfraOnly,
+    [switch] `$DmsOnly,
+    [switch] `$DbOnly,
+    [switch] `$EnableConfig,
+    [string] `$EnvironmentFile,
+    [string] `$IdentityProvider,
+    [string] `$DmsBaseUrl,
+    [string] `$DatabaseEngine,
+    [switch] `$SeparateConfigDatabase,
+    [switch] `$SuppressWrapperContinuationGuidance,
+    [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
+)
+`$label = if (`$DbOnly) { "start-db-only" }
+          elseif (`$InfraOnly) { "start-infra" }
+          elseif (`$DmsOnly) { "start-dms" }
+          else { "start-legacy" }
+if (-not [string]::IsNullOrWhiteSpace(`$EnvironmentFile) -and -not (Test-Path -LiteralPath `$EnvironmentFile)) {
+    throw "start stub: environment file does not exist: `$EnvironmentFile"
+}
+Add-Content -LiteralPath '$CallLogPath' -Value "`$label env=`$EnvironmentFile override=[`$env:DMS_BOOTSTRAP_ROOT_OVERRIDE]"
+"@ | Set-Content -LiteralPath (Join-Path $Directory "start-local-dms.ps1") -Encoding utf8
+            }
+
+            # The D12 order, as patterns over the override-recording log of one restore run.
+            $script:repeatedRestoreOrder = @(
+                "restore:resolve-target*",
+                "restore:name-safety*",
+                "restore:find template=Minimal*",
+                "restore:trust",
+                "restore:stage",
+                "restore:candidate",
+                "candidate-prepare-schema*",
+                "candidate-prepare-claims*",
+                "restore:crosscheck",
+                "restore:stop-proof project=dms-local*",
+                "restore:stop-proof project=dms-published*",
+                "start-db-only env=*preflight.env override=*",
+                "restore:target-safety",
+                "restore:scratch template=Minimal",
+                "restore:preflight-drop name=[[]edfi_dms_restore_preflight_*",
+                "restore:stop-db project=dms-local*",
+                "restore:publish",
+                "restore:replacement package-identity=11111111-1111-1111-1111-111111111111",
+                "start-infra env=*",
+                "configure*",
+                "start-dms env=*"
+            )
+        }
+
         BeforeEach {
             $script:restoreLog = Join-Path $script:repo.RepoRoot "call-log-restore-sequencing.txt"
             # With bootstrap-manifest present, Get-EffectiveBootstrapEnvFile materializes REAL
@@ -2052,6 +2193,106 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
             # restore branch's finally, the restore-effective env at the end of the run.
             Test-Path -LiteralPath (Join-Path $script:repo.RepoRoot "preflight.env") | Should -BeFalse
             Test-Path -LiteralPath (Join-Path $script:repo.DockerComposeRoot ".bootstrap-restore/derived/.env.restore-effective") | Should -BeFalse
+        }
+
+        It "never runs compose or docker while the real candidate build's root override is set, which both prepare phases see" {
+            New-OverrideRecordingStartScriptStub -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreLog
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
+            $realModule = Install-RealRestoreCandidateAndTarget -LogPath $script:restoreLog -DockerComposeRoot $script:repo.DockerComposeRoot
+            try {
+                & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal
+
+                $log = @(Get-Content -LiteralPath $script:restoreLog)
+                $workspaceRoot = Join-Path $script:repo.DockerComposeRoot ".bootstrap-restore"
+
+                # The recorder demonstrably sees the override: both prepare phases ran under it, and
+                # it pointed at the candidate the real helper created.
+                $prepareLines = @($log | Where-Object { $_ -like "candidate-prepare-*" })
+                $prepareLines.Count | Should -Be 2
+                $prepareLines[0] | Should -BeLike "candidate-prepare-schema override=[[]$workspaceRoot*candidate-*]"
+                $prepareLines[1] | Should -BeLike "candidate-prepare-claims override=[[]$workspaceRoot*candidate-*]"
+
+                # Every compose-shaped call of the run recorded the override unset.
+                $composeLines = @($log | Where-Object {
+                        $_ -like "start-*" -or $_ -like "docker *" -or $_ -like "restore:stop-proof*" -or $_ -like "restore:stop-db*"
+                    })
+                @($composeLines | Where-Object { $_ -like "start-db-only*" }).Count | Should -Be 2
+                @($composeLines | Where-Object { $_ -like "start-infra*" }).Count | Should -Be 1
+                @($composeLines | Where-Object { $_ -like "start-dms*" }).Count | Should -Be 1
+                @($composeLines | Where-Object { $_ -like "restore:stop-proof*" }).Count | Should -Be 4
+                @($composeLines | Where-Object { $_ -like "restore:stop-db*" }).Count | Should -Be 1
+                @($composeLines | Where-Object { $_ -notlike "* override=[[]]" }) |
+                    Should -BeNullOrEmpty -Because "no compose or docker invocation may run while DMS_BOOTSTRAP_ROOT_OVERRIDE is set"
+
+                # Both prepare phases ran before the first compose-shaped call.
+                $lastPrepareIndex = Get-RestoreLogIndex -Log $log -Pattern "candidate-prepare-*" -Occurrence 2
+                $firstComposeIndex = [array]::IndexOf($log, $composeLines[0])
+                $firstComposeIndex | Should -BeGreaterThan $lastPrepareIndex
+
+                # The override does not outlive the run, and the committed workspace is the real
+                # helper's candidate.
+                Test-Path Env:\DMS_BOOTSTRAP_ROOT_OVERRIDE | Should -BeFalse
+                @(Get-ChildItem -LiteralPath $workspaceRoot -Directory -Filter "candidate-*" -ErrorAction SilentlyContinue) | Should -BeNullOrEmpty
+                Join-Path $script:repo.BootstrapRoot "bootstrap-manifest.json" | Should -Exist
+            }
+            finally {
+                Remove-Module -ModuleInfo $realModule -Force -ErrorAction SilentlyContinue
+                Remove-Item Env:\DMS_BOOTSTRAP_ROOT_OVERRIDE -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "restores twice in a row into the same configured target, each run the full D12 sequence, neither provisioning" {
+            # A non-default target name, so a run that fell back to the default would show.
+            $repeatEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.repeat-target"
+            @(Get-Content -LiteralPath $script:repo.EnvFile) -replace '^POSTGRES_DB_NAME=.*$', 'POSTGRES_DB_NAME=edfi_dms_repeat_target' |
+                Set-Content -LiteralPath $repeatEnvFile -Encoding utf8
+            New-OverrideRecordingStartScriptStub -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreLog
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
+            $realModule = Install-RealRestoreCandidateAndTarget -LogPath $script:restoreLog -DockerComposeRoot $script:repo.DockerComposeRoot
+            try {
+                & $script:repo.WrapperScript -EnvironmentFile $repeatEnvFile -RestoreTemplate Minimal
+                $firstRunLength = @(Get-Content -LiteralPath $script:restoreLog).Count
+
+                # The second invocation meets the workspace the first one committed.
+                Join-Path $script:repo.BootstrapRoot "bootstrap-manifest.json" | Should -Exist
+
+                & $script:repo.WrapperScript -EnvironmentFile $repeatEnvFile -RestoreTemplate Minimal
+
+                $log = @(Get-Content -LiteralPath $script:restoreLog)
+                $log.Count | Should -BeGreaterThan $firstRunLength
+                $runs = @(
+                    [pscustomobject]@{ Name = "first"; Lines = @($log[0..($firstRunLength - 1)]) }
+                    [pscustomobject]@{ Name = "second"; Lines = @($log[$firstRunLength..($log.Count - 1)]) }
+                )
+                foreach ($run in $runs) {
+                    $lines = [string[]]$run.Lines
+                    @($lines | Where-Object { $_ -like "restore:resolve-target*" }) |
+                        Should -Be @("restore:resolve-target engine=postgresql target=edfi_dms_repeat_target") -Because "the $($run.Name) run resolves the configured target"
+                    @($lines | Where-Object { $_ -like "restore:name-safety*" }) |
+                        Should -Be @("restore:name-safety target=edfi_dms_repeat_target") -Because "the $($run.Name) run checks that same target"
+
+                    $previousIndex = -1
+                    foreach ($pattern in $script:repeatedRestoreOrder) {
+                        $currentIndex = Get-RestoreLogIndex -Log $lines -Pattern $pattern
+                        $currentIndex | Should -BeGreaterThan $previousIndex -Because "in the $($run.Name) run, '$pattern' must appear after the previous step"
+                        $previousIndex = $currentIndex
+                    }
+
+                    @($lines | Where-Object { $_ -like "restore:replacement*" }).Count | Should -Be 1 -Because "the $($run.Name) run replaces exactly one target"
+                    @($lines | Where-Object { $_ -eq "restore:publish" }).Count | Should -Be 1
+                    $lines | Should -Not -Contain "provision" -Because "the $($run.Name) run must not provision"
+                    $lines | Should -Contain "restore:remove-stage"
+                }
+
+                @(Get-ChildItem -LiteralPath (Join-Path $script:repo.DockerComposeRoot ".bootstrap-restore") -Directory -Filter "candidate-*" -ErrorAction SilentlyContinue) | Should -BeNullOrEmpty
+                Test-Path -LiteralPath (Join-Path $script:repo.RepoRoot "preflight.env") | Should -BeFalse
+                Test-Path -LiteralPath (Join-Path $script:repo.DockerComposeRoot ".bootstrap-restore/derived/.env.restore-effective") | Should -BeFalse
+                Test-Path Env:\DMS_BOOTSTRAP_ROOT_OVERRIDE | Should -BeFalse
+            }
+            finally {
+                Remove-Module -ModuleInfo $realModule -Force -ErrorAction SilentlyContinue
+                Remove-Item Env:\DMS_BOOTSTRAP_ROOT_OVERRIDE -ErrorAction SilentlyContinue
+            }
         }
 
         It "targets the dms-published compose project for the published wrapper" {
