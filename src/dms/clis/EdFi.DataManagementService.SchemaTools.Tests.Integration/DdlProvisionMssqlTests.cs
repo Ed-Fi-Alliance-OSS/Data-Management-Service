@@ -441,7 +441,8 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
             "mssql",
             connectionString,
             CliTestHelper.GetAuthoritativeSchemaPaths(),
-            createDatabase: true
+            createDatabase: true,
+            processTimeout: TimeSpan.FromMinutes(5)
         );
 
         // Introspect after first run
@@ -462,7 +463,8 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
             "mssql",
             connectionString,
             CliTestHelper.GetAuthoritativeSchemaPaths(),
-            createDatabase: true
+            createDatabase: true,
+            processTimeout: TimeSpan.FromMinutes(5)
         );
 
         // Introspect after second run (rediscover schemas to catch accidental new schemas)
