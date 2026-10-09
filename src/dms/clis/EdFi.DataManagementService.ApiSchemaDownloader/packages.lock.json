@@ -96,6 +96,15 @@
           "System.Security.Cryptography.ProtectedData": "4.4.0"
         }
       },
+      "NuGet.Credentials": {
+        "type": "Direct",
+        "requested": "[6.13.1, )",
+        "resolved": "6.13.1",
+        "contentHash": "rGboYyQKrr0WtU+IblSKKLnLkU6Odb/vVPvkeSf7OEg9dwaBAuGpJ9PCpmKwxw5i2YpYoApyQzmaKKlVowuz3A==",
+        "dependencies": {
+          "NuGet.Protocol": "6.13.1"
+        }
+      },
       "NuGet.Packaging": {
         "type": "Direct",
         "requested": "[6.13.1, )",

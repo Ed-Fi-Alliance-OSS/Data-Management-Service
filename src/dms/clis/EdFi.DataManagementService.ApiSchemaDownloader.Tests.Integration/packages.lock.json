@@ -50,6 +50,15 @@
           "Microsoft.TestPlatform.TestHost": "17.11.1"
         }
       },
+      "NuGet.Protocol": {
+        "type": "Direct",
+        "requested": "[6.13.1, )",
+        "resolved": "6.13.1",
+        "contentHash": "do4DFom8As6Tf55UlcNa3o4VyuTJhBvK2WtdCSVs4Nlwpo4JeIM3aI6rzAAu4zp2X06lelhnMXBj3aowbizeqQ==",
+        "dependencies": {
+          "NuGet.Packaging": "6.13.1"
+        }
+      },
       "NUnit": {
         "type": "Direct",
         "requested": "[4.2.2, )",
@@ -376,6 +385,7 @@
           "Microsoft.Extensions.Logging.Debug": "[10.0.1, )",
           "Microsoft.Extensions.Options": "[10.0.1, )",
           "NuGet.Configuration": "[6.13.1, )",
+          "NuGet.Credentials": "[6.13.1, )",
           "NuGet.Packaging": "[6.13.1, )",
           "NuGet.Protocol": "[6.13.1, )",
           "Serilog": "[4.2.0, )",
@@ -686,6 +696,15 @@
           "System.Security.Cryptography.ProtectedData": "4.4.0"
         }
       },
+      "NuGet.Credentials": {
+        "type": "CentralTransitive",
+        "requested": "[6.13.1, )",
+        "resolved": "6.13.1",
+        "contentHash": "rGboYyQKrr0WtU+IblSKKLnLkU6Odb/vVPvkeSf7OEg9dwaBAuGpJ9PCpmKwxw5i2YpYoApyQzmaKKlVowuz3A==",
+        "dependencies": {
+          "NuGet.Protocol": "6.13.1"
+        }
+      },
       "NuGet.Packaging": {
         "type": "CentralTransitive",
         "requested": "[6.13.1, )",
@@ -696,15 +715,6 @@
           "NuGet.Configuration": "6.13.1",
           "NuGet.Versioning": "6.13.1",
           "System.Security.Cryptography.Pkcs": "6.0.4"
-        }
-      },
-      "NuGet.Protocol": {
-        "type": "CentralTransitive",
-        "requested": "[6.13.1, )",
-        "resolved": "6.13.1",
-        "contentHash": "do4DFom8As6Tf55UlcNa3o4VyuTJhBvK2WtdCSVs4Nlwpo4JeIM3aI6rzAAu4zp2X06lelhnMXBj3aowbizeqQ==",
-        "dependencies": {
-          "NuGet.Packaging": "6.13.1"
         }
       },
       "Polly.Core": {
