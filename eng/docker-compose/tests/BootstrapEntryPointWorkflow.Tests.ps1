@@ -2011,6 +2011,12 @@ Add-Content -LiteralPath '$log' -Value "candidate-prepare-claims override=[`$env
                     param($ProjectName, $DatabaseEngine, $EnvironmentFile)
                     Add-Content -LiteralPath $log -Value "restore:stop-db project=$ProjectName engine=$DatabaseEngine override=[$env:DMS_BOOTSTRAP_ROOT_OVERRIDE]"
                 }.GetNewClosure()
+                # Records the target the destructive step receives, not only the identity.
+                Set-Item function:global:Invoke-RestoreTargetReplacement {
+                    param($Stage, $TargetDatabaseName, $PackageSourceIdentity, $DatabaseEngine, $ContainerName, [switch]$SeparateConfigDatabase, $EffectiveConfigDatabaseName)
+                    Add-Content -LiteralPath $log -Value "restore:replacement target=$TargetDatabaseName package-identity=$PackageSourceIdentity"
+                    [pscustomobject]@{ TargetDatabaseName = $TargetDatabaseName; RestoredSourceIdentity = "33333333-3333-3333-3333-333333333333" }
+                }.GetNewClosure()
                 return $realModule
             }
 
@@ -2050,29 +2056,34 @@ Add-Content -LiteralPath '$CallLogPath' -Value "`$label env=`$EnvironmentFile ov
 "@ | Set-Content -LiteralPath (Join-Path $Directory "start-local-dms.ps1") -Encoding utf8
             }
 
-            # The D12 order, as patterns over the override-recording log of one restore run.
+            # The complete D12 order of one restore run, as patterns (with occurrences) over the
+            # override-recording log: both stop-proof pairs, both -DbOnly starts, both preflight drops.
             $script:repeatedRestoreOrder = @(
-                "restore:resolve-target*",
-                "restore:name-safety*",
-                "restore:find template=Minimal*",
-                "restore:trust",
-                "restore:stage",
-                "restore:candidate",
-                "candidate-prepare-schema*",
-                "candidate-prepare-claims*",
-                "restore:crosscheck",
-                "restore:stop-proof project=dms-local*",
-                "restore:stop-proof project=dms-published*",
-                "start-db-only env=*preflight.env override=*",
-                "restore:target-safety",
-                "restore:scratch template=Minimal",
-                "restore:preflight-drop name=[[]edfi_dms_restore_preflight_*",
-                "restore:stop-db project=dms-local*",
-                "restore:publish",
-                "restore:replacement package-identity=11111111-1111-1111-1111-111111111111",
-                "start-infra env=*",
-                "configure*",
-                "start-dms env=*"
+                @{ Pattern = "restore:resolve-target*" }
+                @{ Pattern = "restore:name-safety*" }
+                @{ Pattern = "restore:find template=Minimal*" }
+                @{ Pattern = "restore:trust" }
+                @{ Pattern = "restore:stage" }
+                @{ Pattern = "restore:candidate" }
+                @{ Pattern = "candidate-prepare-schema*" }
+                @{ Pattern = "candidate-prepare-claims*" }
+                @{ Pattern = "restore:crosscheck" }
+                @{ Pattern = "restore:stop-proof project=dms-local*" }
+                @{ Pattern = "restore:stop-proof project=dms-published*" }
+                @{ Pattern = "start-db-only env=*preflight.env override=*" }
+                @{ Pattern = "restore:target-safety" }
+                @{ Pattern = "restore:scratch template=Minimal" }
+                @{ Pattern = "restore:preflight-drop name=[[]edfi_dms_restore_preflight_*" }
+                @{ Pattern = "restore:stop-db project=dms-local*" }
+                @{ Pattern = "restore:stop-proof project=dms-local*"; Occurrence = 2 }
+                @{ Pattern = "restore:stop-proof project=dms-published*"; Occurrence = 2 }
+                @{ Pattern = "restore:publish" }
+                @{ Pattern = "start-db-only env=*preflight.env override=*"; Occurrence = 2 }
+                @{ Pattern = "restore:replacement target=edfi_dms_repeat_target package-identity=11111111-1111-1111-1111-111111111111" }
+                @{ Pattern = "restore:preflight-drop name=[[]edfi_dms_restore_preflight_*"; Occurrence = 2 }
+                @{ Pattern = "start-infra env=*" }
+                @{ Pattern = "configure*" }
+                @{ Pattern = "start-dms env=*" }
             )
         }
 
@@ -2272,13 +2283,17 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
                         Should -Be @("restore:name-safety target=edfi_dms_repeat_target") -Because "the $($run.Name) run checks that same target"
 
                     $previousIndex = -1
-                    foreach ($pattern in $script:repeatedRestoreOrder) {
-                        $currentIndex = Get-RestoreLogIndex -Log $lines -Pattern $pattern
-                        $currentIndex | Should -BeGreaterThan $previousIndex -Because "in the $($run.Name) run, '$pattern' must appear after the previous step"
+                    foreach ($step in $script:repeatedRestoreOrder) {
+                        $occurrence = if ($step.ContainsKey("Occurrence")) { $step.Occurrence } else { 1 }
+                        $currentIndex = Get-RestoreLogIndex -Log $lines -Pattern $step.Pattern -Occurrence $occurrence
+                        $currentIndex | Should -BeGreaterThan $previousIndex -Because "in the $($run.Name) run, '$($step.Pattern)' (occurrence $occurrence) must appear after the previous step"
                         $previousIndex = $currentIndex
                     }
+                    @($lines | Where-Object { $_ -like "restore:stop-proof*" }).Count | Should -Be 4 -Because "the $($run.Name) run proves the stop twice for both projects"
+                    @($lines | Where-Object { $_ -like "start-db-only*" }).Count | Should -Be 2 -Because "the $($run.Name) run restarts the database once for scratch and once for the replacement"
 
-                    @($lines | Where-Object { $_ -like "restore:replacement*" }).Count | Should -Be 1 -Because "the $($run.Name) run replaces exactly one target"
+                    @($lines | Where-Object { $_ -like "restore:replacement*" }) |
+                        Should -Be @("restore:replacement target=edfi_dms_repeat_target package-identity=11111111-1111-1111-1111-111111111111") -Because "the $($run.Name) run replaces exactly the configured target, once"
                     @($lines | Where-Object { $_ -eq "restore:publish" }).Count | Should -Be 1
                     $lines | Should -Not -Contain "provision" -Because "the $($run.Name) run must not provision"
                     $lines | Should -Contain "restore:remove-stage"
