@@ -164,7 +164,14 @@ param(
     [string]
     $EnvironmentOverlayFile,
 
-    # Optional test filter for dotnet test operations
+    # Optional test filter for dotnet test operations. A leading @ on a category is stripped, also
+    # inside | and parenthesized groups. E2E scenarios tagged @MssqlOnly or @PostgresqlOnly run on
+    # one engine only, so each E2E lane excludes the other engine's tag:
+    #   PostgreSQL shard:       (Category=@e2e-ci-shard-N)&(Category!=@MssqlOnly)
+    #   PostgreSQL DS 6.1:      (Category=@StandardVersion-6_1)&(Category!=@MssqlOnly)
+    #   Partition sizing:       (Category=@CursorPartitionSizing)&(Category!=@MssqlOnly)
+    #   SQL Server:             (Category=@MssqlRepresentative|Category=@MssqlOnly)&(Category!=@PostgresqlOnly)
+    #   SQL Server DS 6.1:      (Category=@StandardVersion-6_1)&(Category!=@PostgresqlOnly)
     [string]
     $TestFilter,
 

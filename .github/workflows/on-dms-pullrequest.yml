@@ -2156,7 +2156,7 @@ jobs:
         id: e2e
         if: success()
         run: |
-          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-${{ matrix.shard }}'
+          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter '(Category=@e2e-ci-shard-${{ matrix.shard }})&(Category!=@MssqlOnly)'
 
       - name: Export DMS E2E Docker Logs
         if: always() && steps.e2e.outcome == 'failure'
@@ -2344,7 +2344,7 @@ jobs:
         env:
           KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
         run: |
-          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1'
+          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter '(Category=@StandardVersion-6_1)&(Category!=@MssqlOnly)'
 
       - name: Export DMS E2E Docker Logs
         if: always() && steps.e2e_ds61.outcome == 'failure'
@@ -2530,7 +2530,7 @@ jobs:
         env:
           KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
         run: |
-          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.cursorpartitions.e2e' -TestFilter 'Category=@CursorPartitionSizing'
+          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.cursorpartitions.e2e' -TestFilter '(Category=@CursorPartitionSizing)&(Category!=@MssqlOnly)'
 
       - name: Export DMS E2E Docker Logs
         if: always() && steps.e2e_partition_sizing.outcome == 'failure'
@@ -2602,8 +2602,9 @@ jobs:
   # SQL Server DMS E2E lane. Mirrors run-e2e-tests but targets the MSSQL datastore engine:
   # -DatabaseEngine mssql composes the .env.mssql overlay onto -EnvironmentFile and swaps mssql.yml
   # for postgresql.yml, so the stack is relational-only (no Kafka / OpenSearch). Rather than the full
-  # four-shard DS 5.2 sweep, this lane runs only the bounded @MssqlRepresentative cross-section across
-  # both identity providers. That filter carries no shard, so RunE2E writes the filtered TRX
+  # four-shard DS 5.2 sweep, this lane runs only the bounded @MssqlRepresentative cross-section plus
+  # the @MssqlOnly engine variants across both identity providers, excluding @PostgresqlOnly; the
+  # PostgreSQL lanes exclude @MssqlOnly. That filter carries no shard, so RunE2E writes the filtered TRX
   # (EdFi.DataManagementService.Tests.E2E.filtered.trx). An always()-guarded engine-correct teardown
   # runs regardless of outcome, and diagnostic artifacts are sanitized before any upload or report.
   run-e2e-tests-mssql:
@@ -2727,7 +2728,7 @@ jobs:
           $diagDir = "${{ github.workspace }}/logs/e2e-mssql-${{ matrix.identityprovider }}"
           New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
           $diagFile = Join-Path $diagDir 'build-dms-setup.log'
-          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category=@MssqlRepresentative' *> $diagFile
+          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter '(Category=@MssqlRepresentative|Category=@MssqlOnly)&(Category!=@PostgresqlOnly)' *> $diagFile
           $buildExitCode = $LASTEXITCODE
           if ($buildExitCode -ne 0) {
               throw "build-dms.ps1 E2ETest failed with exit code $buildExitCode. See the sanitized build-dms-setup.log artifact."
@@ -2948,7 +2949,7 @@ jobs:
           $diagDir = "${{ github.workspace }}/logs/e2e-mssql-ds61"
           New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
           $diagFile = Join-Path $diagDir 'build-dms-setup.log'
-          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1' *> $diagFile
+          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter '(Category=@StandardVersion-6_1)&(Category!=@PostgresqlOnly)' *> $diagFile
           $buildExitCode = $LASTEXITCODE
           if ($buildExitCode -ne 0) {
               throw "build-dms.ps1 E2ETest (DS 6.1) failed with exit code $buildExitCode. See the sanitized build-dms-setup.log artifact."
