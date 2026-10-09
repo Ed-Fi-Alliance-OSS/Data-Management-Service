@@ -8758,5 +8758,20 @@
         ]
       }
     ]
+  },
+  {
+    "name": "http://ed-fi.org/identity/claims/services/educationOrganizationProjection",
+    "defaultAuthorization": {
+      "actions": [
+        {
+          "name": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    }
   }
 ]

@@ -9,7 +9,7 @@ namespace EdFi.DataManagementService.Core.Configuration;
 
 /// <summary>
 /// Validates the paging-related <see cref="AppSettings"/> values that later request handling and
-/// partition sizing depend on.
+/// partition sizing depend on, and the education-organization projection limits.
 /// </summary>
 /// <remarks>
 /// Every failure is reported rather than stopping at the first, so an operator correcting a
@@ -44,6 +44,72 @@ public sealed class AppSettingsValidator : IValidateOptions<AppSettings>
             );
         }
 
+        ValidateEducationOrganizationProjection(options.EducationOrganizationProjection, failures);
+
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
+    }
+
+    private static void ValidateEducationOrganizationProjection(
+        EducationOrganizationProjectionSettings? settings,
+        List<string> failures
+    )
+    {
+        const string SectionName = nameof(AppSettings.EducationOrganizationProjection);
+
+        if (settings is null)
+        {
+            failures.Add($"AppSettings value {SectionName} must be configured");
+            return;
+        }
+
+        AddRangeFailure(
+            failures,
+            $"{SectionName}:{nameof(EducationOrganizationProjectionSettings.MaximumPageSize)}",
+            settings.MaximumPageSize,
+            EducationOrganizationProjectionSettings.MaximumPageSizeMinimum,
+            EducationOrganizationProjectionSettings.MaximumPageSizeMaximum
+        );
+        AddRangeFailure(
+            failures,
+            $"{SectionName}:{nameof(EducationOrganizationProjectionSettings.MaxProjectionRows)}",
+            settings.MaxProjectionRows,
+            EducationOrganizationProjectionSettings.MaxProjectionRowsMinimum,
+            EducationOrganizationProjectionSettings.MaxProjectionRowsMaximum
+        );
+        AddRangeFailure(
+            failures,
+            $"{SectionName}:{nameof(EducationOrganizationProjectionSettings.CursorLifetimeMinutes)}",
+            settings.CursorLifetimeMinutes,
+            EducationOrganizationProjectionSettings.CursorLifetimeMinutesMinimum,
+            EducationOrganizationProjectionSettings.CursorLifetimeMinutesMaximum
+        );
+        AddRangeFailure(
+            failures,
+            $"{SectionName}:{nameof(EducationOrganizationProjectionSettings.ReadLockTimeoutSeconds)}",
+            settings.ReadLockTimeoutSeconds,
+            EducationOrganizationProjectionSettings.ReadLockTimeoutSecondsMinimum,
+            EducationOrganizationProjectionSettings.ReadLockTimeoutSecondsMaximum
+        );
+        AddRangeFailure(
+            failures,
+            $"{SectionName}:{nameof(EducationOrganizationProjectionSettings.ReadCommandTimeoutSeconds)}",
+            settings.ReadCommandTimeoutSeconds,
+            EducationOrganizationProjectionSettings.ReadCommandTimeoutSecondsMinimum,
+            EducationOrganizationProjectionSettings.ReadCommandTimeoutSecondsMaximum
+        );
+    }
+
+    private static void AddRangeFailure(
+        List<string> failures,
+        string settingName,
+        int value,
+        int minimum,
+        int maximum
+    )
+    {
+        if (value < minimum || value > maximum)
+        {
+            failures.Add($"AppSettings value {settingName} must be between {minimum} and {maximum}");
+        }
     }
 }

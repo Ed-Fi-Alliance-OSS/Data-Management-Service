@@ -111,8 +111,8 @@ public class ConfigurationServiceDataStoreProvider(
                 logger.LogDebug(
                     "Loaded data store: ID={DataStoreId}, Name='{Name}', Type='{DataStoreType}'",
                     instance.Id,
-                    instance.Name,
-                    instance.DataStoreType
+                    LoggingSanitizer.SanitizeInternalValueForLogging(instance.Name),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(instance.DataStoreType)
                 );
             }
             string sanitizedTenant = LoggingSanitizer.SanitizeInternalValueForLogging(tenant ?? "(default)");
@@ -125,11 +125,17 @@ public class ConfigurationServiceDataStoreProvider(
         }
         catch (HttpRequestException ex)
         {
+            // The exception object is withheld: an HTTP or JSON failure's message, data and inner
+            // exceptions can carry whatever the Configuration Service or the network returned. Its type
+            // and, for HTTP, its status code identify the failure without carrying any of that.
+#pragma warning disable S6667 // Deliberate: the exception object is withheld so nothing it carries reaches the log
             logger.LogError(
-                ex,
-                "Failed to load data stores from Configuration Service. Ensure the Configuration Service is running and accessible at {BaseUrl}",
+                "Failed to load data stores from Configuration Service ({ExceptionType}, status {StatusCode}). Ensure the Configuration Service is running and accessible at {BaseUrl}",
+                ex.GetType().Name,
+                ex.StatusCode,
                 configurationServiceApiClient.Client.BaseAddress
             );
+#pragma warning restore S6667
             throw new InvalidOperationException(
                 $"Unable to connect to Configuration Service at {configurationServiceApiClient.Client.BaseAddress}. "
                     + "Verify that the service is running and the ConfigurationServiceSettings are configured correctly. "
@@ -139,10 +145,15 @@ public class ConfigurationServiceDataStoreProvider(
         }
         catch (JsonException ex)
         {
+            // The exception object is withheld: an HTTP or JSON failure's message, data and inner
+            // exceptions can carry whatever the Configuration Service or the network returned. Its type
+            // and, for HTTP, its status code identify the failure without carrying any of that.
+#pragma warning disable S6667 // Deliberate: the exception object is withheld so nothing it carries reaches the log
             logger.LogError(
-                ex,
-                "Failed to deserialize data stores response from Configuration Service. The API response format may have changed."
+                "Failed to deserialize data stores response from Configuration Service ({ExceptionType}). The API response format may have changed.",
+                ex.GetType().Name
             );
+#pragma warning restore S6667
             throw new InvalidOperationException(
                 "Configuration Service returned an invalid response format for data stores. "
                     + "This may indicate an API version mismatch or corrupted data.",
@@ -386,11 +397,17 @@ public class ConfigurationServiceDataStoreProvider(
         }
         catch (HttpRequestException ex)
         {
+            // The exception object is withheld: an HTTP or JSON failure's message, data and inner
+            // exceptions can carry whatever the Configuration Service or the network returned. Its type
+            // and, for HTTP, its status code identify the failure without carrying any of that.
+#pragma warning disable S6667 // Deliberate: the exception object is withheld so nothing it carries reaches the log
             logger.LogError(
-                ex,
-                "Failed to load tenants from Configuration Service. Ensure the Configuration Service is running and accessible at {BaseUrl}",
+                "Failed to load tenants from Configuration Service ({ExceptionType}, status {StatusCode}). Ensure the Configuration Service is running and accessible at {BaseUrl}",
+                ex.GetType().Name,
+                ex.StatusCode,
                 configurationServiceApiClient.Client.BaseAddress
             );
+#pragma warning restore S6667
             throw new InvalidOperationException(
                 $"Unable to connect to Configuration Service at {configurationServiceApiClient.Client.BaseAddress}. "
                     + "Verify that the service is running and the ConfigurationServiceSettings are configured correctly. "
@@ -400,10 +417,15 @@ public class ConfigurationServiceDataStoreProvider(
         }
         catch (JsonException ex)
         {
+            // The exception object is withheld: an HTTP or JSON failure's message, data and inner
+            // exceptions can carry whatever the Configuration Service or the network returned. Its type
+            // and, for HTTP, its status code identify the failure without carrying any of that.
+#pragma warning disable S6667 // Deliberate: the exception object is withheld so nothing it carries reaches the log
             logger.LogError(
-                ex,
-                "Failed to deserialize tenants response from Configuration Service. The API response format may have changed."
+                "Failed to deserialize tenants response from Configuration Service ({ExceptionType}). The API response format may have changed.",
+                ex.GetType().Name
             );
+#pragma warning restore S6667
             throw new InvalidOperationException(
                 "Configuration Service returned an invalid response format for tenants. "
                     + "This may indicate an API version mismatch or corrupted data.",

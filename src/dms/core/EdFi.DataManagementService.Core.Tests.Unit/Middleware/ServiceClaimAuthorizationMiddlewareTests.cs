@@ -22,11 +22,12 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 /// <summary>
-/// ServiceClaimAuthorizationMiddleware maps the identity operation to the required CMS action
-/// (Create for IdentityOperation.Create, Read for every other operation - Update is never consulted),
-/// loads the token's claim set, matches the seeded
-/// http://ed-fi.org/identity/claims/services/identity claim, and enforces that a matched action's
-/// authorization strategies are exactly [NoFurtherAuthorizationRequired].
+/// ServiceClaimAuthorizationMiddleware asks its ServiceClaimRequirement for the required CMS action,
+/// loads the token's claim set, matches the requirement's claim, and enforces that a matched action's
+/// authorization strategies are exactly [NoFurtherAuthorizationRequired]. The identity requirement maps
+/// the identity operation to the action (Create for IdentityOperation.Create, Read for every other
+/// operation - Update is never consulted) on the seeded http://ed-fi.org/identity/claims/services/identity
+/// claim; the projection requirement always needs Read on its own claim.
 /// </summary>
 public class ServiceClaimAuthorizationMiddlewareTests
 {
@@ -34,10 +35,19 @@ public class ServiceClaimAuthorizationMiddlewareTests
     private const string ClaimSetName = "IdentityClaims";
     private static readonly string _identityClaimUri = $"{Conventions.EdFiOdsServiceClaimBaseUri}/identity";
 
+    private const string ProjectionClaimUri =
+        "http://ed-fi.org/identity/claims/services/educationOrganizationProjection";
+
     private static ServiceClaimAuthorizationMiddleware CreateMiddleware(
         IClaimSetProvider claimSetProvider,
-        ILogger<ServiceClaimAuthorizationMiddleware>? logger = null
-    ) => new(claimSetProvider, logger ?? NullLogger<ServiceClaimAuthorizationMiddleware>.Instance);
+        ILogger<ServiceClaimAuthorizationMiddleware>? logger = null,
+        ServiceClaimRequirement? requirement = null
+    ) =>
+        new(
+            requirement ?? ServiceClaimRequirement.Identity,
+            claimSetProvider,
+            logger ?? NullLogger<ServiceClaimAuthorizationMiddleware>.Instance
+        );
 
     private static IClaimSetProvider CreateProvider(params ClaimSet[] claimSets)
     {
@@ -50,8 +60,17 @@ public class ServiceClaimAuthorizationMiddlewareTests
     private static ResourceClaim IdentityResourceClaim(string action, params string[] strategyNames) =>
         new(_identityClaimUri, action, [.. strategyNames.Select(name => new AuthorizationStrategy(name))]);
 
+    private static ResourceClaim ProjectionResourceClaim(string action, params string[] strategyNames) =>
+        new(ProjectionClaimUri, action, [.. strategyNames.Select(name => new AuthorizationStrategy(name))]);
+
+    private static string[] Errors(RequestInfo requestInfo) =>
+        requestInfo.FrontendResponse.Body!["errors"]!
+            .AsArray()
+            .Select(node => node!.GetValue<string>())
+            .ToArray();
+
     private static RequestInfo CreateRequestInfo(
-        IdentityOperation operation,
+        IdentityOperation? operation,
         string claimSetName = ClaimSetName,
         string traceId = "service-claim-authorization"
     )
@@ -590,6 +609,329 @@ public class ServiceClaimAuthorizationMiddlewareTests
                 await CreateMiddleware(claimSetProvider).Execute(requestInfo, TestHelper.NullNext);
 
             act.Should().ThrowAsync<OperationCanceledException>();
+        }
+    }
+
+    /// <summary>
+    /// The identity response wording is pinned by identity-v2-openapi.json and its wire baseline, so the
+    /// requirement-specific wording must reproduce the identity message exactly.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Identity_Requirement_And_A_Misconfigured_Strategy
+    {
+        private RequestInfo _requestInfo = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ClaimSet claimSet = new("SIS-Vendor", [IdentityResourceClaim("Create", "SomeUnknownStrategy")]);
+            IClaimSetProvider claimSetProvider = CreateProvider(claimSet);
+            _requestInfo = CreateRequestInfo(IdentityOperation.Create, claimSetName: "SIS-Vendor");
+
+            await CreateMiddleware(claimSetProvider).Execute(_requestInfo, TestHelper.NullNext);
+        }
+
+        [Test]
+        public void It_keeps_the_identity_wording()
+        {
+            Errors(_requestInfo)
+                .Should()
+                .Equal(
+                    "The identity service claim's authorization strategies for claim set 'SIS-Vendor' and action 'Create' must be exactly ['NoFurtherAuthorizationRequired']."
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Requirements
+    {
+        [Test]
+        public void It_points_the_identity_requirement_at_the_identity_claim()
+        {
+            ServiceClaimRequirement
+                .Identity.ClaimUri.Should()
+                .Be("http://ed-fi.org/identity/claims/services/identity");
+        }
+
+        [Test]
+        public void It_points_the_projection_requirement_at_the_seeded_projection_claim()
+        {
+            ServiceClaimRequirement.EducationOrganizationProjection.ClaimUri.Should().Be(ProjectionClaimUri);
+        }
+
+        [TestCase(null)]
+        [TestCase("Create")]
+        [TestCase("GetById")]
+        [TestCase("Find")]
+        [TestCase("Search")]
+        [TestCase("Results")]
+        public void It_requires_Read_for_the_projection_regardless_of_the_identity_operation(
+            string? operationName
+        )
+        {
+            IdentityOperation? operation = operationName is null
+                ? null
+                : Enum.Parse<IdentityOperation>(operationName);
+
+            ServiceClaimRequirement
+                .EducationOrganizationProjection.RequiredAction(CreateRequestInfo(operation))
+                .Should()
+                .Be("Read");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Projection_Requirement_And_A_Claim_Set_Granting_Read
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ClaimSet claimSet = new(
+                ClaimSetName,
+                [
+                    ProjectionResourceClaim(
+                        "Read",
+                        AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                    ),
+                ]
+            );
+            IClaimSetProvider claimSetProvider = CreateProvider(claimSet);
+            _requestInfo = CreateRequestInfo(operation: null);
+            _nextCalled = false;
+
+            await CreateMiddleware(
+                    claimSetProvider,
+                    requirement: ServiceClaimRequirement.EducationOrganizationProjection
+                )
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+
+        [Test]
+        public void It_calls_next()
+        {
+            _nextCalled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_sets_no_response()
+        {
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Projection_Requirement_And_A_Claim_Set_Granting_Other_Actions_Or_Claims
+    {
+        private static IEnumerable<TestCaseData> Grants()
+        {
+            yield return new TestCaseData("Create", ProjectionClaimUri).SetName(
+                "It_forbids_Create_on_the_projection_claim"
+            );
+            yield return new TestCaseData("Update", ProjectionClaimUri).SetName(
+                "It_forbids_Update_on_the_projection_claim"
+            );
+            yield return new TestCaseData("Delete", ProjectionClaimUri).SetName(
+                "It_forbids_Delete_on_the_projection_claim"
+            );
+            yield return new TestCaseData("Read", _identityClaimUri).SetName(
+                "It_forbids_Read_on_the_identity_claim"
+            );
+            yield return new TestCaseData("Create", _identityClaimUri).SetName(
+                "It_forbids_Create_on_the_identity_claim"
+            );
+        }
+
+        [TestCaseSource(nameof(Grants))]
+        public async Task It_is_forbidden_without_calling_next(string action, string claimUri)
+        {
+            ClaimSet claimSet = new(
+                ClaimSetName,
+                [
+                    new ResourceClaim(
+                        claimUri,
+                        action,
+                        [
+                            new AuthorizationStrategy(
+                                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                            ),
+                        ]
+                    ),
+                ]
+            );
+            IClaimSetProvider claimSetProvider = CreateProvider(claimSet);
+            RequestInfo requestInfo = CreateRequestInfo(IdentityOperation.Create);
+            var nextCalled = false;
+
+            await CreateMiddleware(
+                    claimSetProvider,
+                    requirement: ServiceClaimRequirement.EducationOrganizationProjection
+                )
+                .Execute(
+                    requestInfo,
+                    () =>
+                    {
+                        nextCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+
+            nextCalled.Should().BeFalse();
+            requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            requestInfo.FrontendResponse.Body!["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:security:authorization:");
+            Errors(requestInfo).Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Identity_Requirement_And_A_Claim_Set_Granting_Only_The_Projection_Claim
+    {
+        [TestCase("Create")]
+        [TestCase("GetById")]
+        public async Task It_is_forbidden(string operationName)
+        {
+            ClaimSet claimSet = new(
+                ClaimSetName,
+                [
+                    ProjectionResourceClaim(
+                        "Create",
+                        AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                    ),
+                    ProjectionResourceClaim(
+                        "Read",
+                        AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                    ),
+                ]
+            );
+            IClaimSetProvider claimSetProvider = CreateProvider(claimSet);
+            RequestInfo requestInfo = CreateRequestInfo(Enum.Parse<IdentityOperation>(operationName));
+
+            await CreateMiddleware(claimSetProvider).Execute(requestInfo, TestHelper.NullNext);
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Projection_Requirement_And_A_Denied_Request
+    {
+        private RecordingLogger<ServiceClaimAuthorizationMiddleware> _logger = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ClaimSet claimSet = new(
+                ClaimSetName,
+                [
+                    IdentityResourceClaim(
+                        "Read",
+                        AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                    ),
+                ]
+            );
+            IClaimSetProvider claimSetProvider = CreateProvider(claimSet);
+            _logger = new RecordingLogger<ServiceClaimAuthorizationMiddleware>();
+
+            await CreateMiddleware(
+                    claimSetProvider,
+                    _logger,
+                    ServiceClaimRequirement.EducationOrganizationProjection
+                )
+                .Execute(CreateRequestInfo(operation: null), TestHelper.NullNext);
+        }
+
+        [Test]
+        public void It_logs_the_projection_claim_and_action()
+        {
+            LogRecord record = _logger.Records.Should().ContainSingle(r => r.Level == LogLevel.Debug).Subject;
+            record.Properties["ServiceClaim"].Should().Be(ProjectionClaimUri);
+            record.Properties["Action"].Should().Be("Read");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Projection_Requirement_And_A_Misconfigured_Strategy
+    {
+        private static IEnumerable<TestCaseData> Strategies()
+        {
+            yield return new TestCaseData((object)Array.Empty<string>()).SetName(
+                "It_rejects_an_empty_strategy_list"
+            );
+            yield return new TestCaseData((object)new[] { "SomeUnknownStrategy" }).SetName(
+                "It_rejects_an_unknown_strategy"
+            );
+            yield return new TestCaseData(
+                (object)new[] { AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly }
+            ).SetName("It_rejects_another_recognized_strategy");
+            yield return new TestCaseData(
+                (object)
+                    new[]
+                    {
+                        AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                    }
+            ).SetName("It_rejects_more_than_one_strategy");
+        }
+
+        [TestCaseSource(nameof(Strategies))]
+        public async Task It_returns_a_security_configuration_error_with_service_claim_wording(
+            string[] strategyNames
+        )
+        {
+            ClaimSet claimSet = new(
+                "EdOrgProjectionReader",
+                [ProjectionResourceClaim("Read", strategyNames)]
+            );
+            IClaimSetProvider claimSetProvider = CreateProvider(claimSet);
+            RequestInfo requestInfo = CreateRequestInfo(
+                operation: null,
+                claimSetName: "EdOrgProjectionReader"
+            );
+            var nextCalled = false;
+
+            await CreateMiddleware(
+                    claimSetProvider,
+                    requirement: ServiceClaimRequirement.EducationOrganizationProjection
+                )
+                .Execute(
+                    requestInfo,
+                    () =>
+                    {
+                        nextCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+
+            nextCalled.Should().BeFalse();
+            requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            requestInfo.FrontendResponse.Body!["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:system:configuration:security");
+            Errors(requestInfo)
+                .Should()
+                .Equal(
+                    "The service claim's authorization strategies for claim set 'EdOrgProjectionReader' and action 'Read' must be exactly ['NoFurtherAuthorizationRequired']."
+                );
         }
     }
 }

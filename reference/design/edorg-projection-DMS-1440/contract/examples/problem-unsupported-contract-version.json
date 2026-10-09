@@ -1,0 +1,9 @@
+{
+  "detail": "The requested contract version is not supported.",
+  "type": "urn:ed-fi:api:education-organization-projection:unsupported-contract-version",
+  "title": "Unsupported Contract Version",
+  "status": 400,
+  "correlationId": "0HNG2K7Q8V1M3:00000002",
+  "validationErrors": {},
+  "errors": []
+}

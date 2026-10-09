@@ -129,6 +129,22 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
 
         return services;
     }
+
+    public static IServiceCollection AddMssqlEducationOrganizationProjectionSetReader(
+        this IServiceCollection services
+    )
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.Replace(
+            ServiceDescriptor.Scoped<
+                IEducationOrganizationProjectionSetReader,
+                MssqlEducationOrganizationProjectionSetReader
+            >()
+        );
+
+        return services;
+    }
 }
 
 internal sealed class MssqlReferenceResolverAdapterFactory(IRelationalCommandExecutor commandExecutor)

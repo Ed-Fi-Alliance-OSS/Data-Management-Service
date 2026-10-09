@@ -1221,6 +1221,70 @@ public static class AspNetCoreFrontend
     }
 
     /// <summary>
+    /// The query parameters the education-organization projection refuses when supplied more than
+    /// once. Held here rather than shared with Core, whose parameter constants are internal to a
+    /// different assembly, and held to those constants by a frontend unit test that sees them through
+    /// <c>InternalsVisibleTo</c>.
+    /// </summary>
+    internal static readonly string[] EducationOrganizationProjectionParameterNames =
+    [
+        "dataStoreId",
+        "limit",
+        "cursor",
+        "contractVersion",
+    ];
+
+    /// <summary>
+    /// The projection parameters supplied more than once. The query collection is keyed
+    /// case-insensitively and keeps every value under one entry, so <c>?cursor=a&amp;Cursor=b</c> is
+    /// one entry with two values here, while <see cref="FrontendRequest.QueryParameters"/> keeps only
+    /// the last of them and cannot show the repeat.
+    /// </summary>
+    private static string[] FindRepeatedProjectionParameters(IQueryCollection query) =>
+        [.. EducationOrganizationProjectionParameterNames.Where(name => query[name].Count > 1)];
+
+    /// <summary>
+    /// ASP.NET Core entry point for one page of the education-organization projection:
+    /// GET {prefix}/management/education-organizations
+    /// </summary>
+    /// <remarks>
+    /// Every response is marked <c>Cache-Control: no-store</c>: a page carries one client's view of
+    /// one data store and a cursor bound to it. <see cref="SecurityHeadersMiddleware"/> adds the same
+    /// value only to non-success statuses, and only when none is present, so the assignment here
+    /// leaves exactly one value on every status.
+    /// </remarks>
+    public static async Task<IResult> GetEducationOrganizationProjection(
+        HttpContext httpContext,
+        IApiService apiService,
+        IOptions<AppSettings> appSettings
+    )
+    {
+        string dmsPath = httpContext.Request.Path.ToUriComponent().TrimStart('/');
+
+        FrontendRequest frontendRequest = await FromRequest(
+            httpContext.Request,
+            dmsPath,
+            appSettings,
+            includeBody: false,
+            includeForm: false
+        );
+
+        frontendRequest = frontendRequest with
+        {
+            RepeatedQueryParameterNames = FindRepeatedProjectionParameters(httpContext.Request.Query),
+        };
+
+        IFrontendResponse frontendResponse = await apiService.GetEducationOrganizationProjection(
+            frontendRequest,
+            httpContext.RequestAborted
+        );
+
+        httpContext.Response.Headers.CacheControl = "no-store";
+
+        return ToResult(frontendResponse, httpContext, dmsPath);
+    }
+
+    /// <summary>
     /// The literal route segment every identity operation route is anchored on, used both to
     /// derive the redacted route-template path and to locate the real request path's tail
     /// for the Location header math in <see cref="ToResult"/>.

@@ -99,6 +99,20 @@ job fails with that code's registered message. Any other exception is transient.
 Consumers register their own codes with `AddJobErrorCode(code, message)`. A permanent failure
 whose code is not registered is recorded as `HandlerFailed`.
 
+The DMS education-organization projection reader is one such consumer
+(`AddDmsEducationOrganizationProjectionReader`; see
+[Education Organization Projection](./EDUCATION-ORGANIZATION-PROJECTION.md) and
+[`DmsEducationOrganizationProjectionSettings`](./CONFIGURATION.md#dmseducationorganizationprojectionsettings)).
+It registers the `EdOrgProjection*` codes (`EducationOrganizationProjectionJobErrorCodes`). A
+handler that uses it throws `JobPermanentException(failure.ToJobErrorCode()!)` for a `Permanent`
+failure, and any other exception for a `Transient` one (`ToJobErrorCode()` returns `null`), so
+the job is retried and ends in `AttemptsExhausted` if no attempt succeeds. A failed read returns
+no items, so a handler never applies part of a set. The reader talks to DMS over HTTP only: it
+opens no DMS database connection, and the backend project references no DMS assembly and no
+database provider (`BackendProjectBoundaryTests`). Its logs follow the rules in
+[Observability](#observability) and also never contain tokens, client secrets, cursors or
+`Authorization` headers, at any level (`RedactionTests`).
+
 ## Polling endpoint
 
 `GET /v3/jobs/{jobId}` follows the Admin API v3 contract.

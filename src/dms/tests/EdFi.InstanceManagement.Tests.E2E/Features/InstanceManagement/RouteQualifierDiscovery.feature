@@ -28,7 +28,8 @@ Feature: Route Qualifier Discovery API
                     "dataManagementApi": "http://localhost:8080/Tenant_255901/255901/2024/data",
                     "changeQueries": "http://localhost:8080/Tenant_255901/255901/2024/changeQueries/v1/",
                     "xsdMetadata": "http://localhost:8080/Tenant_255901/255901/2024/metadata/xsd",
-                    "identity": "http://localhost:8080/Tenant_255901/255901/2024/identity/v2/"
+                    "identity": "http://localhost:8080/Tenant_255901/255901/2024/identity/v2/",
+                    "educationOrganizationProjection": "http://localhost:8080/Tenant_255901/255901/2024/management/education-organizations"
                 }
               """
 
@@ -61,7 +62,8 @@ Feature: Route Qualifier Discovery API
                     "dataManagementApi": "http://localhost:8080/Tenant_255901/255901/{schoolYear}/data",
                     "changeQueries": "http://localhost:8080/Tenant_255901/255901/{schoolYear}/changeQueries/v1/",
                     "xsdMetadata": "http://localhost:8080/Tenant_255901/255901/{schoolYear}/metadata/xsd",
-                    "identity": "http://localhost:8080/Tenant_255901/255901/{schoolYear}/identity/v2/"
+                    "identity": "http://localhost:8080/Tenant_255901/255901/{schoolYear}/identity/v2/",
+                    "educationOrganizationProjection": "http://localhost:8080/Tenant_255901/255901/{schoolYear}/management/education-organizations"
                 }
               """
 
@@ -78,7 +80,8 @@ Feature: Route Qualifier Discovery API
                     "dataManagementApi": "http://localhost:8080/Tenant_255901/{districtId}/{schoolYear}/data",
                     "changeQueries": "http://localhost:8080/Tenant_255901/{districtId}/{schoolYear}/changeQueries/v1/",
                     "xsdMetadata": "http://localhost:8080/Tenant_255901/{districtId}/{schoolYear}/metadata/xsd",
-                    "identity": "http://localhost:8080/Tenant_255901/{districtId}/{schoolYear}/identity/v2/"
+                    "identity": "http://localhost:8080/Tenant_255901/{districtId}/{schoolYear}/identity/v2/",
+                    "educationOrganizationProjection": "http://localhost:8080/Tenant_255901/{districtId}/{schoolYear}/management/education-organizations"
                 }
               """
 
@@ -95,6 +98,7 @@ Feature: Route Qualifier Discovery API
                     "dataManagementApi": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/data",
                     "changeQueries": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/changeQueries/v1/",
                     "xsdMetadata": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/metadata/xsd",
-                    "identity": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/identity/v2/"
+                    "identity": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/identity/v2/",
+                    "educationOrganizationProjection": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/management/education-organizations"
                 }
               """

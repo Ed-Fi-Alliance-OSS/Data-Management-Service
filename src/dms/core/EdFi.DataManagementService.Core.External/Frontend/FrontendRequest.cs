@@ -73,4 +73,14 @@ public record FrontendRequest(
     /// one, in which case a Core-side default applies.
     /// </summary>
     int? MaxRequestLineSize = null
-);
+)
+{
+    /// <summary>
+    /// Query parameter names the client supplied more than once, counting letter-case variants of one
+    /// name as the same name, because <see cref="QueryParameters"/> keeps only one value per name and
+    /// cannot show a repeat. Compare entries with <see cref="StringComparer.OrdinalIgnoreCase"/>.
+    /// Populated only by frontend handlers whose endpoint rejects repeated parameters; empty
+    /// everywhere else.
+    /// </summary>
+    public IReadOnlyCollection<string> RepeatedQueryParameterNames { get; init; } = [];
+}

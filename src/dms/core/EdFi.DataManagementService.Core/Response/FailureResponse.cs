@@ -546,6 +546,24 @@ public static class FailureResponse
             errors: errors
         );
 
+    /// <summary>
+    /// A problem document owned by the education-organization projection endpoint: its fixed
+    /// status, type, title and detail, and an empty <c>errors</c> array.
+    /// </summary>
+    internal static JsonNode ForEducationOrganizationProjection(
+        EducationOrganizationProjectionProblem problem,
+        TraceId traceId
+    ) =>
+        CreateBaseJsonObject(
+            detail: problem.Detail,
+            type: problem.Type,
+            title: problem.Title,
+            status: problem.Status,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: []
+        );
+
     public static JsonNode ForDataPolicyEnforced(string profileName, TraceId traceId) =>
         CreateBaseJsonObject(
             detail: "The data cannot be saved because a data policy has been applied to the request that prevents it.",

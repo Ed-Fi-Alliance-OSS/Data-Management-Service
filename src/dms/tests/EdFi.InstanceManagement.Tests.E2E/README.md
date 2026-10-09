@@ -14,6 +14,9 @@ These tests verify that:
 - Route segments correctly isolate data access
 - Instance context is maintained throughout request processing
 - Invalid route qualifiers are handled correctly
+- The education organization projection serves each tenant's data stores only to its own
+  projection credential, and the Configuration Service's production reader reads it end to end
+  (see [Configuration Service projection reader project](#configuration-service-projection-reader-project))
 
 ## Prerequisites
 
@@ -64,7 +67,10 @@ pwsh ./build-dms.ps1 InstanceE2ETest -Configuration Release -SkipDockerBuild -Da
 pwsh ./build-dms.ps1 InstanceE2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -TestFilter 'Category=@instance-management-ci-shard-2'
 ```
 
-Each shard writes `TestResults/EdFi.InstanceManagement.Tests.E2E.instance-shard-<N>.trx`.
+Each shard writes `TestResults/EdFi.InstanceManagement.Tests.E2E.instance-shard-<N>.trx`. A full
+run or a shard 1 run also writes
+`TestResults/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.<engine>.trx` (see
+[Configuration Service projection reader project](#configuration-service-projection-reader-project)).
 
 ### CI lanes
 
@@ -136,6 +142,83 @@ The route-context suite deliberately matches the local image's DS 5.2 core + TPD
 so the provisioned databases and the DMS runtime compute an identical `EffectiveSchemaHash`
 (otherwise every routed data request returns 503). Schema-extension coverage (Sample, Homograph)
 belongs to the standard DMS E2E suite, not this one.
+
+## Configuration Service projection reader project
+
+`InstanceE2ETest` also runs a Configuration Service test project,
+[`EdFi.DmsConfigurationService.Tests.DmsProjectionE2E`](../../../config/tests/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E/),
+which drives the production
+[education organization projection](../../../../docs/EDUCATION-ORGANIZATION-PROJECTION.md) reader
+(`AddDmsEducationOrganizationProjectionReader`) against this stack: Discovery, real tokens, a
+multi-page read of a seeded hierarchy, an empty data store, unknown, unavailable and unroutable
+data stores, and injected page failures, restarts and caller cancellation.
+
+**When it runs.** On a full run (no `-TestFilter`), and on a run whose filter names
+`instance-management-ci-shard-1` under `Category` or `TestCategory`, as a whole word (so
+`instance-management-ci-shard-10` does not match). Each engine's CI lane therefore runs it once, with
+shard 1. A shard 2 run does not run it.
+
+**Order.** It runs **before** the Reqnroll suite, in the same test-process context. The Reqnroll
+suite's `AfterTestRun` hook deletes the suite-owned fixture (applications, data stores and vendors)
+that the reader project provisions against, so the project cannot run after it. A reader project
+failure fails the target, and the Reqnroll suite does not run.
+
+**Build.** Its `dotnet test` builds and restores the project, even with `-UsePrebuiltOutput`. The
+project belongs to the Configuration Service solution, which the shared CI build artifact does not
+contain, so building it rebuilds nothing the artifact provides. This is the one exemption from the
+CI-budget rule that every `dotnet test` in `build-dms.ps1` reuses the artifact with
+`--no-build --no-restore`: [`eng/ci/tests/DmsPullRequestCiBudget.Tests.ps1`](../../../../eng/ci/tests/DmsPullRequestCiBudget.Tests.ps1)
+pins it to `RunDmsProjectionReaderE2E`, to that function's single `dotnet test`, and to this one
+project, and fails if any other function omits the flags.
+
+**Result guard.** After the run, `Assert-DmsProjectionReaderTrxResults` reads
+`TestResults/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.<engine>.trx` and fails the target
+when:
+
+1. the file is missing or has no counters;
+2. fewer than **8** results are from live tests, or any live result is not `Passed` (failed,
+   skipped or not run). Live tests are the classes in the
+   `EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Live` namespace, the only ones that reach
+   DMS; each result is mapped to its class through the TRX test definitions;
+3. any test of the project, live or not, did not pass.
+
+The project also holds harness tests (the `Harness` namespace) that need no stack, so the live
+results are counted on their own: a run that discovered or selected no live test cannot pass on
+harness tests alone, and the overall check still rejects a failed harness test. The minimum of 8
+detects that live execution is missing; it is not a coverage inventory. The project has 20 live
+tests, and a run in which at least 8 live tests ran and every test passed is accepted.
+
+In CI the guard, through the target's exit code, is what fails a lane. The two lanes report the
+TRX differently:
+
+- **PostgreSQL** (`run-instance-management-e2e-tests`): the test reporter's `**/*.trx` wildcard
+  picks up the reader TRX beside the Reqnroll one.
+- **SQL Server** (`run-instance-management-e2e-tests-mssql`): the sanitizer covers every file in
+  `TestResults`, but the reporter and the result upload select only the Reqnroll shard TRX. The
+  reader's results appear in the sanitized setup log (`build-dms-setup.log`), which includes the
+  guard's `DMS projection reader E2E: <n> of <m> live tests passed; ...` line and is shown and
+  uploaded when the lane fails.
+
+**Inputs.** The target exports `INSTANCE_E2E_DMS_BASE_URL`, `INSTANCE_E2E_CONFIG_SERVICE_URL`,
+`INSTANCE_E2E_CONFIG_ADMIN_CLIENT_ID` and `INSTANCE_E2E_CONFIG_ADMIN_CLIENT_SECRET` (the DMS and
+Configuration Service URLs and the system-administrator credential the Reqnroll `SetupHooks` use).
+The project also reads `INSTANCE_E2E_DATABASE_ENGINE`, `INSTANCE_E2E_DATABASE_2_CONNECTION_STRING`,
+`INSTANCE_E2E_ROUTE_MANIFEST` and both fixture tenants' `INSTANCE_E2E_FIXTURE_TENANT_<N>_NAME` and
+`_VENDOR_ID`. A missing or malformed input fails every live test with
+`DMS projection reader E2E setup failed: ...`; no test is skipped.
+
+**What it creates.** Per tenant: a claim set granting only `Read` on the projection claim, exported
+back to confirm the grant, and an application with no data stores or education organizations. In
+`Tenant_255901`, `255901/2025`: a seven-organization hierarchy written through the DMS API by an
+`EdFiSandbox` application. Two more data stores, one naming a database that does not exist and one
+without a `schoolYear` context. Each record is registered for cleanup as soon as its id is known,
+before any later request or check, and everything is deleted newest first in `OneTimeTearDown`; a
+failed deletion fails the run, reported apart from any setup failure. The harness tests run
+without a stack:
+
+```powershell
+dotnet test src/config/tests/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E --filter "FullyQualifiedName~.Harness."
+```
 
 ### Why not `dotnet test` directly?
 
@@ -225,7 +308,10 @@ instances (including route contexts), and vendors after each scenario, while the
 Tests use Reqnroll (SpecFlow successor) with Gherkin feature files under
 `Features/InstanceManagement/` — including `InstanceSetup`, `RouteQualifierSegregation`,
 `RouteQualifierErrors`, `RouteQualifierDiscovery`, `TenantAwareDiscovery`, `TenantSegregation`,
-`ChangeQueriesInstanceIsolation`, `OwaspTenantIsolation`, and `ManagementClaimsetEndpoints`.
+`ChangeQueriesInstanceIsolation`, `OwaspTenantIsolation`, and `ManagementClaimsetEndpoints` —
+and under `Features/EducationOrganizationProjection/` (shard 1: Discovery templates, the
+credential denial matrix, target resolution, a paged walk with exact parents, and the projection
+credential's denial on the resource API).
 Supporting code lives in `StepDefinitions/`, `Management/` (Configuration Service / DMS API
 clients, fixture state, and hydration), `Models/`, and `Hooks/` (`SetupHooks.cs`,
 `InstanceFixtureHooks.cs`, `InstanceManagementCleanupHooks.cs`).

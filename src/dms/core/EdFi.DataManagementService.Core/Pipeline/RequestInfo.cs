@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.EducationOrganizationProjection;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -312,4 +313,11 @@ internal class RequestInfo(
     /// prefix. Empty string on every non-identity pipeline.
     /// </summary>
     public string IdentityPollPathPrefix { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The accepted parameters of an education-organization projection request, set by
+    /// <see cref="Middleware.ParseEducationOrganizationProjectionRequestMiddleware"/> only once every
+    /// parameter, including any cursor, has been accepted. Null on every other pipeline.
+    /// </summary>
+    public EducationOrganizationProjectionRequest? EducationOrganizationProjectionRequest { get; set; }
 }

@@ -81,6 +81,7 @@ public static class MssqlServiceExtensions
         services.AddMssqlDatastore(configuration);
         services.AddMssqlReferenceResolver();
         services.AddMssqlRelationalTokenInfoEducationOrganizationLookup();
+        services.AddMssqlEducationOrganizationProjectionSetReader();
         services.Replace(
             ServiceDescriptor.Singleton<IDatabaseFingerprintReader, MssqlDatabaseFingerprintReader>()
         );

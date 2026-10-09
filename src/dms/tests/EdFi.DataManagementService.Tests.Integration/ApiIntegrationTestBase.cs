@@ -265,6 +265,20 @@ public abstract class ApiIntegrationTestBase
     protected abstract Task ReleaseAdditionalDatabaseAsync(string leasedConnectionString);
 
     /// <summary>
+    /// Leases one more database from the fixture's baseline while a test runs, for a scenario that
+    /// registers a data store after the host started. Released with the derivative leases, after the
+    /// host is disposed.
+    /// </summary>
+    protected async Task<string> LeaseScenarioDatabaseAsync()
+    {
+        string connectionString = await LeaseAdditionalDatabaseAsync(
+            _fixtureContext ?? throw new InvalidOperationException("The fixture has not been set up yet.")
+        );
+        _extraLeases.Add(connectionString);
+        return connectionString;
+    }
+
+    /// <summary>
     /// Switches a leased database's reachability at the server, for a fixture that proves a request
     /// never touched a target other than the one it selected.
     /// </summary>

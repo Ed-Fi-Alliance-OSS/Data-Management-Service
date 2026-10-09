@@ -1,0 +1,9 @@
+{
+  "detail": "An unexpected problem has occurred.",
+  "type": "urn:ed-fi:api:system",
+  "title": "System Error",
+  "status": 500,
+  "correlationId": "0HNG2K7Q8V1M3:00000002",
+  "validationErrors": {},
+  "errors": []
+}

@@ -802,11 +802,31 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             foreach ($block in $functionBlock) {
                 $name = ($block -split '\s', 2)[0]
 
+                # The DMS projection reader project (DMS-1440) lives in the Configuration Service
+                # solution, which the shared artifact does not contain, so building it rebuilds
+                # nothing the artifact provides. The exemption is held to exactly that project.
+                if ($name -eq 'RunDmsProjectionReaderE2E') {
+                    ([regex]::Matches($block, '(?m)^\s*dotnet test\b')).Count | Should -Be 1
+                    $block | Should -Match '\$project = "\$PSScriptRoot/src/config/tests/EdFi\.DmsConfigurationService\.Tests\.DmsProjectionE2E/EdFi\.DmsConfigurationService\.Tests\.DmsProjectionE2E\.csproj"'
+                    $block | Should -Match '(?m)^\s*dotnet test \$project\b'
+                    continue
+                }
+
                 # The invocation and the flags can be separated by an argument array, so the
                 # function body as a whole is the unit, not the command line.
                 $block | Should -Match '--no-build' -Because "$name invokes dotnet test"
                 $block | Should -Match '--no-restore' -Because "$name invokes dotnet test"
             }
+        }
+
+        It "exempts only the DMS projection reader project from reusing the artifact" {
+            $buildScript = Get-Content -LiteralPath $script:buildScriptPath -Raw
+            $withoutPrebuiltFlags = [regex]::Split($buildScript, '(?m)^function ') |
+                Select-Object -Skip 1 |
+                Where-Object { $_ -match '(?m)^\s*dotnet test\b' -and $_ -notmatch '--no-restore' } |
+                ForEach-Object { ($_ -split '\s', 2)[0] }
+
+            $withoutPrebuiltFlags | Should -Be @('RunDmsProjectionReaderE2E')
         }
     }
 

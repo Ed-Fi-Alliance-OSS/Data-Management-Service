@@ -1826,11 +1826,20 @@ function Register-InstanceE2EFixture {
         }
     )
 
+    # The endpoints and the Configuration Service system-admin credential the test processes use: the
+    # DmsConfigurationService client the Reqnroll suite's SetupHooks authenticates as, with the secret the env
+    # file registers it with. The DMS projection reader project (DMS-1440) provisions through them.
+    $identityClientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues $environmentValues
+
     return [pscustomobject]@{
-        Tenants        = $tenants
-        DataStoreIds   = @($tenants | ForEach-Object { $_.DataStoreIds } | ForEach-Object { $_ })
-        ApplicationIds = @($tenants | ForEach-Object { $_.ApplicationId })
-        Routes         = @($tenants | ForEach-Object { $_.Routes } | ForEach-Object { $_ })
+        Tenants                 = $tenants
+        DataStoreIds            = @($tenants | ForEach-Object { $_.DataStoreIds } | ForEach-Object { $_ })
+        ApplicationIds          = @($tenants | ForEach-Object { $_.ApplicationId })
+        Routes                  = @($tenants | ForEach-Object { $_.Routes } | ForEach-Object { $_ })
+        DmsBaseUrl              = Resolve-DockerLocalDmsBaseUrl -EnvValues $environmentValues
+        ConfigServiceUrl        = $cmsUrl
+        ConfigAdminClientId     = "DmsConfigurationService"
+        ConfigAdminClientSecret = $identityClientSecrets.DmsConfigurationServiceClientSecret
     }
 }
 
@@ -1889,6 +1898,10 @@ function Invoke-WithInstanceE2ETestProcessContext {
         "INSTANCE_E2E_FIXTURE_TENANT_2_CLIENT_KEY"     = [string]$Fixture.Tenants[1].ClientKey
         "INSTANCE_E2E_FIXTURE_TENANT_2_CLIENT_SECRET"  = [string]$Fixture.Tenants[1].ClientSecret
         "INSTANCE_E2E_FIXTURE_DATASTORE_IDS"           = ($Fixture.DataStoreIds -join ",")
+        "INSTANCE_E2E_DMS_BASE_URL"                    = [string]$Fixture.DmsBaseUrl
+        "INSTANCE_E2E_CONFIG_SERVICE_URL"              = [string]$Fixture.ConfigServiceUrl
+        "INSTANCE_E2E_CONFIG_ADMIN_CLIENT_ID"          = [string]$Fixture.ConfigAdminClientId
+        "INSTANCE_E2E_CONFIG_ADMIN_CLIENT_SECRET"      = [string]$Fixture.ConfigAdminClientSecret
     }
 
     # Capture existence independently from value (PowerShell retains empty/whitespace variables) so the
@@ -1931,11 +1944,18 @@ function Invoke-WithInstanceE2ETestProcessContext {
 function RunInstanceE2E {
     param (
         [string]
-        $TestFilter
+        $TestFilter,
+
+        [string]
+        $DatabaseEngine
     )
 
     # Run only the instance management E2E tests
     $testProject = "$solutionRoot/tests/EdFi.InstanceManagement.Tests.E2E/EdFi.InstanceManagement.Tests.E2E.csproj"
+    # Decided from the caller's filter, before an empty one is replaced by the identity-plugin exclusion, so a
+    # full run still runs the reader project.
+    $runsDmsProjectionReader = Test-InstanceE2ERunsDmsProjectionReader `
+        -NormalizedTestFilter (ConvertTo-NormalizedTestFilter -TestFilter $TestFilter)
     if ([string]::IsNullOrWhiteSpace($TestFilter)) {
         $TestFilter = $instanceIdentityPluginExcludedFilter
     }
@@ -1978,8 +1998,112 @@ function RunInstanceE2E {
         $dotNetTestArguments += @("--filter", $normalizedTestFilter)
     }
 
+    # The reader project runs first: the Reqnroll suite's AfterTestRun hook deletes the suite-owned fixture
+    # (applications, data stores, vendors) the reader project provisions against.
+    if ($runsDmsProjectionReader) {
+        RunDmsProjectionReaderE2E -DatabaseEngine $DatabaseEngine
+    }
+
     Invoke-Execute {
         dotnet test @dotNetTestArguments
+    }
+}
+
+function Test-InstanceE2ERunsDmsProjectionReader {
+    <#
+    .SYNOPSIS
+        Whether an Instance E2E run also runs the DMS projection reader project (DMS-1440): a full run, or the
+        run of shard 1, so each engine's CI lane runs it exactly once.
+    #>
+    param(
+        [string]
+        $NormalizedTestFilter
+    )
+
+    return [string]::IsNullOrWhiteSpace($NormalizedTestFilter) -or
+        $NormalizedTestFilter -match '(?i)\b(?:TestCategory|Category)\s*=\s*instance-management-ci-shard-1\b'
+}
+
+function RunDmsProjectionReaderE2E {
+    <#
+    .SYNOPSIS
+        Runs the Configuration Service's DMS projection reader project against the Instance stack, inside the
+        same test-process context as the Reqnroll suite. It always builds and restores the project, even with
+        -UsePrebuiltOutput: the shared CI build artifact holds only DMS output.
+    #>
+    param(
+        [string]
+        $DatabaseEngine
+    )
+
+    $project = "$PSScriptRoot/src/config/tests/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.csproj"
+    $trxFile = "$testResults/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.$DatabaseEngine.trx"
+    Remove-Item -LiteralPath $trxFile -ErrorAction SilentlyContinue
+
+    Invoke-Execute {
+        dotnet test $project `
+            --configuration $Configuration `
+            --logger "trx;LogFileName=$trxFile" `
+            --logger console `
+            --verbosity normal `
+            --nologo
+    }
+
+    Assert-DmsProjectionReaderTrxResults -TrxFile $trxFile -MinimumLiveTests 8
+}
+
+function Assert-DmsProjectionReaderTrxResults {
+    <#
+    .SYNOPSIS
+        Fails unless the reader project's TRX shows at least -MinimumLiveTests results from the live tests (the
+        project's Live namespace, the only tests that reach DMS), every one of them passed, and every test of the
+        project passed. The live results are counted on their own because the project also holds harness tests
+        that need no stack: a run that discovers or selects no live test must not pass on harness tests alone.
+    #>
+    param(
+        [string]
+        $TrxFile,
+
+        [int]
+        $MinimumLiveTests
+    )
+
+    $liveClassPrefix = "EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Live."
+
+    if (-not (Test-Path -LiteralPath $TrxFile)) {
+        throw "DMS projection reader E2E wrote no results file at '$TrxFile'."
+    }
+
+    [xml]$trx = Get-Content -LiteralPath $TrxFile -Raw
+    $counters = $trx.TestRun.ResultSummary.Counters
+    if ($null -eq $counters) {
+        throw "DMS projection reader E2E results file '$TrxFile' has no counters."
+    }
+
+    $classByTestId = @{}
+    foreach ($test in @($trx.TestRun.TestDefinitions.UnitTest)) {
+        if ($null -ne $test) {
+            $classByTestId[[string]$test.id] = [string]$test.TestMethod.className
+        }
+    }
+    $liveResults = @(
+        @($trx.TestRun.Results.UnitTestResult) | Where-Object {
+            $null -ne $_ -and
+            $classByTestId.ContainsKey([string]$_.testId) -and
+            $classByTestId[[string]$_.testId].StartsWith($liveClassPrefix, [System.StringComparison]::Ordinal)
+        }
+    )
+    $livePassed = @($liveResults | Where-Object { $_.outcome -eq "Passed" }).Count
+    $total = [int]$counters.total
+    $passed = [int]$counters.passed
+    Write-Output "DMS projection reader E2E: $livePassed of $($liveResults.Count) live tests passed; $passed of $total tests passed."
+
+    if ($liveResults.Count -lt $MinimumLiveTests -or $livePassed -ne $liveResults.Count) {
+        throw "DMS projection reader E2E must run at least $MinimumLiveTests live tests and pass all of them; it ran $($liveResults.Count) and passed $livePassed."
+    }
+
+    if ($passed -ne $total) {
+        throw "DMS projection reader E2E must pass every test; it ran $total and passed $passed."
     }
 }
 
@@ -2081,7 +2205,7 @@ function InstanceE2ETests {
     # Run the routed tests inside the Instance test-process context so they consume the fixture.
     Invoke-Step {
         Invoke-WithInstanceE2ETestProcessContext -InstanceE2ESettings $instanceSettings -Fixture $instanceFixture -Action {
-            RunInstanceE2E -TestFilter $TestFilter
+            RunInstanceE2E -TestFilter $TestFilter -DatabaseEngine $instanceSettings.DatabaseEngine
         }
     }
 

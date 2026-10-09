@@ -22,6 +22,9 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 [TestFixture]
 public class Given_Embedded_Claims_Json
 {
+    private const string EducationOrganizationProjectionClaim =
+        "http://ed-fi.org/identity/claims/services/educationOrganizationProjection";
+
     private JsonObject _claims = null!;
 
     // SeedLoader is granted Update alongside Create because a POST that finds an existing record is
@@ -178,6 +181,55 @@ public class Given_Embedded_Claims_Json
         epdmGrant.Should().NotBeNull();
         epdmGrant!.HasAction.Should().BeTrue();
         epdmGrant.HasOverride.Should().BeFalse();
+    }
+
+    [TestCase("ds52")]
+    [TestCase("ds61")]
+    public void It_defines_the_education_organization_projection_claim_with_only_Read_and_no_grants(
+        string standardFolder
+    )
+    {
+        JsonNode hierarchy = LoadEmbeddedClaims(standardFolder)["claimsHierarchy"]!;
+
+        JsonObject projectionClaim = hierarchy
+            .AsArray()
+            .OfType<JsonObject>()
+            .Should()
+            .ContainSingle(claim => claim["name"]!.GetValue<string>() == EducationOrganizationProjectionClaim)
+            .Which;
+
+        JsonNode
+            .DeepEquals(
+                projectionClaim,
+                JsonNode.Parse(
+                    $$"""
+                    {
+                      "name": "{{EducationOrganizationProjectionClaim}}",
+                      "defaultAuthorization": {
+                        "actions": [
+                          { "name": "Read", "authorizationStrategies": [{ "name": "NoFurtherAuthorizationRequired" }] }
+                        ]
+                      }
+                    }
+                    """
+                )
+            )
+            .Should()
+            .BeTrue(projectionClaim.ToJsonString());
+        ClaimNames(hierarchy).Count(name => name == EducationOrganizationProjectionClaim).Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_grants_the_education_organization_projection_claim_to_no_shipped_claim_set()
+    {
+        foreach (ClaimSetResponse claimSet in LoadClaimSetResponses())
+        {
+            ClaimSetMetadata metadata = await CreateClaimSetMetadata(claimSet.Name);
+
+            metadata
+                .Claims.Should()
+                .NotContain(claim => claim.Name == EducationOrganizationProjectionClaim, claimSet.Name);
+        }
     }
 
     [Test]

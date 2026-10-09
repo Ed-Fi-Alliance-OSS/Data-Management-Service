@@ -79,6 +79,7 @@ public static class PostgresqlServiceExtensions
         services.AddPostgresqlDatastore(configuration);
         services.AddPostgresqlReferenceResolver();
         services.AddPostgresqlRelationalTokenInfoEducationOrganizationLookup();
+        services.AddPostgresqlEducationOrganizationProjectionSetReader();
         services.Replace(
             ServiceDescriptor.Singleton<IDatabaseFingerprintReader, PostgresqlDatabaseFingerprintReader>()
         );

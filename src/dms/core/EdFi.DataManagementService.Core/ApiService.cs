@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.EducationOrganizationProjection;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
@@ -60,6 +61,8 @@ internal class ApiService : IApiService
     private readonly ILogger<ServiceClaimAuthorizationMiddleware> _serviceClaimAuthorizationLogger;
     private readonly ILogger<IdentityOperationCapabilityMiddleware> _identityOperationCapabilityLogger;
     private readonly ILogger<IdentityHandler> _identityHandlerLogger;
+    private readonly ILogger<ParseEducationOrganizationProjectionRequestMiddleware> _parseEducationOrganizationProjectionRequestLogger;
+    private readonly ILogger<EducationOrganizationProjectionHandler> _educationOrganizationProjectionHandlerLogger;
 
     /// <summary>
     /// The sanitized identity provider-execution boundary, shared by both identity
@@ -149,6 +152,11 @@ internal class ApiService : IApiService
     /// </summary>
     private readonly Lazy<PipelineProvider> _identityBodylessSteps;
 
+    /// <summary>
+    /// The pipeline steps to satisfy an education-organization projection page request
+    /// </summary>
+    private readonly Lazy<PipelineProvider> _educationOrganizationProjectionSteps;
+
     public ApiService(
         IApiSchemaProvider apiSchemaProvider,
         IEffectiveApiSchemaProvider effectiveApiSchemaProvider,
@@ -207,6 +215,10 @@ internal class ApiService : IApiService
         _identityOperationCapabilityLogger =
             loggerFactory.CreateLogger<IdentityOperationCapabilityMiddleware>();
         _identityHandlerLogger = loggerFactory.CreateLogger<IdentityHandler>();
+        _parseEducationOrganizationProjectionRequestLogger =
+            loggerFactory.CreateLogger<ParseEducationOrganizationProjectionRequestMiddleware>();
+        _educationOrganizationProjectionHandlerLogger =
+            loggerFactory.CreateLogger<EducationOrganizationProjectionHandler>();
         _identityProviderBoundary = new IdentityProviderBoundary(
             loggerFactory.CreateLogger<IdentityProviderBoundary>()
         );
@@ -232,6 +244,9 @@ internal class ApiService : IApiService
         _changeQueriesOpenApiSpecification = new Lazy<JsonNode?>(CreateChangeQueriesOpenApiSpecification);
         _identityJsonBodySteps = new Lazy<PipelineProvider>(CreateIdentityJsonBodyPipeline);
         _identityBodylessSteps = new Lazy<PipelineProvider>(CreateIdentityBodylessPipeline);
+        _educationOrganizationProjectionSteps = new Lazy<PipelineProvider>(
+            CreateEducationOrganizationProjectionPipeline
+        );
     }
 
     private List<IPipelineStep> GetCommonInitialSteps()
@@ -717,7 +732,11 @@ internal class ApiService : IApiService
                 _validateTenantExistsLogger
             ),
             new ValidateClientTenantBindingMiddleware(_validateClientTenantBindingLogger),
-            new ServiceClaimAuthorizationMiddleware(_claimSetProvider, _serviceClaimAuthorizationLogger),
+            new ServiceClaimAuthorizationMiddleware(
+                ServiceClaimRequirement.Identity,
+                _claimSetProvider,
+                _serviceClaimAuthorizationLogger
+            ),
             new IdentityOperationCapabilityMiddleware(
                 _identityProviderBoundary,
                 _identityOperationCapabilityLogger
@@ -762,6 +781,68 @@ internal class ApiService : IApiService
                 _identityHandlerLogger
             )
         );
+
+        return new PipelineProvider(steps);
+    }
+
+    /// <summary>
+    /// The pipeline for one page of the education-organization projection. The identity ordering
+    /// authenticates the client, checks the tenant and the client's tenant binding, and authorizes the
+    /// projection service claim before the request is parsed or a data store is resolved. The target is
+    /// then resolved from the request's <c>dataStoreId</c>, not from the client's data-store
+    /// assignment, which a projection credential does not have.
+    /// </summary>
+    /// <remarks>
+    /// The projection reads the resolved store's primary database only. Target selection runs with a
+    /// policy under which neither a snapshot request nor a configured read replica applies, so it
+    /// records the primary as the effective target, which the fingerprint read and the set reader both
+    /// read. Without it every database step would fail for want of a target.
+    /// </remarks>
+    private PipelineProvider CreateEducationOrganizationProjectionPipeline()
+    {
+        EducationOrganizationProjectionSettings settings = _appSettings.Value.EducationOrganizationProjection;
+        TimeProvider timeProvider = _serviceProvider.GetRequiredService<TimeProvider>();
+
+        List<IPipelineStep> steps =
+        [
+            new RequestResponseLoggingMiddleware(_requestResponseLogger),
+            new CoreExceptionLoggingMiddleware(
+                _logger,
+                TimeSpan.FromSeconds(_circuitBreakerSettings.BreakDurationSeconds)
+            ),
+            new TenantValidationMiddleware(_appSettings.Value.MultiTenancy, _logger),
+            _serviceProvider.GetRequiredService<JwtAuthenticationMiddleware>(),
+            new ValidateTenantExistsMiddleware(
+                _appSettings.Value.MultiTenancy,
+                _identityTenantSnapshot,
+                _validateTenantExistsLogger
+            ),
+            new ValidateClientTenantBindingMiddleware(_validateClientTenantBindingLogger),
+            new ServiceClaimAuthorizationMiddleware(
+                ServiceClaimRequirement.EducationOrganizationProjection,
+                _claimSetProvider,
+                _serviceClaimAuthorizationLogger
+            ),
+            new ParseEducationOrganizationProjectionRequestMiddleware(
+                settings,
+                timeProvider,
+                _parseEducationOrganizationProjectionRequestLogger
+            ),
+            _serviceProvider.GetRequiredService<ResolveEducationOrganizationProjectionTargetMiddleware>(),
+            GetSelectEffectiveTargetStep(
+                DatabaseAccessIntent.ReadOnly,
+                SnapshotEligibility.NotApplicable,
+                ReplicaEligibility.NotApplicable
+            ),
+            _serviceProvider.GetRequiredService<ValidateEducationOrganizationProjectionTargetSchemaMiddleware>(),
+            _serviceProvider.GetRequiredService<ResolveEducationOrganizationProjectionMappingSetMiddleware>(),
+            new EducationOrganizationProjectionHandler(
+                settings,
+                timeProvider,
+                NoOpProjectionProcessingObserver.Instance,
+                _educationOrganizationProjectionHandlerLogger
+            ),
+        ];
 
         return new PipelineProvider(steps);
     }
@@ -1182,6 +1263,26 @@ internal class ApiService : IApiService
             IdentityPollPathPrefix = ComputeIdentityPollPathPrefix(frontendRequest.Path),
         };
         await _identityBodylessSteps.Value.Run(requestInfo);
+        return requestInfo.FrontendResponse;
+    }
+
+    /// <summary>
+    /// DMS entry point for one page of the education-organization projection:
+    /// GET {prefix}/management/education-organizations
+    /// </summary>
+    public async Task<IFrontendResponse> GetEducationOrganizationProjection(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        RequestInfo requestInfo = new(
+            frontendRequest,
+            RequestMethod.GET,
+            scope.ServiceProvider,
+            cancellationToken
+        );
+        await _educationOrganizationProjectionSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }
 

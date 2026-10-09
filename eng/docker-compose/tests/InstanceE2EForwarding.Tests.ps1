@@ -303,6 +303,18 @@ Describe "Register-InstanceE2EFixture registers the canonical suite-owned fixtur
             $route.DistrictContextId | Should -Not -Be $route.SchoolYearContextId
         }
     }
+
+    It "returns the env-file endpoints and the DmsConfigurationService admin credential (DMS-1440)" {
+        Mock Get-EnvValue -ModuleName env-utility { "env-identity-secret" } -ParameterFilter { $Name -eq "DMS_CONFIG_IDENTITY_CLIENT_SECRET" }
+        $script:settings.EnvironmentValues = @{ DMS_HTTP_PORTS = "9080" }
+
+        $fixture = Register-InstanceE2EFixture -InstanceE2ESettings $script:settings
+
+        $fixture.DmsBaseUrl | Should -Be "http://localhost:9080"
+        $fixture.ConfigServiceUrl | Should -Be "http://localhost:8081"
+        $fixture.ConfigAdminClientId | Should -Be "DmsConfigurationService"
+        $fixture.ConfigAdminClientSecret | Should -Be "env-identity-secret"
+    }
 }
 
 Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment state exactly (DMS-1284)" {
@@ -336,6 +348,10 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
             )
             DataStoreIds   = @(201, 202, 203)
             ApplicationIds = @(301, 302)
+            DmsBaseUrl              = "http://localhost:9080"
+            ConfigServiceUrl        = "http://localhost:9081"
+            ConfigAdminClientId     = "DmsConfigurationService"
+            ConfigAdminClientSecret = "admin-secret"
             Routes         = @(
                 [pscustomobject]@{ TenantName = "Tenant_255901"; DistrictId = "255901"; SchoolYear = "2024"; DatabaseOrdinal = 1; DatabaseName = "db1"; DataStoreId = 201; DistrictContextId = 401; SchoolYearContextId = 402 },
                 [pscustomobject]@{ TenantName = "Tenant_255901"; DistrictId = "255901"; SchoolYear = "2025"; DatabaseOrdinal = 2; DatabaseName = "db2"; DataStoreId = 202; DistrictContextId = 403; SchoolYearContextId = 404 },
@@ -352,7 +368,8 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
             "INSTANCE_E2E_FIXTURE_TENANT_1_CLIENT_SECRET", "INSTANCE_E2E_FIXTURE_TENANT_2_NAME",
             "INSTANCE_E2E_FIXTURE_TENANT_2_VENDOR_ID", "INSTANCE_E2E_FIXTURE_TENANT_2_APPLICATION_ID",
             "INSTANCE_E2E_FIXTURE_TENANT_2_CLIENT_KEY", "INSTANCE_E2E_FIXTURE_TENANT_2_CLIENT_SECRET",
-            "INSTANCE_E2E_FIXTURE_DATASTORE_IDS"
+            "INSTANCE_E2E_FIXTURE_DATASTORE_IDS", "INSTANCE_E2E_DMS_BASE_URL", "INSTANCE_E2E_CONFIG_SERVICE_URL",
+            "INSTANCE_E2E_CONFIG_ADMIN_CLIENT_ID", "INSTANCE_E2E_CONFIG_ADMIN_CLIENT_SECRET"
         )
     }
 
@@ -378,6 +395,21 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
         $script:observed.Key1 | Should -Be "key1"
         $script:observed.Secret2 | Should -Be "secret2"
         $script:observed.Stores | Should -Be "201,202,203"
+    }
+
+    It "sets the endpoints and admin credential the DMS projection reader project reads (DMS-1440)" {
+        $script:observedReaderInputs = $null
+        Invoke-WithInstanceE2ETestProcessContext -InstanceE2ESettings $script:settings -Fixture $script:fixture -Action {
+            $script:observedReaderInputs = @(
+                $env:INSTANCE_E2E_DMS_BASE_URL
+                $env:INSTANCE_E2E_CONFIG_SERVICE_URL
+                $env:INSTANCE_E2E_CONFIG_ADMIN_CLIENT_ID
+                $env:INSTANCE_E2E_CONFIG_ADMIN_CLIENT_SECRET
+            )
+        }
+
+        $script:observedReaderInputs | Should -Be @("http://localhost:9080", "http://localhost:9081", "DmsConfigurationService", "admin-secret")
+        (Test-Path Env:INSTANCE_E2E_CONFIG_ADMIN_CLIENT_SECRET) | Should -BeFalse
     }
 
     It "sets the three opaque engine-correct connection strings verbatim for the action" {
@@ -844,6 +876,210 @@ Describe "InstanceE2ETest environment-file wiring (DMS-1284)" {
     }
 }
 
+Describe "Instance E2E runs the DMS projection reader project once per engine lane (DMS-1440)" {
+    BeforeAll {
+        function Get-BuildScriptFunctionText {
+            param([Parameter(Mandatory)] [string] $ScriptPath, [Parameter(Mandatory)] [string] $FunctionName)
+            $parseErrors = $null
+            $tokens = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$tokens, [ref]$parseErrors)
+            $functionAst = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName }, $true) | Select-Object -First 1
+            if ($null -eq $functionAst) { throw "Function '$FunctionName' was not found in '$ScriptPath'." }
+            return $functionAst.Extent.Text
+        }
+
+        $script:buildScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../build-dms.ps1"))
+        foreach ($name in @(
+                "ConvertTo-NormalizedTestFilter",
+                "Test-InstanceE2ERunsDmsProjectionReader",
+                "Assert-DmsProjectionReaderTrxResults",
+                "RunDmsProjectionReaderE2E",
+                "RunInstanceE2E"
+            )) {
+            . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName $name)))
+        }
+
+        # RunInstanceE2E replaces an empty filter with this script-level constant; it is read from the script's
+        # own assignment so the tests see the default a real run uses.
+        $constantMatch = [regex]::Match(
+            (Get-Content -LiteralPath $script:buildScript -Raw),
+            '(?m)^\$instanceIdentityPluginExcludedFilter\s*=\s*"([^"]+)"'
+        )
+        $script:instanceIdentityPluginExcludedFilter = $constantMatch.Groups[1].Value
+
+        # Stands in for the build-helpers command so it can be mocked.
+        function Invoke-Execute { param([scriptblock] $Command) & $Command }
+
+        # A TRX shaped as the reader project's: one definition per test, naming its class, and one result per test
+        # with its outcome. Outcomes are "Passed", "Failed" or "NotExecuted" (a skipped test); the counters agree.
+        function New-Trx {
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test helper that writes a fixture file under Pester TestDrive; no -WhatIf surface.')]
+            param([string] $Path, [string[]] $LiveOutcomes = @(), [string[]] $HarnessOutcomes = @())
+
+            $definitions = [System.Text.StringBuilder]::new()
+            $results = [System.Text.StringBuilder]::new()
+            $tests = @(
+                $LiveOutcomes | ForEach-Object { [pscustomobject]@{ Class = "EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Live.DmsProjectionReaderTests+Given_a_case"; Outcome = $_ } }
+                $HarnessOutcomes | ForEach-Object { [pscustomobject]@{ Class = "EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Harness.LiveServicesCleanupTests+Given_a_case"; Outcome = $_ } }
+            )
+            for ($index = 0; $index -lt $tests.Count; $index++) {
+                $id = [guid]::NewGuid()
+                [void]$definitions.Append("<UnitTest name=`"It_$index`" id=`"$id`"><TestMethod className=`"$($tests[$index].Class)`" name=`"It_$index`" /></UnitTest>")
+                [void]$results.Append("<UnitTestResult testId=`"$id`" testName=`"It_$index`" outcome=`"$($tests[$index].Outcome)`" />")
+            }
+            $passed = @($tests | Where-Object { $_.Outcome -eq "Passed" }).Count
+            $failed = @($tests | Where-Object { $_.Outcome -eq "Failed" }).Count
+            $executed = @($tests | Where-Object { $_.Outcome -ne "NotExecuted" }).Count
+
+            Set-Content -LiteralPath $Path -Value (
+                '<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">' +
+                "<Results>$results</Results><TestDefinitions>$definitions</TestDefinitions>" +
+                '<ResultSummary outcome="Completed">' +
+                "<Counters total=`"$($tests.Count)`" executed=`"$executed`" passed=`"$passed`" failed=`"$failed`" />" +
+                '</ResultSummary></TestRun>'
+            )
+        }
+
+        function Repeat {
+            param([string] $Outcome, [int] $Count)
+            return @(1..$Count | ForEach-Object { $Outcome })
+        }
+    }
+
+    Context "selecting the run" {
+        It "runs the reader for a full run and for shard 1, under either category spelling" {
+            Test-InstanceE2ERunsDmsProjectionReader -NormalizedTestFilter "" | Should -BeTrue
+            Test-InstanceE2ERunsDmsProjectionReader -NormalizedTestFilter "Category=instance-management-ci-shard-1" | Should -BeTrue
+            Test-InstanceE2ERunsDmsProjectionReader -NormalizedTestFilter "TestCategory=instance-management-ci-shard-1" | Should -BeTrue
+            Test-InstanceE2ERunsDmsProjectionReader -NormalizedTestFilter (ConvertTo-NormalizedTestFilter -TestFilter "Category=@instance-management-ci-shard-1") | Should -BeTrue
+        }
+
+        It "does not run the reader for shard 2, a shard 1 prefix, or another filter" {
+            Test-InstanceE2ERunsDmsProjectionReader -NormalizedTestFilter "Category=instance-management-ci-shard-2" | Should -BeFalse
+            Test-InstanceE2ERunsDmsProjectionReader -NormalizedTestFilter "Category=instance-management-ci-shard-10" | Should -BeFalse
+            Test-InstanceE2ERunsDmsProjectionReader -NormalizedTestFilter "Category=EducationOrganizationProjection" | Should -BeFalse
+        }
+    }
+
+    Context "the TRX guard" {
+        It "accepts a complete, all-passed run of live and harness tests" {
+            $trx = Join-Path $TestDrive "complete.trx"
+            New-Trx -Path $trx -LiveOutcomes (Repeat "Passed" 20) -HarnessOutcomes (Repeat "Passed" 10)
+            { Assert-DmsProjectionReaderTrxResults -TrxFile $trx -MinimumLiveTests 8 } | Should -Not -Throw
+        }
+
+        It "rejects a run of harness tests only, however many passed" {
+            $trx = Join-Path $TestDrive "harness-only.trx"
+            New-Trx -Path $trx -HarnessOutcomes (Repeat "Passed" 30)
+            { Assert-DmsProjectionReaderTrxResults -TrxFile $trx -MinimumLiveTests 8 } |
+                Should -Throw "*at least 8 live tests*ran 0 and passed 0*"
+        }
+
+        It "rejects too few live tests even when the total reaches the minimum" {
+            $trx = Join-Path $TestDrive "few-live.trx"
+            New-Trx -Path $trx -LiveOutcomes (Repeat "Passed" 7) -HarnessOutcomes (Repeat "Passed" 10)
+            { Assert-DmsProjectionReaderTrxResults -TrxFile $trx -MinimumLiveTests 8 } |
+                Should -Throw "*at least 8 live tests*ran 7 and passed 7*"
+        }
+
+        It "rejects a failed live test" {
+            $trx = Join-Path $TestDrive "failed-live.trx"
+            New-Trx -Path $trx -LiveOutcomes @((Repeat "Passed" 19) + "Failed") -HarnessOutcomes (Repeat "Passed" 10)
+            { Assert-DmsProjectionReaderTrxResults -TrxFile $trx -MinimumLiveTests 8 } |
+                Should -Throw "*live tests*ran 20 and passed 19*"
+        }
+
+        It "rejects a skipped live test" {
+            $trx = Join-Path $TestDrive "skipped-live.trx"
+            New-Trx -Path $trx -LiveOutcomes @((Repeat "Passed" 19) + "NotExecuted") -HarnessOutcomes (Repeat "Passed" 10)
+            { Assert-DmsProjectionReaderTrxResults -TrxFile $trx -MinimumLiveTests 8 } |
+                Should -Throw "*live tests*ran 20 and passed 19*"
+        }
+
+        It "rejects a failed harness test when every live test passed" {
+            $trx = Join-Path $TestDrive "failed-harness.trx"
+            New-Trx -Path $trx -LiveOutcomes (Repeat "Passed" 20) -HarnessOutcomes @((Repeat "Passed" 9) + "Failed")
+            { Assert-DmsProjectionReaderTrxResults -TrxFile $trx -MinimumLiveTests 8 } |
+                Should -Throw "*must pass every test; it ran 30 and passed 29*"
+        }
+
+        It "rejects a missing results file" {
+            { Assert-DmsProjectionReaderTrxResults -TrxFile (Join-Path $TestDrive "absent.trx") -MinimumLiveTests 8 } |
+                Should -Throw "*wrote no results file*"
+        }
+    }
+
+    Context "running the project" {
+        BeforeEach {
+            $script:executed = [System.Collections.Generic.List[string]]::new()
+            Mock Invoke-Execute { $script:executed.Add($Command.ToString()) }
+            Mock Assert-DmsProjectionReaderTrxResults { }
+            $script:Configuration = "Release"
+            $script:testResults = $TestDrive
+            $script:solutionRoot = "src/dms"
+            $script:UsePrebuiltOutput = $true
+        }
+
+        It "runs the reader for shard 1, with the engine, before the Reqnroll suite removes the fixture" {
+            Mock RunDmsProjectionReaderE2E { $script:executed.Add("reader") }
+            RunInstanceE2E -TestFilter "Category=@instance-management-ci-shard-1" -DatabaseEngine "mssql"
+
+            Should -Invoke RunDmsProjectionReaderE2E -Times 1 -Exactly -ParameterFilter { $DatabaseEngine -eq "mssql" }
+            $script:executed | Should -HaveCount 2
+            $script:executed[0] | Should -Be "reader"
+            $script:executed[1] | Should -Match "dotnet test @dotNetTestArguments"
+        }
+
+        It "runs the reader for a full run although an empty filter becomes the identity-plugin exclusion" -TestCases @(
+            @{ Filter = "" }
+            @{ Filter = "  " }
+        ) {
+            param($Filter)
+            $script:instanceIdentityPluginExcludedFilter | Should -Not -BeNullOrEmpty
+            Mock RunDmsProjectionReaderE2E { $script:executed.Add("reader") }
+            RunInstanceE2E -TestFilter $Filter -DatabaseEngine "postgresql"
+
+            Should -Invoke RunDmsProjectionReaderE2E -Times 1 -Exactly -ParameterFilter { $DatabaseEngine -eq "postgresql" }
+            $script:executed | Should -HaveCount 2
+            $script:executed[0] | Should -Be "reader"
+        }
+
+        It "does not run the reader for shard 2" {
+            Mock RunDmsProjectionReaderE2E { }
+            RunInstanceE2E -TestFilter "Category=@instance-management-ci-shard-2" -DatabaseEngine "postgresql"
+
+            Should -Invoke RunDmsProjectionReaderE2E -Times 0 -Exactly
+            Should -Invoke Invoke-Execute -Times 1 -Exactly
+        }
+
+        It "fails the target, without running the Reqnroll suite, when the reader fails" {
+            Mock RunDmsProjectionReaderE2E { throw "reader failed" }
+
+            { RunInstanceE2E -TestFilter "" -DatabaseEngine "postgresql" } | Should -Throw "*reader failed*"
+            Should -Invoke Invoke-Execute -Times 0 -Exactly
+        }
+
+        It "fails the target when the reader's dotnet test exits non-zero" {
+            Mock Invoke-Execute { throw "Error executing command" }
+
+            { RunDmsProjectionReaderE2E -DatabaseEngine "postgresql" } | Should -Throw "*Error executing command*"
+            Should -Invoke Assert-DmsProjectionReaderTrxResults -Times 0 -Exactly
+        }
+
+        It "builds the reader project instead of reusing prebuilt output, names its TRX by engine, and guards it" {
+            RunDmsProjectionReaderE2E -DatabaseEngine "mssql"
+
+            $script:executed | Should -HaveCount 1
+            $script:executed[0] | Should -Match "dotnet test \`$project"
+            $script:executed[0] | Should -Not -Match "--no-build"
+            $script:executed[0] | Should -Not -Match "--no-restore"
+            Should -Invoke Assert-DmsProjectionReaderTrxResults -Times 1 -Exactly -ParameterFilter {
+                $MinimumLiveTests -eq 8 -and $TrxFile -like "*EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.mssql.trx"
+            }
+        }
+    }
+}
+
 Describe "RunInstanceE2E defaults to excluding the identity plugin slice (DMS-1516)" {
     BeforeAll {
         function Get-BuildScriptFunctionText {
@@ -860,6 +1096,7 @@ Describe "RunInstanceE2E defaults to excluding the identity plugin slice (DMS-15
         $script:buildSource = Get-Content -LiteralPath $script:buildScript -Raw
         . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName "ConvertTo-NormalizedTestFilter")))
         . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName "RunInstanceE2E")))
+        . ([scriptblock]::Create((Get-BuildScriptFunctionText -ScriptPath $script:buildScript -FunctionName "Test-InstanceE2ERunsDmsProjectionReader")))
 
         # The named constant is read from the script's own assignment so the test follows its value.
         $constantMatch = [regex]::Match($script:buildSource, '(?m)^\$instanceIdentityPluginExcludedFilter\s*=\s*"([^"]+)"')
@@ -870,9 +1107,10 @@ Describe "RunInstanceE2E defaults to excluding the identity plugin slice (DMS-15
         $script:instanceIdentityPluginExcludedFilter = $constantMatch.Groups[1].Value
 
         # Leaf boundaries: Invoke-Execute runs its block, and dotnet records the arguments it was given
-        # instead of starting a test run.
+        # instead of starting a test run. The DMS projection reader run (DMS-1440) is covered by its own tests.
         function Invoke-Execute { param([scriptblock] $Command) & $Command }
         function dotnet { $script:dotnetArguments = @($args) }
+        function RunDmsProjectionReaderE2E { }
     }
 
     BeforeEach {

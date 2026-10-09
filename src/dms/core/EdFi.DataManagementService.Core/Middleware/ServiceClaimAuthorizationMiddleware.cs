@@ -16,27 +16,59 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
-/// Authorizes an identity request against the token's claim set and the CMS-seeded
-/// <c>http://ed-fi.org/identity/claims/services/identity</c> service claim.
-/// The required CMS action is <c>Create</c> for <see cref="IdentityOperation.Create" /> and
-/// <c>Read</c> for every other identity operation - <c>Update</c> is never consulted, so a claim set
-/// granting only <c>Update</c> on the identity claim is forbidden on every operation.
+/// A CMS-seeded service claim a pipeline requires, the CMS action a request needs on it, and the
+/// wording that names the claim in a security-configuration failure.
+/// </summary>
+/// <param name="ClaimUri">The service claim's resource-claim URI.</param>
+/// <param name="RequiredAction">Selects the CMS action the request needs on the claim.</param>
+/// <param name="ClaimDescription">
+/// The phrase naming the claim in the security-configuration response, e.g. "identity service claim".
+/// </param>
+internal sealed record ServiceClaimRequirement(
+    string ClaimUri,
+    Func<RequestInfo, string> RequiredAction,
+    string ClaimDescription
+)
+{
+    /// <summary>
+    /// The <c>http://ed-fi.org/identity/claims/services/identity</c> claim. The required action is
+    /// <c>Create</c> for <see cref="IdentityOperation.Create" /> and <c>Read</c> for every other identity
+    /// operation - <c>Update</c> is never consulted, so a claim set granting only <c>Update</c> on the
+    /// identity claim is forbidden on every operation.
+    /// </summary>
+    public static ServiceClaimRequirement Identity { get; } =
+        new(
+            $"{Conventions.EdFiOdsServiceClaimBaseUri}/identity",
+            static requestInfo =>
+                requestInfo.IdentityOperation == IdentityOperation.Create ? "Create" : "Read",
+            "identity service claim"
+        );
+
+    /// <summary>
+    /// The <see cref="Conventions.EducationOrganizationProjectionServiceClaimUri" /> claim; every
+    /// projection request requires <c>Read</c>.
+    /// </summary>
+    public static ServiceClaimRequirement EducationOrganizationProjection { get; } =
+        new(Conventions.EducationOrganizationProjectionServiceClaimUri, static _ => "Read", "service claim");
+}
+
+/// <summary>
+/// Authorizes a service request against the token's claim set and the
+/// <see cref="ServiceClaimRequirement" /> the pipeline was built with.
 /// A matched action's strategy list must be exactly one entry named
 /// <see cref="AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired" />: an empty list, an
 /// unknown name, or another recognized strategy is a security-configuration failure (500), following
 /// the strategy-validation precedent in <see cref="ResourceActionAuthorizationMiddleware" />.
 /// </summary>
 internal sealed class ServiceClaimAuthorizationMiddleware(
+    ServiceClaimRequirement requirement,
     IClaimSetProvider claimSetProvider,
     ILogger<ServiceClaimAuthorizationMiddleware> logger
 ) : IPipelineStep
 {
-    private static readonly string _identityServiceClaimUri =
-        $"{Conventions.EdFiOdsServiceClaimBaseUri}/identity";
-
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
-        string requiredAction = requestInfo.IdentityOperation == IdentityOperation.Create ? "Create" : "Read";
+        string requiredAction = requirement.RequiredAction(requestInfo);
 
         IList<ClaimSet> claimSets = await claimSetProvider.GetAllClaimSets(
             requestInfo.FrontendRequest.Tenant,
@@ -57,7 +89,7 @@ internal sealed class ServiceClaimAuthorizationMiddleware(
             return;
         }
 
-        ResourceClaim[] matchingClaims = claimSet.FindMatchingResourceClaims(_identityServiceClaimUri);
+        ResourceClaim[] matchingClaims = claimSet.FindMatchingResourceClaims(requirement.ClaimUri);
 
         ResourceClaim[] authorizedActions = matchingClaims
             .Where(claim => string.Equals(claim.Action, requiredAction, StringComparison.OrdinalIgnoreCase))
@@ -66,9 +98,10 @@ internal sealed class ServiceClaimAuthorizationMiddleware(
         if (authorizedActions.Length == 0)
         {
             logger.LogDebug(
-                "ServiceClaimAuthorizationMiddleware: Claim set '{ClaimSetName}' does not grant '{Action}' on the identity service claim - {TraceId}",
+                "ServiceClaimAuthorizationMiddleware: Claim set '{ClaimSetName}' does not grant '{Action}' on service claim '{ServiceClaim}' - {TraceId}",
                 LoggingSanitizer.SanitizeInternalValueForLogging(claimSet.Name),
                 requiredAction,
+                requirement.ClaimUri,
                 LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
             );
             CreateForbiddenResponse(requestInfo);
@@ -91,9 +124,10 @@ internal sealed class ServiceClaimAuthorizationMiddleware(
         if (!isNoFurtherAuthorizationRequired)
         {
             string message =
-                $"The identity service claim's authorization strategies for claim set '{claimSet.Name}' and action '{requiredAction}' must be exactly ['{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}'].";
+                $"The {requirement.ClaimDescription}'s authorization strategies for claim set '{claimSet.Name}' and action '{requiredAction}' must be exactly ['{AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired}'].";
             logger.LogError(
-                "ServiceClaimAuthorizationMiddleware: The identity service claim's authorization strategies for claim set '{ClaimSetName}' and action '{Action}' must be exactly ['{Strategy}']. - {TraceId}",
+                "ServiceClaimAuthorizationMiddleware: The authorization strategies of service claim '{ServiceClaim}' for claim set '{ClaimSetName}' and action '{Action}' must be exactly ['{Strategy}']. - {TraceId}",
+                requirement.ClaimUri,
                 LoggingSanitizer.SanitizeInternalValueForLogging(claimSet.Name),
                 requiredAction,
                 AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,

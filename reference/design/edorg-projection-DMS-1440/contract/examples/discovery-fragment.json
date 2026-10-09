@@ -1,0 +1,11 @@
+{
+  "urls": {
+    "oauth": "http://localhost:8080/Tenant_255901/{districtId}/{schoolYear}/oauth/token",
+    "educationOrganizationProjection": "http://localhost:8080/Tenant_255901/{districtId}/{schoolYear}/management/education-organizations"
+  },
+  "educationOrganizationProjection": {
+    "contractVersions": [
+      "educationOrganizationProjection.v1"
+    ]
+  }
+}

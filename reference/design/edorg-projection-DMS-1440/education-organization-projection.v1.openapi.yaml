@@ -1,0 +1,832 @@
+openapi: 3.1.0
+info:
+  title: Ed-Fi API Education Organization Projection
+  version: educationOrganizationProjection.v1
+  summary: Service-only, paged projection of the core education organizations in one data store.
+  description: |
+    Service contract for DMS-1440. The Ed-Fi API (DMS) serves this endpoint; the DMS
+    Configuration Service (CMS) reads it over HTTP to learn which education organizations
+    exist in a data store and how they are parented. CMS never reads the data store's
+    database directly.
+
+    The projection covers exactly four core types: `edfi.StateEducationAgency`,
+    `edfi.EducationServiceCenter`, `edfi.LocalEducationAgency` and `edfi.School`.
+    Extension-defined types and other core education organization types are not included.
+
+    ## Locating the endpoint
+
+    Clients do not build the URL. They read it from the Discovery document served at the
+    route root (`GET {dmsBaseUrl}/` in single-tenant mode, `GET {dmsBaseUrl}/{tenant}` in
+    multi-tenant mode), which carries `urls.educationOrganizationProjection`,
+    `urls.oauth` and `educationOrganizationProjection.contractVersions`
+    (schema `DiscoveryProjectionFragment`). Route-qualifier segments the Discovery request
+    did not supply appear as `{placeholder}` segments; the client substitutes the data
+    store's context values for them. `urls.oauth` is the existing Discovery member and
+    is unaffected by this feature. `urls.educationOrganizationProjection` and the
+    top-level `educationOrganizationProjection` object are present only when the
+    deployment enables the endpoint (`AppSettings:EnableEducationOrganizationProjection`,
+    default `true`); disabling it removes exactly those two members. The route forms are:
+
+    | Mode | Path |
+    | --- | --- |
+    | Single-tenant | `/management/education-organizations` |
+    | Multi-tenant | `/{tenant}/management/education-organizations` |
+    | Multi-tenant with route qualifiers | `/{tenant}/{districtId}/{schoolYear}/management/education-organizations` |
+
+    The legacy `/management/{tenant}/...` form is not used, and the prefix-less path is
+    not served in multi-tenant mode.
+
+    ## Authorization
+
+    A bearer token from the client-credentials grant at `urls.oauth` is required. The
+    client's claim set must grant `Read` on the service claim
+    `http://ed-fi.org/identity/claims/services/educationOrganizationProjection`, and the
+    client must belong to the tenant in the route. No shipped claim set grants this claim.
+    The credential is an application API client with no data store assignments.
+    Authorization is checked before any parameter is parsed or any data store is resolved.
+
+    ## Reading the whole set
+
+    A read starts without `cursor` and follows `nextCursor` until it is `null`. Every
+    request repeats `dataStoreId`, `limit` and `contractVersion` unchanged.
+
+    - Items are strictly ascending by `educationOrganizationId` (numeric order, int64).
+    - `nextCursor` is `null` exactly when the response reaches the end of the set.
+    - When `nextCursor` is not `null`, `items` holds exactly `limit` items.
+    - A response has no items only when the whole set is empty; that response is the
+      first page and has `nextCursor: null`. No continuation page is ever empty.
+    - Replaying an unexpired cursor with unchanged request parameters returns the same
+      projected items while the projected content remains unchanged and the request
+      remains authorized. After a committed change to the projected content the replay
+      is answered `409 projection-changed`, and an authorization change is answered
+      with the corresponding 401, 403 or 404.
+
+    Each request reads the complete set inside one database transaction, validates it,
+    and computes a SHA-256 digest of its projected content. The first page records the
+    digest in the cursor; a later page is answered only when its set has the same digest.
+    The pages of one read therefore all come from one projected content set: no item is
+    duplicated or skipped. When the set changes between pages, DMS answers
+    `409 projection-changed` and the client restarts the read without a cursor.
+
+    ## Cursor
+
+    `cursor` is opaque: clients never construct, parse or modify it. Clients must
+    return `nextCursor` verbatim. The decoder accepts only canonical, unpadded
+    base64url with canonical payload fields; padded or otherwise noncanonical
+    representations receive `400 invalid-cursor`. It is bound to the data store,
+    tenant, route qualifiers and contract version of the read that produced it, and it expires
+    `CursorLifetimeMinutes` (default 60) after the read's first page. A cursor that does
+    not decode, does not match the request, has expired, or is dated more than 60 seconds in the future is
+    rejected with `400 invalid-cursor`; the client may restart the read once without a
+    cursor. The cursor carries no server state and is not signed: a modified cursor can
+    only move the position, or fail the digest check, within a set the caller is already
+    authorized to read in full.
+
+    ## Validation of the set
+
+    The whole set is validated on every page, before the digest is compared and before
+    the page is sliced. A set with a duplicate identifier, a populated reference that does
+    not resolve to an education organization of the expected type (including references
+    that do not become the parent), a cycle through parent local education agencies
+    (including a self-reference), or a name that is not well-formed text (an unpaired
+    UTF-16 surrogate) is rejected with `409 projection-data-invalid`. The
+    parent is chosen as follows:
+
+    | Type | `parentId` |
+    | --- | --- |
+    | `edfi.School` | the school's local education agency, otherwise `null` |
+    | `edfi.LocalEducationAgency` | parent local education agency, else education service center, else state education agency, else `null` |
+    | `edfi.EducationServiceCenter` | the state education agency, otherwise `null` |
+    | `edfi.StateEducationAgency` | `null` |
+
+    ## Failures
+
+    Every failure is `application/problem+json` (except the unexpected-condition 500 body
+    described on that response). Problem `type` values are stable; `title` and `detail`
+    of the problem types this endpoint owns are fixed literals and never contain SQL,
+    object names, connection strings, hashes or other diagnostics. In the problem
+    documents this endpoint owns (schema `FixedProblem`), `errors` is empty;
+    `parameter-validation-failed` names the offending parameters in `errors`. Problem
+    documents produced by existing pipeline steps (authentication, malformed tenant,
+    security configuration and the others marked as inherited) keep their existing
+    bodies, including any `errors` entries. Each problem schema carries
+    `x-ed-fi-cms-classification`, the category and code CMS assigns to it.
+
+    `409 projection-changed` is the only 409 a client should retry, and only by restarting
+    the read. Every other 409 is permanent for the data store as it stands.
+
+    ## Contract versions
+
+    The response echoes `contractVersion`. Discovery lists the versions the deployment
+    serves; a client sends the highest version it shares with that list. A later version
+    is advertised alongside this one for at least one release. An unsupported value is
+    rejected with `400 unsupported-contract-version`.
+
+    ## Caching
+
+    Every response carries `Cache-Control: no-store`.
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+servers:
+  - url: '{dmsBaseUrl}{routePrefix}'
+    description: >-
+      Illustrative only. Clients take the endpoint URL from Discovery
+      (`urls.educationOrganizationProjection`) rather than composing it.
+    variables:
+      dmsBaseUrl:
+        default: 'http://localhost:8080'
+        description: The Ed-Fi API base URL, including any path base.
+      routePrefix:
+        default: '/Tenant_255901/255901/2025'
+        description: >-
+          Empty in single-tenant mode; `/{tenant}` in multi-tenant mode; followed by one
+          segment per configured route qualifier (for example `/{districtId}/{schoolYear}`).
+security:
+  - educationOrganizationProjectionClient: []
+paths:
+  /management/education-organizations:
+    get:
+      operationId: getEducationOrganizationProjection
+      summary: Reads one page of the education organization projection for a data store.
+      description: |
+        Returns the next page of the four core education organization types in the data
+        store `dataStoreId`, in ascending `educationOrganizationId` order. See the
+        document description for the walk, cursor and validation rules.
+
+        **Repeated parameters.** Supplying any of `dataStoreId`, `limit`, `cursor` or
+        `contractVersion` more than once, in any letter case, is rejected with
+        `400 parameter-validation-failed` naming the parameter. Unknown parameters are
+        ignored.
+      parameters:
+        - $ref: '#/components/parameters/DataStoreId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/ContractVersion'
+      responses:
+        '200':
+          description: One page of the projection.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EducationOrganizationProjectionPage'
+              examples:
+                firstPage:
+                  summary: First page of a read with limit=2
+                  externalValue: contract/examples/success-page.json
+                lastPage:
+                  summary: Last page of the same read (fourth request)
+                  externalValue: contract/examples/success-last-page.json
+                emptyStore:
+                  summary: A data store with no core education organizations
+                  externalValue: contract/examples/empty.json
+        '400':
+          description: >-
+            The request is invalid: a parameter is missing, out of range or repeated, the
+            cursor is not valid for this request, the contract version is not supported,
+            or (multi-tenant mode) the tenant segment is malformed.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+          content:
+            application/problem+json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ParameterValidationFailedProblem'
+                  - $ref: '#/components/schemas/InvalidCursorProblem'
+                  - $ref: '#/components/schemas/UnsupportedContractVersionProblem'
+                  - $ref: '#/components/schemas/TenantBadRequestProblem'
+              examples:
+                parameterValidationFailed:
+                  externalValue: contract/examples/problem-parameter-validation-failed.json
+                parameterRepeated:
+                  externalValue: contract/examples/problem-parameter-repeated.json
+                invalidCursor:
+                  externalValue: contract/examples/problem-invalid-cursor.json
+                unsupportedContractVersion:
+                  externalValue: contract/examples/problem-unsupported-contract-version.json
+                tenantBadRequest:
+                  externalValue: contract/examples/problem-tenant-bad-request.json
+        '401':
+          description: >-
+            The bearer token is missing or invalid, or the client does not belong to the
+            tenant in the route.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            WWW-Authenticate:
+              $ref: '#/components/headers/WwwAuthenticate'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationFailedProblem'
+              examples:
+                authenticationFailed:
+                  externalValue: contract/examples/problem-authentication-failed.json
+        '403':
+          description: The client's claim set does not grant `Read` on the projection service claim.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/AuthorizationDeniedProblem'
+              examples:
+                authorizationDenied:
+                  externalValue: contract/examples/problem-authorization-denied.json
+        '404':
+          description: >-
+            The tenant does not exist, or no data store with this id is visible to this
+            tenant and route. An unknown data store, a data store of another tenant, and a
+            data store whose route context does not match the route qualifiers all receive
+            the same body. When the deployment disables the endpoint the route is not
+            mapped; clients learn this from Discovery before sending a request.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+          content:
+            application/problem+json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/TenantNotFoundProblem'
+                  - $ref: '#/components/schemas/TargetNotFoundProblem'
+              examples:
+                tenantNotFound:
+                  externalValue: contract/examples/problem-tenant-not-found.json
+                targetNotFound:
+                  externalValue: contract/examples/problem-target-not-found.json
+        '409':
+          description: >-
+            The projection cannot be served for this data store. Only `projection-changed`
+            is retriable, by restarting the read without a cursor.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+          content:
+            application/problem+json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/TargetProviderUnsupportedProblem'
+                  - $ref: '#/components/schemas/TargetSchemaIncompatibleProblem'
+                  - $ref: '#/components/schemas/ProjectionUnsupportedProblem'
+                  - $ref: '#/components/schemas/ProjectionTooLargeProblem'
+                  - $ref: '#/components/schemas/ProjectionDataInvalidProblem'
+                  - $ref: '#/components/schemas/ProjectionChangedProblem'
+              examples:
+                targetProviderUnsupported:
+                  externalValue: contract/examples/problem-target-provider-unsupported.json
+                targetSchemaIncompatible:
+                  externalValue: contract/examples/problem-target-schema-incompatible.json
+                projectionUnsupported:
+                  externalValue: contract/examples/problem-projection-unsupported.json
+                projectionTooLarge:
+                  externalValue: contract/examples/problem-projection-too-large.json
+                projectionDataInvalid:
+                  externalValue: contract/examples/problem-projection-data-invalid.json
+                projectionChanged:
+                  externalValue: contract/examples/problem-projection-changed.json
+        '429':
+          description: The request was rate limited.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/TooManyRequestsProblem'
+              examples:
+                tooManyRequests:
+                  externalValue: contract/examples/problem-too-many-requests.json
+        '500':
+          description: >-
+            The security configuration for the service claim is invalid, the deployment
+            configuration is invalid, or an unexpected condition occurred. The
+            unexpected-condition body is the existing DMS `{message, traceId}` shape served
+            as `application/json`, not a problem document.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+          content:
+            application/problem+json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SecurityConfigurationProblem'
+                  - $ref: '#/components/schemas/SystemErrorProblem'
+              examples:
+                securityConfiguration:
+                  externalValue: contract/examples/problem-security-configuration.json
+                systemError:
+                  externalValue: contract/examples/problem-system-error.json
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnexpectedConditionBody'
+              examples:
+                unexpectedCondition:
+                  externalValue: contract/examples/unexpected-condition.json
+        '503':
+          description: >-
+            A dependency is temporarily unavailable: the tenant or data store catalog could
+            not be loaded, the data store's connection is not configured, its database has
+            not been provisioned, or the database could not be reached, its schema
+            fingerprint could not be read, or it did not complete the read.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/CacheControl'
+            Retry-After:
+              $ref: '#/components/headers/RetryAfter'
+          content:
+            application/problem+json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ServiceUnavailableProblem'
+                  - $ref: '#/components/schemas/ServiceConfigurationErrorProblem'
+                  - $ref: '#/components/schemas/DatabaseNotProvisionedProblem'
+                  - $ref: '#/components/schemas/TargetUnavailableProblem'
+              examples:
+                serviceUnavailable:
+                  externalValue: contract/examples/problem-service-unavailable.json
+                serviceConfigurationError:
+                  externalValue: contract/examples/problem-service-configuration-error.json
+                databaseNotProvisioned:
+                  externalValue: contract/examples/problem-database-not-provisioned.json
+                targetUnavailable:
+                  externalValue: contract/examples/problem-target-unavailable.json
+components:
+  securitySchemes:
+    educationOrganizationProjectionClient:
+      type: oauth2
+      description: >-
+        Client-credentials grant against the token endpoint advertised as Discovery
+        `urls.oauth` (the DMS `{routePrefix}/oauth/token` endpoint), authenticated with
+        HTTP Basic `client_id:client_secret` and form body `grant_type=client_credentials`.
+        The token response carries `access_token`, `expires_in` and `token_type: bearer`.
+        The client's claim set must grant `Read` on
+        `http://ed-fi.org/identity/claims/services/educationOrganizationProjection`; in
+        multi-tenant mode the client must belong to the route tenant, so each tenant needs
+        its own credential.
+      flows:
+        clientCredentials:
+          tokenUrl: oauth/token
+          scopes: {}
+  parameters:
+    DataStoreId:
+      name: dataStoreId
+      in: query
+      required: true
+      description: >-
+        The CMS data store id (the ordinary `dataStoreId` from the CMS catalog). Must not
+        be repeated.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 2147483647
+      example: 3788
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: >-
+        Maximum number of items in the page, from 1 to the deployment's
+        `MaximumPageSize` (default 2000, configurable up to 10000). Defaults to
+        `MaximumPageSize`. Must not be repeated.
+      schema:
+        type: integer
+        format: int32
+        minimum: 1
+        maximum: 10000
+      example: 2
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: >-
+        The `nextCursor` value from the previous page of this read, returned verbatim.
+        Padded or otherwise noncanonical representations receive `400 invalid-cursor`.
+        Omitted on the first page. Opaque; see the document description. Must not be
+        repeated.
+      schema:
+        type: string
+        minLength: 1
+    ContractVersion:
+      name: contractVersion
+      in: query
+      required: false
+      description: >-
+        The contract version the client expects. When omitted the response uses this
+        version. Must not be repeated.
+      schema:
+        type: string
+      example: educationOrganizationProjection.v1
+  headers:
+    CacheControl:
+      description: Always `no-store`.
+      schema:
+        type: string
+        const: no-store
+    WwwAuthenticate:
+      description: Bearer challenge.
+      schema:
+        type: string
+      example: Bearer error="invalid_token"
+    RetryAfter:
+      description: Seconds to wait before retrying, when known. Often absent.
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+  schemas:
+    EducationOrganizationProjectionPage:
+      type: object
+      additionalProperties: false
+      required: [contractVersion, dataStoreId, nextCursor, items]
+      properties:
+        contractVersion:
+          type: string
+          const: educationOrganizationProjection.v1
+          description: Echo of the contract version this page conforms to.
+        dataStoreId:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Echo of the requested `dataStoreId`.
+        nextCursor:
+          type: [string, 'null']
+          minLength: 1
+          description: >-
+            Cursor for the next page, or `null` when this page reaches the end of the set.
+            Always present.
+        items:
+          type: array
+          description: >-
+            Strictly ascending by `educationOrganizationId`. Exactly `limit` items when
+            `nextCursor` is not `null`; empty only when the whole set is empty.
+          items:
+            $ref: '#/components/schemas/EducationOrganizationProjectionItem'
+    EducationOrganizationProjectionItem:
+      type: object
+      additionalProperties: false
+      required:
+        [educationOrganizationId, nameOfInstitution, shortNameOfInstitution, discriminator, parentId]
+      description: >-
+        Same members, types and nullability as the Admin API `educationOrganizationModel`.
+        Every member is always present; nullable members are `null`, never omitted.
+      properties:
+        educationOrganizationId:
+          type: integer
+          format: int64
+          description: Unique across the set. Any int64 value, including zero and negative values.
+        nameOfInstitution:
+          type: string
+          minLength: 1
+        shortNameOfInstitution:
+          type: [string, 'null']
+          description: '`null` when the education organization has no short name; may be the empty string.'
+        discriminator:
+          type: string
+          enum:
+            - edfi.StateEducationAgency
+            - edfi.EducationServiceCenter
+            - edfi.LocalEducationAgency
+            - edfi.School
+        parentId:
+          type: [integer, 'null']
+          format: int64
+          description: >-
+            Chosen by the precedence rule in the document description; never equal to
+            `educationOrganizationId`; always the id of another item in the set when not
+            `null`.
+    DiscoveryProjectionFragment:
+      type: object
+      description: >-
+        The Discovery members a projection client reads. `urls.educationOrganizationProjection`
+        and the top-level `educationOrganizationProjection` object are added by this
+        contract and are present only when the endpoint is enabled; disabling it removes
+        exactly those two members. `urls.oauth` is the existing Discovery member, present
+        whether or not the endpoint is enabled. All other Discovery members are unchanged
+        and ignored by projection clients. URLs include any path base, carry no query string,
+        and use a `{name}` segment for each route qualifier the Discovery request did not
+        supply. Example: `contract/examples/discovery-fragment.json`.
+      required: [urls, educationOrganizationProjection]
+      properties:
+        urls:
+          type: object
+          required: [oauth, educationOrganizationProjection]
+          properties:
+            oauth:
+              type: string
+              description: >-
+                Existing Discovery member: the token endpoint for the client-credentials
+                grant. Not affected by the projection toggle.
+            educationOrganizationProjection:
+              type: string
+              description: The projection endpoint URL template. Absent when the endpoint is disabled.
+        educationOrganizationProjection:
+          type: object
+          required: [contractVersions]
+          properties:
+            contractVersions:
+              type: array
+              minItems: 1
+              uniqueItems: true
+              items:
+                type: string
+    ProblemDetails:
+      type: object
+      description: >-
+        The DMS problem document. Clients classify failures by HTTP status and `type`
+        only.
+      required: [type, title, status, detail, correlationId, errors]
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        correlationId:
+          type: string
+          description: Correlates the response with DMS logs.
+        validationErrors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        errors:
+          type: array
+          items:
+            type: string
+    FixedProblem:
+      description: >-
+        A problem document owned by this endpoint: fixed `title` and `detail`, an empty
+        `validationErrors` object and an empty `errors` array.
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - type: object
+          required: [validationErrors]
+          properties:
+            validationErrors:
+              type: object
+              maxProperties: 0
+            errors:
+              type: array
+              maxItems: 0
+    ParameterValidationFailedProblem:
+      x-ed-fi-cms-classification: { category: Permanent, code: InvalidRequest }
+      description: >-
+        `dataStoreId` missing or out of range, `limit` out of range, or any of the four
+        parameters repeated. `errors` names each offending parameter; its wording is
+        informative.
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - type: object
+          required: [validationErrors]
+          properties:
+            type: { const: 'urn:ed-fi:api:bad-request:parameter-validation-failed' }
+            title: { const: Parameter Validation Failed }
+            status: { const: 400 }
+            detail: { const: Parameters supplied to the request were invalid. }
+            validationErrors: { type: object, maxProperties: 0 }
+            errors: { type: array, minItems: 1 }
+    InvalidCursorProblem:
+      x-ed-fi-cms-classification: { category: Permanent, code: InvalidRequest, note: one restart without a cursor allowed }
+      description: The cursor does not decode, does not match the request, has expired, or is dated more than 60 seconds in the future.
+      allOf:
+        - $ref: '#/components/schemas/FixedProblem'
+        - properties:
+            type: { const: 'urn:ed-fi:api:education-organization-projection:invalid-cursor' }
+            title: { const: Invalid Cursor }
+            status: { const: 400 }
+            detail: { const: The cursor is not valid for this request. Restart the read without a cursor. }
+    UnsupportedContractVersionProblem:
+      x-ed-fi-cms-classification: { category: Permanent, code: UnsupportedContract }
+      allOf:
+        - $ref: '#/components/schemas/FixedProblem'
+        - properties:
+            type: { const: 'urn:ed-fi:api:education-organization-projection:unsupported-contract-version' }
+            title: { const: Unsupported Contract Version }
+            status: { const: 400 }
+            detail: { const: The requested contract version is not supported. }
+    TenantBadRequestProblem:
+      x-ed-fi-cms-classification: { category: Permanent, code: InvalidRequest }
+      description: Inherited from the existing tenant validation step (multi-tenant mode).
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - properties:
+            type: { const: 'urn:ed-fi:api:bad-request' }
+            title: { const: Bad Request }
+            status: { const: 400 }
+    AuthenticationFailedProblem:
+      x-ed-fi-cms-classification: { category: Permanent, code: Unauthorized, note: after one token refresh }
+      description: >-
+        Inherited from the existing identity pipeline. Unlike the other problem documents
+        it has no `validationErrors` member.
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - properties:
+            type: { const: 'urn:ed-fi:api:security:authentication' }
+            title: { const: Authentication Failed }
+            status: { const: 401 }
+            detail: { const: The caller could not be authenticated. }
+    AuthorizationDeniedProblem:
+      x-ed-fi-cms-classification: { category: Permanent, code: Forbidden }
+      description: Inherited from the existing service-claim authorization step.
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - properties:
+            type: { const: 'urn:ed-fi:api:security:authorization:' }
+            title: { const: Authorization Denied }
+            status: { const: 403 }
+    TenantNotFoundProblem:
+      x-ed-fi-cms-classification: { category: Permanent, code: TargetNotFound }
+      description: Inherited from the existing tenant-existence step (multi-tenant mode).
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - properties:
+            type: { const: 'urn:ed-fi:api:not-found' }
+            title: { const: Not Found }
+            status: { const: 404 }
+    TargetNotFoundProblem:
+      x-ed-fi-cms-classification: { category: Permanent, code: TargetNotFound }
+      description: >-
+        No data store with this id is visible to this tenant, or its route context does
+        not match the route qualifiers. The body does not say which.
+      allOf:
+        - $ref: '#/components/schemas/FixedProblem'
+        - properties:
+            type: { const: 'urn:ed-fi:api:education-organization-projection:target-not-found' }
+            title: { const: Target Not Found }
+            status: { const: 404 }
+            detail: { const: The data store could not be found. }
+    TargetProviderUnsupportedProblem:
+      x-ed-fi-cms-classification: { category: Permanent, code: TargetSchemaIncompatible }
+      description: >-
+        The data store's provider is unrecognized, or names a database provider other than
+        the one this deployment serves.
+      allOf:
+        - $ref: '#/components/schemas/FixedProblem'
+        - properties:
+            type: { const: 'urn:ed-fi:api:education-organization-projection:target-provider-unsupported' }
+            title: { const: Target Provider Unsupported }
+            status: { const: 409 }
+            detail: { const: The data store uses a database provider that this Ed-Fi API deployment does not serve. }
+    TargetSchemaIncompatibleProblem:
+      x-ed-fi-cms-classification: { category: Permanent, code: TargetSchemaIncompatible }
+      description: >-
+        The database's schema fingerprint does not match this deployment, or reading the
+        projection failed on a missing or incompatible schema object or column type. A
+        fingerprint verdict is kept for the life of the process; after repairing the
+        database under the same connection string, restart every affected DMS replica.
+      allOf:
+        - $ref: '#/components/schemas/FixedProblem'
+        - properties:
+            type: { const: 'urn:ed-fi:api:education-organization-projection:target-schema-incompatible' }
+            title: { const: Target Schema Incompatible }
+            status: { const: 409 }
+            detail: { const: "The data store's database schema is not compatible with this Ed-Fi API deployment." }
+    ProjectionUnsupportedProblem:
+      x-ed-fi-cms-classification: { category: Permanent, code: Unsupported }
+      description: The data model in use does not provide an element the projection requires.
+      allOf:
+        - $ref: '#/components/schemas/FixedProblem'
+        - properties:
+            type: { const: 'urn:ed-fi:api:education-organization-projection:projection-unsupported' }
+            title: { const: Projection Unsupported }
+            status: { const: 409 }
+            detail: { const: The education organization projection is not supported by the data model in use. }
+    ProjectionTooLargeProblem:
+      x-ed-fi-cms-classification: { category: Permanent, code: LimitExceeded }
+      description: The set has more rows than the deployment's `MaxProjectionRows` (default 50000).
+      allOf:
+        - $ref: '#/components/schemas/FixedProblem'
+        - properties:
+            type: { const: 'urn:ed-fi:api:education-organization-projection:projection-too-large' }
+            title: { const: Projection Too Large }
+            status: { const: 409 }
+            detail: { const: The education organization set is larger than this deployment is configured to project. }
+    ProjectionDataInvalidProblem:
+      x-ed-fi-cms-classification: { category: Permanent, code: DataInvalid }
+      description: >-
+        The set has a duplicate identifier, a populated reference that does not resolve to
+        an education organization of the expected type, a parent local education agency
+        cycle, or a name that is not well-formed text. Detected anywhere in the set, not
+        only in the requested page.
+      allOf:
+        - $ref: '#/components/schemas/FixedProblem'
+        - properties:
+            type: { const: 'urn:ed-fi:api:education-organization-projection:projection-data-invalid' }
+            title: { const: Projection Data Invalid }
+            status: { const: 409 }
+            detail: { const: The education organization data contains duplicate identifiers or contradictory relationships. }
+    ProjectionChangedProblem:
+      x-ed-fi-cms-classification: { category: Transient, code: ProjectionChanged, note: restart without a cursor up to MaxWalkRestarts; matched by exact type }
+      description: The set's digest differs from the digest recorded when the read began.
+      allOf:
+        - $ref: '#/components/schemas/FixedProblem'
+        - properties:
+            type: { const: 'urn:ed-fi:api:education-organization-projection:projection-changed' }
+            title: { const: Projection Changed }
+            status: { const: 409 }
+            detail: { const: The education organization set changed during the read. Restart the read without a cursor. }
+    TooManyRequestsProblem:
+      x-ed-fi-cms-classification: { category: Transient, code: RateLimited }
+      description: Inherited from the existing rate limiter.
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - properties:
+            type: { const: 'urn:ed-fi:api:too-many-requests' }
+            title: { const: Too Many Requests }
+            status: { const: 429 }
+    SecurityConfigurationProblem:
+      x-ed-fi-cms-classification: { category: Permanent, code: Forbidden }
+      description: >-
+        Inherited from the existing service-claim authorization step: the claim set grants
+        the claim with an authorization strategy other than `NoFurtherAuthorizationRequired`.
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - properties:
+            type: { const: 'urn:ed-fi:api:system:configuration:security' }
+            title: { const: Security Configuration Error }
+            status: { const: 500 }
+    SystemErrorProblem:
+      x-ed-fi-cms-classification: { category: Transient, code: ServiceUnavailable }
+      description: Inherited; for example, the deployment's configuration is invalid.
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - properties:
+            type: { const: 'urn:ed-fi:api:system' }
+            title: { const: System Error }
+            status: { const: 500 }
+    UnexpectedConditionBody:
+      x-ed-fi-cms-classification: { category: Transient, code: ServiceUnavailable }
+      description: Inherited DMS body for an unexpected exception; served as `application/json`.
+      type: object
+      required: [message, traceId]
+      properties:
+        message:
+          type: string
+        traceId:
+          type: string
+    ServiceUnavailableProblem:
+      x-ed-fi-cms-classification: { category: Transient, code: ServiceUnavailable }
+      description: >-
+        The tenant or data store catalog could not be loaded from the Configuration
+        Service, including when the tenant's catalog holds a connection string that
+        cannot be decrypted, or the request was shed.
+      allOf:
+        - $ref: '#/components/schemas/FixedProblem'
+        - properties:
+            type: { const: 'urn:ed-fi:api:service-unavailable' }
+            title: { const: Service Unavailable }
+            status: { const: 503 }
+            detail: { const: The service is temporarily unable to handle the request. Retry the request later. }
+    ServiceConfigurationErrorProblem:
+      x-ed-fi-cms-classification: { category: Transient, code: ServiceUnavailable }
+      description: >-
+        The data store has no connection string. Used only for connection
+        configuration; an undecryptable connection string fails the catalog load
+        (`service-unavailable`), and a failure to read the schema fingerprint is
+        `target-unavailable`.
+      allOf:
+        - $ref: '#/components/schemas/FixedProblem'
+        - properties:
+            type: { const: 'urn:ed-fi:api:service-configuration-error' }
+            title: { const: Service Configuration Error }
+            status: { const: 503 }
+            detail: { const: "The data store's database connection is not configured." }
+    DatabaseNotProvisionedProblem:
+      x-ed-fi-cms-classification: { category: Transient, code: ServiceUnavailable }
+      description: >-
+        The data store's database has no schema fingerprint row. DMS keeps this verdict
+        for the life of the process; after provisioning the database under the same
+        connection string, restart every affected DMS replica.
+      allOf:
+        - $ref: '#/components/schemas/FixedProblem'
+        - properties:
+            type: { const: 'urn:ed-fi:api:database-not-provisioned' }
+            title: { const: Database Not Provisioned }
+            status: { const: 503 }
+            detail: { const: "The data store's database has not been provisioned." }
+    TargetUnavailableProblem:
+      x-ed-fi-cms-classification: { category: Transient, code: ServiceUnavailable }
+      description: >-
+        The database could not be reached, its schema fingerprint could not be read
+        because of a transient failure, or the read did not complete (lock timeout,
+        deadlock, command timeout, dropped connection, failed commit, or an unrecognized
+        database error).
+      allOf:
+        - $ref: '#/components/schemas/FixedProblem'
+        - properties:
+            type: { const: 'urn:ed-fi:api:education-organization-projection:target-unavailable' }
+            title: { const: Target Unavailable }
+            status: { const: 503 }
+            detail: { const: "The data store's database is temporarily unavailable. Retry the request later." }
