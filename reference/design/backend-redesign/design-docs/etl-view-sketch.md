@@ -75,7 +75,9 @@ JOIN dms.Document d
   - project identity fields from the referencing table’s per-site identity-part binding columns (aliases when unified; see [key-unification.md](key-unification.md)).
   - this applies to both concrete and abstract references.
 - **Descriptor references** (`..._DescriptorId`):
-  - join `dms.Descriptor` and project `Uri` (unless a separate descriptor-URI denormalization is introduced).
+  - join `dms.Descriptor d` on `d.DescriptorId = <..._DescriptorId>`, using the database dialect's identifier quoting.
+  - project the URI as `d."Namespace" || '#' || d."CodeValue"` on PostgreSQL, or use the non-persisted computed `d.[Uri]` column on SQL Server.
+  - use the descriptor's owning `d.DocumentId` when joining `dms.Document` for document metadata or stamps.
 
 ## Collections (sketch)
 
