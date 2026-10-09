@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Diagnostics;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Startup;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -188,6 +189,10 @@ internal static class SchemaRestampTestHelper
                 "UPDATE dms.\"EffectiveSchema\" SET \"ResourceKeyCount\" = \"ResourceKeyCount\" + 1;",
             ("mssql", "count") =>
                 "UPDATE [dms].[EffectiveSchema] SET [ResourceKeyCount] = [ResourceKeyCount] + 1;",
+            ("pgsql", "seed") =>
+                "UPDATE dms.\"EffectiveSchema\" SET \"ResourceKeySeedHash\" = decode(repeat('00', 32), 'hex');",
+            ("mssql", "seed") =>
+                "UPDATE [dms].[EffectiveSchema] SET [ResourceKeySeedHash] = 0x0000000000000000000000000000000000000000000000000000000000000000;",
             ("pgsql", "component") =>
                 "UPDATE dms.\"SchemaComponent\" SET \"ProjectVersion\" = 'invalid' WHERE \"ProjectEndpointName\" = (SELECT MIN(\"ProjectEndpointName\") FROM dms.\"SchemaComponent\");",
             ("mssql", "component") =>
@@ -195,6 +200,35 @@ internal static class SchemaRestampTestHelper
             _ => throw new ArgumentOutOfRangeException(nameof(field)),
         };
         command.ExecuteNonQuery();
+    }
+
+    internal static async Task WaitForLockWaitAsync(
+        DbConnection monitorConnection,
+        string dialect,
+        string applicationName,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var stopwatch = Stopwatch.StartNew();
+        do
+        {
+            await using var command = monitorConnection.CreateCommand();
+            command.CommandText =
+                dialect == "pgsql"
+                    ? "SELECT 1 FROM pg_catalog.pg_stat_activity WHERE application_name = @application AND wait_event_type = 'Lock' AND state = 'active';"
+                    : "SELECT 1 FROM sys.dm_exec_requests request_info INNER JOIN sys.dm_exec_sessions session_info ON session_info.session_id = request_info.session_id WHERE session_info.program_name = @application AND request_info.blocking_session_id <> 0;";
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "application";
+            parameter.Value = applicationName;
+            command.Parameters.Add(parameter);
+            if (await command.ExecuteScalarAsync(cancellationToken) is not null)
+            {
+                return;
+            }
+            await Task.Delay(TimeSpan.FromMilliseconds(25), cancellationToken);
+        } while (stopwatch.Elapsed < TimeSpan.FromSeconds(20));
+
+        throw new TimeoutException($"Database session '{applicationName}' did not reach a lock wait.");
     }
 
     internal static (

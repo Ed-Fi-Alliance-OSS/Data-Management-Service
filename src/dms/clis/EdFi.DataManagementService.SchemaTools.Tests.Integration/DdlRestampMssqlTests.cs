@@ -266,6 +266,7 @@ public class Given_SchemaRestamp_Mssql_Compatible_Transition
 
     [TestCase("format")]
     [TestCase("count")]
+    [TestCase("seed")]
     [TestCase("component")]
     public async Task It_rejects_corrupt_compatibility_metadata_without_mutating_it(string field)
     {
@@ -372,6 +373,163 @@ public class Given_SchemaRestamp_Mssql_Compatible_Transition
         using var verify = new SqlConnection(_connectionString);
         await verify.OpenAsync();
         SchemaRestampTestHelper.Capture(verify, "mssql").Hash.Should().Be(_oldHash);
+    }
+
+    [Test]
+    public async Task It_cancels_while_waiting_for_a_metadata_lock_and_preserves_the_old_stamp()
+    {
+        using var blocker = new SqlConnection(_connectionString);
+        await blocker.OpenAsync();
+        await using var transaction = (SqlTransaction)await blocker.BeginTransactionAsync();
+        await using (var lockCommand = blocker.CreateCommand())
+        {
+            lockCommand.Transaction = transaction;
+            lockCommand.CommandText =
+                "SELECT COUNT_BIG(*) FROM [dms].[SchemaComponent] WITH (TABLOCKX, HOLDLOCK);";
+            await lockCommand.ExecuteNonQueryAsync();
+        }
+
+        var applicationName = $"dms1303-restamp-cancel-{Guid.NewGuid():N}";
+        var connectionString = new SqlConnectionStringBuilder(_connectionString)
+        {
+            ApplicationName = applicationName,
+        };
+        using var cancellation = new CancellationTokenSource();
+        using var monitor = new SqlConnection(_connectionString);
+        await monitor.OpenAsync();
+        var restamp = new SchemaRestamper(NullLogger.Instance).RestampAsync(
+            SqlDialect.Mssql,
+            connectionString.ConnectionString,
+            30,
+            _target,
+            true,
+            cancellation.Token
+        );
+
+        try
+        {
+            await SchemaRestampTestHelper.WaitForLockWaitAsync(monitor, "mssql", applicationName);
+            await cancellation.CancelAsync();
+            Func<Task> action = async () => await restamp;
+            (await action.Should().ThrowAsync<SchemaRestampException>())
+                .Which.Failure.Should()
+                .Be(SchemaRestampFailure.Cancelled);
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+            await transaction.RollbackAsync();
+        }
+
+        using var verify = new SqlConnection(_connectionString);
+        await verify.OpenAsync();
+        SchemaRestampTestHelper.Capture(verify, "mssql").Hash.Should().Be(_oldHash);
+    }
+
+    [Test]
+    public async Task It_holds_metadata_writer_until_restamp_validation_and_commit_complete()
+    {
+        using var blocker = new SqlConnection(_connectionString);
+        await blocker.OpenAsync();
+        await using var blockerTransaction = (SqlTransaction)await blocker.BeginTransactionAsync();
+        await using (var lockCommand = blocker.CreateCommand())
+        {
+            lockCommand.Transaction = blockerTransaction;
+            lockCommand.CommandText =
+                "SELECT COUNT_BIG(*) FROM [dms].[SchemaComponent] WITH (TABLOCKX, HOLDLOCK);";
+            await lockCommand.ExecuteNonQueryAsync();
+        }
+
+        var restampApplication = $"dms1303-restamp-writer-{Guid.NewGuid():N}";
+        var restampConnectionString = new SqlConnectionStringBuilder(_connectionString)
+        {
+            ApplicationName = restampApplication,
+        };
+        using var monitor = new SqlConnection(_connectionString);
+        await monitor.OpenAsync();
+        var restampTask = new SchemaRestamper(NullLogger.Instance).RestampAsync(
+            SqlDialect.Mssql,
+            restampConnectionString.ConnectionString,
+            30,
+            _target,
+            true,
+            CancellationToken.None
+        );
+
+        var writerApplication = $"dms1303-metadata-writer-{Guid.NewGuid():N}";
+        var writerConnectionString = new SqlConnectionStringBuilder(_connectionString)
+        {
+            ApplicationName = writerApplication,
+        };
+        using var writer = new SqlConnection(writerConnectionString.ConnectionString);
+        await writer.OpenAsync();
+        await using var writerTransaction = (SqlTransaction)await writer.BeginTransactionAsync();
+        await using var writerCommand = writer.CreateCommand();
+        writerCommand.Transaction = writerTransaction;
+        writerCommand.CommandText = "UPDATE [dms].[EffectiveSchema] SET [AppliedAt] = [AppliedAt];";
+        Task<int>? writerUpdate = null;
+        var blockerReleased = false;
+        var writerTransactionCompleted = false;
+
+        try
+        {
+            await SchemaRestampTestHelper.WaitForLockWaitAsync(monitor, "mssql", restampApplication);
+            writerUpdate = writerCommand.ExecuteNonQueryAsync();
+            await SchemaRestampTestHelper.WaitForLockWaitAsync(monitor, "mssql", writerApplication);
+
+            await blockerTransaction.RollbackAsync();
+            blockerReleased = true;
+            var result = await restampTask;
+            result.Changed.Should().BeTrue();
+            result.PreviousHash.Should().Be(_oldHash);
+            await writerUpdate.WaitAsync(TimeSpan.FromSeconds(20));
+            await writerTransaction.RollbackAsync();
+            writerTransactionCompleted = true;
+        }
+        finally
+        {
+            if (!blockerReleased)
+            {
+                await blockerTransaction.RollbackAsync();
+            }
+            if (writerUpdate is not null && !writerUpdate.IsCompleted)
+            {
+                try
+                {
+                    await writerUpdate.WaitAsync(TimeSpan.FromSeconds(20));
+                }
+                catch (Exception exception)
+                {
+                    TestContext.WriteLine($"Writer cleanup failed: {exception.Message}");
+                }
+            }
+            if (!writerTransactionCompleted)
+            {
+                try
+                {
+                    await writerTransaction.RollbackAsync();
+                }
+                catch (Exception exception)
+                {
+                    TestContext.WriteLine($"Writer transaction cleanup failed: {exception.Message}");
+                }
+            }
+            if (!restampTask.IsCompleted)
+            {
+                try
+                {
+                    await restampTask;
+                }
+                catch (Exception exception)
+                {
+                    TestContext.WriteLine($"Restamp cleanup failed: {exception.Message}");
+                }
+            }
+        }
+
+        using var verify = new SqlConnection(_connectionString);
+        await verify.OpenAsync();
+        SchemaRestampTestHelper.Capture(verify, "mssql").Hash.Should().Be(_target.EffectiveSchemaHash);
     }
 
     [Test]
