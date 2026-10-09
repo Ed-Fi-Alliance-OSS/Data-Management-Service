@@ -567,7 +567,9 @@ With `-SeparateConfigDatabase` the restore replaces only the DMS datastore; the 
 the data store that earlier run registered. After the restore the wrapper's configure phase lists the
 CMS data stores and:
 
-* registers the data store as usual when CMS holds none;
+* registers the data store when CMS holds none, naming the database the restore replaced (an
+  explicit `-DataStoreDatabaseName` must repeat that name; a different one is refused before any
+  CMS write, after the restore);
 * reuses the existing data store, with its id and without changing it, when it is the only one, is
   not route-qualified, and its stored connection string (decrypted with
   `DMS_CONFIG_DATABASE_ENCRYPTION_KEY`) names the composed database service (`dms-postgresql:5432` or

@@ -492,7 +492,20 @@ function Invoke-ConfigureLocalDataStore {
         if ($schoolYears.Count -gt 0) {
             throw "-RestoreTargetDatabaseName cannot be combined with -SchoolYearRange. A restore replaces exactly one route-unqualified target."
         }
+        # A data store this handoff creates must name the database the restore replaced, so an
+        # explicit -DataStoreDatabaseName may only repeat it. Refused here, before any CMS write.
+        if (-not [string]::IsNullOrEmpty($DataStoreDatabaseName) -and
+            -not [string]::Equals($DataStoreDatabaseName, $RestoreTargetDatabaseName, [System.StringComparison]::Ordinal)) {
+            throw "-DataStoreDatabaseName names a different database than the one this restore replaced (-RestoreTargetDatabaseName), so the data store would be registered against a database the restore did not populate. The restore has already replaced its target: DMS was not started, and the scratch-validation guarantee that a refused restore leaves the target untouched does not apply. Rerun the restore without -DataStoreDatabaseName (the restore target comes from POSTGRES_DB_NAME or MSSQL_DB_NAME), or with the same name. Both values are withheld."
+        }
+        # From here on the registration name IS the restore target: every resolution below that
+        # honors -DataStoreDatabaseName (PostgreSQL and SQL Server names, the topology guard) now
+        # names the restored database instead of the env default.
+        $DataStoreDatabaseName = $RestoreTargetDatabaseName
     }
+
+    # Which input a registered name came from, for the topology guards' diagnostics.
+    $registrationDatabaseSource = if ($restoreReuse) { "-RestoreTargetDatabaseName" } else { "-DataStoreDatabaseName" }
 
     $multiTenancyEnabled = (Get-EnvValueOrDefault -EnvValues $envValues -Name "DMS_CONFIG_MULTI_TENANCY").Equals("true", [System.StringComparison]::OrdinalIgnoreCase)
     if ($schoolYears.Count -gt 0 -and $multiTenancyEnabled -and [string]::IsNullOrWhiteSpace($tenant)) {
@@ -571,11 +584,16 @@ function Invoke-ConfigureLocalDataStore {
             if (-not [string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) {
                 $registeredDatastoreDatabaseValue = Get-RegisteredDatastoreDatabaseValue -DatastoreDatabaseName $DataStoreDatabaseName
             }
-            Assert-MssqlTopologyPhysicalConsistency `
-                -EnvironmentFile $resolvedEnvironmentFile `
-                -ContainerName "dms-mssql" `
-                -SaPassword $mssqlPassword `
-                -RegisteredDatastoreDatabaseName $registeredDatastoreDatabaseValue
+            $authorityArguments = @{
+                EnvironmentFile = $resolvedEnvironmentFile
+                ContainerName = "dms-mssql"
+                SaPassword = $mssqlPassword
+                RegisteredDatastoreDatabaseName = $registeredDatastoreDatabaseValue
+            }
+            # The restore handoff's name is reported under its own parameter; other runs keep the
+            # authority's default source key.
+            if ($restoreReuse) { $authorityArguments.RegisteredDatastoreDatabaseSourceKey = $registrationDatabaseSource }
+            Assert-MssqlTopologyPhysicalConsistency @authorityArguments
         }
         else {
             # PostgreSQL's registration transport does have a sound offline verdict, and its own
@@ -589,7 +607,7 @@ function Invoke-ConfigureLocalDataStore {
             if (Test-RegisteredDatastoreNameCollidesWithReservedCmsDatabase -DatabaseEngine "postgresql" -DatastoreDatabaseName $postgresDbName) {
                 $datastoreNameSource =
                     if ([string]::IsNullOrWhiteSpace($DataStoreDatabaseName)) { "POSTGRES_DB_NAME" }
-                    else { "-DataStoreDatabaseName" }
+                    else { $registrationDatabaseSource }
                 # Names the source key and the reserved literal only - never the caller's own value.
                 throw "The DMS datastore database name resolved from '$datastoreNameSource' must be provably distinct from 'edfi_configurationservice' with -SeparateConfigDatabase: that is the dedicated Configuration Service database, and registering the datastore against it would reintroduce the shared topology the switch opts out of. On PostgreSQL the name is compared as the provider parses it - SchemaTools creates it with a quoted identifier, so nothing folds; only a name that parses back to that reserved name collides, and the measured non-exact case is a trailing line feed, which connection-string parsing removes. The resolved value is withheld."
             }

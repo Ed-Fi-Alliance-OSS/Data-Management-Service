@@ -198,7 +198,7 @@ local flow's SQL Server / PostgreSQL engine selection.
 | Item | Detail |
 |---|---|
 | **Preconditions** | Config Service healthy and claims-loaded (Docker service ready). |
-| **Inputs** | `-EnvironmentFile <path>` (select local settings for CMS URL, auth, tenant scope, and database defaults); `-NoDataStore` (narrow reuse escape hatch: valid only when exactly one existing instance is present); `-SchoolYearRange <range>` (school-year path); `-AddSmokeTestCredentials` (creates CMS-only test application); `-RestoreTargetDatabaseName <name>` (DMS-1271 restore handoff: passed by the wrappers only for `-RestoreTemplate` with `-SeparateConfigDatabase`; requires `-SeparateConfigDatabase`, rejects `-NoDataStore` and `-SchoolYearRange`) |
+| **Inputs** | `-EnvironmentFile <path>` (select local settings for CMS URL, auth, tenant scope, and database defaults); `-NoDataStore` (narrow reuse escape hatch: valid only when exactly one existing instance is present); `-SchoolYearRange <range>` (school-year path); `-AddSmokeTestCredentials` (creates CMS-only test application); `-RestoreTargetDatabaseName <name>` (DMS-1271 restore handoff: passed by the wrappers only for `-RestoreTemplate` with `-SeparateConfigDatabase`; requires `-SeparateConfigDatabase`, rejects `-NoDataStore`, `-SchoolYearRange`, and a `-DataStoreDatabaseName` other than the restore target; a new registration names the restore target) |
 | **Outputs** | One or more DMS instance records in CMS; `EdFiSandbox` application when `-AddSmokeTestCredentials` is set; structured success-pipeline result containing selected data store IDs and, when available, the pre-provisioned `CMSReadOnlyAccess` credential values needed by IDE guidance |
 | **Side effects** | CMS API calls to `Add-DataStore` / `Add-DmsSchoolYearInstances`; optional CMS API calls for smoke-test credentials; may validate or report the `CMSReadOnlyAccess` client created by the local identity setup path; emits human-readable progress and guidance on non-success streams; no files written beyond CMS records |
 | **Failure conditions** | Config Service unreachable; `-NoDataStore` with 0 or >1 existing instances; `-NoDataStore` with `-SchoolYearRange` (invalid combination); with `-RestoreTargetDatabaseName`: more than one data store, a route-qualified one, a stored connection string that cannot be decrypted with `DMS_CONFIG_DATABASE_ENCRYPTION_KEY`, or a stored target other than the composed database service and the restored database (refused after the restore; see the restore note below) |
@@ -218,7 +218,8 @@ re-runnable without hidden disk artifacts.
 datastore; the dedicated Configuration Service database survives, so it can still hold the data store an
 earlier run registered, and CMS rejects a second registration under the same name. The wrapper therefore
 hands this phase the target it resolved and replaced (`-RestoreTargetDatabaseName`). With it, the phase
-lists the data stores in tenant scope and creates the normal registration when there are none; with exactly
+lists the data stores in tenant scope and, when there are none, registers one that names the restored target
+(an explicit `-DataStoreDatabaseName` must repeat it; a different name is refused before any CMS write); with exactly
 one route-unqualified data store it decrypts the stored connection string and reuses that data store, with
 its existing id and without updating it, only when the engine (provider and connection-string form), the
 host and port (the composed database service), and the database (exactly the restored target) all match.

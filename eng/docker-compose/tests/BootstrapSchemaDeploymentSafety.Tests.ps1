@@ -4498,7 +4498,16 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 $script:reuseTrace = [System.Collections.Generic.List[string]]::new()
                 $script:reuseStores = @(& $ReuseStoreFactory)
 
-                function Assert-MssqlTopologyPhysicalConsistency { $script:reuseTrace.Add("authority") }
+                $script:reuseAuthority = $null
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    # A simple function: the credential the phase also passes lands in $args unread.
+                    param($EnvironmentFile, $ContainerName, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:reuseTrace.Add("authority")
+                    $script:reuseAuthority = [pscustomobject]@{
+                        Registered = $RegisteredDatastoreDatabaseName
+                        SourceKey = $RegisteredDatastoreDatabaseSourceKey
+                    }
+                }
                 function Add-CmsClient { $script:reuseTrace.Add("Add-CmsClient") }
                 function Get-CmsToken { return "token" }
                 function Get-DataStore {
@@ -4654,6 +4663,82 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
             @($reused.SelectedDataStoreIds) | Should -Be @(9001)
             $script:reuseTrace | Should -Not -Contain "Add-DataStore"
+        }
+
+        It "creates the registration for a non-default restore target, not the environment's name, and reuses it next time (<engine>)" -ForEach @(
+            @{ Engine = "postgresql" }
+            @{ Engine = "mssql" }
+        ) {
+            # The env names the default database; the restore replaced another one. With CMS empty the
+            # new registration must name the restored database - inspected in the payload the REAL
+            # Add-DataStore posts - and the next restore must accept exactly that registration.
+            $restoredTarget = "edfi_restored_target"
+            $envFile = New-ReuseEnvFile -Engine $Engine
+            $created = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseEnvFile $envFile -ReuseRealAddDataStore -ReuseParameters @{ RestoreTargetDatabaseName = $restoredTarget }
+
+            @($created.SelectedDataStoreIds) | Should -Be @(9001)
+            $registered = (& $script:reuseDmsModule { $script:reuseCreatedBody }) | ConvertFrom-Json
+            $registered.provider | Should -BeExactly (Get-ReuseProvider -Engine $Engine)
+            $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+            $builder.set_ConnectionString([string]$registered.connectionString)
+            $builder.get_Item("database") | Should -BeExactly $restoredTarget
+            if ($Engine -eq "mssql") {
+                $builder.get_Item("server") | Should -BeExactly "dms-mssql,1433"
+                # The live distinctness authority is asked about the name that is registered, under
+                # the parameter it came from.
+                $script:reuseAuthority.Registered | Should -BeExactly $restoredTarget
+                $script:reuseAuthority.SourceKey | Should -BeExactly "-RestoreTargetDatabaseName"
+            }
+            else {
+                $builder.get_Item("host") | Should -BeExactly "dms-postgresql"
+                $builder.get_Item("port") | Should -BeExactly "5432"
+            }
+
+            $storedConnectionString = New-CmsEncryptedConnectionString -PlainText ([string]$registered.connectionString) -EncryptionKey $script:reuseCmsKey
+            $storedProvider = [string]$registered.provider
+            $reused = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseEnvFile $envFile -ReuseParameters @{ RestoreTargetDatabaseName = $restoredTarget } -ReuseStoreFactory {
+                New-ReuseDataStore -Id 9001 -Provider $storedProvider -ConnectionString $storedConnectionString
+            }
+            @($reused.SelectedDataStoreIds) | Should -Be @(9001)
+            $script:reuseTrace | Should -Not -Contain "Add-DataStore"
+        }
+
+        It "accepts an explicit -DataStoreDatabaseName that repeats the restore target and registers it (<engine>)" -ForEach @(
+            @{ Engine = "postgresql" }
+            @{ Engine = "mssql" }
+        ) {
+            $restoredTarget = "edfi_restored_target"
+            $created = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseRealAddDataStore -ReuseParameters @{
+                RestoreTargetDatabaseName = $restoredTarget
+                DataStoreDatabaseName = $restoredTarget
+            }
+
+            @($created.SelectedDataStoreIds) | Should -Be @(9001)
+            $registered = (& $script:reuseDmsModule { $script:reuseCreatedBody }) | ConvertFrom-Json
+            $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+            $builder.set_ConnectionString([string]$registered.connectionString)
+            $builder.get_Item("database") | Should -BeExactly $restoredTarget
+        }
+
+        It "refuses a conflicting -DataStoreDatabaseName before any CMS write when CMS holds no data store (<engine>: <case>)" -ForEach @(
+            @{ Engine = "postgresql"; Case = "another database"; Conflicting = "edfi_other" }
+            @{ Engine = "postgresql"; Case = "the env's default while the restore replaced another"; Conflicting = "edfi_datamanagementservice" }
+            @{ Engine = "postgresql"; Case = "a name differing only in case"; Conflicting = "EDFI_Restored_Target" }
+            @{ Engine = "mssql"; Case = "another database"; Conflicting = "edfi_other" }
+            @{ Engine = "mssql"; Case = "the env's default while the restore replaced another"; Conflicting = "edfi_datamanagementservice" }
+            @{ Engine = "mssql"; Case = "a name differing only in case"; Conflicting = "EDFI_Restored_Target" }
+        ) {
+            # CMS is empty, so the reuse comparison never runs: without this refusal the phase would
+            # register the explicit name, pointing DMS at a database the restore did not populate.
+            $thrown = { Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseParameters @{
+                    RestoreTargetDatabaseName = "edfi_restored_target"
+                    DataStoreDatabaseName = $Conflicting
+                } } | Should -Throw -PassThru
+            $message = $thrown.Exception.Message
+
+            $message | Should -BeExactly "-DataStoreDatabaseName names a different database than the one this restore replaced (-RestoreTargetDatabaseName), so the data store would be registered against a database the restore did not populate. The restore has already replaced its target: DMS was not started, and the scratch-validation guarantee that a refused restore leaves the target untouched does not apply. Rerun the restore without -DataStoreDatabaseName (the restore target comes from POSTGRES_DB_NAME or MSSQL_DB_NAME), or with the same name. Both values are withheld."
+            @($script:reuseTrace) | Should -BeNullOrEmpty -Because "nothing reaches CMS - no admin client, no listing, no registration - and the MSSQL authority is not consulted either"
+            Assert-ReuseRefusalSecretFree -Message $message -AlsoWithheld @($Conflicting, "edfi_restored_target")
         }
 
         It "refuses, after the restore and before any registration, when <case> (<engine>)" -ForEach @(
