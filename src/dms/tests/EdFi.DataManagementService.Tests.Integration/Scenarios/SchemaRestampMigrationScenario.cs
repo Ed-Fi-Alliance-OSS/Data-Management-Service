@@ -115,7 +115,7 @@ internal static class SchemaRestampMigrationScenario
         }
         else
         {
-            provision = new ProcessResult(-1, string.Empty, string.Empty);
+            provision = new ProcessResult(-1, string.Empty);
         }
 
         var freshTarget = CreateHost(target, connectionString, dataStore);
@@ -272,7 +272,7 @@ internal static class SchemaRestampMigrationScenario
             .ToArray();
     }
 
-    private sealed record ProcessResult(int ExitCode, string Output, string Error);
+    private sealed record ProcessResult(int ExitCode, string Error);
 
     private static async Task<ProcessResult> RunToolAsync(params string[] arguments)
     {
@@ -315,7 +315,7 @@ internal static class SchemaRestampMigrationScenario
         {
             await WaitForToolExitAsync(process, deadline.Token);
             await Task.WhenAll(outputTask, errorTask).WaitAsync(deadline.Token);
-            return new ProcessResult(process.ExitCode, await outputTask, await errorTask);
+            return new ProcessResult(process.ExitCode, await errorTask);
         }
         catch (Exception exception) when (exception is OperationCanceledException or TimeoutException)
         {

@@ -134,6 +134,52 @@ public class Given_SchemaRestamp_Mssql_Compatible_Transition
     }
 
     [Test]
+    public async Task It_refuses_a_changed_stamp_without_confirmation_and_preserves_metadata()
+    {
+        using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        var before = SchemaRestampTestHelper.Capture(connection, "mssql");
+        before.Hash.Should().NotBe(_target.EffectiveSchemaHash);
+
+        Func<Task> action = () =>
+            new SchemaRestamper(NullLogger.Instance).RestampAsync(
+                SqlDialect.Mssql,
+                _connectionString,
+                30,
+                _target,
+                migrationCompleted: false,
+                CancellationToken.None
+            );
+
+        (await action.Should().ThrowAsync<SchemaRestampException>())
+            .Which.Failure.Should()
+            .Be(SchemaRestampFailure.ConfirmationRequired);
+        SchemaRestampTestHelper.Capture(connection, "mssql").Should().BeEquivalentTo(before);
+    }
+
+    [Test]
+    public async Task It_refuses_a_changed_stamp_without_confirmation_through_the_shipped_cli()
+    {
+        using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        var before = SchemaRestampTestHelper.Capture(connection, "mssql");
+        before.Hash.Should().NotBe(_target.EffectiveSchemaHash);
+
+        var result = SchemaRestampTestHelper.RunRestamp(
+            _connectionString,
+            "mssql",
+            false,
+            CliTestHelper.GetMinimalSchemaPath(),
+            SchemaRestampTestHelper.ExtensionPath
+        );
+
+        result.ExitCode.Should().Be(1);
+        result.Error.Should().Contain("migration-completed confirmation is required");
+        result.Output.Should().BeEmpty();
+        SchemaRestampTestHelper.Capture(connection, "mssql").Should().BeEquivalentTo(before);
+    }
+
+    [Test]
     public async Task It_validates_a_match_without_confirmation_or_dml()
     {
         using var connection = new SqlConnection(_connectionString);

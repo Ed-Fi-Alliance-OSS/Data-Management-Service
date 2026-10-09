@@ -237,6 +237,7 @@ internal static class SchemaRestampTestHelper
         short Count,
         string Seed,
         DateTime AppliedAt,
+        short SingletonId,
         string[] Components,
         string[] Keys,
         string[] Documents,
@@ -247,7 +248,7 @@ internal static class SchemaRestampTestHelper
         var parent = Table(dialect, "EffectiveSchema");
         using var parentCommand = connection.CreateCommand();
         parentCommand.CommandText =
-            $"SELECT {Column(dialect, "EffectiveSchemaHash")}, {Column(dialect, "ApiSchemaFormatVersion")}, {Column(dialect, "ResourceKeyCount")}, {Column(dialect, "ResourceKeySeedHash")}, {Column(dialect, "AppliedAt")} FROM {parent};";
+            $"SELECT {Column(dialect, "EffectiveSchemaHash")}, {Column(dialect, "ApiSchemaFormatVersion")}, {Column(dialect, "ResourceKeyCount")}, {Column(dialect, "ResourceKeySeedHash")}, {Column(dialect, "AppliedAt")}, {Column(dialect, "EffectiveSchemaSingletonId")} FROM {parent};";
         using var parentReader = parentCommand.ExecuteReader();
         if (!parentReader.Read())
         {
@@ -258,7 +259,8 @@ internal static class SchemaRestampTestHelper
             Format: parentReader.GetString(1),
             Count: parentReader.GetInt16(2),
             Seed: Convert.ToHexString((byte[])parentReader.GetValue(3)),
-            AppliedAt: parentReader.GetDateTime(4)
+            AppliedAt: parentReader.GetDateTime(4),
+            SingletonId: parentReader.GetInt16(5)
         );
         parentReader.Close();
 
@@ -362,6 +364,7 @@ internal static class SchemaRestampTestHelper
             snapshot.Count,
             snapshot.Seed,
             snapshot.AppliedAt,
+            snapshot.SingletonId,
             components,
             keys,
             documents,

@@ -218,33 +218,7 @@ public sealed class SchemaRestamper : ISchemaRestamper
                 "Target schema and connection string are required."
             );
         }
-        try
-        {
-            var namedDatabase = dialect switch
-            {
-                SqlDialect.Pgsql => new NpgsqlConnectionStringBuilder(connectionString) is var pg
-                    && pg.ContainsKey("Database")
-                    && !string.IsNullOrWhiteSpace(pg.Database),
-                SqlDialect.Mssql => new SqlConnectionStringBuilder(connectionString) is var ms
-                    && (ms.ContainsKey("Initial Catalog") || ms.ContainsKey("Database"))
-                    && !string.IsNullOrWhiteSpace(ms.InitialCatalog),
-                _ => false,
-            };
-            if (!namedDatabase)
-            {
-                throw new SchemaRestampException(
-                    SchemaRestampFailure.Validation,
-                    "An explicit target database name is required."
-                );
-            }
-        }
-        catch (ArgumentException)
-        {
-            throw new SchemaRestampException(
-                SchemaRestampFailure.Validation,
-                "The target connection string is invalid."
-            );
-        }
+        SchemaRestampConnectionStringValidator.ValidateOrThrow(connectionString, dialect);
     }
 
     private static DbConnection CreateConnection(SqlDialect dialect, string connectionString) =>
