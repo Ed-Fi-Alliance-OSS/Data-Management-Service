@@ -1820,34 +1820,129 @@ Describe "Get-RestoreSmokeSourceRevision" {
     }
 }
 
+BeforeDiscovery {
+    # Independent compatibility fixtures for the data store connection strings CMS returns: each
+    # CipherText is the Base64 a CMS response carries, produced by the CMS's own
+    # ConnectionStringEncryptionService (random IV, src/config backend) through a throwaway console
+    # that references the CMS backend project - not by this file's encryptor - so encryption and the
+    # probe's decryption cannot share one unnoticed mistake. Key "long" is the test key below (longer
+    # than 32 characters, so CMS keeps its first 32); "short" is padded with '0'. Padding is the
+    # value's count of Base64 '=' characters; each engine has zero, one, and two.
+    $script:cmsCipherFixtures = @(
+        @{ Name = "PgPad1"; Engine = "postgresql"; Key = "long"; Padding = 1; PlainText = "host=dms-postgresql;port=5432;username=postgres;password=Pg-S3cret!;database=edfi_datamanagementservice"
+            CipherText = "4j9U0etELPg41jXuZUKpdoDxm6uHVm9LfeGXEgmCdtQIx6EGEVXiNiIagqFyXjz0nM6sYrOzBp396gZo8dAjGRdUoMIbOVrrC3IUfntPi39jy9mQKFqxzrzC0OPwPokktE3IaO4+DyT9uzRV/MM6GXyOfQlw/A3HOXwGTspfdnw=" }
+        @{ Name = "PgPad0"; Engine = "postgresql"; Key = "long"; Padding = 0; PlainText = "host=dms-postgresql;port=5432;username=postgres;password=Pg-S3cret!-padded-1;database=edfi_datamanagementservice"
+            CipherText = "2bNfoFoqgBz3OA7Nd0ym29P9OE6r0igrGPHIkO1oGWii1eXfX+w5YNZNjCDJqBjDKw+YbBzJHtPSWxWkh4IDPfqYS6huwoHxM23ixC/HlRb0vflmtK8xTdhhMRGDPn2Sq61NLR8D1mE7wV6+zyQjoNxGYy9tYfsaa/7Gj8AXvVzuE1b1pGhHMnL2sQRq9o65" }
+        @{ Name = "PgPad2"; Engine = "postgresql"; Key = "long"; Padding = 2; PlainText = "host=dms-postgresql;port=5432;username=postgres;password=Pg-S3cret!-padded-to-reach-two-pads;database=edfi_datamanagementservice"
+            CipherText = "ip4lZz+DZtr+SHFDNmCE9+BBKkmpgsCijSyqpTlHzxrGMhbSZfTRXUgEK6RMtflXkjWgQw7wcTXQNUq/9ZCW1JWbb7iGYnUgXZNl25uwC6IoaA0OhTEcYrHxWtXseFHeu7VaEIOOPf/rSipAC9VBxtW9CzsKMBkiG6iWAS2qOMgOU1va0dIG2C2Dob0Fh7oTFEa9FUtWS0ciSYe7Q7ADRg==" }
+        @{ Name = "MsPad0"; Engine = "mssql"; Key = "long"; Padding = 0; PlainText = "Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=Ms-S3cret!;TrustServerCertificate=true"
+            CipherText = "gu5rgREwGLOnWU+pLqbSGNh/gzVyn9kXQ+dmwvVfWBLoNtubyeCC9XhVePNz+9vK4aiZvcZxVO/9/zPKXx1dz8++kY+icxop1UZaKGY84s7M6PiEkdrYixNe9yh0jUG3tT9UMxx/0UGwH+QXF6QCK6UBkMqBy1tPzGVxwri891VRuLt0d/pURWCpof4DBfev" }
+        @{ Name = "MsPad1"; Engine = "mssql"; Key = "long"; Padding = 1; PlainText = "Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=Ms-S3cret!-padded-1"
+            CipherText = "INJ3NT2lGcNnwQYTNa1MeLUw8//yNE4jeRpyunObYrqewcpC2rN5zGXBxZen2uj678EoXhhLsSZGKiUeQQOnikaEhkFtMlZCwgP1ZM+uXH8Y005coYZlDL91TAlPj+G6g21ZxdVTnzYUcGGbEJ2nDZnYroaB0soh5wXdyZGSzdY=" }
+        @{ Name = "MsPad2"; Engine = "mssql"; Key = "long"; Padding = 2; PlainText = "Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=Ms-S3cret!-padded-to-reach-two;TrustServerCertificate=true"
+            CipherText = "vZu4uoPh2nPQy33MRoORArdeS5aGYq3RjyvZCwEjo0fOVoidMHYIjWuz+hUHXqsJKMk/U2viEfcmd+yQI2aE3PHsGNQG7k4i/DNR2iqMteuGCOEx9f1b1Mr/Wasx+AoggHjoVMFCW3MGaQpzphLbCibaXEq0G9N0HZ//F9rijd1qpPIlvMl46m3RkEOr8PpJ5CnG7dms3jHCMiZsKgFuxg==" }
+        @{ Name = "PgShortKey"; Engine = "postgresql"; Key = "short"; Padding = 1; PlainText = "host=dms-postgresql;port=5432;username=postgres;password=Pg-S3cret!;database=edfi_datamanagementservice"
+            CipherText = "wYCF12vce3iEJwOhBjWe+UhMiEAsSjquwR8WN85J6dTyPDv/GWKgvFWON0ZT8Nu3KA45ay61u1ViG9rG1W3edQwemkUl7Rkw3hFZ0UO0HZTbx/ytiIl/yQQ8J8UG9Oh1bpynd33BL5AWv0INSEwv0iLiN+3cgESQYK6c9cbRm1U=" }
+    )
+}
+
 Describe "Served-data API probe" {
     BeforeAll {
+        # CMS returns data store connection strings as Base64 AES cipher text under this key; the
+        # probe reads it from the stack's env (DMS_CONFIG_DATABASE_ENCRYPTION_KEY).
+        $script:dataStoreKey = "RestoreSmokeProbe-TestKey-0123456789ABCDEF"
+        $script:shortDataStoreKey = "short-test-key"
+        # The env resolver lets an ambient value win (as Compose does), so no ambient key may leak in.
+        # [NullString]::Value unsets it: PowerShell would pass $null to the .NET string parameter as "",
+        # leaving an empty variable that counts as set.
+        function script:Set-TestAmbientDataStoreKey {
+            param([AllowNull()][string]$Value)
+
+            $resolved = if ([string]::IsNullOrEmpty($Value)) { [NullString]::Value } else { $Value }
+            [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_ENCRYPTION_KEY", $resolved)
+        }
+        $script:ambientDataStoreKey = [System.Environment]::GetEnvironmentVariable("DMS_CONFIG_DATABASE_ENCRYPTION_KEY")
+        Set-TestAmbientDataStoreKey $null
+
+        # This file's own CMS-compatible encryptor: the ConnectionStringEncryptionService steps with a
+        # caller-chosen IV (-InitializationVector; -IV would collide with -InformationVariable's alias),
+        # so values are reproducible. Pinned to the CMS fixtures byte for byte below.
+        function script:New-TestCmsCipherText {
+            param(
+                [Parameter(Mandatory)]
+                [string]$PlainText,
+
+                [string]$Key = $script:dataStoreKey,
+
+                [byte[]]$InitializationVector = [byte[]](0..15)
+            )
+
+            $plainTextBytes = [System.Text.Encoding]::UTF8.GetBytes($PlainText)
+            $aes = [System.Security.Cryptography.Aes]::Create()
+            try {
+                $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
+                $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
+                $aes.Key = [System.Text.Encoding]::UTF8.GetBytes($Key.PadRight(32, [char]'0').Substring(0, 32))
+                $aes.IV = $InitializationVector
+                $encryptor = $aes.CreateEncryptor()
+                try {
+                    $cipherText = $encryptor.TransformFinalBlock($plainTextBytes, 0, $plainTextBytes.Length)
+                }
+                finally {
+                    $encryptor.Dispose()
+                }
+            }
+            finally {
+                $aes.Dispose()
+            }
+            return [System.Convert]::ToBase64String([byte[]]($InitializationVector + $cipherText))
+        }
+
+        function script:Resolve-TestDataStoreKey {
+            param([string]$Name)
+
+            if ($Name -eq "short") {
+                return $script:shortDataStoreKey
+            }
+            return $script:dataStoreKey
+        }
+
         $script:pgConnection = "host=dms-postgresql;port=5432;username=postgres;password=Pg-S3cret!;database=edfi_datamanagementservice"
         $script:mssqlConnection = "Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=Ms-S3cret!;TrustServerCertificate=true"
         $script:target = "edfi_datamanagementservice"
         $script:descriptorUri = "http://localhost:18080/data/ed-fi/academicSubjectDescriptors?limit=5"
         $script:schoolUri = "http://localhost:18080/data/ed-fi/schools?limit=5"
 
-        # The shape Get-DataStore returns (Invoke-RestMethod objects, camelCase CMS properties).
+        # The shape Get-DataStore returns (Invoke-RestMethod objects, camelCase CMS properties). A
+        # connection string is encrypted under the test key, as CMS returns it, unless -Raw.
         function script:New-TestDataStore {
             param(
                 [object]$Id,
                 [string]$Name = "Local Development Data Store",
                 [AllowNull()]
                 [object]$ConnectionString = $script:pgConnection,
-                [object]$Contexts = @()
+                [object]$Contexts = @(),
+                [switch]$Raw
             )
 
+            if (-not $Raw -and $ConnectionString -is [string] -and $ConnectionString.Length -gt 0) {
+                $ConnectionString = New-TestCmsCipherText -PlainText $ConnectionString
+            }
             return [pscustomobject]@{ id = $Id; dataStoreType = "Development"; name = $Name; connectionString = $ConnectionString; dataStoreContexts = $Contexts }
         }
 
         function script:New-TestEndpoint {
             return [pscustomobject]@{
-                CmsUrl      = "http://localhost:18081"
-                DmsUrl      = "http://localhost:18080"
-                AdminClient = [pscustomobject]@{ ClientId = "dms-data-store-admin"; ClientSecret = "Admin-S3cret!" }
+                CmsUrl                 = "http://localhost:18081"
+                DmsUrl                 = "http://localhost:18080"
+                AdminClient            = [pscustomobject]@{ ClientId = "dms-data-store-admin"; ClientSecret = "Admin-S3cret!" }
+                DataStoreEncryptionKey = $script:dataStoreKey
             }
         }
+    }
+
+    AfterAll {
+        Set-TestAmbientDataStoreKey $script:ambientDataStoreKey
     }
 
     Context "Resolve-RestoreSmokeApiEndpoint" {
@@ -1859,6 +1954,7 @@ Describe "Served-data API probe" {
                 "DMS_BOOTSTRAP_ADMIN_CLIENT_ID=custom-admin"
                 "DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=Custom-S3cret!"
                 "DMS_CONFIG_MULTI_TENANCY=false"
+                "DMS_CONFIG_DATABASE_ENCRYPTION_KEY=Stack-Env-File-Key-0123456789ABCDEF"
             )
 
             $endpoint = Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $file
@@ -1867,11 +1963,12 @@ Describe "Served-data API probe" {
             $endpoint.DmsUrl | Should -Be "http://localhost:18080"
             $endpoint.AdminClient.ClientId | Should -Be "custom-admin"
             $endpoint.AdminClient.ClientSecret | Should -Be "Custom-S3cret!"
+            $endpoint.DataStoreEncryptionKey | Should -BeExactly "Stack-Env-File-Key-0123456789ABCDEF"
         }
 
         It "falls back to the defaults the configure phase uses when the keys are absent" {
             $file = Join-Path $TestDrive "defaults.env"
-            Set-Content -LiteralPath $file -Value "POSTGRES_DB_NAME=edfi_datamanagementservice"
+            Set-Content -LiteralPath $file -Value @("POSTGRES_DB_NAME=edfi_datamanagementservice", "DMS_CONFIG_DATABASE_ENCRYPTION_KEY=$($script:dataStoreKey)")
 
             $endpoint = Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $file
 
@@ -1889,6 +1986,162 @@ Describe "Served-data API probe" {
             Set-Content -LiteralPath $file -Value "DMS_CONFIG_MULTI_TENANCY=$Value"
 
             { Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $file } | Should -Throw "The served-data probe supports only a single-tenant stack*"
+        }
+
+        It "refuses a stack whose DMS_CONFIG_DATABASE_ENCRYPTION_KEY is <case>, naming no value" -ForEach @(
+            @{ Case = "absent"; Lines = @() }
+            @{ Case = "empty"; Lines = @("DMS_CONFIG_DATABASE_ENCRYPTION_KEY=") }
+            @{ Case = "blank"; Lines = @("DMS_CONFIG_DATABASE_ENCRYPTION_KEY=   ") }
+        ) {
+            $file = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N") + ".env")
+            Set-Content -LiteralPath $file -Value (@("DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=Custom-S3cret!") + $Lines)
+
+            $failure = $null
+            try {
+                Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $file
+            }
+            catch {
+                $failure = $_.Exception.Message
+            }
+
+            $failure | Should -BeExactly "The served-data probe needs DMS_CONFIG_DATABASE_ENCRYPTION_KEY, the key CMS encrypts data store connection strings with, but it is not set for the stack started from '$file'."
+            $failure | Should -Not -Match 'Custom-S3cret'
+        }
+
+        It "reads the key as Compose does: <case>" -ForEach @(
+            @{ Case = "surrounding quotes are stripped"; Line = 'DMS_CONFIG_DATABASE_ENCRYPTION_KEY="Quoted-Key-0123456789ABCDEFGHIJKLMN"'; Ambient = $null; Expected = "Quoted-Key-0123456789ABCDEFGHIJKLMN" }
+            @{ Case = "an ambient value wins over the env file"; Line = "DMS_CONFIG_DATABASE_ENCRYPTION_KEY=File-Key-0123456789ABCDEFGHIJKLMNOP"; Ambient = "Ambient-Key-0123456789ABCDEFGHIJKLM"; Expected = "Ambient-Key-0123456789ABCDEFGHIJKLM" }
+        ) {
+            $file = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N") + ".env")
+            Set-Content -LiteralPath $file -Value $Line
+            Set-TestAmbientDataStoreKey $Ambient
+            try {
+                (Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $file).DataStoreEncryptionKey | Should -BeExactly $Expected
+            }
+            finally {
+                Set-TestAmbientDataStoreKey $null
+            }
+        }
+    }
+
+    Context "CMS data store connection-string cipher text" {
+        It "has CMS fixtures with zero, one, and two Base64 padding characters for each engine" -ForEach @(@{ Fixtures = $script:cmsCipherFixtures }) {
+            foreach ($engine in @("postgresql", "mssql")) {
+                $paddings = @($Fixtures | Where-Object { $_.Engine -eq $engine } | ForEach-Object { $_.CipherText.Length - $_.CipherText.TrimEnd("=").Length } | Sort-Object -Unique)
+                $paddings | Should -Be @(0, 1, 2)
+            }
+            foreach ($fixture in $Fixtures) {
+                ($fixture.CipherText.Length - $fixture.CipherText.TrimEnd("=").Length) | Should -Be $fixture.Padding
+            }
+        }
+
+        It "decrypts the CMS's own cipher text (<name>: <engine>, <padding> padding, <key> key)" -ForEach $script:cmsCipherFixtures {
+            $keyBytes = Get-RestoreSmokeDataStoreAesKey -EncryptionKey (Resolve-TestDataStoreKey $Key)
+
+            $result = ConvertFrom-RestoreSmokeDataStoreCipherText -CipherText $CipherText -Key $keyBytes
+
+            $result.Reason | Should -BeNullOrEmpty
+            $result.PlainText | Should -BeExactly $PlainText
+        }
+
+        It "reproduces the CMS cipher text byte for byte with this file's encryptor and the fixture's IV (<name>)" -ForEach $script:cmsCipherFixtures {
+            $iv = [byte[]]([System.Convert]::FromBase64String($CipherText)[0..15])
+
+            New-TestCmsCipherText -PlainText $PlainText -Key (Resolve-TestDataStoreKey $Key) -InitializationVector $iv | Should -BeExactly $CipherText
+        }
+
+        It "derives the key as CMS does: padded with '0' to 32 characters, then its first 32, as UTF-8" {
+            $short = Get-RestoreSmokeDataStoreAesKey -EncryptionKey $script:shortDataStoreKey
+            $long = Get-RestoreSmokeDataStoreAesKey -EncryptionKey $script:dataStoreKey
+
+            $short.GetType().Name | Should -Be "Byte[]"
+            [System.Text.Encoding]::UTF8.GetString($short) | Should -BeExactly "short-test-key000000000000000000"
+            [System.Text.Encoding]::UTF8.GetString($long) | Should -BeExactly "RestoreSmokeProbe-TestKey-012345"
+        }
+
+        It "decrypts with any key that shares the CMS key's first 32 characters" -ForEach @($script:cmsCipherFixtures[0]) {
+            $keyBytes = Get-RestoreSmokeDataStoreAesKey -EncryptionKey ($script:dataStoreKey + "-ignored-suffix")
+
+            (ConvertFrom-RestoreSmokeDataStoreCipherText -CipherText $CipherText -Key $keyBytes).PlainText | Should -BeExactly $PlainText
+        }
+
+        It "refuses a <case> key before examining any data store" -ForEach @(
+            @{ Case = "empty"; Key = "" }
+            @{ Case = "blank"; Key = "   " }
+        ) {
+            $expected = "Data store selection needs DMS_CONFIG_DATABASE_ENCRYPTION_KEY, the key CMS encrypts data store connection strings with, but it is not set."
+
+            { Get-RestoreSmokeDataStoreAesKey -EncryptionKey $Key } | Should -Throw -ExpectedMessage $expected
+            { Select-RestoreSmokeDataStore -DataStores @(New-TestDataStore -Id 3) -TargetDatabaseName $script:target -DatabaseEngine postgresql -EncryptionKey $Key } |
+                Should -Throw -ExpectedMessage $expected
+        }
+
+        It "refuses a key whose first 32 characters are not 32 UTF-8 bytes, without echoing it" {
+            $key = ([string][char]0x00E9 * 4) + "-" + ("x" * 40)
+
+            $failure = $null
+            try {
+                Get-RestoreSmokeDataStoreAesKey -EncryptionKey $key
+            }
+            catch {
+                $failure = $_.Exception.Message
+            }
+
+            $failure | Should -BeExactly "DMS_CONFIG_DATABASE_ENCRYPTION_KEY does not derive a 32-byte AES key: its first 32 characters encode to 36 UTF-8 bytes."
+            $failure.Contains([string][char]0x00E9) | Should -BeFalse
+        }
+
+        It "does not select a data store whose connection string is <case>, and names no secret" -ForEach @(
+            @{ Case = "plaintext (no fallback)"; Value = "plaintext"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string is not CMS Base64 cipher text" }
+            @{ Case = "not Base64"; Value = "not-base64"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string is not CMS Base64 cipher text" }
+            @{ Case = "the Base64 of an unencrypted connection string"; Value = "base64-plaintext"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string cipher text is truncated or malformed (103 bytes; expected a 16-byte IV and whole 16-byte AES blocks)" }
+            @{ Case = "truncated mid-block"; Value = "truncated"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string cipher text is truncated or malformed (123 bytes; expected a 16-byte IV and whole 16-byte AES blocks)" }
+            @{ Case = "an IV without cipher text"; Value = "iv-only"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string cipher text is truncated or malformed (16 bytes; expected a 16-byte IV and whole 16-byte AES blocks)" }
+            @{ Case = "missing its final block"; Value = "final-block-dropped"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string could not be decrypted with DMS_CONFIG_DATABASE_ENCRYPTION_KEY" }
+            @{ Case = "encrypted under another key"; Value = "wrong-key"; Fixture = $script:cmsCipherFixtures[0]; Reason = "its connection string could not be decrypted with DMS_CONFIG_DATABASE_ENCRYPTION_KEY" }
+        ) {
+            $fixture = $Fixture
+            $payload = [System.Convert]::FromBase64String($fixture.CipherText)
+            $key = $script:dataStoreKey
+            $value = switch ($Value) {
+                "plaintext" { $fixture.PlainText }
+                "not-base64" { "not*base64!" }
+                "base64-plaintext" { [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($fixture.PlainText)) }
+                "truncated" { [System.Convert]::ToBase64String([byte[]]$payload[0..122]) }
+                "iv-only" { [System.Convert]::ToBase64String([byte[]]$payload[0..15]) }
+                "final-block-dropped" { [System.Convert]::ToBase64String([byte[]]$payload[0..111]) }
+                "wrong-key" { $key = $script:shortDataStoreKey; $fixture.CipherText }
+            }
+            $stores = @(New-TestDataStore -Id 3 -ConnectionString $value -Raw)
+
+            $failure = $null
+            try {
+                Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine postgresql -EncryptionKey $key
+            }
+            catch {
+                $failure = $_.Exception.Message
+            }
+
+            $failure | Should -BeExactly "No route-unqualified data store targets the restored database 'edfi_datamanagementservice' (1 listed: id=3 name='Local Development Data Store': $Reason)."
+            foreach ($secret in @($script:dataStoreKey, $script:shortDataStoreKey, $fixture.CipherText, $value, "Pg-S3cret!", "dms-postgresql")) {
+                $failure.Contains($secret) | Should -BeFalse
+            }
+            $failure | Should -Not -Match '(?i)padding|cryptograph|exception|base-64 string'
+        }
+
+        It "selects the data store from the CMS's own <engine> cipher text and records no secret (<name>)" -ForEach $script:cmsCipherFixtures {
+            $key = Resolve-TestDataStoreKey $Key
+            $stores = @(New-TestDataStore -Id 3 -ConnectionString $CipherText -Raw)
+
+            $result = Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine $Engine -EncryptionKey $key
+
+            $result.DataStoreId | Should -Be 3
+            $result.Candidates[0].DatabaseName | Should -BeExactly $script:target
+            $result.Candidates[0].Reason | Should -BeExactly "route-unqualified $Engine data store for '$($script:target)'"
+            $json = $result | ConvertTo-Json -Depth 6
+            foreach ($secret in @($key, $CipherText, $PlainText, "S3cret")) {
+                $json.Contains($secret) | Should -BeFalse
+            }
         }
     }
 
@@ -1946,7 +2199,7 @@ Describe "Served-data API probe" {
                 New-TestDataStore -Id 3
             )
 
-            $result = Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine postgresql
+            $result = Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine postgresql -EncryptionKey $script:dataStoreKey
 
             $result.DataStoreId | Should -Be 3
             $result.Name | Should -Be "Local Development Data Store"
@@ -1969,7 +2222,7 @@ Describe "Served-data API probe" {
                 New-TestDataStore -Id 2 -ConnectionString $script:mssqlConnection
             )
 
-            $result = Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine $Engine
+            $result = Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine $Engine -EncryptionKey $script:dataStoreKey
 
             $result.DataStoreId | Should -Be $SelectedId
             @($result.Candidates | Where-Object { -not $_.Selected }).Reason | Should -Be $OtherReason
@@ -1978,18 +2231,18 @@ Describe "Served-data API probe" {
         It "accepts the SqlClient synonyms Data Source and Initial Catalog" {
             $stores = @(New-TestDataStore -Id 5 -ConnectionString "Data Source=dms-mssql,1433;Initial Catalog=edfi_datamanagementservice;User Id=sa;Password=Ms-S3cret!")
 
-            (Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine mssql).DataStoreId | Should -Be 5
+            (Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine mssql -EncryptionKey $script:dataStoreKey).DataStoreId | Should -Be 5
         }
 
         It "fails when CMS lists no data store" {
-            { Select-RestoreSmokeDataStore -DataStores @() -TargetDatabaseName $script:target -DatabaseEngine postgresql } |
+            { Select-RestoreSmokeDataStore -DataStores @() -TargetDatabaseName $script:target -DatabaseEngine postgresql -EncryptionKey $script:dataStoreKey } |
                 Should -Throw -ExpectedMessage "No route-unqualified data store targets the restored database 'edfi_datamanagementservice' (0 listed)."
         }
 
         It "fails when the only data store for the target is route-qualified" {
             $stores = @(New-TestDataStore -Id 4 -Contexts @([pscustomobject]@{ contextKey = "schoolYear"; contextValue = "2025" }))
 
-            { Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine postgresql } |
+            { Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine postgresql -EncryptionKey $script:dataStoreKey } |
                 Should -Throw -ExpectedMessage "No route-unqualified data store targets the restored database 'edfi_datamanagementservice' (1 listed: id=4 name='Local Development Data Store': it is route-qualified (schoolYear=2025))."
         }
 
@@ -1999,7 +2252,7 @@ Describe "Served-data API probe" {
                 New-TestDataStore -Id 7 -Name "Duplicate"
             )
 
-            { Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine postgresql } |
+            { Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine postgresql -EncryptionKey $script:dataStoreKey } |
                 Should -Throw -ExpectedMessage "2 route-unqualified data stores target the restored database 'edfi_datamanagementservice' (ids 4, 7); the probe needs exactly one.*"
         }
 
@@ -2019,7 +2272,7 @@ Describe "Served-data API probe" {
 
             $failure = $null
             try {
-                Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine postgresql
+                Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine postgresql -EncryptionKey $script:dataStoreKey
             }
             catch {
                 $failure = $_.Exception.Message
@@ -2031,7 +2284,7 @@ Describe "Served-data API probe" {
         It "does not select a SQL Server data store that names two databases" {
             $stores = @(New-TestDataStore -Id 3 -ConnectionString "Server=dms-mssql,1433;Database=edfi_datamanagementservice;Initial Catalog=edfi_other;User Id=sa;Password=Ms-S3cret!")
 
-            { Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine mssql } |
+            { Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine mssql -EncryptionKey $script:dataStoreKey } |
                 Should -Throw -ExpectedMessage "*: its connection string names 2 databases)."
         }
 
@@ -2044,16 +2297,20 @@ Describe "Served-data API probe" {
 
             $failure = $null
             try {
-                Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine postgresql
+                Select-RestoreSmokeDataStore -DataStores $stores -TargetDatabaseName $script:target -DatabaseEngine postgresql -EncryptionKey $script:dataStoreKey
             }
             catch {
                 $failure = $_.Exception.Message
             }
-            $selected = Select-RestoreSmokeDataStore -DataStores @($stores[0], $stores[1]) -TargetDatabaseName $script:target -DatabaseEngine postgresql | ConvertTo-Json -Depth 6
+            $selected = Select-RestoreSmokeDataStore -DataStores @($stores[0], $stores[1]) -TargetDatabaseName $script:target -DatabaseEngine postgresql -EncryptionKey $script:dataStoreKey | ConvertTo-Json -Depth 6
 
             foreach ($text in @($failure, $selected)) {
                 $text | Should -Not -BeNullOrEmpty
                 $text | Should -Not -Match '(?i)password|Pg-S3cret|Ms-S3cret|dms-postgresql|dms-mssql'
+                $text.Contains($script:dataStoreKey) | Should -BeFalse
+                foreach ($store in $stores) {
+                    $text.Contains([string]$store.connectionString) | Should -BeFalse
+                }
             }
         }
     }
@@ -2230,6 +2487,65 @@ Describe "Served-data API probe" {
             { Test-RestoreSmokeApiRead @script:readArguments } | Should -Throw -ExpectedMessage $Expected
             @($global:RestoreSmokeApiTest.Calls) | Should -Be @("Get-CmsToken", "Get-DataStore")
             $script:session.Token | Should -BeNullOrEmpty
+        }
+
+        It "selects through the stack's own env-file key, Resolve-RestoreSmokeApiEndpoint to the read (<name>)" -ForEach $script:cmsCipherFixtures {
+            $key = Resolve-TestDataStoreKey $Key
+            $file = Join-Path $TestDrive "probe-$Name.env"
+            Set-Content -LiteralPath $file -Value @(
+                "DMS_HTTP_PORTS=18080"
+                "DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081"
+                "DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=Admin-S3cret!"
+                "DMS_CONFIG_DATABASE_ENCRYPTION_KEY=$key"
+            )
+            $global:RestoreSmokeApiTest.DataStores = @(New-TestDataStore -Id 3 -ConnectionString $CipherText -Raw)
+
+            $endpoint = Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $file
+            $result = Test-RestoreSmokeApiRead -Session $script:session -Endpoint $endpoint -TargetDatabaseName $script:target -DatabaseEngine $Engine
+
+            $result.DataStoreId | Should -Be 3
+            $result.Reads[0].Count | Should -Be 3
+            @($global:RestoreSmokeApiTest.Calls) | Should -Be @("Get-CmsToken", "Get-DataStore", "Get-SmokeTestCredential", "Wait-CmsClientAvailable", "Get-DmsToken", "GET $script:descriptorUri")
+            $evidence = @($result, $script:session.DataStore) | ConvertTo-Json -Depth 8
+            foreach ($secret in @($key, $CipherText, $PlainText, "S3cret")) {
+                $evidence.Contains($secret) | Should -BeFalse
+            }
+        }
+
+        It "fails before creating any credential when the stack's key does not decrypt the CMS value, naming no secret" -ForEach @($script:cmsCipherFixtures[0]) {
+            $file = Join-Path $TestDrive "probe-wrong-key.env"
+            Set-Content -LiteralPath $file -Value @(
+                "DMS_HTTP_PORTS=18080"
+                "DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081"
+                "DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=Admin-S3cret!"
+                "DMS_CONFIG_DATABASE_ENCRYPTION_KEY=$($script:shortDataStoreKey)"
+            )
+            $global:RestoreSmokeApiTest.DataStores = @(New-TestDataStore -Id 3 -ConnectionString $CipherText -Raw)
+            $endpoint = Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $file
+
+            $failure = $null
+            try {
+                Test-RestoreSmokeApiRead -Session $script:session -Endpoint $endpoint -TargetDatabaseName $script:target -DatabaseEngine postgresql
+            }
+            catch {
+                $failure = $_.Exception.Message
+            }
+
+            $failure | Should -BeExactly "No route-unqualified data store targets the restored database 'edfi_datamanagementservice' (1 listed: id=3 name='Local Development Data Store': its connection string could not be decrypted with DMS_CONFIG_DATABASE_ENCRYPTION_KEY)."
+            foreach ($secret in @($script:dataStoreKey, $script:shortDataStoreKey, $CipherText, $PlainText, "S3cret")) {
+                $failure.Contains($secret) | Should -BeFalse
+            }
+            @($global:RestoreSmokeApiTest.Calls) | Should -Be @("Get-CmsToken", "Get-DataStore")
+            $script:session.Token | Should -BeNullOrEmpty
+        }
+
+        It "fails clearly when the endpoint carries no data store encryption key" {
+            $endpoint = New-TestEndpoint
+            $endpoint.DataStoreEncryptionKey = $null
+
+            { Test-RestoreSmokeApiRead -Session $script:session -Endpoint $endpoint -TargetDatabaseName $script:target -DatabaseEngine postgresql } |
+                Should -Throw -ExpectedMessage "Data store selection needs DMS_CONFIG_DATABASE_ENCRYPTION_KEY, the key CMS encrypts data store connection strings with, but it is not set."
+            @($global:RestoreSmokeApiTest.Calls) | Should -Be @("Get-CmsToken", "Get-DataStore")
         }
 
         It "fails without any read when <step> fails" -ForEach @(

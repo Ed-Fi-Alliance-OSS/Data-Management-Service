@@ -64,6 +64,10 @@ $script:PublishedDmsRepository = "edfialliance/ed-fi-api"
 Import-Module (Join-Path $PSScriptRoot "../env-utility.psm1")
 Import-Module (Join-Path $PSScriptRoot "../../smoke_test/modules/SmokeTest.psm1")
 Import-Module (Join-Path $PSScriptRoot "../../Dms-Management.psm1")
+# The data store encryption key is read with the Compose-equivalent resolver provision-dms-schema.ps1
+# uses for the same key (Get-ComposeResolvedEnvValue): an ambient value wins over the env file, as it
+# does for the containers Compose starts.
+Import-Module (Join-Path $PSScriptRoot "../database-safety.psm1")
 # The SourceIdentity proof uses the restore consumer's own SQL and MSSQL MOVE builders
 # (Get-SourceIdentitySelectSql, ConvertFrom-MssqlBackupFileList, New-MssqlRestoreMoveClause).
 Import-Module (Join-Path $PSScriptRoot "../../DatabaseTemplates/Template-RestoreCore.psm1")
@@ -1572,6 +1576,10 @@ function Resolve-RestoreSmokeApiEndpoint {
     Resolve-BootstrapAdminClient). The engine, Data Standard, and image overlays the wrappers compose
     set none of these keys. A multi-tenant stack is refused: its data stores are tenant-scoped and
     its DMS routes carry a tenant segment, which the probe does not model.
+
+    It also returns the stack's DMS_CONFIG_DATABASE_ENCRYPTION_KEY (DataStoreEncryptionKey): CMS
+    returns every data store connection string as Base64 AES cipher text under that key, so data
+    store selection needs it. A stack without it is refused. The value is never logged or recorded.
     #>
     param(
         [Parameter(Mandatory)]
@@ -1584,10 +1592,16 @@ function Resolve-RestoreSmokeApiEndpoint {
         throw "The served-data probe supports only a single-tenant stack, but DMS_CONFIG_MULTI_TENANCY is '$(ConvertTo-RestoreSmokeLogSafeText $multiTenancy)' in '$EnvironmentFile'."
     }
 
+    $encryptionKey = [string](Get-ComposeResolvedEnvValue -EnvironmentValues $values -Name "DMS_CONFIG_DATABASE_ENCRYPTION_KEY")
+    if ([string]::IsNullOrWhiteSpace($encryptionKey)) {
+        throw "The served-data probe needs DMS_CONFIG_DATABASE_ENCRYPTION_KEY, the key CMS encrypts data store connection strings with, but it is not set for the stack started from '$EnvironmentFile'."
+    }
+
     return [pscustomobject]@{
-        CmsUrl      = ([string](Resolve-CmsBaseUrl -EnvValues $values)).TrimEnd("/")
-        DmsUrl      = ([string](Resolve-DockerLocalDmsBaseUrl -EnvValues $values)).TrimEnd("/")
-        AdminClient = Resolve-BootstrapAdminClient -EnvValues $values
+        CmsUrl                 = ([string](Resolve-CmsBaseUrl -EnvValues $values)).TrimEnd("/")
+        DmsUrl                 = ([string](Resolve-DockerLocalDmsBaseUrl -EnvValues $values)).TrimEnd("/")
+        AdminClient            = Resolve-BootstrapAdminClient -EnvValues $values
+        DataStoreEncryptionKey = $encryptionKey
     }
 }
 
@@ -1627,6 +1641,98 @@ function Reset-RestoreSmokeApiSession {
     $Session.StackGeneration++
 }
 
+function Get-RestoreSmokeDataStoreAesKey {
+    <#
+    .SYNOPSIS
+    The AES key CMS derives from DMS_CONFIG_DATABASE_ENCRYPTION_KEY, exactly as
+    ConnectionStringEncryptionService does: the key string padded with '0' to 32 characters, cut to
+    its first 32, then UTF-8 encoded. Throws for a blank key, or for one whose first 32 characters
+    do not encode to 32 bytes (CMS cannot use such a key either). Messages never carry the key.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$EncryptionKey
+    )
+
+    if ([string]::IsNullOrWhiteSpace($EncryptionKey)) {
+        throw "Data store selection needs DMS_CONFIG_DATABASE_ENCRYPTION_KEY, the key CMS encrypts data store connection strings with, but it is not set."
+    }
+    $keyBytes = [System.Text.Encoding]::UTF8.GetBytes($EncryptionKey.PadRight(32, [char]'0').Substring(0, 32))
+    if ($keyBytes.Length -ne 32) {
+        throw "DMS_CONFIG_DATABASE_ENCRYPTION_KEY does not derive a 32-byte AES key: its first 32 characters encode to $($keyBytes.Length) UTF-8 bytes."
+    }
+    return , $keyBytes
+}
+
+function ConvertFrom-RestoreSmokeDataStoreCipherText {
+    <#
+    .SYNOPSIS
+    Decrypts one connection string as a CMS data store response carries it: Base64 of a 16-byte IV
+    followed by AES-CBC/PKCS7 cipher text (ConnectionStringEncryptionService.Decrypt). Returns
+    PlainText, or a Reason when the value is not Base64, is too short or not whole AES blocks, does not
+    decrypt under the key, or does not decrypt to UTF-8 text. Plaintext input is rejected, never parsed
+    as a fallback. A Reason never carries the key, the value, its plaintext, or exception text.
+    #>
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$CipherText,
+
+        [Parameter(Mandatory)]
+        [byte[]]$Key
+    )
+
+    $result = [pscustomobject]@{ PlainText = $null; Reason = $null }
+    $payload = $null
+    try {
+        $payload = [System.Convert]::FromBase64String([string]$CipherText)
+    }
+    catch {
+        $result.Reason = "its connection string is not CMS Base64 cipher text"
+        return $result
+    }
+    if ($payload.Length -lt 32 -or ($payload.Length % 16) -ne 0) {
+        $result.Reason = "its connection string cipher text is truncated or malformed ($($payload.Length) bytes; expected a 16-byte IV and whole 16-byte AES blocks)"
+        return $result
+    }
+
+    $iv = [byte[]]::new(16)
+    [System.Array]::Copy($payload, 0, $iv, 0, 16)
+    $plainTextBytes = $null
+    $aes = [System.Security.Cryptography.Aes]::Create()
+    try {
+        $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
+        $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
+        $aes.Key = $Key
+        $aes.IV = $iv
+        $decryptor = $aes.CreateDecryptor()
+        try {
+            $plainTextBytes = $decryptor.TransformFinalBlock($payload, 16, $payload.Length - 16)
+        }
+        finally {
+            $decryptor.Dispose()
+        }
+    }
+    catch {
+        $result.Reason = "its connection string could not be decrypted with DMS_CONFIG_DATABASE_ENCRYPTION_KEY"
+        return $result
+    }
+    finally {
+        $aes.Dispose()
+    }
+
+    try {
+        # Strict decoding: bytes that are not UTF-8 mean the key was wrong even though the padding
+        # happened to verify.
+        $result.PlainText = [System.Text.UTF8Encoding]::new($false, $true).GetString($plainTextBytes)
+    }
+    catch {
+        $result.Reason = "its connection string did not decrypt to UTF-8 text with DMS_CONFIG_DATABASE_ENCRYPTION_KEY"
+    }
+    return $result
+}
+
 function Select-RestoreSmokeDataStore {
     <#
     .SYNOPSIS
@@ -1634,6 +1740,11 @@ function Select-RestoreSmokeDataStore {
     form and names the restored target database. No match, or more than one, throws, listing every
     data store by id and name with the reason it was or was not selected. Connection strings carry
     credentials, so only the parsed database name is ever reported.
+
+    CMS returns each connection string as Base64 AES cipher text, so each one is decrypted with
+    -EncryptionKey (the stack's DMS_CONFIG_DATABASE_ENCRYPTION_KEY) before it is parsed. A value
+    that does not decrypt is not selected, with a reason that names no key or value. A blank key throws
+    before any data store is examined.
     #>
     param(
         [AllowNull()]
@@ -1645,8 +1756,14 @@ function Select-RestoreSmokeDataStore {
 
         [Parameter(Mandatory)]
         [ValidateSet("postgresql", "mssql")]
-        [string]$DatabaseEngine
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]$EncryptionKey
     )
+
+    $keyBytes = Get-RestoreSmokeDataStoreAesKey -EncryptionKey $EncryptionKey
 
     # The keys configure-local-data-store.ps1 writes: host/database for PostgreSQL, Server/Database
     # for SQL Server (Data Source / Initial Catalog are the SqlClient synonyms).
@@ -1687,11 +1804,17 @@ function Select-RestoreSmokeDataStore {
             continue
         }
 
-        $connectionString = [string](Get-RestoreSmokeEvidenceValue $dataStore "connectionString")
-        if ([string]::IsNullOrWhiteSpace($connectionString)) {
+        $cipherText = [string](Get-RestoreSmokeEvidenceValue $dataStore "connectionString")
+        if ([string]::IsNullOrWhiteSpace($cipherText)) {
             $record.Reason = "CMS returned no connection string for it"
             continue
         }
+        $decrypted = ConvertFrom-RestoreSmokeDataStoreCipherText -CipherText $cipherText -Key $keyBytes
+        if ($null -ne $decrypted.Reason) {
+            $record.Reason = $decrypted.Reason
+            continue
+        }
+        $connectionString = $decrypted.PlainText
         $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
         try {
             # The setter, not property syntax: PowerShell adapts the builder as a dictionary, so
@@ -1847,6 +1970,7 @@ function Test-RestoreSmokeApiRead {
     }
 
     $adminSecret = [string]$Endpoint.AdminClient.ClientSecret
+    $encryptionKey = [string](Get-RestoreSmokeEvidenceValue $Endpoint "DataStoreEncryptionKey")
     $tokenReused = $null -ne $Session.Token
     if (-not $tokenReused) {
         $cmsToken = $null
@@ -1855,9 +1979,9 @@ function Test-RestoreSmokeApiRead {
             $dataStores = @(Get-DataStore -CmsUrl $Endpoint.CmsUrl -AccessToken $cmsToken)
         }
         catch {
-            throw "The served-data probe could not list the CMS data stores: $(ConvertTo-RestoreSmokeRedactedText $_.Exception.Message -Secret @($adminSecret, $cmsToken))"
+            throw "The served-data probe could not list the CMS data stores: $(ConvertTo-RestoreSmokeRedactedText $_.Exception.Message -Secret @($adminSecret, $cmsToken, $encryptionKey))"
         }
-        $selection = Select-RestoreSmokeDataStore -DataStores $dataStores -TargetDatabaseName $TargetDatabaseName -DatabaseEngine $DatabaseEngine
+        $selection = Select-RestoreSmokeDataStore -DataStores $dataStores -TargetDatabaseName $TargetDatabaseName -DatabaseEngine $DatabaseEngine -EncryptionKey $encryptionKey
 
         $applicationSecret = $null
         $token = $null
@@ -1869,7 +1993,7 @@ function Test-RestoreSmokeApiRead {
             $token = Get-DmsToken -DmsUrl $Endpoint.DmsUrl -Key ([string]$credential.Key) -Secret $applicationSecret
         }
         catch {
-            throw "The served-data probe could not obtain a DMS token for data store $($selection.DataStoreId): $(ConvertTo-RestoreSmokeRedactedText $_.Exception.Message -Secret @($adminSecret, $cmsToken, $applicationSecret, $token))"
+            throw "The served-data probe could not obtain a DMS token for data store $($selection.DataStoreId): $(ConvertTo-RestoreSmokeRedactedText $_.Exception.Message -Secret @($adminSecret, $cmsToken, $applicationSecret, $token, $encryptionKey))"
         }
         if ([string]::IsNullOrWhiteSpace([string]$token)) {
             throw "The served-data probe received no DMS token for data store $($selection.DataStoreId)."
@@ -3904,6 +4028,8 @@ Export-ModuleMember -Function `
     Resolve-RestoreSmokeApiEndpoint, `
     New-RestoreSmokeApiSession, `
     Reset-RestoreSmokeApiSession, `
+    Get-RestoreSmokeDataStoreAesKey, `
+    ConvertFrom-RestoreSmokeDataStoreCipherText, `
     Select-RestoreSmokeDataStore, `
     Get-RestoreSmokeJsonArrayLength, `
     Test-RestoreSmokeApiRead, `
