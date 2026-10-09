@@ -83,11 +83,13 @@
     first proves absent, takes each image's identity from the build's own --iidfile, forwards the
     run tags to the selected wrapper through a smoke-owned env file, removes only those tags at the
     end, and records what each started stack actually ran (docker inspect), the built package and
-    its attestation, the effective
-    SCHEMA_PACKAGES, and the worktree revision and status at start and end. The results JSON
-    classifies the run: it is final evidence only when every one of those was observed and
-    matched, the worktree was clean throughout, and -ExploratoryPackage was not set; otherwise it
-    lists the reasons it is not.
+    its attestation, the package selection each started stack's active workspace staged (the
+    workspace manifest's schema.selectedPackages, bound to the stack start that produced it), and
+    the worktree revision and status at start and end. When a restore keeps an unchanged
+    workspace, the smoke observes that retained staged selection; it does not independently prove
+    the whole workspace tree equal. The results JSON classifies the run: it is final evidence only
+    when every one of those was observed and matched, the worktree was clean throughout, and
+    -ExploratoryPackage was not set; otherwise it lists the reasons it is not.
 
     Served data: every successful restore is also read back through the DMS API with a bearer
     token. The bootstrap admin client lists the CMS data stores; exactly one route-unqualified data
