@@ -39,6 +39,31 @@ internal static class SchemaRestampTestHelper
         return builder.Build(success.NormalizedNodes).EffectiveSchema;
     }
 
+    internal static (int ExitCode, string Output, string Error) RunRestamp(
+        string connectionString,
+        string dialect,
+        bool migrationCompleted,
+        params string[] schemaPaths
+    )
+    {
+        List<string> arguments =
+        [
+            "ddl",
+            "re-stamp",
+            "--schema",
+            .. schemaPaths,
+            "--connection-string",
+            connectionString,
+            "--dialect",
+            dialect,
+        ];
+        if (migrationCompleted)
+        {
+            arguments.Add("--migration-completed");
+        }
+        return CliTestHelper.RunCli([.. arguments]);
+    }
+
     internal static void SetOldHash(DbConnection connection, string dialect, string oldHash)
     {
         var parent = Table(dialect, "EffectiveSchema");
