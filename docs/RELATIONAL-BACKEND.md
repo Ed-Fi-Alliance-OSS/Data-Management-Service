@@ -611,3 +611,14 @@ This exception does not change the fresh-database developer loop above, hot
 reload behavior, the release cadence for `RelationalMappingVersion`, or the
 reprovisioning requirements for changes that are not compatible fingerprint
 transitions. See the [schema tools command reference](../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#ddl-re-stamp--record-a-validated-physical-schema-migration).
+
+For compatible metadata transitions, this command replaces the manual
+EffectiveSchema/SchemaComponent re-key in [PR #1121's historical migration procedure](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/pull/1121).
+Use the target binary's exact core and extension schema inputs; the ApiSchema
+format, resource-key seed fingerprint, ResourceKey ID/name/version mappings,
+and component endpoint/name/version/extension flags must remain identical.
+Keep any independently applicable physical migration DDL and validate it before
+re-stamping. The historical procedure's mapping-version references and physical
+DDL do not constitute a complete upgrade to today's schema; current release
+policy retains `RelationalMappingVersion = "v3"` for 8.1. A same-hash no-op cannot
+repair a stale physical database or template.

@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
-using System.Runtime.ExceptionServices;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.SchemaTools.Provisioning;
 using Microsoft.Data.SqlClient;
@@ -160,9 +159,9 @@ public sealed class SchemaRestamper : ISchemaRestamper
                 );
             }
 
-            if (exception is SchemaRestampException restampException)
+            if (exception is SchemaRestampException)
             {
-                throw restampException;
+                throw;
             }
 
             throw Classify(exception, transaction is null, cancellationToken);
@@ -425,7 +424,7 @@ public sealed class SchemaRestamper : ISchemaRestamper
         {
             result = await operation(resource);
         }
-        catch (Exception exception)
+        catch (Exception)
         {
             try
             {
@@ -436,7 +435,6 @@ public sealed class SchemaRestamper : ISchemaRestamper
                 // Keep cleanup from replacing the operation's primary failure.
             }
 
-            ExceptionDispatchInfo.Capture(exception).Throw();
             throw;
         }
 
@@ -535,16 +533,14 @@ public sealed class SchemaRestamper : ISchemaRestamper
 
     private static bool HasInnerTimeoutException(Exception exception)
     {
-        for (
-            Exception? current = exception.InnerException;
-            current is not null;
-            current = current.InnerException
-        )
+        var current = exception;
+        while (current.InnerException is { } inner)
         {
-            if (current is TimeoutException)
+            if (inner is TimeoutException)
             {
                 return true;
             }
+            current = inner;
         }
 
         return false;

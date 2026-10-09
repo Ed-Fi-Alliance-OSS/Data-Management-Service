@@ -455,9 +455,9 @@ The DDL generation utility is a **provisioning** tool, not a schema migration en
 
 ### Create-only (no migrations / upgrades)
 
-- The utility targets **new/empty** databases only.
-- There is **no upgrade/migration** capability and no support for evolving an already-provisioned database from one `EffectiveSchemaHash` to another.
-- The utility is not required to preserve data or compute diffs/reconcile drift for previously provisioned databases.
+- Ordinary `ddl provision` targets **new/empty** databases and same-hash reruns.
+- Ordinary provisioning has **no upgrade/migration** capability and cannot evolve an already-provisioned database from one `EffectiveSchemaHash` to another. The separate, bounded `ddl re-stamp` metadata operation described below records an independently completed physical migration.
+- Ordinary provisioning is not required to compute diffs/reconcile drift for previously provisioned databases; same-hash reruns retain the preservation safeguards defined in this design.
 
 DMS-1404 keeps the current 8.1 `RelationalMappingVersion` at `v3`, following the once-per-release
 cadence. `EffectiveSchemaHash` excludes generated DDL and mapping-set output, so a mapping-only

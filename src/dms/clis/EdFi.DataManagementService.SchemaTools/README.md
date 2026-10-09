@@ -206,6 +206,13 @@ after an operator has independently completed and validated a physical,
 data-preserving migration. It does not execute migration DDL or certify that the
 database's physical objects match the supplied schema.
 
+Supported transitions require the same ApiSchema format version, resource-key
+count and seed hash, every ResourceKey ID/name/version mapping, and every
+component endpoint/name/version/extension flag. Only the effective hash and its
+component associations may change. Adding or removing resources or projects,
+changing their versions, or converting schema formats requires a separately
+supported migration; this command rejects those metadata changes.
+
 ```bash
 api-schema-tools ddl re-stamp --schema <paths...> --connection-string <connstr> --dialect <dialect> --migration-completed [--timeout <seconds>]
 ```

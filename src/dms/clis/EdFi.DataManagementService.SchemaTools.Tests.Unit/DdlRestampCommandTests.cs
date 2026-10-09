@@ -439,31 +439,7 @@ public class Given_SchemaRestamp_Command
         return await DdlRestampCommand.InvokeAsync(parseResult, _output, _error, cancellationToken);
     }
 
-    private static string MinimalSchemaPath
-    {
-        get
-        {
-            var current = new DirectoryInfo(AppContext.BaseDirectory);
-            while (current is not null)
-            {
-                var candidate = Path.Combine(
-                    current.FullName,
-                    "src",
-                    "dms",
-                    "clis",
-                    "EdFi.DataManagementService.SchemaTools.Tests.Integration",
-                    "Fixtures",
-                    "minimal-api-schema.json"
-                );
-                if (File.Exists(candidate))
-                {
-                    return candidate;
-                }
-                current = current.Parent;
-            }
-            throw new DirectoryNotFoundException("The minimal schema fixture could not be located.");
-        }
-    }
+    private static string MinimalSchemaPath => FindRepositoryFile("minimal-api-schema.json");
 
     private static string MinimalAlternateSchemaPath => FindRepositoryFile("minimal-api-schema-alt.json");
 
