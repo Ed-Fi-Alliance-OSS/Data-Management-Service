@@ -165,6 +165,34 @@ api-schema-tools ddl provision -s core/ApiSchema.json -s extensions/tpdm/ApiSche
 SQL Server RCSI configuration for newly created databases, and RCSI warnings for
 existing databases, run outside and before the generated DDL transaction.
 
+### `ddl re-stamp` — Record a validated physical schema migration
+
+This administrative operation changes the effective schema fingerprint metadata
+after an operator has independently completed and validated a physical,
+data-preserving migration. It does not execute migration DDL or certify that the
+database's physical objects match the supplied schema.
+
+```bash
+api-schema-tools ddl re-stamp --schema <paths...> --connection-string <connstr> --dialect <dialect> --migration-completed [--timeout <seconds>]
+```
+
+The command validates the existing fingerprint, resource-key seed and schema
+component metadata before it acts. A valid matching fingerprint is a read-only
+success and needs no confirmation. A changed fingerprint requires
+`--migration-completed`; it updates the parent hash and associated component
+hashes atomically while preserving the other metadata. It never creates or
+repairs missing metadata. A commit transport failure may leave the result
+uncertain; inspect the database and retry with the same schema inputs while
+services remain offline. A retry from a fully validated old stamp can apply the
+transition; a retry from the target stamp is a no-op.
+
+For a changed stamp, keep DMS and workers stopped, apply and validate the
+provider-specific physical migration, run `ddl re-stamp`, run ordinary
+`ddl provision` separately, then restart DMS and workers. Provisioning remains
+create-only and rejects an ordinary mismatched fingerprint. The operation does
+not guarantee rollback of the physical migration and makes no claim about CDC
+continuity. See the [schema fingerprint operations guide](../../../../docs/RELATIONAL-BACKEND.md#re-stamping-after-a-validated-physical-migration).
+
 Provisioning always creates the fixed `dms.DataStoreIdentity`, `dms.DocumentCache`,
 `dms.DocumentProjectionWork`, and `dms.DocumentCacheState` objects. Their physical shape
 is owned by

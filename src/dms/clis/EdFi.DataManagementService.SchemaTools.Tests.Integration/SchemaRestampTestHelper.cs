@@ -97,6 +97,53 @@ internal static class SchemaRestampTestHelper
         }
     }
 
+    internal static void InstallDmlRejectingTriggers(DbConnection connection, string dialect)
+    {
+        string[] statements = dialect switch
+        {
+            "pgsql" =>
+            [
+                """
+                    CREATE FUNCTION dms.reject_restamp_dml() RETURNS trigger LANGUAGE plpgsql AS $$
+                    BEGIN RAISE EXCEPTION 'DML rejected by re-stamp no-op test'; END; $$;
+                    """,
+                "CREATE TRIGGER reject_restamp_dml BEFORE INSERT OR UPDATE OR DELETE ON dms.\"EffectiveSchema\" FOR EACH ROW EXECUTE FUNCTION dms.reject_restamp_dml();",
+                "CREATE TRIGGER reject_restamp_dml BEFORE INSERT OR UPDATE OR DELETE ON dms.\"ResourceKey\" FOR EACH ROW EXECUTE FUNCTION dms.reject_restamp_dml();",
+                "CREATE TRIGGER reject_restamp_dml BEFORE INSERT OR UPDATE OR DELETE ON dms.\"SchemaComponent\" FOR EACH ROW EXECUTE FUNCTION dms.reject_restamp_dml();",
+            ],
+            "mssql" =>
+            [
+                "CREATE TRIGGER [dms].[reject_restamp_effective_schema] ON [dms].[EffectiveSchema] AFTER INSERT, UPDATE, DELETE AS THROW 51000, 'DML rejected by re-stamp no-op test', 1;",
+                "CREATE TRIGGER [dms].[reject_restamp_resource_key] ON [dms].[ResourceKey] AFTER INSERT, UPDATE, DELETE AS THROW 51000, 'DML rejected by re-stamp no-op test', 1;",
+                "CREATE TRIGGER [dms].[reject_restamp_schema_component] ON [dms].[SchemaComponent] AFTER INSERT, UPDATE, DELETE AS THROW 51000, 'DML rejected by re-stamp no-op test', 1;",
+            ],
+            _ => throw new ArgumentOutOfRangeException(nameof(dialect)),
+        };
+        foreach (var sql in statements)
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.ExecuteNonQuery();
+        }
+    }
+
+    internal static void InstallParentUpdateRejectingTrigger(DbConnection connection, string dialect)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = dialect switch
+        {
+            "pgsql" => """
+                CREATE FUNCTION dms.reject_restamp_parent_update() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN RAISE EXCEPTION 'parent update rejected by re-stamp rollback test'; END; $$;
+                CREATE TRIGGER reject_restamp_parent_update BEFORE UPDATE ON dms."EffectiveSchema" FOR EACH ROW EXECUTE FUNCTION dms.reject_restamp_parent_update();
+                """,
+            "mssql" =>
+                "CREATE TRIGGER [dms].[reject_restamp_parent_update] ON [dms].[EffectiveSchema] AFTER UPDATE AS THROW 51000, 'Parent update rejected by re-stamp rollback test', 1;",
+            _ => throw new ArgumentOutOfRangeException(nameof(dialect)),
+        };
+        command.ExecuteNonQuery();
+    }
+
     internal static (
         string Hash,
         string Format,

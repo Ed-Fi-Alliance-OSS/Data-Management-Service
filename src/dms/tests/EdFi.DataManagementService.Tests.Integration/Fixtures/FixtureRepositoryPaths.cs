@@ -43,6 +43,10 @@ internal static class FixtureRepositoryPaths
         [FixtureKey.AuthoritativeDs52Tpdm] = "src/dms/backend/Fixtures/authoritative/ds-5.2-tpdm",
         [FixtureKey.CursorPartitionContract] =
             "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/cursor-partition-contract",
+        [FixtureKey.SchemaRestampSource] =
+            "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/schema-restamp/source",
+        [FixtureKey.SchemaRestampTarget] =
+            "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/schema-restamp/target",
     };
 
     /// <summary>

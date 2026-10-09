@@ -132,6 +132,53 @@ public class Given_SchemaRestamp_Mssql_Compatible_Transition
     }
 
     [Test]
+    public async Task It_performs_no_metadata_dml_when_a_valid_match_has_dml_rejecting_triggers()
+    {
+        using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        SchemaRestampTestHelper.SetOldHash(connection, "mssql", _target.EffectiveSchemaHash);
+        SchemaRestampTestHelper.InsertComponents(connection, "mssql", _target, _target.EffectiveSchemaHash);
+        SchemaRestampTestHelper.InstallDmlRejectingTriggers(connection, "mssql");
+        var before = SchemaRestampTestHelper.Capture(connection, "mssql");
+
+        var result = await new SchemaRestamper(NullLogger.Instance).RestampAsync(
+            SqlDialect.Mssql,
+            _connectionString,
+            30,
+            _target,
+            false,
+            CancellationToken.None
+        );
+
+        result.Changed.Should().BeFalse();
+        SchemaRestampTestHelper.Capture(connection, "mssql").Should().BeEquivalentTo(before);
+    }
+
+    [Test]
+    public async Task It_rolls_back_deleted_children_when_the_parent_update_fails()
+    {
+        using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        SchemaRestampTestHelper.InstallParentUpdateRejectingTrigger(connection, "mssql");
+        var before = SchemaRestampTestHelper.Capture(connection, "mssql");
+
+        Func<Task> action = () =>
+            new SchemaRestamper(NullLogger.Instance).RestampAsync(
+                SqlDialect.Mssql,
+                _connectionString,
+                30,
+                _target,
+                true,
+                CancellationToken.None
+            );
+
+        (await action.Should().ThrowAsync<SchemaRestampException>())
+            .Which.Failure.Should()
+            .Be(SchemaRestampFailure.TransactionFailed);
+        SchemaRestampTestHelper.Capture(connection, "mssql").Should().BeEquivalentTo(before);
+    }
+
+    [Test]
     public async Task It_refuses_a_missing_singleton_without_creating_one()
     {
         using var connection = new SqlConnection(_connectionString);

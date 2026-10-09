@@ -42,6 +42,7 @@
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Tests.Common\EdFi.DataManagementService.Backend.Tests.Common.csproj" />
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Ddl\EdFi.DataManagementService.Backend.Ddl.csproj" />
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Tests.Integration.Common\EdFi.DataManagementService.Backend.Tests.Integration.Common.csproj" />
+        <ProjectReference Include="..\..\clis\EdFi.DataManagementService.SchemaTools\EdFi.DataManagementService.SchemaTools.csproj" />
     </ItemGroup>
     <ItemGroup>
         <Using Include="NUnit.Framework" />
