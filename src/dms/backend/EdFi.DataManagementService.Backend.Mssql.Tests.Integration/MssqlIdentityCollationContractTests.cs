@@ -200,6 +200,7 @@ public class Given_A_Mssql_Case_Sensitive_Default_Database_With_Identity_Collati
         await DeleteAcademicWeekRootAsync(academicWeekDocumentId);
         await ReinsertAcademicWeekRootAsync(academicWeekDocumentId, "WEEK ONE CASING");
 
+        // A collation conflict (Msg 468) between the tracked-change and live columns would throw here.
         TrackedChangeQueryResult result = await QueryAcademicWeekDeletesAsync(windowStart);
 
         result.Items.Should().BeEmpty();
@@ -221,20 +222,6 @@ public class Given_A_Mssql_Case_Sensitive_Default_Database_With_Identity_Collati
         result.TotalCount.Should().Be(1L);
         JsonObject keyValues = result.Items[0]!["keyValues"]!.AsObject();
         keyValues["weekIdentifier"]!.GetValue<string>().Should().Be("Week One Control");
-    }
-
-    [Test]
-    public async Task It_raises_no_collation_conflict()
-    {
-        long windowStart = await NextChangeVersionAsync();
-        long academicWeekDocumentId = await InsertAcademicWeekAsync("Week One Conflict");
-
-        await DeleteAcademicWeekRootAsync(academicWeekDocumentId);
-        await ReinsertAcademicWeekRootAsync(academicWeekDocumentId, "week one conflict");
-
-        Func<Task> query = () => QueryAcademicWeekDeletesAsync(windowStart);
-
-        await query.Should().NotThrowAsync<SqlException>();
     }
 
     [Test]
