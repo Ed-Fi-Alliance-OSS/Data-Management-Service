@@ -17,13 +17,17 @@
         has to name one published image can pin it. The moving tag is emitted first and is never
         dropped: deployments that follow it must keep following it.
 
-        The non-alpha branch is a faithful port of the shell it replaces, including that branch's
-        fixed-offset strip and its two-field minor form. It is reproduced rather than corrected
-        because nothing in this change publishes through it; on-prerelease.yml fires on
-        `prereleased`, and correcting a path this change does not exercise would be a release-policy
-        change wearing a refactor's clothes.
+        Which branch a ref takes is the classify-release job's decision (release-classification.psm1),
+        not the ref's spelling: an ordinary main build gets the moving tag, and a build for a v tag
+        gets the release tags. The release branch is a faithful port of the shell it replaces,
+        including its fixed-offset strip and its two-field minor form; for a dms-pre- ref the strip
+        removes exactly the prefix, so it yields the version.
     .PARAMETER ReleaseRef
         The release tag the workflow is running for, as github.ref_name reports it.
+    .PARAMETER TaggedRelease
+        "true" when the prerelease was built for a v tag, "false" for an ordinary main build, as
+        Write-PrereleaseClassification.ps1 writes it. Anything else, including the empty value a
+        skipped classify job leaves, is refused rather than guessed.
     .PARAMETER ImageName
         The image repository to tag, which the workflow reads from the IMAGE_NAME variable.
     .PARAMETER OutputPath
@@ -38,6 +42,11 @@ param(
     $ReleaseRef,
 
     [Parameter(Mandatory)]
+    [ValidateSet('true', 'false')]
+    [string]
+    $TaggedRelease,
+
+    [Parameter(Mandatory)]
     [ValidateNotNullOrEmpty()]
     [string]
     $ImageName,
@@ -49,14 +58,12 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # The prefix every DMS prerelease tag carries, and the number of characters the shell this replaces
-# stripped off the front of a ref. They agree today, and the alpha branch below uses the prefix
-# rather than the count so that they cannot quietly stop agreeing.
+# stripped off the front of a ref. They agree today, and the ordinary-build branch below uses the
+# prefix rather than the count so that they cannot quietly stop agreeing.
 $prereleasePrefix = 'dms-pre-'
 $legacyStripLength = 8
 
-# Ordinal, because the shell's [[ $REF =~ "alpha" ]] is a case-sensitive substring test and
-# PowerShell's -match is neither case-sensitive nor a substring test by default.
-$isPrerelease = $ReleaseRef.Contains('alpha', [System.StringComparison]::Ordinal)
+$isPrerelease = $TaggedRelease -eq 'false'
 
 if ($isPrerelease -and -not $ReleaseRef.StartsWith($prereleasePrefix, [System.StringComparison]::Ordinal)) {
     # A prerelease ref without the prefix gets what the shell gave it: the moving tag and the
@@ -67,9 +74,13 @@ if ($isPrerelease -and -not $ReleaseRef.StartsWith($prereleasePrefix, [System.St
     $tags = @("${ImageName}:pre")
 }
 elseif ($isPrerelease) {
-    # No empty-remainder guard: reaching here means the ref contains "alpha" and starts with a
-    # prefix that does not, so the remainder cannot be empty.
+    # Before the "alpha" test was replaced, containing "alpha" guaranteed a non-empty remainder.
+    # The classification gives no such guarantee, so an empty version is refused here rather than
+    # pushed as a bare "image:" tag.
     $version = $ReleaseRef.Substring($prereleasePrefix.Length)
+    if ($version -eq '') {
+        throw "Release ref '$ReleaseRef' names no version after '$prereleasePrefix'."
+    }
 
     # "pre" first, so the moving tag keeps the position it has always been pushed in.
     $tags = @("${ImageName}:pre", "${ImageName}:$version")

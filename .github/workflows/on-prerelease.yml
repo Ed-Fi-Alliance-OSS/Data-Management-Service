@@ -47,6 +47,27 @@ env:
 permissions: read-all
 
 jobs:
+  # A dms- or cs- prerelease is either an ordinary merge to main or the build for a v tag; the
+  # merge-or-tag workflows create both the same way. The release-asset jobs and the image tags
+  # differ between the two, so they read this job's answer (eng/ci/release-classification.psm1)
+  # rather than the spelling of the ref. "Does not contain alpha" used to stand in for "built for a
+  # v tag", which only held while the newest v tag was a final release: after a prerelease v tag
+  # such as v8.1.0-beta.0.1, main builds are 8.1.0-beta.0.1.N. A dispatch carries no tag name and
+  # skips this job, and with it everything that needs it.
+  classify-release:
+    name: Classify the Prerelease
+    runs-on: ubuntu-latest
+    if: ${{ startsWith(github.event.release.tag_name, 'dms-') || startsWith(github.event.release.tag_name, 'cs-') }}
+    outputs:
+      tagged-release: ${{ steps.classify.outputs.tagged-release }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Classify the release
+        id: classify
+        shell: pwsh
+        run: ./eng/ci/Write-PrereleaseClassification.ps1 -ReleaseRef $env:REF
+
   # jobs for DMS
   pack-dms:
     name: Build and Pack DMS
@@ -715,12 +736,12 @@ jobs:
   # Deliberate, and not a step left unfinished.
   #
   # The three release-stamped siblings can attach because their version moves with every release,
-  # so the non-alpha prerelease run that populates the vX.Y.Z release is the run that pushed the
+  # so the tagged release build that populates the vX.Y.Z release is the run that pushed the
   # package. A contract's version does not move. The run that first pushes a contract version is an
-  # alpha prerelease, which attaches nothing and whose release is deleted at the next final release;
+  # ordinary main build, which attaches nothing and whose release is deleted at the next final release;
   # every later run finds the version already on the feed and packs a different archive, because a
   # nupkg is not byte-reproducible, so its evidence would describe bytes the feed does not serve.
-  # Retaining the alpha run's artifacts for a later backfill was considered and rejected: GitHub
+  # Retaining the first run's artifacts for a later backfill was considered and rejected: GitHub
   # keeps run artifacts for thirty days and this repository's final releases are 36 to 214 days
   # apart. See reference/design/plugins-DMS-1462/06-publish-plugin-contract-packages.md.
   sbom-create-plugins:
@@ -1398,18 +1419,19 @@ jobs:
 
           ./build-dms.ps1 Push @arguments
 
-  # dms-pre and dms-*-alpha releases, will not have artifacts attached.
-  # This step attach DMS artifacts to the release with tag vX.Y.Z without 'alpha' or 'pre' in the tag name.
+  # Only a tagged release build attaches artifacts, to the vX.Y.Z release its v tag names. An ordinary
+  # main build has no such release; classify-release tells the two apart.
   attach-dms-artifacts-to-release:
     name: Attach DMS Artifacts to GitHub Release
     runs-on: ubuntu-latest
     needs:
+      - classify-release
       - pack-dms
       - sbom-create-dms
       - provenance-create-dms
       - sbom-create-schema-tools
       - provenance-create-schema-tools
-    if: ${{ startsWith(github.event.release.tag_name, 'dms-') && !contains(github.event.release.tag_name, 'alpha') }}
+    if: ${{ startsWith(github.event.release.tag_name, 'dms-') && needs.classify-release.outputs.tagged-release == 'true' }}
     permissions:
       contents: write
     steps:
@@ -1518,7 +1540,10 @@ jobs:
     name: Publish DMS to Docker Hub
     runs-on: ubuntu-latest
     needs:
+      - classify-release
       - publish-package-dms
+    env:
+      TAGGED_RELEASE: ${{ needs.classify-release.outputs.tagged-release }}
     steps:
       # Needed only by the tag step below, which runs a script out of this repository. The image is
       # built from the remote context "{{defaultContext}}:src/dms", so nothing else in this job
@@ -1537,7 +1562,7 @@ jobs:
       - name: Prepare DMS Tags
         id: prepare-tags
         shell: pwsh
-        run: ./eng/ci/Get-DmsPrereleaseImageTag.ps1 -ReleaseRef $env:REF -ImageName $env:IMAGE_NAME
+        run: ./eng/ci/Get-DmsPrereleaseImageTag.ps1 -ReleaseRef $env:REF -TaggedRelease $env:TAGGED_RELEASE -ImageName $env:IMAGE_NAME
 
       - name: Set up DMS Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
@@ -1574,12 +1599,13 @@ jobs:
     # dependency on docker-publish-dms at all, so the two run concurrently and a generator step added
     # there could inspect an image that has not been pushed yet.
     needs:
+      - classify-release
       - docker-publish-dms
     # The same gate attach-dms-artifacts-to-release carries, and deliberately not the one
-    # docker-publish-dms carries, which is none at all. An alpha prerelease has no vX.Y.Z release to
-    # attach an asset to, so an alpha publishes an image and no manifest - which is already what
+    # docker-publish-dms carries, which is none at all. An ordinary main build has no vX.Y.Z release
+    # to attach an asset to, so it publishes an image and no manifest - which is already what
     # happens to the SBOM and the provenance.
-    if: ${{ startsWith(github.event.release.tag_name, 'dms-') && !contains(github.event.release.tag_name, 'alpha') }}
+    if: ${{ startsWith(github.event.release.tag_name, 'dms-') && needs.classify-release.outputs.tagged-release == 'true' }}
     permissions:
       contents: write
     steps:
@@ -1775,7 +1801,7 @@ jobs:
           retention-days: 30
 
   # Run artifacts only, like the six DMS contract SBOM and provenance jobs, and for the reason
-  # recorded above them: a contract version is first pushed by an alpha prerelease, whose release
+  # recorded above them: a contract version is first pushed by an ordinary main build, whose release
   # attaches nothing.
   sbom-create-secrets:
     name: Create Secrets Contract SBOM
@@ -2221,16 +2247,17 @@ jobs:
              ./build-config.ps1 Push @arguments
           }
 
-  # cs-pre and cs-*-alpha releases, will not have artifacts attached.
-  # This step attach Config artifacts to the release with tag vX.Y.Z without 'alpha' or 'pre' in the tag name.
+  # Only a tagged release build attaches artifacts, to the vX.Y.Z release its v tag names. An ordinary
+  # main build has no such release; classify-release tells the two apart.
   attach-cs-artifacts-to-release:
     name: Attach Config Artifacts to GitHub Release
     runs-on: ubuntu-latest
     needs:
+      - classify-release
       - pack-cs
       - sbom-create-cs
       - provenance-create-cs
-    if: ${{ startsWith(github.event.release.tag_name, 'cs-') && !contains(github.event.release.tag_name, 'alpha') }}
+    if: ${{ startsWith(github.event.release.tag_name, 'cs-') && needs.classify-release.outputs.tagged-release == 'true' }}
     permissions:
       contents: write
     steps:
@@ -2301,8 +2328,11 @@ jobs:
     name: Publish Config to Docker Hub
     runs-on: ubuntu-latest
     needs:
+      - classify-release
       - pack-cs
       - publish-package-cs
+    env:
+      TAGGED_RELEASE: ${{ needs.classify-release.outputs.tagged-release }}
     steps:
       - name: Wait 20s
         # Give Azure Artifacts caching a moment to catch up
@@ -2314,22 +2344,27 @@ jobs:
           REF="${{ env.REF }}"
           PACKAGEVERSION=${REF}
 
-          if [[ $PACKAGEVERSION =~ "alpha" ]]
+          case "$TAGGED_RELEASE" in
+            true|false) ;;
+            *) echo "::error::TAGGED_RELEASE is '$TAGGED_RELEASE'; expected true or false from classify-release."; exit 1 ;;
+          esac
+
+          if [ "$TAGGED_RELEASE" = "false" ]
           then
-            # Pre-releases get the tag "pre"
+            # An ordinary main build gets the tag "pre"
             DMSTAGS="${{ env.CONFIG_IMAGE_NAME }}:pre"
           else
             # Releases get the version, plus shortened form for minor release.
             # We are not using shortened form for major or using "latest"
             # because they are too imprecise.
-            MINOR=`echo ${PACKAGEVERSION} | awk -F"." '{print $1"."$2}'`
+            MINOR=$(echo "${PACKAGEVERSION}" | awk -F"." '{print $1"."$2}')
             DMSTAGS="${{ env.CONFIG_IMAGE_NAME }}:${PACKAGEVERSION},${{ env.CONFIG_IMAGE_NAME }}:${MINOR}"
           fi
 
           SEMVERSION=${PACKAGEVERSION:7}  # strip off the leading 'cs-pre-'
 
-          echo "DMSTAGS=$DMSTAGS" >> $GITHUB_OUTPUT
-          echo "VERSION=$SEMVERSION" >> $GITHUB_OUTPUT
+          echo "DMSTAGS=$DMSTAGS" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$SEMVERSION" >> "$GITHUB_OUTPUT"
 
       - name: Set up Config Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0

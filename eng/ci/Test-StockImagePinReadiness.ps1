@@ -65,8 +65,9 @@ $movingTag = @('pre', 'latest')
 $tagPattern = '^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}\z'
 
 # The release ref the version-specific tag rule actually acts on. Get-DmsPrereleaseImageTag.ps1
-# emits a version-specific tag only for a "dms-pre-" ref that carries "alpha", so a pin naming any
-# other shape names a release whose publication produced no version-specific tag to pin.
+# emits a version-specific tag only for a "dms-pre-" ref that on-prerelease.yml's classify-release
+# job found to be an ordinary main build, so a pin naming any other shape names a release whose
+# publication produced no version-specific tag to pin.
 $releasePattern = '^dms-pre-[0-9A-Za-z][0-9A-Za-z.+-]*\z'
 
 # An env-safe single-line label. This one is written as DMS_CONFIG_DATA_STANDARD_VERSION.
@@ -315,11 +316,13 @@ else {
 
     $release = Assert-PinValue -Path @('release', 'githubRelease') -Pattern $releasePattern
 
-    # The same ordinal containment Get-DmsPrereleaseImageTag.ps1 applies. A release that does not
-    # carry "alpha" takes the other branch there and never produces the version-specific tag this
-    # pin exists to name.
+    # Narrower than the publishing rule, on purpose. An alpha release is an ordinary main build,
+    # because this repository never puts a v tag on an alpha version, so it carries the
+    # version-specific tag this pin exists to name. A main build after a prerelease v tag (for
+    # example 8.1.0-beta.0.1.3) carries one too, but telling it from the v-tagged build itself needs
+    # the remote's v tags, which this offline check does not read.
     if (-not $release.Contains('alpha', [StringComparison]::Ordinal)) {
-        throw "The stock image pin's release.githubRelease is '$release', which is not an alpha prerelease. Only an alpha prerelease publishes the version-specific tag this pin names."
+        throw "The stock image pin's release.githubRelease is '$release', which is not an alpha prerelease. This check accepts only an alpha prerelease, which always publishes the version-specific tag this pin names."
     }
 
     Assert-PinValue -Path @('release', 'sourceCommit') -Pattern $commitPattern | Out-Null
@@ -403,9 +406,10 @@ else {
 
     # The tag the recorded release actually publishes, computed by the rule the publication workflow
     # runs rather than restated here. A pin naming a release and a tag that release never produced
-    # describes no artifact at all.
+    # describes no artifact at all. The release was checked to be an alpha above, and an alpha is
+    # an ordinary main build, which is what classify-release reports for it.
     $expected = & (Join-Path $PSScriptRoot 'Get-DmsPrereleaseImageTag.ps1') `
-        -ReleaseRef $release -ImageName $edFiApiRepository -OutputPath ''
+        -ReleaseRef $release -TaggedRelease 'false' -ImageName $edFiApiRepository -OutputPath ''
     $expectedTag = ($expected | Where-Object { $_ -like 'DMSTAGS=*' }) -replace '^DMSTAGS=', ''
 
     if ("${edFiApiRepository}:$tag" -cnotin $expectedTag.Split(',')) {

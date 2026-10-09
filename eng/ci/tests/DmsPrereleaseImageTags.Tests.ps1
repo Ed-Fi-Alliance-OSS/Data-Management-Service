@@ -13,13 +13,14 @@ Describe 'DMS prerelease image tags' {
         function script:Invoke-TagScript {
             param(
                 [Parameter(Mandatory)] [string] $ReleaseRef,
+                [Parameter(Mandatory)] [string] $TaggedRelease,
                 [string] $ImageName = 'edfialliance/ed-fi-api'
             )
 
             $outputPath = Join-Path ([System.IO.Path]::GetTempPath()) "dms-tags-$([guid]::NewGuid().ToString('N')).txt"
 
             try {
-                & $script:script -ReleaseRef $ReleaseRef -ImageName $ImageName -OutputPath $outputPath | Out-Null
+                & $script:script -ReleaseRef $ReleaseRef -TaggedRelease $TaggedRelease -ImageName $ImageName -OutputPath $outputPath | Out-Null
 
                 $written = [ordered]@{}
                 foreach ($line in Get-Content -LiteralPath $outputPath) {
@@ -37,68 +38,76 @@ Describe 'DMS prerelease image tags' {
         }
     }
 
-    Context 'a prerelease ref' {
+    Context 'an ordinary main build, which no v tag names' {
         It 'publishes the moving tag and a version-specific tag for <ref>' -ForEach @(
             @{ Ref = 'dms-pre-8.0.1-alpha.0.7'; Version = '8.0.1-alpha.0.7' }
             @{ Ref = 'dms-pre-8.1.0-alpha.0.152'; Version = '8.1.0-alpha.0.152' }
+            # A merge after a beta tag carries no "alpha" and is still an ordinary build.
+            @{ Ref = 'dms-pre-8.1.0-beta.0.1.3'; Version = '8.1.0-beta.0.1.3' }
         ) {
-            $result = script:Invoke-TagScript -ReleaseRef $Ref
+            $result = script:Invoke-TagScript -ReleaseRef $Ref -TaggedRelease 'false'
 
             $result.DMSTAGS | Should -BeExactly "edfialliance/ed-fi-api:pre,edfialliance/ed-fi-api:$Version"
             $result.VERSION | Should -BeExactly $Version
         }
 
         It 'keeps the moving tag first, because that is the position it has always been pushed in' {
-            $result = script:Invoke-TagScript -ReleaseRef 'dms-pre-8.0.1-alpha.0.7'
+            $result = script:Invoke-TagScript -ReleaseRef 'dms-pre-8.0.1-alpha.0.7' -TaggedRelease 'false'
 
             $result.DMSTAGS.Split(',')[0] | Should -BeExactly 'edfialliance/ed-fi-api:pre'
         }
 
         It 'tags the image name it was given rather than a literal' {
-            $result = script:Invoke-TagScript -ReleaseRef 'dms-pre-8.0.1-alpha.0.7' -ImageName 'someone/else'
+            $result = script:Invoke-TagScript -ReleaseRef 'dms-pre-8.0.1-alpha.0.7' -TaggedRelease 'false' -ImageName 'someone/else'
 
             $result.DMSTAGS | Should -BeExactly 'someone/else:pre,someone/else:8.0.1-alpha.0.7'
         }
 
-        It 'publishes only the moving tag for a prerelease ref without the dms-pre- prefix' {
+        It 'publishes only the moving tag for an ordinary build ref without the dms-pre- prefix' {
             # What the shell published for such a ref. No version-specific tag is derived from a
             # value that is not a version, and the publication is not refused either.
-            $result = script:Invoke-TagScript -ReleaseRef 'dms-8.0.1-alpha.0.7'
+            $result = script:Invoke-TagScript -ReleaseRef 'dms-8.0.1-alpha.0.7' -TaggedRelease 'false'
 
             $result.DMSTAGS | Should -BeExactly 'edfialliance/ed-fi-api:pre'
             $result.VERSION | Should -BeExactly '1-alpha.0.7'
         }
 
-        It 'treats Alpha as a release, because the shell it replaces matched case-sensitively' {
-            # Verified against the shell being replaced: [[ $REF =~ "alpha" ]] does not match
-            # "Alpha", so this ref takes the release branch and gets no moving tag.
-            $result = script:Invoke-TagScript -ReleaseRef 'dms-v8.1.0-Alpha'
-
-            $result.DMSTAGS | Should -BeExactly 'edfialliance/ed-fi-api:dms-v8.1.0-Alpha,edfialliance/ed-fi-api:dms-v8.1'
-            $result.VERSION | Should -BeExactly '.0-Alpha'
-        }
     }
 
-    Context 'a non-alpha ref, whose handling this change does not alter' {
+    Context 'a tagged release build' {
+        It 'publishes the version and minor tags the v8.1.0-beta.0.1 build published, and no moving tag' {
+            $result = script:Invoke-TagScript -ReleaseRef 'dms-pre-8.1.0-beta.0.1' -TaggedRelease 'true'
+
+            $result.DMSTAGS | Should -BeExactly 'edfialliance/ed-fi-api:dms-pre-8.1.0-beta.0.1,edfialliance/ed-fi-api:dms-pre-8.1'
+            $result.VERSION | Should -BeExactly '8.1.0-beta.0.1'
+        }
+
+        It 'follows the classification rather than the name, so a v-tagged alpha is a release' {
+            $result = script:Invoke-TagScript -ReleaseRef 'dms-pre-8.2.0-alpha.1' -TaggedRelease 'true'
+
+            $result.DMSTAGS | Should -BeExactly 'edfialliance/ed-fi-api:dms-pre-8.2.0-alpha.1,edfialliance/ed-fi-api:dms-pre-8.2'
+        }
+
         It 'emits the full ref and the two-field minor form, and no moving tag' {
-            $result = script:Invoke-TagScript -ReleaseRef 'dms-v8.1.0'
+            $result = script:Invoke-TagScript -ReleaseRef 'dms-v8.1.0' -TaggedRelease 'true'
 
             $result.DMSTAGS | Should -BeExactly 'edfialliance/ed-fi-api:dms-v8.1.0,edfialliance/ed-fi-api:dms-v8.1'
             $result.DMSTAGS | Should -Not -Match ':pre'
         }
 
         It 'reproduces the fixed-offset strip the shell performed, wrong result and all' {
-            # ${REF:8} over "dms-v8.1.0" is ".0", not a version. Ported rather than corrected: this
-            # branch publishes nothing on a workflow that fires on prereleased.
-            (script:Invoke-TagScript -ReleaseRef 'dms-v8.1.0').VERSION | Should -BeExactly '.0'
+            # ${REF:8} over "dms-v8.1.0" is ".0", not a version. Ported rather than corrected: the
+            # merge-or-tag workflows only create dms-pre- refs, where the strip removes exactly the
+            # prefix, so a dms-v ref never reaches this branch from a real release.
+            (script:Invoke-TagScript -ReleaseRef 'dms-v8.1.0' -TaggedRelease 'true').VERSION | Should -BeExactly '.0'
         }
 
         It 'yields an empty version rather than throwing on a ref shorter than the strip' {
-            (script:Invoke-TagScript -ReleaseRef 'dms-v8').VERSION | Should -BeExactly ''
+            (script:Invoke-TagScript -ReleaseRef 'dms-v8' -TaggedRelease 'true').VERSION | Should -BeExactly ''
         }
 
         It 'reproduces the trailing dot awk prints for a ref with one field' {
-            (script:Invoke-TagScript -ReleaseRef 'dms-v8').DMSTAGS |
+            (script:Invoke-TagScript -ReleaseRef 'dms-v8' -TaggedRelease 'true').DMSTAGS |
                 Should -BeExactly 'edfialliance/ed-fi-api:dms-v8,edfialliance/ed-fi-api:dms-v8.'
         }
     }
@@ -109,7 +118,7 @@ Describe 'DMS prerelease image tags' {
             Set-Content -LiteralPath $outputPath -Value 'PRE_EXISTING=kept'
 
             try {
-                & $script:script -ReleaseRef 'dms-pre-8.0.1-alpha.0.7' -ImageName 'edfialliance/ed-fi-api' -OutputPath $outputPath | Out-Null
+                & $script:script -ReleaseRef 'dms-pre-8.0.1-alpha.0.7' -TaggedRelease 'false' -ImageName 'edfialliance/ed-fi-api' -OutputPath $outputPath | Out-Null
 
                 Get-Content -LiteralPath $outputPath | Should -Be @(
                     'PRE_EXISTING=kept'
@@ -123,7 +132,7 @@ Describe 'DMS prerelease image tags' {
         }
 
         It 'echoes both lines so an unexpected tag can be read out of the job log' {
-            $written = & $script:script -ReleaseRef 'dms-pre-8.0.1-alpha.0.7' -ImageName 'edfialliance/ed-fi-api' -OutputPath ''
+            $written = & $script:script -ReleaseRef 'dms-pre-8.0.1-alpha.0.7' -TaggedRelease 'false' -ImageName 'edfialliance/ed-fi-api' -OutputPath ''
 
             $written | Should -Be @(
                 'DMSTAGS=edfialliance/ed-fi-api:pre,edfialliance/ed-fi-api:8.0.1-alpha.0.7'
@@ -132,7 +141,19 @@ Describe 'DMS prerelease image tags' {
         }
 
         It 'rejects an empty image name, which an unset IMAGE_NAME variable would supply' {
-            { & $script:script -ReleaseRef 'dms-pre-8.0.1-alpha.0.7' -ImageName '' -OutputPath '' } | Should -Throw
+            { & $script:script -ReleaseRef 'dms-pre-8.0.1-alpha.0.7' -TaggedRelease 'false' -ImageName '' -OutputPath '' } | Should -Throw
+        }
+
+        It 'refuses an ordinary build ref that names no version after the prefix' {
+            { & $script:script -ReleaseRef 'dms-pre-' -TaggedRelease 'false' -ImageName 'edfialliance/ed-fi-api' -OutputPath '' } |
+                Should -Throw '*names no version*'
+        }
+
+        It 'rejects a classification of <value>, which a skipped or failed classify job would supply' -ForEach @(
+            @{ Value = '' }
+            @{ Value = 'yes' }
+        ) {
+            { & $script:script -ReleaseRef 'dms-pre-8.0.1-alpha.0.7' -TaggedRelease $Value -ImageName 'edfialliance/ed-fi-api' -OutputPath '' } | Should -Throw
         }
     }
 }
@@ -164,6 +185,7 @@ Describe 'DMS prerelease image tag workflow wiring' {
         $step | Should -Match 'eng/ci/Get-DmsPrereleaseImageTag\.ps1'
         $step | Should -Match '\$env:REF'
         $step | Should -Match '\$env:IMAGE_NAME'
+        $step | Should -Match '-TaggedRelease \$env:TAGGED_RELEASE'
         $step | Should -Not -Match '\$\{\{'
     }
 
@@ -177,9 +199,11 @@ Describe 'DMS prerelease image tag workflow wiring' {
         $script:dmsPublish | Should -Match 'context: "\{\{defaultContext\}\}:src/dms"'
     }
 
-    It 'leaves the Configuration Service publishing only the moving tag on a prerelease' {
-        # Unchanged by this work. docker-publish-cs keeps its own inline shell and its single tag.
+    It 'leaves the Configuration Service publishing only the moving tag for an ordinary build' {
+        # docker-publish-cs keeps its own inline shell and its single tag; only its decision moved
+        # from the word alpha to the classification.
         $script:cmsPublish | Should -Match '\$\{\{ env\.CONFIG_IMAGE_NAME \}\}:pre"'
+        $script:cmsPublish | Should -Match 'if \[ "\$TAGGED_RELEASE" = "false" \]'
         $script:cmsPublish | Should -Not -Match 'Get-DmsPrereleaseImageTag'
     }
 

@@ -35,6 +35,11 @@ jobs:
           $repo = "${{ github.repository }}"
           $token = "${{ secrets.GITHUB_TOKEN }}"
 
+          # An ordinary main build's prerelease is deleted; a tagged release build's is kept. The same
+          # rule on-prerelease.yml applies, read once here for every page below.
+          Import-Module ./eng/ci/release-classification.psm1
+          $taggedVersion = @(Get-ReleaseTagVersion -Remote origin)
+
           $page = 1
           $release_list = @()
 
@@ -49,7 +54,8 @@ jobs:
             $release_list = Invoke-RestMethod $url -Headers $gh_headers
 
             $release_list | ForEach-Object {
-                if ($_.tag_name -like "*-pre-*-alpha*" -and $_.prerelease) {
+                if ($_.prerelease -and (Get-PrereleaseVersion -ReleaseRef $_.tag_name) -and
+                    -not (Test-TaggedReleaseBuild -ReleaseRef $_.tag_name -TaggedVersion $taggedVersion)) {
 
                     "Deleting pre-release $($_.tag_name)" | Write-Output
                     Invoke-RestMethod -Method Delete -Uri $_.url -Headers $gh_headers
