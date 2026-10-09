@@ -10,6 +10,11 @@ namespace EdFi.DataManagementService.Backend.Cdc;
 /// <summary>Trusted managed host callbacks; creation returns the actual provider CREATE outcome.</summary>
 public interface ICdcManagedDatabaseProvisioner
 {
+    /// <summary>
+    /// Rejects an incompatible server before the creation intent is recorded, so a failed check
+    /// leaves no unfinished creation for a retry to treat as interrupted.
+    /// </summary>
+    void CheckPlatformPreconditions();
     bool CreateDatabase();
     void ProvisionSchema(bool databaseWasCreated);
     void ValidateSchema();
@@ -104,6 +109,9 @@ public sealed class CdcManagedDatabaseProvisioning(LocalCdcWorkflowJournalStore 
             return new(journal.WorkflowId, target, receipt.Receipt, current);
         }
 
+        // Before the intent: a server rejected here can be upgraded and the same workflow retried.
+        provisioner.CheckPlatformPreconditions();
+        cancellationToken.ThrowIfCancellationRequested();
         Guid creationOperation = Guid.NewGuid();
         await session.RecordIntentAsync(
             target,
