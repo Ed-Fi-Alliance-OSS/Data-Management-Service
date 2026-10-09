@@ -324,7 +324,10 @@ internal static class SchemaRestampMigrationScenario
             {
                 await Task.WhenAll(outputTask, errorTask).WaitAsync(TimeSpan.FromSeconds(10));
             }
-            catch (TimeoutException) { }
+            catch (TimeoutException)
+            {
+                // Report the original process deadline even if redirected pipes do not finish draining.
+            }
 
             string output = outputTask.IsCompletedSuccessfully ? outputTask.Result : "(not captured)";
             string error = errorTask.IsCompletedSuccessfully ? errorTask.Result : "(not captured)";
