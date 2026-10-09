@@ -6,12 +6,8 @@
 #Requires -Version 7
 
 Describe "sanitize-e2e-artifacts Get-SanitizedText (DMS-1284)" {
-    # Two value-class modes. Default (plain text: *.log, *.txt, *.out, *.err) redacts a bare value to
-    # its real terminator so no suffix of a secret survives. -PreserveMarkup (*.trx, *.xml) stops the
-    # same value before markup, because those artifacts are parsed by the CI test reporter and a
-    # redaction that swallowed a closing tag would publish an unparseable document. Tests that assert
-    # surviving markup pass -PreserveMarkup; tests that assert complete redaction of a markup-bearing
-    # secret do not.
+    # Default (plain text: *.log, *.txt, *.out, *.err) redacts a bare value to its real terminator.
+    # -PreserveMarkup (*.trx, *.xml) sanitizes decoded values and preserves XML boundaries.
     BeforeAll {
         $script:sanitizer = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../sanitize-e2e-artifacts.ps1"))
         # Dot-source to load the functions; the script's run guard prevents Invoke-ArtifactSanitization
@@ -56,12 +52,137 @@ Describe "sanitize-e2e-artifacts Get-SanitizedText (DMS-1284)" {
         $result | Should -Match "database=db"
     }
 
+    It "preserves plain-text connection-string fields after an entity-like password" -ForEach @(
+        @{ Entity = 'amp' }
+        @{ Entity = 'quot' }
+        @{ Entity = 'apos' }
+        @{ Entity = 'lt' }
+        @{ Entity = 'gt' }
+        @{ Entity = '#38' }
+        @{ Entity = '#x26' }
+    ) {
+        $result = Get-SanitizedText -Text "Server=s;Password=Aa1!&$Entity;Database=d;TrustServerCertificate=true"
+
+        $result | Should -Be 'Server=s;Password=***REDACTED***;Database=d;TrustServerCertificate=true'
+    }
+
+    It "redacts the entire XML-escaped password while preserving following fields and markup" -ForEach @(
+        @{ Entity = 'amp' }
+        @{ Entity = 'quot' }
+        @{ Entity = 'apos' }
+        @{ Entity = 'lt' }
+        @{ Entity = 'gt' }
+        @{ Entity = '#38' }
+        @{ Entity = '#x26' }
+    ) {
+        $result = Get-SanitizedText -PreserveMarkup -Text "<Output>Server=s;Password=Aa1!&$Entity;SECRET_SUFFIX;Database=d;TrustServerCertificate=true</Output>"
+
+        $result | Should -Be '<Output>Server=s;Password=***REDACTED***;Database=d;TrustServerCertificate=true</Output>'
+        { [xml]$result } | Should -Not -Throw
+    }
+
     It "redacts an XML-escaped connection-string password as it appears inside a TRX" {
         $result = Get-SanitizedText -PreserveMarkup -Text '<Output>connect failed: Server=s;Password=&quot;Aa1!xmlSecretValue&quot;;TrustServerCertificate=true</Output>'
 
         $result | Should -Not -Match "Aa1!xmlSecretValue"
         $result | Should -Match "Password=\*\*\*REDACTED\*\*\*"
         $result | Should -Match "TrustServerCertificate=true"
+    }
+
+    It "redacts a valid bare password with an internal quote in XML <Location> using <Encoding> encoding" -ForEach @(
+        @{ Location = 'text'; Encoding = 'literal' }
+        @{ Location = 'text'; Encoding = 'named' }
+        @{ Location = 'text'; Encoding = 'decimal' }
+        @{ Location = 'text'; Encoding = 'hexadecimal' }
+        @{ Location = 'attribute'; Encoding = 'named' }
+    ) {
+        $connection = 'Server=s;Password=PREFIX"SECRET_SUFFIX;Database=d'
+        $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+        $builder.set_ConnectionString($connection)
+        $builder['Password'] | Should -Be 'PREFIX"SECRET_SUFFIX'
+
+        $buffer = [System.Text.StringBuilder]::new()
+        $settings = [System.Xml.XmlWriterSettings]::new()
+        $settings.OmitXmlDeclaration = $true
+        $writer = [System.Xml.XmlWriter]::Create($buffer, $settings)
+        try {
+            $writer.WriteStartElement('TestRun')
+            $writer.WriteStartElement('UnitTestResult')
+            $writer.WriteAttributeString('outcome', 'Passed')
+            if ($Location -eq 'attribute') { $writer.WriteAttributeString('testName', $connection) }
+            else { $writer.WriteElementString('StdOut', $connection) }
+            $writer.WriteEndElement()
+            $writer.WriteEndElement()
+        }
+        finally { $writer.Dispose() }
+
+        $xml = $buffer.ToString()
+        if ($Location -eq 'text') {
+            $quote = switch ($Encoding) {
+                'named' { '&quot;' }
+                'decimal' { '&#34;' }
+                'hexadecimal' { '&#x22;' }
+                default { '"' }
+            }
+            $xml = $xml.Replace('PREFIX"SECRET_SUFFIX', "PREFIX${quote}SECRET_SUFFIX")
+        }
+        $artifact = Join-Path $TestDrive 'internal-quote.trx'
+        Set-Content -LiteralPath $artifact -Value $xml -NoNewline
+        Invoke-ArtifactSanitization -Path $artifact
+
+        $result = Get-Content -LiteralPath $artifact -Raw
+        $result | Should -Not -Match 'PREFIX|SECRET_SUFFIX'
+        $document = [xml]$result
+        $document.TestRun.UnitTestResult.outcome | Should -Be 'Passed'
+        $value = if ($Location -eq 'attribute') { $document.TestRun.UnitTestResult.testName } else { $document.TestRun.UnitTestResult.StdOut }
+        $value | Should -Be 'Server=s;Password=***REDACTED***;Database=d'
+    }
+
+    It "redacts the complete XML value across <Case>" -ForEach @(
+        @{ Case = 'CDATA followed by text'; Content = '<![CDATA[host=h;password=PREFIX]]>SECRET_SUFFIX;database=d' }
+        @{ Case = 'adjacent CDATA sections'; Content = '<![CDATA[host=h;password=PREFIX]]><![CDATA[SECRET_SUFFIX;database=d]]>' }
+        @{ Case = 'text followed by CDATA'; Content = 'host=h;password=PREFIX<![CDATA[SECRET_SUFFIX;database=d]]>' }
+        @{ Case = 'a key split between CDATA and text'; Content = '<![CDATA[host=h;pass]]>word=PREFIXSECRET_SUFFIX;database=d' }
+        @{ Case = 'a key split between CDATA sections'; Content = '<![CDATA[host=h;pass]]><![CDATA[word=PREFIXSECRET_SUFFIX;database=d]]>' }
+        @{ Case = 'a key split between text and CDATA'; Content = 'host=h;pass<![CDATA[word=PREFIXSECRET_SUFFIX;database=d]]>' }
+        @{ Case = 'leading whitespace followed by CDATA'; Content = ' <![CDATA[host=h;password=PREFIX]]>SECRET_SUFFIX;database=d' }
+    ) {
+        $result = Get-SanitizedText -PreserveMarkup -Text "<Output><StdOut>$Content</StdOut><StdErr>$Content</StdErr><Status>ready</Status></Output>"
+
+        $result | Should -Not -Match 'PREFIX|SECRET_SUFFIX'
+        $document = [xml]$result
+        $expected = 'host=h;password=***REDACTED***;database=d'
+        if ($Case -eq 'leading whitespace followed by CDATA') { $expected = ' ' + $expected }
+        $document.Output.StdOut | Should -Be $expected
+        $document.Output.StdErr | Should -Be $expected
+        $document.Output.Status | Should -Be 'ready'
+    }
+
+    It "preserves element boundaries while redacting multiple contiguous XML values" {
+        $result = Get-SanitizedText -PreserveMarkup -Text '<Output><StdOut><![CDATA[password=PREFIX]]>SECRET_SUFFIX<Status>ready</Status><![CDATA[host=h;password=PREFIX]]>SECRET_SUFFIX;database=d</StdOut></Output>'
+
+        $result | Should -Not -Match 'PREFIX|SECRET_SUFFIX'
+        ([xml]$result).Output.StdOut.InnerXml | Should -Be 'password=***REDACTED***<Status>ready</Status>host=h;password=***REDACTED***;database=d'
+    }
+
+    It "serializes a joined CDATA terminator as valid text after redaction" {
+        $result = Get-SanitizedText -PreserveMarkup -Text '<Output><![CDATA[diagnostic ]]]]><![CDATA[> host=h;password=PREFIX]]>SECRET_SUFFIX;database=d</Output>'
+
+        $result | Should -Not -Match 'PREFIX|SECRET_SUFFIX'
+        ([xml]$result).DocumentElement.InnerText | Should -Be 'diagnostic ]]> host=h;password=***REDACTED***;database=d'
+    }
+
+    It "leaves benign adjacent XML text and CDATA unchanged" {
+        $text = '<Output><![CDATA[host=h;]]>database=d<Status>ready</Status><![CDATA[port=]]><![CDATA[5432]]></Output>'
+
+        Get-SanitizedText -PreserveMarkup -Text $text | Should -Be $text
+    }
+
+    It "rejects malformed XML and DTDs before artifact publication" -ForEach @(
+        @{ Xml = '<Output>Password=PREFIX"SECRET_SUFFIX</Invalid>' }
+        @{ Xml = '<!DOCTYPE Output [<!ENTITY secret "SECRET_SUFFIX">]><Output>Password=PREFIX&secret;</Output>' }
+    ) {
+        { Get-SanitizedText -PreserveMarkup -Text $Xml } | Should -Throw
     }
 
     It "redacts a double-quoted password with ADO.NET-doubled embedded quotes without leaking the tail" {
@@ -339,7 +460,7 @@ DMS_DATASTORE=mssql
     }
 
     It "redacts a form-encoded credential inside single-line TRX markup without consuming the closing tag" {
-        $result = Get-SanitizedText -PreserveMarkup -Text '<Output><StdOut>token request: grant_type=client_credentials&client_secret=Aa1!TrxFormSecret</StdOut></Output>'
+        $result = Get-SanitizedText -PreserveMarkup -Text '<Output><StdOut>token request: grant_type=client_credentials&amp;client_secret=Aa1!TrxFormSecret</StdOut></Output>'
 
         $result | Should -Not -Match "Aa1!TrxFormSecret"
         $result | Should -Match "client_secret=\*\*\*REDACTED\*\*\*"
@@ -370,7 +491,7 @@ DMS_DATASTORE=mssql
 
         $result | Should -Not -Match "XJFRAGA"
         $result | Should -Not -Match "XJFRAGB"
-        $result | Should -Match ([regex]::Escape("&quot;clientId&quot;: &quot;svc-1&quot;"))
+        ([xml]$result).Output.StdOut | Should -Match ([regex]::Escape('"clientId": "svc-1"'))
         $result | Should -Match ([regex]::Escape("</StdOut></Output>"))
     }
 
@@ -389,7 +510,7 @@ DMS_DATASTORE=mssql
 
         $result | Should -Not -Match "XEFRAGA"
         $result | Should -Not -Match "XEFRAGB"
-        $result | Should -Match ([regex]::Escape("&quot;tenant&quot;: &quot;Tenant_255901&quot;"))
+        ([xml]$result).DocumentElement.InnerText | Should -Match ([regex]::Escape('"tenant": "Tenant_255901"'))
         $result | Should -Match ([regex]::Escape("</Output>"))
     }
 
@@ -506,6 +627,18 @@ Describe "sanitize-e2e-artifacts Invoke-ArtifactSanitization (DMS-1284)" {
         $content = Get-Content -LiteralPath $logFile -Raw
         $content | Should -Not -Match "leakedValue123"
         $content | Should -Match "host=dms-mssql"
+    }
+
+    It "selects entity handling for <Extension> artifacts" -ForEach @(
+        @{ Extension = 'log'; Original = 'Server=s;Password=Aa1!&amp;Database=d'; Expected = 'Server=s;Password=***REDACTED***;Database=d' }
+        @{ Extension = 'trx'; Original = '<Output>Server=s;Password=Aa1!&amp;SECRET_SUFFIX;Database=d</Output>'; Expected = '<Output>Server=s;Password=***REDACTED***;Database=d</Output>' }
+    ) {
+        $artifact = Join-Path $TestDrive "entity-password.$Extension"
+        Set-Content -LiteralPath $artifact -Value $Original -NoNewline
+
+        Invoke-ArtifactSanitization -Path $artifact
+
+        Get-Content -LiteralPath $artifact -Raw | Should -Be $Expected
     }
 
     It "keeps a .trx artifact parseable by stopping the redaction before the closing tag" {

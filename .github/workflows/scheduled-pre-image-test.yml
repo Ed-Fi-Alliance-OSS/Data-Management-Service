@@ -14,17 +14,22 @@ permissions: read-all
 
 jobs:
   test:
-    name: pre Image Tests (${{ matrix.identityprovider }})
-    # Scheduled runs only in Ed-Fi-Alliance-OSS: a fork inherits the schedule but not the Slack
-    # webhook or the Ed-Fi resources the run acts on. workflow_dispatch still runs anywhere.
+    name: pre Image Tests (${{ matrix.database_engine }}, ${{ matrix.identityprovider }})
+    # Skip inherited schedules on forks; manual runs retain the full engine/identity matrix.
     if: (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
     runs-on: ubuntu-latest
     defaults:
       run:
         shell: pwsh
+    env:
+      E2E_DATABASE_ENGINE: ${{ matrix.database_engine }}
+      E2E_IDENTITY_PROVIDER: ${{ matrix.identityprovider }}
+      E2E_DIAGNOSTIC_DIRECTORY: ${{ github.workspace }}/logs/scheduled-pre-image-${{ matrix.database_engine }}-${{ matrix.identityprovider }}
+      E2E_TRX_PATH: ${{ github.workspace }}/TestResults/EdFi.DataManagementService.Tests.E2E.filtered.trx
     strategy:
       fail-fast: false
       matrix:
+        database_engine: [postgresql, mssql]
         identityprovider: [keycloak, self-contained]
     steps:
       - name: Checkout the repo
@@ -45,87 +50,248 @@ jobs:
 
       - name: DMS Build
         id: build_step
-        run: ./build-dms.ps1 Build -Configuration Release -IdentityProvider ${{matrix.identityprovider}}
+        run: ./build-dms.ps1 Build -Configuration Release -IdentityProvider ${{ matrix.identityprovider }}
 
       - name: Run DMS End to End Tests
         id: e2e
         if: success()
         continue-on-error: true
-        # This lane runs against the default DS 5.2 stack at the shipped MAXIMUM_PAGE_SIZE of 500,
-        # so exclude the DS 6.1 version-coupled scenarios, the local-compose-only DocumentCache
-        # fixture, and the partition sizing scenarios. DocumentCache runs with its explicit overlay
-        # in dms-weekend-build.yml; partition sizing needs .env.cursorpartitions.e2e, whose
-        # MAXIMUM_PAGE_SIZE of 2 is the only setting under which a collection an E2E scenario can
-        # seed over HTTP is cut into more than one partition, and runs per-PR in
-        # run-e2e-tests-partition-sizing. The non-empty filter writes the filtered TRX.
-        run: ./build-dms.ps1 E2ETest -UsePublishedImage -Configuration Release -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)'
-
-      - name: Export DMS E2E Docker Logs
-        if: always() && steps.e2e.outcome == 'failure'
         run: |
-          $logDir = "${{ github.workspace }}/logs/e2e"
-          Remove-Item -Path $logDir -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
-
-          $containers = @(docker ps -a --format "{{.Names}}" | Sort-Object)
-
-          if ($containers.Count -eq 0) {
-              Write-Host "No Docker containers found for log export."
-              exit 0
+          $PSNativeCommandUseErrorActionPreference = $false
+          $diagnosticDirectory = $env:E2E_DIAGNOSTIC_DIRECTORY
+          New-Item -ItemType Directory -Path $diagnosticDirectory -Force | Out-Null
+          $setupLog = Join-Path $diagnosticDirectory 'build-dms-setup.log'
+          if (Test-Path -LiteralPath $env:E2E_TRX_PATH) {
+            Remove-Item -LiteralPath $env:E2E_TRX_PATH -Force
           }
 
-          foreach ($container in $containers) {
-              $logPath = Join-Path $logDir "$container.log"
-              docker logs $container > $logPath 2>&1
+          $testFilter = switch ($env:E2E_DATABASE_ENGINE) {
+            # The PostgreSQL leg uses DS 5.2 and MAXIMUM_PAGE_SIZE=500, so exclude DS 6.1
+            # version-coupled scenarios, the local-compose-only DocumentCache fixture, and
+            # partition sizing. DocumentCache runs with its explicit overlay in dms-weekend-build.yml.
+            # Partition sizing runs per PR in run-e2e-tests-partition-sizing using
+            # .env.cursorpartitions.e2e: its MAXIMUM_PAGE_SIZE=2 lets a collection seeded over
+            # HTTP span multiple partitions.
+            'postgresql' { '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)' }
+            'mssql' { 'Category=@MssqlRepresentative' }
+            default { throw 'Unsupported E2E database engine.' }
+          }
+
+          # Both non-empty filters write the filtered TRX used for execution evidence and upload.
+          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest `
+            -UsePublishedImage `
+            -Configuration Release `
+            -DatabaseEngine $env:E2E_DATABASE_ENGINE `
+            -IdentityProvider $env:E2E_IDENTITY_PROVIDER `
+            -EnvironmentFile './.env.e2e' `
+            -TestFilter $testFilter *> $setupLog
+          $buildExitCode = $LASTEXITCODE
+          if ($buildExitCode -ne 0) {
+            throw "Published-image E2E child process failed with exit code $buildExitCode."
+          }
+
+      - name: Capture DMS E2E Docker Logs
+        id: capture
+        if: always()
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $diagnosticDirectory = $env:E2E_DIAGNOSTIC_DIRECTORY
+          New-Item -ItemType Directory -Path $diagnosticDirectory -Force | Out-Null
+          $enumerationErrorPath = Join-Path $diagnosticDirectory 'docker-ps.err'
+          $containerNames = @(docker ps -a --filter 'label=com.docker.compose.project=dms-published' --format '{{.Names}}' 2> $enumerationErrorPath)
+          $dockerExitCode = $LASTEXITCODE
+          if ($dockerExitCode -ne 0) {
+            throw 'Docker container enumeration failed; diagnostic details were retained privately.'
+          }
+
+          foreach ($container in ($containerNames | Sort-Object)) {
+            if ([string]::IsNullOrWhiteSpace($container)) { continue }
+            $logPath = Join-Path $diagnosticDirectory "$container.log"
+            docker logs $container *> $logPath
+            $dockerExitCode = $LASTEXITCODE
+            if ($dockerExitCode -ne 0) {
+              throw 'Docker log capture failed; diagnostic details were retained privately.'
+            }
+          }
+
+      - name: Teardown DMS E2E Environment
+        id: teardown
+        if: always()
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          $diagnosticDirectory = $env:E2E_DIAGNOSTIC_DIRECTORY
+          New-Item -ItemType Directory -Path $diagnosticDirectory -Force | Out-Null
+          $teardownLog = Join-Path $diagnosticDirectory 'teardown.log'
+          & pwsh -NoProfile -File ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/teardown-local-dms.ps1 `
+            -DatabaseEngine $env:E2E_DATABASE_ENGINE `
+            -EnvironmentFile './.env.e2e' *> $teardownLog
+          $teardownExitCode = $LASTEXITCODE
+          if ($teardownExitCode -ne 0) {
+            throw "DMS E2E teardown failed with exit code $teardownExitCode; details were retained privately."
+          }
+
+      - name: Sanitize DMS E2E Diagnostic Artifacts
+        id: sanitize
+        if: always()
+        run: |
+          try {
+            ./eng/ci/sanitize-e2e-artifacts.ps1 -Path $env:E2E_DIAGNOSTIC_DIRECTORY
+            ./eng/ci/sanitize-e2e-artifacts.ps1 -Path $env:E2E_TRX_PATH
+          }
+          catch {
+            throw 'E2E artifact sanitization failed; raw diagnostic content was withheld.'
+          }
+
+      - name: Verify DMS E2E Execution
+        id: evidence
+        if: always() && steps.e2e.outcome == 'success' && steps.sanitize.outcome == 'success'
+        run: |
+          try {
+            if (-not (Test-Path -LiteralPath $env:E2E_TRX_PATH -PathType Leaf)) {
+              throw 'TRX file is missing.'
+            }
+
+            $readerSettings = [System.Xml.XmlReaderSettings]::new()
+            $readerSettings.DtdProcessing = [System.Xml.DtdProcessing]::Prohibit
+            $readerSettings.XmlResolver = $null
+            $reader = [System.Xml.XmlReader]::Create($env:E2E_TRX_PATH, $readerSettings)
+            try {
+              $document = [System.Xml.XmlDocument]::new()
+              $document.XmlResolver = $null
+              $document.Load($reader)
+            }
+            finally {
+              $reader.Dispose()
+            }
+
+            if ($null -eq $document.DocumentElement -or $document.DocumentElement.LocalName -ne 'TestRun') {
+              throw 'TRX root is invalid.'
+            }
+
+            $summary = $document.DocumentElement.SelectSingleNode("./*[local-name()='ResultSummary']")
+            $counters = if ($null -ne $summary) { $summary.SelectSingleNode("./*[local-name()='Counters']") } else { $null }
+            if ($null -eq $counters -or -not $counters.HasAttribute('executed')) {
+              throw 'TRX execution counter is missing.'
+            }
+
+            $executedCount = 0
+            $executedIsInteger = [int]::TryParse(
+              $counters.GetAttribute('executed'),
+              [System.Globalization.NumberStyles]::None,
+              [System.Globalization.CultureInfo]::InvariantCulture,
+              [ref]$executedCount
+            )
+            if (-not $executedIsInteger -or $executedCount -le 0) {
+              throw 'TRX execution counter is not positive.'
+            }
+
+            $passedResults = $document.SelectNodes("/*[local-name()='TestRun']/*[local-name()='Results']/*[local-name()='UnitTestResult'][@outcome='Passed']")
+            if ($passedResults.Count -eq 0) {
+              throw 'TRX has no passed test result.'
+            }
+
+            Write-Host "Validated E2E execution: executed=$executedCount, passed=$($passedResults.Count)."
+          }
+          catch {
+            throw 'Published-image E2E produced no valid executed test result.'
           }
 
       - name: Upload DMS E2E Logs
-        if: always() && steps.e2e.outcome == 'failure'
+        id: upload_logs
+        if: always() && steps.sanitize.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: scheduled-pre-image-logs-${{ matrix.identityprovider }}-e2e
-          path: |
-            ${{ github.workspace }}/logs/e2e
+          name: scheduled-pre-image-${{ matrix.database_engine }}-${{ matrix.identityprovider }}-logs
+          path: ${{ github.workspace }}/logs/scheduled-pre-image-${{ matrix.database_engine }}-${{ matrix.identityprovider }}
           retention-days: 10
+          if-no-files-found: ignore
 
       - name: Upload DMS End to End Test Results
-        if: always()
+        id: upload_results
+        if: always() && steps.sanitize.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: scheduled-pre-image-e2e-results-${{ matrix.identityprovider }}
+          name: scheduled-pre-image-${{ matrix.database_engine }}-${{ matrix.identityprovider }}-results
           path: TestResults/EdFi.DataManagementService.Tests.E2E.filtered.trx
           if-no-files-found: ignore
 
       - name: Fail if DMS E2E failed
         if: always() && steps.e2e.outcome == 'failure'
         run: |
-          Write-Host "DMS E2E outcome: ${{ steps.e2e.outcome }}"
-          throw "DMS E2E failed."
+          throw 'DMS E2E failed.'
+
+      - name: Summarize DMS E2E Results
+        id: summary
+        if: always()
+        env:
+          E2E_JOB_STATUS: ${{ job.status }}
+          E2E_BUILD_OUTCOME: ${{ steps.build_step.outcome }}
+          E2E_TEST_OUTCOME: ${{ steps.e2e.outcome }}
+          E2E_CAPTURE_OUTCOME: ${{ steps.capture.outcome }}
+          E2E_TEARDOWN_OUTCOME: ${{ steps.teardown.outcome }}
+          E2E_SANITIZE_OUTCOME: ${{ steps.sanitize.outcome }}
+          E2E_EVIDENCE_OUTCOME: ${{ steps.evidence.outcome }}
+          E2E_LOG_UPLOAD_OUTCOME: ${{ steps.upload_logs.outcome }}
+          E2E_RESULT_UPLOAD_OUTCOME: ${{ steps.upload_results.outcome }}
+        run: |
+          $engineLabel = switch ($env:E2E_DATABASE_ENGINE) {
+            'postgresql' { 'PostgreSQL' }
+            'mssql' { 'SQL Server' }
+            default { 'Unknown database engine' }
+          }
+          $coverageLabel = if ($env:E2E_DATABASE_ENGINE -eq 'mssql') { 'Representative MSSQL published-image E2E' } else { 'Full PostgreSQL published-image E2E' }
+          $stages = [ordered]@{
+            Build = $env:E2E_BUILD_OUTCOME
+            Test = $env:E2E_TEST_OUTCOME
+            Capture = $env:E2E_CAPTURE_OUTCOME
+            Teardown = $env:E2E_TEARDOWN_OUTCOME
+            Sanitize = $env:E2E_SANITIZE_OUTCOME
+            Evidence = $env:E2E_EVIDENCE_OUTCOME
+            'Log upload' = $env:E2E_LOG_UPLOAD_OUTCOME
+            'Result upload' = $env:E2E_RESULT_UPLOAD_OUTCOME
+          }
+          $requiredOutcomes = @($stages.Values)
+          $legPassed = $env:E2E_JOB_STATUS -eq 'success' -and $requiredOutcomes.Count -eq 8 -and @($requiredOutcomes | Where-Object { $_ -ne 'success' }).Count -eq 0
+          $resultLabel = if ($legPassed) { 'passed' } else { 'failed' }
+          $stageRows = foreach ($stage in $stages.GetEnumerator()) { "| $($stage.Key) | $($stage.Value) |" }
+          $summaryText = @(
+            "# Scheduled pre-image: $engineLabel ($env:E2E_DATABASE_ENGINE) / $env:E2E_IDENTITY_PROVIDER"
+            ""
+            "- **Result:** $resultLabel"
+            "- **Coverage:** $coverageLabel"
+            "- **Job status:** $env:E2E_JOB_STATUS"
+            "- **Run:** $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            ""
+            '| Stage | Outcome |'
+            '| --- | --- |'
+            $stageRows
+          ) -join "`n"
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value $summaryText
 
       - name: Notify Slack on success
-        if: success() && github.event_name != 'workflow_dispatch'
+        if: success() && github.event_name != 'workflow_dispatch' && github.repository_owner == 'Ed-Fi-Alliance-OSS' && steps.e2e.outcome == 'success' && steps.evidence.outcome == 'success'
         uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
         with:
           payload: |
             {
-              "text": "✅ Scheduled pre image tests passed for identityprovider=${{ matrix.identityprovider }}."
+              "text": "✅ Scheduled published-image E2E leg passed.\nEngine: ${{ matrix.database_engine == 'mssql' && 'SQL Server' || 'PostgreSQL' }} (${{ matrix.database_engine }})\nIdentity: ${{ matrix.identityprovider }}\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
             }
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
 
       - name: Notify Slack on failure
-        if: failure() && github.event_name != 'workflow_dispatch'
+        if: failure() && github.event_name != 'workflow_dispatch' && github.repository_owner == 'Ed-Fi-Alliance-OSS'
         uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
         with:
           payload: |
             {
-              "text": "❌ Scheduled pre image tests result: ${{ job.status }}\nIdentityProvider: ${{ matrix.identityprovider }}\nDMS E2E: ${{ steps.e2e.outcome }}\n${{ github.event.pull_request.html_url || github.event.head_commit.url }}",
+              "text": "❌ Scheduled published-image E2E leg failed (${{ job.status }}).\nEngine: ${{ matrix.database_engine == 'mssql' && 'SQL Server' || 'PostgreSQL' }} (${{ matrix.database_engine }})\nIdentity: ${{ matrix.identityprovider }}\nBuild: ${{ steps.build_step.outcome }}; Test: ${{ steps.e2e.outcome }}; Evidence: ${{ steps.evidence.outcome }}; Capture: ${{ steps.capture.outcome }}; Teardown: ${{ steps.teardown.outcome }}; Sanitize: ${{ steps.sanitize.outcome }}\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
               "blocks": [
                 {
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "❌ Scheduled pre image tests result: ${{ job.status }}\n*Identity Provider:* ${{ matrix.identityprovider }}\n*DMS E2E:* ${{ steps.e2e.outcome }}\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Commit Message:* ${{ github.event.head_commit.message || 'No commit message available' }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "❌ Scheduled published-image E2E leg failed (${{ job.status }}).\n*Engine:* ${{ matrix.database_engine == 'mssql' && 'SQL Server' || 'PostgreSQL' }} (${{ matrix.database_engine }})\n*Identity:* ${{ matrix.identityprovider }}\n*Build:* ${{ steps.build_step.outcome }} | *Test:* ${{ steps.e2e.outcome }} | *Evidence:* ${{ steps.evidence.outcome }}\n*Capture:* ${{ steps.capture.outcome }} | *Teardown:* ${{ steps.teardown.outcome }} | *Sanitize:* ${{ steps.sanitize.outcome }}\n*Run:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]

@@ -15,9 +15,8 @@ This script rewrites matching artifact files in place with the sensitive values 
 redaction marker, while leaving benign diagnostics untouched. Get-SanitizedText is a pure function so
 the redaction rules can be unit tested without touching the filesystem.
 
-Redaction breadth varies by artifact type. A TRX or XML file must still parse for the CI test reporter
-after sanitization, so its values stop before markup; every other artifact is plain text, where a value
-runs to its real terminator so no suffix of a secret survives.
+TRX and XML values are decoded and sanitized separately from markup, then serialized as XML so the CI
+test reporter can still parse them. Other artifacts are sanitized as plain text.
 
 .PARAMETER Path
 File or directory to sanitize in place. When a directory, matching files are sanitized recursively.
@@ -40,41 +39,26 @@ $ErrorActionPreference = "Stop"
 
 $script:RedactionMarker = "***REDACTED***"
 
-# Placeholder inside a rule's value character class, replaced with that rule's MarkupExclusions for a
-# markup-bearing artifact and with nothing for a plain-text one. Every class it appears in carries at
-# least one other member, so the empty (plain-text) expansion is still a valid class.
-$script:MarkupExclusionToken = "{markup}"
-
 # Ordered redaction rules. Each rule keeps its non-secret capture group(s) and replaces the secret
 # value with the marker. Rules are intentionally conservative about non-secret text: they anchor on a
 # key name or scheme so ordinary diagnostics (ids, hostnames, ports, timings) are preserved.
-#
-# MarkupExclusions holds the characters a rule's value must additionally stop at in a TRX/XML artifact
-# (see Get-SanitizedText -PreserveMarkup), because a redaction that consumed a closing tag or an
-# attribute's closing quote would leave the document unparseable for the CI test reporter. Inside
-# well-formed XML those exclusions cost no coverage: a literal '<' cannot appear in element content or
-# an attribute value (it arrives as &lt;), and a '"'-bearing connection-string value is quoted and so
-# matched by a quoted alternative. In a plain-text artifact the same exclusions would end the match
-# inside a secret that happens to contain '<' or '"' and publish its suffix, so the token expands to
-# nothing there and each value runs to its real terminator.
 $script:RedactionRules = @(
     # Connection-string secrets: password=... / pwd=... in PostgreSQL and SQL Server connection
     # strings. The value is redacted whether it is wrapped - double-quoted ("..."), single-quoted
-    # ('...'), or XML-escaped (&quot;...&quot;) as it appears inside a TRX - or bare. Each quoted form
+    # ('...'), or XML-escaped (&quot;...&quot;) in a plain-text diagnostic - or bare. Each quoted form
     # consumes ADO.NET-doubled quote pairs ("" / '' / &quot;&quot;) as part of the value so an embedded
     # quote does not terminate the match early and leak the remainder, stopping only at a single
     # (undoubled) closing delimiter. The bare (unquoted) alternative runs to the real ';' terminator
     # (or end of line): commas and spaces are legal inside an unquoted ADO.NET value, so stopping at a
-    # comma or space left the remainder of the secret (e.g. Password=Aa1!,tail) in the artifact. The
-    # whole matched span is redacted so the enclosed secret is not left behind; a following key/value
+    # comma or space left the remainder of the secret (e.g. Password=Aa1!,tail) in the artifact.
+    # The whole matched span is redacted so the enclosed secret is not left behind; a following key/value
     # after the real delimiter is preserved.
     # The whitespace around '=' is horizontal only: a `\s*` span crosses a newline, so a key with an empty
     # value at end of line consumed the next line's first token as its value and replaced it with the
     # marker - over-redaction that corrupts the following line rather than leaking anything.
     [pscustomobject]@{
         Name             = "connection-string-password"
-        Pattern          = "(?i)((?:password|pwd)[ \t]*=[ \t]*)(&quot;(?:(?!&quot;).|&quot;&quot;)*&quot;|""(?:[^""]|"""")*""|'(?:[^']|'')*'|[^;{markup}\r\n]+)"
-        MarkupExclusions = '"<'
+        Pattern          = "(?i)((?:password|pwd)[ \t]*=[ \t]*)(&quot;(?:(?!&quot;).|&quot;&quot;)*&quot;|""(?:[^""]|"""")*""|'(?:[^']|'')*'|[^;\r\n]+)"
         Replacement      = "`${1}$($script:RedactionMarker)"
     },
     # JSON string values for credential-bearing property names. A JSON-escaped quote (\") is consumed
@@ -82,32 +66,27 @@ $script:RedactionRules = @(
     # end the match inside the secret and leave its remainder in the artifact.
     [pscustomobject]@{
         Name             = "json-credential"
-        Pattern          = "(?i)(""(?:password|secret|client_?secret|client_?key|clientkey|clientsecret|access_?token|refresh_?token|token|api_?key|encryption_?key)""\s*:\s*"")((?:\\.|[^""\\{markup}])*)("")"
-        MarkupExclusions = '<'
+        Pattern          = "(?i)(""(?:password|secret|client_?secret|client_?key|clientkey|clientsecret|access_?token|refresh_?token|token|api_?key|encryption_?key)""\s*:\s*"")((?:\\.|[^""\\])*)("")"
         Replacement      = "`${1}$($script:RedactionMarker)`${3}"
     },
-    # The same JSON body with its quotes XML-escaped, which is how a scenario log that echoes a
-    # credential response arrives inside a TRX <Output> block. The literal-quote rule above cannot see
-    # this shape, so without this alternative the value was published verbatim.
+    # JSON echoed with XML-escaped quotes into a plain-text diagnostic. Parsed XML values use the
+    # literal-quote rule above, but logs containing encoded JSON still need this alternative.
     [pscustomobject]@{
         Name             = "json-credential-xml-escaped"
-        Pattern          = "(?i)(&quot;(?:password|secret|client_?secret|client_?key|clientkey|clientsecret|access_?token|refresh_?token|token|api_?key|encryption_?key)&quot;\s*:\s*&quot;)((?:\\&quot;|(?!&quot;)[^{markup}\r\n])*)(&quot;)"
-        MarkupExclusions = '<'
+        Pattern          = "(?i)(&quot;(?:password|secret|client_?secret|client_?key|clientkey|clientsecret|access_?token|refresh_?token|token|api_?key|encryption_?key)&quot;\s*:\s*&quot;)((?:\\&quot;|(?!&quot;)[^\r\n])*)(&quot;)"
         Replacement      = "`${1}$($script:RedactionMarker)`${3}"
     },
     # Form-encoded / query-string credential parameters.
     [pscustomobject]@{
         Name             = "form-credential"
-        Pattern          = "(?i)(\b(?:password|client_secret|secret|access_token|refresh_token|token|api_?key)=)([^&\s;""'{markup}\r\n]+)"
-        MarkupExclusions = '<>'
+        Pattern          = "(?i)(\b(?:password|client_secret|secret|access_token|refresh_token|token|api_?key)=)([^&\s;""'\r\n]+)"
         Replacement      = "`${1}$($script:RedactionMarker)"
     },
     # Authorization headers (Bearer / Basic). The token carries no whitespace, so the value ends at the
     # first space rather than taking the rest of the line.
     [pscustomobject]@{
         Name             = "authorization-header"
-        Pattern          = "(?i)(Authorization\s*:\s*(?:Bearer|Basic)\s+)([^\s{markup}\r\n]+)"
-        MarkupExclusions = '"<>'
+        Pattern          = "(?i)(Authorization\s*:\s*(?:Bearer|Basic)\s+)([^\s\r\n]+)"
         Replacement      = "`${1}$($script:RedactionMarker)"
     },
     # Bare bearer tokens that appear outside a header (e.g. logged token values). The value is a
@@ -115,7 +94,6 @@ $script:RedactionRules = @(
     [pscustomobject]@{
         Name             = "bearer-token"
         Pattern          = "(?i)(\bBearer\s+)([A-Za-z0-9\-._~+/]+=*)"
-        MarkupExclusions = ''
         Replacement      = "`${1}$($script:RedactionMarker)"
     },
     # Environment-variable-style secrets: any NAME ending in PASSWORD/SECRET/TOKEN/KEY = value.
@@ -129,8 +107,7 @@ $script:RedactionRules = @(
     # A quoted value is matched by its own alternative first, because a diagnostic that echoes an env-file
     # line, a `docker inspect` fragment, or a shell command carries the value wrapped in quotes and the
     # bare class stops at whitespace: without these alternatives the tail of a quoted secret containing
-    # spaces survives, and in a markup artifact (where the class also excludes '"') a quoted value does
-    # not match at all. PASSWORD-suffixed names are also reached by the connection-string rule's quoted
+    # spaces survives. PASSWORD-suffixed names are also reached by the connection-string rule's quoted
     # alternatives; the SECRET/TOKEN/KEY suffixes are covered only here. Each quoted alternative consumes
     # doubled delimiter pairs ("" / '' / &quot;&quot;) as part of the value, matching what the
     # connection-string rule does: otherwise the alternative ends at the first quote of a doubled pair and
@@ -141,8 +118,7 @@ $script:RedactionRules = @(
     # end of line cannot span the newline and consume the next line's key name.
     [pscustomobject]@{
         Name             = "env-secret"
-        Pattern          = "(?im)(^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:PASSWORD|SECRET|TOKEN|KEY)[ \t]*=[ \t]*)(&quot;(?:(?!&quot;)[^\r\n]|&quot;&quot;)*&quot;|""(?:[^""\r\n]|"""")*""|'(?:[^'\r\n]|'')*'|[^\s{markup}\r\n]+)"
-        MarkupExclusions = '"<>'
+        Pattern          = "(?im)(^|[^A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*(?:PASSWORD|SECRET|TOKEN|KEY)[ \t]*=[ \t]*)(&quot;(?:(?!&quot;)[^\r\n]|&quot;&quot;)*&quot;|""(?:[^""\r\n]|"""")*""|'(?:[^'\r\n]|'')*'|[^\s\r\n]+)"
         Replacement      = "`${1}`${2}$($script:RedactionMarker)"
     },
     # Bracketed PowerShell key/value credential output, e.g. build-dms.ps1 CMS-bootstrap logging that
@@ -153,8 +129,7 @@ $script:RedactionRules = @(
     # alternation lists compound names before their shorter suffixes so the whole key is matched.
     [pscustomobject]@{
         Name             = "bracketed-key-value-credential"
-        Pattern          = "(?i)(\[\s*(?:ClientSecret|ClientKey|AccessToken|RefreshToken|EncryptionKey|ApiKey|Password|Secret|Token)\s*,\s*)([^\]{markup}]+?)(\s*\])"
-        MarkupExclusions = '<'
+        Pattern          = "(?i)(\[\s*(?:ClientSecret|ClientKey|AccessToken|RefreshToken|EncryptionKey|ApiKey|Password|Secret|Token)\s*,\s*)([^\]]+?)(\s*\])"
         Replacement      = "`${1}$($script:RedactionMarker)`${3}"
     }
 )
@@ -165,11 +140,8 @@ function Get-SanitizedText {
     Returns the input text with all recognized secrets replaced by the redaction marker.
 
     .PARAMETER PreserveMarkup
-    Treat the text as markup the CI test reporter must still be able to parse (a TRX or XML artifact):
-    each value stops before markup instead of running to its terminator, so a redaction cannot consume
-    a closing tag or an attribute's closing quote. Off by default, which is the correct mode for
-    plain-text artifacts: there the exclusions would end a match inside a secret containing '<' or '"'
-    and publish its suffix, and no reporter parses the file.
+    Parse TRX/XML with DTDs prohibited, sanitize decoded values, and serialize with markup preserved.
+    Malformed XML fails sanitization, preventing publication. Off by default for plain-text artifacts.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -183,11 +155,60 @@ function Get-SanitizedText {
         $PreserveMarkup
     )
 
+    if ($PreserveMarkup) {
+        $settings = [System.Xml.XmlReaderSettings]::new()
+        $settings.DtdProcessing = [System.Xml.DtdProcessing]::Prohibit
+        $settings.XmlResolver = $null
+        $inputReader = [System.IO.StringReader]::new($Text)
+        $reader = [System.Xml.XmlReader]::Create($inputReader, $settings)
+        try {
+            $document = [System.Xml.XmlDocument]::new()
+            $document.XmlResolver = $null
+            $document.PreserveWhitespace = $true
+            $document.Load($reader)
+        }
+        finally {
+            $reader.Dispose()
+            $inputReader.Dispose()
+        }
+
+        # XPath navigator values combine contiguous text/CDATA/whitespace nodes and decode entities.
+        # Snapshot the selected nodes before replacing a whole text sequence so later values are visited.
+        $textNodeTypes = @(
+            [System.Xml.XmlNodeType]::Text,
+            [System.Xml.XmlNodeType]::CDATA,
+            [System.Xml.XmlNodeType]::Whitespace,
+            [System.Xml.XmlNodeType]::SignificantWhitespace
+        )
+        $changed = $false
+        foreach ($node in @($document.SelectNodes('//text() | //@* | //comment() | //processing-instruction()'))) {
+            $original = $node.CreateNavigator().Value
+            $value = Get-SanitizedText -Text $original
+            if ($value -cne $original) {
+                if ($node.NodeType -in $textNodeTypes) {
+                    $parent = $node.ParentNode
+                    # A text node safely serializes even a CDATA terminator joined across fragments.
+                    $null = $parent.InsertBefore($document.CreateTextNode($value), $node)
+                    $fragment = $node
+                    do {
+                        $next = $fragment.NextSibling
+                        $null = $parent.RemoveChild($fragment)
+                        $fragment = $next
+                    } while ($null -ne $fragment -and $fragment.NodeType -in $textNodeTypes)
+                }
+                else {
+                    $node.Value = $value
+                }
+                $changed = $true
+            }
+        }
+        if ($changed) { return $document.OuterXml }
+        return $Text
+    }
+
     $sanitized = $Text
     foreach ($rule in $script:RedactionRules) {
-        $markupExclusions = if ($PreserveMarkup) { $rule.MarkupExclusions } else { "" }
-        $pattern = $rule.Pattern.Replace($script:MarkupExclusionToken, $markupExclusions)
-        $sanitized = [regex]::Replace($sanitized, $pattern, $rule.Replacement)
+        $sanitized = [regex]::Replace($sanitized, $rule.Pattern, $rule.Replacement)
     }
 
     return $sanitized
@@ -228,9 +249,7 @@ function Invoke-ArtifactSanitization {
             continue
         }
 
-        # A TRX or XML artifact is parsed by the CI test reporter, so its redactions must stop before
-        # markup; every other artifact is plain text and gets the value classes that run to the real
-        # terminator, which is what keeps the suffix of a '<'-bearing secret out of the upload.
+        # TRX/XML redactions operate on decoded values, preserving the reporter's markup.
         $preserveMarkup = $file.Extension -in @(".trx", ".xml")
 
         $sanitized = Get-SanitizedText -Text $original -PreserveMarkup:$preserveMarkup
