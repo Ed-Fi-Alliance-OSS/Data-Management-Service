@@ -55,7 +55,7 @@ exactly what they must not borrow. Start a throwaway one from the stack's own im
 for it to accept connections, and remove it afterwards:
 
 ```powershell
-docker run --rm -d --name nr-pg-fixture -e POSTGRES_PASSWORD=fixture postgres:16.8-alpine
+docker run --rm -d --name nr-pg-fixture -e POSTGRES_PASSWORD=fixture postgres:18.6-alpine
 $deadline = (Get-Date).AddSeconds(60)
 while ($(docker exec nr-pg-fixture pg_isready -q -h localhost -U postgres 2>$null; $LASTEXITCODE) -ne 0) {
     if ((Get-Date) -gt $deadline) { throw "nr-pg-fixture did not accept connections within 60 s" }

@@ -54,7 +54,7 @@ env:
   MSSQL_TMPFS_SIZE: "4g"
   MSSQL_GENERATED_DDL_LEASE_STRATEGY: "backup-restore"
   MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY: ${{ github.event.inputs.mssql_generated_ddl_provision_max_concurrency || '2' }}
-  POSTGRES_INTEGRATION_IMAGE: "postgres:16.3-alpine"
+  POSTGRES_INTEGRATION_IMAGE: "postgres:18.6-alpine"
   POSTGRES_CONTAINER_MEMORY: "10g"
   POSTGRES_TMPFS_SIZE: "4g"
   POSTGRES_USE_TMPFS: "true"
@@ -1438,7 +1438,6 @@ jobs:
         uses: ./.github/actions/export-database-container-diagnostics
         with:
           container-name: dms-ci-postgresql
-          data-path: /var/lib/postgresql/data
 
       - name: Teardown PostgreSQL Container
         if: always()
@@ -1512,7 +1511,6 @@ jobs:
         uses: ./.github/actions/export-database-container-diagnostics
         with:
           container-name: dms-ci-postgresql
-          data-path: /var/lib/postgresql/data
 
       - name: Teardown PostgreSQL Container
         if: always()
@@ -1957,7 +1955,6 @@ jobs:
         uses: ./.github/actions/export-database-container-diagnostics
         with:
           container-name: dms-ci-postgresql
-          data-path: /var/lib/postgresql/data
 
       - name: Teardown PostgreSQL Container
         if: always()
@@ -2179,8 +2176,9 @@ jobs:
               if ($container -eq "dms-postgresql") {
                   $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
                   docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
-                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
-                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  $postgresDataPath = docker exec $container printenv PGDATA 2>$null
+                  docker exec $container df -h $postgresDataPath >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh $postgresDataPath >> $postgresDiagnosticsPath 2>&1
               }
           }
         shell: pwsh
@@ -2367,8 +2365,9 @@ jobs:
               if ($container -eq "dms-postgresql") {
                   $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
                   docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
-                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
-                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  $postgresDataPath = docker exec $container printenv PGDATA 2>$null
+                  docker exec $container df -h $postgresDataPath >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh $postgresDataPath >> $postgresDiagnosticsPath 2>&1
               }
           }
         shell: pwsh
@@ -2553,8 +2552,9 @@ jobs:
               if ($container -eq "dms-postgresql") {
                   $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
                   docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
-                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
-                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  $postgresDataPath = docker exec $container printenv PGDATA 2>$null
+                  docker exec $container df -h $postgresDataPath >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh $postgresDataPath >> $postgresDiagnosticsPath 2>&1
               }
           }
         shell: pwsh
@@ -3215,8 +3215,9 @@ jobs:
               if ($container -eq "dms-postgresql") {
                   $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
                   docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
-                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
-                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  $postgresDataPath = docker exec $container printenv PGDATA 2>$null
+                  docker exec $container df -h $postgresDataPath >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh $postgresDataPath >> $postgresDiagnosticsPath 2>&1
               }
 
               # Also display DMS logs in the workflow output for easier debugging
@@ -3415,8 +3416,9 @@ jobs:
               if ($container -eq "dms-postgresql") {
                   $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
                   docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
-                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
-                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  $postgresDataPath = docker exec $container printenv PGDATA 2>$null
+                  docker exec $container df -h $postgresDataPath >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh $postgresDataPath >> $postgresDiagnosticsPath 2>&1
               }
 
               # Also display DMS logs in the workflow output for easier debugging
@@ -3917,8 +3919,9 @@ jobs:
             if ($container -eq "dms-postgresql") {
               $postgresDiagnosticsPath = Join-Path $diagnosticsDir "$container.storage.txt"
               docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
-              docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
-              docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+              $postgresDataPath = docker exec $container printenv PGDATA 2>$null
+              docker exec $container df -h $postgresDataPath >> $postgresDiagnosticsPath 2>&1
+              docker exec $container du -sh $postgresDataPath >> $postgresDiagnosticsPath 2>&1
             }
 
             if ($container -eq $dmsContainer) {

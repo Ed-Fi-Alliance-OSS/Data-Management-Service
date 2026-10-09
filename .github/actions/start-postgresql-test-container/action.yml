@@ -14,7 +14,7 @@ inputs:
     description: Docker memory and memory-swap limit.
     required: true
   tmpfs-size:
-    description: tmpfs size for /var/lib/postgresql/data.
+    description: tmpfs size for the PostgreSQL 18 data directory, /var/lib/postgresql/18/docker.
     required: true
   image:
     description: PostgreSQL container image.
@@ -39,7 +39,7 @@ runs:
         $containerId = docker run --detach --name $env:CONTAINER_NAME `
           --memory $env:CONTAINER_MEMORY `
           --memory-swap $env:CONTAINER_MEMORY `
-          --tmpfs "/var/lib/postgresql/data:rw,size=$($env:POSTGRES_TMPFS_SIZE),mode=0700" `
+          --tmpfs "/var/lib/postgresql/18/docker:rw,size=$($env:POSTGRES_TMPFS_SIZE),mode=0700" `
           --env POSTGRES_HOST_AUTH_METHOD=trust `
           --publish "$($env:HOST_PORT):5432" `
           $env:POSTGRES_IMAGE `
