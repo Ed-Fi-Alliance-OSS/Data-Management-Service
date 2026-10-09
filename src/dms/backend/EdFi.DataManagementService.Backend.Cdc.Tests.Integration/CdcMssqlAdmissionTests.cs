@@ -758,6 +758,8 @@ public sealed class Given_SqlServer_Controller_Admission
     private sealed class CreationBoundary(ICdcManagedDatabaseProvisioner inner, Action afterCreate)
         : ICdcManagedDatabaseProvisioner
     {
+        public void CheckPlatformPreconditions() => inner.CheckPlatformPreconditions();
+
         public bool CreateDatabase()
         {
             bool result = inner.CreateDatabase();

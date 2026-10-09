@@ -14,6 +14,15 @@ namespace EdFi.DataManagementService.SchemaTools.Provisioning;
 public interface IDatabaseProvisioner
 {
     /// <summary>
+    /// Checks server platform preconditions over the maintenance connection before any database is
+    /// created, so an incompatible server is rejected without leaving a database behind. PostgreSQL
+    /// requires version 18 or later and a UTF-8 encoding for the existing target database, or for
+    /// template1 when the target does not exist yet. SQL Server implementation is a no-op.
+    /// </summary>
+    /// <exception cref="PostgresqlPlatformCompatibilityException">A precondition is not met.</exception>
+    void CheckPlatformPreconditions(string connectionString);
+
+    /// <summary>
     /// Connects to the admin database (postgres/master) and creates the target
     /// database if it does not already exist. This is a pre-step outside any transaction.
     /// </summary>
@@ -49,7 +58,8 @@ public interface IDatabaseProvisioner
     void CheckCdcProjectionPrerequisites(string connectionString, bool configureOwnedLocalServer);
 
     /// <summary>
-    /// Validates that the contents of dms.ResourceKey and dms.SchemaComponent match
+    /// Checks the target database's platform compatibility first (PostgreSQL 18 or later and a
+    /// UTF-8 database), then validates that the contents of dms.ResourceKey and dms.SchemaComponent match
     /// the expected seed data from <paramref name="expectedSchema"/>, and runs the bounded
     /// create-only E18 provisioning guards. If dms.EffectiveSchema does not exist (new database),
     /// seed validation returns immediately after checking legacy cache artifacts and provider
@@ -58,6 +68,7 @@ public interface IDatabaseProvisioner
     /// <remarks>
     /// Throws <see cref="InvalidOperationException"/> in any of these cases:
     /// <list type="bullet">
+    ///   <item>The target is not a PostgreSQL 18 or later UTF-8 database (<see cref="PostgresqlPlatformCompatibilityException"/>).</item>
     ///   <item>The dms.EffectiveSchema table exists but the singleton row is missing (partial/corrupt state).</item>
     ///   <item>A known legacy dms.DocumentCache artifact is present.</item>
     ///   <item>A completed same-hash database is missing the DataStoreIdentity or DocumentCacheState singleton state.</item>

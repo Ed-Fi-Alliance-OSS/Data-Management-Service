@@ -1928,8 +1928,21 @@ jobs:
           tmpfs-size: ${{ env.POSTGRES_TMPFS_SIZE }}
           image: ${{ env.POSTGRES_INTEGRATION_IMAGE }}
 
+      # The PostgreSQL platform-compatibility fixtures need a cluster whose template1 is not UTF-8.
+      - name: Start Non-UTF-8 PostgreSQL Container
+        uses: ./.github/actions/start-postgresql-test-container
+        with:
+          container-name: dms-ci-postgresql-latin1
+          container-memory: 2g
+          tmpfs-size: 1g
+          image: ${{ env.POSTGRES_INTEGRATION_IMAGE }}
+          host-port: "5433"
+          initdb-args: --encoding=LATIN1 --locale=C
+
       - name: Run SchemaTools PostgreSQL Integration Tests
         if: success()
+        env:
+          ConnectionStrings__PostgresNonUtf8Admin: "host=localhost;port=5433;username=postgres;database=postgres;pooling=false"
         run: |
           dotnet test ${{ env.SCHEMATOOLS_TEST_ASSEMBLY }} `
             -v normal `
@@ -1956,9 +1969,15 @@ jobs:
         with:
           container-name: dms-ci-postgresql
 
-      - name: Teardown PostgreSQL Container
+      - name: Export Non-UTF-8 PostgreSQL Logs
+        if: failure()
+        uses: ./.github/actions/export-database-container-diagnostics
+        with:
+          container-name: dms-ci-postgresql-latin1
+
+      - name: Teardown PostgreSQL Containers
         if: always()
-        run: docker rm -f dms-ci-postgresql
+        run: docker rm -f dms-ci-postgresql dms-ci-postgresql-latin1
 
   run-schematools-mssql-integration-tests:
     name: Run SchemaTools MSSQL Integration Tests
