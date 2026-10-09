@@ -52,8 +52,9 @@ For SQL Server use `-DatabaseEngine mssql`, its container/database, and `MSSQL_S
 `-MssqlPassword`. `-RenderSql` renders the same provider SQL for a direct provider connection.
 Integration tests use this route, then execute it on ordinary connections separate from DDL
 provisioning. SQL Server verification checks effective indexed-computation SET options, URI type,
-database-default collation and non-persistence. Its separate-session regression also exercises
-fresh and reused runtime pools without inheriting provisioner settings.
+the DMS identity collation (`SQL_Latin1_General_CP1_CI_AS`) on `Namespace`, `CodeValue` and the
+computed `Uri`, independent of the database default, and non-persistence. Its separate-session
+regression also exercises fresh and reused runtime pools without inheriting provisioner settings.
 
 For DMS-1401's combined template gate, pass `-ExpectedModelManifestPath $baseline` to
 `verify-template-restore.ps1`; it asserts the source before restoration and the restored catalog
