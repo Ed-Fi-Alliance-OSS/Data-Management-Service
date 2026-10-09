@@ -1107,12 +1107,12 @@ Describe "Get-RestoreSmokeEffectiveSchemaPackageList" {
 Describe "Get-RestoreSmokePackageProvenance" {
     BeforeAll {
         function script:New-FakeTemplatePackage {
-            param([string]$Directory, [string]$RecordedSha)
+            param([string]$Directory, [string]$RecordedSha, [string]$ManifestJson = ('{"projects":["edfi","tpdm"],"effectiveSchemaHash":"' + ("e5" * 32) + '"}'))
 
             New-Item -ItemType Directory -Path $Directory -Force | Out-Null
             $contents = Join-Path $Directory "contents"
             New-Item -ItemType Directory -Path $contents -Force | Out-Null
-            Set-Content -LiteralPath (Join-Path $contents "restore-manifest.json") -Value '{"projects":["edfi","tpdm"]}'
+            Set-Content -LiteralPath (Join-Path $contents "restore-manifest.json") -Value $ManifestJson
             $packagePath = Join-Path $Directory "EdFi.Api.Minimal.Template.PostgreSql.5.2.0.1.0.999.nupkg"
             Compress-Archive -Path (Join-Path $contents "*") -DestinationPath ($packagePath + ".zip")
             Move-Item -LiteralPath ($packagePath + ".zip") -Destination $packagePath
@@ -1133,7 +1133,7 @@ Describe "Get-RestoreSmokePackageProvenance" {
         $directory = Join-Path $TestDrive "package-ok"
         $sha = New-FakeTemplatePackage -Directory $directory
 
-        $record = Get-RestoreSmokePackageProvenance -PackageDirectory $directory -RestoreManifestFileName "restore-manifest.json" -TemplateKind Minimal
+        $record = Get-RestoreSmokePackageProvenance -PackageDirectory $directory -RestoreManifestFileName "restore-manifest.json" -PackageFixture default-minimal
 
         $record.Verified | Should -BeTrue
         $record.Sha256 | Should -Be $sha
@@ -1142,13 +1142,28 @@ Describe "Get-RestoreSmokePackageProvenance" {
         $record.AttestationProducer | Should -Be "restore-smoke-1234"
         $record.AttestationKeyId | Should -Be ("ab" * 32)
         $record.RestoreManifestProjects | Should -Be @("edfi", "tpdm")
+        $record.RestoreManifestEffectiveSchemaHash | Should -BeExactly ("e5" * 32)
+        $record.PackageFixture | Should -BeExactly "default-minimal"
+        $record.TemplateKind | Should -BeExactly "Minimal"
+    }
+
+    It "records the fixture's kind, and no effective schema hash when the restore manifest has none" {
+        $directory = Join-Path $TestDrive "package-core-only"
+        $null = New-FakeTemplatePackage -Directory $directory -ManifestJson '{"projects":["edfi"]}'
+
+        $record = Get-RestoreSmokePackageProvenance -PackageDirectory $directory -RestoreManifestFileName "restore-manifest.json" -PackageFixture core-only-minimal
+
+        $record.PackageFixture | Should -BeExactly "core-only-minimal"
+        $record.TemplateKind | Should -BeExactly "Minimal"
+        $record.RestoreManifestProjects | Should -Be @("edfi")
+        $record.RestoreManifestEffectiveSchemaHash | Should -BeNullOrEmpty
     }
 
     It "is not verified when the attestation's recorded SHA does not match the file" {
         $directory = Join-Path $TestDrive "package-mismatch"
         $null = New-FakeTemplatePackage -Directory $directory -RecordedSha ("0" * 64)
 
-        $record = Get-RestoreSmokePackageProvenance -PackageDirectory $directory -RestoreManifestFileName "restore-manifest.json" -TemplateKind Minimal
+        $record = Get-RestoreSmokePackageProvenance -PackageDirectory $directory -RestoreManifestFileName "restore-manifest.json" -PackageFixture default-minimal
 
         $record.Verified | Should -BeFalse
         $record.Reason | Should -BeLike "*records packageSha256 $("0" * 64), but the file hashes to*"
@@ -2025,7 +2040,7 @@ Describe "SourceIdentity evidence (capture, inspection, restored identity)" {
             $script:bindings = [System.Collections.Generic.List[object]]::new()
             $script:packages = [System.Collections.Generic.List[object]]::new()
             $script:buildArguments = @{
-                TemplateKind            = "Minimal"
+                PackageFixture          = "default-minimal"
                 DatabaseEngine          = "postgresql"
                 SourceDatabaseName      = "edfi_datamanagementservice"
                 PackageDirectory        = $script:directory
@@ -2077,7 +2092,7 @@ Describe "SourceIdentity evidence (capture, inspection, restored identity)" {
         ) {
             Reset-IdentityDocker -SelectQueue $Queue -Fail $Fail
 
-            { Invoke-RestoreSmokeIdentityBoundPackageBuild @script:buildArguments } | Should -Throw -ExpectedMessage "Cannot bind the Minimal package to its source's SourceIdentity: before the backup, $Expected. Nothing was built."
+            { Invoke-RestoreSmokeIdentityBoundPackageBuild @script:buildArguments } | Should -Throw -ExpectedMessage "Cannot bind the default-minimal package to its source's SourceIdentity: before the backup, $Expected. Nothing was built."
 
             @($global:RestoreSmokeIdentityTest.Steps) | Should -Be @("select")
             Test-Path -LiteralPath $script:directory | Should -BeFalse
@@ -2128,7 +2143,7 @@ Describe "SourceIdentity evidence (capture, inspection, restored identity)" {
             $populatedDirectory = Join-Path $TestDrive "bound-populated"
 
             $minimal = Invoke-RestoreSmokeIdentityBoundPackageBuild @script:buildArguments -PackageDirectory $minimalDirectory -BuildPackage { $null = New-FakeIdentityPackage -Directory $minimalDirectory }
-            $populated = Invoke-RestoreSmokeIdentityBoundPackageBuild @script:buildArguments -TemplateKind Populated -PackageDirectory $populatedDirectory -BuildPackage { $null = New-FakeIdentityPackage -Directory $populatedDirectory -TemplateKind Populated -ArtifactContent "-- populated dump" }
+            $populated = Invoke-RestoreSmokeIdentityBoundPackageBuild @script:buildArguments -PackageFixture default-populated -PackageDirectory $populatedDirectory -BuildPackage { $null = New-FakeIdentityPackage -Directory $populatedDirectory -TemplateKind Populated -ArtifactContent "-- populated dump" }
 
             $script:bindings.Count | Should -Be 2
             @($script:bindings.TemplateKind) | Should -Be @("Minimal", "Populated")
@@ -2401,16 +2416,16 @@ Describe "SourceIdentity evidence (capture, inspection, restored identity)" {
             $bindings = [System.Collections.Generic.List[object]]::new()
             $packages = [System.Collections.Generic.List[object]]::new()
 
-            $bound = Invoke-RestoreSmokeIdentityBoundPackageBuild -TemplateKind Minimal -DatabaseEngine postgresql -SourceDatabaseName "edfi_datamanagementservice" -PackageDirectory $directory -RestoreManifestFileName "restore-manifest.json" -BindingList $bindings -PackageList $packages -BuildPackage { $null = New-FakeIdentityPackage -Directory $directory }
+            $bound = Invoke-RestoreSmokeIdentityBoundPackageBuild -PackageFixture default-minimal -DatabaseEngine postgresql -SourceDatabaseName "edfi_datamanagementservice" -PackageDirectory $directory -RestoreManifestFileName "restore-manifest.json" -BindingList $bindings -PackageList $packages -BuildPackage { $null = New-FakeIdentityPackage -Directory $directory }
             $packagePath = Join-Path $directory $bound.Package.PackageFile
             $restored = [System.Collections.Generic.List[object]]::new()
             $first = Get-RestoreSmokeSourceIdentityRead -DatabaseEngine postgresql -DatabaseName "edfi_datamanagementservice"
-            $restored.Add([pscustomobject]@{ RestoreExecution = "package-directory#1"; TemplateKind = "Minimal"; PackageSha256 = (Get-RestoreSmokeFileSha256 -Path $packagePath); Rows = $first.Rows; Identity = $first.Identity; Reason = $first.Reason })
+            $restored.Add([pscustomobject]@{ RestoreExecution = "package-directory#1"; PackageFixture = "default-minimal"; TemplateKind = "Minimal"; PackageSha256 = (Get-RestoreSmokeFileSha256 -Path $packagePath); Rows = $first.Rows; Identity = $first.Identity; Reason = $first.Reason })
             $work = Join-Path $TestDrive "contract-work-$([Guid]::NewGuid().ToString('N'))"
             New-Item -ItemType Directory -Path $work | Out-Null
             $inspection = Invoke-RestoreSmokePackageInspection -PackagePath $packagePath -TemplateKind Minimal -DatabaseEngine postgresql -WorkDirectory $work -RestoreManifestFileName "restore-manifest.json"
             $second = Get-RestoreSmokeSourceIdentityRead -DatabaseEngine postgresql -DatabaseName "edfi_datamanagementservice"
-            $restored.Add([pscustomobject]@{ RestoreExecution = "package-directory#2"; TemplateKind = "Minimal"; PackageSha256 = (Get-RestoreSmokeFileSha256 -Path $packagePath); Rows = $second.Rows; Identity = $second.Identity; Reason = $second.Reason })
+            $restored.Add([pscustomobject]@{ RestoreExecution = "package-directory#2"; PackageFixture = "default-minimal"; TemplateKind = "Minimal"; PackageSha256 = (Get-RestoreSmokeFileSha256 -Path $packagePath); Rows = $second.Rows; Identity = $second.Identity; Reason = $second.Reason })
 
             $classification = Get-RestoreSmokeResultClassification -Provenance ([ordered]@{
                     Legs                   = @("package-directory")
@@ -2421,8 +2436,731 @@ Describe "SourceIdentity evidence (capture, inspection, restored identity)" {
                 })
 
             $inspection.Identity | Should -BeExactly $script:sourceIdentity
-            @($classification.Reasons | Where-Object { $_ -like "*SourceIdentity*" -or $_ -like "*inspect*" -or $_ -like "Minimal package *" }) | Should -Be $Expected
+            @($classification.Reasons | Where-Object { $_ -like "*SourceIdentity*" -or $_ -like "*inspect*" -or $_ -like "default-minimal package *" }) | Should -Be $Expected
         }
+    }
+}
+
+Describe "Package fixtures and leg selection" {
+    It "describes the <name> fixture" -ForEach @(
+        @{ Name = "default-minimal"; Kind = "Minimal"; Selection = "default"; Projects = $null; Directory = "package-default-minimal" }
+        @{ Name = "core-only-minimal"; Kind = "Minimal"; Selection = "core-only"; Projects = @("edfi"); Directory = "package-core-only-minimal" }
+        @{ Name = "default-populated"; Kind = "Populated"; Selection = "default"; Projects = $null; Directory = "package-default-populated" }
+    ) {
+        $fixture = Get-RestoreSmokePackageFixture -Name $Name
+
+        $fixture.Name | Should -BeExactly $Name
+        $fixture.TemplateKind | Should -BeExactly $Kind
+        $fixture.Selection | Should -BeExactly $Selection
+        $fixture.DirectoryName | Should -BeExactly $Directory
+        if ($null -eq $Projects) {
+            $fixture.ProjectSchemas | Should -BeNullOrEmpty
+        }
+        else {
+            @($fixture.ProjectSchemas) | Should -Be $Projects
+        }
+    }
+
+    It "refuses an unknown fixture" {
+        { Get-RestoreSmokePackageFixture -Name "minimal" } | Should -Throw -ExpectedMessage "Unknown package fixture 'minimal'. Known fixtures: default-minimal, core-only-minimal, default-populated."
+    }
+
+    It "derives the fixtures <case>" -ForEach @(
+        @{ Case = "a package-directory run needs"; Legs = @("package-directory"); Expected = @("default-minimal") }
+        @{ Case = "a negative-only run needs"; Legs = @("tampered-package", "running-stack"); Expected = @("default-minimal") }
+        @{ Case = "extension-selection needs, for its restore and its refusal"; Legs = @("extension-selection"); Expected = @("default-minimal", "core-only-minimal") }
+        @{ Case = "a populated-only run needs"; Legs = @("populated"); Expected = @("default-populated") }
+        @{ Case = "a mixed run needs, each once and in table order"; Legs = @("populated", "extension-selection", "separate-config", "package-directory"); Expected = @("default-minimal", "core-only-minimal", "default-populated") }
+    ) {
+        @(Get-RestoreSmokeLegPackageFixture -Leg $Legs) | Should -Be $Expected
+    }
+
+    It "derives no fixture for no leg" {
+        @(Get-RestoreSmokeLegPackageFixture -Leg @()) | Should -BeNullOrEmpty
+    }
+
+    It "maps restore <execution> to the <expected> fixture" -ForEach @(
+        @{ Execution = "package-directory#1"; Expected = "default-minimal" }
+        @{ Execution = "package-directory#2"; Expected = "default-minimal" }
+        @{ Execution = "separate-config#1"; Expected = "default-minimal" }
+        @{ Execution = "directory-feed#1"; Expected = "default-minimal" }
+        @{ Execution = "extension-selection#1"; Expected = "core-only-minimal" }
+        @{ Execution = "populated#1"; Expected = "default-populated" }
+    ) {
+        (Get-RestoreSmokeRestoreExecutionFixture -RestoreExecution $Execution).Name | Should -BeExactly $Expected
+    }
+
+    It "refuses restore execution <execution>" -ForEach @(
+        @{ Execution = "tampered-package#1"; Expected = "Leg 'tampered-package' performs no successful restore, so it has no restore execution id." }
+        @{ Execution = "extension-selection#2"; Expected = "Leg 'extension-selection' performs 1 successful restore(s); restore 2 is not defined." }
+        @{ Execution = "package-directory"; Expected = "'package-directory' is not a restore execution id ('<leg>#<ordinal>')." }
+        @{ Execution = "package-directory#0"; Expected = "'package-directory#0' is not a restore execution id ('<leg>#<ordinal>')." }
+    ) {
+        { Get-RestoreSmokeRestoreExecutionFixture -RestoreExecution $Execution } | Should -Throw -ExpectedMessage $Expected
+    }
+
+    It "requires extension-selection's one restore, of the core-only fixture" {
+        Get-RestoreSmokeRestoreExecutionId -Leg "extension-selection" | Should -BeExactly "extension-selection#1"
+        $requirement = Get-RestoreSmokeRequiredApiRead -Legs @("extension-selection", "package-directory")
+
+        @($requirement.Required | ForEach-Object { $_.RestoreExecution }) | Should -Be @("extension-selection#1", "package-directory#1", "package-directory#2")
+        @($requirement.Required | ForEach-Object { $_.PackageFixture }) | Should -Be @("core-only-minimal", "default-minimal", "default-minimal")
+        @($requirement.Required | ForEach-Object { $_.TemplateKind }) | Should -Be @("Minimal", "Minimal", "Minimal")
+        @($requirement.UnknownLegs) | Should -BeNullOrEmpty
+    }
+
+    It "refuses extension-selection <case>" -ForEach @(
+        @{ Case = "with -Wrapper local"; Wrapper = "local"; Supplied = $false; Expected = "The extension-selection leg requires -Wrapper published; it proves the selection a published-image deployment takes from its env file." }
+        @{ Case = "with -Wrapper local and an explicit Data Standard"; Wrapper = "local"; Supplied = $true; Expected = "The extension-selection leg requires -Wrapper published; it proves the selection a published-image deployment takes from its env file." }
+        @{ Case = "with an explicit -DataStandardVersion"; Wrapper = "published"; Supplied = $true; Expected = "The extension-selection leg refuses an explicit -DataStandardVersion: the published wrapper would compose the Data Standard overlay's SCHEMA_PACKAGES over the env file's selection." }
+    ) {
+        { Assert-RestoreSmokeLegSelection -Leg @("package-directory", "extension-selection") -Wrapper $Wrapper -DataStandardVersionSupplied $Supplied } | Should -Throw -ExpectedMessage $Expected
+    }
+
+    It "accepts <case>" -ForEach @(
+        @{ Case = "extension-selection under the published wrapper without a Data Standard"; Legs = @("extension-selection"); Wrapper = "published"; Supplied = $false }
+        @{ Case = "other legs under the local wrapper with a Data Standard"; Legs = @("package-directory", "populated"); Wrapper = "local"; Supplied = $true }
+        @{ Case = "other legs under the published wrapper with a Data Standard"; Legs = @("separate-config"); Wrapper = "published"; Supplied = $true }
+        @{ Case = "no leg"; Legs = @(); Wrapper = "local"; Supplied = $true }
+    ) {
+        { Assert-RestoreSmokeLegSelection -Leg $Legs -Wrapper $Wrapper -DataStandardVersionSupplied $Supplied } | Should -Not -Throw
+    }
+}
+
+Describe "Write-RestoreSmokeCoreOnlyEnvironmentFile" {
+    BeforeAll {
+        # The test reads the written file with the parser prepare-dms-schema.ps1 uses.
+        Import-Module (Join-Path $PSScriptRoot "../../schema-package-utility.psm1") -Force
+
+        $script:coreEntry = '{ "version": "1.0.335", "feedUrl": "https://feed.example.invalid/index.json", "name": "EdFi.DataStandard52.ApiSchema" }'
+        $script:tpdmEntry = '{ "version": "1.0.335", "feedUrl": "https://feed.example.invalid/index.json", "name": "EdFi.DataStandard52.TPDM.ApiSchema" }'
+        $script:schemaBlock = "SCHEMA_PACKAGES='[`n  $script:coreEntry,`n  $script:tpdmEntry`n]'"
+
+        function script:New-BaseEnvironmentFile {
+            param([string]$SchemaPackages = $script:schemaBlock)
+
+            $path = Join-Path $TestDrive "base-$([Guid]::NewGuid().ToString('N')).env"
+            $content = @(
+                "POSTGRES_DB_NAME=edfi_datamanagementservice"
+                "DATABASE_TEMPLATE_PACKAGE=EdFi.Api.Populated.Template.PostgreSql.5.2.0"
+                "# SCHEMA_PACKAGES='[]' in a comment is not a declaration"
+                $SchemaPackages
+                "DMS_CONFIG_ASPNETCORE_HTTP_PORTS=8081"
+                "DMS_IMAGE_TAG=dms-restore-smoke-0123456789ab"
+                "DMS_CONFIG_DOCKER_IMAGE=local/ed-fi-api-configuration-service:dms-restore-smoke-0123456789ab"
+            ) -join "`n"
+            [System.IO.File]::WriteAllText($path, $content + "`n")
+            return $path
+        }
+    }
+
+    It "keeps only the core package and every other line, including the run's image tags" {
+        $base = New-BaseEnvironmentFile
+        $target = Join-Path $TestDrive "core-$([Guid]::NewGuid().ToString('N')).env"
+
+        $record = Write-RestoreSmokeCoreOnlyEnvironmentFile -BaseEnvironmentFile $base -TargetPath $target
+
+        $record.Selection | Should -BeExactly "core-only"
+        $record.FileName | Should -BeExactly ([System.IO.Path]::GetFileName($target))
+        @($record.SelectedPackages) | Should -Be @("EdFi.DataStandard52.ApiSchema@1.0.335")
+        @($record.RemovedPackages) | Should -Be @("EdFi.DataStandard52.TPDM.ApiSchema@1.0.335")
+        $packages = @(Get-SchemaPackagesFromEnvironmentFile -EnvironmentFilePath $target)
+        $packages.Count | Should -Be 1
+        $packages[0].name | Should -BeExactly "EdFi.DataStandard52.ApiSchema"
+        $packages[0].version | Should -BeExactly "1.0.335"
+        $packages[0].feedUrl | Should -BeExactly "https://feed.example.invalid/index.json"
+
+        $written = Get-Content -LiteralPath $target -Raw
+        $schemaLine = @($written -split "`n" | Where-Object { $_ -like "SCHEMA_PACKAGES=*" })
+        $schemaLine.Count | Should -Be 1
+        $written.Replace($schemaLine[0], "<schema>") | Should -BeExactly ((Get-Content -LiteralPath $base -Raw).Replace($script:schemaBlock, "<schema>"))
+        $written | Should -Match '(?m)^DMS_IMAGE_TAG=dms-restore-smoke-0123456789ab$'
+        $written | Should -Match '(?m)^DMS_CONFIG_DOCKER_IMAGE=local/ed-fi-api-configuration-service:dms-restore-smoke-0123456789ab$'
+    }
+
+    It "derives the core-only selection from the repository's .env.example" {
+        $base = Join-Path $TestDrive "env-example-$([Guid]::NewGuid().ToString('N'))"
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../.env.example") -Destination $base
+        $target = Join-Path $TestDrive "core-$([Guid]::NewGuid().ToString('N')).env"
+
+        $record = Write-RestoreSmokeCoreOnlyEnvironmentFile -BaseEnvironmentFile $base -TargetPath $target
+
+        @($record.SelectedPackages) | Should -HaveCount 1
+        @($record.SelectedPackages)[0] | Should -Match '^EdFi\.DataStandard52\.ApiSchema@\d+\.\d+\.\d+$'
+        @($record.RemovedPackages | Where-Object { $_ -like "EdFi.DataStandard52.TPDM.ApiSchema@*" }) | Should -HaveCount 1
+        @(Get-SchemaPackagesFromEnvironmentFile -EnvironmentFilePath $target | ForEach-Object { "$($_.name)@$($_.version)" }) | Should -Be @($record.SelectedPackages)
+    }
+
+    It "refuses, writing nothing, when SCHEMA_PACKAGES <case>" -ForEach @(
+        @{ Case = "lists only the core package"; Block = "SCHEMA_PACKAGES='[{ `"version`": `"1.0.335`", `"name`": `"EdFi.DataStandard52.ApiSchema`" }]'"; Expected = "lists only the core package, so a core-only selection would equal the default one." }
+        @{ Case = "lists no core package"; Block = "SCHEMA_PACKAGES='[{ `"version`": `"1.0.335`", `"name`": `"EdFi.DataStandard52.TPDM.ApiSchema`" }]'"; Expected = "lists 0 core packages (EdFi.DataStandard<NN>.ApiSchema); expected exactly one." }
+        @{ Case = "lists two core packages"; Block = "SCHEMA_PACKAGES='[{ `"version`": `"1.0.335`", `"name`": `"EdFi.DataStandard52.ApiSchema`" }, { `"version`": `"1.0.335`", `"name`": `"EdFi.DataStandard61.ApiSchema`" }, { `"version`": `"1.0.335`", `"name`": `"EdFi.DataStandard52.TPDM.ApiSchema`" }]'"; Expected = "lists 2 core packages (EdFi.DataStandard<NN>.ApiSchema); expected exactly one." }
+        @{ Case = "has an entry without a version"; Block = "SCHEMA_PACKAGES='[{ `"version`": `"1.0.335`", `"name`": `"EdFi.DataStandard52.ApiSchema`" }, { `"name`": `"EdFi.DataStandard52.TPDM.ApiSchema`" }]'"; Expected = "has an entry without both name and version." }
+        @{ Case = "is declared twice"; Block = "SCHEMA_PACKAGES='[]'`nSCHEMA_PACKAGES='[{ `"version`": `"1.0.335`", `"name`": `"EdFi.DataStandard52.ApiSchema`" }]'"; Expected = "SCHEMA_PACKAGES 2 times; expected exactly once." }
+        @{ Case = "is not declared"; Block = "OTHER_KEY=1"; Expected = "SCHEMA_PACKAGES 0 times; expected exactly once." }
+        @{ Case = "is not a quoted array"; Block = "SCHEMA_PACKAGES=[]"; Expected = "is not a quoted JSON array." }
+    ) {
+        $base = New-BaseEnvironmentFile -SchemaPackages $Block
+        $target = Join-Path $TestDrive "core-$([Guid]::NewGuid().ToString('N')).env"
+
+        { Write-RestoreSmokeCoreOnlyEnvironmentFile -BaseEnvironmentFile $base -TargetPath $target } | Should -Throw -ExpectedMessage "Cannot derive a core-only env: *$Expected"
+        Test-Path -LiteralPath $target | Should -BeFalse
+    }
+}
+
+Describe "Read-RestoreSmokeWorkspaceSelection" {
+    BeforeAll {
+        $script:coreHash = "c0" * 32
+
+        function script:New-TestWorkspace {
+            param(
+                [object]$SelectedPackages = @("EdFi.DataStandard52.ApiSchema@1.0.335"),
+                [object]$SelectedExtensions = @(),
+                [string]$ApiSchemaManifestPath = "ApiSchema/bootstrap-api-schema-manifest.json",
+                [object[]]$Projects = @(@{ projectEndpointName = "ed-fi"; isExtensionProject = $false; schemaPath = "ed-fi/ApiSchema.json" }),
+                [switch]$OmitSelectedPackages,
+                [switch]$OmitApiSchemaManifest
+            )
+
+            $root = Join-Path $TestDrive "bootstrap-$([Guid]::NewGuid().ToString('N'))"
+            New-Item -ItemType Directory -Path (Join-Path $root "ApiSchema") -Force | Out-Null
+            $schema = [ordered]@{ selectionMode = "standard"; selectedExtensions = $SelectedExtensions; effectiveSchemaHash = $script:coreHash; apiSchemaManifestPath = $ApiSchemaManifestPath }
+            if (-not $OmitSelectedPackages) {
+                $schema.selectedPackages = $SelectedPackages
+            }
+            [ordered]@{ version = 1; schema = $schema } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $root "bootstrap-manifest.json")
+            if (-not $OmitApiSchemaManifest) {
+                [ordered]@{ version = 1; projects = $Projects } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $root "ApiSchema/bootstrap-api-schema-manifest.json")
+            }
+            return $root
+        }
+    }
+
+    It "reads a core-only workspace" {
+        $record = Read-RestoreSmokeWorkspaceSelection -BootstrapRoot (New-TestWorkspace)
+
+        $record.Reason | Should -BeNullOrEmpty
+        @($record.SelectedPackages) | Should -Be @("EdFi.DataStandard52.ApiSchema@1.0.335")
+        @($record.SelectedExtensions) | Should -BeNullOrEmpty
+        $record.CoreProjectEndpointName | Should -BeExactly "ed-fi"
+        @($record.ProjectSchemas) | Should -Be @("edfi")
+        $record.EffectiveSchemaHash | Should -BeExactly $script:coreHash
+    }
+
+    It "reads a Core+TPDM workspace as two projects" {
+        $projects = @(
+            @{ projectEndpointName = "ed-fi"; isExtensionProject = $false; schemaPath = "ed-fi/ApiSchema.json" }
+            @{ projectEndpointName = "tpdm"; isExtensionProject = $true; schemaPath = "tpdm/ApiSchema.json" }
+        )
+        $record = Read-RestoreSmokeWorkspaceSelection -BootstrapRoot (New-TestWorkspace -SelectedPackages @("EdFi.DataStandard52.ApiSchema@1.0.335", "EdFi.DataStandard52.TPDM.ApiSchema@1.0.335") -SelectedExtensions @("tpdm") -Projects $projects)
+
+        $record.Reason | Should -BeNullOrEmpty
+        @($record.ProjectSchemas) | Should -Be @("edfi", "tpdm")
+        @($record.SelectedPackages) | Should -HaveCount 2
+    }
+
+    It "records a workspace without schema.selectedPackages as null, not as an empty selection" {
+        $record = Read-RestoreSmokeWorkspaceSelection -BootstrapRoot (New-TestWorkspace -OmitSelectedPackages)
+
+        $record.Reason | Should -BeNullOrEmpty
+        $null -eq $record.SelectedPackages | Should -BeTrue
+        @($record.ProjectSchemas) | Should -Be @("edfi")
+    }
+
+    It "reports, without throwing, <case>" -ForEach @(
+        @{ Case = "an escaping ApiSchema manifest path"; Arguments = @{ ApiSchemaManifestPath = "../outside.json" }; Expected = "schema.apiSchemaManifestPath '../outside.json' is not a path inside the workspace" }
+        @{ Case = "an empty path segment"; Arguments = @{ ApiSchemaManifestPath = "ApiSchema//bootstrap-api-schema-manifest.json" }; Expected = "schema.apiSchemaManifestPath 'ApiSchema//bootstrap-api-schema-manifest.json' is not a path inside the workspace" }
+        @{ Case = "a missing ApiSchema manifest"; Arguments = @{ OmitApiSchemaManifest = $true }; Expected = "the staged ApiSchema manifest 'ApiSchema/bootstrap-api-schema-manifest.json' is missing" }
+        @{ Case = "two core projects"; Arguments = @{ Projects = @(@{ projectEndpointName = "ed-fi"; isExtensionProject = $false; schemaPath = "a.json" }, @{ projectEndpointName = "other"; isExtensionProject = $false; schemaPath = "b.json" }) }; Expected = "the staged ApiSchema manifest declares 2 core projects; expected exactly one" }
+        @{ Case = "a non-array selectedExtensions"; Arguments = @{ SelectedExtensions = "tpdm" }; Expected = "schema.selectedExtensions is not an array" }
+    ) {
+        $record = Read-RestoreSmokeWorkspaceSelection -BootstrapRoot (New-TestWorkspace @Arguments)
+
+        $record.Reason | Should -BeExactly $Expected
+        $record.ProjectSchemas | Should -BeNullOrEmpty
+    }
+
+    It "reports a rooted ApiSchema manifest path" {
+        $root = New-TestWorkspace -ApiSchemaManifestPath (Join-Path $TestDrive "elsewhere.json")
+
+        (Read-RestoreSmokeWorkspaceSelection -BootstrapRoot $root).Reason | Should -BeLike "schema.apiSchemaManifestPath '*elsewhere.json' is not a path inside the workspace"
+    }
+
+    It "reports a missing workspace, a missing schema section, and unreadable JSON" {
+        (Read-RestoreSmokeWorkspaceSelection -BootstrapRoot (Join-Path $TestDrive "absent")).Reason | Should -BeExactly "the active workspace has no bootstrap-manifest.json"
+
+        $noSchema = Join-Path $TestDrive "no-schema-$([Guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $noSchema | Out-Null
+        Set-Content -LiteralPath (Join-Path $noSchema "bootstrap-manifest.json") -Value '{ "version": 1 }'
+        (Read-RestoreSmokeWorkspaceSelection -BootstrapRoot $noSchema).Reason | Should -BeExactly "bootstrap-manifest.json has no schema section"
+
+        $broken = Join-Path $TestDrive "broken-$([Guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $broken | Out-Null
+        Set-Content -LiteralPath (Join-Path $broken "bootstrap-manifest.json") -Value '{ "schema": '
+        (Read-RestoreSmokeWorkspaceSelection -BootstrapRoot $broken).Reason | Should -BeLike "the active workspace could not be read: *"
+    }
+}
+
+Describe "Get-RestoreSmokeCatalogSelection and Get-RestoreSmokeRefusalState" {
+    BeforeAll {
+        Import-Module (Join-Path $PSScriptRoot "../../DatabaseTemplates/Template-RestoreCore.psm1") -Force
+        $script:coreHash = "c0" * 32
+        $script:seedHash = "ab" * 32
+
+        # A fake engine and daemon answered from $global:RestoreSmokeSelectionTest: schema rows,
+        # the EffectiveSchema rows, container and volume names, and per-call failures.
+        Mock docker -ModuleName RestoreSmokeProbes {
+            $state = $global:RestoreSmokeSelectionTest
+            $line = $args -join " "
+            $state.Calls.Add($line)
+            $step = "unknown"
+            if ($line.Contains("pg_namespace") -or $line.Contains("sys.schemas")) { $step = "schemas" }
+            elseif ($line.Contains("EffectiveSchema")) { $step = "effective" }
+            elseif ($args[0] -eq "ps") { $step = "ps" }
+            elseif ($args[0] -eq "volume" -and $args[1] -eq "ls") { $step = "volumes" }
+            if ($state.Fail.ContainsKey($step)) {
+                $global:LASTEXITCODE = 1
+                return $state.Fail[$step]
+            }
+            $global:LASTEXITCODE = 0
+            switch ($step) {
+                "schemas" { return $state.SchemaRows }
+                "effective" { return $state.EffectiveRows }
+                "ps" { return $state.Containers }
+                "volumes" { return $state.Volumes }
+                default { $global:LASTEXITCODE = 99; return "unexpected docker call: $line" }
+            }
+        }
+
+        function script:Reset-SelectionDocker {
+            param(
+                [string[]]$SchemaRows = @("auth", "dms", "edfi", "public", "tracked_changes_edfi"),
+                [string[]]$EffectiveRows = @("1.0.0|$($script:coreHash)|42|$($script:seedHash)"),
+                [string[]]$Containers = @(),
+                [string[]]$Volumes = @(),
+                [hashtable]$Fail = @{}
+            )
+
+            $global:RestoreSmokeSelectionTest = @{
+                Calls         = [System.Collections.Generic.List[string]]::new()
+                SchemaRows    = $SchemaRows
+                EffectiveRows = $EffectiveRows
+                Containers    = $Containers
+                Volumes       = $Volumes
+                Fail          = $Fail
+            }
+        }
+    }
+
+    AfterAll {
+        Remove-Variable -Name RestoreSmokeSelectionTest -Scope Global -ErrorAction SilentlyContinue
+    }
+
+    It "partitions the PostgreSQL catalog with the restore consumer's own queries" {
+        Reset-SelectionDocker
+
+        $record = Get-RestoreSmokeCatalogSelection -DatabaseEngine postgresql -DatabaseName "edfi_datamanagementservice"
+
+        $record.Reason | Should -BeNullOrEmpty
+        @($record.SchemaNames) | Should -Be @("auth", "dms", "edfi", "public", "tracked_changes_edfi")
+        @($record.ProjectSchemas) | Should -Be @("edfi")
+        @($record.TrackedChangesProjects) | Should -Be @("edfi")
+        $record.EffectiveSchemaHash | Should -BeExactly $script:coreHash
+        $calls = $global:RestoreSmokeSelectionTest.Calls
+        $calls[0] | Should -BeExactly ("exec dms-postgresql psql -U postgres -d edfi_datamanagementservice -tA -c " + (Get-InventorySchemaQuerySql -DatabaseEngine postgresql -Purpose InventoryEnumeration))
+        $calls[1] | Should -BeExactly ("exec dms-postgresql psql -U postgres -d edfi_datamanagementservice -tA -c " + (Get-EffectiveSchemaRowQuerySql -DatabaseEngine postgresql))
+    }
+
+    It "partitions a SQL Server catalog holding an extension project" {
+        Reset-SelectionDocker -SchemaRows @("dbo", "dms", "edfi", "tpdm", "tracked_changes_tpdm")
+
+        $record = Get-RestoreSmokeCatalogSelection -DatabaseEngine mssql -DatabaseName "edfi_datamanagementservice"
+
+        @($record.ProjectSchemas) | Should -Be @("edfi", "tpdm")
+        @($record.TrackedChangesProjects) | Should -Be @("tpdm")
+        $global:RestoreSmokeSelectionTest.Calls[0].Contains("/opt/mssql-tools18/bin/sqlcmd") | Should -BeTrue
+        $global:RestoreSmokeSelectionTest.Calls[0].EndsWith((Get-InventorySchemaQuerySql -DatabaseEngine mssql -Purpose InventoryEnumeration)) | Should -BeTrue
+    }
+
+    It "reports, without throwing, <case>" -ForEach @(
+        @{ Case = "a failed schema query"; Arguments = @{ Fail = @{ schemas = "FATAL: database does not exist" } }; Expected = "the catalog schema query against 'edfi_datamanagementservice' exited 1: FATAL: database does not exist" }
+        @{ Case = "a failed EffectiveSchema query"; Arguments = @{ Fail = @{ effective = "ERROR: relation does not exist" } }; Expected = "the dms.EffectiveSchema query against 'edfi_datamanagementservice' exited 1: ERROR: relation does not exist" }
+        @{ Case = "two EffectiveSchema rows"; Arguments = @{ EffectiveRows = @("1.0.0|$("c0" * 32)|42|$("ab" * 32)", "1.0.0|$("c0" * 32)|42|$("ab" * 32)") }; Expected = "the dms.EffectiveSchema row of 'edfi_datamanagementservice' could not be read: Expected exactly one dms.EffectiveSchema row, found 2. The source database is not a provisioned DMS datastore." }
+    ) {
+        Reset-SelectionDocker @Arguments
+
+        $record = Get-RestoreSmokeCatalogSelection -DatabaseEngine postgresql -DatabaseName "edfi_datamanagementservice"
+
+        $record.Reason | Should -BeExactly $Expected
+        $record.EffectiveSchemaHash | Should -BeNullOrEmpty
+    }
+
+    It "records the project's containers and volumes, the workspace, and the restore candidates" {
+        Reset-SelectionDocker -Volumes @("dms-published_dms-mssql-2025")
+        $composeRoot = Join-Path $TestDrive "compose-$([Guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path (Join-Path $composeRoot ".bootstrap-restore/candidate-0123"), (Join-Path $composeRoot ".bootstrap-restore/derived") -Force | Out-Null
+
+        $state = Get-RestoreSmokeRefusalState -ComposeProject "dms-published" -BootstrapRoot (Join-Path $composeRoot ".bootstrap") -RestoreWorkspaceRoot (Join-Path $composeRoot ".bootstrap-restore")
+
+        $state.Reason | Should -BeNullOrEmpty
+        @($state.Containers) | Should -BeNullOrEmpty
+        $null -eq $state.Containers | Should -BeFalse
+        @($state.Volumes) | Should -Be @("dms-published_dms-mssql-2025")
+        $state.WorkspacePresent | Should -BeFalse
+        @($state.CandidateDirectories) | Should -Be @("candidate-0123")
+        @($global:RestoreSmokeSelectionTest.Calls) | Should -Be @(
+            "ps -a --filter label=com.docker.compose.project=dms-published --format {{.Names}}"
+            "volume ls --filter label=com.docker.compose.project=dms-published --format {{.Name}}"
+        )
+
+        New-Item -ItemType Directory -Path (Join-Path $composeRoot ".bootstrap") | Out-Null
+        Reset-SelectionDocker -Containers @("ed-fi-api")
+        $present = Get-RestoreSmokeRefusalState -ComposeProject "dms-published" -BootstrapRoot (Join-Path $composeRoot ".bootstrap") -RestoreWorkspaceRoot (Join-Path $composeRoot ".bootstrap-restore")
+        $present.WorkspacePresent | Should -BeTrue
+        @($present.Containers) | Should -Be @("ed-fi-api")
+    }
+
+    It "reports a failed <step> listing and leaves the Docker lists unknown" -ForEach @(
+        @{ Step = "ps"; Expected = "docker ps exited 1: Cannot connect to the Docker daemon" }
+        @{ Step = "volumes"; Expected = "docker volume ls exited 1: Cannot connect to the Docker daemon" }
+    ) {
+        Reset-SelectionDocker -Fail @{ $Step = "Cannot connect to the Docker daemon" }
+
+        $state = Get-RestoreSmokeRefusalState -ComposeProject "dms-published" -BootstrapRoot (Join-Path $TestDrive "none") -RestoreWorkspaceRoot (Join-Path $TestDrive "none-restore")
+
+        $state.Reason | Should -BeExactly $Expected
+        $null -eq $state.Containers | Should -BeTrue
+        $null -eq $state.Volumes | Should -BeTrue
+    }
+}
+
+Describe "Get-RestoreSmokeSelectionDefect" {
+    BeforeAll {
+        $script:coreHash = "c0" * 32
+        $script:defaultHash = "d0" * 32
+        $script:corePackageId = "EdFi.DataStandard52.ApiSchema@1.0.335"
+        $script:tpdmPackageId = "EdFi.DataStandard52.TPDM.ApiSchema@1.0.335"
+
+        function script:New-SelectionProof {
+            return [pscustomobject]@{
+                RestoreExecution = "extension-selection#1"
+                PackageFixture   = "core-only-minimal"
+                PackageSha256    = ("c1" * 32)
+                Workspace        = [pscustomobject]@{ Manifest = "bootstrap-manifest.json"; SelectedPackages = @($script:corePackageId); SelectedExtensions = @(); CoreProjectEndpointName = "ed-fi"; ProjectSchemas = @("edfi"); EffectiveSchemaHash = $script:coreHash; Reason = $null }
+                Catalog          = [pscustomobject]@{ DatabaseName = "edfi_datamanagementservice"; SchemaNames = @("auth", "dms", "edfi", "public"); ProjectSchemas = @("edfi"); TrackedChangesProjects = @("edfi"); EffectiveSchemaHash = $script:coreHash; Reason = $null }
+            }
+        }
+
+        function script:New-SelectionPackage {
+            return [pscustomobject]@{ PackageFixture = "core-only-minimal"; TemplateKind = "Minimal"; Sha256 = ("c1" * 32); RestoreManifestProjects = @("edfi"); RestoreManifestEffectiveSchemaHash = $script:coreHash; Verified = $true }
+        }
+    }
+
+    It "finds no defect when the workspace, the restore manifest, and the catalog all select the core project" {
+        @(Get-RestoreSmokeSelectionDefect -Proof (New-SelectionProof) -Package (New-SelectionPackage) -ExpectedProject @("edfi") -ExpectedPackage @($script:corePackageId)) | Should -BeNullOrEmpty
+    }
+
+    It "compares package identities case-insensitively, as the wrapper does" {
+        $proof = New-SelectionProof
+        $proof.Workspace.SelectedPackages = @($script:corePackageId.ToLowerInvariant())
+
+        @(Get-RestoreSmokeSelectionDefect -Proof $proof -Package (New-SelectionPackage) -ExpectedProject @("edfi") -ExpectedPackage @($script:corePackageId)) | Should -BeNullOrEmpty
+    }
+
+    It "reports exactly one defect when <case>" -ForEach @(
+        @{ Case = "the workspace also staged TPDM"; Mutate = { param($case) $case.Proof.Workspace.SelectedPackages = @("EdFi.DataStandard52.ApiSchema@1.0.335", "EdFi.DataStandard52.TPDM.ApiSchema@1.0.335") }; Expected = "the workspace staged packages [EdFi.DataStandard52.ApiSchema@1.0.335, EdFi.DataStandard52.TPDM.ApiSchema@1.0.335], but the selection env selects [EdFi.DataStandard52.ApiSchema@1.0.335]" }
+        @{ Case = "the workspace staged another core version"; Mutate = { param($case) $case.Proof.Workspace.SelectedPackages = @("EdFi.DataStandard52.ApiSchema@1.0.334") }; Expected = "the workspace staged packages [EdFi.DataStandard52.ApiSchema@1.0.334], but the selection env selects [EdFi.DataStandard52.ApiSchema@1.0.335]" }
+        @{ Case = "the workspace records no selectedPackages"; Mutate = { param($case) $case.Proof.Workspace.SelectedPackages = $null }; Expected = "the workspace manifest records no schema.selectedPackages" }
+        @{ Case = "the workspace selects TPDM"; Mutate = { param($case) $case.Proof.Workspace.ProjectSchemas = @("edfi", "tpdm") }; Expected = "the workspace selects projects [edfi, tpdm], expected [edfi]" }
+        @{ Case = "the workspace could not be read"; Mutate = { param($case) $case.Proof.Workspace.Reason = "the active workspace has no bootstrap-manifest.json" }; Expected = "the active workspace could not be read: the active workspace has no bootstrap-manifest.json" }
+        @{ Case = "the workspace was not recorded"; Mutate = { param($case) $case.Proof.Workspace = $null }; Expected = "the active workspace's selection was not recorded" }
+        @{ Case = "the restore manifest declares TPDM"; Mutate = { param($case) $case.Package.RestoreManifestProjects = @("edfi", "tpdm") }; Expected = "the restore manifest declares projects [edfi, tpdm], expected [edfi]" }
+        @{ Case = "the catalog holds a TPDM schema"; Mutate = { param($case) $case.Proof.Catalog.ProjectSchemas = @("edfi", "tpdm") }; Expected = "the target catalog holds project schemas [edfi, tpdm], expected [edfi]" }
+        @{ Case = "the catalog repeats the core schema"; Mutate = { param($case) $case.Proof.Catalog.ProjectSchemas = @("edfi", "edfi") }; Expected = "the target catalog holds project schemas [edfi, edfi], expected [edfi]" }
+        @{ Case = "the catalog holds no project schema"; Mutate = { param($case) $case.Proof.Catalog.ProjectSchemas = @() }; Expected = "the target catalog holds project schemas [], expected [edfi]" }
+        @{ Case = "the catalog holds a TPDM tracked_changes companion"; Mutate = { param($case) $case.Proof.Catalog.TrackedChangesProjects = @("edfi", "tpdm") }; Expected = "the target catalog holds tracked_changes companions of projects outside the selection: [tpdm]" }
+        @{ Case = "the catalog could not be read"; Mutate = { param($case) $case.Proof.Catalog.Reason = "the catalog schema query against 'edfi_datamanagementservice' exited 2: refused" }; Expected = "the target catalog could not be read: the catalog schema query against 'edfi_datamanagementservice' exited 2: refused" }
+        @{ Case = "the catalog was not recorded"; Mutate = { param($case) $case.Proof.Catalog = $null }; Expected = "the target catalog's selection was not recorded" }
+        @{ Case = "the workspace hash differs"; Mutate = { param($case) $case.Proof.Workspace.EffectiveSchemaHash = "d0" * 32 }; Expected = "the effective schema hashes disagree: workspace $("d0" * 32), restore manifest $("c0" * 32), target catalog $("c0" * 32)" }
+        @{ Case = "the restore manifest hash differs"; Mutate = { param($case) $case.Package.RestoreManifestEffectiveSchemaHash = "d0" * 32 }; Expected = "the effective schema hashes disagree: workspace $("c0" * 32), restore manifest $("d0" * 32), target catalog $("c0" * 32)" }
+        @{ Case = "the catalog hash differs"; Mutate = { param($case) $case.Proof.Catalog.EffectiveSchemaHash = "d0" * 32 }; Expected = "the effective schema hashes disagree: workspace $("c0" * 32), restore manifest $("c0" * 32), target catalog $("d0" * 32)" }
+        @{ Case = "the restore manifest hash is not lowercase hex"; Mutate = { param($case) $case.Package.RestoreManifestEffectiveSchemaHash = "C0" * 32 }; Expected = "the restore manifest effective schema hash '$("C0" * 32)' is not 64 lowercase hex" }
+        @{ Case = "the catalog hash is missing"; Mutate = { param($case) $case.Proof.Catalog.EffectiveSchemaHash = $null }; Expected = "the target catalog effective schema hash '' is not 64 lowercase hex" }
+    ) {
+        $proof = New-SelectionProof
+        $package = New-SelectionPackage
+        & $Mutate ([pscustomobject]@{ Proof = $proof; Package = $package })
+
+        @(Get-RestoreSmokeSelectionDefect -Proof $proof -Package $package -ExpectedProject @("edfi") -ExpectedPackage @($script:corePackageId)) | Should -Be @($Expected)
+    }
+
+    It "reports a missing package record" {
+        @(Get-RestoreSmokeSelectionDefect -Proof (New-SelectionProof) -Package $null -ExpectedProject @("edfi") -ExpectedPackage @($script:corePackageId)) | Should -Be @("no package record exists for the restored package, so its restore manifest is unknown")
+    }
+
+    It "reports undefined expectations instead of passing" {
+        $defects = @(Get-RestoreSmokeSelectionDefect -Proof (New-SelectionProof) -Package (New-SelectionPackage) -ExpectedProject @() -ExpectedPackage @())
+
+        $defects | Should -Contain "no expected project schemas are defined for the selection"
+        $defects | Should -Contain "the selection env records no selected packages"
+    }
+}
+
+Describe "Get-RestoreSmokeSelectionRefusalDefect" {
+    BeforeAll {
+        $script:coreHash = "c0" * 32
+        $script:defaultHash = "d0" * 32
+        $script:defaultSha = "d1" * 32
+        $script:coreSha = "c1" * 32
+
+        function script:New-RefusalPackage {
+            param([string]$Fixture)
+
+            if ($Fixture -eq "default-minimal") {
+                return [pscustomobject]@{ PackageFixture = "default-minimal"; TemplateKind = "Minimal"; Sha256 = $script:defaultSha; RestoreManifestProjects = @("edfi", "tpdm"); RestoreManifestEffectiveSchemaHash = $script:defaultHash }
+            }
+            return [pscustomobject]@{ PackageFixture = "core-only-minimal"; TemplateKind = "Minimal"; Sha256 = $script:coreSha; RestoreManifestProjects = @("edfi"); RestoreManifestEffectiveSchemaHash = $script:coreHash }
+        }
+
+        function script:New-RefusalState {
+            return [pscustomobject]@{ ComposeProject = "dms-published"; Containers = @(); Volumes = @("dms-published_dms-mssql-2025"); WorkspacePresent = $false; CandidateDirectories = @("candidate-old"); Reason = $null }
+        }
+
+        function script:New-Refusal {
+            $sentence = Get-RestoreSmokeSelectionRefusalExpectedMessage -PackageEffectiveSchemaHash $script:defaultHash -CandidateEffectiveSchemaHash $script:coreHash
+            return [pscustomobject]@{
+                Leg                  = "extension-selection"
+                PackageFixture       = "default-minimal"
+                EnvironmentSelection = "core-only"
+                PackageFile          = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0.1.0.999.nupkg"
+                PackageSha256        = $script:defaultSha
+                Before               = (New-RefusalState)
+                After                = (New-RefusalState)
+                Refused              = $true
+                Message              = $sentence
+            }
+        }
+    }
+
+    It "states the cross-check's effective-schema-hash sentence" {
+        Get-RestoreSmokeSelectionRefusalExpectedMessage -PackageEffectiveSchemaHash "aa" -CandidateEffectiveSchemaHash "bb" | Should -BeExactly "Effective schema hash mismatch: the restore manifest declares 'aa' but the candidate workspace staged 'bb'."
+    }
+
+    It "matches what the production cross-check throws for a Core+TPDM package against a core-only candidate, and only then the project set" {
+        # The production comparison, in its own process so the restore module's imports do not
+        # reach this session: the hash is compared before the project set, so differing
+        # selections are refused on the hash; with equal hashes the project set is what differs.
+        $restoreModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../bootstrap-restore.psm1"))
+        $restoreCoreModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../DatabaseTemplates/Template-RestoreCore.psm1"))
+        $probe = @'
+param([string]$RestoreModule, [string]$RestoreCoreModule, [string]$ManifestHash, [string]$CandidateHash)
+$ErrorActionPreference = "Stop"
+Import-Module $RestoreCoreModule -Force
+Import-Module $RestoreModule -Force
+$manifest = [pscustomobject]@{ databaseEngine = "postgresql"; documentJsonColumnType = (Get-RestoreDocumentJsonBaselineType -DatabaseEngine postgresql); dataStandardVersion = "5.2.0"; apiSchemaFormatVersion = "1.0.0"; effectiveSchemaHash = $ManifestHash; relationalMappingVersion = "v3"; projects = @("edfi", "tpdm") }
+$fact = [pscustomobject]@{ DataStandardVersion = "5.2.0"; ApiSchemaFormatVersion = "1.0.0"; EffectiveSchemaHash = $CandidateHash; SelectedExtensions = [string[]]@(); CoreProjectEndpointName = "ed-fi"; SchemaFilePaths = [string[]]@() }
+try {
+    Assert-RestoreManifestMatchesCandidate -Manifest $manifest -CandidateFact $fact -DatabaseEngine postgresql -CandidateRelationalMappingVersion "v3"
+    "no refusal"
+}
+catch {
+    $_.Exception.Message
+}
+'@
+        $probePath = Join-Path $TestDrive "cross-check-probe.ps1"
+        Set-Content -LiteralPath $probePath -Value $probe
+        $pwshPath = (Get-Process -Id $PID).Path
+
+        $differing = & $pwshPath -NoProfile -NonInteractive -File $probePath -RestoreModule $restoreModule -RestoreCoreModule $restoreCoreModule -ManifestHash $script:defaultHash -CandidateHash $script:coreHash 2>&1
+        $equal = & $pwshPath -NoProfile -NonInteractive -File $probePath -RestoreModule $restoreModule -RestoreCoreModule $restoreCoreModule -ManifestHash $script:coreHash -CandidateHash $script:coreHash 2>&1
+
+        ($differing | Out-String).Trim() | Should -BeExactly (Get-RestoreSmokeSelectionRefusalExpectedMessage -PackageEffectiveSchemaHash $script:defaultHash -CandidateEffectiveSchemaHash $script:coreHash)
+        ($equal | Out-String).Trim() | Should -BeExactly "Project set mismatch: the restore manifest declares projects [edfi, tpdm] but the candidate workspace stages [edfi]."
+    }
+
+    It "finds no defect for a refusal by the cross-check that changed nothing" {
+        $refusal = New-Refusal
+        $refusal.Message = "bootstrap failed: $($refusal.Message) (restore preflight)"
+
+        @(Get-RestoreSmokeSelectionRefusalDefect -Refusal $refusal -DefaultPackage (New-RefusalPackage "default-minimal") -SelectedPackage (New-RefusalPackage "core-only-minimal")) | Should -BeNullOrEmpty
+    }
+
+    It "reports exactly one defect when <case>" -ForEach @(
+        @{ Case = "the restore was not refused"; Mutate = { param($case) $case.Refusal.Refused = $false; $case.Refusal.Message = $null }; Expected = "the default package was not refused under the core-only env" }
+        @{ Case = "the refusal came from the project-set comparison"; Mutate = { param($case) $case.Refusal.Message = "Project set mismatch: the restore manifest declares projects [edfi, tpdm] but the candidate workspace stages [edfi]." }; Expected = "the refusal was not the package-to-candidate cross-check's effective schema hash mismatch: Project set mismatch: the restore manifest declares projects [edfi, tpdm] but the candidate workspace stages [edfi]." }
+        @{ Case = "the refusal names the hashes the other way round"; Mutate = { param($case) $case.Refusal.Message = Get-RestoreSmokeSelectionRefusalExpectedMessage -PackageEffectiveSchemaHash ("c0" * 32) -CandidateEffectiveSchemaHash ("d0" * 32) }; Expected = "the refusal was not the package-to-candidate cross-check's effective schema hash mismatch: Effective schema hash mismatch: the restore manifest declares '$("c0" * 32)' but the candidate workspace staged '$("d0" * 32)'." }
+        @{ Case = "the stop proof refused instead"; Mutate = { param($case) $case.Refusal.Message = "Restore refused: compose project 'dms-published' still has running containers: ed-fi-api." }; Expected = "the refusal was not the package-to-candidate cross-check's effective schema hash mismatch: Restore refused: compose project 'dms-published' still has running containers: ed-fi-api." }
+        @{ Case = "the attempted package is the core-only one"; Mutate = { param($case) $case.Refusal.PackageSha256 = "c1" * 32 }; Expected = "the attempted package '$("c1" * 32)' is not the default package" }
+        @{ Case = "both packages declare one hash"; Mutate = { param($case) $case.Default.RestoreManifestEffectiveSchemaHash = "c0" * 32 }; Expected = "the default and core-only packages declare the same effective schema hash, so the refusal cannot show the selections differ" }
+        @{ Case = "a package hash is malformed"; Mutate = { param($case) $case.Selected.RestoreManifestEffectiveSchemaHash = "not-a-hash" }; Expected = "the default and core-only packages' effective schema hashes are not both 64 lowercase hex" }
+        @{ Case = "a container existed before"; Mutate = { param($case) $case.Refusal.Before.Containers = @("dms-postgresql") }; Expected = "containers existed before the attempt: [dms-postgresql]" }
+        @{ Case = "a container exists after"; Mutate = { param($case) $case.Refusal.After.Containers = @("dms-postgresql") }; Expected = "containers existed after the attempt: [dms-postgresql]" }
+        @{ Case = "a volume appeared"; Mutate = { param($case) $case.Refusal.After.Volumes = @("dms-published_dms-mssql-2025", "dms-published_dms-postgresql") }; Expected = "the project's volumes changed across the attempt: before [dms-published_dms-mssql-2025], after [dms-published_dms-mssql-2025, dms-published_dms-postgresql]" }
+        @{ Case = "a volume disappeared"; Mutate = { param($case) $case.Refusal.After.Volumes = @() }; Expected = "the project's volumes changed across the attempt: before [dms-published_dms-mssql-2025], after []" }
+        @{ Case = "a workspace existed before"; Mutate = { param($case) $case.Refusal.Before.WorkspacePresent = $true }; Expected = "an active .bootstrap workspace existed before the attempt (or was not checked)" }
+        @{ Case = "a workspace exists after"; Mutate = { param($case) $case.Refusal.After.WorkspacePresent = $true }; Expected = "an active .bootstrap workspace existed after the attempt (or was not checked)" }
+        @{ Case = "the workspace was not checked"; Mutate = { param($case) $case.Refusal.After.PSObject.Properties.Remove("WorkspacePresent") }; Expected = "an active .bootstrap workspace existed after the attempt (or was not checked)" }
+        @{ Case = "a candidate workspace was left behind"; Mutate = { param($case) $case.Refusal.After.CandidateDirectories = @("candidate-old", "candidate-new") }; Expected = "the attempt left candidate workspaces behind: [candidate-new]" }
+        @{ Case = "the state before could not be observed"; Mutate = { param($case) $case.Refusal.Before.Reason = "docker ps exited 1: Cannot connect" }; Expected = "the project state before the attempt could not be observed: docker ps exited 1: Cannot connect" }
+        @{ Case = "the state after was not recorded"; Mutate = { param($case) $case.Refusal.After = $null }; Expected = "the project state after the attempt was not recorded" }
+    ) {
+        $refusal = New-Refusal
+        $defaultPackage = New-RefusalPackage "default-minimal"
+        $selectedPackage = New-RefusalPackage "core-only-minimal"
+        & $Mutate ([pscustomobject]@{ Refusal = $refusal; Default = $defaultPackage; Selected = $selectedPackage })
+
+        @(Get-RestoreSmokeSelectionRefusalDefect -Refusal $refusal -DefaultPackage $defaultPackage -SelectedPackage $selectedPackage) | Should -Be @($Expected)
+    }
+
+    It "reports a missing refusal and missing package records" {
+        @(Get-RestoreSmokeSelectionRefusalDefect -Refusal $null -DefaultPackage (New-RefusalPackage "default-minimal") -SelectedPackage (New-RefusalPackage "core-only-minimal")) | Should -Be @("no refusal was recorded")
+        @(Get-RestoreSmokeSelectionRefusalDefect -Refusal (New-Refusal) -DefaultPackage $null -SelectedPackage (New-RefusalPackage "core-only-minimal")) | Should -Be @("the default and the core-only package records are both needed to judge the refusal")
+    }
+}
+
+Describe "Get-RestoreSmokeResultClassification for extension-selection" {
+    BeforeAll {
+        $script:coreHash = "c0" * 32
+        $script:defaultHash = "d0" * 32
+        $script:defaultSha = "d1" * 32
+        $script:coreSha = "c1" * 32
+        $script:corePackageId = "EdFi.DataStandard52.ApiSchema@1.0.335"
+        $script:tpdmPackageId = "EdFi.DataStandard52.TPDM.ApiSchema@1.0.335"
+        $script:sourceIdentity = @{ "default-minimal" = "6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11"; "core-only-minimal" = "7a2d2d44-1e5f-4e1a-8c0f-5a6c9b4e3d22" }
+        $script:restoredIdentity = "d1000000-0000-4000-8000-000000000007"
+
+        function script:New-ExtensionPackage {
+            param([string]$Fixture)
+
+            $sha = if ($Fixture -eq "default-minimal") { $script:defaultSha } else { $script:coreSha }
+            $projects = if ($Fixture -eq "default-minimal") { @("edfi", "tpdm") } else { @("edfi") }
+            $hash = if ($Fixture -eq "default-minimal") { $script:defaultHash } else { $script:coreHash }
+            return [pscustomobject]@{ PackageFixture = $Fixture; TemplateKind = "Minimal"; PackageFile = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0.1.0.999.nupkg"; Sha256 = $sha; RestoreManifestProjects = $projects; RestoreManifestEffectiveSchemaHash = $hash; Verified = $true; Reason = $null }
+        }
+
+        function script:New-ExtensionBinding {
+            param([string]$Fixture)
+
+            $identity = $script:sourceIdentity[$Fixture]
+            $sha = if ($Fixture -eq "default-minimal") { $script:defaultSha } else { $script:coreSha }
+            return [pscustomobject]@{
+                PackageFixture = $Fixture
+                TemplateKind   = "Minimal"
+                SourceDatabase = "edfi_datamanagementservice"
+                BeforeBackup   = [pscustomobject]@{ ExitCode = 0; Rows = @($identity); Identity = $identity; Reason = $null }
+                AfterBackup    = [pscustomobject]@{ ExitCode = 0; Rows = @($identity); Identity = $identity; Reason = $null }
+                PackageFile    = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0.1.0.999.nupkg"
+                PackageSha256  = $sha
+                Bound          = $true
+                Reason         = $null
+            }
+        }
+
+        function script:New-ExtensionProvenance {
+            $identity = $script:sourceIdentity["core-only-minimal"]
+            $observations = [System.Collections.Generic.List[object]]::new()
+            $observations.Add([pscustomobject]@{
+                    Label                   = "leg-extension-selection"
+                    Reason                  = $null
+                    Services                = [ordered]@{
+                        dms    = [pscustomobject]@{ Container = "ed-fi-api"; ImageId = "sha256:dms"; ImageRef = "edfialliance/ed-fi-api:dms-restore-smoke-0123456789ab"; RepoDigests = @(); RepoDigestsReason = $null }
+                        config = [pscustomobject]@{ Container = "dms-config-service"; ImageId = "sha256:config"; ImageRef = "local/ed-fi-api-configuration-service:dms-restore-smoke-0123456789ab"; RepoDigests = @(); RepoDigestsReason = $null }
+                        db     = [pscustomobject]@{ Container = "dms-postgresql"; ImageId = "sha256:pg"; ImageRef = "postgres:16"; RepoDigests = @("postgres@sha256:" + ("a" * 64)); RepoDigestsReason = $null }
+                    }
+                    EffectiveSchemaPackages = [pscustomobject]@{ Source = ".bootstrap/.env.derived"; Value = '[{"name":"EdFi.DataStandard52.ApiSchema"}]'; Reason = $null }
+                })
+            $apiReads = [System.Collections.Generic.List[object]]::new()
+            $apiReads.Add([pscustomobject]@{ Mode = "seeded"; DataStoreId = 1; Reads = @([pscustomobject]@{ Resource = "academicSubjectDescriptors"; StatusCode = 200; Count = 5 }); RestoreExecution = "extension-selection#1"; Label = "leg-extension-selection" })
+            $restored = [System.Collections.Generic.List[object]]::new()
+            $restored.Add([pscustomobject]@{ RestoreExecution = "extension-selection#1"; PackageFixture = "core-only-minimal"; TemplateKind = "Minimal"; PackageSha256 = $script:coreSha; ExitCode = 0; Rows = @($script:restoredIdentity); Identity = $script:restoredIdentity; Reason = $null })
+            $refusalState = { [pscustomobject]@{ ComposeProject = "dms-published"; Containers = @(); Volumes = @(); WorkspacePresent = $false; CandidateDirectories = @(); Reason = $null } }
+            return [ordered]@{
+                Legs                   = @("extension-selection")
+                ExploratoryPackage     = $false
+                SourceAtStart          = [pscustomobject]@{ Revision = ("1" * 40); Observed = $true; Clean = $true; Porcelain = @(); Reason = $null }
+                SourceAtEnd            = [pscustomobject]@{ Revision = ("1" * 40); Observed = $true; Clean = $true; Porcelain = @(); Reason = $null }
+                SchemaTools            = [pscustomobject]@{ Verified = $true; Reason = $null; Sha256AtBuild = "aa"; Sha256AtEnd = "aa" }
+                Images                 = [ordered]@{
+                    Dms    = [ordered]@{ ImageId = "sha256:dms"; Verified = $true; Reason = $null }
+                    Config = [ordered]@{ ImageId = "sha256:config"; Verified = $true; Reason = $null }
+                }
+                StackObservations      = $observations
+                Packages               = @((New-ExtensionPackage "default-minimal"), (New-ExtensionPackage "core-only-minimal"))
+                ApiReads               = $apiReads
+                SourceIdentityBindings = @((New-ExtensionBinding "default-minimal"), (New-ExtensionBinding "core-only-minimal"))
+                PackageInspections     = @([pscustomobject]@{ PackageFixture = "core-only-minimal"; TemplateKind = "Minimal"; PackageSha256 = $script:coreSha; InspectionDatabase = "restore_smoke_inspect_0123456789ab"; Rows = @($identity); Identity = $identity; Reason = $null; Cleanup = [pscustomobject]@{ Complete = $true; Reasons = @() } })
+                RestoredIdentities     = $restored
+                SelectionEnvironments  = @([pscustomobject]@{ Selection = "core-only"; FileName = ".env.smoke-core-only"; SelectedPackages = @($script:corePackageId); RemovedPackages = @($script:tpdmPackageId) })
+                SelectionProofs        = @([pscustomobject]@{
+                        RestoreExecution = "extension-selection#1"
+                        PackageFixture   = "core-only-minimal"
+                        PackageSha256    = $script:coreSha
+                        Workspace        = [pscustomobject]@{ SelectedPackages = @($script:corePackageId); SelectedExtensions = @(); CoreProjectEndpointName = "ed-fi"; ProjectSchemas = @("edfi"); EffectiveSchemaHash = $script:coreHash; Reason = $null }
+                        Catalog          = [pscustomobject]@{ ProjectSchemas = @("edfi"); TrackedChangesProjects = @(); EffectiveSchemaHash = $script:coreHash; Reason = $null }
+                    })
+                SelectionRefusals      = @([pscustomobject]@{
+                        Leg           = "extension-selection"
+                        PackageFixture = "default-minimal"
+                        PackageSha256 = $script:defaultSha
+                        Before        = (& $refusalState)
+                        After         = (& $refusalState)
+                        Refused       = $true
+                        Message       = (Get-RestoreSmokeSelectionRefusalExpectedMessage -PackageEffectiveSchemaHash $script:defaultHash -CandidateEffectiveSchemaHash $script:coreHash)
+                    })
+            }
+        }
+    }
+
+    It "is final with the core-only restore's selection proof, identity, and API read, and the default package's refusal" {
+        $classification = Get-RestoreSmokeResultClassification -Provenance (New-ExtensionProvenance)
+
+        @($classification.Reasons) | Should -BeNullOrEmpty
+        $classification.Final | Should -BeTrue
+    }
+
+    It "is non-final with exactly the reasons when <case>" -ForEach @(
+        @{ Case = "no selection proof was recorded"; Mutate = { param($p) $p.SelectionProofs = @() }; Expected = @("restore extension-selection#1: no selection proof was recorded") }
+        @{ Case = "two selection proofs were recorded"; Mutate = { param($p) $p.SelectionProofs = @($p.SelectionProofs[0], $p.SelectionProofs[0]) }; Expected = @("restore extension-selection#1: 2 selection proofs were recorded; expected exactly one") }
+        @{ Case = "the workspace staged TPDM too"; Mutate = { param($p) $p.SelectionProofs[0].Workspace.SelectedPackages = @("EdFi.DataStandard52.ApiSchema@1.0.335", "EdFi.DataStandard52.TPDM.ApiSchema@1.0.335") }; Expected = @("restore extension-selection#1: the workspace staged packages [EdFi.DataStandard52.ApiSchema@1.0.335, EdFi.DataStandard52.TPDM.ApiSchema@1.0.335], but the selection env selects [EdFi.DataStandard52.ApiSchema@1.0.335]") }
+        @{ Case = "the catalog holds TPDM"; Mutate = { param($p) $p.SelectionProofs[0].Catalog.ProjectSchemas = @("edfi", "tpdm") }; Expected = @("restore extension-selection#1: the target catalog holds project schemas [edfi, tpdm], expected [edfi]") }
+        @{ Case = "the proof names the default package"; Mutate = { param($p) $p.SelectionProofs[0].PackageSha256 = "d1" * 32 }; Expected = @("restore extension-selection#1: the selection proof's package SHA-256 '$("d1" * 32)' is not a core-only-minimal package built in this run", "restore extension-selection#1: no package record exists for the restored package, so its restore manifest is unknown") }
+        @{ Case = "a proof names a restore no leg requires"; Mutate = { param($p) $p.SelectionProofs = @($p.SelectionProofs[0], [pscustomobject]@{ RestoreExecution = "package-directory#1" }) }; Expected = @("a selection proof was recorded for restore package-directory#1, which no selected leg requires") }
+        @{ Case = "the core-only env was not recorded"; Mutate = { param($p) $p.SelectionEnvironments = @() }; Expected = @("restore extension-selection#1: expected one recorded core-only env, found 0", "restore extension-selection#1: the selection env records no selected packages") }
+        @{ Case = "the core-only env removed nothing"; Mutate = { param($p) $p.SelectionEnvironments[0].RemovedPackages = @() }; Expected = @("restore extension-selection#1: the core-only env removed no package, so it does not differ from the default selection") }
+        @{ Case = "no refusal was recorded"; Mutate = { param($p) $p.SelectionRefusals = @() }; Expected = @("leg extension-selection: no refusal of the default package under the core-only env was recorded") }
+        @{ Case = "two refusals were recorded"; Mutate = { param($p) $p.SelectionRefusals = @($p.SelectionRefusals[0], $p.SelectionRefusals[0]) }; Expected = @("leg extension-selection: 2 refusals were recorded; expected exactly one") }
+        @{ Case = "the default package was not refused"; Mutate = { param($p) $p.SelectionRefusals[0].Refused = $false }; Expected = @("leg extension-selection: the default package was not refused under the core-only env") }
+        @{ Case = "a container started during the refusal"; Mutate = { param($p) $p.SelectionRefusals[0].After.Containers = @("dms-postgresql") }; Expected = @("leg extension-selection: containers existed after the attempt: [dms-postgresql]") }
+        @{ Case = "the restore used the default package"; Mutate = { param($p) $p.RestoredIdentities[0].PackageSha256 = "d1" * 32 }; Expected = @("default-minimal package $("d1" * 32): it was not independently inspected", "restore extension-selection#1: it restored the default-minimal package; the leg restores core-only-minimal") }
+        @{ Case = "the restore left no API read"; Mutate = { param($p) $p.ApiReads.Clear() }; Expected = @("restore extension-selection#1: no served-data API read was recorded") }
+        @{ Case = "the restore left no identity"; Mutate = { param($p) $p.RestoredIdentities.Clear() }; Expected = @("restore extension-selection#1: no restored SourceIdentity was recorded") }
+        @{ Case = "the core-only capture is filed under the default fixture"; Mutate = { param($p) $p.SourceIdentityBindings[1].PackageFixture = "default-minimal" }; Expected = @("core-only-minimal package $("c1" * 32): the bound capture is for a default-minimal package") }
+        @{ Case = "two packages were recorded for one fixture"; Mutate = { param($p) $p.Packages[0].PackageFixture = "core-only-minimal" }; Expected = @("2 packages were recorded for fixture core-only-minimal; expected one", "core-only-minimal package $("d1" * 32): the bound capture is for a default-minimal package", "leg extension-selection: the default and the core-only package records are both needed to judge the refusal") }
+        @{ Case = "a package names an unknown fixture"; Mutate = { param($p) $p.Packages[0].PackageFixture = "minimal" }; Expected = @("package EdFi.Api.Minimal.Template.PostgreSql.5.2.0.1.0.999.nupkg: 'minimal' is not a known package fixture", "minimal package $("d1" * 32): the bound capture is for a default-minimal package", "leg extension-selection: the default and the core-only package records are both needed to judge the refusal") }
+        @{ Case = "a package's kind disagrees with its fixture"; Mutate = { param($p) $p.Packages[1].TemplateKind = "Populated" }; Expected = @("package (core-only-minimal): it is recorded as a Populated package, but the fixture is Minimal") }
+    ) {
+        $provenance = New-ExtensionProvenance
+        & $Mutate $provenance
+
+        $classification = Get-RestoreSmokeResultClassification -Provenance $provenance
+
+        $classification.Final | Should -BeFalse
+        @($classification.Reasons) | Should -Be $Expected
+    }
+
+    It "reports a refusal or a selection proof recorded when extension-selection is not selected" {
+        $provenance = New-ExtensionProvenance
+        $provenance.Legs = @("tampered-package")
+        $provenance.RestoredIdentities.Clear()
+        $provenance.ApiReads.Clear()
+        $provenance.PackageInspections = @()
+
+        $classification = Get-RestoreSmokeResultClassification -Provenance $provenance
+
+        @($classification.Reasons) | Should -Be @(
+            "a selection proof was recorded for restore extension-selection#1, which no selected leg requires"
+            "a selection refusal was recorded for leg 'extension-selection', which no selected leg requires"
+        )
     }
 }
 
@@ -2454,6 +3192,15 @@ Describe "Get-RestoreSmokeResultClassification" {
             }
         }
 
+        function script:Get-FixtureName {
+            param([string]$TemplateKind)
+
+            if ($TemplateKind -eq "Populated") {
+                return "default-populated"
+            }
+            return "default-minimal"
+        }
+
         function script:Get-FixtureSha {
             param([string]$TemplateKind)
 
@@ -2469,7 +3216,7 @@ Describe "Get-RestoreSmokeResultClassification" {
         function script:New-CompletePackage {
             param([string]$TemplateKind = "Minimal")
 
-            return [pscustomobject]@{ TemplateKind = $TemplateKind; PackageFile = "EdFi.Api.$TemplateKind.Template.PostgreSql.5.2.0.1.0.999.nupkg"; Sha256 = (Get-FixtureSha $TemplateKind); Verified = $true; Reason = $null }
+            return [pscustomobject]@{ PackageFixture = (Get-FixtureName $TemplateKind); TemplateKind = $TemplateKind; PackageFile = "EdFi.Api.$TemplateKind.Template.PostgreSql.5.2.0.1.0.999.nupkg"; Sha256 = (Get-FixtureSha $TemplateKind); Verified = $true; Reason = $null }
         }
 
         function script:New-CompleteBinding {
@@ -2477,6 +3224,7 @@ Describe "Get-RestoreSmokeResultClassification" {
 
             $identity = $script:packageIdentity[$TemplateKind]
             return [pscustomobject]@{
+                PackageFixture = (Get-FixtureName $TemplateKind)
                 TemplateKind   = $TemplateKind
                 SourceDatabase = "edfi_datamanagementservice"
                 BeforeBackup   = [pscustomobject]@{ DatabaseName = "edfi_datamanagementservice"; ExitCode = 0; Rows = @($identity); Identity = $identity; Reason = $null }
@@ -2521,6 +3269,7 @@ Describe "Get-RestoreSmokeResultClassification" {
             }
             return [pscustomobject]@{
                 RestoreExecution = $RestoreExecution
+                PackageFixture   = (Get-FixtureName $TemplateKind)
                 TemplateKind     = $TemplateKind
                 Label            = "leg-" + ($RestoreExecution -replace '#\d+$', '')
                 TargetDatabase   = "edfi_datamanagementservice"
@@ -2660,7 +3409,7 @@ Describe "Get-RestoreSmokeResultClassification" {
         @{ Case = "the second observation ran a different DMS image (for example the stale shared tag's)"; Mutate = { param($p) $p.StackObservations[1].Services["dms"] = [pscustomobject]@{ ImageId = "sha256:stale" } }; Expected = "leg-separate-config: dms runs image sha256:stale, not the in-run build (sha256:dms)" }
         @{ Case = "the second observation ran a different config image"; Mutate = { param($p) $p.StackObservations[1].Services["config"] = [pscustomobject]@{ ImageId = "sha256:stale" } }; Expected = "leg-separate-config: config runs image sha256:stale, not the in-run build (sha256:config)" }
         @{ Case = "the second observation has no config container"; Mutate = { param($p) $p.StackObservations[1].Services.Remove("config") }; Expected = "leg-separate-config: no config container observed" }
-        @{ Case = "the package was not verified"; Mutate = { param($p) $p.Packages[0].Verified = $false; $p.Packages[0].Reason = "sha mismatch" }; Expected = "package (Minimal) not verified: sha mismatch" }
+        @{ Case = "the package was not verified"; Mutate = { param($p) $p.Packages[0].Verified = $false; $p.Packages[0].Reason = "sha mismatch" }; Expected = "package (default-minimal) not verified: sha mismatch" }
 
         # Revisions (2.1c).
         @{ Case = "clean start and end trees are at different revisions"; Mutate = { param($p) $p.SourceAtEnd.Revision = $script:otherRevision }; Expected = "the revision changed during the run (start 1111111111111111111111111111111111111111, end 2222222222222222222222222222222222222222)" }
@@ -2748,30 +3497,30 @@ Describe "Get-RestoreSmokeResultClassification" {
 
     It "is non-final with exactly the SourceIdentity reasons when <case>" -ForEach @(
         # The pre-backup capture bound to the package hash.
-        @{ Case = "no capture is bound to the package"; Mutate = { param($p) $p.SourceIdentityBindings = @() }; Expected = @("Minimal package {minimalSha}: no pre-backup SourceIdentity capture is bound to it") }
-        @{ Case = "two captures are bound to the package"; Mutate = { param($p) $p.SourceIdentityBindings = @($p.SourceIdentityBindings[0], (New-CompleteBinding)) }; Expected = @("Minimal package {minimalSha}: 2 pre-backup SourceIdentity captures are bound to it; expected exactly one") }
-        @{ Case = "the capture is bound to another package's hash"; Mutate = { param($p) $p.SourceIdentityBindings[0].PackageSha256 = $script:otherSha }; Expected = @("Minimal package {minimalSha}: no pre-backup SourceIdentity capture is bound to it", "a pre-backup SourceIdentity capture (Minimal) is bound to package SHA-256 {otherSha}, which no package built in this run has") }
-        @{ Case = "a failed capture is bound to no package"; Mutate = { param($p) $p.SourceIdentityBindings = @($p.SourceIdentityBindings[0], [pscustomobject]@{ TemplateKind = "Populated"; PackageSha256 = $null; Bound = $false; Reason = "before the backup, the SourceIdentity query against 'edfi_datamanagementservice' exited 1: refused" }) }; Expected = @("a pre-backup SourceIdentity capture (Populated) is bound to no package: before the backup, the SourceIdentity query against 'edfi_datamanagementservice' exited 1: refused") }
-        @{ Case = "the capture is of another template kind"; Mutate = { param($p) $p.SourceIdentityBindings[0].TemplateKind = "Populated" }; Expected = @("Minimal package {minimalSha}: the bound capture is for a Populated package") }
-        @{ Case = "the pre-backup read returned no row (its stored Identity is ignored)"; Mutate = { param($p) $p.SourceIdentityBindings[0].BeforeBackup.Rows = @() }; Expected = @("Minimal package {minimalSha}: the pre-backup SourceIdentity has 0 rows; expected exactly one") }
-        @{ Case = "the pre-backup read returned two rows"; Mutate = { param($p) $p.SourceIdentityBindings[0].BeforeBackup.Rows = @($script:packageIdentity.Minimal, $script:packageIdentity.Populated) }; Expected = @("Minimal package {minimalSha}: the pre-backup SourceIdentity has 2 rows; expected exactly one") }
-        @{ Case = "the pre-backup value is not a UUID"; Mutate = { param($p) $p.SourceIdentityBindings[0].BeforeBackup.Rows = @("not-a-uuid") }; Expected = @("Minimal package {minimalSha}: the pre-backup SourceIdentity is not a UUID ('not-a-uuid')") }
-        @{ Case = "the pre-backup value is a braced UUID"; Mutate = { param($p) $p.SourceIdentityBindings[0].BeforeBackup.Rows = @("{6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11}") }; Expected = @("Minimal package {minimalSha}: the pre-backup SourceIdentity is not a UUID ('{6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11}')") }
-        @{ Case = "the pre-backup value is the zero UUID"; Mutate = { param($p) $p.SourceIdentityBindings[0].BeforeBackup.Rows = @("00000000-0000-0000-0000-000000000000") }; Expected = @("Minimal package {minimalSha}: the pre-backup SourceIdentity is the zero UUID") }
-        @{ Case = "the pre-backup read is missing"; Mutate = { param($p) $p.SourceIdentityBindings[0].BeforeBackup = $null }; Expected = @("Minimal package {minimalSha}: the pre-backup SourceIdentity has 0 rows; expected exactly one") }
-        @{ Case = "the identity changed across the backup"; Mutate = { param($p) $p.SourceIdentityBindings[0].AfterBackup.Rows = @($script:packageIdentity.Populated) }; Expected = @("Minimal package {minimalSha}: the source's SourceIdentity changed across the backup (before {minimalId}, after {populatedId})") }
-        @{ Case = "the after-backup read is missing"; Mutate = { param($p) $p.SourceIdentityBindings[0].AfterBackup = $null }; Expected = @("Minimal package {minimalSha}: the SourceIdentity read after the backup has 0 rows; expected exactly one") }
+        @{ Case = "no capture is bound to the package"; Mutate = { param($p) $p.SourceIdentityBindings = @() }; Expected = @("default-minimal package {minimalSha}: no pre-backup SourceIdentity capture is bound to it") }
+        @{ Case = "two captures are bound to the package"; Mutate = { param($p) $p.SourceIdentityBindings = @($p.SourceIdentityBindings[0], (New-CompleteBinding)) }; Expected = @("default-minimal package {minimalSha}: 2 pre-backup SourceIdentity captures are bound to it; expected exactly one") }
+        @{ Case = "the capture is bound to another package's hash"; Mutate = { param($p) $p.SourceIdentityBindings[0].PackageSha256 = $script:otherSha }; Expected = @("default-minimal package {minimalSha}: no pre-backup SourceIdentity capture is bound to it", "a pre-backup SourceIdentity capture (default-minimal) is bound to package SHA-256 {otherSha}, which no package built in this run has") }
+        @{ Case = "a failed capture is bound to no package"; Mutate = { param($p) $p.SourceIdentityBindings = @($p.SourceIdentityBindings[0], [pscustomobject]@{ PackageFixture = "default-populated"; TemplateKind = "Populated"; PackageSha256 = $null; Bound = $false; Reason = "before the backup, the SourceIdentity query against 'edfi_datamanagementservice' exited 1: refused" }) }; Expected = @("a pre-backup SourceIdentity capture (default-populated) is bound to no package: before the backup, the SourceIdentity query against 'edfi_datamanagementservice' exited 1: refused") }
+        @{ Case = "the capture is of another package fixture"; Mutate = { param($p) $p.SourceIdentityBindings[0].PackageFixture = "core-only-minimal" }; Expected = @("default-minimal package {minimalSha}: the bound capture is for a core-only-minimal package") }
+        @{ Case = "the pre-backup read returned no row (its stored Identity is ignored)"; Mutate = { param($p) $p.SourceIdentityBindings[0].BeforeBackup.Rows = @() }; Expected = @("default-minimal package {minimalSha}: the pre-backup SourceIdentity has 0 rows; expected exactly one") }
+        @{ Case = "the pre-backup read returned two rows"; Mutate = { param($p) $p.SourceIdentityBindings[0].BeforeBackup.Rows = @($script:packageIdentity.Minimal, $script:packageIdentity.Populated) }; Expected = @("default-minimal package {minimalSha}: the pre-backup SourceIdentity has 2 rows; expected exactly one") }
+        @{ Case = "the pre-backup value is not a UUID"; Mutate = { param($p) $p.SourceIdentityBindings[0].BeforeBackup.Rows = @("not-a-uuid") }; Expected = @("default-minimal package {minimalSha}: the pre-backup SourceIdentity is not a UUID ('not-a-uuid')") }
+        @{ Case = "the pre-backup value is a braced UUID"; Mutate = { param($p) $p.SourceIdentityBindings[0].BeforeBackup.Rows = @("{6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11}") }; Expected = @("default-minimal package {minimalSha}: the pre-backup SourceIdentity is not a UUID ('{6f1c1c33-0d4e-4d0f-9b9e-4f5b8a3d2c11}')") }
+        @{ Case = "the pre-backup value is the zero UUID"; Mutate = { param($p) $p.SourceIdentityBindings[0].BeforeBackup.Rows = @("00000000-0000-0000-0000-000000000000") }; Expected = @("default-minimal package {minimalSha}: the pre-backup SourceIdentity is the zero UUID") }
+        @{ Case = "the pre-backup read is missing"; Mutate = { param($p) $p.SourceIdentityBindings[0].BeforeBackup = $null }; Expected = @("default-minimal package {minimalSha}: the pre-backup SourceIdentity has 0 rows; expected exactly one") }
+        @{ Case = "the identity changed across the backup"; Mutate = { param($p) $p.SourceIdentityBindings[0].AfterBackup.Rows = @($script:packageIdentity.Populated) }; Expected = @("default-minimal package {minimalSha}: the source's SourceIdentity changed across the backup (before {minimalId}, after {populatedId})") }
+        @{ Case = "the after-backup read is missing"; Mutate = { param($p) $p.SourceIdentityBindings[0].AfterBackup = $null }; Expected = @("default-minimal package {minimalSha}: the SourceIdentity read after the backup has 0 rows; expected exactly one") }
 
         # The independent inspection of the package.
-        @{ Case = "the package was not inspected"; Mutate = { param($p) $p.PackageInspections = @() }; Expected = @("Minimal package {minimalSha}: it was not independently inspected") }
-        @{ Case = "the package was inspected twice"; Mutate = { param($p) $p.PackageInspections = @($p.PackageInspections[0], (New-CompleteInspection)) }; Expected = @("Minimal package {minimalSha}: it was inspected 2 times; expected exactly once") }
-        @{ Case = "the inspection failed"; Mutate = { param($p) $p.PackageInspections[0].Reason = "the replay into restore_smoke_inspect_0123456789ab exited 3: ERROR: syntax error" }; Expected = @("Minimal package {minimalSha}: the independent inspection failed: the replay into {db} exited 3: ERROR: syntax error") }
-        @{ Case = "the inspection read no row"; Mutate = { param($p) $p.PackageInspections[0].Rows = @() }; Expected = @("Minimal package {minimalSha}: the inspected package SourceIdentity has 0 rows; expected exactly one") }
-        @{ Case = "the inspection read two rows"; Mutate = { param($p) $p.PackageInspections[0].Rows = @($script:packageIdentity.Minimal, $script:packageIdentity.Minimal) }; Expected = @("Minimal package {minimalSha}: the inspected package SourceIdentity has 2 rows; expected exactly one") }
-        @{ Case = "the inspected value is not a UUID"; Mutate = { param($p) $p.PackageInspections[0].Rows = @("SourceIdentity") }; Expected = @("Minimal package {minimalSha}: the inspected package SourceIdentity is not a UUID ('SourceIdentity')") }
-        @{ Case = "the inspected value is the zero UUID"; Mutate = { param($p) $p.PackageInspections[0].Rows = @("00000000-0000-0000-0000-000000000000") }; Expected = @("Minimal package {minimalSha}: the inspected package SourceIdentity is the zero UUID") }
-        @{ Case = "the inspected identity differs from the bound capture"; Mutate = { param($p) $p.PackageInspections[0].Rows = @($script:packageIdentity.Populated) }; Expected = @("Minimal package {minimalSha}: the inspected package SourceIdentity {populatedId} differs from the pre-backup capture {minimalId} bound to its SHA-256") }
-        @{ Case = "the inspection is of another package's hash"; Mutate = { param($p) $p.PackageInspections[0].PackageSha256 = $script:otherSha }; Expected = @("package inspection {db}: it inspected package SHA-256 '{otherSha}', which no package built in this run has", "Minimal package {minimalSha}: it was not independently inspected") }
+        @{ Case = "the package was not inspected"; Mutate = { param($p) $p.PackageInspections = @() }; Expected = @("default-minimal package {minimalSha}: it was not independently inspected") }
+        @{ Case = "the package was inspected twice"; Mutate = { param($p) $p.PackageInspections = @($p.PackageInspections[0], (New-CompleteInspection)) }; Expected = @("default-minimal package {minimalSha}: it was inspected 2 times; expected exactly once") }
+        @{ Case = "the inspection failed"; Mutate = { param($p) $p.PackageInspections[0].Reason = "the replay into restore_smoke_inspect_0123456789ab exited 3: ERROR: syntax error" }; Expected = @("default-minimal package {minimalSha}: the independent inspection failed: the replay into {db} exited 3: ERROR: syntax error") }
+        @{ Case = "the inspection read no row"; Mutate = { param($p) $p.PackageInspections[0].Rows = @() }; Expected = @("default-minimal package {minimalSha}: the inspected package SourceIdentity has 0 rows; expected exactly one") }
+        @{ Case = "the inspection read two rows"; Mutate = { param($p) $p.PackageInspections[0].Rows = @($script:packageIdentity.Minimal, $script:packageIdentity.Minimal) }; Expected = @("default-minimal package {minimalSha}: the inspected package SourceIdentity has 2 rows; expected exactly one") }
+        @{ Case = "the inspected value is not a UUID"; Mutate = { param($p) $p.PackageInspections[0].Rows = @("SourceIdentity") }; Expected = @("default-minimal package {minimalSha}: the inspected package SourceIdentity is not a UUID ('SourceIdentity')") }
+        @{ Case = "the inspected value is the zero UUID"; Mutate = { param($p) $p.PackageInspections[0].Rows = @("00000000-0000-0000-0000-000000000000") }; Expected = @("default-minimal package {minimalSha}: the inspected package SourceIdentity is the zero UUID") }
+        @{ Case = "the inspected identity differs from the bound capture"; Mutate = { param($p) $p.PackageInspections[0].Rows = @($script:packageIdentity.Populated) }; Expected = @("default-minimal package {minimalSha}: the inspected package SourceIdentity {populatedId} differs from the pre-backup capture {minimalId} bound to its SHA-256") }
+        @{ Case = "the inspection is of another package's hash"; Mutate = { param($p) $p.PackageInspections[0].PackageSha256 = $script:otherSha }; Expected = @("package inspection {db}: it inspected package SHA-256 '{otherSha}', which no package built in this run has", "default-minimal package {minimalSha}: it was not independently inspected") }
         @{ Case = "the inspection database was not shown dropped"; Mutate = { param($p) $p.PackageInspections[0].Cleanup = [pscustomobject]@{ DatabaseOwned = $true; DatabaseDropped = $false; DatabaseAbsent = $false; ContainerFile = "/tmp/x.sql"; ContainerFileRemoved = $true; LocalDirectoryRemoved = $true; Complete = $false; Reasons = @("dropping restore_smoke_inspect_0123456789ab exited 1: ERROR: database is being accessed", "restore_smoke_inspect_0123456789ab was not shown absent after the drop") } }; Expected = @("package inspection {db}: its cleanup was not shown complete: dropping {db} exited 1: ERROR: database is being accessed; {db} was not shown absent after the drop") }
         @{ Case = "the inspection recorded no cleanup"; Mutate = { param($p) $p.PackageInspections[0].PSObject.Properties.Remove("Cleanup") }; Expected = @("package inspection {db}: its cleanup was not shown complete") }
 
@@ -2796,7 +3545,7 @@ Describe "Get-RestoreSmokeResultClassification" {
         # No package was built, while its evidence names its hash.
         @{ Case = "no package was built"; Mutate = { param($p) $p.Packages = @() }; Expected = @(
                 "no package was built in this run"
-                "a pre-backup SourceIdentity capture (Minimal) is bound to package SHA-256 {minimalSha}, which no package built in this run has"
+                "a pre-backup SourceIdentity capture (default-minimal) is bound to package SHA-256 {minimalSha}, which no package built in this run has"
                 "package inspection {db}: it inspected package SHA-256 '{minimalSha}', which no package built in this run has"
                 "restore package-directory#1: its package SHA-256 '{minimalSha}' matches no package built in this run"
                 "restore package-directory#2: its package SHA-256 '{minimalSha}' matches no package built in this run"
@@ -2829,7 +3578,7 @@ Describe "Get-RestoreSmokeResultClassification" {
         $withoutCapture = Get-RestoreSmokeResultClassification -Provenance $provenance
 
         $withoutCapture.Final | Should -BeFalse
-        @($withoutCapture.Reasons) | Should -Be @(Expand-FixtureText "Minimal package {minimalSha}: no pre-backup SourceIdentity capture is bound to it")
+        @($withoutCapture.Reasons) | Should -Be @(Expand-FixtureText "default-minimal package {minimalSha}: no pre-backup SourceIdentity capture is bound to it")
     }
 
     Context "a Populated restore" {
@@ -2889,10 +3638,10 @@ Describe "Get-RestoreSmokeResultClassification" {
         }
 
         It "is non-final when <case>" -ForEach @(
-            @{ Case = "only the Minimal package's capture was kept"; Mutate = { param($p) $p.SourceIdentityBindings = @($p.SourceIdentityBindings[0]) }; Expected = @("Populated package {populatedSha}: no pre-backup SourceIdentity capture is bound to it") }
-            @{ Case = "the Populated capture was filed under the Minimal package's hash"; Mutate = { param($p) $p.SourceIdentityBindings[1].PackageSha256 = $script:minimalSha }; Expected = @("Minimal package {minimalSha}: 2 pre-backup SourceIdentity captures are bound to it; expected exactly one", "Populated package {populatedSha}: no pre-backup SourceIdentity capture is bound to it") }
-            @{ Case = "the Populated package was not inspected"; Mutate = { param($p) $p.PackageInspections = @($p.PackageInspections[0]) }; Expected = @("Populated package {populatedSha}: it was not independently inspected") }
-            @{ Case = "the populated restore names the Minimal package"; Mutate = { param($p) $p.RestoredIdentities[2].PackageSha256 = $script:minimalSha }; Expected = @("restore populated#1: it restored the Minimal package; the leg restores Populated") }
+            @{ Case = "only the Minimal package's capture was kept"; Mutate = { param($p) $p.SourceIdentityBindings = @($p.SourceIdentityBindings[0]) }; Expected = @("default-populated package {populatedSha}: no pre-backup SourceIdentity capture is bound to it") }
+            @{ Case = "the Populated capture was filed under the Minimal package's hash"; Mutate = { param($p) $p.SourceIdentityBindings[1].PackageSha256 = $script:minimalSha }; Expected = @("default-minimal package {minimalSha}: 2 pre-backup SourceIdentity captures are bound to it; expected exactly one", "default-populated package {populatedSha}: no pre-backup SourceIdentity capture is bound to it") }
+            @{ Case = "the Populated package was not inspected"; Mutate = { param($p) $p.PackageInspections = @($p.PackageInspections[0]) }; Expected = @("default-populated package {populatedSha}: it was not independently inspected") }
+            @{ Case = "the populated restore names the Minimal package"; Mutate = { param($p) $p.RestoredIdentities[2].PackageSha256 = $script:minimalSha }; Expected = @("restore populated#1: it restored the default-minimal package; the leg restores default-populated") }
             @{ Case = "the populated restore kept the Populated package's identity"; Mutate = { param($p) $p.RestoredIdentities[2].Rows = @($script:packageIdentity.Populated) }; Expected = @("restore populated#1: the restored SourceIdentity {populatedId} equals the package's inspected SourceIdentity") }
         ) {
             & $Mutate $script:both
@@ -3004,7 +3753,7 @@ Describe "Invoke-BootstrapRestoreSmoke complete preflight path (sandboxed, no Do
             # The helper modules the probe module imports, at their repository paths.
             $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
             New-Item -ItemType Directory -Path (Join-Path $checkout "eng/smoke_test/modules"), (Join-Path $checkout "eng/DatabaseTemplates") -Force | Out-Null
-            foreach ($helperModule in @("eng/docker-compose/env-utility.psm1", "eng/docker-compose/database-safety.psm1", "eng/Dms-Management.psm1", "eng/smoke_test/modules/SmokeTest.psm1", "eng/DatabaseTemplates/Template-RestoreCore.psm1")) {
+            foreach ($helperModule in @("eng/docker-compose/env-utility.psm1", "eng/docker-compose/database-safety.psm1", "eng/Dms-Management.psm1", "eng/smoke_test/modules/SmokeTest.psm1", "eng/DatabaseTemplates/Template-RestoreCore.psm1", "eng/schema-package-utility.psm1")) {
                 Copy-Item -LiteralPath (Join-Path $repoRoot $helperModule) -Destination (Join-Path $checkout $helperModule)
             }
             Set-Content -LiteralPath (Join-Path $composeRoot ".env.example") -Value "POSTGRES_DB_NAME=edfi_datamanagementservice"
@@ -3262,6 +4011,32 @@ exit $LASTEXITCODE
             $run.Results.Provenance.DataStandardVersionSupplied | Should -Be $Supplied
             $run.Results.Provenance.DataStandardVersionForwarded | Should -Be $Forwarded
             $run.Results.Provenance.StandardVersion | Should -Be $StandardVersion
+        }
+    }
+
+    Context "an extension-selection run the smoke cannot perform as specified" {
+        It "refuses <case> in the preflight step, before any docker or script call" -ForEach @(
+            @{ Case = "the local wrapper"; Arguments = @{ Leg = @("extension-selection"); Wrapper = "local" }; Expected = "The extension-selection leg requires -Wrapper published*" }
+            @{ Case = "an explicit Data Standard under the published wrapper"; Arguments = @{ Leg = @("extension-selection"); Wrapper = "published"; DataStandardVersion = "5.2" }; Expected = "The extension-selection leg refuses an explicit -DataStandardVersion*" }
+        ) {
+            $run = Invoke-SandboxedSmoke -DockerState @{} -Arguments $Arguments
+
+            $run.ExitCode | Should -Be 1
+            $run.Output | Should -BeLike "*FAILED: $Expected"
+            $run.Calls | Should -BeNullOrEmpty
+            @($run.Results.Steps.Name) | Should -Be @("preflight")
+            $run.Results.Steps[0].Status | Should -Be "failed"
+            $run.Results.Classification.Final | Should -BeFalse
+            $run.Output | Should -BeLike "*no teardown: the preflight did not authorize any Docker change*"
+        }
+
+        It "lets an extension-selection run under the published wrapper without a Data Standard pass the preflight" {
+            $run = Invoke-SandboxedSmoke -DockerState @{} -Arguments @{ Leg = @("extension-selection"); Wrapper = "published" }
+
+            $run.ExitCode | Should -Be 1
+            @($run.Calls | Where-Object { $_ -like "docker: info*" }) | Should -HaveCount 1
+            @($run.Results.Steps.Name) | Should -Be @("preflight", "build-schema-tools")
+            $run.Results.Steps[0].Status | Should -Be "ok"
         }
     }
 

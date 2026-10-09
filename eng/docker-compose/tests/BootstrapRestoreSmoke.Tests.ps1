@@ -170,6 +170,7 @@ Describe "Invoke-BootstrapRestoreSmoke static contract" {
                 "package-directory#2" = "leg-package-directory-repeat"
                 "separate-config#1"   = "leg-separate-config"
                 "directory-feed#1"    = "leg-directory-feed"
+                "extension-selection#1" = "leg-extension-selection"
                 "populated#1"         = "leg-populated"
             }
             $restores = foreach ($call in $calls) {
@@ -201,7 +202,7 @@ Describe "Invoke-BootstrapRestoreSmoke static contract" {
                 $restore
             }
 
-            @($restores) | Should -Be @("package-directory#1", "package-directory#2", "separate-config#1", "directory-feed#1", "populated#1")
+            @($restores) | Should -Be @("package-directory#1", "package-directory#2", "separate-config#1", "directory-feed#1", "extension-selection#1", "populated#1")
             $script:smokeContent.Contains('Assert-RestoredDatastore -RestoreExecution (Get-RestoreSmokeRestoreExecutionId -Leg "directory-feed") -PackageDirectory $packageDirectoryPath -EnvironmentFile $feedEnvironmentFile') | Should -BeTrue
             (Get-SmokeFunctionBody -Name "Assert-RestoredDatastore").Contains('$apiRead | Add-Member -NotePropertyName RestoreExecution -NotePropertyValue $RestoreExecution') | Should -BeTrue
         }
@@ -249,13 +250,13 @@ Describe "Invoke-BootstrapRestoreSmoke static contract" {
 
         It "proves the SourceIdentity in every post-restore assertion, before the API read, and records it under the restore" {
             $assertBody = Get-SmokeFunctionBody -Name "Assert-RestoredDatastore"
-            $identityIndex = $assertBody.IndexOf('Assert-RestoredSourceIdentity -RestoreExecution $RestoreExecution -TemplateKind $templateKind -PackageDirectory $PackageDirectory')
+            $identityIndex = $assertBody.IndexOf('Assert-RestoredSourceIdentity -RestoreExecution $RestoreExecution -PackageFixture $fixture.Name -PackageDirectory $PackageDirectory')
             $apiIndex = $assertBody.IndexOf('Test-RestoreSmokeApiRead')
             $identityIndex | Should -BeGreaterThan 0
             $apiIndex | Should -BeGreaterThan $identityIndex
 
             $identityBody = Get-SmokeFunctionBody -Name "Assert-RestoredSourceIdentity"
-            $identityBody | Should -Match '(?s)\$script:Provenance\.RestoredIdentities\.Add\(\[pscustomobject\]@\{\s+RestoreExecution = \$RestoreExecution\s+TemplateKind\s+= \$TemplateKind.*PackageSha256\s+= \$packageSha256.*Rows\s+= \$targetRead\.Rows'
+            $identityBody | Should -Match '(?s)\$script:Provenance\.RestoredIdentities\.Add\(\[pscustomobject\]@\{\s+RestoreExecution = \$RestoreExecution\s+PackageFixture\s+= \$fixture\.Name\s+TemplateKind\s+= \$fixture\.TemplateKind.*PackageSha256\s+= \$packageSha256.*Rows\s+= \$targetRead\.Rows'
             $recordIndex = $identityBody.IndexOf('$script:Provenance.RestoredIdentities.Add(')
             $inspectionIndex = $identityBody.IndexOf('Invoke-RestoreSmokePackageInspection')
             $defectIndex = $identityBody.IndexOf('Get-RestoreSmokeRestoredIdentityDefect -Row $targetRead.Rows -PackageIdentity $packageInspection.Identity -EarlierRestore $earlierRestores')
@@ -268,11 +269,14 @@ Describe "Invoke-BootstrapRestoreSmoke static contract" {
             $identityBody.Contains('$bindings[0].BeforeBackup.Identity -cne $packageInspection.Identity') | Should -BeTrue
         }
 
-        It "binds the source's SourceIdentity around the producer build, per template kind" {
+        It "binds the source's SourceIdentity around the producer build, per package fixture" {
             $buildBody = Get-SmokeFunctionBody -Name "Build-SmokeSourceAndPackage"
             $buildBody | Should -Match '(?s)Invoke-RestoreSmokeIdentityBoundPackageBuild\s+`.*-BindingList \$script:Provenance\.SourceIdentityBindings\s+`\s+-PackageList \$script:Provenance\.Packages\s+`\s+-BuildPackage \{.*Build-TemplateNuGetPackage'
-            $buildBody.Contains('$packageDirectory = Get-SmokePackageDirectory -TemplateKind $TemplateKind') | Should -BeTrue
-            (Get-SmokeFunctionBody -Name "Get-SmokePackageDirectory").Contains('"package-$($TemplateKind.ToLowerInvariant())"') | Should -BeTrue
+            $buildBody.Contains('$packageDirectory = Get-SmokePackageDirectory -PackageFixture $fixture.Name') | Should -BeTrue
+            $buildBody.Contains('-PackageFixture $fixture.Name `') | Should -BeTrue
+            $buildBody.Contains('$sourceEnvironmentFile = Get-SmokeSelectionEnvironmentFile -Selection $fixture.Selection') | Should -BeTrue
+            $buildBody.Contains('$sourceArgs = @{ EnvironmentFile = $sourceEnvironmentFile;') | Should -BeTrue
+            (Get-SmokeFunctionBody -Name "Get-SmokePackageDirectory").Contains('(Get-RestoreSmokePackageFixture -Name $PackageFixture).DirectoryName') | Should -BeTrue
             $script:smokeContent | Should -Not -Match 'SourceIdentityReason'
         }
 
@@ -292,6 +296,112 @@ Describe "Invoke-BootstrapRestoreSmoke static contract" {
         ) {
             $content = Get-Content -LiteralPath (Join-Path $PSScriptRoot $File) -Raw
             $content.Contains("DMS_CONFIG_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT") | Should -BeFalse
+        }
+    }
+
+    Context "Extension selection" {
+        BeforeAll {
+            $tokens = $null
+            $errors = $null
+            $script:smokeAst = [System.Management.Automation.Language.Parser]::ParseFile($script:smokeScriptPath, [ref]$tokens, [ref]$errors)
+
+            function script:Get-SmokeFunctionText {
+                param([string]$Name)
+
+                $definitions = @($script:smokeAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) | Where-Object { $_.Name -eq $Name })
+                $definitions.Count | Should -Be 1
+                return $definitions[0].Body.Extent.Text
+            }
+
+            function script:Get-LegStep {
+                # The Invoke-SmokeStep commands directly inside a leg's if block, in order.
+                param([string]$Leg)
+
+                $condition = '$legSet.Contains("' + $Leg + '")'
+                $legBlocks = @($script:smokeAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.IfStatementAst] -and $node.Clauses[0].Item1.Extent.Text -eq $condition }, $true))
+                $legBlocks.Count | Should -Be 1
+                return [pscustomobject]@{
+                    Text  = $legBlocks[0].Clauses[0].Item2.Extent.Text
+                    Steps = @($legBlocks[0].Clauses[0].Item2.Statements | Where-Object { $_ -is [System.Management.Automation.Language.PipelineAst] } | ForEach-Object { $_.PipelineElements[0] } | Where-Object { $_ -is [System.Management.Automation.Language.CommandAst] -and $_.GetCommandName() -eq "Invoke-SmokeStep" })
+                }
+            }
+        }
+
+        It "keeps extension-selection out of the default leg set and checks the leg selection before any Docker call" {
+            $legParameter = @($script:smokeAst.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq "Leg" })[0]
+            $legParameter.DefaultValue.Extent.Text | Should -Not -Match 'extension-selection'
+            $legParameter.Attributes[0].Extent.Text | Should -Match '"extension-selection"'
+
+            $preflight = @($script:smokeAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq "Invoke-SmokeStep" -and $node.CommandElements[2].Value -eq "preflight" }, $true))
+            $preflight.Count | Should -Be 1
+            $body = $preflight[0].CommandElements[4].ScriptBlock.EndBlock.Extent.Text
+            $selectionIndex = $body.IndexOf('Assert-RestoreSmokeLegSelection -Leg $Leg -Wrapper $Wrapper -DataStandardVersionSupplied $script:DataStandardVersionSupplied')
+            $selectionIndex | Should -BeGreaterThan -1
+            $body.IndexOf('docker info') | Should -BeGreaterThan $selectionIndex
+        }
+
+        It "derives the core-only env from the image env and builds its own fixture before the refusal and the restore" {
+            $leg = Get-LegStep -Leg "extension-selection"
+            @($leg.Steps | ForEach-Object { $_.CommandElements[2].Value }) | Should -Be @("write-core-only-environment", "leg-extension-selection-mismatch", "leg-extension-selection", "leg-extension-selection-teardown")
+            $leg.Text.Contains('Write-RestoreSmokeCoreOnlyEnvironmentFile -BaseEnvironmentFile $script:ResolvedEnvironmentFile -TargetPath $coreOnlyEnvironmentFile') | Should -BeTrue
+            $leg.Text.Contains('$script:Provenance.SelectionEnvironments.Add($selectionEnvironment)') | Should -BeTrue
+            $buildIndex = $leg.Text.IndexOf('Build-SmokeSourceAndPackage -PackageFixture "core-only-minimal"')
+            $buildIndex | Should -BeGreaterThan $leg.Text.IndexOf('"write-core-only-environment"')
+            $leg.Text.IndexOf('"leg-extension-selection-mismatch"') | Should -BeGreaterThan $buildIndex
+            $leg.Text.Contains('$coreOnlyPackageDirectory = Get-SmokePackageDirectory -PackageFixture "core-only-minimal"') | Should -BeTrue
+        }
+
+        It "refuses the default package under the core-only env, and restores the core-only package under it" {
+            $leg = Get-LegStep -Leg "extension-selection"
+            $mismatch = $leg.Steps[1].CommandElements[4].ScriptBlock.EndBlock.Extent.Text.Trim()
+            $mismatch | Should -BeExactly 'Assert-SmokeSelectionRefusal -PackageDirectory $packageDirectoryPath -EnvironmentFile (Get-SmokeSelectionEnvironmentFile -Selection "core-only")'
+            $script:smokeContent.Contains('$packageDirectoryPath = Get-SmokePackageDirectory -PackageFixture "default-minimal"') | Should -BeTrue
+
+            $restore = $leg.Steps[2].CommandElements[4].ScriptBlock.EndBlock
+            $commands = @($restore.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object { $_.GetCommandName() })
+            @($commands | Where-Object { $_ -eq "Invoke-RestoreWrapper" }).Count | Should -Be 1
+            @($commands | Where-Object { $_ -eq "Assert-RestoredDatastore" }).Count | Should -Be 1
+            @($commands | Where-Object { $_ -eq "Invoke-SmokeTeardown" }) | Should -BeNullOrEmpty
+            $restore.Extent.Text | Should -Match 'EnvironmentFile\s+=\s+\(Get-SmokeSelectionEnvironmentFile -Selection "core-only"\)'
+            $restore.Extent.Text | Should -Match 'RestoreTemplate\s+=\s+"Minimal"'
+            $restore.Extent.Text | Should -Match 'PackageDirectory\s+=\s+\$coreOnlyPackageDirectory\s'
+            $restore.Extent.Text | Should -Match '-EnvironmentFile \(Get-SmokeSelectionEnvironmentFile -Selection "core-only"\)'
+            $leg.Steps[3].CommandElements[4].ScriptBlock.EndBlock.Extent.Text.Trim() | Should -BeExactly "Invoke-SmokeTeardown"
+        }
+
+        It "records the refusal and the state around it before the refused restore is judged" {
+            $body = Get-SmokeFunctionText -Name "Assert-SmokeSelectionRefusal"
+            $recordIndex = $body.IndexOf('$script:Provenance.SelectionRefusals.Add($refusal)')
+            $beforeIndex = $body.IndexOf('$refusal.Before = Get-RestoreSmokeRefusalState @stateArguments')
+            $wrapperIndex = $body.IndexOf('Invoke-RestoreWrapper -Arguments')
+            $afterIndex = $body.IndexOf('$refusal.After = Get-RestoreSmokeRefusalState @stateArguments')
+            $judgeIndex = $body.IndexOf('Get-RestoreSmokeSelectionRefusalDefect -Refusal $refusal')
+            $recordIndex | Should -BeGreaterThan 0
+            $beforeIndex | Should -BeGreaterThan $recordIndex
+            $wrapperIndex | Should -BeGreaterThan $beforeIndex
+            $afterIndex | Should -BeGreaterThan $wrapperIndex
+            $judgeIndex | Should -BeGreaterThan $afterIndex
+            $body | Should -Match 'RestoreTemplate\s+=\s+"Minimal"'
+            $body.Contains('$stateArguments = @{ ComposeProject = $script:WrapperProfile.ComposeProject; BootstrapRoot = $script:BootstrapRoot; RestoreWorkspaceRoot = $script:RestoreWorkspaceRoot }') | Should -BeTrue
+        }
+
+        It "proves a non-default selection in the post-restore assertion, after the SourceIdentity and before the API read" {
+            $assertBody = Get-SmokeFunctionText -Name "Assert-RestoredDatastore"
+            $assertBody.Contains('$fixture = Get-RestoreSmokeRestoreExecutionFixture -RestoreExecution $RestoreExecution') | Should -BeTrue
+            $identityIndex = $assertBody.IndexOf('Assert-RestoredSourceIdentity -RestoreExecution')
+            $selectionIndex = $assertBody.IndexOf('Assert-RestoredSelection -RestoreExecution $RestoreExecution -PackageFixture $fixture.Name -PackageDirectory $PackageDirectory')
+            $apiIndex = $assertBody.IndexOf('Test-RestoreSmokeApiRead')
+            $selectionIndex | Should -BeGreaterThan $identityIndex
+            $apiIndex | Should -BeGreaterThan $selectionIndex
+            $assertBody | Should -Match '(?s)if \(\$fixture\.Selection -ne "default"\) \{\s+Assert-RestoredSelection'
+
+            $selectionBody = Get-SmokeFunctionText -Name "Assert-RestoredSelection"
+            $recordIndex = $selectionBody.IndexOf('$script:Provenance.SelectionProofs.Add($proof)')
+            $judgeIndex = $selectionBody.IndexOf('Get-RestoreSmokeSelectionDefect -Proof $proof')
+            $recordIndex | Should -BeGreaterThan 0
+            $judgeIndex | Should -BeGreaterThan $recordIndex
+            $selectionBody.Contains('Read-RestoreSmokeWorkspaceSelection -BootstrapRoot $script:BootstrapRoot') | Should -BeTrue
+            $selectionBody.Contains('Get-RestoreSmokeCatalogSelection -DatabaseEngine $DatabaseEngine -DatabaseName $script:TargetDatabaseName') | Should -BeTrue
         }
     }
 

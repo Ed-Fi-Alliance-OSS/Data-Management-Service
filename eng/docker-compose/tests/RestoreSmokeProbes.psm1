@@ -67,6 +67,8 @@ Import-Module (Join-Path $PSScriptRoot "../../Dms-Management.psm1")
 # The SourceIdentity proof uses the restore consumer's own SQL and MSSQL MOVE builders
 # (Get-SourceIdentitySelectSql, ConvertFrom-MssqlBackupFileList, New-MssqlRestoreMoveClause).
 Import-Module (Join-Path $PSScriptRoot "../../DatabaseTemplates/Template-RestoreCore.psm1")
+# The core-only env reads SCHEMA_PACKAGES with the parser prepare-dms-schema.ps1 uses.
+Import-Module (Join-Path $PSScriptRoot "../../schema-package-utility.psm1")
 
 # The engine containers the restore consumer and the smoke's SQL use (Get-RestoreDatabaseContainerName).
 $script:EngineContainerNames = @{
@@ -78,17 +80,40 @@ $script:EngineContainerNames = @{
 $script:ApiProbeDescriptorPath = "data/ed-fi/academicSubjectDescriptors?limit=5"
 $script:ApiProbeSchoolPath = "data/ed-fi/schools?limit=5"
 
-# The successful restores each leg performs, in order, by the template kind it restores. Each one
-# must leave exactly one complete served-data API record and one restored SourceIdentity record
-# (Get-RestoreSmokeResultClassification). package-directory restores the same package twice, around
-# a -KeepVolumes stop. The negative legs refuse a restore by design, so they require neither.
+# The packages a run can build. A fixture names what its package was built from: the template kind
+# and the schema selection of the source stack (default = the env file's own SCHEMA_PACKAGES;
+# core-only = that set without its extension packages). Two fixtures can share a template kind, so
+# packages, captures, and restores are matched by fixture, never by kind alone. A non-default
+# selection also names the project schemas its restore must leave (Get-RestoreSmokeSelectionDefect).
+$script:PackageFixtures = [ordered]@{
+    "default-minimal"   = [pscustomobject]@{ Name = "default-minimal"; TemplateKind = "Minimal"; Selection = "default"; ProjectSchemas = $null }
+    "core-only-minimal" = [pscustomobject]@{ Name = "core-only-minimal"; TemplateKind = "Minimal"; Selection = "core-only"; ProjectSchemas = @("edfi") }
+    "default-populated" = [pscustomobject]@{ Name = "default-populated"; TemplateKind = "Populated"; Selection = "default"; ProjectSchemas = $null }
+}
+
+# The successful restores each leg performs, in order, by the package fixture it restores. Each one
+# must leave exactly one complete served-data API record and one restored SourceIdentity record, and a
+# restore of a non-default selection one selection proof (Get-RestoreSmokeResultClassification).
+# package-directory restores the same package twice, around a -KeepVolumes stop. The negative legs
+# refuse a restore by design, so they require neither.
 $script:RestoreLegExecutions = [ordered]@{
-    "package-directory" = @("Minimal", "Minimal")
-    "separate-config"   = @("Minimal")
-    "directory-feed"    = @("Minimal")
-    "populated"         = @("Populated")
+    "package-directory"   = @("default-minimal", "default-minimal")
+    "separate-config"     = @("default-minimal")
+    "directory-feed"      = @("default-minimal")
+    "extension-selection" = @("core-only-minimal")
+    "populated"           = @("default-populated")
 }
 $script:NegativeLegs = @("tampered-package", "contaminated-package", "running-stack")
+# Packages a leg needs beyond the ones it restores: the negative legs refuse the default Minimal
+# package, and extension-selection proves the default package is refused under its core-only env.
+$script:LegAdditionalFixtures = @{
+    "tampered-package"     = @("default-minimal")
+    "contaminated-package" = @("default-minimal")
+    "running-stack"        = @("default-minimal")
+    "extension-selection"  = @("default-minimal")
+}
+# The wrapper's core-package pattern (Get-WrapperEffectiveSchemaPackage in bootstrap-wrapper.psm1).
+$script:CoreSchemaPackagePattern = '^EdFi\.DataStandard\d+\.ApiSchema$'
 $script:ApiReadResources = [ordered]@{
     Minimal   = @("academicSubjectDescriptors")
     Populated = @("academicSubjectDescriptors", "schools")
@@ -163,6 +188,96 @@ function Get-RestoreSmokeWrapperArgumentSet {
         $result.DataStandardVersion = $DataStandardVersion
     }
     return $result
+}
+
+function Assert-RestoreSmokeLegSelection {
+    <#
+    .SYNOPSIS
+    Refuses a leg selection the run cannot perform as specified: extension-selection proves the
+    selection a published-image deployment takes from its own env file, so it needs -Wrapper published
+    and no explicit -DataStandardVersion (which would make that wrapper compose the Data Standard
+    overlay's SCHEMA_PACKAGES over the env's).
+    #>
+    param(
+        [AllowEmptyCollection()]
+        [string[]]$Leg = @(),
+
+        [Parameter(Mandatory)]
+        [ValidateSet("local", "published")]
+        [string]$Wrapper,
+
+        [Parameter(Mandatory)]
+        [bool]$DataStandardVersionSupplied
+    )
+
+    if ("extension-selection" -notin $Leg) {
+        return
+    }
+    if ($Wrapper -ne "published") {
+        throw "The extension-selection leg requires -Wrapper published; it proves the selection a published-image deployment takes from its env file."
+    }
+    if ($DataStandardVersionSupplied) {
+        throw "The extension-selection leg refuses an explicit -DataStandardVersion: the published wrapper would compose the Data Standard overlay's SCHEMA_PACKAGES over the env file's selection."
+    }
+}
+
+function Get-RestoreSmokePackageFixture {
+    <#
+    .SYNOPSIS
+    One package fixture: its template kind, schema selection, the project schemas a restore of a
+    non-default selection must leave, and the work-directory folder its package is built into.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$Name
+    )
+
+    if (-not $script:PackageFixtures.Contains($Name)) {
+        throw "Unknown package fixture '$Name'. Known fixtures: $($script:PackageFixtures.Keys -join ', ')."
+    }
+    $fixture = $script:PackageFixtures[$Name]
+    $projectSchemas = $null
+    if ($null -ne $fixture.ProjectSchemas) {
+        $projectSchemas = @($fixture.ProjectSchemas)
+    }
+    return [pscustomobject]@{
+        Name           = $fixture.Name
+        TemplateKind   = $fixture.TemplateKind
+        Selection      = $fixture.Selection
+        ProjectSchemas = $projectSchemas
+        DirectoryName  = "package-$($fixture.Name)"
+    }
+}
+
+function Get-RestoreSmokeLegPackageFixture {
+    <#
+    .SYNOPSIS
+    The package fixtures the selected legs need built, each once, in the fixture table's order: the
+    fixtures their successful restores use plus the ones their refusals use.
+    #>
+    param(
+        [AllowEmptyCollection()]
+        [string[]]$Leg = @()
+    )
+
+    $needed = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($legName in @($Leg | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+        if ($script:RestoreLegExecutions.Contains($legName)) {
+            foreach ($fixtureName in @($script:RestoreLegExecutions[$legName])) {
+                $null = $needed.Add($fixtureName)
+            }
+        }
+        if ($script:LegAdditionalFixtures.ContainsKey($legName)) {
+            foreach ($fixtureName in @($script:LegAdditionalFixtures[$legName])) {
+                $null = $needed.Add($fixtureName)
+            }
+        }
+    }
+    foreach ($fixtureName in $script:PackageFixtures.Keys) {
+        if ($needed.Contains($fixtureName)) {
+            $fixtureName
+        }
+    }
 }
 
 function Resolve-RestoreSmokeStandardVersion {
@@ -1045,6 +1160,74 @@ function Write-RestoreSmokeImageEnvironmentFile {
     return [pscustomobject]$imageKeys
 }
 
+function Write-RestoreSmokeCoreOnlyEnvironmentFile {
+    <#
+    .SYNOPSIS
+    Writes the core-only env: the base env (the smoke's image env, so the run tags stay) with
+    SCHEMA_PACKAGES reduced to its one core package. Every other line is kept as it is.
+
+    .DESCRIPTION
+    SCHEMA_PACKAGES is parsed with schema-package-utility.psm1, the parser prepare-dms-schema.ps1
+    uses. Refuses, writing nothing, unless the base env declares SCHEMA_PACKAGES exactly once as a
+    quoted JSON array with exactly one core package (EdFi.DataStandard<NN>.ApiSchema, the wrapper's
+    rule), every entry has a name and a version, and at least one other package is listed (without
+    one, a core-only selection would equal the default one and the leg would prove nothing). Returns
+    the selected and removed "<name>@<version>" identities, the form schema.selectedPackages records.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Writes only the smoke-owned env file in its private work directory.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'matchInfo', Justification = 'MatchEvaluator delegate parameter: the replacement line is returned literally.')]
+    param(
+        [Parameter(Mandatory)]
+        [string]$BaseEnvironmentFile,
+
+        [Parameter(Mandatory)]
+        [string]$TargetPath
+    )
+
+    $content = Get-Content -LiteralPath $BaseEnvironmentFile -Raw
+    $declarations = [regex]::Matches($content, '(?m)^[ \t]*(?:export[ \t]+)?SCHEMA_PACKAGES[ \t]*=')
+    if ($declarations.Count -ne 1) {
+        throw "Cannot derive a core-only env: '$BaseEnvironmentFile' declares SCHEMA_PACKAGES $($declarations.Count) times; expected exactly once."
+    }
+    $blockPattern = "(?ms)^[ \t]*SCHEMA_PACKAGES='\[.*?\]'"
+    if (-not [regex]::IsMatch($content, $blockPattern)) {
+        throw "Cannot derive a core-only env: SCHEMA_PACKAGES in '$BaseEnvironmentFile' is not a quoted JSON array."
+    }
+
+    $packages = @(Get-SchemaPackagesFromEnvironmentFile -EnvironmentFilePath $BaseEnvironmentFile)
+    foreach ($package in $packages) {
+        # Read null-safely: under strict mode a missing property would throw before this refusal.
+        if ([string]::IsNullOrWhiteSpace([string](Get-RestoreSmokeEvidenceValue $package "name")) -or
+            [string]::IsNullOrWhiteSpace([string](Get-RestoreSmokeEvidenceValue $package "version"))) {
+            throw "Cannot derive a core-only env: SCHEMA_PACKAGES in '$BaseEnvironmentFile' has an entry without both name and version."
+        }
+    }
+    $core = @($packages | Where-Object { [string]$_.name -match $script:CoreSchemaPackagePattern })
+    if ($core.Count -ne 1) {
+        throw "Cannot derive a core-only env: SCHEMA_PACKAGES in '$BaseEnvironmentFile' lists $($core.Count) core packages (EdFi.DataStandard<NN>.ApiSchema); expected exactly one."
+    }
+    $removed = @($packages | Where-Object { [string]$_.name -notmatch $script:CoreSchemaPackagePattern })
+    if ($removed.Count -eq 0) {
+        throw "Cannot derive a core-only env: SCHEMA_PACKAGES in '$BaseEnvironmentFile' lists only the core package, so a core-only selection would equal the default one."
+    }
+
+    $coreJson = ConvertTo-Json -InputObject @($core[0]) -Compress -Depth 5
+    if ($coreJson.Contains("'")) {
+        throw "Cannot derive a core-only env: the core SCHEMA_PACKAGES entry contains a single quote, which the quoted env value cannot carry."
+    }
+    $newLine = "SCHEMA_PACKAGES='$coreJson'"
+    $rewritten = [regex]::Replace($content, $blockPattern, { param($matchInfo) $newLine })
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($TargetPath, $rewritten, $utf8NoBom)
+
+    return [pscustomobject]@{
+        Selection        = "core-only"
+        FileName         = [System.IO.Path]::GetFileName($TargetPath)
+        SelectedPackages = @($core | ForEach-Object { "$($_.name)@$($_.version)" })
+        RemovedPackages  = @($removed | ForEach-Object { "$($_.name)@$($_.version)" })
+    }
+}
+
 function Get-RestoreSmokeStackObservation {
     <#
     .SYNOPSIS
@@ -1142,7 +1325,8 @@ function Get-RestoreSmokePackageProvenance {
     .SYNOPSIS
     The built template package as observed on disk: file SHA-256, the attestation payload's package
     id, version, recorded SHA-256 and producer, the signing key id, and the in-package restore
-    manifest's projects. Verified only when every value was read and the payload SHA equals the file SHA.
+    manifest's projects and effective schema hash. Verified only when every value was read and the
+    payload SHA equals the file SHA. The record names the package fixture it was built for.
     #>
     param(
         [Parameter(Mandatory)]
@@ -1152,11 +1336,13 @@ function Get-RestoreSmokePackageProvenance {
         [string]$RestoreManifestFileName,
 
         [Parameter(Mandatory)]
-        [string]$TemplateKind
+        [string]$PackageFixture
     )
 
+    $fixture = Get-RestoreSmokePackageFixture -Name $PackageFixture
     $record = [ordered]@{
-        TemplateKind            = $TemplateKind
+        PackageFixture          = $fixture.Name
+        TemplateKind            = $fixture.TemplateKind
         PackageFile             = $null
         Sha256                  = $null
         PackageId               = $null
@@ -1165,6 +1351,7 @@ function Get-RestoreSmokePackageProvenance {
         AttestationProducer     = $null
         AttestationKeyId        = $null
         RestoreManifestProjects = $null
+        RestoreManifestEffectiveSchemaHash = $null
         Verified                = $false
         Reason                  = $null
     }
@@ -1210,6 +1397,10 @@ function Get-RestoreSmokePackageProvenance {
         $archive.Dispose()
     }
     $record.RestoreManifestProjects = @($manifest.projects | ForEach-Object { [string]$_ })
+    $hashProperty = $manifest.PSObject.Properties["effectiveSchemaHash"]
+    if ($null -ne $hashProperty) {
+        $record.RestoreManifestEffectiveSchemaHash = [string]$hashProperty.Value
+    }
 
     if ($record.AttestationPackageSha256 -cne $record.Sha256) {
         $record.Reason = "the attestation payload records packageSha256 $($record.AttestationPackageSha256), but the file hashes to $($record.Sha256)"
@@ -1631,19 +1822,42 @@ function Get-RestoreSmokeRestoreExecutionId {
     if (-not $script:RestoreLegExecutions.Contains($Leg)) {
         throw "Leg '$Leg' performs no successful restore, so it has no restore execution id."
     }
-    $kinds = @($script:RestoreLegExecutions[$Leg])
-    if ($Ordinal -lt 1 -or $Ordinal -gt $kinds.Count) {
-        throw "Leg '$Leg' performs $($kinds.Count) successful restore(s); restore $Ordinal is not defined."
+    $fixtures = @($script:RestoreLegExecutions[$Leg])
+    if ($Ordinal -lt 1 -or $Ordinal -gt $fixtures.Count) {
+        throw "Leg '$Leg' performs $($fixtures.Count) successful restore(s); restore $Ordinal is not defined."
     }
     return "$Leg#$Ordinal"
+}
+
+function Get-RestoreSmokeRestoreExecutionFixture {
+    <#
+    .SYNOPSIS
+    The package fixture a restore execution ("<leg>#<ordinal>", Get-RestoreSmokeRestoreExecutionId)
+    restores, from the same execution map the classifier derives its requirements from. Throws for
+    an id that names no defined restore.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$RestoreExecution
+    )
+
+    if ($RestoreExecution -notmatch '^(?<leg>[a-z-]+)#(?<ordinal>[1-9]\d*)$') {
+        throw "'$RestoreExecution' is not a restore execution id ('<leg>#<ordinal>')."
+    }
+    $leg = $Matches["leg"]
+    $ordinal = [int]$Matches["ordinal"]
+    $null = Get-RestoreSmokeRestoreExecutionId -Leg $leg -Ordinal $ordinal
+    return Get-RestoreSmokePackageFixture -Name @($script:RestoreLegExecutions[$leg])[$ordinal - 1]
 }
 
 function Get-RestoreSmokeRequiredApiRead {
     <#
     .SYNOPSIS
-    The served-data API reads a run's selected legs require: one per successful restore, with the
-    template kind that decides which resources must be served. Negative legs require none; a leg
-    that is neither is returned as unknown, so the classifier reports it instead of ignoring it.
+    The successful restores a run's selected legs perform, each requiring its own served-data API
+    read and restored SourceIdentity (and, for a non-default selection, a selection proof): the
+    package fixture it restores and that fixture's template kind, which decides which resources
+    must be served. Negative legs require none; a leg that is neither is returned as unknown, so
+    the classifier reports it instead of ignoring it.
     #>
     param(
         [AllowNull()]
@@ -1655,9 +1869,10 @@ function Get-RestoreSmokeRequiredApiRead {
     $unknown = [System.Collections.Generic.List[string]]::new()
     foreach ($leg in @($Legs | Where-Object { $null -ne $_ } | ForEach-Object { [string]$_ } | Select-Object -Unique)) {
         if ($script:RestoreLegExecutions.Contains($leg)) {
-            $kinds = @($script:RestoreLegExecutions[$leg])
-            for ($index = 0; $index -lt $kinds.Count; $index++) {
-                $required.Add([pscustomobject]@{ RestoreExecution = "$leg#$($index + 1)"; Leg = $leg; TemplateKind = $kinds[$index] })
+            $fixtures = @($script:RestoreLegExecutions[$leg])
+            for ($index = 0; $index -lt $fixtures.Count; $index++) {
+                $fixture = Get-RestoreSmokePackageFixture -Name $fixtures[$index]
+                $required.Add([pscustomobject]@{ RestoreExecution = "$leg#$($index + 1)"; Leg = $leg; PackageFixture = $fixture.Name; TemplateKind = $fixture.TemplateKind })
             }
         }
         elseif ($leg -notin $script:NegativeLegs) {
@@ -1899,12 +2114,11 @@ function Invoke-RestoreSmokeIdentityBoundPackageBuild {
     the binding's Reason set, when the source identity is not exactly one valid, nonzero UUID (then
     nothing is built), when the package provenance cannot be established, or when the identity read
     after the build is invalid or differs from the one before it. Bound is true only when none of
-    those happened. Each template kind gets its own binding, so packages never overwrite each other.
+    those happened. Each package fixture gets its own binding, so packages never overwrite each other.
     #>
     param(
         [Parameter(Mandatory)]
-        [ValidateSet("Minimal", "Populated")]
-        [string]$TemplateKind,
+        [string]$PackageFixture,
 
         [Parameter(Mandatory)]
         [ValidateSet("postgresql", "mssql")]
@@ -1931,8 +2145,10 @@ function Invoke-RestoreSmokeIdentityBoundPackageBuild {
         [System.Collections.Generic.List[object]]$PackageList
     )
 
+    $fixture = Get-RestoreSmokePackageFixture -Name $PackageFixture
     $binding = [pscustomobject]@{
-        TemplateKind   = $TemplateKind
+        PackageFixture = $fixture.Name
+        TemplateKind   = $fixture.TemplateKind
         SourceDatabase = $SourceDatabaseName
         BeforeBackup   = $null
         AfterBackup    = $null
@@ -1946,12 +2162,12 @@ function Invoke-RestoreSmokeIdentityBoundPackageBuild {
     $binding.BeforeBackup = Get-RestoreSmokeSourceIdentityRead -DatabaseEngine $DatabaseEngine -DatabaseName $SourceDatabaseName
     if ($null -ne $binding.BeforeBackup.Reason) {
         $binding.Reason = "before the backup, $($binding.BeforeBackup.Reason)"
-        throw "Cannot bind the $TemplateKind package to its source's SourceIdentity: $($binding.Reason). Nothing was built."
+        throw "Cannot bind the $($fixture.Name) package to its source's SourceIdentity: $($binding.Reason). Nothing was built."
     }
 
     & $BuildPackage
 
-    $package = Get-RestoreSmokePackageProvenance -PackageDirectory $PackageDirectory -RestoreManifestFileName $RestoreManifestFileName -TemplateKind $TemplateKind
+    $package = Get-RestoreSmokePackageProvenance -PackageDirectory $PackageDirectory -RestoreManifestFileName $RestoreManifestFileName -PackageFixture $fixture.Name
     $PackageList.Add($package)
     $binding.PackageFile = $package.PackageFile
     $binding.PackageSha256 = $package.Sha256
@@ -1963,11 +2179,11 @@ function Invoke-RestoreSmokeIdentityBoundPackageBuild {
     }
     if ($null -ne $binding.AfterBackup.Reason) {
         $binding.Reason = "after the backup, $($binding.AfterBackup.Reason)"
-        throw "Cannot bind the $TemplateKind package to its source's SourceIdentity: $($binding.Reason)."
+        throw "Cannot bind the $($fixture.Name) package to its source's SourceIdentity: $($binding.Reason)."
     }
     if ($binding.AfterBackup.Identity -cne $binding.BeforeBackup.Identity) {
         $binding.Reason = "the source's SourceIdentity changed across the backup (before $($binding.BeforeBackup.Identity), after $($binding.AfterBackup.Identity))"
-        throw "Cannot bind the $TemplateKind package to its source's SourceIdentity: $($binding.Reason)."
+        throw "Cannot bind the $($fixture.Name) package to its source's SourceIdentity: $($binding.Reason)."
     }
 
     $binding.Bound = $true
@@ -2234,6 +2450,473 @@ function Get-RestoreSmokeRestoredIdentityDefect {
     return @($defects)
 }
 
+function ConvertTo-RestoreSmokeProjectSchemaName {
+    <#
+    .SYNOPSIS
+    A project endpoint name as the resource schema the database uses: lowercase, hyphens removed
+    ('ed-fi' -> 'edfi'), the rule the restore cross-check applies (ConvertTo-RestoreProjectSchemaName).
+    #>
+    param(
+        [AllowEmptyString()]
+        [string]$ProjectEndpointName
+    )
+
+    return $ProjectEndpointName.ToLowerInvariant().Replace("-", "")
+}
+
+function Format-RestoreSmokeNameSet {
+    # A set of names for a reason: log-safe, ordinal-sorted, bracketed.
+    param(
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [object[]]$Name
+    )
+
+    $names = [System.Collections.Generic.List[string]]::new()
+    foreach ($item in @($Name | Where-Object { $null -ne $_ })) {
+        $names.Add((ConvertTo-RestoreSmokeLogSafeText ([string]$item)))
+    }
+    $names.Sort([System.StringComparer]::Ordinal)
+    return "[" + ($names -join ", ") + "]"
+}
+
+function Test-RestoreSmokeNameSetEqual {
+    # True when both sets hold the same distinct names and neither repeats one.
+    param(
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [object[]]$Actual,
+
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [object[]]$Expected,
+
+        [switch]$IgnoreCase
+    )
+
+    $comparer = if ($IgnoreCase) { [System.StringComparer]::OrdinalIgnoreCase } else { [System.StringComparer]::Ordinal }
+    $actualNames = @($Actual | Where-Object { $null -ne $_ } | ForEach-Object { [string]$_ })
+    $expectedNames = @($Expected | Where-Object { $null -ne $_ } | ForEach-Object { [string]$_ })
+    $actualSet = [System.Collections.Generic.HashSet[string]]::new([string[]]$actualNames, $comparer)
+    $expectedSet = [System.Collections.Generic.HashSet[string]]::new([string[]]$expectedNames, $comparer)
+    if ($actualSet.Count -ne $actualNames.Count -or $expectedSet.Count -ne $expectedNames.Count) {
+        return $false
+    }
+    return $actualSet.SetEquals($expectedSet)
+}
+
+function Read-RestoreSmokeWorkspaceSelection {
+    <#
+    .SYNOPSIS
+    The schema selection the active bootstrap workspace records: bootstrap-manifest.json's
+    schema.selectedPackages (as prepare-dms-schema.ps1 staged them from the effective
+    SCHEMA_PACKAGES), schema.selectedExtensions, schema.effectiveSchemaHash, and the core project's
+    endpoint from the staged ApiSchema manifest, with the resulting project schema names. Never
+    throws: anything unreadable is a Reason. The ApiSchema manifest path must stay inside the
+    workspace (relative, no empty, '.' or '..' segment).
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$BootstrapRoot
+    )
+
+    $record = [ordered]@{
+        Manifest                = "bootstrap-manifest.json"
+        SelectedPackages        = $null
+        SelectedExtensions      = $null
+        CoreProjectEndpointName = $null
+        ProjectSchemas          = $null
+        EffectiveSchemaHash     = $null
+        Reason                  = $null
+    }
+    try {
+        $manifestPath = Join-Path $BootstrapRoot "bootstrap-manifest.json"
+        if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+            $record.Reason = "the active workspace has no bootstrap-manifest.json"
+            return [pscustomobject]$record
+        }
+        $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -AsHashtable
+        if ($manifest -isnot [System.Collections.IDictionary] -or -not $manifest.Contains("schema") -or $manifest["schema"] -isnot [System.Collections.IDictionary]) {
+            $record.Reason = "bootstrap-manifest.json has no schema section"
+            return [pscustomobject]$record
+        }
+        $schema = $manifest["schema"]
+
+        if ($schema.Contains("selectedPackages") -and $schema["selectedPackages"] -is [System.Collections.IList]) {
+            $record.SelectedPackages = @($schema["selectedPackages"] | ForEach-Object { ConvertTo-RestoreSmokeLogSafeText ([string]$_) })
+        }
+        $extensions = @()
+        if ($schema.Contains("selectedExtensions") -and $null -ne $schema["selectedExtensions"]) {
+            if ($schema["selectedExtensions"] -isnot [System.Collections.IList]) {
+                $record.Reason = "schema.selectedExtensions is not an array"
+                return [pscustomobject]$record
+            }
+            $extensions = @($schema["selectedExtensions"] | ForEach-Object { ConvertTo-RestoreSmokeLogSafeText ([string]$_) })
+        }
+        $record.SelectedExtensions = $extensions
+        if ($schema.Contains("effectiveSchemaHash")) {
+            $record.EffectiveSchemaHash = ConvertTo-RestoreSmokeLogSafeText ([string]$schema["effectiveSchemaHash"])
+        }
+
+        $relativePath = if ($schema.Contains("apiSchemaManifestPath")) { [string]$schema["apiSchemaManifestPath"] } else { "" }
+        $segments = @($relativePath -split '[\\/]')
+        if ([string]::IsNullOrWhiteSpace($relativePath) -or [System.IO.Path]::IsPathRooted($relativePath) -or
+            @($segments | Where-Object { $_ -eq "" -or $_ -eq "." -or $_ -eq ".." }).Count -gt 0) {
+            $record.Reason = "schema.apiSchemaManifestPath '$(ConvertTo-RestoreSmokeLogSafeText $relativePath)' is not a path inside the workspace"
+            return [pscustomobject]$record
+        }
+        $apiSchemaManifestPath = Join-Path $BootstrapRoot ($segments -join [System.IO.Path]::DirectorySeparatorChar)
+        if (-not (Test-Path -LiteralPath $apiSchemaManifestPath -PathType Leaf)) {
+            $record.Reason = "the staged ApiSchema manifest '$(ConvertTo-RestoreSmokeLogSafeText $relativePath)' is missing"
+            return [pscustomobject]$record
+        }
+        $apiSchemaManifest = Get-Content -LiteralPath $apiSchemaManifestPath -Raw | ConvertFrom-Json -AsHashtable
+        if ($apiSchemaManifest -isnot [System.Collections.IDictionary] -or -not $apiSchemaManifest.Contains("projects") -or $apiSchemaManifest["projects"] -isnot [System.Collections.IList]) {
+            $record.Reason = "the staged ApiSchema manifest declares no projects"
+            return [pscustomobject]$record
+        }
+        $coreProjects = @($apiSchemaManifest["projects"] | Where-Object { $_ -is [System.Collections.IDictionary] -and -not [bool]$_["isExtensionProject"] })
+        if ($coreProjects.Count -ne 1) {
+            $record.Reason = "the staged ApiSchema manifest declares $($coreProjects.Count) core projects; expected exactly one"
+            return [pscustomobject]$record
+        }
+        $record.CoreProjectEndpointName = ConvertTo-RestoreSmokeLogSafeText ([string]$coreProjects[0]["projectEndpointName"])
+        $projectSchemas = [System.Collections.Generic.List[string]]::new()
+        $projectSchemas.Add((ConvertTo-RestoreSmokeProjectSchemaName -ProjectEndpointName $record.CoreProjectEndpointName))
+        foreach ($extension in $extensions) {
+            $projectSchemas.Add((ConvertTo-RestoreSmokeProjectSchemaName -ProjectEndpointName $extension))
+        }
+        $record.ProjectSchemas = $projectSchemas.ToArray()
+    }
+    catch {
+        $record.Reason = "the active workspace could not be read: $(ConvertTo-RestoreSmokeLogSafeText $_.Exception.Message)"
+    }
+    return [pscustomobject]$record
+}
+
+function Get-RestoreSmokeCatalogSelection {
+    <#
+    .SYNOPSIS
+    The schema selection the restored target's catalog holds, read with the restore consumer's own
+    queries: the schemas its DMS-only gate enumerates (Get-InventorySchemaQuerySql
+    InventoryEnumeration), partitioned by Get-TemplateProjectSchemaPartition into project schemas and
+    tracked_changes companions, and the dms.EffectiveSchema singleton's hash
+    (Get-EffectiveSchemaRowQuerySql + ConvertFrom-EffectiveSchemaRow). Never throws: a failed query or
+    an unreadable row is a Reason.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory)]
+        [string]$DatabaseName
+    )
+
+    $record = [ordered]@{
+        DatabaseName           = $DatabaseName
+        SchemaNames            = $null
+        ProjectSchemas         = $null
+        TrackedChangesProjects = $null
+        EffectiveSchemaHash    = $null
+        Reason                 = $null
+    }
+
+    $schemaQuery = Invoke-RestoreSmokeEngineQuery -DatabaseEngine $DatabaseEngine -DatabaseName $DatabaseName -Query (Get-InventorySchemaQuerySql -DatabaseEngine $DatabaseEngine -Purpose InventoryEnumeration)
+    if ($schemaQuery.ExitCode -ne 0) {
+        $record.Reason = "the catalog schema query against '$DatabaseName' exited $($schemaQuery.ExitCode): $($schemaQuery.Error)"
+        return [pscustomobject]$record
+    }
+    $record.SchemaNames = @($schemaQuery.Rows)
+    $partition = Get-TemplateProjectSchemaPartition -DatabaseEngine $DatabaseEngine -SchemaName ([string[]]@($schemaQuery.Rows))
+    $record.ProjectSchemas = @($partition.ProjectSchemaNames)
+    $record.TrackedChangesProjects = @($partition.TrackedChangesProjectNames)
+
+    $effectiveSchemaQuery = Invoke-RestoreSmokeEngineQuery -DatabaseEngine $DatabaseEngine -DatabaseName $DatabaseName -Query (Get-EffectiveSchemaRowQuerySql -DatabaseEngine $DatabaseEngine)
+    if ($effectiveSchemaQuery.ExitCode -ne 0) {
+        $record.Reason = "the dms.EffectiveSchema query against '$DatabaseName' exited $($effectiveSchemaQuery.ExitCode): $($effectiveSchemaQuery.Error)"
+        return [pscustomobject]$record
+    }
+    try {
+        $record.EffectiveSchemaHash = (ConvertFrom-EffectiveSchemaRow -Row ([string[]]@($effectiveSchemaQuery.Rows))).EffectiveSchemaHash
+    }
+    catch {
+        $record.Reason = "the dms.EffectiveSchema row of '$DatabaseName' could not be read: $(ConvertTo-RestoreSmokeLogSafeText $_.Exception.Message)"
+    }
+    return [pscustomobject]$record
+}
+
+function Get-RestoreSmokeRefusalState {
+    <#
+    .SYNOPSIS
+    The state a refused restore must leave as it found it: the containers (any state) and volumes
+    Docker holds for the compose project, whether the active .bootstrap workspace exists, and the
+    restore candidate directories (candidate-*) under the restore workspace root. Never throws: a
+    failed listing is a Reason, and the Docker lists are then unknown (null).
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$ComposeProject,
+
+        [Parameter(Mandatory)]
+        [string]$BootstrapRoot,
+
+        [Parameter(Mandatory)]
+        [string]$RestoreWorkspaceRoot
+    )
+
+    $filter = "label=com.docker.compose.project=$ComposeProject"
+    $candidates = @()
+    if (Test-Path -LiteralPath $RestoreWorkspaceRoot -PathType Container) {
+        $candidates = @(Get-ChildItem -LiteralPath $RestoreWorkspaceRoot -Directory -Filter "candidate-*" | ForEach-Object { $_.Name })
+    }
+    $record = [ordered]@{
+        ComposeProject       = $ComposeProject
+        Containers           = $null
+        Volumes              = $null
+        WorkspacePresent     = (Test-Path -LiteralPath $BootstrapRoot)
+        CandidateDirectories = $candidates
+        Reason               = $null
+    }
+    $containers = Invoke-RestoreSmokeDockerCommand -ArgumentList @("ps", "-a", "--filter", $filter, "--format", "{{.Names}}")
+    if ($containers.ExitCode -ne 0) {
+        $record.Reason = "docker ps exited $($containers.ExitCode): $(Get-RestoreSmokeDockerFailureText -Result $containers)"
+        return [pscustomobject]$record
+    }
+    $volumes = Invoke-RestoreSmokeDockerCommand -ArgumentList @("volume", "ls", "--filter", $filter, "--format", "{{.Name}}")
+    if ($volumes.ExitCode -ne 0) {
+        $record.Reason = "docker volume ls exited $($volumes.ExitCode): $(Get-RestoreSmokeDockerFailureText -Result $volumes)"
+        return [pscustomobject]$record
+    }
+    $record.Containers = @($containers.Output | ForEach-Object { ConvertTo-RestoreSmokeLogSafeText $_ } | Where-Object { $_ -ne "" })
+    $record.Volumes = @($volumes.Output | ForEach-Object { ConvertTo-RestoreSmokeLogSafeText $_ } | Where-Object { $_ -ne "" })
+    return [pscustomobject]$record
+}
+
+function Get-RestoreSmokeSelectionDefect {
+    <#
+    .SYNOPSIS
+    Why a restore of a non-default selection does not prove that selection took effect: the active
+    workspace's staged packages must equal the selection env's packages, and the workspace's projects,
+    the restored package's restore-manifest projects, and the target catalog's project schemas must
+    each equal -ExpectedProject exactly, with no tracked_changes companion of another project; the
+    workspace, restore-manifest, and catalog effective schema hashes must be 64 lowercase hex and
+    equal. Each disagreement is its own defect; a complete proof returns none. Values are read from
+    the recorded evidence (-Proof's Workspace and Catalog, -Package's restore manifest), so the
+    classifier can re-judge a results record.
+    #>
+    param(
+        [AllowNull()]
+        [object]$Proof,
+
+        # The package record (Get-RestoreSmokePackageProvenance) of the restored package.
+        [AllowNull()]
+        [object]$Package,
+
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [string[]]$ExpectedProject,
+
+        # The selection env's "<name>@<version>" identities (Write-RestoreSmokeCoreOnlyEnvironmentFile).
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [string[]]$ExpectedPackage
+    )
+
+    $defects = [System.Collections.Generic.List[string]]::new()
+    $expectedProjects = @($ExpectedProject | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $expectedPackages = @($ExpectedPackage | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($expectedProjects.Count -eq 0) {
+        $defects.Add("no expected project schemas are defined for the selection")
+    }
+    if ($expectedPackages.Count -eq 0) {
+        $defects.Add("the selection env records no selected packages")
+    }
+    $expectedProjectText = Format-RestoreSmokeNameSet $expectedProjects
+    $hashes = [ordered]@{}
+
+    $workspace = Get-RestoreSmokeEvidenceValue $Proof "Workspace"
+    $workspaceReason = [string](Get-RestoreSmokeEvidenceValue $workspace "Reason")
+    if ($null -eq $workspace) {
+        $defects.Add("the active workspace's selection was not recorded")
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($workspaceReason)) {
+        $defects.Add("the active workspace could not be read: $(ConvertTo-RestoreSmokeLogSafeText $workspaceReason)")
+    }
+    else {
+        $stagedValue = Get-RestoreSmokeEvidenceValue $workspace "SelectedPackages"
+        if ($null -eq $stagedValue) {
+            $defects.Add("the workspace manifest records no schema.selectedPackages")
+        }
+        else {
+            $staged = Get-RestoreSmokeEvidenceList $workspace "SelectedPackages"
+            if ($expectedPackages.Count -gt 0 -and -not (Test-RestoreSmokeNameSetEqual -Actual $staged -Expected $expectedPackages -IgnoreCase)) {
+                $defects.Add("the workspace staged packages $(Format-RestoreSmokeNameSet $staged), but the selection env selects $(Format-RestoreSmokeNameSet $expectedPackages)")
+            }
+        }
+        $workspaceProjects = Get-RestoreSmokeEvidenceList $workspace "ProjectSchemas"
+        if ($expectedProjects.Count -gt 0 -and -not (Test-RestoreSmokeNameSetEqual -Actual $workspaceProjects -Expected $expectedProjects)) {
+            $defects.Add("the workspace selects projects $(Format-RestoreSmokeNameSet $workspaceProjects), expected $expectedProjectText")
+        }
+        $hashes["workspace"] = [string](Get-RestoreSmokeEvidenceValue $workspace "EffectiveSchemaHash")
+    }
+
+    if ($null -eq $Package) {
+        $defects.Add("no package record exists for the restored package, so its restore manifest is unknown")
+    }
+    else {
+        $manifestProjects = Get-RestoreSmokeEvidenceList $Package "RestoreManifestProjects"
+        if ($expectedProjects.Count -gt 0 -and -not (Test-RestoreSmokeNameSetEqual -Actual $manifestProjects -Expected $expectedProjects)) {
+            $defects.Add("the restore manifest declares projects $(Format-RestoreSmokeNameSet $manifestProjects), expected $expectedProjectText")
+        }
+        $hashes["restore manifest"] = [string](Get-RestoreSmokeEvidenceValue $Package "RestoreManifestEffectiveSchemaHash")
+    }
+
+    $catalog = Get-RestoreSmokeEvidenceValue $Proof "Catalog"
+    $catalogReason = [string](Get-RestoreSmokeEvidenceValue $catalog "Reason")
+    if ($null -eq $catalog) {
+        $defects.Add("the target catalog's selection was not recorded")
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($catalogReason)) {
+        $defects.Add("the target catalog could not be read: $(ConvertTo-RestoreSmokeLogSafeText $catalogReason)")
+    }
+    else {
+        $catalogProjects = Get-RestoreSmokeEvidenceList $catalog "ProjectSchemas"
+        if ($expectedProjects.Count -gt 0 -and -not (Test-RestoreSmokeNameSetEqual -Actual $catalogProjects -Expected $expectedProjects)) {
+            $defects.Add("the target catalog holds project schemas $(Format-RestoreSmokeNameSet $catalogProjects), expected $expectedProjectText")
+        }
+        $trackedChanges = Get-RestoreSmokeEvidenceList $catalog "TrackedChangesProjects"
+        $foreignTracked = @($trackedChanges | Where-Object { [string]$_ -cnotin $expectedProjects })
+        if ($foreignTracked.Count -gt 0) {
+            $defects.Add("the target catalog holds tracked_changes companions of projects outside the selection: $(Format-RestoreSmokeNameSet $foreignTracked)")
+        }
+        $hashes["target catalog"] = [string](Get-RestoreSmokeEvidenceValue $catalog "EffectiveSchemaHash")
+    }
+
+    $validHashes = $true
+    foreach ($source in $hashes.Keys) {
+        if ($hashes[$source] -cnotmatch '^[0-9a-f]{64}$') {
+            $defects.Add("the $source effective schema hash '$(ConvertTo-RestoreSmokeLogSafeText $hashes[$source])' is not 64 lowercase hex")
+            $validHashes = $false
+        }
+    }
+    if ($validHashes -and @($hashes.Values | Select-Object -Unique).Count -gt 1) {
+        $defects.Add("the effective schema hashes disagree: " + (($hashes.Keys | ForEach-Object { "$_ $($hashes[$_])" }) -join ", "))
+    }
+    return @($defects)
+}
+
+function Get-RestoreSmokeSelectionRefusalExpectedMessage {
+    <#
+    .SYNOPSIS
+    The sentence the package-to-candidate cross-check (Assert-RestoreManifestMatchesCandidate) throws
+    when a package built for one selection meets a candidate staged for another: it compares the
+    effective schema hash before the project set, so differing selections are refused on the hash.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$PackageEffectiveSchemaHash,
+
+        [Parameter(Mandatory)]
+        [string]$CandidateEffectiveSchemaHash
+    )
+
+    return "Effective schema hash mismatch: the restore manifest declares '$PackageEffectiveSchemaHash' but the candidate workspace staged '$CandidateEffectiveSchemaHash'."
+}
+
+function Get-RestoreSmokeSelectionRefusalDefect {
+    <#
+    .SYNOPSIS
+    Why a refusal record does not prove that the default package is refused under the core-only env
+    during the restore preflight, before any container starts: the attempt must have restored the
+    default package and been refused with the cross-check's effective-schema-hash sentence naming
+    the default package's hash and the core-only candidate's (the core-only package's) hash, which
+    must be valid and differ; the project held no container before or after, its volumes did not
+    change, no .bootstrap workspace existed before or after, and no candidate workspace was left
+    behind. A complete record returns no defect.
+    #>
+    param(
+        [AllowNull()]
+        [object]$Refusal,
+
+        [AllowNull()]
+        [object]$DefaultPackage,
+
+        [AllowNull()]
+        [object]$SelectedPackage
+    )
+
+    $defects = [System.Collections.Generic.List[string]]::new()
+    if ($null -eq $Refusal) {
+        return @("no refusal was recorded")
+    }
+    if ($null -eq $DefaultPackage -or $null -eq $SelectedPackage) {
+        $defects.Add("the default and the core-only package records are both needed to judge the refusal")
+        return @($defects)
+    }
+
+    $defaultHash = [string](Get-RestoreSmokeEvidenceValue $DefaultPackage "RestoreManifestEffectiveSchemaHash")
+    $selectedHash = [string](Get-RestoreSmokeEvidenceValue $SelectedPackage "RestoreManifestEffectiveSchemaHash")
+    $expectedMessage = $null
+    if ($defaultHash -cnotmatch '^[0-9a-f]{64}$' -or $selectedHash -cnotmatch '^[0-9a-f]{64}$') {
+        $defects.Add("the default and core-only packages' effective schema hashes are not both 64 lowercase hex")
+    }
+    elseif ($defaultHash -ceq $selectedHash) {
+        $defects.Add("the default and core-only packages declare the same effective schema hash, so the refusal cannot show the selections differ")
+    }
+    else {
+        $expectedMessage = Get-RestoreSmokeSelectionRefusalExpectedMessage -PackageEffectiveSchemaHash $defaultHash -CandidateEffectiveSchemaHash $selectedHash
+    }
+
+    $refusedSha = [string](Get-RestoreSmokeEvidenceValue $Refusal "PackageSha256")
+    if ($refusedSha -cne [string](Get-RestoreSmokeEvidenceValue $DefaultPackage "Sha256")) {
+        $defects.Add("the attempted package '$(ConvertTo-RestoreSmokeLogSafeText $refusedSha)' is not the default package")
+    }
+    $message = [string](Get-RestoreSmokeEvidenceValue $Refusal "Message")
+    if ((Get-RestoreSmokeEvidenceValue $Refusal "Refused") -ne $true) {
+        $defects.Add("the default package was not refused under the core-only env")
+    }
+    elseif ($null -ne $expectedMessage -and -not $message.Contains($expectedMessage, [System.StringComparison]::Ordinal)) {
+        $defects.Add("the refusal was not the package-to-candidate cross-check's effective schema hash mismatch: $(ConvertTo-RestoreSmokeLogSafeText $message)")
+    }
+
+    $states = [ordered]@{}
+    foreach ($point in @("Before", "After")) {
+        $state = Get-RestoreSmokeEvidenceValue $Refusal $point
+        $stateReason = [string](Get-RestoreSmokeEvidenceValue $state "Reason")
+        if ($null -eq $state) {
+            $defects.Add("the project state $($point.ToLowerInvariant()) the attempt was not recorded")
+            continue
+        }
+        if (-not [string]::IsNullOrWhiteSpace($stateReason)) {
+            $defects.Add("the project state $($point.ToLowerInvariant()) the attempt could not be observed: $(ConvertTo-RestoreSmokeLogSafeText $stateReason)")
+            continue
+        }
+        $states[$point] = $state
+        $containers = Get-RestoreSmokeEvidenceList $state "Containers"
+        if ($containers.Count -gt 0) {
+            $defects.Add("containers existed $($point.ToLowerInvariant()) the attempt: $(Format-RestoreSmokeNameSet $containers)")
+        }
+        if ((Get-RestoreSmokeEvidenceValue $state "WorkspacePresent") -ne $false) {
+            $defects.Add("an active .bootstrap workspace existed $($point.ToLowerInvariant()) the attempt (or was not checked)")
+        }
+    }
+    if ($states.Count -eq 2) {
+        $volumesBefore = Get-RestoreSmokeEvidenceList $states["Before"] "Volumes"
+        $volumesAfter = Get-RestoreSmokeEvidenceList $states["After"] "Volumes"
+        if (-not (Test-RestoreSmokeNameSetEqual -Actual $volumesAfter -Expected $volumesBefore)) {
+            $defects.Add("the project's volumes changed across the attempt: before $(Format-RestoreSmokeNameSet $volumesBefore), after $(Format-RestoreSmokeNameSet $volumesAfter)")
+        }
+        $candidatesBefore = Get-RestoreSmokeEvidenceList $states["Before"] "CandidateDirectories"
+        $candidatesAfter = Get-RestoreSmokeEvidenceList $states["After"] "CandidateDirectories"
+        $leftCandidates = @($candidatesAfter | Where-Object { [string]$_ -cnotin @($candidatesBefore | ForEach-Object { [string]$_ }) })
+        if ($leftCandidates.Count -gt 0) {
+            $defects.Add("the attempt left candidate workspaces behind: $(Format-RestoreSmokeNameSet $leftCandidates)")
+        }
+    }
+    return @($defects)
+}
+
 function Get-RestoreSmokeSourceIdentityReason {
     <#
     .SYNOPSIS
@@ -2241,13 +2924,13 @@ function Get-RestoreSmokeSourceIdentityReason {
     prove that each successful restore received a new identity, different from its package's.
 
     .DESCRIPTION
-    Per built package: exactly one pre-backup capture bound to its SHA-256, of the same template
-    kind, whose before- and after-backup reads are the same valid UUID. A capture bound to a SHA no
+    Per built package: exactly one pre-backup capture bound to its SHA-256, of the same package
+    fixture, whose before- and after-backup reads are the same valid UUID. A capture bound to a SHA no
     built package has is reported. Per package a required restore used: exactly one independent
     inspection of that SHA, without a failure, with a valid identity equal to the bound capture.
     Every inspection must have cleaned up completely and must be of a built package. Per required
     restore execution: exactly one restored-identity record, whose package SHA is a built package of
-    the kind the leg restores, holding a valid identity that differs from the package identity and
+    the fixture the leg restores, holding a valid identity that differs from the package identity and
     from every earlier required restore's. Untagged records and records of restores no selected leg
     performs are reported. Identities are re-derived from the recorded rows.
     #>
@@ -2275,9 +2958,9 @@ function Get-RestoreSmokeSourceIdentityReason {
     # Pre-backup captures, per built package.
     $capturedIdentity = @{}
     foreach ($builtPackage in $packages) {
-        $kind = [string](Get-RestoreSmokeEvidenceValue $builtPackage "TemplateKind")
+        $fixtureName = ConvertTo-RestoreSmokeLogSafeText ([string](Get-RestoreSmokeEvidenceValue $builtPackage "PackageFixture"))
         $sha = [string](Get-RestoreSmokeEvidenceValue $builtPackage "Sha256")
-        $label = "$kind package $sha"
+        $label = "$fixtureName package $sha"
         $bindings = @($evidence.SourceIdentityBindings | Where-Object { [string](Get-RestoreSmokeEvidenceValue $_ "PackageSha256") -ceq $sha })
         if ($bindings.Count -eq 0) {
             $reasons.Add("${label}: no pre-backup SourceIdentity capture is bound to it")
@@ -2287,9 +2970,9 @@ function Get-RestoreSmokeSourceIdentityReason {
             $reasons.Add("${label}: $($bindings.Count) pre-backup SourceIdentity captures are bound to it; expected exactly one")
             continue
         }
-        $bindingKind = [string](Get-RestoreSmokeEvidenceValue $bindings[0] "TemplateKind")
-        if ($bindingKind -cne $kind) {
-            $reasons.Add("${label}: the bound capture is for a $(ConvertTo-RestoreSmokeLogSafeText $bindingKind) package")
+        $bindingFixture = [string](Get-RestoreSmokeEvidenceValue $bindings[0] "PackageFixture")
+        if ($bindingFixture -cne $fixtureName) {
+            $reasons.Add("${label}: the bound capture is for a $(ConvertTo-RestoreSmokeLogSafeText $bindingFixture) package")
             continue
         }
         $beforeRows = Get-RestoreSmokeEvidenceList (Get-RestoreSmokeEvidenceValue $bindings[0] "BeforeBackup") "Rows"
@@ -2312,12 +2995,12 @@ function Get-RestoreSmokeSourceIdentityReason {
     }
     foreach ($binding in $evidence.SourceIdentityBindings) {
         $sha = ConvertTo-RestoreSmokeLogSafeText ([string](Get-RestoreSmokeEvidenceValue $binding "PackageSha256"))
-        $kind = ConvertTo-RestoreSmokeLogSafeText ([string](Get-RestoreSmokeEvidenceValue $binding "TemplateKind"))
+        $bindingFixture = ConvertTo-RestoreSmokeLogSafeText ([string](Get-RestoreSmokeEvidenceValue $binding "PackageFixture"))
         if ([string]::IsNullOrWhiteSpace($sha)) {
-            $reasons.Add("a pre-backup SourceIdentity capture ($kind) is bound to no package: $(ConvertTo-RestoreSmokeLogSafeText ([string](Get-RestoreSmokeEvidenceValue $binding 'Reason')))")
+            $reasons.Add("a pre-backup SourceIdentity capture ($bindingFixture) is bound to no package: $(ConvertTo-RestoreSmokeLogSafeText ([string](Get-RestoreSmokeEvidenceValue $binding 'Reason')))")
         }
         elseif ($sha -cnotin $packageShas) {
-            $reasons.Add("a pre-backup SourceIdentity capture ($kind) is bound to package SHA-256 $sha, which no package built in this run has")
+            $reasons.Add("a pre-backup SourceIdentity capture ($bindingFixture) is bound to package SHA-256 $sha, which no package built in this run has")
         }
     }
 
@@ -2357,7 +3040,7 @@ function Get-RestoreSmokeSourceIdentityReason {
     $packageIdentity = @{}
     foreach ($sha in $usedShas) {
         $builtPackage = @($packages | Where-Object { [string](Get-RestoreSmokeEvidenceValue $_ "Sha256") -ceq $sha })[0]
-        $label = "$(Get-RestoreSmokeEvidenceValue $builtPackage 'TemplateKind') package $sha"
+        $label = "$(ConvertTo-RestoreSmokeLogSafeText ([string](Get-RestoreSmokeEvidenceValue $builtPackage 'PackageFixture'))) package $sha"
         $inspections = @($evidence.PackageInspections | Where-Object { [string](Get-RestoreSmokeEvidenceValue $_ "PackageSha256") -ceq $sha })
         if ($inspections.Count -eq 0) {
             $reasons.Add("${label}: it was not independently inspected")
@@ -2406,9 +3089,9 @@ function Get-RestoreSmokeSourceIdentityReason {
             $reasons.Add("restore ${id}: its package SHA-256 '$(ConvertTo-RestoreSmokeLogSafeText $sha)' matches no package built in this run")
         }
         else {
-            $restoredKind = [string](Get-RestoreSmokeEvidenceValue $restoredPackage[0] "TemplateKind")
-            if ($restoredKind -cne $restore.TemplateKind) {
-                $reasons.Add("restore ${id}: it restored the $(ConvertTo-RestoreSmokeLogSafeText $restoredKind) package; the leg restores $($restore.TemplateKind)")
+            $restoredFixture = [string](Get-RestoreSmokeEvidenceValue $restoredPackage[0] "PackageFixture")
+            if ($restoredFixture -cne $restore.PackageFixture) {
+                $reasons.Add("restore ${id}: it restored the $(ConvertTo-RestoreSmokeLogSafeText $restoredFixture) package; the leg restores $($restore.PackageFixture)")
             }
             if ($packageIdentity.ContainsKey($sha)) {
                 $comparedIdentity = $packageIdentity[$sha]
@@ -2427,6 +3110,129 @@ function Get-RestoreSmokeSourceIdentityReason {
         }
         elseif ($executionId -cnotin $requiredIds) {
             $reasons.Add("a restored SourceIdentity was recorded for restore $executionId, which no selected leg performs")
+        }
+    }
+    return @($reasons)
+}
+
+function Get-RestoreSmokeSelectionReason {
+    <#
+    .SYNOPSIS
+    The schema-selection part of the classification. Every required restore of a non-default
+    fixture needs exactly one selection proof of its own, re-judged here by
+    Get-RestoreSmokeSelectionDefect against the fixture's expected projects, the one recorded env of
+    that selection (which must have removed at least one package), and the package record of the
+    proof's SHA-256 (a built package of the restore's fixture). With extension-selection selected,
+    exactly one refusal record is required and re-judged by Get-RestoreSmokeSelectionRefusalDefect
+    against the default-minimal and core-only-minimal package records. Untagged proofs and proofs or
+    refusals nothing requires are reported.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [System.Collections.IDictionary]$Provenance,
+
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [object[]]$Package,
+
+        # The required restores (Get-RestoreSmokeRequiredApiRead), or $null when the legs are unknown.
+        [AllowNull()]
+        [object[]]$RequiredRestore,
+
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [object[]]$Leg
+    )
+
+    $reasons = [System.Collections.Generic.List[string]]::new()
+    if ($null -eq $RequiredRestore) {
+        return @($reasons)
+    }
+    $packages = @(@($Package) | Where-Object { $null -ne $_ })
+    $proofs = Get-RestoreSmokeEvidenceList $Provenance "SelectionProofs"
+    $refusals = Get-RestoreSmokeEvidenceList $Provenance "SelectionRefusals"
+    $environments = Get-RestoreSmokeEvidenceList $Provenance "SelectionEnvironments"
+
+    $requiredSelections = @($RequiredRestore | Where-Object { (Get-RestoreSmokePackageFixture -Name $_.PackageFixture).Selection -cne "default" })
+    foreach ($restore in $requiredSelections) {
+        $id = $restore.RestoreExecution
+        $fixture = Get-RestoreSmokePackageFixture -Name $restore.PackageFixture
+        $records = @($proofs | Where-Object { [string](Get-RestoreSmokeEvidenceValue $_ "RestoreExecution") -ceq $id })
+        if ($records.Count -eq 0) {
+            $reasons.Add("restore ${id}: no selection proof was recorded")
+            continue
+        }
+        if ($records.Count -gt 1) {
+            $reasons.Add("restore ${id}: $($records.Count) selection proofs were recorded; expected exactly one")
+            continue
+        }
+
+        $expectedPackages = @()
+        $selectionEnvironments = @($environments | Where-Object { [string](Get-RestoreSmokeEvidenceValue $_ "Selection") -ceq $fixture.Selection })
+        if ($selectionEnvironments.Count -ne 1) {
+            $reasons.Add("restore ${id}: expected one recorded $($fixture.Selection) env, found $($selectionEnvironments.Count)")
+        }
+        else {
+            $expectedPackages = Get-RestoreSmokeEvidenceList $selectionEnvironments[0] "SelectedPackages"
+            $removedPackages = Get-RestoreSmokeEvidenceList $selectionEnvironments[0] "RemovedPackages"
+            if ($removedPackages.Count -eq 0) {
+                $reasons.Add("restore ${id}: the $($fixture.Selection) env removed no package, so it does not differ from the default selection")
+            }
+        }
+
+        $sha = [string](Get-RestoreSmokeEvidenceValue $records[0] "PackageSha256")
+        $restoredPackage = @($packages | Where-Object { [string](Get-RestoreSmokeEvidenceValue $_ "Sha256") -ceq $sha -and [string](Get-RestoreSmokeEvidenceValue $_ "PackageFixture") -ceq $fixture.Name })
+        $packageRecord = $null
+        if ([string]::IsNullOrWhiteSpace($sha) -or $restoredPackage.Count -eq 0) {
+            $reasons.Add("restore ${id}: the selection proof's package SHA-256 '$(ConvertTo-RestoreSmokeLogSafeText $sha)' is not a $($fixture.Name) package built in this run")
+        }
+        else {
+            $packageRecord = $restoredPackage[0]
+        }
+        foreach ($defect in @(Get-RestoreSmokeSelectionDefect -Proof $records[0] -Package $packageRecord -ExpectedProject ([string[]]@($fixture.ProjectSchemas)) -ExpectedPackage ([string[]]@($expectedPackages)))) {
+            $reasons.Add("restore ${id}: $defect")
+        }
+    }
+    $requiredIds = @($requiredSelections | ForEach-Object { $_.RestoreExecution })
+    foreach ($proof in $proofs) {
+        $executionId = ConvertTo-RestoreSmokeLogSafeText ([string](Get-RestoreSmokeEvidenceValue $proof "RestoreExecution"))
+        if ([string]::IsNullOrWhiteSpace($executionId)) {
+            $reasons.Add("a selection proof names no restore execution")
+        }
+        elseif ($executionId -cnotin $requiredIds) {
+            $reasons.Add("a selection proof was recorded for restore $executionId, which no selected leg requires")
+        }
+    }
+
+    $refusalRequired = "extension-selection" -cin @($Leg | ForEach-Object { [string]$_ })
+    if ($refusalRequired) {
+        $records = @($refusals | Where-Object { [string](Get-RestoreSmokeEvidenceValue $_ "Leg") -ceq "extension-selection" })
+        if ($records.Count -eq 0) {
+            $reasons.Add("leg extension-selection: no refusal of the default package under the core-only env was recorded")
+        }
+        elseif ($records.Count -gt 1) {
+            $reasons.Add("leg extension-selection: $($records.Count) refusals were recorded; expected exactly one")
+        }
+        else {
+            $defaultPackages = @($packages | Where-Object { [string](Get-RestoreSmokeEvidenceValue $_ "PackageFixture") -ceq "default-minimal" })
+            $coreOnlyPackages = @($packages | Where-Object { [string](Get-RestoreSmokeEvidenceValue $_ "PackageFixture") -ceq "core-only-minimal" })
+            $defaultPackage = $null
+            if ($defaultPackages.Count -eq 1) {
+                $defaultPackage = $defaultPackages[0]
+            }
+            $coreOnlyPackage = $null
+            if ($coreOnlyPackages.Count -eq 1) {
+                $coreOnlyPackage = $coreOnlyPackages[0]
+            }
+            foreach ($defect in @(Get-RestoreSmokeSelectionRefusalDefect -Refusal $records[0] -DefaultPackage $defaultPackage -SelectedPackage $coreOnlyPackage)) {
+                $reasons.Add("leg extension-selection: $defect")
+            }
+        }
+    }
+    foreach ($refusal in $refusals) {
+        $refusalLeg = ConvertTo-RestoreSmokeLogSafeText ([string](Get-RestoreSmokeEvidenceValue $refusal "Leg"))
+        if (-not $refusalRequired -or $refusalLeg -cne "extension-selection") {
+            $reasons.Add("a selection refusal was recorded for leg '$refusalLeg', which no selected leg requires")
         }
     }
     return @($reasons)
@@ -2502,7 +3308,10 @@ function Get-RestoreSmokeResultClassification {
     served-data API record of its own, complete for its template kind (schema-only reads never are).
     Every built package needs its pre-backup SourceIdentity capture bound to its SHA-256, and every
     such restore needs a restored identity of its own that differs from its independently inspected
-    package's identity and from every other restore's (Get-RestoreSmokeSourceIdentityReason).
+    package's identity and from every other restore's (Get-RestoreSmokeSourceIdentityReason). Each
+    package names a known fixture of its template kind, one package per fixture. A restore of a
+    non-default selection needs its selection proof, and extension-selection its refusal of the
+    default package (Get-RestoreSmokeSelectionReason).
     #>
     param(
         [Parameter(Mandatory)]
@@ -2656,9 +3465,25 @@ function Get-RestoreSmokeResultClassification {
     if ($packages.Count -eq 0) {
         $reasons.Add("no package was built in this run")
     }
+    $packagesPerFixture = @{}
     foreach ($package in $packages) {
+        $fixtureName = ConvertTo-RestoreSmokeLogSafeText ([string](Get-RestoreSmokeEvidenceValue $package "PackageFixture"))
+        $packageKind = ConvertTo-RestoreSmokeLogSafeText ([string](Get-RestoreSmokeEvidenceValue $package "TemplateKind"))
         if ((Get-RestoreSmokeEvidenceValue $package "Verified") -ne $true) {
-            $reasons.Add("package ($(Get-RestoreSmokeEvidenceValue $package 'TemplateKind')) not verified: $(Get-RestoreSmokeEvidenceValue $package 'Reason')")
+            $reasons.Add("package ($fixtureName) not verified: $(Get-RestoreSmokeEvidenceValue $package 'Reason')")
+        }
+        if (-not $script:PackageFixtures.Contains($fixtureName)) {
+            $reasons.Add("package $(ConvertTo-RestoreSmokeLogSafeText ([string](Get-RestoreSmokeEvidenceValue $package 'PackageFile'))): '$fixtureName' is not a known package fixture")
+            continue
+        }
+        if ($packageKind -cne $script:PackageFixtures[$fixtureName].TemplateKind) {
+            $reasons.Add("package ($fixtureName): it is recorded as a $packageKind package, but the fixture is $($script:PackageFixtures[$fixtureName].TemplateKind)")
+        }
+        $packagesPerFixture[$fixtureName] = 1 + [int]$packagesPerFixture[$fixtureName]
+    }
+    foreach ($fixtureName in @($packagesPerFixture.Keys | Sort-Object)) {
+        if ($packagesPerFixture[$fixtureName] -gt 1) {
+            $reasons.Add("$($packagesPerFixture[$fixtureName]) packages were recorded for fixture $fixtureName; expected one")
         }
     }
 
@@ -2735,6 +3560,16 @@ function Get-RestoreSmokeResultClassification {
         $reasons.Add($identityReason)
     }
 
+    # Schema selection: each non-default selection proven to have taken effect, and the default
+    # package refused under the core-only env before any container started.
+    $selectedLegs = @()
+    if ($null -ne $legList) {
+        $selectedLegs = @($legList)
+    }
+    foreach ($selectionReason in @(Get-RestoreSmokeSelectionReason -Provenance $Provenance -Package $packages -RequiredRestore $requiredRestores -Leg $selectedLegs)) {
+        $reasons.Add($selectionReason)
+    }
+
     return [pscustomobject]@{
         Final   = ($reasons.Count -eq 0)
         Reasons = @($reasons)
@@ -2745,6 +3580,9 @@ Export-ModuleMember -Function `
     ConvertTo-RestoreSmokeLogSafeText, `
     Get-RestoreSmokeWrapperProfile, `
     Get-RestoreSmokeWrapperArgumentSet, `
+    Assert-RestoreSmokeLegSelection, `
+    Get-RestoreSmokePackageFixture, `
+    Get-RestoreSmokeLegPackageFixture, `
     Resolve-RestoreSmokeStandardVersion, `
     Get-RestoreSmokeForeignStackInventory, `
     Format-RestoreSmokeForeignStackInventory, `
@@ -2763,6 +3601,7 @@ Export-ModuleMember -Function `
     Invoke-RestoreSmokeImageBuild, `
     Remove-RestoreSmokeOwnedImageTag, `
     Write-RestoreSmokeImageEnvironmentFile, `
+    Write-RestoreSmokeCoreOnlyEnvironmentFile, `
     Get-RestoreSmokeStackObservation, `
     Get-RestoreSmokeEffectiveSchemaPackageList, `
     Get-RestoreSmokePackageProvenance, `
@@ -2773,10 +3612,17 @@ Export-ModuleMember -Function `
     Get-RestoreSmokeJsonArrayLength, `
     Test-RestoreSmokeApiRead, `
     Get-RestoreSmokeRestoreExecutionId, `
+    Get-RestoreSmokeRestoreExecutionFixture, `
     Get-RestoreSmokeRequiredApiRead, `
     Get-RestoreSmokeSourceIdentityValue, `
     Get-RestoreSmokeSourceIdentityRead, `
     Invoke-RestoreSmokeIdentityBoundPackageBuild, `
     Invoke-RestoreSmokePackageInspection, `
     Get-RestoreSmokeRestoredIdentityDefect, `
+    Read-RestoreSmokeWorkspaceSelection, `
+    Get-RestoreSmokeCatalogSelection, `
+    Get-RestoreSmokeRefusalState, `
+    Get-RestoreSmokeSelectionDefect, `
+    Get-RestoreSmokeSelectionRefusalExpectedMessage, `
+    Get-RestoreSmokeSelectionRefusalDefect, `
     Get-RestoreSmokeResultClassification

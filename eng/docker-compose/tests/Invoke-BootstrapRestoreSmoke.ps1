@@ -44,6 +44,17 @@
                           remain, and no active .bootstrap workspace was created.
       running-stack       Attempts a restore while the stack is RUNNING; asserts the stop
                           proof refuses, naming the running containers.
+      extension-selection Opt-in, -Wrapper published only, without -DataStandardVersion: derives a
+                          core-only env from the run's env (SCHEMA_PACKAGES reduced to its core
+                          package, the run's image tags kept), builds a core-only Minimal package
+                          from a core-only source into its own directory, then (1) proves the
+                          default package is refused under the core-only env by the package-to-
+                          candidate cross-check, with no container started, the project's volumes
+                          unchanged, and no workspace left behind, and (2) restores the core-only
+                          package and asserts, besides every post-restore probe, that the active
+                          workspace's staged packages equal the core-only env's, and that the
+                          workspace, the restore manifest, and the target catalog each select
+                          exactly the edfi project with one shared effective schema hash.
       populated           Opt-in: the package-directory shape built from a Populated-seeded
                           source, adding the non-descriptor document count probe and the schools
                           API read. Long.
@@ -92,7 +103,8 @@
 
     SourceIdentity: the source database's dms.DataStoreIdentity.SourceIdentity is read immediately
     before the producer builds each package and again after it, and both reads are bound to the
-    built .nupkg's SHA-256 (each template kind has its own package directory and binding). On the
+    built .nupkg's SHA-256 (each package fixture - default-minimal, core-only-minimal,
+    default-populated - has its own package directory and binding). On the
     first successful restore of a package, while that stack is up, the smoke inspects the package
     independently: it replays (PostgreSQL) or restores (SQL Server) the artifact from that exact
     .nupkg into a run-owned scratch database restore_smoke_inspect_<12 hex>, selects the identity,
@@ -118,7 +130,7 @@
 .PARAMETER Leg
     Which legs to run, in order. Defaults to the core matrix:
     package-directory, separate-config, directory-feed, tampered-package,
-    contaminated-package, running-stack.
+    contaminated-package, running-stack. extension-selection and populated are opt-in.
 
 .PARAMETER PackageVersion
     NuGet version for the locally built template package. Defaults to 1.0.999.
@@ -175,7 +187,7 @@ param(
     [ValidateSet("postgresql", "mssql")]
     [string]$DatabaseEngine = "postgresql",
 
-    [ValidateSet("package-directory", "separate-config", "directory-feed", "tampered-package", "contaminated-package", "running-stack", "populated")]
+    [ValidateSet("package-directory", "separate-config", "directory-feed", "tampered-package", "contaminated-package", "running-stack", "extension-selection", "populated")]
     [string[]]$Leg = @("package-directory", "separate-config", "directory-feed", "tampered-package", "contaminated-package", "running-stack"),
 
     [string]$PackageVersion = "1.0.999",
@@ -206,6 +218,10 @@ $script:DockerComposeRoot = Split-Path -Parent $PSScriptRoot
 $script:RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $script:DockerComposeRoot "../.."))
 $script:TemplatesRoot = Join-Path $script:RepoRoot "eng/DatabaseTemplates"
 $script:BootstrapRoot = Join-Path $script:DockerComposeRoot ".bootstrap"
+$script:RestoreWorkspaceRoot = Join-Path $script:DockerComposeRoot ".bootstrap-restore"
+# The env file each schema selection's stacks start from: default is the image env (set by the
+# build-images step); core-only is written by the extension-selection leg.
+$script:SelectionEnvironmentFiles = @{}
 $script:LocalTrustOverlayPath = Join-Path $script:DockerComposeRoot "template-trust-policy.local.json"
 $script:StepResults = [System.Collections.Generic.List[pscustomobject]]::new()
 $script:WorkDirectory = $null
@@ -254,6 +270,11 @@ $script:Provenance = [ordered]@{
     SourceIdentityBindings       = [System.Collections.Generic.List[object]]::new()
     PackageInspections           = [System.Collections.Generic.List[object]]::new()
     RestoredIdentities           = [System.Collections.Generic.List[object]]::new()
+    # The non-default selection envs the run derived, one selection proof per restore of such a
+    # selection, and extension-selection's refusal of the default package under the core-only env.
+    SelectionEnvironments        = [System.Collections.Generic.List[object]]::new()
+    SelectionProofs              = [System.Collections.Generic.List[object]]::new()
+    SelectionRefusals            = [System.Collections.Generic.List[object]]::new()
 }
 
 function Write-SmokeStep {
@@ -465,16 +486,156 @@ function Invoke-RestoreWrapper {
 function Get-SmokePackageDirectory {
     <#
     .SYNOPSIS
-    The work-directory folder holding one template kind's built package: each kind has its own, so a
-    run that builds both never mixes their packages or their evidence.
+    The work-directory folder holding one package fixture's built package: each fixture has its own
+    (the default and core-only Minimal packages share a template kind), so a run that builds
+    several never mixes their packages or their evidence.
     #>
     param(
         [Parameter(Mandatory)]
-        [ValidateSet("Minimal", "Populated")]
-        [string]$TemplateKind
+        [string]$PackageFixture
     )
 
-    return (Join-Path $script:WorkDirectory "package-$($TemplateKind.ToLowerInvariant())")
+    return (Join-Path $script:WorkDirectory (Get-RestoreSmokePackageFixture -Name $PackageFixture).DirectoryName)
+}
+
+function Get-SmokeSelectionEnvironmentFile {
+    <#
+    .SYNOPSIS
+    The env file a schema selection's stacks start from. Every one derives from the image env, so
+    the run's image tags reach every stack.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$Selection
+    )
+
+    if ($Selection -eq "default") {
+        return $script:ResolvedEnvironmentFile
+    }
+    if (-not $script:SelectionEnvironmentFiles.ContainsKey($Selection)) {
+        throw "No env file was written for the '$Selection' schema selection."
+    }
+    return $script:SelectionEnvironmentFiles[$Selection]
+}
+
+function Get-SmokePackageSha256 {
+    # The SHA-256 of the one template .nupkg in a package directory.
+    param(
+        [Parameter(Mandatory)]
+        [string]$PackageDirectory
+    )
+
+    $packages = @(Get-ChildItem -LiteralPath $PackageDirectory -Filter "*.nupkg" -File | Where-Object { $_.Name -notlike "*.Attestation.*" })
+    if ($packages.Count -ne 1) {
+        throw "Expected exactly one template .nupkg in '$PackageDirectory', found $($packages.Count)."
+    }
+    return [pscustomobject]@{ PackageFile = $packages[0].Name; PackagePath = $packages[0].FullName; Sha256 = (Get-RestoreSmokeFileSha256 -Path $packages[0].FullName) }
+}
+
+function Assert-RestoredSelection {
+    <#
+    .SYNOPSIS
+    The selection proof for one successful restore of a non-default selection: records, under
+    -RestoreExecution and before judging, what the active workspace staged and selected and what the
+    restored target's catalog holds, then throws on any defect Get-RestoreSmokeSelectionDefect finds
+    against the fixture's projects, the selection env's packages, and the restored package's restore
+    manifest (its package record, by SHA-256 and fixture).
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$RestoreExecution,
+
+        [Parameter(Mandatory)]
+        [string]$PackageFixture,
+
+        [Parameter(Mandatory)]
+        [string]$PackageDirectory
+    )
+
+    $fixture = Get-RestoreSmokePackageFixture -Name $PackageFixture
+    $package = Get-SmokePackageSha256 -PackageDirectory $PackageDirectory
+    $proof = [pscustomobject]@{
+        RestoreExecution = $RestoreExecution
+        PackageFixture   = $fixture.Name
+        Label            = [string]$script:CurrentStepName
+        PackageFile      = $package.PackageFile
+        PackageSha256    = $package.Sha256
+        Workspace        = (Read-RestoreSmokeWorkspaceSelection -BootstrapRoot $script:BootstrapRoot)
+        Catalog          = (Get-RestoreSmokeCatalogSelection -DatabaseEngine $DatabaseEngine -DatabaseName $script:TargetDatabaseName)
+    }
+    $script:Provenance.SelectionProofs.Add($proof)
+
+    $environments = @($script:Provenance.SelectionEnvironments | Where-Object { $_.Selection -ceq $fixture.Selection })
+    if ($environments.Count -ne 1) {
+        throw "Restore ${RestoreExecution}: expected one recorded $($fixture.Selection) env, found $($environments.Count)."
+    }
+    $packageRecords = @($script:Provenance.Packages | Where-Object { $_.Sha256 -ceq $package.Sha256 -and $_.PackageFixture -ceq $fixture.Name })
+    $packageRecord = $null
+    if ($packageRecords.Count -eq 1) {
+        $packageRecord = $packageRecords[0]
+    }
+    $defects = @(Get-RestoreSmokeSelectionDefect -Proof $proof -Package $packageRecord -ExpectedProject ([string[]]@($fixture.ProjectSchemas)) -ExpectedPackage ([string[]]@($environments[0].SelectedPackages)))
+    if ($defects.Count -gt 0) {
+        throw "Restore ${RestoreExecution} did not take the $($fixture.Selection) selection: $($defects -join '; ')."
+    }
+    Write-Host "[restore-smoke] restore $RestoreExecution selection: workspace, restore manifest, and catalog select $(@($fixture.ProjectSchemas) -join ', ') with effective schema hash $($proof.Catalog.EffectiveSchemaHash)"
+}
+
+function Assert-SmokeSelectionRefusal {
+    <#
+    .SYNOPSIS
+    extension-selection's negative: restores the default package under the core-only env and
+    records, before judging, the project's containers and volumes, the active workspace, and the
+    restore candidates before and after the attempt and the refusal message. Throws on any defect
+    Get-RestoreSmokeSelectionRefusalDefect finds: the refusal must be the package-to-candidate
+    cross-check's, and nothing may have started or been left behind.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$PackageDirectory,
+
+        [Parameter(Mandatory)]
+        [string]$EnvironmentFile
+    )
+
+    $package = Get-SmokePackageSha256 -PackageDirectory $PackageDirectory
+    $refusal = [pscustomobject]@{
+        Leg                  = "extension-selection"
+        PackageFixture       = "default-minimal"
+        EnvironmentSelection = "core-only"
+        Label                = [string]$script:CurrentStepName
+        PackageFile          = $package.PackageFile
+        PackageSha256        = $package.Sha256
+        Before               = $null
+        After                = $null
+        Refused              = $false
+        Message              = $null
+    }
+    $script:Provenance.SelectionRefusals.Add($refusal)
+
+    $stateArguments = @{ ComposeProject = $script:WrapperProfile.ComposeProject; BootstrapRoot = $script:BootstrapRoot; RestoreWorkspaceRoot = $script:RestoreWorkspaceRoot }
+    $refusal.Before = Get-RestoreSmokeRefusalState @stateArguments
+    try {
+        Invoke-RestoreWrapper -Arguments @{
+            EnvironmentFile  = $EnvironmentFile
+            DatabaseEngine   = $DatabaseEngine
+            RestoreTemplate  = "Minimal"
+            PackageDirectory = $PackageDirectory
+        }
+    }
+    catch {
+        $refusal.Refused = $true
+        $refusal.Message = ConvertTo-RestoreSmokeLogSafeText $_.Exception.Message
+    }
+    $refusal.After = Get-RestoreSmokeRefusalState @stateArguments
+
+    $defaultPackage = @($script:Provenance.Packages | Where-Object { $_.PackageFixture -ceq "default-minimal" })
+    $coreOnlyPackage = @($script:Provenance.Packages | Where-Object { $_.PackageFixture -ceq "core-only-minimal" })
+    $defects = @(Get-RestoreSmokeSelectionRefusalDefect -Refusal $refusal -DefaultPackage ($defaultPackage | Select-Object -First 1) -SelectedPackage ($coreOnlyPackage | Select-Object -First 1))
+    if ($defects.Count -gt 0) {
+        throw "The default package under the core-only env did not fail in the restore preflight as required: $($defects -join '; ')."
+    }
+    Write-Host "[restore-smoke] default package refused under the core-only env before any container started: $($refusal.Message)"
 }
 
 function Assert-RestoredSourceIdentity {
@@ -492,13 +653,13 @@ function Assert-RestoredSourceIdentity {
         [string]$RestoreExecution,
 
         [Parameter(Mandatory)]
-        [ValidateSet("Minimal", "Populated")]
-        [string]$TemplateKind,
+        [string]$PackageFixture,
 
         [Parameter(Mandatory)]
         [string]$PackageDirectory
     )
 
+    $fixture = Get-RestoreSmokePackageFixture -Name $PackageFixture
     $packages = @(Get-ChildItem -LiteralPath $PackageDirectory -Filter "*.nupkg" -File | Where-Object { $_.Name -notlike "*.Attestation.*" })
     if ($packages.Count -ne 1) {
         throw "Restore ${RestoreExecution}: expected exactly one template .nupkg in '$PackageDirectory', found $($packages.Count)."
@@ -509,7 +670,8 @@ function Assert-RestoredSourceIdentity {
     $targetRead = Get-RestoreSmokeSourceIdentityRead -DatabaseEngine $DatabaseEngine -DatabaseName $script:TargetDatabaseName
     $script:Provenance.RestoredIdentities.Add([pscustomobject]@{
             RestoreExecution = $RestoreExecution
-            TemplateKind     = $TemplateKind
+            PackageFixture   = $fixture.Name
+            TemplateKind     = $fixture.TemplateKind
             Label            = [string]$script:CurrentStepName
             TargetDatabase   = $script:TargetDatabaseName
             PackageFile      = $packages[0].Name
@@ -527,7 +689,7 @@ function Assert-RestoredSourceIdentity {
     if ($inspections.Count -eq 0) {
         $inspection = Invoke-RestoreSmokePackageInspection `
             -PackagePath $packages[0].FullName `
-            -TemplateKind $TemplateKind `
+            -TemplateKind $fixture.TemplateKind `
             -DatabaseEngine $DatabaseEngine `
             -WorkDirectory $script:WorkDirectory `
             -RestoreManifestFileName (Get-RestoreManifestFileName)
@@ -562,10 +724,12 @@ function Assert-RestoredDatastore {
     <#
     .SYNOPSIS
     The post-restore probes: DMS health, the dms.EffectiveSchema singleton, (when the source
-    was seeded) at least one restored descriptor row, the SourceIdentity proof against the package
-    in -PackageDirectory, and the authenticated served-data read through the DMS API of the stack
-    -EnvironmentFile started. Both records carry -RestoreExecution (the restore's id from
-    Get-RestoreSmokeRestoreExecutionId) so the classifier can match them to that restore.
+    was seeded) at least one restored descriptor row, (Populated) non-descriptor documents, the
+    SourceIdentity proof against the package in -PackageDirectory, for a non-default schema
+    selection the selection proof, and the authenticated served-data read through the DMS API of the
+    stack -EnvironmentFile started. Every record carries -RestoreExecution (the restore's id from
+    Get-RestoreSmokeRestoreExecutionId), whose package fixture - and so template kind and selection -
+    comes from the same execution map the classifier uses.
     #>
     param(
         [Parameter(Mandatory)]
@@ -575,11 +739,11 @@ function Assert-RestoredDatastore {
         [Parameter(Mandatory)]
         [string]$PackageDirectory,
 
-        [switch]$RequirePopulatedData,
-
         [string]$EnvironmentFile = $script:ResolvedEnvironmentFile
     )
 
+    $fixture = Get-RestoreSmokeRestoreExecutionFixture -RestoreExecution $RestoreExecution
+    $RequirePopulatedData = $fixture.TemplateKind -eq "Populated"
     Wait-SmokeDmsHealth
 
     $effectiveSchemaCountQuery = if ($DatabaseEngine -eq "mssql") {
@@ -621,11 +785,10 @@ function Assert-RestoredDatastore {
         Write-Host "[restore-smoke] restored populated documents: $populatedCount"
     }
 
-    $templateKind = "Minimal"
-    if ($RequirePopulatedData) {
-        $templateKind = "Populated"
+    Assert-RestoredSourceIdentity -RestoreExecution $RestoreExecution -PackageFixture $fixture.Name -PackageDirectory $PackageDirectory
+    if ($fixture.Selection -ne "default") {
+        Assert-RestoredSelection -RestoreExecution $RestoreExecution -PackageFixture $fixture.Name -PackageDirectory $PackageDirectory
     }
-    Assert-RestoredSourceIdentity -RestoreExecution $RestoreExecution -TemplateKind $templateKind -PackageDirectory $PackageDirectory
 
     $apiEndpoint = Resolve-RestoreSmokeApiEndpoint -EnvironmentFile $EnvironmentFile
     $apiRead = Test-RestoreSmokeApiRead `
@@ -645,22 +808,26 @@ function Assert-RestoredDatastore {
 function Build-SmokeSourceAndPackage {
     <#
     .SYNOPSIS
-    Bootstraps a source datastore, builds the attested template package from it into the work
-    directory, and tears the stack down to fresh volumes.
+    Bootstraps a source datastore from the fixture's selection env, builds the fixture's attested
+    template package from it into the fixture's own work-directory folder, and tears the stack down
+    to fresh volumes.
     #>
     param(
         [Parameter(Mandatory)]
-        [ValidateSet("Minimal", "Populated")]
-        [string]$TemplateKind
+        [string]$PackageFixture
     )
 
-    Invoke-SmokeStep -Name "build-source-datastore-$($TemplateKind.ToLowerInvariant())" -Body {
+    $fixture = Get-RestoreSmokePackageFixture -Name $PackageFixture
+    $TemplateKind = $fixture.TemplateKind
+    $sourceEnvironmentFile = Get-SmokeSelectionEnvironmentFile -Selection $fixture.Selection
+
+    Invoke-SmokeStep -Name "build-source-datastore-$($fixture.Name)" -Body {
         # The SOURCE stack runs separate topology: the producer's DMS-only gate requires a
         # dedicated DMS datastore, and the default shared topology would put the Configuration
         # Service's dmscs schema and OpenIddict identity state into the very database the
         # template is dumped from (the gate refuses exactly that - proven by this smoke's
         # development history).
-        $sourceArgs = @{ EnvironmentFile = $script:ResolvedEnvironmentFile; DatabaseEngine = $DatabaseEngine; SeparateConfigDatabase = $true }
+        $sourceArgs = @{ EnvironmentFile = $sourceEnvironmentFile; DatabaseEngine = $DatabaseEngine; SeparateConfigDatabase = $true }
         if (-not $SkipSourceSeed) {
             $sourceArgs.LoadSeedData = $true
             $sourceArgs.SeedTemplate = $TemplateKind
@@ -669,15 +836,15 @@ function Build-SmokeSourceAndPackage {
         Wait-SmokeDmsHealth
     }
 
-    Invoke-SmokeStep -Name "build-attested-package-$($TemplateKind.ToLowerInvariant())" -Body {
-        $packageDirectory = Get-SmokePackageDirectory -TemplateKind $TemplateKind
+    Invoke-SmokeStep -Name "build-attested-package-$($fixture.Name)" -Body {
+        $packageDirectory = Get-SmokePackageDirectory -PackageFixture $fixture.Name
         New-Item -ItemType Directory -Path $packageDirectory -Force | Out-Null
         Import-Module (Join-Path $script:TemplatesRoot "Template-RestoreCore.psm1") -Force
 
         # The source's SourceIdentity is read immediately before the producer runs and again after
         # it, and both reads are bound to the SHA-256 of the exact .nupkg this build leaves.
         $bound = Invoke-RestoreSmokeIdentityBoundPackageBuild `
-            -TemplateKind $TemplateKind `
+            -PackageFixture $fixture.Name `
             -DatabaseEngine $DatabaseEngine `
             -SourceDatabaseName $script:TargetDatabaseName `
             -PackageDirectory $packageDirectory `
@@ -734,7 +901,7 @@ function Build-SmokeSourceAndPackage {
         Write-Host "[restore-smoke] source SourceIdentity $($bound.Binding.BeforeBackup.Identity) bound to $($bound.Package.PackageFile) (SHA-256 $($bound.Package.Sha256))"
     }
 
-    Invoke-SmokeStep -Name "teardown-source-stack" -Body {
+    Invoke-SmokeStep -Name "teardown-source-stack-$($fixture.Name)" -Body {
         Invoke-SmokeTeardown
     }
 }
@@ -758,6 +925,9 @@ Write-Host ("[restore-smoke] revision={0} clean={1} wrapper={2} dataStandard={3}
 
 try {
     Invoke-SmokeStep -Name "preflight" -Body {
+        # A leg selection the run cannot perform as specified is refused before any Docker call.
+        Assert-RestoreSmokeLegSelection -Leg $Leg -Wrapper $Wrapper -DataStandardVersionSupplied $script:DataStandardVersionSupplied
+
         $global:LASTEXITCODE = 0
         docker info --format '{{.ServerVersion}}' | Out-Null
         if ($LASTEXITCODE -ne 0) {
@@ -893,12 +1063,13 @@ try {
     }
 
     $legSet = [System.Collections.Generic.HashSet[string]]::new([string[]]$Leg, [System.StringComparer]::OrdinalIgnoreCase)
-    $minimalLegs = @("package-directory", "separate-config", "directory-feed", "tampered-package", "contaminated-package", "running-stack") |
-        Where-Object { $legSet.Contains($_) }
+    $neededFixtures = @(Get-RestoreSmokeLegPackageFixture -Leg $Leg)
 
-    if (@($minimalLegs).Count -gt 0) {
-        Build-SmokeSourceAndPackage -TemplateKind "Minimal"
-        $packageDirectoryPath = Get-SmokePackageDirectory -TemplateKind "Minimal"
+    # The default Minimal package serves every Minimal leg and extension-selection's refusal; the
+    # core-only and Populated packages are built where their legs start.
+    if ($neededFixtures -contains "default-minimal") {
+        Build-SmokeSourceAndPackage -PackageFixture "default-minimal"
+        $packageDirectoryPath = Get-SmokePackageDirectory -PackageFixture "default-minimal"
     }
 
     if ($legSet.Contains("package-directory")) {
@@ -1152,9 +1323,38 @@ try {
         Invoke-SmokeStep -Name "leg-running-stack-teardown" -Body { Invoke-SmokeTeardown }
     }
 
+    if ($legSet.Contains("extension-selection")) {
+        Invoke-SmokeStep -Name "write-core-only-environment" -Body {
+            # Derived from the image env, so the run's own image tags reach the core-only stacks.
+            $coreOnlyEnvironmentFile = Join-Path $script:WorkDirectory ".env.smoke-core-only"
+            $selectionEnvironment = Write-RestoreSmokeCoreOnlyEnvironmentFile -BaseEnvironmentFile $script:ResolvedEnvironmentFile -TargetPath $coreOnlyEnvironmentFile
+            $script:Provenance.SelectionEnvironments.Add($selectionEnvironment)
+            $script:SelectionEnvironmentFiles["core-only"] = $coreOnlyEnvironmentFile
+            Write-Host "[restore-smoke] core-only env selects $($selectionEnvironment.SelectedPackages -join ', '); removed $($selectionEnvironment.RemovedPackages -join ', ')"
+        }
+        Build-SmokeSourceAndPackage -PackageFixture "core-only-minimal"
+        $coreOnlyPackageDirectory = Get-SmokePackageDirectory -PackageFixture "core-only-minimal"
+
+        # Every stack is down (the source teardown removed volumes and the workspace), so a refusal
+        # that leaves no container, no new volume, and no workspace failed before Docker.
+        Invoke-SmokeStep -Name "leg-extension-selection-mismatch" -Body {
+            Assert-SmokeSelectionRefusal -PackageDirectory $packageDirectoryPath -EnvironmentFile (Get-SmokeSelectionEnvironmentFile -Selection "core-only")
+        }
+        Invoke-SmokeStep -Name "leg-extension-selection" -Body {
+            Invoke-RestoreWrapper -Arguments @{
+                EnvironmentFile  = (Get-SmokeSelectionEnvironmentFile -Selection "core-only")
+                DatabaseEngine   = $DatabaseEngine
+                RestoreTemplate  = "Minimal"
+                PackageDirectory = $coreOnlyPackageDirectory
+            }
+            Assert-RestoredDatastore -RestoreExecution (Get-RestoreSmokeRestoreExecutionId -Leg "extension-selection") -PackageDirectory $coreOnlyPackageDirectory -EnvironmentFile (Get-SmokeSelectionEnvironmentFile -Selection "core-only")
+        }
+        Invoke-SmokeStep -Name "leg-extension-selection-teardown" -Body { Invoke-SmokeTeardown }
+    }
+
     if ($legSet.Contains("populated")) {
-        Build-SmokeSourceAndPackage -TemplateKind "Populated"
-        $populatedPackageDirectory = Get-SmokePackageDirectory -TemplateKind "Populated"
+        Build-SmokeSourceAndPackage -PackageFixture "default-populated"
+        $populatedPackageDirectory = Get-SmokePackageDirectory -PackageFixture "default-populated"
         Invoke-SmokeStep -Name "leg-populated" -Body {
             Invoke-RestoreWrapper -Arguments @{
                 EnvironmentFile  = $script:ResolvedEnvironmentFile
@@ -1162,7 +1362,7 @@ try {
                 RestoreTemplate  = "Populated"
                 PackageDirectory = $populatedPackageDirectory
             }
-            Assert-RestoredDatastore -RestoreExecution (Get-RestoreSmokeRestoreExecutionId -Leg "populated") -PackageDirectory $populatedPackageDirectory -RequirePopulatedData
+            Assert-RestoredDatastore -RestoreExecution (Get-RestoreSmokeRestoreExecutionId -Leg "populated") -PackageDirectory $populatedPackageDirectory
         }
         Invoke-SmokeStep -Name "leg-populated-teardown" -Body { Invoke-SmokeTeardown }
     }
