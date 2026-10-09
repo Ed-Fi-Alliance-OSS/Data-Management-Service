@@ -87,6 +87,37 @@ Describe 'Test-TaggedReleaseBuild' {
     }
 }
 
+Describe 'Test-DeletablePrerelease' {
+    BeforeAll {
+        $script:tagged = @(Get-ReleaseTagVersion -Remote $script:remote)
+    }
+
+    It 'deletes <ref>, an ordinary main build' -ForEach @(
+        @{ Ref = 'dms-pre-8.1.0-beta.0.1.3' }
+        @{ Ref = 'cs-pre-8.1.0-beta.0.1.2' }
+        @{ Ref = 'dms-pre-8.0.1-alpha.0.204' }
+    ) {
+        Test-DeletablePrerelease -ReleaseRef $Ref -Prerelease $true -TaggedVersion $script:tagged | Should -BeTrue
+    }
+
+    It 'keeps <ref>, <case>' -ForEach @(
+        @{ Ref = 'dms-pre-8.1.0-beta.0.1'; Prerelease = $true; Case = 'the build for a prerelease v tag' }
+        @{ Ref = 'cs-pre-8.0.0'; Prerelease = $true; Case = 'the build for a final v tag' }
+        @{ Ref = 'v8.1.0-beta.0.1'; Prerelease = $true; Case = 'the v release itself' }
+        @{ Ref = '0.2.1-alpha.0.9'; Prerelease = $true; Case = 'a prerelease from before the dms-pre- and cs-pre- prefixes' }
+        @{ Ref = 'dms-pre-8.0.1-alpha.0.7'; Prerelease = $false; Case = 'which is not marked as a prerelease' }
+    ) {
+        Test-DeletablePrerelease -ReleaseRef $Ref -Prerelease $Prerelease -TaggedVersion $script:tagged | Should -BeFalse
+    }
+
+    It 'refuses to decide when no v tags were read, before looking at the release' {
+        # The cleanup always runs where v tags exist, so an empty list means the read went wrong.
+        # Deleting on it would also remove every tagged build's prerelease and git tag, which the
+        # cleanup never deletes, so the first call stops the run before anything is deleted.
+        { Test-DeletablePrerelease -ReleaseRef 'v8.1.0' -Prerelease $false -TaggedVersion @() } | Should -Throw '*No v tags*'
+    }
+}
+
 Describe 'Write-PrereleaseClassification' {
     It 'appends tagged-release=<expected> for <ref> to the output file' -ForEach @(
         @{ Ref = 'dms-pre-8.1.0-beta.0.1'; Expected = 'true' }
@@ -167,7 +198,9 @@ Describe 'Prerelease classification workflow wiring' {
 
         $cleanup | Should -Match "Import-Module \./eng/ci/release-classification\.psm1"
         $cleanup | Should -Match 'Get-ReleaseTagVersion -Remote origin'
-        $cleanup | Should -Match 'Test-TaggedReleaseBuild -ReleaseRef \$_\.tag_name -TaggedVersion \$taggedVersion'
+        # The decision is the module's, which the cases above test; the workflow only asks.
+        $cleanup | Should -Match 'if \(Test-DeletablePrerelease -ReleaseRef \$_\.tag_name -Prerelease \$_\.prerelease -TaggedVersion \$taggedVersion\) \{'
+        $cleanup | Should -Not -Match '\$_\.prerelease -and'
         $cleanup | Should -Not -Match "-pre-\*-alpha\*"
     }
 

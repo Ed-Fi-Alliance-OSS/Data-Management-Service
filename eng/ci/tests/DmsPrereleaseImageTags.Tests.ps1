@@ -63,15 +63,13 @@ Describe 'DMS prerelease image tags' {
             $result.DMSTAGS | Should -BeExactly 'someone/else:pre,someone/else:8.0.1-alpha.0.7'
         }
 
-        It 'publishes only the moving tag for an ordinary build ref without the dms-pre- prefix' {
-            # What the shell published for such a ref. No version-specific tag is derived from a
-            # value that is not a version, and the publication is not refused either.
-            $result = script:Invoke-TagScript -ReleaseRef 'dms-8.0.1-alpha.0.7' -TaggedRelease 'false'
-
-            $result.DMSTAGS | Should -BeExactly 'edfialliance/ed-fi-api:pre'
-            $result.VERSION | Should -BeExactly '1-alpha.0.7'
+        It 'refuses an ordinary build ref without the dms-pre- prefix' {
+            # The classify-release job already fails for such a ref, so the workflow never publishes
+            # one, and no release in the repository has ever carried one. Refusing here keeps a hand
+            # run from publishing what the workflow would not.
+            { & $script:script -ReleaseRef 'dms-8.0.1-alpha.0.7' -TaggedRelease 'false' -ImageName 'edfialliance/ed-fi-api' -OutputPath '' } |
+                Should -Throw "*does not start with 'dms-pre-'*"
         }
-
     }
 
     Context 'a tagged release build' {

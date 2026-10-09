@@ -251,8 +251,9 @@ Describe 'Stock image pin readiness' {
         }
 
         It 'refuses a release that is not an alpha prerelease' {
-            # The version-specific tag this pin names is only produced for an alpha ref, so a
-            # non-alpha release publishes no tag to pin.
+            # Narrower than the publishing rule, as the check documents: an alpha is always an
+            # ordinary main build with a version-specific tag, while telling a non-alpha main build
+            # from a v-tagged build needs the remote's v tags, which this offline check does not read.
             $pin = New-PublishedPin @{
                 'release.githubRelease' = 'dms-pre-8.0.1'
                 'edFiApi.tag'           = '8.0'

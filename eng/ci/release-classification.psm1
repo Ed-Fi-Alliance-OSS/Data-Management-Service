@@ -96,4 +96,48 @@ function Test-TaggedReleaseBuild {
     return $TaggedVersion -ccontains $version
 }
 
-Export-ModuleMember -Function Get-PrereleaseVersion, Get-ReleaseTagVersion, Test-TaggedReleaseBuild
+function Test-DeletablePrerelease {
+    <#
+    .SYNOPSIS
+        Returns whether on-release.yml's cleanup deletes a GitHub release: a dms-pre- or cs-pre-
+        prerelease built for an ordinary main build. Every other release, including the build for
+        a v tag, is kept.
+    .DESCRIPTION
+        The cleanup deletes the release and its git tag permanently. An empty tag list throws: the
+        cleanup runs where v tags exist, so an empty list means the read went wrong, and deleting
+        on it would remove every tagged build's prerelease as well.
+    .PARAMETER Prerelease
+        The release's prerelease flag, as the GitHub API reports it.
+    .PARAMETER TaggedVersion
+        The versions Get-ReleaseTagVersion returned, read once and reused across many releases.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]
+        $ReleaseRef,
+
+        [Parameter(Mandatory)]
+        [bool]
+        $Prerelease,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [string[]]
+        $TaggedVersion
+    )
+
+    if ($TaggedVersion.Count -eq 0) {
+        throw "No v tags were read, so no prerelease can be told apart from a tagged release build. Nothing is deleted."
+    }
+
+    if (-not $Prerelease -or -not (Get-PrereleaseVersion -ReleaseRef $ReleaseRef)) {
+        return $false
+    }
+
+    return -not (Test-TaggedReleaseBuild -ReleaseRef $ReleaseRef -TaggedVersion $TaggedVersion)
+}
+
+Export-ModuleMember -Function Get-PrereleaseVersion, Get-ReleaseTagVersion, Test-TaggedReleaseBuild, Test-DeletablePrerelease

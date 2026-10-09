@@ -54,8 +54,7 @@ jobs:
             $release_list = Invoke-RestMethod $url -Headers $gh_headers
 
             $release_list | ForEach-Object {
-                if ($_.prerelease -and (Get-PrereleaseVersion -ReleaseRef $_.tag_name) -and
-                    -not (Test-TaggedReleaseBuild -ReleaseRef $_.tag_name -TaggedVersion $taggedVersion)) {
+                if (Test-DeletablePrerelease -ReleaseRef $_.tag_name -Prerelease $_.prerelease -TaggedVersion $taggedVersion) {
 
                     "Deleting pre-release $($_.tag_name)" | Write-Output
                     Invoke-RestMethod -Method Delete -Uri $_.url -Headers $gh_headers

@@ -66,12 +66,9 @@ $legacyStripLength = 8
 $isPrerelease = $TaggedRelease -eq 'false'
 
 if ($isPrerelease -and -not $ReleaseRef.StartsWith($prereleasePrefix, [System.StringComparison]::Ordinal)) {
-    # A prerelease ref without the prefix gets what the shell gave it: the moving tag and the
-    # fixed-offset strip. No version-specific tag is derived, because the stripped value is not a
-    # version and a pushed tag is published state nobody can take back. Refusing instead would stop
-    # a publication the shell used to complete.
-    $version = if ($ReleaseRef.Length -gt $legacyStripLength) { $ReleaseRef.Substring($legacyStripLength) } else { '' }
-    $tags = @("${ImageName}:pre")
+    # The classify-release job fails for such a ref, so the workflow never publishes one. Refused
+    # here as well, so a hand run cannot publish what the workflow would not.
+    throw "Release ref '$ReleaseRef' is an ordinary build but does not start with '$prereleasePrefix'."
 }
 elseif ($isPrerelease) {
     # Before the "alpha" test was replaced, containing "alpha" guaranteed a non-empty remainder.
