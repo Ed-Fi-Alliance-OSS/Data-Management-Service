@@ -9,6 +9,7 @@ using System.Xml.Linq;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -162,6 +163,32 @@ public class Given_A_Mssql_Case_Sensitive_Default_Database_With_Identity_Collati
                 },
                 "the computed alias carries no COLLATE text, so it must inherit the pinned canonical column"
             );
+    }
+
+    /// <summary>
+    /// The compact descriptor catalog verifier must accept the pinned descriptor identity collation on a
+    /// database whose default differs from it, rather than requiring the database default.
+    /// </summary>
+    [Test]
+    public async Task It_passes_the_compact_descriptor_catalog_verifier()
+    {
+        string repositoryRoot = FixturePathResolver.FindRepositoryRoot(
+            TestContext.CurrentContext.TestDirectory
+        );
+        string assertionSql = await CompactDescriptorCatalogAssertions.RenderAsync(
+            repositoryRoot,
+            "mssql",
+            Path.Combine(
+                repositoryRoot,
+                FixtureRelativePath,
+                "expected",
+                "relational-model.mssql.manifest.json"
+            )
+        );
+
+        Func<Task> verify = () => _database.ExecuteNonQueryAsync(assertionSql);
+
+        await verify.Should().NotThrowAsync();
     }
 
     [Test]
