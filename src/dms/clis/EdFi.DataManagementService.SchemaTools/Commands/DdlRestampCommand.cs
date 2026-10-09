@@ -7,9 +7,7 @@ using System.CommandLine;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.SchemaTools.Restamping;
-using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
-using Npgsql;
 
 namespace EdFi.DataManagementService.SchemaTools.Commands;
 
@@ -152,10 +150,13 @@ public static class DdlRestampCommand
             return 1;
         }
 
-        var connectionError = ValidateConnectionString(connectionString, dialect.Value);
-        if (connectionError is not null)
+        try
         {
-            await error.WriteLineAsync(connectionError);
+            SchemaRestampConnectionStringValidator.ValidateOrThrow(connectionString, dialect.Value);
+        }
+        catch (SchemaRestampException exception)
+        {
+            await error.WriteLineAsync(exception.Message);
             return 1;
         }
         if (schemaPaths.Count == 0 || string.IsNullOrWhiteSpace(schemaPaths[0]))
@@ -216,25 +217,5 @@ public static class DdlRestampCommand
             "This command updates schema metadata only. Run 'ddl provision' separately, then restart DMS and workers."
         );
         return 0;
-    }
-
-    private static string? ValidateConnectionString(string connectionString, SqlDialect dialect)
-    {
-        try
-        {
-            var hasDatabase = dialect switch
-            {
-                SqlDialect.Pgsql => new NpgsqlConnectionStringBuilder(connectionString) is var pg
-                    && !string.IsNullOrWhiteSpace(pg.Database),
-                SqlDialect.Mssql => new SqlConnectionStringBuilder(connectionString) is var ms
-                    && !string.IsNullOrWhiteSpace(ms.InitialCatalog),
-                _ => false,
-            };
-            return hasDatabase ? null : "An explicit target database name is required.";
-        }
-        catch (ArgumentException)
-        {
-            return "The target connection string is invalid.";
-        }
     }
 }

@@ -50,7 +50,7 @@ public class Given_SchemaRestamp_Command
                     ConnectionString,
                     300,
                     A<EffectiveSchemaInfo>._,
-                    false,
+                    true,
                     A<CancellationToken>._
                 )
             )
@@ -65,7 +65,8 @@ public class Given_SchemaRestamp_Command
             "-c",
             ConnectionString,
             "-d",
-            "pgsql"
+            "pgsql",
+            "--migration-completed"
         );
 
         exitCode.Should().Be(0);
@@ -79,20 +80,26 @@ public class Given_SchemaRestamp_Command
                     ConnectionString,
                     300,
                     A<EffectiveSchemaInfo>._,
-                    false,
+                    true,
                     A<CancellationToken>._
                 )
             )
             .MustHaveHappenedOnceExactly();
     }
 
-    [Test]
-    public async Task It_reports_a_valid_match_without_confirmation()
+    [TestCase("Host=localhost;Database=restamp_target", "pgsql", SqlDialect.Pgsql)]
+    [TestCase("Server=localhost;Database=restamp_target", "mssql", SqlDialect.Mssql)]
+    [TestCase("Server=localhost;Initial Catalog=restamp_target", "mssql", SqlDialect.Mssql)]
+    public async Task It_reports_a_valid_match_without_confirmation(
+        string connectionString,
+        string dialectName,
+        SqlDialect dialect
+    )
     {
         A.CallTo(() =>
                 _restamper.RestampAsync(
-                    SqlDialect.Pgsql,
-                    ConnectionString,
+                    dialect,
+                    connectionString,
                     300,
                     A<EffectiveSchemaInfo>._,
                     false,
@@ -108,9 +115,9 @@ public class Given_SchemaRestamp_Command
             "--schema",
             MinimalSchemaPath,
             "--connection-string",
-            ConnectionString,
+            connectionString,
             "--dialect",
-            "pgsql"
+            dialectName
         );
 
         exitCode.Should().Be(0);
@@ -309,11 +316,14 @@ public class Given_SchemaRestamp_Command
     [TestCase("Host=localhost;Database=", "pgsql")]
     [TestCase("Host=localhost;Database=restamp_target;invalid", "pgsql")]
     [TestCase("Server=localhost", "mssql")]
+    [TestCase("Server=localhost;Initial Catalog=", "mssql")]
+    [TestCase("Server=localhost;Database=restamp_target;invalid", "mssql")]
     public async Task It_rejects_a_missing_or_empty_database_before_the_service(
         string connectionString,
         string dialect
     )
     {
+        _fileLoader = A.Fake<IApiSchemaFileLoader>();
         var exitCode = await InvokeAsync(
             CancellationToken.None,
             "ddl",
@@ -328,6 +338,7 @@ public class Given_SchemaRestamp_Command
         );
 
         exitCode.Should().Be(1);
+        A.CallTo(() => _fileLoader.Load(A<string>._, A<IReadOnlyList<string>>._)).MustNotHaveHappened();
         A.CallTo(() =>
                 _restamper.RestampAsync(
                     A<SqlDialect>._,

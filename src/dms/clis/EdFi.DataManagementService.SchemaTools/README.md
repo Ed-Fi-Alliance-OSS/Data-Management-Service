@@ -214,7 +214,7 @@ changing their versions, or converting schema formats requires a separately
 supported migration; this command rejects those metadata changes.
 
 ```bash
-api-schema-tools ddl re-stamp --schema <paths...> --connection-string <connstr> --dialect <dialect> --migration-completed [--timeout <seconds>]
+api-schema-tools ddl re-stamp --schema <paths...> --connection-string <connstr> --dialect <dialect> [--migration-completed] [--timeout <seconds>]
 ```
 
 The command validates the existing fingerprint, resource-key seed and schema

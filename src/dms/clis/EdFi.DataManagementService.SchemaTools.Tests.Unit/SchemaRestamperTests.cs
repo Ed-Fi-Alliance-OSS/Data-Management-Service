@@ -44,7 +44,11 @@ public class Given_SchemaRestamper_Invalid_Inputs
     [TestCase((SqlDialect)99, "Host=localhost;Database=sample", 30)]
     [TestCase(SqlDialect.Pgsql, "Host=localhost;Database=sample", 0)]
     [TestCase(SqlDialect.Pgsql, "Host=localhost", 30)]
+    [TestCase(SqlDialect.Pgsql, "Host=localhost;Database=", 30)]
+    [TestCase(SqlDialect.Pgsql, "Host=localhost;Database=sample;invalid", 30)]
     [TestCase(SqlDialect.Mssql, "Server=localhost", 30)]
+    [TestCase(SqlDialect.Mssql, "Server=localhost;Initial Catalog=", 30)]
+    [TestCase(SqlDialect.Mssql, "Server=localhost;Database=sample;invalid", 30)]
     public async Task It_rejects_invalid_arguments_before_opening(
         SqlDialect dialect,
         string connectionString,
@@ -60,18 +64,16 @@ public class Given_SchemaRestamper_Invalid_Inputs
         _connectionsCreated.Should().Be(0);
     }
 
-    [Test]
-    public async Task It_reports_connection_factory_failure_without_leaking_its_message()
+    [TestCase(SqlDialect.Pgsql, "Host=localhost;Database=sample;Password=credential-sentinel")]
+    [TestCase(SqlDialect.Mssql, "Server=localhost;Database=sample;Password=credential-sentinel")]
+    [TestCase(SqlDialect.Mssql, "Server=localhost;Initial Catalog=sample;Password=credential-sentinel")]
+    public async Task It_reports_connection_factory_failure_without_leaking_its_message(
+        SqlDialect dialect,
+        string connectionString
+    )
     {
         Func<Task> action = () =>
-            _service.RestampAsync(
-                SqlDialect.Pgsql,
-                "Host=localhost;Database=sample;Password=credential-sentinel",
-                30,
-                _target,
-                true,
-                CancellationToken.None
-            );
+            _service.RestampAsync(dialect, connectionString, 30, _target, true, CancellationToken.None);
 
         var failure = (await action.Should().ThrowAsync<SchemaRestampException>()).Which;
         failure.Failure.Should().Be(SchemaRestampFailure.Connection);
