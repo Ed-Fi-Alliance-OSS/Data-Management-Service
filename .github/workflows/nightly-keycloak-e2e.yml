@@ -95,7 +95,7 @@ jobs:
             -SkipDockerBuild `
             -IdentityProvider keycloak `
             -EnvironmentFile './.env.e2e' `
-            -TestFilter 'Category=@e2e-ci-shard-${{ matrix.shard }}'
+            -TestFilter '(Category=@e2e-ci-shard-${{ matrix.shard }})&(Category!=@MssqlOnly)'
 
       - name: Export DMS E2E Docker Logs
         if: always() && steps.e2e.outcome == 'failure'

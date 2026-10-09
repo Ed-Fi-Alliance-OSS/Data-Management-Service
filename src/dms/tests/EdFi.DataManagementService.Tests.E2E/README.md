@@ -36,25 +36,27 @@ same public entry point against SQL Server. The `-DatabaseEngine mssql` value co
 ```pwsh
 # Default engine (PostgreSQL), self-contained identity, standard DS 5.2 suite. The exclusion filter
 # drops the unsharded @StandardVersion-6_1 scenarios and the separately configured DocumentCache
-# fixture (run those with the focused commands below):
-pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)'
+# fixture (run those with the focused commands below), plus the SQL Server-only @MssqlOnly variants:
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@MssqlOnly)'
 
 # Explicit engine is equivalent to the default:
-pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine postgresql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)'
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine postgresql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@MssqlOnly)'
 ```
 
 ### SQL Server (MSSQL)
 
 ```pwsh
 # SQL Server, self-contained identity, standard DS 5.2 suite. As above, exclude the DS 6.1-only
-# scenarios and the separately configured DocumentCache fixture:
-pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)'
+# scenarios, the separately configured DocumentCache fixture and the PostgreSQL-only
+# @PostgresqlOnly variants:
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@PostgresqlOnly)'
 
-# SQL Server, self-contained identity, bounded representative cross-section (the PR-gated signal):
-pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@MssqlRepresentative'
+# SQL Server, self-contained identity, bounded representative cross-section plus the @MssqlOnly
+# engine variants (the PR-gated signal):
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category=@MssqlRepresentative|Category=@MssqlOnly)&(Category!=@PostgresqlOnly)'
 
 # SQL Server, Keycloak identity, same representative set:
-pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider keycloak -EnvironmentFile './.env.e2e' -TestFilter 'Category=@MssqlRepresentative'
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider keycloak -EnvironmentFile './.env.e2e' -TestFilter '(Category=@MssqlRepresentative|Category=@MssqlOnly)&(Category!=@PostgresqlOnly)'
 ```
 
 ### Filtered and version-coupled runs
@@ -66,6 +68,8 @@ Any run can be narrowed with `-TestFilter 'Category=@<tag>'`. Common tags:
 | `Category!=@StandardVersion-6_1`    | The full DS 5.2 suite. A bare no-filter run also selects the unsharded DS 6.1 scenarios, which require a DS 6.1 stack and fail on the default DS 5.2 provisioning, so exclude them as shown. |
 | `Category=@e2e-ci-shard-1` … `-4`   | One of the four DS 5.2 CI shards.                                        |
 | `Category=@MssqlRepresentative`     | The bounded SQL Server representative cross-section (a subset of DS 5.2).|
+| `Category!=@MssqlOnly`              | Excludes the SQL Server-only variant of an engine-paired scenario. Every PostgreSQL run adds it. |
+| `Category!=@PostgresqlOnly`         | Excludes the PostgreSQL-only variant of an engine-paired scenario. Every SQL Server run adds it. |
 | `Category=@StandardVersion-6_1`     | The DS 6.1 version-coupled scenarios (XSD metadata, Discovery, and a datastore round-trip smoke that proves a public data-plane request reaches the DS 6.1 datastore); run only against a DS 6.1 stack (`-DataStandardVersion 6.1`). |
 | `Category=@DocumentCacheHostedHappyPath` | The hosted DocumentCache fixture; run only with `-EnvironmentOverlayFile './.env.document-cache.e2e'`. |
 
@@ -75,10 +79,10 @@ Any run can be narrowed with `-TestFilter 'Category=@<tag>'`. Common tags:
 # and needs none.
 
 # PostgreSQL, DS 6.1:
-pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1'
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter '(Category=@StandardVersion-6_1)&(Category!=@MssqlOnly)'
 
 # SQL Server, DS 6.1:
-pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1'
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter '(Category=@StandardVersion-6_1)&(Category!=@PostgresqlOnly)'
 ```
 
 The hosted DocumentCache fixture has an explicit environment overlay so ordinary E2E runs retain
@@ -120,11 +124,12 @@ suite rows are documented in its own
 
 | Suite    | Engine     | Identity        | Data Standard / filter                 | Required PR lane                             |
 | -------- | ---------- | --------------- | -------------------------------------- | -------------------------------------------- |
-| Standard | PostgreSQL | self-contained  | DS 5.2 full (shards `@e2e-ci-shard-1..4`) | `run-e2e-tests`                              |
-| Standard | PostgreSQL | self-contained  | DS 6.1 `@StandardVersion-6_1`          | `run-e2e-tests-ds61`                         |
-| Standard | SQL Server | self-contained  | `@MssqlRepresentative`                 | `run-e2e-tests-mssql`                        |
-| Standard | SQL Server | keycloak        | `@MssqlRepresentative`                 | `run-e2e-tests-mssql`                        |
-| Standard | SQL Server | self-contained  | DS 6.1 `@StandardVersion-6_1`          | `run-e2e-tests-mssql-ds61`                   |
+| Standard | PostgreSQL | self-contained  | DS 5.2 full (shards `@e2e-ci-shard-1..4`), excluding `@MssqlOnly` | `run-e2e-tests`                              |
+| Standard | PostgreSQL | self-contained  | DS 6.1 `@StandardVersion-6_1`, excluding `@MssqlOnly` | `run-e2e-tests-ds61`                         |
+| Standard | PostgreSQL | self-contained  | `@CursorPartitionSizing`, excluding `@MssqlOnly` | `run-e2e-tests-partition-sizing`             |
+| Standard | SQL Server | self-contained  | `@MssqlRepresentative` or `@MssqlOnly`, excluding `@PostgresqlOnly` | `run-e2e-tests-mssql`                        |
+| Standard | SQL Server | keycloak        | `@MssqlRepresentative` or `@MssqlOnly`, excluding `@PostgresqlOnly` | `run-e2e-tests-mssql`                        |
+| Standard | SQL Server | self-contained  | DS 6.1 `@StandardVersion-6_1`, excluding `@PostgresqlOnly` | `run-e2e-tests-mssql-ds61`                   |
 | Standard | PostgreSQL | keycloak        | any                                    | _(locally runnable; not a required PR lane)_ |
 | Standard | SQL Server | self-contained  | DS 5.2 full                            | _(locally runnable; not a required PR lane)_ |
 | Instance | PostgreSQL / SQL Server | self-contained | `@instance-management-ci-shard-1/2` | `run-instance-management-e2e-tests` / `run-instance-management-e2e-tests-mssql`; the PostgreSQL-only identity plugin slice (`@instance-management-identity-plugin`) runs in `run-instance-management-identity-plugin-e2e-tests` |
