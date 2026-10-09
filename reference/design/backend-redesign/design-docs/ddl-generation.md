@@ -515,6 +515,17 @@ fingerprints, singleton preservation, known incompatible legacy artifacts, and r
 provisioning security prerequisites. Other incompatible existing objects may fail through
 ordinary provider DDL execution inside the provisioning transaction.
 
+An operator may use the separate `api-schema-tools ddl re-stamp` command after an
+independently designed and validated physical migration to update a compatible fingerprint
+transition. This bounded metadata operation validates the existing singleton, resource-key
+seed, and schema-component rows and atomically updates the effective hash and child hash
+associations. It does not execute physical DDL, certify physical schema shape or CDC
+continuity, or change ordinary provisioning: `ddl provision` continues to reject a different
+hash unless the explicit re-stamp operation has already recorded the validated target. The
+operator must stop services and other writers, run the physical migration, re-stamp, run
+ordinary provisioning separately, and restart services. Fresh provisioning remains the
+normal path; this is not a named-release upgrade recipe or automatic rollback guarantee.
+
 ### Seed data semantics
 
 - Deterministic seed data MUST be safe with foreign keys.

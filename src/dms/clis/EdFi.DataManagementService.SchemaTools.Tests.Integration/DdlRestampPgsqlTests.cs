@@ -145,6 +145,53 @@ public class Given_SchemaRestamp_Pgsql_Compatible_Transition
     }
 
     [Test]
+    public async Task It_performs_no_metadata_dml_when_a_valid_match_has_dml_rejecting_triggers()
+    {
+        using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        SchemaRestampTestHelper.SetOldHash(connection, "pgsql", _target.EffectiveSchemaHash);
+        SchemaRestampTestHelper.InsertComponents(connection, "pgsql", _target, _target.EffectiveSchemaHash);
+        SchemaRestampTestHelper.InstallDmlRejectingTriggers(connection, "pgsql");
+        var before = SchemaRestampTestHelper.Capture(connection, "pgsql");
+
+        var result = await new SchemaRestamper(NullLogger.Instance).RestampAsync(
+            SqlDialect.Pgsql,
+            _connectionString,
+            30,
+            _target,
+            false,
+            CancellationToken.None
+        );
+
+        result.Changed.Should().BeFalse();
+        SchemaRestampTestHelper.Capture(connection, "pgsql").Should().BeEquivalentTo(before);
+    }
+
+    [Test]
+    public async Task It_rolls_back_deleted_children_when_the_parent_update_fails()
+    {
+        using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync();
+        SchemaRestampTestHelper.InstallParentUpdateRejectingTrigger(connection, "pgsql");
+        var before = SchemaRestampTestHelper.Capture(connection, "pgsql");
+
+        Func<Task> action = () =>
+            new SchemaRestamper(NullLogger.Instance).RestampAsync(
+                SqlDialect.Pgsql,
+                _connectionString,
+                30,
+                _target,
+                true,
+                CancellationToken.None
+            );
+
+        (await action.Should().ThrowAsync<SchemaRestampException>())
+            .Which.Failure.Should()
+            .Be(SchemaRestampFailure.TransactionFailed);
+        SchemaRestampTestHelper.Capture(connection, "pgsql").Should().BeEquivalentTo(before);
+    }
+
+    [Test]
     public async Task It_refuses_a_missing_singleton_without_creating_one()
     {
         using var connection = new NpgsqlConnection(_connectionString);

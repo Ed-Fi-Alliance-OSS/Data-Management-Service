@@ -42,4 +42,6 @@ public enum FixtureKey
     AuthoritativeDs52,
     AuthoritativeDs52Tpdm,
     CursorPartitionContract,
+    SchemaRestampSource,
+    SchemaRestampTarget,
 }
