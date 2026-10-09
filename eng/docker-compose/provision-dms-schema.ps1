@@ -1188,62 +1188,8 @@ function Convert-CmsConnectionStringToHostSideTarget {
     }
 }
 
-function ConvertFrom-CmsEncryptedConnectionString {
-    param(
-        [string]
-        $ProtectedConnectionString,
-
-        [hashtable]
-        $EnvValues
-    )
-
-    $encryptionKey = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "DMS_CONFIG_DATABASE_ENCRYPTION_KEY"
-    if ([string]::IsNullOrWhiteSpace($encryptionKey)) {
-        throw "CMS data store connection string is encrypted, but DMS_CONFIG_DATABASE_ENCRYPTION_KEY is not set in the environment file."
-    }
-
-    try {
-        $encryptedBytes = [Convert]::FromBase64String($ProtectedConnectionString)
-    }
-    catch {
-        throw "CMS data store connection string did not contain a database name and was not valid CMS encrypted base64."
-    }
-
-    if ($encryptedBytes.Length -le 16) {
-        throw "CMS data store encrypted connection string payload is invalid."
-    }
-
-    $keyText = $encryptionKey.PadRight(32, "0").Substring(0, 32)
-    $keyBytes = [System.Text.Encoding]::UTF8.GetBytes($keyText)
-    $iv = [byte[]]::new(16)
-    [Array]::Copy($encryptedBytes, 0, $iv, 0, 16)
-
-    $cipherText = [byte[]]::new($encryptedBytes.Length - 16)
-    [Array]::Copy($encryptedBytes, 16, $cipherText, 0, $cipherText.Length)
-
-    $aes = [System.Security.Cryptography.Aes]::Create()
-    # CMS encrypts connection strings with AES-CBC / PKCS7; set explicitly rather than relying on .NET defaults.
-    $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
-    $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
-    try {
-        $aes.Key = $keyBytes
-        $aes.IV = $iv
-        $decryptor = $aes.CreateDecryptor()
-        try {
-            $plainTextBytes = $decryptor.TransformFinalBlock($cipherText, 0, $cipherText.Length)
-            return [System.Text.Encoding]::UTF8.GetString($plainTextBytes)
-        }
-        finally {
-            $decryptor.Dispose()
-        }
-    }
-    catch {
-        throw "CMS data store encrypted connection string could not be decrypted with DMS_CONFIG_DATABASE_ENCRYPTION_KEY."
-    }
-    finally {
-        $aes.Dispose()
-    }
-}
+# ConvertFrom-CmsEncryptedConnectionString lives in database-safety.psm1 (imported above), shared with
+# the configure phase's restore reuse check so both decrypt a CMS-stored value the same way.
 
 function Resolve-CmsInstanceConnectionString {
     param(

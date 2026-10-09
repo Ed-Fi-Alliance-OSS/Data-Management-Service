@@ -1261,6 +1261,74 @@ function Get-EndpointFromResolvedConnectionString {
     }
 }
 
+function ConvertFrom-CmsEncryptedConnectionString {
+    <#
+    .SYNOPSIS
+        Decrypts a data store connection string as a CMS response carries it: the Base64 of a 16-byte
+        IV followed by AES-CBC/PKCS7 cipher text, under DMS_CONFIG_DATABASE_ENCRYPTION_KEY (the same key
+        CMS encrypts with) padded with '0' and cut to 32 characters.
+    .DESCRIPTION
+        Shared by the provisioning phase, which hands the decrypted target to SchemaTools, and by the
+        configure phase's restore reuse check, which compares it with the restored target. Every
+        failure is one of the fixed messages below; none carries the key, the cipher text, or the
+        decrypted text.
+    #>
+    param(
+        [string]
+        $ProtectedConnectionString,
+
+        [hashtable]
+        $EnvValues
+    )
+
+    $encryptionKey = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name "DMS_CONFIG_DATABASE_ENCRYPTION_KEY"
+    if ([string]::IsNullOrWhiteSpace($encryptionKey)) {
+        throw "CMS data store connection string is encrypted, but DMS_CONFIG_DATABASE_ENCRYPTION_KEY is not set in the environment file."
+    }
+
+    try {
+        $encryptedBytes = [Convert]::FromBase64String($ProtectedConnectionString)
+    }
+    catch {
+        throw "CMS data store connection string did not contain a database name and was not valid CMS encrypted base64."
+    }
+
+    if ($encryptedBytes.Length -le 16) {
+        throw "CMS data store encrypted connection string payload is invalid."
+    }
+
+    $keyText = $encryptionKey.PadRight(32, "0").Substring(0, 32)
+    $keyBytes = [System.Text.Encoding]::UTF8.GetBytes($keyText)
+    $iv = [byte[]]::new(16)
+    [Array]::Copy($encryptedBytes, 0, $iv, 0, 16)
+
+    $cipherText = [byte[]]::new($encryptedBytes.Length - 16)
+    [Array]::Copy($encryptedBytes, 16, $cipherText, 0, $cipherText.Length)
+
+    $aes = [System.Security.Cryptography.Aes]::Create()
+    # CMS encrypts connection strings with AES-CBC / PKCS7; set explicitly rather than relying on .NET defaults.
+    $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
+    $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
+    try {
+        $aes.Key = $keyBytes
+        $aes.IV = $iv
+        $decryptor = $aes.CreateDecryptor()
+        try {
+            $plainTextBytes = $decryptor.TransformFinalBlock($cipherText, 0, $cipherText.Length)
+            return [System.Text.Encoding]::UTF8.GetString($plainTextBytes)
+        }
+        finally {
+            $decryptor.Dispose()
+        }
+    }
+    catch {
+        throw "CMS data store encrypted connection string could not be decrypted with DMS_CONFIG_DATABASE_ENCRYPTION_KEY."
+    }
+    finally {
+        $aes.Dispose()
+    }
+}
+
 function Get-CmsDatabaseTopologyDefaultConnectionString {
     <#
     .SYNOPSIS
@@ -1546,6 +1614,7 @@ Export-ModuleMember -Function `
     Get-DatabaseNameFromConnectionString, `
     Get-DatabaseNameFromResolvedConnectionString, `
     Get-EndpointFromResolvedConnectionString, `
+    ConvertFrom-CmsEncryptedConnectionString, `
     Get-SqlServerDataSourceEndpoint, `
     Get-PostgresHostCandidateEndpoint, `
     Test-PortNumberEquivalent, `

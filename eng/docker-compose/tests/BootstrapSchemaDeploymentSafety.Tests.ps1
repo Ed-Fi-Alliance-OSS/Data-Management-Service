@@ -187,7 +187,9 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
         function script:New-CmsEncryptedConnectionString {
             param(
                 [string]$PlainText,
-                [string]$EncryptionKey = "TestEncryptionKey123456789012345678901234567890"
+                [string]$EncryptionKey = "TestEncryptionKey123456789012345678901234567890",
+                # A fixed IV makes the cipher text reproducible; by default a random IV is drawn, as CMS does.
+                [byte[]]$InitializationVector = $null
             )
 
             $keyText = $EncryptionKey.PadRight(32, "0").Substring(0, 32)
@@ -196,7 +198,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             $aes = [System.Security.Cryptography.Aes]::Create()
             try {
                 $aes.Key = $keyBytes
-                $aes.GenerateIV()
+                if ($null -ne $InitializationVector) { $aes.IV = $InitializationVector } else { $aes.GenerateIV() }
                 $encryptor = $aes.CreateEncryptor()
                 try {
                     $cipherText = $encryptor.TransformFinalBlock($plainTextBytes, 0, $plainTextBytes.Length)
@@ -4363,6 +4365,444 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
             $script:guardRegisteredName | Should -Be "edfi_datamanagementservice_sy" -Because "every year registers the single validated name"
             $result.DataStoreIds | Should -Be @([long]613, [long]614)
+        }
+    }
+
+    Context "restore separate-config data store reuse at the configure boundary (DMS-1271)" {
+        # A -SeparateConfigDatabase restore replaces only the DMS datastore; the Configuration Service
+        # database survives, so the configure phase after the restore can meet the data store an
+        # earlier run registered, and CMS rejects a second registration under the same name. With the
+        # wrapper's -RestoreTargetDatabaseName handoff the phase reuses that data store only when its
+        # STORED (CMS-encrypted) connection string names the composed database service and exactly the
+        # restored database, creates one when CMS holds none, and otherwise refuses - after the restore,
+        # so every refusal says the target is already restored.
+        BeforeAll {
+            # The key the CMS literal fixtures below were encrypted under (by the CMS service itself).
+            $script:reuseCmsKey = "RestoreSmokeProbe-TestKey-0123456789ABCDEF"
+            $script:reusePassword = "Reuse-S3cret!"
+            $script:reuseTarget = "edfi_datamanagementservice"
+            # The env resolver lets an ambient value win (as Compose does), so none may leak in.
+            $script:reuseAmbientKey = [System.Environment]::GetEnvironmentVariable("DMS_CONFIG_DATABASE_ENCRYPTION_KEY")
+            Remove-Item Env:DMS_CONFIG_DATABASE_ENCRYPTION_KEY -ErrorAction SilentlyContinue
+
+            function script:New-ReuseEnvFile {
+                param(
+                    [Parameter(Mandatory)]
+                    [string]$Engine,
+
+                    [string]$EncryptionKey = $script:reuseCmsKey
+                )
+
+                $path = Join-Path $script:repo.DockerComposeRoot "env-reuse-$Engine-$([Guid]::NewGuid().ToString('N')).env"
+                $lines = if ($Engine -eq "mssql") {
+                    @(
+                        "POSTGRES_PASSWORD=isolated-pass"
+                        "DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081"
+                        "DMS_HTTP_PORTS=18080"
+                        "DMS_CONFIG_IDENTITY_PROVIDER=self-contained"
+                        "DMS_CONFIG_DATABASE_ENCRYPTION_KEY=$EncryptionKey"
+                        "MSSQL_SA_PASSWORD=abcdefgh1!"
+                        "MSSQL_DB_NAME=$($script:reuseTarget)"
+                        "DMS_DATASTORE=mssql"
+                        "DMS_CONFIG_DATASTORE=mssql"
+                        "DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
+                    )
+                }
+                else {
+                    @(
+                        "POSTGRES_PASSWORD=isolated-pass"
+                        "POSTGRES_DB_NAME=$($script:reuseTarget)"
+                        "POSTGRES_PORT=5544"
+                        "DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081"
+                        "DMS_HTTP_PORTS=18080"
+                        "DMS_CONFIG_IDENTITY_PROVIDER=self-contained"
+                        "DMS_CONFIG_DATABASE_ENCRYPTION_KEY=$EncryptionKey"
+                    )
+                }
+                $lines | Set-Content -LiteralPath $path -Encoding utf8
+                return $path
+            }
+
+            # The plaintext the configure phase itself registers for the composed service, through the
+            # production serializer; the caller encrypts it as CMS would.
+            function script:New-ReusePlainConnectionString {
+                param(
+                    [Parameter(Mandatory)]
+                    [string]$Engine,
+
+                    [string]$DbHost,
+
+                    [int]$Port = 0,
+
+                    [string]$DatabaseName = $script:reuseTarget
+                )
+
+                if ($Engine -eq "mssql") {
+                    if (-not $DbHost) { $DbHost = "dms-mssql" }
+                    if ($Port -eq 0) { $Port = 1433 }
+                    return New-DataStoreConnectionString -DatabaseEngine mssql -DbHost $DbHost -Port $Port -Username "sa" -Password $script:reusePassword -DatabaseName $DatabaseName
+                }
+
+                if (-not $DbHost) { $DbHost = "dms-postgresql" }
+                if ($Port -eq 0) { $Port = 5432 }
+                return New-DataStoreConnectionString -DatabaseEngine postgresql -DbHost $DbHost -Port $Port -Username "postgres" -Password $script:reusePassword -DatabaseName $DatabaseName
+            }
+
+            function script:New-ReuseDataStore {
+                param(
+                    [long]$Id = 77,
+
+                    [string]$ConnectionString,
+
+                    [AllowEmptyString()]
+                    [string]$Provider = "",
+
+                    [object[]]$Contexts = @()
+                )
+
+                return [pscustomobject]@{
+                    id = $Id
+                    name = "Local Development Data Store"
+                    dataStoreType = "Development"
+                    connectionString = $ConnectionString
+                    provider = $Provider
+                    dataStoreContexts = @($Contexts)
+                }
+            }
+
+            function script:Get-ReuseProvider {
+                param([Parameter(Mandatory)] [string]$Engine)
+                if ($Engine -eq "mssql") { "sqlserver" } else { "postgresql" }
+            }
+
+            # Runs the REAL configure phase with CMS replaced by recording stubs. Every parameter is
+            # Reuse-prefixed: dot-sourcing configure-local-data-store.ps1 runs its own param() block in
+            # this scope and would reset same-named variables ($EnvironmentFile, $DatabaseEngine, ...).
+            # -ReuseStoreFactory runs after the dot-source, so it can use the production serializer.
+            function script:Invoke-ReuseConfigure {
+                param(
+                    [Parameter(Mandatory)]
+                    [string]$ReuseEngine,
+
+                    [scriptblock]$ReuseStoreFactory = { @() },
+
+                    [string]$ReuseEnvFile = "",
+
+                    [hashtable]$ReuseParameters = @{},
+
+                    [switch]$ReuseRealAddDataStore
+                )
+
+                . $script:repo.ConfigureScript
+
+                $script:reuseTrace = [System.Collections.Generic.List[string]]::new()
+                $script:reuseStores = @(& $ReuseStoreFactory)
+
+                function Assert-MssqlTopologyPhysicalConsistency { $script:reuseTrace.Add("authority") }
+                function Add-CmsClient { $script:reuseTrace.Add("Add-CmsClient") }
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    param($CmsUrl, $AccessToken, $Offset, $Limit, $Tenant)
+                    $script:reuseTrace.Add("Get-DataStore limit=$Limit")
+                    return $script:reuseStores
+                }
+                if (-not $ReuseRealAddDataStore) {
+                    function Add-DataStore {
+                        param($CmsUrl, $DataStoreType, $Name, $PostgresCredential, $PostgresDbName, $PostgresHost, $PostgresPort, $ConnectionString, $DatabaseEngine, $AccessToken, $Tenant)
+                        $script:reuseTrace.Add("Add-DataStore")
+                        return 9001
+                    }
+                }
+                else {
+                    # The real Add-DataStore builds and posts the registration; only its HTTP call is
+                    # replaced, so the body is exactly what CMS would store. The override goes into the
+                    # exact module instance configure just imported from this fixture (selected by path),
+                    # not through Mock -ModuleName, which refuses to bind when earlier suites in the same
+                    # process left other Dms-Management copies loaded.
+                    $script:reuseDmsModule = @(Get-Module -Name Dms-Management |
+                            Where-Object { $_.Path -like "$($script:repo.RepoRoot)*" })[0]
+                    $script:reuseDmsModule | Should -Not -BeNullOrEmpty
+                    & $script:reuseDmsModule {
+                        $script:reuseCreatedBody = $null
+                        Set-Item function:script:Invoke-Api {
+                            param($BaseUrl, $RelativeUrl, $Method, $ContentType, $Body, $Headers)
+                            $script:reuseCreatedBody = $Body
+                            return [pscustomobject]@{ id = 9001 }
+                        }
+                    }
+                }
+                # Any other CMS call made from this phase (an update, a delete) would land here.
+                function Invoke-Api { $script:reuseTrace.Add("Invoke-Api $($args -join ' ')") }
+
+                $envFile = if ($ReuseEnvFile) { $ReuseEnvFile } else { New-ReuseEnvFile -Engine $ReuseEngine }
+                $arguments = @{
+                    EnvironmentFile = $envFile
+                    DatabaseEngine = $ReuseEngine
+                    SeparateConfigDatabase = $true
+                    RestoreTargetDatabaseName = $script:reuseTarget
+                }
+                foreach ($key in $ReuseParameters.Keys) { $arguments[$key] = $ReuseParameters[$key] }
+
+                return Invoke-ConfigureLocalDataStore @arguments
+            }
+
+            # Everything a refusal must never carry.
+            function script:Assert-ReuseRefusalSecretFree {
+                param(
+                    [Parameter(Mandatory)]
+                    [string]$Message,
+
+                    [string[]]$AlsoWithheld = @()
+                )
+
+                foreach ($secret in @($script:reusePassword, $script:reuseCmsKey, "abcdefgh1!", $script:reuseTarget) + $AlsoWithheld) {
+                    if (-not [string]::IsNullOrEmpty($secret)) {
+                        $Message.Contains($secret) | Should -BeFalse -Because "a refusal must not carry '$secret'"
+                    }
+                }
+                foreach ($store in @($script:reuseStores)) {
+                    $stored = [string]$store.connectionString
+                    if ($stored.Length -gt 8) {
+                        $Message.Contains($stored) | Should -BeFalse -Because "a refusal must not carry the stored connection string"
+                    }
+                }
+            }
+        }
+
+        AfterAll {
+            if ($null -ne $script:reuseAmbientKey) {
+                [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_ENCRYPTION_KEY", $script:reuseAmbientKey)
+            }
+        }
+
+        It "creates the normal registration when CMS holds no data store (<engine>)" -ForEach @(
+            @{ Engine = "postgresql" }
+            @{ Engine = "mssql" }
+        ) {
+            $result = Invoke-ReuseConfigure -ReuseEngine $Engine
+
+            @($result.SelectedDataStoreIds) | Should -Be @(9001)
+            $expected = @("Add-CmsClient", "Get-DataStore limit=500", "Add-DataStore")
+            if ($Engine -eq "mssql") { $expected = @("authority") + $expected }
+            @($script:reuseTrace) | Should -Be $expected
+        }
+
+        It "reuses the one route-unqualified data store whose decrypted target is the restored database, keeping its id and never registering (<engine>: <case>)" -ForEach @(
+            @{ Engine = "postgresql"; Case = "the registered form"; Plain = $null; Provider = "postgresql" }
+            @{ Engine = "postgresql"; Case = "no provider reported"; Plain = $null; Provider = "" }
+            @{ Engine = "postgresql"; Case = "port omitted (provider default)"; Plain = "host=dms-postgresql;username=postgres;password=Reuse-S3cret!;database=edfi_datamanagementservice"; Provider = "postgresql" }
+            @{ Engine = "postgresql"; Case = "host case differs"; Plain = "host=DMS-PostgreSQL;port=5432;username=postgres;password=Reuse-S3cret!;database=edfi_datamanagementservice"; Provider = "postgresql" }
+            @{ Engine = "mssql"; Case = "the registered form"; Plain = $null; Provider = "sqlserver" }
+            @{ Engine = "mssql"; Case = "no provider reported"; Plain = $null; Provider = "" }
+            @{ Engine = "mssql"; Case = "port omitted (provider default)"; Plain = "Server=dms-mssql;Database=edfi_datamanagementservice;User Id=sa;Password=Reuse-S3cret!"; Provider = "sqlserver" }
+            @{ Engine = "mssql"; Case = "SqlClient synonyms"; Plain = "Data Source=tcp:dms-mssql,1433;Initial Catalog=edfi_datamanagementservice;User Id=sa;Password=Reuse-S3cret!"; Provider = "sqlserver" }
+        ) {
+            $plainText = $Plain
+            $provider = $Provider
+            $engine = $Engine
+            $result = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseStoreFactory {
+                $text = if ($plainText) { $plainText } else { New-ReusePlainConnectionString -Engine $engine }
+                New-ReuseDataStore -Id 77 -Provider $provider -ConnectionString (New-CmsEncryptedConnectionString -PlainText $text -EncryptionKey $script:reuseCmsKey)
+            }
+
+            @($result.SelectedDataStoreIds) | Should -Be @(77) -Because "the existing registration keeps its id"
+            @($result.DataStoreIds) | Should -Be @(77)
+            $result.HasRouteQualifiedDataStores | Should -BeFalse
+            $script:reuseTrace | Should -Not -Contain "Add-DataStore" -Because "CMS already holds the data store; a second registration is what CMS rejects"
+            @($script:reuseTrace | Where-Object { $_ -like "Invoke-Api*" }) | Should -BeNullOrEmpty -Because "the registration is reused as-is, never updated"
+            $script:reuseTrace | Should -Contain "Get-DataStore limit=500"
+        }
+
+        It "reuses a value encrypted by the CMS service itself (<name>)" -ForEach @(
+            # Cipher text produced by the CMS's own ConnectionStringEncryptionService (random IV) under
+            # the key above - the DMS-1271 smoke's compatibility fixtures - with zero, one, and two
+            # Base64 padding characters per engine.
+            @{ Name = "PgPad1"; Engine = "postgresql"; CipherText = "4j9U0etELPg41jXuZUKpdoDxm6uHVm9LfeGXEgmCdtQIx6EGEVXiNiIagqFyXjz0nM6sYrOzBp396gZo8dAjGRdUoMIbOVrrC3IUfntPi39jy9mQKFqxzrzC0OPwPokktE3IaO4+DyT9uzRV/MM6GXyOfQlw/A3HOXwGTspfdnw=" }
+            @{ Name = "PgPad0"; Engine = "postgresql"; CipherText = "2bNfoFoqgBz3OA7Nd0ym29P9OE6r0igrGPHIkO1oGWii1eXfX+w5YNZNjCDJqBjDKw+YbBzJHtPSWxWkh4IDPfqYS6huwoHxM23ixC/HlRb0vflmtK8xTdhhMRGDPn2Sq61NLR8D1mE7wV6+zyQjoNxGYy9tYfsaa/7Gj8AXvVzuE1b1pGhHMnL2sQRq9o65" }
+            @{ Name = "PgPad2"; Engine = "postgresql"; CipherText = "ip4lZz+DZtr+SHFDNmCE9+BBKkmpgsCijSyqpTlHzxrGMhbSZfTRXUgEK6RMtflXkjWgQw7wcTXQNUq/9ZCW1JWbb7iGYnUgXZNl25uwC6IoaA0OhTEcYrHxWtXseFHeu7VaEIOOPf/rSipAC9VBxtW9CzsKMBkiG6iWAS2qOMgOU1va0dIG2C2Dob0Fh7oTFEa9FUtWS0ciSYe7Q7ADRg==" }
+            @{ Name = "MsPad0"; Engine = "mssql"; CipherText = "gu5rgREwGLOnWU+pLqbSGNh/gzVyn9kXQ+dmwvVfWBLoNtubyeCC9XhVePNz+9vK4aiZvcZxVO/9/zPKXx1dz8++kY+icxop1UZaKGY84s7M6PiEkdrYixNe9yh0jUG3tT9UMxx/0UGwH+QXF6QCK6UBkMqBy1tPzGVxwri891VRuLt0d/pURWCpof4DBfev" }
+            @{ Name = "MsPad1"; Engine = "mssql"; CipherText = "INJ3NT2lGcNnwQYTNa1MeLUw8//yNE4jeRpyunObYrqewcpC2rN5zGXBxZen2uj678EoXhhLsSZGKiUeQQOnikaEhkFtMlZCwgP1ZM+uXH8Y005coYZlDL91TAlPj+G6g21ZxdVTnzYUcGGbEJ2nDZnYroaB0soh5wXdyZGSzdY=" }
+            @{ Name = "MsPad2"; Engine = "mssql"; CipherText = "vZu4uoPh2nPQy33MRoORArdeS5aGYq3RjyvZCwEjo0fOVoidMHYIjWuz+hUHXqsJKMk/U2viEfcmd+yQI2aE3PHsGNQG7k4i/DNR2iqMteuGCOEx9f1b1Mr/Wasx+AoggHjoVMFCW3MGaQpzphLbCibaXEq0G9N0HZ//F9rijd1qpPIlvMl46m3RkEOr8PpJ5CnG7dms3jHCMiZsKgFuxg==" }
+        ) {
+            $cipherText = $CipherText
+            $provider = Get-ReuseProvider -Engine $Engine
+            $result = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseStoreFactory {
+                New-ReuseDataStore -Id 31 -Provider $provider -ConnectionString $cipherText
+            }
+
+            @($result.SelectedDataStoreIds) | Should -Be @(31)
+            $script:reuseTrace | Should -Not -Contain "Add-DataStore"
+        }
+
+        It "reuses exactly what its own creation registered (<engine>)" -ForEach @(
+            @{ Engine = "postgresql" }
+            @{ Engine = "mssql" }
+        ) {
+            # Round trip through the REAL Add-DataStore: the registration a create posts, encrypted as
+            # CMS stores it, is what the next restore's configure phase must accept.
+            $envFile = New-ReuseEnvFile -Engine $Engine
+            $created = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseEnvFile $envFile -ReuseRealAddDataStore
+            @($created.SelectedDataStoreIds) | Should -Be @(9001)
+            $registered = (& $script:reuseDmsModule { $script:reuseCreatedBody }) | ConvertFrom-Json
+            $registered | Should -Not -BeNullOrEmpty
+
+            $storedConnectionString = New-CmsEncryptedConnectionString -PlainText ([string]$registered.connectionString) -EncryptionKey $script:reuseCmsKey
+            $storedProvider = [string]$registered.provider
+            $reused = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseEnvFile $envFile -ReuseStoreFactory {
+                New-ReuseDataStore -Id 9001 -Provider $storedProvider -ConnectionString $storedConnectionString
+            }
+
+            @($reused.SelectedDataStoreIds) | Should -Be @(9001)
+            $script:reuseTrace | Should -Not -Contain "Add-DataStore"
+        }
+
+        It "refuses, after the restore and before any registration, when <case> (<engine>)" -ForEach @(
+            @{ Engine = "postgresql"; Case = "CMS holds two data stores"; Kind = "two"; Expected = "*found 2 CMS data stores*it reuses only a single route-unqualified data store*" }
+            @{ Engine = "postgresql"; Case = "the data store is route-qualified"; Kind = "routed"; Expected = "*cannot reuse CMS data store id=77*it is route-qualified*" }
+            @{ Engine = "postgresql"; Case = "the provider is the other engine's"; Kind = "provider"; Expected = "*its provider is not 'postgresql'*" }
+            @{ Engine = "postgresql"; Case = "CMS returns no connection string"; Kind = "missing"; Expected = "*CMS returned no connection string*" }
+            @{ Engine = "postgresql"; Case = "the stored value is plaintext, not CMS cipher text"; Kind = "plaintext"; Expected = "*could not be read (CMS data store connection string did not contain a database name and was not valid CMS encrypted base64.)*" }
+            @{ Engine = "postgresql"; Case = "it was encrypted under another key"; Kind = "wrongkey"; Expected = "*could not be read (CMS data store encrypted connection string could not be decrypted with DMS_CONFIG_DATABASE_ENCRYPTION_KEY.)*" }
+            @{ Engine = "postgresql"; Case = "it is the other engine's connection string"; Kind = "otherform"; Expected = "*its connection string names 2 servers*" }
+            @{ Engine = "postgresql"; Case = "only the database name matches (another host)"; Kind = "host"; Expected = "*its server host is not the composed database service 'dms-postgresql'*" }
+            @{ Engine = "postgresql"; Case = "only the database name matches (another port)"; Kind = "port"; Expected = "*its server port is not 5432*" }
+            @{ Engine = "postgresql"; Case = "it names another database"; Kind = "database"; Expected = "*its database is not the restored target database*" }
+            @{ Engine = "postgresql"; Case = "its database differs only in case"; Kind = "case"; Expected = "*its database is not the restored target database*" }
+            @{ Engine = "postgresql"; Case = "it names two databases"; Kind = "twodatabases"; Expected = "*its connection string names 2 databases*" }
+            @{ Engine = "postgresql"; Case = "the listing reaches the query page size"; Kind = "page"; Expected = "*listed 500 CMS data stores*the query page size*" }
+            @{ Engine = "mssql"; Case = "CMS holds two data stores"; Kind = "two"; Expected = "*found 2 CMS data stores*it reuses only a single route-unqualified data store*" }
+            @{ Engine = "mssql"; Case = "the data store is route-qualified"; Kind = "routed"; Expected = "*cannot reuse CMS data store id=77*it is route-qualified*" }
+            @{ Engine = "mssql"; Case = "the provider is the other engine's"; Kind = "provider"; Expected = "*its provider is not 'sqlserver'*" }
+            @{ Engine = "mssql"; Case = "CMS returns no connection string"; Kind = "missing"; Expected = "*CMS returned no connection string*" }
+            @{ Engine = "mssql"; Case = "the stored value is plaintext, not CMS cipher text"; Kind = "plaintext"; Expected = "*could not be read (CMS data store connection string did not contain a database name and was not valid CMS encrypted base64.)*" }
+            @{ Engine = "mssql"; Case = "it was encrypted under another key"; Kind = "wrongkey"; Expected = "*could not be read (CMS data store encrypted connection string could not be decrypted with DMS_CONFIG_DATABASE_ENCRYPTION_KEY.)*" }
+            @{ Engine = "mssql"; Case = "it is the other engine's connection string"; Kind = "otherform"; Expected = "*its decrypted connection string does not name a mssql server and database*" }
+            @{ Engine = "mssql"; Case = "only the database name matches (another host)"; Kind = "host"; Expected = "*its server host is not the composed database service 'dms-mssql'*" }
+            @{ Engine = "mssql"; Case = "only the database name matches (another port)"; Kind = "port"; Expected = "*its server port is not 1433*" }
+            @{ Engine = "mssql"; Case = "it names another database"; Kind = "database"; Expected = "*its database is not the restored target database*" }
+            @{ Engine = "mssql"; Case = "its database differs only in case"; Kind = "case"; Expected = "*its database is not the restored target database*" }
+            @{ Engine = "mssql"; Case = "it names two databases"; Kind = "twodatabases"; Expected = "*its connection string names 2 databases*" }
+            @{ Engine = "mssql"; Case = "the listing reaches the query page size"; Kind = "page"; Expected = "*listed 500 CMS data stores*the query page size*" }
+        ) {
+            $engine = $Engine
+            $kind = $Kind
+            $otherEngine = if ($Engine -eq "mssql") { "postgresql" } else { "mssql" }
+            $withheld = @("other-host", "edfi_other", "EDFI_DataManagementService")
+            $factory = {
+                $provider = Get-ReuseProvider -Engine $engine
+                $encrypt = { param($text) New-CmsEncryptedConnectionString -PlainText $text -EncryptionKey $script:reuseCmsKey }
+                $matching = & $encrypt (New-ReusePlainConnectionString -Engine $engine)
+                switch ($kind) {
+                    "two" {
+                        New-ReuseDataStore -Id 77 -Provider $provider -ConnectionString $matching
+                        New-ReuseDataStore -Id 78 -Provider $provider -ConnectionString $matching
+                    }
+                    "routed" {
+                        New-ReuseDataStore -Id 77 -Provider $provider -ConnectionString $matching -Contexts @([pscustomobject]@{ id = 1; dataStoreId = 77; contextKey = "schoolYear"; contextValue = "2025" })
+                    }
+                    "provider" { New-ReuseDataStore -Id 77 -Provider (Get-ReuseProvider -Engine $otherEngine) -ConnectionString $matching }
+                    "missing" { New-ReuseDataStore -Id 77 -Provider $provider -ConnectionString "" }
+                    "plaintext" { New-ReuseDataStore -Id 77 -Provider $provider -ConnectionString (New-ReusePlainConnectionString -Engine $engine) }
+                    "wrongkey" {
+                        # Fixed IV: with a random one the wrong key passes PKCS7 padding by chance (about
+                        # 1 in 400), which the next test covers on its own.
+                        New-ReuseDataStore -Id 77 -Provider $provider -ConnectionString (New-CmsEncryptedConnectionString -PlainText (New-ReusePlainConnectionString -Engine $engine) -EncryptionKey "Another-Key-Entirely-0123456789ABCDEF" -InitializationVector ([byte[]](0..15)))
+                    }
+                    "otherform" { New-ReuseDataStore -Id 77 -Provider "" -ConnectionString (& $encrypt (New-ReusePlainConnectionString -Engine $otherEngine)) }
+                    "host" { New-ReuseDataStore -Id 77 -Provider $provider -ConnectionString (& $encrypt (New-ReusePlainConnectionString -Engine $engine -DbHost "other-host")) }
+                    "port" {
+                        $otherPort = if ($engine -eq "mssql") { 1434 } else { 5433 }
+                        New-ReuseDataStore -Id 77 -Provider $provider -ConnectionString (& $encrypt (New-ReusePlainConnectionString -Engine $engine -Port $otherPort))
+                    }
+                    "database" { New-ReuseDataStore -Id 77 -Provider $provider -ConnectionString (& $encrypt (New-ReusePlainConnectionString -Engine $engine -DatabaseName "edfi_other")) }
+                    "case" { New-ReuseDataStore -Id 77 -Provider $provider -ConnectionString (& $encrypt (New-ReusePlainConnectionString -Engine $engine -DatabaseName "EDFI_DataManagementService")) }
+                    "twodatabases" {
+                        $plain = if ($engine -eq "mssql") {
+                            "Server=dms-mssql,1433;Database=edfi_other;Initial Catalog=edfi_datamanagementservice;User Id=sa;Password=Reuse-S3cret!"
+                        }
+                        else {
+                            "host=dms-postgresql;port=5432;username=postgres;password=Reuse-S3cret!;database=edfi_datamanagementservice;db=edfi_other"
+                        }
+                        New-ReuseDataStore -Id 77 -Provider $provider -ConnectionString (& $encrypt $plain)
+                    }
+                    "page" {
+                        foreach ($index in 1..500) { New-ReuseDataStore -Id $index -Provider $provider -ConnectionString "x" }
+                    }
+                }
+            }
+
+            $thrown = { Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseStoreFactory $factory } | Should -Throw -PassThru
+            $message = $thrown.Exception.Message
+
+            $message | Should -BeLike $Expected
+            $message | Should -BeLike "*This check runs after the restore replaced the target database: the target is restored, DMS was not started, and the scratch-validation guarantee that a refused restore leaves the target untouched does not apply.*"
+            $script:reuseTrace | Should -Contain "Get-DataStore limit=500"
+            $script:reuseTrace | Should -Not -Contain "Add-DataStore" -Because "a refusal registers nothing"
+            @($script:reuseTrace | Where-Object { $_ -like "Invoke-Api*" }) | Should -BeNullOrEmpty
+            Assert-ReuseRefusalSecretFree -Message $message -AlsoWithheld $withheld
+        }
+
+        It "refuses a wrong-key value whose padding happens to validate, reading its garbage as no target (<engine>)" -ForEach @(
+            @{ Engine = "postgresql" }
+            @{ Engine = "mssql" }
+        ) {
+            # AES-CBC under the wrong key still ends in valid PKCS7 padding for some IVs, and then
+            # decryption "succeeds" with garbage text. Search deterministic IVs for one such value and
+            # prove the garbage is refused like any other unreadable or foreign target.
+            $engine = $Engine
+            $factory = {
+                $plainText = New-ReusePlainConnectionString -Engine $engine
+                $envValues = @{ DMS_CONFIG_DATABASE_ENCRYPTION_KEY = $script:reuseCmsKey }
+                $collision = $null
+                for ($seed = 0; $seed -lt 20000 -and $null -eq $collision; $seed++) {
+                    $iv = [byte[]]::new(16)
+                    [System.BitConverter]::GetBytes([int]$seed).CopyTo($iv, 0)
+                    $candidate = New-CmsEncryptedConnectionString -PlainText $plainText -EncryptionKey "Another-Key-Entirely-0123456789ABCDEF" -InitializationVector $iv
+                    try {
+                        $null = ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $candidate -EnvValues $envValues
+                        $collision = $candidate
+                    }
+                    catch {
+                        $null = $_
+                    }
+                }
+                if ($null -eq $collision) { throw "test setup: no wrong-key padding collision found in 20000 IVs" }
+                New-ReuseDataStore -Id 77 -Provider (Get-ReuseProvider -Engine $engine) -ConnectionString $collision
+            }
+
+            $thrown = { Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseStoreFactory $factory } | Should -Throw -PassThru
+            $message = $thrown.Exception.Message
+
+            $message | Should -BeLike "*cannot reuse CMS data store id=77 (name=Local Development Data Store) for the restored target:*"
+            $message | Should -BeLike "*This check runs after the restore replaced the target database*"
+            $script:reuseTrace | Should -Not -Contain "Add-DataStore"
+            @($script:reuseTrace | Where-Object { $_ -like "Invoke-Api*" }) | Should -BeNullOrEmpty
+            Assert-ReuseRefusalSecretFree -Message $message
+        }
+
+        It "rejects -RestoreTargetDatabaseName <case> before any CMS call (<engine>)" -ForEach @(
+            @{ Engine = "postgresql"; Case = "without -SeparateConfigDatabase"; Parameters = @{ SeparateConfigDatabase = $false }; Expected = "-RestoreTargetDatabaseName requires -SeparateConfigDatabase.*" }
+            @{ Engine = "postgresql"; Case = "with -NoDataStore"; Parameters = @{ NoDataStore = $true }; Expected = "-RestoreTargetDatabaseName cannot be combined with -NoDataStore.*" }
+            @{ Engine = "postgresql"; Case = "with -SchoolYearRange"; Parameters = @{ SchoolYearRange = "2024-2025" }; Expected = "-RestoreTargetDatabaseName cannot be combined with -SchoolYearRange.*" }
+            @{ Engine = "mssql"; Case = "without -SeparateConfigDatabase"; Parameters = @{ SeparateConfigDatabase = $false }; Expected = "-RestoreTargetDatabaseName requires -SeparateConfigDatabase.*" }
+            @{ Engine = "mssql"; Case = "with -NoDataStore"; Parameters = @{ NoDataStore = $true }; Expected = "-RestoreTargetDatabaseName cannot be combined with -NoDataStore.*" }
+            @{ Engine = "mssql"; Case = "with -SchoolYearRange"; Parameters = @{ SchoolYearRange = "2024-2025" }; Expected = "-RestoreTargetDatabaseName cannot be combined with -SchoolYearRange.*" }
+        ) {
+            { Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseParameters $Parameters } | Should -Throw -ExpectedMessage $Expected
+            @($script:reuseTrace) | Should -BeNullOrEmpty -Because "a malformed handoff must not reach CMS"
+        }
+
+        It "leaves the non-restore separate-topology registration unchanged: no listing, one registration (<engine>)" -ForEach @(
+            @{ Engine = "postgresql" }
+            @{ Engine = "mssql" }
+        ) {
+            $result = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseParameters @{ RestoreTargetDatabaseName = "" } -ReuseStoreFactory {
+                New-ReuseDataStore -Id 77 -Provider "" -ConnectionString "unused"
+            }
+
+            @($result.SelectedDataStoreIds) | Should -Be @(9001)
+            @($script:reuseTrace | Where-Object { $_ -like "Get-DataStore*" }) | Should -BeNullOrEmpty
+            $script:reuseTrace | Should -Contain "Add-DataStore"
         }
     }
 

@@ -1255,6 +1255,14 @@ function Invoke-BootstrapWrapper {
             # declaration the start phase got: in separate mode the datastore must not land in the
             # dedicated Configuration Service database. Forwarded exactly as the start args are.
             if ($SeparateConfigDatabase) { $configureArgs.SeparateConfigDatabase = $true }
+            # A separate-topology restore keeps the Configuration Service database, and with it any
+            # data store an earlier run registered. Hand configure the target this restore resolved and
+            # replaced, so it reuses that data store only after verifying its stored target (or creates
+            # one when CMS holds none) instead of registering a duplicate. A shared-topology restore
+            # replaced the database holding the CMS rows, so it registers as usual.
+            if ($restoreTemplateSupplied -and $SeparateConfigDatabase) {
+                $configureArgs.RestoreTargetDatabaseName = $restoreTargetDatabaseName
+            }
 
             # configure-local-data-store.ps1 throws on failure (no exit code); clear any stale native exit code first.
             $global:LASTEXITCODE = 0

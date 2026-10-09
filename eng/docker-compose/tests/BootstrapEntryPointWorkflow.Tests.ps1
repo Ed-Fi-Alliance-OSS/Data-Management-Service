@@ -2499,6 +2499,213 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
             $log = @(Get-Content -LiteralPath $script:restoreLog)
             $log | Where-Object { $_ -like "seed args=*-SeedTemplate*Populated*" } | Should -Not -BeNullOrEmpty
         }
+
+        It "hands configure the resolved restore target only for a separate-topology restore (<case>)" -ForEach @(
+            @{ Case = "restore, separate"; Restore = $true; Separate = $true; Expected = "configure separate=True restoreTarget=[[]edfi_datamanagementservice]" }
+            @{ Case = "restore, shared"; Restore = $true; Separate = $false; Expected = "configure separate=False restoreTarget=[[]]" }
+            @{ Case = "no restore, separate"; Restore = $false; Separate = $true; Expected = "configure separate=True restoreTarget=[[]]" }
+        ) {
+            # A shared-topology restore replaced the database that held the CMS rows, so it registers
+            # as usual; only a separate-topology restore keeps a Configuration Service database whose
+            # data store must be verified before reuse.
+            @"
+param(
+    [switch] `$SeparateConfigDatabase,
+    [string] `$RestoreTargetDatabaseName,
+    [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
+)
+Add-Content -LiteralPath '$script:restoreLog' -Value "configure separate=`$(`$SeparateConfigDatabase.IsPresent) restoreTarget=[`$RestoreTargetDatabaseName]"
+[pscustomobject]@{ DataStoreIds = [long[]] @(42); SelectedDataStoreIds = [long[]] @(42); RouteContexts = @(); Tenant = ''; SchoolYears = [int[]] @(); HasRouteQualifiedDataStores = `$false }
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "configure-local-data-store.ps1") -Encoding utf8
+
+            $wrapperArguments = @{ EnvironmentFile = $script:repo.EnvFile }
+            if ($Separate) { $wrapperArguments.SeparateConfigDatabase = $true }
+            if ($Restore) {
+                Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
+                $wrapperArguments.RestoreTemplate = "Minimal"
+            }
+            else {
+                New-BootstrapManifestFile -DockerComposeRoot $script:repo.DockerComposeRoot | Out-Null
+            }
+
+            & $script:repo.WrapperScript @wrapperArguments
+
+            @(Get-Content -LiteralPath $script:restoreLog) | Where-Object { $_ -like "configure *" } | Should -BeLike $Expected
+        }
+
+        Context "separate-topology restore through the REAL configure phase" {
+            # Regression for the DMS-1271 L1 r3 failure: a -SeparateConfigDatabase restore onto a stack
+            # that had run before kept the Configuration Service database, configure registered the
+            # default data store a second time, and CMS rejected the duplicate name (400). The real
+            # configure-local-data-store.ps1 runs here behind the restore-sequencing stubs; CMS is
+            # replaced by GLOBAL ALIASES, which win over the functions configure's module imports
+            # define (command precedence resolves aliases first), so each CMS call is recorded.
+            BeforeAll {
+                function script:New-WrapperReuseCipherText {
+                    param([Parameter(Mandatory)] [string]$PlainText)
+
+                    # CMS's own scheme: Base64(IV || AES-CBC/PKCS7), key padded with '0' to 32 characters.
+                    $aes = [System.Security.Cryptography.Aes]::Create()
+                    try {
+                        $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
+                        $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
+                        $aes.Key = [System.Text.Encoding]::UTF8.GetBytes("TestEncryptionKey123456789012345678901234567890".PadRight(32, [char]'0').Substring(0, 32))
+                        $aes.GenerateIV()
+                        $plainTextBytes = [System.Text.Encoding]::UTF8.GetBytes($PlainText)
+                        $encryptor = $aes.CreateEncryptor()
+                        try {
+                            $cipherText = $encryptor.TransformFinalBlock($plainTextBytes, 0, $plainTextBytes.Length)
+                        }
+                        finally {
+                            $encryptor.Dispose()
+                        }
+                        return [Convert]::ToBase64String([byte[]]($aes.IV + $cipherText))
+                    }
+                    finally {
+                        $aes.Dispose()
+                    }
+                }
+
+                $script:wrapperReuseStubNames = @("Add-CmsClient", "Get-CmsToken", "Get-DataStore", "Add-DataStore", "Invoke-Api", "Assert-MssqlTopologyPhysicalConsistency")
+
+                function script:Install-WrapperReuseCmsStub {
+                    param(
+                        [Parameter(Mandatory)]
+                        [string]$LogPath,
+
+                        [object[]]$DataStores = @()
+                    )
+
+                    $log = $LogPath
+                    $stores = @($DataStores)
+                    Set-Item function:global:WrapperReuseStub-AddCmsClient { Add-Content -LiteralPath $log -Value "cms:add-client" }.GetNewClosure()
+                    Set-Item function:global:WrapperReuseStub-GetCmsToken { "token" }
+                    Set-Item function:global:WrapperReuseStub-GetDataStore {
+                        param($CmsUrl, $AccessToken, $Offset, $Limit, $Tenant)
+                        Add-Content -LiteralPath $log -Value "cms:list-data-stores limit=$Limit"
+                        $stores
+                    }.GetNewClosure()
+                    Set-Item function:global:WrapperReuseStub-AddDataStore {
+                        Add-Content -LiteralPath $log -Value "cms:add-data-store"
+                        9001
+                    }.GetNewClosure()
+                    Set-Item function:global:WrapperReuseStub-InvokeApi { Add-Content -LiteralPath $log -Value "cms:invoke-api $($args -join ' ')" }.GetNewClosure()
+                    Set-Item function:global:WrapperReuseStub-AssertMssqlTopologyPhysicalConsistency { Add-Content -LiteralPath $log -Value "cms:mssql-topology-authority" }.GetNewClosure()
+                    foreach ($name in $script:wrapperReuseStubNames) {
+                        Set-Alias -Name $name -Value ("WrapperReuseStub-" + $name.Replace("-", "")) -Scope Global -Force
+                    }
+                }
+
+                function script:Remove-WrapperReuseCmsStub {
+                    # Remove-Alias -Scope Global, not Remove-Item "alias:global:<name>": the provider path
+                    # form silently leaves a global alias in place, and a surviving alias would shadow the
+                    # CMS functions of every later suite in the same process (the CI lane runs one process).
+                    foreach ($name in $script:wrapperReuseStubNames) {
+                        Remove-Alias -Name $name -Scope Global -Force -ErrorAction SilentlyContinue
+                        Remove-Item ("function:global:WrapperReuseStub-" + $name.Replace("-", "")) -Force -ErrorAction SilentlyContinue
+                    }
+                    $survivors = @($script:wrapperReuseStubNames | Where-Object { Get-Alias -Name $_ -Scope Global -ErrorAction SilentlyContinue })
+                    if ($survivors.Count -gt 0) {
+                        throw "Wrapper reuse CMS stub aliases survived cleanup: $($survivors -join ', ')."
+                    }
+                }
+
+                function script:Install-RealConfigurePhase {
+                    Copy-DockerComposeFile -FileName "configure-local-data-store.ps1" -Destination $script:repo.DockerComposeRoot
+                    Copy-Item -LiteralPath (Join-Path $script:sourceRepoRoot "eng/Dms-Management.psm1") -Destination (Join-Path $script:repo.RepoRoot "eng/Dms-Management.psm1")
+                }
+
+                function script:New-WrapperReuseDataStore {
+                    param(
+                        [Parameter(Mandatory)]
+                        [string]$Engine,
+
+                        [string]$DatabaseName = "edfi_datamanagementservice"
+                    )
+
+                    $plainText = if ($Engine -eq "mssql") {
+                        "Server=dms-mssql,1433;Database=$DatabaseName;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true"
+                    }
+                    else {
+                        "host=dms-postgresql;port=5432;username=postgres;password=secret-pass;database=$DatabaseName"
+                    }
+                    $provider = if ($Engine -eq "mssql") { "sqlserver" } else { "postgresql" }
+                    return [pscustomobject]@{
+                        id = 77
+                        name = "Local Development Data Store"
+                        dataStoreType = "Development"
+                        connectionString = (New-WrapperReuseCipherText -PlainText $plainText)
+                        provider = $provider
+                        dataStoreContexts = @()
+                    }
+                }
+            }
+
+            AfterEach {
+                Remove-WrapperReuseCmsStub
+                Get-Module Dms-Management, database-safety |
+                    Where-Object { $_.Path -like "$($script:repo.RepoRoot)*" } |
+                    Remove-Module -Force -ErrorAction SilentlyContinue
+            }
+
+            It "reuses the surviving data store with its id, registers nothing, never provisions, and seeds that id (<engine>)" -ForEach @(
+                @{ Engine = "postgresql" }
+                @{ Engine = "mssql" }
+            ) {
+                Install-RealConfigurePhase
+                Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
+                Install-WrapperReuseCmsStub -LogPath $script:restoreLog -DataStores @(New-WrapperReuseDataStore -Engine $Engine)
+                # Binds -DataStoreId so the recorded ids are values, not the array's type name.
+                @"
+param([long[]] `$DataStoreId, [Parameter(ValueFromRemainingArguments = `$true)] `$Rest)
+Add-Content -LiteralPath '$script:restoreLog' -Value "seed ids=[`$(`$DataStoreId -join ',')]"
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "load-dms-seed-data.ps1") -Encoding utf8
+
+                & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -DatabaseEngine $Engine -SeparateConfigDatabase -RestoreTemplate Minimal -LoadSeedData -SeedTemplate Minimal
+
+                $log = @(Get-Content -LiteralPath $script:restoreLog)
+                $orderedPatterns = @(
+                    "restore:replacement*",
+                    "start-infra env=*",
+                    "cms:add-client",
+                    "cms:list-data-stores limit=500",
+                    "start-dms env=*",
+                    "seed ids=*"
+                )
+                $previousIndex = -1
+                foreach ($pattern in $orderedPatterns) {
+                    $currentIndex = Get-RestoreLogIndex -Log $log -Pattern $pattern
+                    $currentIndex | Should -BeGreaterThan $previousIndex -Because "'$pattern' must follow the previous step"
+                    $previousIndex = $currentIndex
+                }
+                $log | Should -Not -Contain "cms:add-data-store" -Because "a second registration under the same name is what CMS rejected"
+                @($log | Where-Object { $_ -like "cms:invoke-api*" }) | Should -BeNullOrEmpty -Because "the registration is reused as-is, never updated"
+                $log | Should -Not -Contain "provision" -Because "restore mode never provisions, reused data store or not"
+                $log | Should -Contain "seed ids=[77]" -Because "the seed targets the reused data store's existing id"
+            }
+
+            It "refuses a surviving data store for another database after the restore, before DMS starts (<engine>)" -ForEach @(
+                @{ Engine = "postgresql" }
+                @{ Engine = "mssql" }
+            ) {
+                Install-RealConfigurePhase
+                Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
+                Install-WrapperReuseCmsStub -LogPath $script:restoreLog -DataStores @(New-WrapperReuseDataStore -Engine $Engine -DatabaseName "edfi_other")
+
+                $thrown = { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -DatabaseEngine $Engine -SeparateConfigDatabase -RestoreTemplate Minimal } |
+                    Should -Throw -PassThru
+                $thrown.Exception.Message | Should -BeLike "*cannot reuse CMS data store id=77*its database is not the restored target database*This check runs after the restore replaced the target database*"
+
+                $log = @(Get-Content -LiteralPath $script:restoreLog)
+                # The replacement already happened: this refusal does not carry scratch validation's
+                # guarantee that the target is untouched.
+                (Get-RestoreLogIndex -Log $log -Pattern "restore:replacement*") |
+                    Should -BeLessThan (Get-RestoreLogIndex -Log $log -Pattern "cms:list-data-stores*")
+                @($log | Where-Object { $_ -like "start-dms*" }) | Should -BeNullOrEmpty
+                $log | Should -Not -Contain "cms:add-data-store"
+                $log | Should -Not -Contain "provision"
+            }
+        }
     }
 
     # =========================================================================

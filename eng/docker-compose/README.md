@@ -560,6 +560,27 @@ $packageDirectory = 'C:\path\to\packages'
    ./bootstrap-local-dms.ps1 -RestoreTemplate $kind -PackageDirectory $packageDirectory
    ```
 
+### Restoring into a stack with a separate Configuration Service database
+
+With `-SeparateConfigDatabase` the restore replaces only the DMS datastore; the dedicated
+`edfi_configurationservice` database is never touched, so on a stack that ran before it still holds
+the data store that earlier run registered. After the restore the wrapper's configure phase lists the
+CMS data stores and:
+
+* registers the data store as usual when CMS holds none;
+* reuses the existing data store, with its id and without changing it, when it is the only one, is
+  not route-qualified, and its stored connection string (decrypted with
+  `DMS_CONFIG_DATABASE_ENCRYPTION_KEY`) names the composed database service (`dms-postgresql:5432` or
+  `dms-mssql,1433`) and exactly the restored database;
+* refuses anything else: several data stores, a route-qualified one, a value that cannot be decrypted,
+  or a different engine, server, port, or database. A matching database name alone is not enough.
+
+This check runs **after** the target database was replaced. A refusal here stops before DMS starts,
+but unlike a scratch-validation refusal (next section) it does not leave the target untouched: the
+target already holds the restored package. Correct or remove the stale data store registration in
+CMS, then rerun the restore. The refusal names the data store id and the property that differs; it
+never prints the connection string, its credentials, or the database names.
+
 ### Recovering from a failed scratch validation
 
 When scratch validation refuses a package, the restore drops the scratch and preflight
