@@ -153,6 +153,7 @@ Authorization is out of scope for this story, but the query execution SQL should
      deterministic response? The story says “resource-scoped compile-time omission,” but not the exact runtime contract.
   3. What exact string-comparison semantics do you want across PostgreSQL and SQL Server: ordinal/case-sensitive matching, or provider/default-collation behavior? The current E2E query
      suite has ignored mixed-case-value scenarios, so this looks unresolved and will affect both SQL generation and test expectations.
+     Superseded by [natural-key-resolution.md §Query-time string filters](../../design-docs/natural-key-resolution.md#query-time-string-filters-fieldvalue) (DMS-1443): SQL Server string `=` filters follow the column collation.
   4. For the pre-auth interim, should relational GET-many be enabled only for requests/resources with no row-level authorization filtering, or do you want the entire relational GET-many
      surface to stay 501 until auth is embedded in the page-selection SQL? The story says “501 for secured resources,” but the rollout boundary still needs a concrete rule.
   5. For test scope, do you want DMS-993 to stop at provider-specific backend integration tests plus unit/golden coverage, or should we also enable/migrate selected existing E2E query
