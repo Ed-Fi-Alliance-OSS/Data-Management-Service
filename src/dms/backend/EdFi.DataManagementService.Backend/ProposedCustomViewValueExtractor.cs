@@ -125,12 +125,19 @@ internal static class ProposedCustomViewValueExtractor
                         );
                     }
 
-                    sqlValues.Add(
-                        new ProposedCustomViewRuntimeValue(
-                            check,
-                            GetBoundSqlValue(rootRow.Values[bindingIndex])
-                        )
-                    );
+                    var basisValue = GetBoundSqlValue(rootRow.Values[bindingIndex]);
+                    if (
+                        proposed.Binding.KeyScalarKind is External.ScalarKind.Int32
+                        && basisValue is not null
+                        && basisValue is not int
+                    )
+                    {
+                        return Invalid(
+                            $"Proposed custom view authorization expected an Int32 descriptor key for column '{proposed.Binding.Column.Value}' but found '{basisValue.GetType().Name}'."
+                        );
+                    }
+
+                    sqlValues.Add(new ProposedCustomViewRuntimeValue(check, basisValue));
                     continue;
 
                 default:

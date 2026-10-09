@@ -16,6 +16,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
@@ -922,6 +923,39 @@ public class Given_PostgresqlDescriptorWriteHandler
         {
             WritePrecondition = writePrecondition ?? new WritePrecondition.None(),
         };
+    }
+
+    [Test]
+    public async Task It_keeps_DocumentCacheMaterializer_Descriptor_updates_and_work_on_the_owning_document()
+    {
+        using var scope = CreateConfiguredScope();
+        await using var connection = new Npgsql.NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await CompactDescriptorCacheScenario.ExecuteAsync(
+            connection,
+            _database.MappingSet,
+            _database.ConnectionString,
+            scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>(),
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheMaterializer>(),
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheWriter>(),
+            body => CreatePostRequest(_database.Fixture.SchoolTypeDescriptorResource, body)
+        );
+    }
+
+    [Test]
+    public async Task It_preserves_compact_descriptor_RI_CRUD_and_conflict_behavior()
+    {
+        using var scope = CreateConfiguredScope();
+        await using var connection = new NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await CompactDescriptorWriteScenario.ExecuteAsync(
+            connection,
+            scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>(),
+            scope.ServiceProvider.GetRequiredService<IDescriptorReadHandler>(),
+            (resource, body) => CreatePostRequest(resource, body),
+            _database.Fixture.SchoolTypeDescriptorResource,
+            _database.Fixture.AcademicSubjectDescriptorResource
+        );
     }
 
     private static ServiceProvider CreateServiceProvider()

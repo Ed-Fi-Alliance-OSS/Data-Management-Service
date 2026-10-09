@@ -18,7 +18,8 @@ public enum MaterializedDocumentFixtureSqlDialect
 
 public sealed record MaterializedDocumentFixtureSqlCommand(
     string CommandText,
-    IReadOnlyList<MaterializedDocumentFixtureSqlParameter> Parameters
+    IReadOnlyList<MaterializedDocumentFixtureSqlParameter> Parameters,
+    int? DescriptorKey = null
 );
 
 public sealed record MaterializedDocumentFixtureSqlParameter(
@@ -72,7 +73,7 @@ public sealed class MaterializedDocumentFixtureSeeder(
         return commands;
     }
 
-    public async Task SeedAsync(
+    public async Task<IReadOnlyDictionary<int, SeededDescriptor>> SeedAsync(
         DbConnection connection,
         MaterializedDocumentFixture fixture,
         CancellationToken cancellationToken = default
@@ -80,6 +81,8 @@ public sealed class MaterializedDocumentFixtureSeeder(
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(fixture);
+
+        Dictionary<int, SeededDescriptor> descriptors = [];
 
         foreach (var commandSpec in BuildSetupCommands(fixture))
         {
@@ -90,13 +93,39 @@ public sealed class MaterializedDocumentFixtureSeeder(
             {
                 var parameter = command.CreateParameter();
                 parameter.ParameterName = parameterSpec.Name;
-                parameter.Value = parameterSpec.Value ?? DBNull.Value;
+                parameter.Value = parameterSpec.Value
+                    is MaterializedDocumentFixtureDescriptorReference reference
+                    ? descriptors[reference.DescriptorKey].DescriptorId
+                    : parameterSpec.Value ?? DBNull.Value;
                 parameterSpec.ConfigureParameter?.Invoke(parameter);
                 command.Parameters.Add(parameter);
             }
 
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            if (commandSpec.DescriptorKey is int descriptorKey)
+            {
+                var generatedId = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                if (generatedId is not int descriptorId || descriptorId <= 0)
+                {
+                    throw new InvalidOperationException(
+                        "Descriptor insert must return its generated positive int key."
+                    );
+                }
+                var documentId = fixture
+                    .SourceSetup.Descriptors.Single(row => row.DescriptorId == descriptorKey)
+                    .DocumentId;
+                if (descriptorId == documentId)
+                {
+                    throw new InvalidOperationException("Fixture descriptor and document keys must differ.");
+                }
+                descriptors.Add(descriptorKey, new(descriptorId, documentId));
+            }
+            else
+            {
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
         }
+
+        return descriptors;
     }
 
     private void AddSchemaCommands(
@@ -169,16 +198,20 @@ public sealed class MaterializedDocumentFixtureSeeder(
                     "dms",
                     "Descriptor",
                     $"""
-                    {_dialect.Quote("DocumentId")} bigint NOT NULL PRIMARY KEY,
+                    {_dialect.Quote(
+                        "DescriptorId"
+                    )} {_dialect.DescriptorIdentityColumnType} NOT NULL PRIMARY KEY,
+                    {_dialect.Quote("DocumentId")} bigint NOT NULL UNIQUE REFERENCES {_dialect.QualifiedTable(
+                        "dms",
+                        "Document"
+                    )} ({_dialect.Quote("DocumentId")}) ON DELETE CASCADE,
                     {_dialect.Quote("ResourceKeyId")} smallint NOT NULL,
                     {_dialect.Quote("Namespace")} {_dialect.Text(255)} NOT NULL,
                     {_dialect.Quote("CodeValue")} {_dialect.Text(50)} NOT NULL,
                     {_dialect.Quote("ShortDescription")} {_dialect.Text(75)} NOT NULL,
                     {_dialect.Quote("Description")} {_dialect.Text(1024)} NULL,
                     {_dialect.Quote("EffectiveBeginDate")} date NULL,
-                    {_dialect.Quote("EffectiveEndDate")} date NULL,
-                    {_dialect.Quote("Discriminator")} {_dialect.Text(128)} NOT NULL,
-                    {_dialect.Quote("Uri")} {_dialect.Text(512)} NULL
+                    {_dialect.Quote("EffectiveEndDate")} date NULL
                     """
                 ),
                 []
@@ -338,13 +371,16 @@ public sealed class MaterializedDocumentFixtureSeeder(
                 ["EffectiveEndDate"] = JsonNodeDateValue(
                     JsonObjectValueOrNull(descriptor.Values, "EffectiveEndDate")
                 ),
-                ["Discriminator"] =
-                    JsonNodeValue(JsonObjectValueOrNull(descriptor.Values, "Discriminator"))
-                    ?? descriptor.CodeValue,
-                ["Uri"] = $"{descriptor.Namespace}#{descriptor.CodeValue}",
             };
 
-            commands.Add(BuildInsertCommand("dms", "Descriptor", values));
+            var insert = BuildInsertCommand("dms", "Descriptor", values);
+            commands.Add(
+                insert with
+                {
+                    CommandText = _dialect.ReturnDescriptorId(insert.CommandText),
+                    DescriptorKey = descriptor.DescriptorId,
+                }
+            );
         }
     }
 
@@ -366,7 +402,11 @@ public sealed class MaterializedDocumentFixtureSeeder(
             {
                 if (value.Key != "DocumentId")
                 {
-                    values[value.Key] = JsonNodeValue(value.Value, value.Key);
+                    values[value.Key] =
+                        value.Key.EndsWith("DescriptorId", StringComparison.Ordinal)
+                        && value.Value is not null
+                            ? new MaterializedDocumentFixtureDescriptorReference(value.Value.GetValue<int>())
+                            : JsonNodeValue(value.Value, value.Key);
                 }
             }
 
@@ -445,6 +485,11 @@ public sealed class MaterializedDocumentFixtureSeeder(
 
     private string InferColumnType(string columnName, IReadOnlyList<JsonNode> values)
     {
+        if (columnName.EndsWith("DescriptorId", StringComparison.Ordinal))
+        {
+            return "integer";
+        }
+
         if (values.Count == 0)
         {
             return _dialect.Text(1024);
@@ -517,6 +562,14 @@ public sealed class MaterializedDocumentFixtureSeeder(
             );
         }
 
+        foreach (var descriptor in fixture.SourceSetup.Descriptors)
+        {
+            resourceKeys.TryAdd(
+                descriptor.ResourceKeyId,
+                new(descriptor.ResourceKeyId, descriptor.ProjectName, descriptor.ResourceName, "5.2.0")
+            );
+        }
+
         foreach (var document in fixture.SourceSetup.Documents)
         {
             resourceKeys.TryAdd(
@@ -560,9 +613,7 @@ public sealed class MaterializedDocumentFixtureSeeder(
     }
 
     private static bool IsBigIntColumn(string columnName) =>
-        columnName.EndsWith("DocumentId", StringComparison.Ordinal)
-        || columnName.EndsWith("DescriptorId", StringComparison.Ordinal)
-        || columnName == "CollectionItemId";
+        columnName.EndsWith("DocumentId", StringComparison.Ordinal) || columnName == "CollectionItemId";
 
     private static bool IsDateColumn(string columnName) =>
         columnName.EndsWith("Date", StringComparison.Ordinal);
@@ -634,6 +685,10 @@ public sealed class MaterializedDocumentFixtureSeeder(
 
     private abstract class FixtureSqlDialect
     {
+        public abstract string DescriptorIdentityColumnType { get; }
+
+        public abstract string ReturnDescriptorId(string insert);
+
         public abstract string UuidColumnType { get; }
 
         public abstract string TimestampWithOffsetColumnType { get; }
@@ -688,6 +743,10 @@ public sealed class MaterializedDocumentFixtureSeeder(
 
     private sealed class PostgresqlFixtureSqlDialect : FixtureSqlDialect
     {
+        public override string DescriptorIdentityColumnType => "int GENERATED ALWAYS AS IDENTITY";
+
+        public override string ReturnDescriptorId(string insert) => insert + " RETURNING \"DescriptorId\";";
+
         public override string UuidColumnType => "uuid";
 
         public override string TimestampWithOffsetColumnType => "timestamp with time zone";
@@ -747,6 +806,17 @@ public sealed class MaterializedDocumentFixtureSeeder(
 
     private sealed class MssqlFixtureSqlDialect : FixtureSqlDialect
     {
+        public override string DescriptorIdentityColumnType => "int IDENTITY(1,1)";
+
+        public override string ReturnDescriptorId(string insert) =>
+            "DECLARE @descriptor TABLE ([DescriptorId] int); "
+            + insert.Replace(
+                " VALUES (",
+                " OUTPUT inserted.[DescriptorId] INTO @descriptor VALUES (",
+                StringComparison.Ordinal
+            )
+            + "; SELECT [DescriptorId] FROM @descriptor;";
+
         public override string UuidColumnType => "uniqueidentifier";
 
         public override string TimestampWithOffsetColumnType => "datetime2(7)";
@@ -828,3 +898,5 @@ public sealed class MaterializedDocumentFixtureSeederOptions
 
     public bool SeedResourceKeys { get; init; } = true;
 }
+
+public sealed record MaterializedDocumentFixtureDescriptorReference(int DescriptorKey);

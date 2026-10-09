@@ -55,7 +55,7 @@ public static class PgsqlPerfAuthorizationSeedSql
                 {seed.SchoolDocumentId},
                 ((k * 2 - 1) / 9) * 10 + ((k * 2 - 1) % 9) + 2,
                 'perf-' || lpad((k * 2)::text, 9, '0'),
-                {seed.GradeLevelDescriptorDocumentId},
+                @{PerfFixtureLoaderParameters.EntryGradeLevelDescriptorId},
                 DATE '{PerfAuthorizationSeedDefinition.EntryDateIso}'
             FROM generate_series(@{PerfFixtureLoaderParameters.FromOrdinal}, @{PerfFixtureLoaderParameters.ToOrdinal}) AS k;
             """;
@@ -162,9 +162,25 @@ public static class PgsqlPerfAuthorizationSeedSql
                 "grade-level-descriptor-count",
                 $"""
                 SELECT COUNT(*) FROM "dms"."Descriptor"
-                WHERE "Discriminator" = '{PerfAuthorizationSeedDefinition.GradeLevelDescriptorResource}';
+                WHERE "ResourceKeyId" = (
+                    SELECT "ResourceKeyId" FROM "dms"."ResourceKey"
+                    WHERE "ProjectName" = '{PerfFixtureDefinition.ProjectName}'
+                        AND "ResourceName" = '{PerfAuthorizationSeedDefinition.GradeLevelDescriptorResource}');
                 """,
                 1
+            ),
+            new(
+                "ssa-compact-grade-level-binding",
+                $"""
+                SELECT COUNT(*) FROM "edfi"."StudentSchoolAssociation" ssa
+                INNER JOIN "dms"."Descriptor" descriptor
+                    ON descriptor."DescriptorId" = ssa."EntryGradeLevelDescriptor_DescriptorId"
+                INNER JOIN "dms"."ResourceKey" rk ON rk."ResourceKeyId" = descriptor."ResourceKeyId"
+                WHERE descriptor."DocumentId" = {seed.GradeLevelDescriptorDocumentId}
+                    AND rk."ProjectName" = '{PerfFixtureDefinition.ProjectName}'
+                    AND rk."ResourceName" = '{PerfAuthorizationSeedDefinition.GradeLevelDescriptorResource}';
+                """,
+                seed.EnrolledStudentCount
             ),
             new(
                 "max-document-id",

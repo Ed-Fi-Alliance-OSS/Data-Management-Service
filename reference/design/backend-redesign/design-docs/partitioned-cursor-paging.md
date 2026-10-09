@@ -39,10 +39,17 @@ Traditional `limit`/`offset` paging has two structural problems for bulk consume
 
 Cursor paging replaces "skip `n` rows" with "seek to an anchor value and take `pageSize` rows".
 Because every regular-resource root table and `dms.Descriptor` order collection results by an
-indexed column — the root `DocumentId` primary key, or the indexed `ContentVersion` mirror when
+indexed column — `DocumentId`, or the indexed `ContentVersion` mirror when
 the request resolves that anchor, per
 [change-queries.md](change-queries.md#page-selection-ordering) — the seek is a range scan whose
 cost depends on the page size, not on how far into the collection the page sits.
+
+Regular-resource roots have a `DocumentId` primary key. The shared descriptor root instead has
+an independently allocated `int DescriptorId` primary key and a unique, non-null `bigint DocumentId`
+association. Descriptor paging uses `IX_Descriptor_ResourceKeyId_DocumentId`, or
+`IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` for the resolved change-version anchor.
+Tokens, partition boundaries, and `HighestSelectedAnchor` retain their `Int64` document/version
+contract; compact descriptor identity does not change the ordering or token markers.
 
 `/partitions` complements this by computing balanced, non-overlapping ranges over that same anchor,
 across the filtered, authorized candidate set. Each returned token is a self-contained starting point, so
@@ -524,7 +531,8 @@ from making an authorization decision from client-supplied text.
 
 Both PostgreSQL and SQL Server already page regular resources and descriptors in ascending
 `DocumentId` order (see [transactions-and-concurrency.md](transactions-and-concurrency.md)), and
-every page root has a `DocumentId` primary key. That existing ordering contract is the entire
+every page root has an indexed `DocumentId` (the regular-resource primary key or the descriptor's
+unique document association with a ResourceKeyId-leading paging index). That existing ordering contract is the entire
 foundation of this feature; cursor paging adds a range predicate to it rather than a new sort.
 
 Extend page selection with an explicit paging-mode choice:

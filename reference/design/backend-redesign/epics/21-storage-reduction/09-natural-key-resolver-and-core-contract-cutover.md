@@ -54,6 +54,9 @@ referential IDs from resolver-facing contracts while preserving public API behav
 - Move descriptor query preprocessing to compiled metadata, add path-attributed malformed-value 400
   responses before resolver calls, and retain empty-page behavior for valid missing or wrong-type
   descriptor URIs.
+- Preserve `int DescriptorId` filter/write bindings and `long DocumentId` metadata/lock/cache roles
+  through the contract cutover. DMS-1404 already supplies compiled descriptor query targets and
+  two-ID RI results; this story changes matching/validation, not those storage roles.
 - Move reference-array duplicate validation from referential IDs to the schema-derived structural
   comparer.
 
@@ -89,5 +92,7 @@ intermediate state. Do not "fix" it by re-adding lowercasing; DMS-1452 and DMS-1
   pass unconditionally from DMS-1452 onward on both engines. It is tagged `@MssqlRepresentative`;
   without the tag the SQL Server E2E lane does not run it.
 - Production composition contains no coexistence arm for the old hash resolver.
+- Unequal-ID descriptor query, hydration, authorization-bridge and replay tests retain compact
+  references and owning-document operations under the new resolver.
 - If production-shaped performance evidence regresses, follow the documented capture-predicate
   contingency ladder; reverting composite write-path batching remains the last resort.

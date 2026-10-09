@@ -504,7 +504,7 @@ public static class HydrationTestHelper
                 new DbColumnModel(
                     ColumnName: new DbColumnName("AttemptStatusDescriptor_DescriptorId"),
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: attemptStatusDescriptorPath,
                     TargetResource: new QualifiedResourceName("Ed-Fi", "AttemptStatusDescriptor")
@@ -708,7 +708,7 @@ public static class HydrationTestHelper
                 new DbColumnModel(
                     ColumnName: new DbColumnName("GradeLevelDescriptor_DescriptorId"),
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: gradeLevelDescriptorPath,
                     TargetResource: new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor")

@@ -1045,7 +1045,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     2026,
                     _seedData.StudentDocumentId,
                     "10001",
-                    _seedData.FallTermDescriptorDocumentId,
+                    _seedData.FallTermDescriptorId,
                     18.500m,
                     "2028-05-20"
                 )
@@ -1133,7 +1133,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     2026,
                     _seedData.StudentDocumentId,
                     "10001",
-                    _seedData.FallTermDescriptorDocumentId,
+                    _seedData.FallTermDescriptorId,
                     21.750m,
                     "2028-05-24"
                 )
@@ -1589,26 +1589,22 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             studentResourceKeyId
         );
 
-        var fallTermDescriptorDocumentId = await InsertDescriptorAsync(
+        var fallTermDescriptor = await InsertDescriptorAsync(
             Guid.Parse("44444444-4444-4444-4444-444444444444"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
-            FallTermDescriptorUri,
             "uri://ed-fi.org/TermDescriptor",
             "Fall",
             "Fall"
         );
         await InsertReferentialIdentityAsync(
             CreateDescriptorReferentialId("Ed-Fi", "TermDescriptor", FallTermDescriptorUri),
-            fallTermDescriptorDocumentId,
+            fallTermDescriptor.DocumentId,
             termDescriptorResourceKeyId
         );
 
-        var honorRollAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
+        var honorRollAcademicHonorCategoryDescriptor = await InsertDescriptorAsync(
             Guid.Parse("55555555-5555-5555-5555-555555555555"),
             academicHonorCategoryDescriptorResourceKeyId,
-            "Ed-Fi:AcademicHonorCategoryDescriptor",
-            HonorRollAcademicHonorCategoryDescriptorUri,
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
             "HonorRoll",
             "Honor Roll"
@@ -1619,15 +1615,13 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "AcademicHonorCategoryDescriptor",
                 HonorRollAcademicHonorCategoryDescriptorUri
             ),
-            honorRollAcademicHonorCategoryDescriptorDocumentId,
+            honorRollAcademicHonorCategoryDescriptor.DocumentId,
             academicHonorCategoryDescriptorResourceKeyId
         );
 
-        var scholarAthleteAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
+        var scholarAthleteAcademicHonorCategoryDescriptor = await InsertDescriptorAsync(
             Guid.Parse("66666666-6666-6666-6666-666666666666"),
             academicHonorCategoryDescriptorResourceKeyId,
-            "Ed-Fi:AcademicHonorCategoryDescriptor",
-            ScholarAthleteAcademicHonorCategoryDescriptorUri,
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
             "ScholarAthlete",
             "Scholar Athlete"
@@ -1638,15 +1632,13 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "AcademicHonorCategoryDescriptor",
                 ScholarAthleteAcademicHonorCategoryDescriptorUri
             ),
-            scholarAthleteAcademicHonorCategoryDescriptorDocumentId,
+            scholarAthleteAcademicHonorCategoryDescriptor.DocumentId,
             academicHonorCategoryDescriptorResourceKeyId
         );
 
-        var communityServiceAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
+        var communityServiceAcademicHonorCategoryDescriptor = await InsertDescriptorAsync(
             Guid.Parse("77777777-7777-7777-7777-777777777777"),
             academicHonorCategoryDescriptorResourceKeyId,
-            "Ed-Fi:AcademicHonorCategoryDescriptor",
-            CommunityServiceAcademicHonorCategoryDescriptorUri,
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
             "CommunityService",
             "Community Service"
@@ -1657,60 +1649,52 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "AcademicHonorCategoryDescriptor",
                 CommunityServiceAcademicHonorCategoryDescriptorUri
             ),
-            communityServiceAcademicHonorCategoryDescriptorDocumentId,
+            communityServiceAcademicHonorCategoryDescriptor.DocumentId,
             academicHonorCategoryDescriptorResourceKeyId
         );
 
-        var standardDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var standardDiplomaTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("88888888-8888-8888-8888-888888888888"),
             diplomaTypeDescriptorResourceKeyId,
-            "Ed-Fi:DiplomaTypeDescriptor",
-            StandardDiplomaTypeDescriptorUri,
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "StandardDiploma",
             "Standard Diploma"
         );
         await InsertReferentialIdentityAsync(
             CreateDescriptorReferentialId("Ed-Fi", "DiplomaTypeDescriptor", StandardDiplomaTypeDescriptorUri),
-            standardDiplomaTypeDescriptorDocumentId,
+            standardDiplomaTypeDescriptor.DocumentId,
             diplomaTypeDescriptorResourceKeyId
         );
 
-        var careerDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var careerDiplomaTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("99999999-9999-9999-9999-999999999999"),
             diplomaTypeDescriptorResourceKeyId,
-            "Ed-Fi:DiplomaTypeDescriptor",
-            CareerDiplomaTypeDescriptorUri,
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "CareerDiploma",
             "Career Diploma"
         );
         await InsertReferentialIdentityAsync(
             CreateDescriptorReferentialId("Ed-Fi", "DiplomaTypeDescriptor", CareerDiplomaTypeDescriptorUri),
-            careerDiplomaTypeDescriptorDocumentId,
+            careerDiplomaTypeDescriptor.DocumentId,
             diplomaTypeDescriptorResourceKeyId
         );
 
-        var honorsDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var honorsDiplomaTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
             diplomaTypeDescriptorResourceKeyId,
-            "Ed-Fi:DiplomaTypeDescriptor",
-            HonorsDiplomaTypeDescriptorUri,
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "HonorsDiploma",
             "Honors Diploma"
         );
         await InsertReferentialIdentityAsync(
             CreateDescriptorReferentialId("Ed-Fi", "DiplomaTypeDescriptor", HonorsDiplomaTypeDescriptorUri),
-            honorsDiplomaTypeDescriptorDocumentId,
+            honorsDiplomaTypeDescriptor.DocumentId,
             diplomaTypeDescriptorResourceKeyId
         );
 
-        var cumulativeGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var cumulativeGradePointAverageTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
             gradePointAverageTypeDescriptorResourceKeyId,
-            "Ed-Fi:GradePointAverageTypeDescriptor",
-            CumulativeGradePointAverageTypeDescriptorUri,
             "uri://ed-fi.org/GradePointAverageTypeDescriptor",
             "Cumulative",
             "Cumulative"
@@ -1721,15 +1705,13 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "GradePointAverageTypeDescriptor",
                 CumulativeGradePointAverageTypeDescriptorUri
             ),
-            cumulativeGradePointAverageTypeDescriptorDocumentId,
+            cumulativeGradePointAverageTypeDescriptor.DocumentId,
             gradePointAverageTypeDescriptorResourceKeyId
         );
 
-        var sessionGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var sessionGradePointAverageTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
             gradePointAverageTypeDescriptorResourceKeyId,
-            "Ed-Fi:GradePointAverageTypeDescriptor",
-            SessionGradePointAverageTypeDescriptorUri,
             "uri://ed-fi.org/GradePointAverageTypeDescriptor",
             "Session",
             "Session"
@@ -1740,15 +1722,13 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "GradePointAverageTypeDescriptor",
                 SessionGradePointAverageTypeDescriptorUri
             ),
-            sessionGradePointAverageTypeDescriptorDocumentId,
+            sessionGradePointAverageTypeDescriptor.DocumentId,
             gradePointAverageTypeDescriptorResourceKeyId
         );
 
-        var weightedGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var weightedGradePointAverageTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
             gradePointAverageTypeDescriptorResourceKeyId,
-            "Ed-Fi:GradePointAverageTypeDescriptor",
-            WeightedGradePointAverageTypeDescriptorUri,
             "uri://ed-fi.org/GradePointAverageTypeDescriptor",
             "Weighted",
             "Weighted"
@@ -1759,15 +1739,13 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "GradePointAverageTypeDescriptor",
                 WeightedGradePointAverageTypeDescriptorUri
             ),
-            weightedGradePointAverageTypeDescriptorDocumentId,
+            weightedGradePointAverageTypeDescriptor.DocumentId,
             gradePointAverageTypeDescriptorResourceKeyId
         );
 
-        var meritRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var meritRecognitionTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
             recognitionTypeDescriptorResourceKeyId,
-            "Ed-Fi:RecognitionTypeDescriptor",
-            MeritRecognitionTypeDescriptorUri,
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Merit",
             "Merit"
@@ -1778,15 +1756,13 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "RecognitionTypeDescriptor",
                 MeritRecognitionTypeDescriptorUri
             ),
-            meritRecognitionTypeDescriptorDocumentId,
+            meritRecognitionTypeDescriptor.DocumentId,
             recognitionTypeDescriptorResourceKeyId
         );
 
-        var leadershipRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var leadershipRecognitionTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff"),
             recognitionTypeDescriptorResourceKeyId,
-            "Ed-Fi:RecognitionTypeDescriptor",
-            LeadershipRecognitionTypeDescriptorUri,
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Leadership",
             "Leadership"
@@ -1797,15 +1773,13 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "RecognitionTypeDescriptor",
                 LeadershipRecognitionTypeDescriptorUri
             ),
-            leadershipRecognitionTypeDescriptorDocumentId,
+            leadershipRecognitionTypeDescriptor.DocumentId,
             recognitionTypeDescriptorResourceKeyId
         );
 
-        var attendanceRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var attendanceRecognitionTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("12121212-1212-1212-1212-121212121212"),
             recognitionTypeDescriptorResourceKeyId,
-            "Ed-Fi:RecognitionTypeDescriptor",
-            AttendanceRecognitionTypeDescriptorUri,
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Attendance",
             "Attendance"
@@ -1816,7 +1790,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "RecognitionTypeDescriptor",
                 AttendanceRecognitionTypeDescriptorUri
             ),
-            attendanceRecognitionTypeDescriptorDocumentId,
+            attendanceRecognitionTypeDescriptor.DocumentId,
             recognitionTypeDescriptorResourceKeyId
         );
 
@@ -1824,19 +1798,19 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             schoolDocumentId,
             schoolYearTypeDocumentId,
             studentDocumentId,
-            fallTermDescriptorDocumentId,
-            honorRollAcademicHonorCategoryDescriptorDocumentId,
-            scholarAthleteAcademicHonorCategoryDescriptorDocumentId,
-            communityServiceAcademicHonorCategoryDescriptorDocumentId,
-            standardDiplomaTypeDescriptorDocumentId,
-            careerDiplomaTypeDescriptorDocumentId,
-            honorsDiplomaTypeDescriptorDocumentId,
-            cumulativeGradePointAverageTypeDescriptorDocumentId,
-            sessionGradePointAverageTypeDescriptorDocumentId,
-            weightedGradePointAverageTypeDescriptorDocumentId,
-            meritRecognitionTypeDescriptorDocumentId,
-            leadershipRecognitionTypeDescriptorDocumentId,
-            attendanceRecognitionTypeDescriptorDocumentId
+            fallTermDescriptor.DescriptorId,
+            honorRollAcademicHonorCategoryDescriptor.DescriptorId,
+            scholarAthleteAcademicHonorCategoryDescriptor.DescriptorId,
+            communityServiceAcademicHonorCategoryDescriptor.DescriptorId,
+            standardDiplomaTypeDescriptor.DescriptorId,
+            careerDiplomaTypeDescriptor.DescriptorId,
+            honorsDiplomaTypeDescriptor.DescriptorId,
+            cumulativeGradePointAverageTypeDescriptor.DescriptorId,
+            sessionGradePointAverageTypeDescriptor.DescriptorId,
+            weightedGradePointAverageTypeDescriptor.DescriptorId,
+            meritRecognitionTypeDescriptor.DescriptorId,
+            leadershipRecognitionTypeDescriptor.DescriptorId,
+            attendanceRecognitionTypeDescriptor.DescriptorId
         );
     }
 
@@ -1867,19 +1841,18 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<SeededDescriptor> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
@@ -1887,9 +1860,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
+                "Description"
             )
             VALUES (
                 @documentId,
@@ -1897,22 +1868,18 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
-            );
+                @description
+            ) RETURNING "DescriptorId";
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),
-            new NpgsqlParameter("description", shortDescription),
-            new NpgsqlParameter("discriminator", discriminator),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("description", shortDescription)
         );
 
-        return documentId;
+        return new(descriptorId, documentId);
     }
 
     private async Task InsertSchoolAsync(long documentId, int schoolId, string nameOfInstitution)
@@ -2128,7 +2095,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 PostAsUpdateIntegrationTestSupport.GetInt32(rows[0], "SchoolYear_SchoolYear"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Student_DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetString(rows[0], "Student_StudentUniqueId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "TermDescriptor_DescriptorId"),
+                PostAsUpdateIntegrationTestSupport.GetInt32(rows[0], "TermDescriptor_DescriptorId"),
                 PostAsUpdateIntegrationTestSupport.GetDecimal(rows[0], "CumulativeEarnedCredits"),
                 PostAsUpdateIntegrationTestSupport.GetString(rows[0], "ProjectedGraduationDate")
             )
@@ -2184,10 +2151,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
                 PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "StudentAcademicRecord_DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(
-                    row,
-                    "AcademicHonorCategoryDescriptor_DescriptorId"
-                ),
+                (int)row["AcademicHonorCategoryDescriptor_DescriptorId"]!,
                 PostAsUpdateIntegrationTestSupport.GetString(row, "HonorDescription"),
                 PostAsUpdateIntegrationTestSupport.GetString(row, "IssuerName")
             ))
@@ -2218,7 +2182,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
                 PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "StudentAcademicRecord_DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(row, "DiplomaTypeDescriptor_DescriptorId"),
+                (int)row["DiplomaTypeDescriptor_DescriptorId"]!,
                 PostAsUpdateIntegrationTestSupport.GetString(row, "DiplomaAwardDate"),
                 PostAsUpdateIntegrationTestSupport.GetString(row, "DiplomaDescription")
             ))
@@ -2250,10 +2214,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
                 PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "StudentAcademicRecord_DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(
-                    row,
-                    "GradePointAverageTypeDescriptor_DescriptorId"
-                ),
+                (int)row["GradePointAverageTypeDescriptor_DescriptorId"]!,
                 PostAsUpdateIntegrationTestSupport.GetDecimal(row, "GradePointAverageValue"),
                 PostAsUpdateIntegrationTestSupport.GetDecimal(row, "MaxGradePointAverageValue"),
                 PostAsUpdateIntegrationTestSupport.GetBoolean(row, "IsCumulative")
@@ -2285,7 +2246,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
                 PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "StudentAcademicRecord_DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(row, "RecognitionTypeDescriptor_DescriptorId"),
+                (int)row["RecognitionTypeDescriptor_DescriptorId"]!,
                 PostAsUpdateIntegrationTestSupport.GetString(row, "RecognitionDescription"),
                 PostAsUpdateIntegrationTestSupport.GetString(row, "IssuerName")
             ))
@@ -2422,45 +2383,43 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             StringComparer.Ordinal
         );
 
-    private long ResolveAcademicHonorDescriptorId(string descriptorUri)
+    private int ResolveAcademicHonorDescriptorId(string descriptorUri)
     {
         return descriptorUri switch
         {
             HonorRollAcademicHonorCategoryDescriptorUri =>
-                _seedData.HonorRollAcademicHonorCategoryDescriptorDocumentId,
+                _seedData.HonorRollAcademicHonorCategoryDescriptorId,
             ScholarAthleteAcademicHonorCategoryDescriptorUri =>
-                _seedData.ScholarAthleteAcademicHonorCategoryDescriptorDocumentId,
+                _seedData.ScholarAthleteAcademicHonorCategoryDescriptorId,
             CommunityServiceAcademicHonorCategoryDescriptorUri =>
-                _seedData.CommunityServiceAcademicHonorCategoryDescriptorDocumentId,
+                _seedData.CommunityServiceAcademicHonorCategoryDescriptorId,
             _ => throw new InvalidOperationException(
                 $"Unsupported academic honor category descriptor '{descriptorUri}'."
             ),
         };
     }
 
-    private long ResolveDiplomaDescriptorId(string descriptorUri)
+    private int ResolveDiplomaDescriptorId(string descriptorUri)
     {
         return descriptorUri switch
         {
-            StandardDiplomaTypeDescriptorUri => _seedData.StandardDiplomaTypeDescriptorDocumentId,
-            CareerDiplomaTypeDescriptorUri => _seedData.CareerDiplomaTypeDescriptorDocumentId,
-            HonorsDiplomaTypeDescriptorUri => _seedData.HonorsDiplomaTypeDescriptorDocumentId,
+            StandardDiplomaTypeDescriptorUri => _seedData.StandardDiplomaTypeDescriptorId,
+            CareerDiplomaTypeDescriptorUri => _seedData.CareerDiplomaTypeDescriptorId,
+            HonorsDiplomaTypeDescriptorUri => _seedData.HonorsDiplomaTypeDescriptorId,
             _ => throw new InvalidOperationException(
                 $"Unsupported diploma type descriptor '{descriptorUri}'."
             ),
         };
     }
 
-    private long ResolveGradePointAverageDescriptorId(string descriptorUri)
+    private int ResolveGradePointAverageDescriptorId(string descriptorUri)
     {
         return descriptorUri switch
         {
             CumulativeGradePointAverageTypeDescriptorUri =>
-                _seedData.CumulativeGradePointAverageTypeDescriptorDocumentId,
-            SessionGradePointAverageTypeDescriptorUri =>
-                _seedData.SessionGradePointAverageTypeDescriptorDocumentId,
-            WeightedGradePointAverageTypeDescriptorUri =>
-                _seedData.WeightedGradePointAverageTypeDescriptorDocumentId,
+                _seedData.CumulativeGradePointAverageTypeDescriptorId,
+            SessionGradePointAverageTypeDescriptorUri => _seedData.SessionGradePointAverageTypeDescriptorId,
+            WeightedGradePointAverageTypeDescriptorUri => _seedData.WeightedGradePointAverageTypeDescriptorId,
             _ => throw new InvalidOperationException(
                 $"Unsupported grade point average type descriptor '{descriptorUri}'."
             ),
@@ -2471,10 +2430,9 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     {
         return descriptorId switch
         {
-            var value when value == _seedData.CumulativeGradePointAverageTypeDescriptorDocumentId =>
-                "Cumulative",
-            var value when value == _seedData.SessionGradePointAverageTypeDescriptorDocumentId => "Session",
-            var value when value == _seedData.WeightedGradePointAverageTypeDescriptorDocumentId => "Weighted",
+            var value when value == _seedData.CumulativeGradePointAverageTypeDescriptorId => "Cumulative",
+            var value when value == _seedData.SessionGradePointAverageTypeDescriptorId => "Session",
+            var value when value == _seedData.WeightedGradePointAverageTypeDescriptorId => "Weighted",
             _ => throw new InvalidOperationException(
                 $"Unsupported grade point average descriptor id '{descriptorId}'."
             ),
@@ -2494,13 +2452,13 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         };
     }
 
-    private long ResolveRecognitionDescriptorId(string descriptorUri)
+    private int ResolveRecognitionDescriptorId(string descriptorUri)
     {
         return descriptorUri switch
         {
-            MeritRecognitionTypeDescriptorUri => _seedData.MeritRecognitionTypeDescriptorDocumentId,
-            LeadershipRecognitionTypeDescriptorUri => _seedData.LeadershipRecognitionTypeDescriptorDocumentId,
-            AttendanceRecognitionTypeDescriptorUri => _seedData.AttendanceRecognitionTypeDescriptorDocumentId,
+            MeritRecognitionTypeDescriptorUri => _seedData.MeritRecognitionTypeDescriptorId,
+            LeadershipRecognitionTypeDescriptorUri => _seedData.LeadershipRecognitionTypeDescriptorId,
+            AttendanceRecognitionTypeDescriptorUri => _seedData.AttendanceRecognitionTypeDescriptorId,
             _ => throw new InvalidOperationException(
                 $"Unsupported recognition type descriptor '{descriptorUri}'."
             ),
@@ -2511,9 +2469,9 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     {
         return descriptorId switch
         {
-            var value when value == _seedData.MeritRecognitionTypeDescriptorDocumentId => "Merit",
-            var value when value == _seedData.LeadershipRecognitionTypeDescriptorDocumentId => "Leadership",
-            var value when value == _seedData.AttendanceRecognitionTypeDescriptorDocumentId => "Attendance",
+            var value when value == _seedData.MeritRecognitionTypeDescriptorId => "Merit",
+            var value when value == _seedData.LeadershipRecognitionTypeDescriptorId => "Leadership",
+            var value when value == _seedData.AttendanceRecognitionTypeDescriptorId => "Attendance",
             _ => throw new InvalidOperationException(
                 $"Unsupported recognition descriptor id '{descriptorId}'."
             ),
@@ -3634,19 +3592,19 @@ internal sealed record AuthoritativeStudentAcademicRecordSeedData(
     long SchoolDocumentId,
     long SchoolYearTypeDocumentId,
     long StudentDocumentId,
-    long FallTermDescriptorDocumentId,
-    long HonorRollAcademicHonorCategoryDescriptorDocumentId,
-    long ScholarAthleteAcademicHonorCategoryDescriptorDocumentId,
-    long CommunityServiceAcademicHonorCategoryDescriptorDocumentId,
-    long StandardDiplomaTypeDescriptorDocumentId,
-    long CareerDiplomaTypeDescriptorDocumentId,
-    long HonorsDiplomaTypeDescriptorDocumentId,
-    long CumulativeGradePointAverageTypeDescriptorDocumentId,
-    long SessionGradePointAverageTypeDescriptorDocumentId,
-    long WeightedGradePointAverageTypeDescriptorDocumentId,
-    long MeritRecognitionTypeDescriptorDocumentId,
-    long LeadershipRecognitionTypeDescriptorDocumentId,
-    long AttendanceRecognitionTypeDescriptorDocumentId
+    int FallTermDescriptorId,
+    int HonorRollAcademicHonorCategoryDescriptorId,
+    int ScholarAthleteAcademicHonorCategoryDescriptorId,
+    int CommunityServiceAcademicHonorCategoryDescriptorId,
+    int StandardDiplomaTypeDescriptorId,
+    int CareerDiplomaTypeDescriptorId,
+    int HonorsDiplomaTypeDescriptorId,
+    int CumulativeGradePointAverageTypeDescriptorId,
+    int SessionGradePointAverageTypeDescriptorId,
+    int WeightedGradePointAverageTypeDescriptorId,
+    int MeritRecognitionTypeDescriptorId,
+    int LeadershipRecognitionTypeDescriptorId,
+    int AttendanceRecognitionTypeDescriptorId
 );
 
 internal sealed record AuthoritativeStudentAcademicRecordRow(
@@ -3657,7 +3615,7 @@ internal sealed record AuthoritativeStudentAcademicRecordRow(
     int SchoolYear,
     long StudentDocumentId,
     string StudentUniqueId,
-    long TermDescriptorId,
+    int TermDescriptorId,
     decimal CumulativeEarnedCredits,
     string ProjectedGraduationDate
 );
@@ -3668,7 +3626,7 @@ internal sealed record AuthoritativeStudentAcademicRecordAcademicHonorRow(
     long CollectionItemId,
     int Ordinal,
     long StudentAcademicRecordDocumentId,
-    long AcademicHonorCategoryDescriptorId,
+    int AcademicHonorCategoryDescriptorId,
     string HonorDescription,
     string IssuerName
 );
@@ -3677,7 +3635,7 @@ internal sealed record AuthoritativeStudentAcademicRecordDiplomaRow(
     long CollectionItemId,
     int Ordinal,
     long StudentAcademicRecordDocumentId,
-    long DiplomaTypeDescriptorId,
+    int DiplomaTypeDescriptorId,
     string DiplomaAwardDate,
     string DiplomaDescription
 );
@@ -3686,7 +3644,7 @@ internal sealed record AuthoritativeStudentAcademicRecordGradePointAverageRow(
     long CollectionItemId,
     int Ordinal,
     long StudentAcademicRecordDocumentId,
-    long GradePointAverageTypeDescriptorId,
+    int GradePointAverageTypeDescriptorId,
     decimal GradePointAverageValue,
     decimal MaxGradePointAverageValue,
     bool IsCumulative
@@ -3696,7 +3654,7 @@ internal sealed record AuthoritativeStudentAcademicRecordRecognitionRow(
     long CollectionItemId,
     int Ordinal,
     long StudentAcademicRecordDocumentId,
-    long RecognitionTypeDescriptorId,
+    int RecognitionTypeDescriptorId,
     string RecognitionDescription,
     string IssuerName
 );
@@ -4097,7 +4055,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     2026,
                     _seedData.StudentDocumentId,
                     "10001",
-                    _seedData.FallTermDescriptorDocumentId,
+                    _seedData.FallTermDescriptorId,
                     19.250m,
                     "2028-05-22"
                 )
@@ -4122,7 +4080,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     _stateAfterCreate.AcademicHonors[0].CollectionItemId,
                     0,
                     _stateAfterCreate.Document.DocumentId,
-                    _seedData.HonorRollAcademicHonorCategoryDescriptorDocumentId,
+                    _seedData.HonorRollAcademicHonorCategoryDescriptorId,
                     "Honor Roll",
                     "District Honors Board"
                 ),
@@ -4130,7 +4088,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     _stateAfterPostAsUpdate.AcademicHonors[1].CollectionItemId,
                     1,
                     _stateAfterCreate.Document.DocumentId,
-                    _seedData.CommunityServiceAcademicHonorCategoryDescriptorDocumentId,
+                    _seedData.CommunityServiceAcademicHonorCategoryDescriptorId,
                     "Community Service",
                     "Community Foundation"
                 )
@@ -4148,7 +4106,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     _stateAfterCreate.Diplomas[0].CollectionItemId,
                     0,
                     _stateAfterCreate.Document.DocumentId,
-                    _seedData.StandardDiplomaTypeDescriptorDocumentId,
+                    _seedData.StandardDiplomaTypeDescriptorId,
                     "2028-05-24",
                     "Revised Standard Path"
                 ),
@@ -4156,7 +4114,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     _stateAfterPostAsUpdate.Diplomas[1].CollectionItemId,
                     1,
                     _stateAfterCreate.Document.DocumentId,
-                    _seedData.HonorsDiplomaTypeDescriptorDocumentId,
+                    _seedData.HonorsDiplomaTypeDescriptorId,
                     "2028-05-26",
                     "Honors Path"
                 )
@@ -4174,7 +4132,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     _stateAfterCreate.GradePointAverages[0].CollectionItemId,
                     0,
                     _stateAfterCreate.Document.DocumentId,
-                    _seedData.CumulativeGradePointAverageTypeDescriptorDocumentId,
+                    _seedData.CumulativeGradePointAverageTypeDescriptorId,
                     3.6100m,
                     4.0000m,
                     true
@@ -4183,7 +4141,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     _stateAfterPostAsUpdate.GradePointAverages[1].CollectionItemId,
                     1,
                     _stateAfterCreate.Document.DocumentId,
-                    _seedData.WeightedGradePointAverageTypeDescriptorDocumentId,
+                    _seedData.WeightedGradePointAverageTypeDescriptorId,
                     4.1200m,
                     5.0000m,
                     false
@@ -4202,7 +4160,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     _stateAfterCreate.Recognitions[0].CollectionItemId,
                     0,
                     _stateAfterCreate.Document.DocumentId,
-                    _seedData.MeritRecognitionTypeDescriptorDocumentId,
+                    _seedData.MeritRecognitionTypeDescriptorId,
                     "State Merit",
                     "State Board"
                 ),
@@ -4210,7 +4168,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     _stateAfterPostAsUpdate.Recognitions[1].CollectionItemId,
                     1,
                     _stateAfterCreate.Document.DocumentId,
-                    _seedData.AttendanceRecognitionTypeDescriptorDocumentId,
+                    _seedData.AttendanceRecognitionTypeDescriptorId,
                     "Perfect Attendance",
                     "District Office"
                 )
@@ -4438,26 +4396,22 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             studentResourceKeyId
         );
 
-        var fallTermDescriptorDocumentId = await InsertDescriptorAsync(
+        var fallTermDescriptor = await InsertDescriptorAsync(
             Guid.Parse("44444444-0000-0000-0000-000000000004"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
-            "uri://ed-fi.org/TermDescriptor#Fall",
             "uri://ed-fi.org/TermDescriptor",
             "Fall",
             "Fall"
         );
         await InsertReferentialIdentityAsync(
             CreateDescriptorReferentialId("Ed-Fi", "TermDescriptor", "uri://ed-fi.org/TermDescriptor#Fall"),
-            fallTermDescriptorDocumentId,
+            fallTermDescriptor.DocumentId,
             termDescriptorResourceKeyId
         );
 
-        var honorRollAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
+        var honorRollAcademicHonorCategoryDescriptor = await InsertDescriptorAsync(
             Guid.Parse("55555555-0000-0000-0000-000000000005"),
             academicHonorCategoryDescriptorResourceKeyId,
-            "Ed-Fi:AcademicHonorCategoryDescriptor",
-            "uri://ed-fi.org/AcademicHonorCategoryDescriptor#HonorRoll",
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
             "HonorRoll",
             "Honor Roll"
@@ -4468,15 +4422,13 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 "AcademicHonorCategoryDescriptor",
                 "uri://ed-fi.org/AcademicHonorCategoryDescriptor#HonorRoll"
             ),
-            honorRollAcademicHonorCategoryDescriptorDocumentId,
+            honorRollAcademicHonorCategoryDescriptor.DocumentId,
             academicHonorCategoryDescriptorResourceKeyId
         );
 
-        var scholarAthleteAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
+        var scholarAthleteAcademicHonorCategoryDescriptor = await InsertDescriptorAsync(
             Guid.Parse("66666666-0000-0000-0000-000000000006"),
             academicHonorCategoryDescriptorResourceKeyId,
-            "Ed-Fi:AcademicHonorCategoryDescriptor",
-            "uri://ed-fi.org/AcademicHonorCategoryDescriptor#ScholarAthlete",
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
             "ScholarAthlete",
             "Scholar Athlete"
@@ -4487,15 +4439,13 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 "AcademicHonorCategoryDescriptor",
                 "uri://ed-fi.org/AcademicHonorCategoryDescriptor#ScholarAthlete"
             ),
-            scholarAthleteAcademicHonorCategoryDescriptorDocumentId,
+            scholarAthleteAcademicHonorCategoryDescriptor.DocumentId,
             academicHonorCategoryDescriptorResourceKeyId
         );
 
-        var communityServiceAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
+        var communityServiceAcademicHonorCategoryDescriptor = await InsertDescriptorAsync(
             Guid.Parse("77777777-0000-0000-0000-000000000007"),
             academicHonorCategoryDescriptorResourceKeyId,
-            "Ed-Fi:AcademicHonorCategoryDescriptor",
-            "uri://ed-fi.org/AcademicHonorCategoryDescriptor#CommunityService",
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
             "CommunityService",
             "Community Service"
@@ -4506,15 +4456,13 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 "AcademicHonorCategoryDescriptor",
                 "uri://ed-fi.org/AcademicHonorCategoryDescriptor#CommunityService"
             ),
-            communityServiceAcademicHonorCategoryDescriptorDocumentId,
+            communityServiceAcademicHonorCategoryDescriptor.DocumentId,
             academicHonorCategoryDescriptorResourceKeyId
         );
 
-        var standardDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var standardDiplomaTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("88888888-0000-0000-0000-000000000008"),
             diplomaTypeDescriptorResourceKeyId,
-            "Ed-Fi:DiplomaTypeDescriptor",
-            "uri://ed-fi.org/DiplomaTypeDescriptor#StandardDiploma",
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "StandardDiploma",
             "Standard Diploma"
@@ -4525,15 +4473,13 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 "DiplomaTypeDescriptor",
                 "uri://ed-fi.org/DiplomaTypeDescriptor#StandardDiploma"
             ),
-            standardDiplomaTypeDescriptorDocumentId,
+            standardDiplomaTypeDescriptor.DocumentId,
             diplomaTypeDescriptorResourceKeyId
         );
 
-        var careerDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var careerDiplomaTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("99999999-0000-0000-0000-000000000009"),
             diplomaTypeDescriptorResourceKeyId,
-            "Ed-Fi:DiplomaTypeDescriptor",
-            "uri://ed-fi.org/DiplomaTypeDescriptor#CareerDiploma",
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "CareerDiploma",
             "Career Diploma"
@@ -4544,15 +4490,13 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 "DiplomaTypeDescriptor",
                 "uri://ed-fi.org/DiplomaTypeDescriptor#CareerDiploma"
             ),
-            careerDiplomaTypeDescriptorDocumentId,
+            careerDiplomaTypeDescriptor.DocumentId,
             diplomaTypeDescriptorResourceKeyId
         );
 
-        var honorsDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var honorsDiplomaTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("aaaaaaaa-0000-0000-0000-00000000000a"),
             diplomaTypeDescriptorResourceKeyId,
-            "Ed-Fi:DiplomaTypeDescriptor",
-            "uri://ed-fi.org/DiplomaTypeDescriptor#HonorsDiploma",
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "HonorsDiploma",
             "Honors Diploma"
@@ -4563,15 +4507,13 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 "DiplomaTypeDescriptor",
                 "uri://ed-fi.org/DiplomaTypeDescriptor#HonorsDiploma"
             ),
-            honorsDiplomaTypeDescriptorDocumentId,
+            honorsDiplomaTypeDescriptor.DocumentId,
             diplomaTypeDescriptorResourceKeyId
         );
 
-        var cumulativeGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var cumulativeGradePointAverageTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("bbbbbbbb-0000-0000-0000-00000000000b"),
             gradePointAverageTypeDescriptorResourceKeyId,
-            "Ed-Fi:GradePointAverageTypeDescriptor",
-            "uri://ed-fi.org/GradePointAverageTypeDescriptor#Cumulative",
             "uri://ed-fi.org/GradePointAverageTypeDescriptor",
             "Cumulative",
             "Cumulative"
@@ -4582,15 +4524,13 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 "GradePointAverageTypeDescriptor",
                 "uri://ed-fi.org/GradePointAverageTypeDescriptor#Cumulative"
             ),
-            cumulativeGradePointAverageTypeDescriptorDocumentId,
+            cumulativeGradePointAverageTypeDescriptor.DocumentId,
             gradePointAverageTypeDescriptorResourceKeyId
         );
 
-        var sessionGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var sessionGradePointAverageTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("cccccccc-0000-0000-0000-00000000000c"),
             gradePointAverageTypeDescriptorResourceKeyId,
-            "Ed-Fi:GradePointAverageTypeDescriptor",
-            "uri://ed-fi.org/GradePointAverageTypeDescriptor#Session",
             "uri://ed-fi.org/GradePointAverageTypeDescriptor",
             "Session",
             "Session"
@@ -4601,15 +4541,13 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 "GradePointAverageTypeDescriptor",
                 "uri://ed-fi.org/GradePointAverageTypeDescriptor#Session"
             ),
-            sessionGradePointAverageTypeDescriptorDocumentId,
+            sessionGradePointAverageTypeDescriptor.DocumentId,
             gradePointAverageTypeDescriptorResourceKeyId
         );
 
-        var weightedGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var weightedGradePointAverageTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("dddddddd-0000-0000-0000-00000000000d"),
             gradePointAverageTypeDescriptorResourceKeyId,
-            "Ed-Fi:GradePointAverageTypeDescriptor",
-            "uri://ed-fi.org/GradePointAverageTypeDescriptor#Weighted",
             "uri://ed-fi.org/GradePointAverageTypeDescriptor",
             "Weighted",
             "Weighted"
@@ -4620,15 +4558,13 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 "GradePointAverageTypeDescriptor",
                 "uri://ed-fi.org/GradePointAverageTypeDescriptor#Weighted"
             ),
-            weightedGradePointAverageTypeDescriptorDocumentId,
+            weightedGradePointAverageTypeDescriptor.DocumentId,
             gradePointAverageTypeDescriptorResourceKeyId
         );
 
-        var meritRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var meritRecognitionTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("eeeeeeee-0000-0000-0000-00000000000e"),
             recognitionTypeDescriptorResourceKeyId,
-            "Ed-Fi:RecognitionTypeDescriptor",
-            "uri://ed-fi.org/RecognitionTypeDescriptor#Merit",
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Merit",
             "Merit"
@@ -4639,15 +4575,13 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 "RecognitionTypeDescriptor",
                 "uri://ed-fi.org/RecognitionTypeDescriptor#Merit"
             ),
-            meritRecognitionTypeDescriptorDocumentId,
+            meritRecognitionTypeDescriptor.DocumentId,
             recognitionTypeDescriptorResourceKeyId
         );
 
-        var leadershipRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var leadershipRecognitionTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("ffffffff-0000-0000-0000-00000000000f"),
             recognitionTypeDescriptorResourceKeyId,
-            "Ed-Fi:RecognitionTypeDescriptor",
-            "uri://ed-fi.org/RecognitionTypeDescriptor#Leadership",
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Leadership",
             "Leadership"
@@ -4658,15 +4592,13 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 "RecognitionTypeDescriptor",
                 "uri://ed-fi.org/RecognitionTypeDescriptor#Leadership"
             ),
-            leadershipRecognitionTypeDescriptorDocumentId,
+            leadershipRecognitionTypeDescriptor.DocumentId,
             recognitionTypeDescriptorResourceKeyId
         );
 
-        var attendanceRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var attendanceRecognitionTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("12121212-0000-0000-0000-000000000010"),
             recognitionTypeDescriptorResourceKeyId,
-            "Ed-Fi:RecognitionTypeDescriptor",
-            "uri://ed-fi.org/RecognitionTypeDescriptor#Attendance",
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Attendance",
             "Attendance"
@@ -4677,7 +4609,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 "RecognitionTypeDescriptor",
                 "uri://ed-fi.org/RecognitionTypeDescriptor#Attendance"
             ),
-            attendanceRecognitionTypeDescriptorDocumentId,
+            attendanceRecognitionTypeDescriptor.DocumentId,
             recognitionTypeDescriptorResourceKeyId
         );
 
@@ -4685,19 +4617,19 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             schoolDocumentId,
             schoolYearTypeDocumentId,
             studentDocumentId,
-            fallTermDescriptorDocumentId,
-            honorRollAcademicHonorCategoryDescriptorDocumentId,
-            scholarAthleteAcademicHonorCategoryDescriptorDocumentId,
-            communityServiceAcademicHonorCategoryDescriptorDocumentId,
-            standardDiplomaTypeDescriptorDocumentId,
-            careerDiplomaTypeDescriptorDocumentId,
-            honorsDiplomaTypeDescriptorDocumentId,
-            cumulativeGradePointAverageTypeDescriptorDocumentId,
-            sessionGradePointAverageTypeDescriptorDocumentId,
-            weightedGradePointAverageTypeDescriptorDocumentId,
-            meritRecognitionTypeDescriptorDocumentId,
-            leadershipRecognitionTypeDescriptorDocumentId,
-            attendanceRecognitionTypeDescriptorDocumentId
+            fallTermDescriptor.DescriptorId,
+            honorRollAcademicHonorCategoryDescriptor.DescriptorId,
+            scholarAthleteAcademicHonorCategoryDescriptor.DescriptorId,
+            communityServiceAcademicHonorCategoryDescriptor.DescriptorId,
+            standardDiplomaTypeDescriptor.DescriptorId,
+            careerDiplomaTypeDescriptor.DescriptorId,
+            honorsDiplomaTypeDescriptor.DescriptorId,
+            cumulativeGradePointAverageTypeDescriptor.DescriptorId,
+            sessionGradePointAverageTypeDescriptor.DescriptorId,
+            weightedGradePointAverageTypeDescriptor.DescriptorId,
+            meritRecognitionTypeDescriptor.DescriptorId,
+            leadershipRecognitionTypeDescriptor.DescriptorId,
+            attendanceRecognitionTypeDescriptor.DescriptorId
         );
     }
 
@@ -4728,19 +4660,18 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         );
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<SeededDescriptor> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
@@ -4748,9 +4679,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
+                "Description"
             )
             VALUES (
                 @documentId,
@@ -4758,22 +4687,18 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
-            );
+                @description
+            ) RETURNING "DescriptorId";
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),
-            new NpgsqlParameter("description", shortDescription),
-            new NpgsqlParameter("discriminator", discriminator),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("description", shortDescription)
         );
 
-        return documentId;
+        return new(descriptorId, documentId);
     }
 
     private async Task InsertSchoolAsync(long documentId, int schoolId, string nameOfInstitution)
@@ -4964,7 +4889,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 PostAsUpdateIntegrationTestSupport.GetInt32(rows[0], "SchoolYear_SchoolYear"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Student_DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetString(rows[0], "Student_StudentUniqueId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "TermDescriptor_DescriptorId"),
+                PostAsUpdateIntegrationTestSupport.GetInt32(rows[0], "TermDescriptor_DescriptorId"),
                 PostAsUpdateIntegrationTestSupport.GetDecimal(rows[0], "CumulativeEarnedCredits"),
                 PostAsUpdateIntegrationTestSupport.GetString(rows[0], "ProjectedGraduationDate")
             )
@@ -5020,10 +4945,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
                 PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "StudentAcademicRecord_DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(
-                    row,
-                    "AcademicHonorCategoryDescriptor_DescriptorId"
-                ),
+                (int)row["AcademicHonorCategoryDescriptor_DescriptorId"]!,
                 PostAsUpdateIntegrationTestSupport.GetString(row, "HonorDescription"),
                 PostAsUpdateIntegrationTestSupport.GetString(row, "IssuerName")
             ))
@@ -5054,7 +4976,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
                 PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "StudentAcademicRecord_DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(row, "DiplomaTypeDescriptor_DescriptorId"),
+                (int)row["DiplomaTypeDescriptor_DescriptorId"]!,
                 PostAsUpdateIntegrationTestSupport.GetString(row, "DiplomaAwardDate"),
                 PostAsUpdateIntegrationTestSupport.GetString(row, "DiplomaDescription")
             ))
@@ -5086,10 +5008,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
                 PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "StudentAcademicRecord_DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(
-                    row,
-                    "GradePointAverageTypeDescriptor_DescriptorId"
-                ),
+                (int)row["GradePointAverageTypeDescriptor_DescriptorId"]!,
                 PostAsUpdateIntegrationTestSupport.GetDecimal(row, "GradePointAverageValue"),
                 PostAsUpdateIntegrationTestSupport.GetDecimal(row, "MaxGradePointAverageValue"),
                 PostAsUpdateIntegrationTestSupport.GetBoolean(row, "IsCumulative")
@@ -5121,7 +5040,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
                 PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "StudentAcademicRecord_DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(row, "RecognitionTypeDescriptor_DescriptorId"),
+                (int)row["RecognitionTypeDescriptor_DescriptorId"]!,
                 PostAsUpdateIntegrationTestSupport.GetString(row, "RecognitionDescription"),
                 PostAsUpdateIntegrationTestSupport.GetString(row, "IssuerName")
             ))

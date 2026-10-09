@@ -178,6 +178,10 @@ targets 18.
   do not exist until DMS-1448 through DMS-1454 land. This story only documents the expected
   per-engine folding differences in the upgrade playbook.
 - Keep legacy descriptor lowercasing and RI resolution in place in this story.
+- The compact descriptor baseline from DMS-1404 works on current supported engines without this
+  upgrade. This story owns the later platform and folding contract; neither its PostgreSQL 18
+  requirement nor its template upgrade gates are DMS-1404 closure requirements. Coordinate any
+  combined package work with DMS-1401's timestamp/compact-schema source and restore checks.
 
 ## Acceptance Criteria
 

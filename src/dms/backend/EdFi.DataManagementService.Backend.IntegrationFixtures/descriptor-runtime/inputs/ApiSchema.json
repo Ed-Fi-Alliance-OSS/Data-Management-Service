@@ -13,13 +13,15 @@
     "abstractResources": {},
     "caseInsensitiveEndpointNameMapping": {
       "schooltypedescriptors": "schoolTypeDescriptors",
-      "profilerootonlymergeitems": "profileRootOnlyMergeItems"
+      "profilerootonlymergeitems": "profileRootOnlyMergeItems",
+      "academicsubjectdescriptors": "academicSubjectDescriptors"
     },
     "educationOrganizationHierarchy": {},
     "educationOrganizationTypes": [],
     "resourceNameMapping": {
       "SchoolTypeDescriptor": "schoolTypeDescriptors",
-      "ProfileRootOnlyMergeItem": "profileRootOnlyMergeItems"
+      "ProfileRootOnlyMergeItem": "profileRootOnlyMergeItems",
+      "AcademicSubjectDescriptor": "academicSubjectDescriptors"
     },
     "resourceSchemas": {
       "schoolTypeDescriptors": {
@@ -208,6 +210,139 @@
           "required": [
             "profileRootOnlyMergeItemId",
             "primarySchoolTypeDescriptor"
+          ]
+        }
+      },
+      "academicSubjectDescriptors": {
+        "resourceName": "AcademicSubjectDescriptor",
+        "isDescriptor": true,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.namespace",
+          "$.codeValue"
+        ],
+        "documentPathsMapping": {
+          "Namespace": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.namespace"
+          },
+          "CodeValue": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.codeValue"
+          },
+          "ShortDescription": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": true,
+            "path": "$.shortDescription"
+          },
+          "Description": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.description"
+          },
+          "EffectiveBeginDate": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.effectiveBeginDate"
+          },
+          "EffectiveEndDate": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.effectiveEndDate"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "namespace": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "codeValue": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 50
+            },
+            "shortDescription": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 75
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "effectiveBeginDate": {
+              "type": "string",
+              "format": "date"
+            },
+            "effectiveEndDate": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          "required": [
+            "namespace",
+            "codeValue",
+            "shortDescription"
+          ]
+        },
+        "queryFieldMapping": {
+          "id": [
+            {
+              "path": "$.id",
+              "type": "string"
+            }
+          ],
+          "namespace": [
+            {
+              "path": "$.namespace",
+              "type": "string"
+            }
+          ],
+          "codeValue": [
+            {
+              "path": "$.codeValue",
+              "type": "string"
+            }
+          ],
+          "shortDescription": [
+            {
+              "path": "$.shortDescription",
+              "type": "string"
+            }
+          ],
+          "description": [
+            {
+              "path": "$.description",
+              "type": "string"
+            }
+          ],
+          "effectiveBeginDate": [
+            {
+              "path": "$.effectiveBeginDate",
+              "type": "date"
+            }
+          ],
+          "effectiveEndDate": [
+            {
+              "path": "$.effectiveEndDate",
+              "type": "date"
+            }
           ]
         }
       }

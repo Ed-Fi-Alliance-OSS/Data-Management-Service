@@ -1,0 +1,118 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Sample",
+    "projectEndpointName": "sample",
+    "projectVersion": "1.0.0",
+    "isExtensionProject": true,
+    "description": "Compact descriptor extension storage baseline",
+    "abstractResources": {},
+    "caseInsensitiveEndpointNameMapping": {
+      "schooltypedescriptors": "schoolTypeDescriptors"
+    },
+    "educationOrganizationHierarchy": {},
+    "educationOrganizationTypes": [],
+    "resourceNameMapping": {
+      "SchoolTypeDescriptor": "schoolTypeDescriptors"
+    },
+    "resourceSchemas": {
+      "profileRootOnlyMergeItemExtensions": {
+        "resourceName": "ProfileRootOnlyMergeItem",
+        "isDescriptor": false,
+        "isResourceExtension": true,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [],
+        "documentPathsMapping": {
+          "ExtensionSchoolTypeDescriptor": {
+            "isReference": true,
+            "isDescriptor": true,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "projectName": "Ed-Fi",
+            "resourceName": "SchoolTypeDescriptor",
+            "path": "$._ext.sample.schoolTypeDescriptor"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "_ext": {
+              "type": "object",
+              "properties": {
+                "sample": {
+                  "type": "object",
+                  "properties": {
+                    "schoolTypeDescriptor": {
+                      "type": "string",
+                      "maxLength": 306
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "schoolTypeDescriptors": {
+        "resourceName": "SchoolTypeDescriptor",
+        "isDescriptor": true,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.namespace",
+          "$.codeValue"
+        ],
+        "documentPathsMapping": {
+          "Namespace": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.namespace"
+          },
+          "CodeValue": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.codeValue"
+          },
+          "ShortDescription": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": true,
+            "path": "$.shortDescription"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "namespace": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "codeValue": {
+              "type": "string",
+              "maxLength": 50
+            },
+            "shortDescription": {
+              "type": "string",
+              "maxLength": 75
+            }
+          },
+          "required": [
+            "namespace",
+            "codeValue",
+            "shortDescription"
+          ]
+        }
+      }
+    }
+  }
+}

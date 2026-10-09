@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Mssql;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -34,7 +35,7 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
     private short _localEducationAgencyResourceKeyId;
     private short _schoolResourceKeyId;
     private short _localEducationAgencyCategoryDescriptorResourceKeyId;
-    private long _localEducationAgencyCategoryDescriptorDocumentId;
+    private int _localEducationAgencyCategoryDescriptorId;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -72,11 +73,9 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
         await _database.ResetAsync();
         _commandExecutor = new RecordingMssqlRelationalCommandExecutor(_database.ConnectionString);
 
-        _localEducationAgencyCategoryDescriptorDocumentId = await InsertDescriptorAsync(
+        _localEducationAgencyCategoryDescriptorId = await InsertDescriptorAsync(
             documentUuid: Guid.Parse("aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"),
             resourceKeyId: _localEducationAgencyCategoryDescriptorResourceKeyId,
-            discriminator: "Ed-Fi:LocalEducationAgencyCategoryDescriptor",
-            uri: "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Independent",
             @namespace: "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor",
             codeValue: "Independent",
             shortDescription: "Independent"
@@ -359,52 +358,48 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
         );
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<int> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
+            DECLARE @descriptor TABLE ([DescriptorId] int);
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
                 [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
-                [Description],
-                [Discriminator],
-                [Uri]
+                [Description]
             )
+            OUTPUT INSERTED.[DescriptorId] INTO @descriptor ([DescriptorId])
             VALUES (
                 @documentId,
                 @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
+                @description
             );
+            SELECT [DescriptorId] FROM @descriptor;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
-            new SqlParameter("@description", shortDescription),
-            new SqlParameter("@discriminator", discriminator),
-            new SqlParameter("@uri", uri)
+            new SqlParameter("@description", shortDescription)
         );
 
-        return documentId;
+        return descriptorId;
     }
 
     private async Task<long> InsertStateEducationAgencyAsync(
@@ -455,7 +450,7 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
             VALUES (
                 @documentId,
                 @localEducationAgencyId,
-                @categoryDescriptorDocumentId,
+                @categoryDescriptorId,
                 @nameOfInstitution,
                 @parentSeaDocumentId,
                 @parentSeaId
@@ -463,10 +458,7 @@ public class Given_A_Mssql_Relational_TokenInfo_EducationOrganization_Lookup
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@localEducationAgencyId", localEducationAgencyId),
-            new SqlParameter(
-                "@categoryDescriptorDocumentId",
-                _localEducationAgencyCategoryDescriptorDocumentId
-            ),
+            new SqlParameter("@categoryDescriptorId", _localEducationAgencyCategoryDescriptorId),
             new SqlParameter("@nameOfInstitution", nameOfInstitution),
             new SqlParameter(
                 "@parentSeaDocumentId",

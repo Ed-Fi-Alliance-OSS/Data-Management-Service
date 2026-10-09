@@ -939,6 +939,90 @@ public class Given_The_Composite_Relational_Write_First_Phase
         }
     }
 
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_replays_unequal_descriptor_and_document_ids_from_one_composite_command(
+        SqlDialect dialect
+    )
+    {
+        var referentialId = new ReferentialId(Guid.Parse("87654321-1111-2222-3333-444444444444"));
+        var reference = RelationalAccessTestData.CreateDescriptorReference(
+            referentialId,
+            "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
+            "$.schoolTypeDescriptor"
+        );
+        var input = CreateInput(RelationalWriteOperationKind.Post, dialect: dialect);
+        var descriptorModel = RelationalAccessTestData
+            .CreateMappingSet(new QualifiedResourceName("Ed-Fi", "Student"))
+            .Model.ConcreteResourcesInNameOrder.Single(resource =>
+                resource.StorageKind is ResourceStorageKind.SharedDescriptorTable
+            );
+        var mappingSet = input.MappingSet with
+        {
+            Model = input.MappingSet.Model with
+            {
+                ConcreteResourcesInNameOrder =
+                [
+                    .. input.MappingSet.Model.ConcreteResourcesInNameOrder,
+                    descriptorModel,
+                ],
+            },
+        };
+        input = input with
+        {
+            MappingSet = mappingSet,
+            ReferenceResolutionRequest = input.ReferenceResolutionRequest with
+            {
+                MappingSet = mappingSet,
+                DescriptorReferences = [reference],
+            },
+        };
+        var lookupRequest = ReferenceResolver.TryBuildLookupRequest(input.ReferenceResolutionRequest)!;
+        var lookupCommand =
+            dialect is SqlDialect.Pgsql
+                ? EdFi.DataManagementService.Backend.Postgresql.PostgresqlReferenceLookupCommandBuilder.Build(
+                    lookupRequest
+                )
+                : EdFi.DataManagementService.Backend.Mssql.MssqlReferenceLookupSmallListStrategy.BuildCommand(
+                    lookupRequest
+                );
+        var factory = new TestReferenceResolverAdapterFactory { EmbeddableCommand = lookupCommand };
+        var lookupTable = CreateReferenceLookupTable();
+        lookupTable.Rows.Add(
+            referentialId.Value,
+            3_000_000_003L,
+            (short)13,
+            (short)13,
+            17,
+            "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+        );
+        var target = new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value);
+        var session = new ScriptedWriteSession(
+            CreateReader(
+                CreateCaptureTable(target),
+                lookupTable,
+                CreateDocumentMetadataTable(target, 44L),
+                CreateRootTable(target)
+            )
+        );
+
+        var resolution = await CreateSut(factory).ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        var resolvedReferences = resolution.Outcome!.ResolvedReferences;
+        resolvedReferences.SuccessfulDescriptorReferencesByPath[reference.Path].DescriptorId.Should().Be(17);
+        resolvedReferences
+            .SuccessfulDescriptorReferencesByPath[reference.Path]
+            .DocumentId.Should()
+            .Be(3_000_000_003L);
+        resolvedReferences.LookupsByReferentialId[referentialId].Result!.DescriptorId.Should().Be(17);
+        resolvedReferences
+            .LookupsByReferentialId[referentialId]
+            .Result!.DocumentId.Should()
+            .Be(3_000_000_003L);
+        session.Commands.Should().ContainSingle();
+    }
+
     private static CompositeRelationalWriteFirstPhase CreateSut(
         TestReferenceResolverAdapterFactory? adapterFactory = null,
         IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null,
@@ -1946,7 +2030,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
         table.Columns.Add("DocumentId", typeof(long));
         table.Columns.Add("ResourceKeyId", typeof(short));
         table.Columns.Add("ReferentialIdentityResourceKeyId", typeof(short));
-        table.Columns.Add("IsDescriptor", typeof(bool));
+        table.Columns.Add("DescriptorId", typeof(int));
         table.Columns.Add("VerificationIdentityKey", typeof(string));
         return table;
     }

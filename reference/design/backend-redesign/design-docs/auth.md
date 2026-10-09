@@ -314,6 +314,13 @@ Descriptor POST must authorize the proposed namespace before inserting `dms.Docu
 proposed namespace before changing descriptor data; descriptor DELETE must authorize the stored
 namespace before deletion.
 
+For regular resources, NamespaceBased requires a namespace value on the concrete root table.
+Descriptor-reference namespace bases, including copied descriptor-valued reference identities,
+are unsupported and fail closed with a Security Configuration Error before executing SQL.
+Namespace dereferencing through a descriptor reference is deferred to a separate story.
+This restriction does not affect a descriptor resource's own `Namespace` column or the
+custom-view bridge from `DescriptorId` to the owning `DocumentId`.
+
 Similar to the Ownership-based strategy, GET-by-ID, Update, Create, and Delete are authorized by retrieving the resource from the DB and materializing it in C#, then checking whether the ApiClient has a namespace prefix that matches the resource's. This consumes resources unnecessarily if the client is not authorized.
 
 ### Execution order
@@ -368,6 +375,13 @@ Storing the `CreatedByOwnershipTokenId` in `dms.Document` also means that we mus
 In DMS, we aim to apply joins using the DocumentId surrogate key instead of natural keys, meaning that the custom authorization views used by this strategy must output the DocumentId of the basis resource instead of the natural keys.
 
 In the example above, the `auth.StudentWithCTECourseEnrollments` view will return the Student's DocumentId instead of the StudentUSI. See the `Resolving the DB columns used for authorization` section below for more information.
+
+Descriptor bases also expose `bigint DocumentId` in custom views. Resource descriptor bindings
+are `int DescriptorId`, so stored checks join the compact key to `dms.Descriptor.DescriptorId`
+and then test that row's owning `DocumentId`. Proposed direct descriptor checks bind an `Int32`
+first hop, including typed nulls; an indirect document-reference first hop remains `Int64` and
+eventually uses the same compact-to-document bridge. A descriptor self-basis already has its
+own `DocumentId`. Metadata, locking, and abstract discriminator behavior retain their contracts.
 
 The same views serve `ReadChanges` (`/deletes` and `/keyChanges`) authorization, where DMS seeks the live basis row by the tombstone's old natural-key values and checks its `DocumentId` against the view; a basis that is the subject itself or a person reads a stored `DocumentId` instead and is authorized by its current membership, as ODS does for its surrogate-keyed bases. A view whose name ends with `IncludingDeletes` (for example `auth.SchoolWithAlternativeTypeIncludingDeletes`) additionally makes DMS probe the basis resource's tombstone table, so that custom views keeps authorizing tombstones after the basis row itself was deleted; without the suffix such a view degrades to live-only behavior. The suffix has no meaning on the live read paths. See "Custom view-based strategies" in [change-queries.md](change-queries.md).
 
@@ -464,7 +478,7 @@ ODS executes an additional DB roundtrip for single-record authorizations, presum
 - Roundtrip #2
   - Run authorization check using the already-stored values (throw if unauthorized)
   - Run authorization check using the values from the request body (throw if unauthorized) (only if identifying values changed)
-  - Retrieve the referenced resources' DocumentIds (using the generated natural-key resolver)
+  - Retrieve the referenced resources' DocumentIds (using the current RI resolver (descriptor results carry both IDs))
   - Reconstitute the record and/or materialize comparable current rowsets for no-op detection
 - Roundtrip #3
   - Execute guarded no-op or update (only if it actually changed)
@@ -474,7 +488,7 @@ ODS requires at least 4 roundtrips for the same operation, and more if the resou
 #### POST
 
 - Roundtrip #1
-  - Retrieve the referenced resources' DocumentIds (using the generated natural-key resolver).
+  - Retrieve the referenced resources' DocumentIds (using the current RI resolver (descriptor results carry both IDs)).
 - Roundtrip #2
   - Retrieve the DocumentId and etag by its identifying values (to check if already exists, and for reconstitution) (etag to enforce `If-Match`, if applicable)
 - Roundtrip #3
@@ -522,7 +536,8 @@ been served.
 #### GET-many
 
 - Roundtrip #1
-  - If filtering by Descriptor(s), convert DescriptorUris to DocumentIds. We could avoid this step by caching descriptors as in ODS.
+  - If filtering by Descriptor(s), resolve whole DescriptorUris through RI to `int DescriptorId`
+    for the resource predicate. The resolver also returns owning `bigint DocumentId`.
 - Roundtrip #2
   - Get the page's DocumentIds (apply authorization, filters, and offset/limit)
   - Get the TotalCount (if applicable)
@@ -537,7 +552,7 @@ Even though the number of roundtrips above seems to be the same as in ODS, we sh
 
 We could further decrease the number of roundtrips if we implement the following measures:
 
-- Cache the DescriptorUri-to-DocumentId mapping (similar to ODS)
+- An optional descriptor URI-to-`int DescriptorId` cache would need component-update invalidation
 - Change the reconstitution queries to use Uuid instead of DocumentId (requires joining with the Document table)
 - Inline existence and ETag checks so they throw and abort the batch (similar to the auth checks)
 
@@ -578,8 +593,8 @@ async Task GetManyCourses()
     // - RelationshipsWithEdOrgsAndPeople
     // - RelationshipsWithEdOrgsAndPeopleInverted
 
-    // Omitted roundtrip #1: If filtering by Descriptor(s), convert DescriptorUris -> DocumentIds
-    // using the descriptor lowered-URI + ResourceKeyId probe.
+    // Omitted roundtrip #1: Resolve whole descriptor URIs through RI to int DescriptorId.
+    // Preserve current normalization; the same result also carries owning bigint DocumentId.
 
     var filterSql = @"
         SELECT edfi.Course.DocumentId
@@ -652,10 +667,11 @@ async Task PostCourseTranscript()
         }
     };
 
-    // Omitted roundtrip #1: Retrieve referenced resources using the generated natural-key resolver; the next values are dummy
-    var resolvedCourseAttemptResultDescriptorId = 12;
-    var resolvedCourseDocumentId = 34;
-    var resolvedStudentAcademicRecordDocumentId = 56;
+    // Omitted roundtrip #1: Current RI lookup; the next values are illustrative.
+    int resolvedCourseAttemptResultDescriptorId = 12;
+    long resolvedCourseAttemptResultDocumentId = 5000000012; // for descriptor document membership
+    long resolvedCourseDocumentId = 34;
+    long resolvedStudentAcademicRecordDocumentId = 56;
 
     await using var roundtrip2 = new NpgsqlCommand(@"
         SELECT
@@ -824,7 +840,7 @@ async Task PostCourseTranscript()
         roundtrip3.Parameters.AddWithValue("NewStudentAcademicRecord_DocumentId", resolvedStudentAcademicRecordDocumentId);
         roundtrip3.Parameters.AddWithValue("NewEducationOrganizationId", requestBody.studentAcademicRecordReference.educationOrganizationId);
 
-        // Omitted command: Retrieve referenced resources using the generated natural-key resolver
+        // Omitted command: Retrieve referenced resources using the current RI resolver (descriptor results carry both IDs)
         // Omitted command: Reconstitution queries
 
         try
@@ -1131,11 +1147,27 @@ The basisResource can also be a descriptor. Assume that the custom view `Transpo
       "schema": "dms",
       "name": "Descriptor"
     },
-    "targetColumnName": "DocumentId"
+    "targetColumnName": "DescriptorId"
+  },
+  {
+    "sourceTable": {
+      "schema": "dms",
+      "name": "Descriptor"
+    },
+    "sourceColumnName": "DocumentId",
+    "targetTable": null,
+    "targetColumnName": null
   }
 ]
 ```
 Custom views that return descriptors (such as the `TransportationTypeDescriptorWithABus` above) should return the descriptor's DocumentId as they appear in `dms.Descriptor.DocumentId`.
+
+For example, a subject storing `TransportationTypeDescriptor_DescriptorId = 42` joins
+`dms.Descriptor.DescriptorId = 42` and checks `DocumentId = 5000000042` against the view.
+The terminal step reads document membership; it does not join compact `42` to a document key.
+For an indirectly referenced descriptor the preceding document-reference hops remain `bigint`
+before the same bridge. Descriptor type resolution uses the qualified project/resource catalog,
+so same-named descriptor types across projects remain distinct.
 
 This function overload should also allow passing an abstract resource (such as `EducationOrganization` or `GeneralStudentProgramAssociation`) as the basis resource.
 

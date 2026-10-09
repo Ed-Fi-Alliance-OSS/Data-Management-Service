@@ -1085,6 +1085,86 @@ public class Given_RelationalQueryCapabilityCompiler
         capability.SupportedFieldsByQueryField.Should().BeEmpty();
     }
 
+    [TestCase(false, ScalarKind.Int32)]
+    [TestCase(true, ScalarKind.Int32)]
+    [TestCase(false, ScalarKind.Int64)]
+    [TestCase(true, ScalarKind.Int64)]
+    [TestCase(false, null)]
+    [TestCase(true, null)]
+    public void It_should_require_compact_storage_metadata_for_descriptor_filters(
+        bool throughReferenceIdentity,
+        ScalarKind? scalarKind
+    )
+    {
+        var publicPath = throughReferenceIdentity
+            ? "$.studentReference.academicSubjectDescriptor"
+            : "$.academicSubjectDescriptor";
+        var storagePath = publicPath;
+        var descriptorColumn = DescriptorColumn(
+            "AcademicSubjectDescriptorId",
+            storagePath,
+            _academicSubjectDescriptorResource
+        ) with
+        {
+            ScalarType = scalarKind is null ? null : new RelationalScalarType(scalarKind.Value),
+        };
+        var root = CreateRootTable(
+            "StudentAssociation",
+            [DocumentFkColumn("Student_DocumentId", "$.studentReference", _studentResource), descriptorColumn]
+        );
+        var concreteResource = CreateConcreteResource(
+            CreateModel(
+                root,
+                throughReferenceIdentity
+                    ?
+                    [
+                        CreateBinding(
+                            "$.studentReference",
+                            root.Table,
+                            "Student_DocumentId",
+                            publicPath,
+                            storagePath,
+                            descriptorColumn.ColumnName.Value
+                        ),
+                    ]
+                    : [],
+                [
+                    DescriptorEdge(
+                        storagePath,
+                        root.Table,
+                        descriptorColumn.ColumnName.Value,
+                        _academicSubjectDescriptorResource
+                    ),
+                ]
+            ),
+            ("academicSubjectDescriptor", [(publicPath, "string")])
+        );
+
+        var capability = new RelationalQueryCapabilityCompiler().Compile(concreteResource);
+
+        if (scalarKind is ScalarKind.Int32)
+        {
+            capability.Support.Should().BeOfType<RelationalQuerySupport.Supported>();
+            capability
+                .SupportedFieldsByQueryField["academicSubjectDescriptor"]
+                .Target.Should()
+                .Be(
+                    new RelationalQueryFieldTarget.DescriptorIdColumn(
+                        descriptorColumn.ColumnName,
+                        _academicSubjectDescriptorResource
+                    )
+                );
+            return;
+        }
+
+        capability.Support.Should().BeOfType<RelationalQuerySupport.Omitted>();
+        capability.SupportedFieldsByQueryField.Should().BeEmpty();
+        capability
+            .UnsupportedFieldsByQueryField["academicSubjectDescriptor"]
+            .FailureKind.Should()
+            .Be(RelationalQueryFieldFailureKind.UnmappedPath);
+    }
+
     private static ConcreteResourceModel CreateConcreteResource(
         RelationalResourceModel model,
         params (string QueryFieldName, (string Path, string Type)[] Paths)[] queryFields
@@ -1309,7 +1389,7 @@ public class Given_RelationalQueryCapabilityCompiler
         return new DbColumnModel(
             ColumnName: new DbColumnName(columnName),
             Kind: ColumnKind.DescriptorFk,
-            ScalarType: new RelationalScalarType(ScalarKind.Int64),
+            ScalarType: new RelationalScalarType(ScalarKind.Int32),
             IsNullable: true,
             SourceJsonPath: null,
             TargetResource: descriptorResource
@@ -1326,7 +1406,7 @@ public class Given_RelationalQueryCapabilityCompiler
         return new DbColumnModel(
             ColumnName: new DbColumnName(columnName),
             Kind: ColumnKind.DescriptorFk,
-            ScalarType: new RelationalScalarType(ScalarKind.Int64),
+            ScalarType: new RelationalScalarType(ScalarKind.Int32),
             IsNullable: true,
             SourceJsonPath: Path(sourcePath),
             TargetResource: descriptorResource,

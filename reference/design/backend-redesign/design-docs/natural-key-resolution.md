@@ -1,5 +1,10 @@
 # Natural-Key Reference Resolution: Removing UUIDv5 `ReferentialId`
 
+This is the future DMS-1443–DMS-1456 design. Its equality, validation, platform, stored-wins,
+and RI-removal changes are not part of [DMS-1404](../epics/21-storage-reduction/15-compact-descriptor-id-and-storage-optimizations.md).
+The storage baseline below includes DMS-1404; the proposed resolver builds on it without making
+DMS-1404 dependent on this workstream or its same-release atomicity requirement.
+
 ## Summary
 
 `dms.ReferentialIdentity` maps a deterministic UUIDv5 hash of each document's identity
@@ -52,7 +57,14 @@ the same physical database as DMS, as described in [bootstrap command
 boundaries](bootstrap/command-boundaries.md).
 
 The migration will be **code-only and re-provision-only**; no in-place upgrade scripts will be
-provided. Databases provisioned before these changes must be re-provisioned.
+provided. `RelationalMappingVersion` tracks the DMS release line: 8.0 shipped with `v1`, and 8.1
+ships with `v3`. All qualifying mapping changes before 8.1 ships retain `v3`; do not lower it or
+bump it again within that release. The next legitimate bump is `v4`, at the first qualifying
+relational mapping change after 8.1 ships, then at most once per subsequent release. The effective
+schema hash does not include generated DDL or mapping-set output, so a mapping-only change can
+leave the fingerprint unchanged. Deliberately reprovision older physical schemas even when `v3`
+and the hash match; startup validation cannot be assumed to detect them. See the
+[schema-fingerprint and reprovisioning guidance](../../../../docs/RELATIONAL-BACKEND.md#reprovisioning-and-legacy-data-carry-forward).
 
 The rollout is filed as epic DMS-1402 with fourteen stories, DMS-1443 through DMS-1456; this
 document refers to them by their stable local aliases T1–T14, defined in
@@ -67,6 +79,49 @@ PostgreSQL + SQL Server integration suites and E2E ran green on the prototype. T
 Server identity-column collation is a design-review correction after that prototype. Its required
 case-sensitive-database coverage is therefore an implementation gate described under
 ["Test strategy"](#test-strategy), not claimed as completed prototype evidence.
+
+### Compact descriptor storage baseline
+
+DMS-1404 retains the RI-based runtime on currently supported engines and supplies:
+
+| Role | Current storage and use |
+|---|---|
+| Descriptor row/reference key | Independently allocated `int DescriptorId` primary key: PostgreSQL `GENERATED ALWAYS AS IDENTITY`, SQL Server `IDENTITY(1,1)`. Every stored descriptor FK, including canonical unified columns, copied reference identities, collections, extensions and abstract projections, uses this compact key. |
+| Owning document key | Unique, non-null `bigint DocumentId` FK to `dms.Document`; used for RI, UUID lookup, locks, concurrency, document metadata, cache/work/restamp operations and document membership in auth views. Never narrow or reuse it as `DescriptorId`. |
+| Descriptor type | Non-null `smallint ResourceKeyId`; stamping triggers enforce descriptor/document agreement, with separate document and resource-catalog FKs. No live descriptor `Discriminator` exists. Abstract discriminators remain unchanged. |
+| URI | Reconstructed whole `Namespace + '#' + CodeValue`, preserving original case. PostgreSQL has no `Uri` column; SQL Server has non-persisted `Uri AS ([Namespace] + N'#' + [CodeValue])`. |
+| Uniqueness | `UX_Descriptor_ResourceKeyId_Uri`: PostgreSQL `(ResourceKeyId, (Namespace \|\| '#' \|\| CodeValue))`, SQL Server `(ResourceKeyId, Uri)`, under the former provider-default URI collation. No lowered identity index or new identity collation. |
+| Descriptor history | Shared history routes by stored `ResourceKeyId`, retaining owning `DocumentId`, UUID and old/new namespace/code snapshots without a live-owner FK. No descriptor history `Discriminator` exists. |
+
+The current batched RI join returns **both** `DescriptorId` and `DocumentId` without another round
+trip. Direct descriptor witnesses and descriptor-valued document identities reconstruct the whole
+URI before their existing transformations. Reference filters, flattening, hydration and joins from
+stored descriptor values use `DescriptorId`; document operations use `DocumentId`. Authorization
+that starts from a stored descriptor FK bridges through the descriptor row to its owning document
+before testing auth-view membership.
+
+Current descriptor POST matching through RI applies incoming namespace/code components and
+preserves both IDs; accepted representation changes stamp normally. PUT retains an ordinal
+whole-URI guard: different text, including case-only changes, returns 400; different component
+pairs producing exactly the same URI pass the guard and remain real updates. Unchanged bodies
+preserve ETags and both stamps. Whole reference URIs are not split, component-trimmed, restricted
+to one delimiter or Unicode-normalized. The later stored-wins and engine-equality proposals below change
+this behavior in DMS-1454, not DMS-1404.
+
+`UX_Descriptor_Uri_Discriminator` and `IX_Descriptor_Discriminator_ContentVersion` were removed
+by DMS-1404. Future index transitions start from `UX_Descriptor_ResourceKeyId_Uri`. Keep the
+existing `(ResourceKeyId, DocumentId)` paging and `(ResourceKeyId, ContentVersion, DocumentId)`
+change-window indexes and their document anchors.
+
+Both document stamp columns remain authoritative in the DMS-1404 baseline, with current
+document-to-root/descriptor mirror ownership. DMS-1404's completed handoff includes regenerated
+provider fixtures, unequal-ID metadata/restamp/cache checks, compatible performance loaders,
+representative legacy-dump conversion and reusable catalog assertions driven by a reviewed model
+manifest for the exact schema. [DMS-1401](../epics/21-storage-reduction/16-drop-document-content-last-modified-at.md#implementation-order-and-handoff-from-dms-1404)
+owns timestamp removal, the combined Minimal/Populated source/restore matrix and affected consumer
+pins. Until compatible templates are verified, use freshly provisioned databases and defer
+template-backed deployment. Final publication, release-view promotion and deployment pins remain
+release work. This handoff adds no benchmark, full-dataset or AOT gate to DMS-1404.
 
 ## Why remove it
 
@@ -290,10 +345,13 @@ OPTION (FORCE ORDER);
 
 **Descriptor-valued identity parts** (a descriptor URI inside a target's identity) will resolve with
 an inline `dms.Descriptor` join on the lowered URI key plus a compile-time `ResourceKeyId` literal
-for the descriptor type.
+for the descriptor type. The join compares the target's stored `int ..._DescriptorId` to
+`descriptor.DescriptorId`, including copied identity columns; the descriptor's owning `DocumentId`
+is not that reference key.
 
 **Descriptor targets** — a probe of `UX_Descriptor_UriLowered_ResourceKeyId` projecting
-`(Ordinal, DocumentId, ResourceKeyId)`. `ResourceKeyId` will read `dms.Descriptor`'s own NOT NULL
+`(Ordinal, DescriptorId, DocumentId, ResourceKeyId)`, retaining compact `int` and owning `bigint`
+IDs in the same result row. `ResourceKeyId` will read `dms.Descriptor`'s own NOT NULL
 column (DMS-1251) and will be the authoritative descriptor-type key for lookup and uniqueness.
 `FK_Descriptor_DocumentResourceKey` will pair `(DocumentId, ResourceKeyId)` back to
 `dms.Document(DocumentId, ResourceKeyId)` so the descriptor-type key cannot drift from the owning
@@ -303,8 +361,8 @@ re-check on every descriptor INSERT/UPDATE that raises "diverges from the owning
 justified in the emitter by "no FK ties the two together") will be retired in the same step, so
 the invariant has one declarative, every-writer enforcement point and the descriptor write path
 drops a per-row subquery. A mismatch is a DMS defect, never client input, so surfacing it as an FK
-violation instead of the bespoke message loses nothing at the API. `Discriminator` remains stored for diagnostics/read compatibility, but descriptor
-resolution will not depend on it.
+violation instead of the bespoke message loses nothing at the API. The compact primary key and
+unique document association remain; no live descriptor discriminator is available or needed.
 
 **Abstract targets** — a probe of `UX_<Abstract>Identity_RefKey` projecting
 `(Ordinal, DocumentId, ResourceKeyId)`. `ResourceKeyId` will be the concrete member resource key
@@ -393,7 +451,7 @@ Key properties:
     the later compatibility check; the capture predicate will only need the referenced `DocumentId`.
   - **Descriptor-valued identity part inside the referenced target identity:** use the
     `dms.Descriptor` lowered-URI + descriptor `ResourceKeyId` subselect (the same probe shape as
-    descriptor targets) to produce the descriptor `DocumentId` key value before comparing the
+    descriptor targets) to produce the compact `DescriptorId` key value before comparing the
     target key column.
   The 0-or-1 cardinality guarantee does **not** come from `UX_<Target>_RefKey` alone: because
   `DocumentId` trails that key, its uniqueness is vacuous while `DocumentId` is the value being
@@ -476,10 +534,16 @@ The composite write pipeline co-batches an embeddable reference lookup when the 
 it as a single statement with a single result set (`TryBuildSessionLookupCommand`). Per-target-group
 statements are multi-statement, so the natural-key builders will also expose a **union-projection
 form**: `UNION ALL` across target groups projecting the superset columns
-`(GroupOrdinal, Ordinal, DocumentId, ResourceKeyId)` plus an optional diagnostic
+`(GroupOrdinal, Ordinal, DocumentId, DescriptorId, ResourceKeyId)` plus an optional diagnostic
 `AbstractDiscriminator` for abstract groups. The resolver's compatibility path will use
 `ResourceKeyId`, not the discriminator string. On SQL Server every branch will keep its OPENJSON input
 leftmost under one statement-level `OPTION (FORCE ORDER)`.
+
+`DescriptorId` is an `int` slot populated for descriptor-target groups and typed NULL for ordinary
+concrete/abstract groups; `DocumentId` remains `bigint` for every resolved document. Descriptor-valued
+identity joins inside a non-descriptor group use compact IDs internally without relabeling its
+returned document key. Result readers, replay snapshots and resolved descriptor maps preserve both
+ID roles; no consumer substitutes one for the other.
 
 Returning null from this seam (falling back to ordered segments) would be *correct but would regress
 round-trip counts* for reference-bearing writes on that engine — acceptable only as a recorded,
@@ -515,24 +579,25 @@ lowercase a descriptor value. Descriptor URI values will accept all well-formed 
   by the framework decoder before parsing and are accepted as that (well-formed) code point.
 
 The PostgreSQL collation will be part of the descriptor identity contract, and it will pin the
-engine's folding rules. Every PostgreSQL descriptor identity index, lookup predicate, and Change
-Query recreated-row probe must lower values under the builtin **`pg_c_utf8`** collation, for example
-`lower("Uri" COLLATE "pg_c_utf8")`. The implementation must not emit an unqualified `lower("Uri")`
-or `lower(<namespace-codeValue expression>)` and rely on the database default. `pg_c_utf8` requires
+engine's folding rules. Every PostgreSQL descriptor identity index, lookup predicate, and Change Query
+recreated-row probe must lower values under the builtin **`pg_c_utf8`** collation, for example
+`lower(("Namespace" || '#' || "CodeValue") COLLATE "pg_c_utf8")`. PostgreSQL has no stored
+`Uri` column. The implementation must not emit an unqualified
+`lower(<namespace-codeValue expression>)` and rely on the database default. `pg_c_utf8` requires
 PostgreSQL 17+ and a UTF-8 database encoding. This design pins **PostgreSQL 18+** as the minimum
 version, a floor the team chose above the collation's own requirement for PostgreSQL 18's
-performance improvements. The collation's folding tables ship inside PostgreSQL and change only at a
-PostgreSQL major upgrade, so the upgrade playbook must include a `REINDEX` of the descriptor
-expression index — and account for the case where a Unicode revision makes two stored descriptors
-newly collide, which blocks the `REINDEX` until the data is resolved manually. On SQL Server,
-folding will follow the `LOWER(...)` computed column and the explicitly emitted
-`SQL_Latin1_General_CP1_CI_AS` identity collation. Every parameter-side descriptor fold must select
-that same casing table before `LOWER` executes, for example `LOWER(@uri COLLATE
-SQL_Latin1_General_CP1_CI_AS)`; an unqualified `LOWER(@uri)` would fold under the database default
-before collation precedence is applied to the comparison. This rule covers write/upsert,
-reference-resolution, query-filter, descriptor-valued identity, Change Query recreated-row probes,
-and custom-view `ReadChanges` authorization (live seeks and tombstone probe arms). The two engines'
-non-ASCII verdicts differ — an accepted trade-off (see "Risks and accepted trade-offs").
+performance improvements. Its folding tables ship inside PostgreSQL and change only at a
+PostgreSQL major upgrade, so the upgrade playbook must include a `REINDEX` of the descriptor expression index —
+and account for the case where a Unicode revision makes two stored descriptors newly collide,
+which blocks the `REINDEX` until the data is resolved manually. On SQL Server, folding will follow
+the `LOWER(...)` computed column and the explicitly emitted `SQL_Latin1_General_CP1_CI_AS`
+identity collation. Every parameter-side descriptor fold must select that same casing table before
+`LOWER` executes, for example `LOWER(@uri COLLATE SQL_Latin1_General_CP1_CI_AS)`; an unqualified
+`LOWER(@uri)` would fold under the database default before collation precedence is applied to the
+comparison. This rule covers write/upsert, reference-resolution, query-filter, descriptor-valued
+identity, Change Query recreated-row probes,
+and custom-view `ReadChanges` authorization (live seeks and tombstone probe arms). The two engines' non-ASCII verdicts differ — an
+accepted trade-off (see "Risks and accepted trade-offs").
 
 The SQL Server difference is deliberately broader than case folding. The chosen
 `SQL_Latin1_General_CP1_CI_AS` identity collation is a legacy version-80 `SQL_*` collation. It can
@@ -556,8 +621,8 @@ the collation's *casing table* while the index applies its *comparison weights*;
 distinct tables that disagree for some characters (Windows lowercasing folds dotted `İ` to `i`,
 for example, while `Latin1_General` comparison treats `İ` as a distinct letter). Keeping `LOWER`
 will therefore fold slightly more than raw CI comparison would — closer to PostgreSQL's Unicode
-simple fold — and preserve the cross-engine index shape at zero storage cost (the computed
-column will be non-persisted; the folded value will exist only in index keys).
+simple fold — and preserve the cross-engine index shape without additional base-row URI payload
+(the computed column will be non-persisted; the folded value will exist only in index keys).
 
 **This is an implementation change, not only a storage or documentation constraint.** The current
 write extraction and query preprocessing implementations lowercase arbitrary Unicode descriptor
@@ -601,30 +666,37 @@ and [transactions-and-concurrency.md](transactions-and-concurrency.md).
 
 | Object | Definition |
 |---|---|
-| PostgreSQL `UX_Descriptor_UriLowered_ResourceKeyId` | Unique expression index: `CREATE UNIQUE INDEX "UX_Descriptor_UriLowered_ResourceKeyId" ON dms."Descriptor" (lower("Uri" COLLATE "pg_c_utf8"), "ResourceKeyId");` |
-| SQL Server `dms.Descriptor.UriLowered` | Non-persisted computed column: `[UriLowered] AS LOWER([Uri])` |
+| PostgreSQL `UX_Descriptor_UriLowered_ResourceKeyId` | Unique expression index: `CREATE UNIQUE INDEX "UX_Descriptor_UriLowered_ResourceKeyId" ON dms."Descriptor" (lower(("Namespace" \|\| '#' \|\| "CodeValue") COLLATE "pg_c_utf8"), "ResourceKeyId");` |
+| SQL Server `dms.Descriptor.UriLowered` | Non-persisted computed column over stored components: `[UriLowered] AS LOWER(([Namespace] + N'#' + [CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)` |
 | SQL Server `UX_Descriptor_UriLowered_ResourceKeyId` | Unique index on `[UriLowered], [ResourceKeyId]` |
 
 The lowercased value will be stored only in the index key (and only as computed index state on SQL
-Server), not as a persisted duplicate in the descriptor row. The legacy
-`UX_Descriptor_Uri_Discriminator` will coexist with the new index from DMS-1448 (T6) until the
-final removal story DMS-1456 (T14) drops it — after descriptor writes (DMS-1454) and Change Queries
-(DMS-1455) have moved to the lowered-URI + `ResourceKeyId` contract. The CI index is additive, so
-keeping the legacy unique through the transition costs nothing.
+Server), not as a persisted duplicate in the descriptor row. Compute SQL Server `UriLowered`
+directly from stored components; `Uri` is itself computed and cannot be a computed-column dependency
+under the [SQL Server expression rules](https://learn.microsoft.com/en-us/sql/t-sql/statements/alter-table-computed-column-definition-transact-sql?view=sql-server-ver17).
+Preserve effective indexed-computation SET options on both provisioner and pooled runtime sessions.
+The existing unlowered `UX_Descriptor_ResourceKeyId_Uri` will coexist with the new index from
+DMS-1448 (T6) until the final removal story DMS-1456 (T14) drops it — after descriptor writes
+(DMS-1454) and Change Queries
+(DMS-1455) have moved to the lowered-URI + `ResourceKeyId` contract. Both indexes require
+maintenance during this internal transition; the final schema removes the redundant unlowered
+index. Neither removed discriminator index is reintroduced.
 
-`ResourceKeyId`, not `Discriminator`, will be the descriptor-type authority. This matches the
-existing descriptor architecture: `ResourceKeyId` is required and already drives type identity;
-`Discriminator` will be retained for diagnostics and read compatibility but will not participate in
-descriptor lookup or uniqueness.
+`ResourceKeyId` remains the descriptor-type authority for both live and historical rows. No live
+or tombstoned descriptor discriminator storage is retained. Abstract-identity discriminator
+columns, union-view outputs and their authorization behavior remain outside this replacement.
 
 The same identity contract will apply when Change Queries determines whether a deleted row was
 recreated. Descriptor `/deletes` anti-joins, and the descriptor-valued identity joins used by
 resource `/deletes`, will probe the live descriptor table by the lowered tombstoned
 `<namespace>#<codeValue>` URI plus the descriptor resource's compile-time `ResourceKeyId`. A shared
-descriptor tombstone's `Discriminator` may be used only to route historical rows to the requested
-descriptor endpoint; it will not be used as live descriptor identity or converted into a resource
-key. Consequently, any descriptor recreation that the engine considers the same identity will
-suppress the old tombstone: this includes casing differences on both engines and the accepted linguistic or
+descriptor tombstone's stored `ResourceKeyId` routes historical rows to the requested endpoint by
+its compile-time qualified resource key, including after the live descriptor/document is deleted.
+Resource identity joins compare compact descriptor FKs to live `DescriptorId`, while auth-view
+membership bridges to owning `DocumentId`; tombstone response/authorization uses retained
+document/UUID/component snapshots. Consequently, any descriptor recreation that the engine
+considers the same identity will suppress the old tombstone: this includes casing differences on
+both engines and the accepted linguistic or
 unweighted-code-point aliases on SQL Server.
 
 The descriptor write handler will simplify from three tables to two: the `ReferentialId`
@@ -632,25 +704,29 @@ CTE/`INSERT`/`ON CONFLICT`/`MERGE` statements will be deleted, and upsert detect
 lowered-URI + `ResourceKeyId` probe. PostgreSQL will probe the expression index:
 
 ```sql
-SELECT descriptor."DocumentId", d."DocumentUuid", d."ContentVersion"
+SELECT descriptor."DescriptorId", descriptor."DocumentId", d."DocumentUuid", d."ContentVersion"
 FROM dms."Descriptor" descriptor
 INNER JOIN dms."Document" d ON d."DocumentId" = descriptor."DocumentId"
-WHERE lower(descriptor."Uri" COLLATE "pg_c_utf8") = lower(@uri COLLATE "pg_c_utf8")
+WHERE lower((descriptor."Namespace" || '#' || descriptor."CodeValue") COLLATE "pg_c_utf8")
+      = lower(@uri COLLATE "pg_c_utf8")
   AND descriptor."ResourceKeyId" = 42 -- compile-time ResourceKeyId literal for the descriptor type
 ```
 
 SQL Server will probe the computed-column index:
 
 ```sql
-SELECT descriptor.[DocumentId], d.[DocumentUuid], d.[ContentVersion]
+SELECT descriptor.[DescriptorId], descriptor.[DocumentId], d.[DocumentUuid], d.[ContentVersion]
 FROM [dms].[Descriptor] descriptor
 INNER JOIN [dms].[Document] d ON d.[DocumentId] = descriptor.[DocumentId]
 WHERE descriptor.[UriLowered] = LOWER(@uri COLLATE SQL_Latin1_General_CP1_CI_AS)
   AND descriptor.[ResourceKeyId] = 42 -- compile-time ResourceKeyId literal for the descriptor type
 ```
 
-The `dms.Document` insert, `SCOPE_IDENTITY()` retrieval, row lock, uuid lookups, and delete builder
-will all keep their current shape.
+Keep native descriptor allocation independent of document allocation. On SQL Server, capture the
+document identity before inserting into the second identity-bearing table and obtain the descriptor
+key separately (for example, with `OUTPUT inserted.[DescriptorId]`). A later `SCOPE_IDENTITY()`
+cannot recover the earlier document key. Updates preserve both IDs; row locks, UUID lookup and
+document deletion continue to use the owning `DocumentId`.
 
 ### Query-time descriptor filters
 
@@ -753,8 +829,8 @@ conflicts or make recreated-row detection depend on the database default instead
 semantics. Therefore every SQL Server `TrackedChangeColumnInfo` string column whose origin includes
 identity, including descriptor `OldNamespace`/`OldCodeValue` and `NewNamespace`/`NewCodeValue`, will
 be emitted with `COLLATE SQL_Latin1_General_CP1_CI_AS`. Routing-only columns such as the shared
-descriptor `Discriminator`, and non-identity tracked scalar payloads, are outside this identity
-collation rule unless another explicit contract applies.
+descriptor `ResourceKeyId` (a smallint), and non-identity tracked scalar payloads, are outside this
+identity collation rule unless another explicit contract applies.
 
 This is a column contract, not a database provisioning constraint. SchemaTools will continue to
 preserve an operator-selected case-sensitive database collation; generated DMS identity columns will
@@ -795,8 +871,8 @@ The rows below state the target behavior once this design ships:
 | Regular natural-key matching (reference resolution and upsert detection) | Case-insensitive under the explicitly emitted `SQL_Latin1_General_CP1_CI_AS` identity-column collation, independent of the database default. Matches ODS. | Case-sensitive. Matches ODS. |
 | Case-variant natural-key POST of an existing document | **200** — silent update; stored casing preserved; if the payload is otherwise identical, a true no-op (no `ContentVersion` bump, no change event). Matches ODS. | Creates a second document (a case variant is a different value). Matches ODS. |
 | Case-variant (casing-only) key change via PUT | Not a key change: stored key casing is **immutable** on SQL Server, exactly as it is structurally in ODS. Real key changes on cascade-enabled resources behave as today. | A real key change (allowed on cascade-enabled resources, as today). |
-| Descriptor matching + uniqueness | Case-insensitive via the `LOWER(...)` computed column under the CI identity collation, + `ResourceKeyId`; also includes the accepted version-80 linguistic and unweighted-code-point aliases described above. | Case-insensitive via `lower(... COLLATE "pg_c_utf8")` + `ResourceKeyId` — the first time descriptors are CI on PostgreSQL (ODS *intended* CI descriptors but its PostgreSQL implementation stored CS and could accumulate case-variant duplicates). Uniform with SQL Server for ASCII input; non-ASCII folding verdicts are per-engine (accepted trade-off #8). |
-| Descriptor POST-as-update casing | Stored-wins: the update preserves stored `Namespace`/`CodeValue`/`Uri` casing; a casing-only re-POST is a true no-op. A case-only descriptor PUT is a 200 update/no-op, not an error. Matches `DescriptorCaseInsensitiveValidation.feature`. | Same. |
+| Descriptor matching + uniqueness | Case-insensitive via the `LOWER(...)` computed column under the CI identity collation, + `ResourceKeyId`; also includes the accepted version-80 linguistic and unweighted-code-point aliases described above. | Case-insensitive via `lower(... COLLATE "pg_c_utf8")` + `ResourceKeyId` — extends CI from the current RI lookup to database-enforced descriptor uniqueness (ODS *intended* CI descriptors but its PostgreSQL implementation stored CS and could accumulate case-variant duplicates). Uniform with SQL Server for ASCII input; non-ASCII folding verdicts are per-engine (accepted trade-off #8). |
+| Descriptor POST-as-update casing | Stored-wins: the update preserves stored `Namespace`/`CodeValue` and reconstructed URI casing; a casing-only re-POST is a true no-op. A case-only descriptor PUT is a 200 update/no-op, not an error. Matches `DescriptorCaseInsensitiveValidation.feature`. | Same. |
 | Core-side equality constraints and duplicate-item validation | Ordinal (stricter than the DMS identity collation; fails closed with 400). The gap this leaves for collections is closed below. | Ordinal (exact). |
 | Collection item matching against stored rows (local string semantic-key members) | Case-insensitive under the schema comparer; a comparer-equal item keeps its stored row, `CollectionItemId`, hidden profile columns, and stored casing (casing-only re-PUT is a no-op). Matches ODS child-entity key equality. | Case-sensitive (unchanged): a case variant is a different item (delete + insert). Matches ODS. |
 | GET-many string equality filters (`?field=value`) | Follow the column collation (no query-side `COLLATE` override): case-insensitive under the DMS identity collation for identity string columns, database-default collation for other string columns. Matches ODS. | Case-sensitive (unchanged). Matches ODS. |
@@ -871,11 +947,13 @@ rebind, the no-op comparer will treat the persisted identity fields as equal and
 ordinally; the PUT identity guard will follow the same engine descriptor-identity verdict and rebind.
 Descriptors have no cascade or key-change machinery, so this path will carry no side-effect risk.
 
-Because [`data-model.md`](data-model.md#2-dmsdescriptor-unified) also owns descriptor update
-semantics, it must express descriptor immutability in these equality-contract terms. The invariant is
-that PUT cannot persist a move to a different descriptor identity; it is not a byte-for-byte request
-matching rule. Without that distinction, the data-model rule reads as rejecting the case-only
-descriptor PUT that this design requires to return 200/no-op with stored casing intact.
+When DMS-1454 implements this proposal, update
+[`data-model.md`](data-model.md#2-dmsdescriptor-unified) from the current ordinal whole-URI PUT
+guard and incoming-component POST behavior to these stored-wins equality terms. In the future
+contract PUT cannot persist a move to a different engine-defined descriptor identity; the proposed
+case-only PUT returns 200/no-op with stored components intact. Until that cutover, DMS-1404's
+current behavior remains authoritative. Canonical response URIs continue to reconstruct from
+the stored components in either contract.
 
 **Comparer residue (documented, two directions):** `OrdinalIgnoreCase` approximates but does not
 equal the fixed DMS SQL Server collation, and the two can disagree in either direction:
@@ -978,8 +1056,8 @@ Relative to current DMS behavior (the hash era), on SQL Server:
 - NUL in descriptor URI writes, descriptor references, and descriptor-valued query filters will
   become a path-attributed 400 validation failure; a JSON `\uD800`-class unpaired-surrogate escape
   anywhere in a request body (any resource, any string property) will become a malformed-body 400
-  at parse instead of today's unmapped 5xx. Other non-ASCII descriptor
-  URI values will become accepted inputs, with case folding owned by each engine — `pg_c_utf8` on
+  at parse instead of today's unmapped 5xx. Other well-formed non-ASCII descriptor
+  URI values remain accepted, with case folding moving to each engine — `pg_c_utf8` on
   PostgreSQL (raising the minimum supported PostgreSQL version to 18) and the CI identity collation
   on SQL Server. The engines' non-ASCII identity verdicts differ; SQL Server's accepted version-80
   behavior includes linguistic and unweighted-code-point aliases (accepted trade-off #8).
@@ -1170,9 +1248,9 @@ a follow-on to be filed only on evidence and is not part of the T1–T14 rollout
 - The `ResourceKeyId` equality guard (and its `RAISE EXCEPTION`/`THROW`) at the top of
   `TF_/TR_Descriptor_Stamp_Document`, superseded by that composite FK; the triggers keep their
   no-op guard and stamp/mirror logic.
-- The live-descriptor `IX_Descriptor_Discriminator_ContentVersion` index after Change Query
-  recreated-row detection moves to `ResourceKeyId`-qualified natural identity probes.
-- `UX_Descriptor_Uri_Discriminator` (replaced by the `ResourceKeyId`-authoritative CI unique index).
+- `UX_Descriptor_ResourceKeyId_Uri` after descriptor writes and Change Query probes use the new
+  lowered-URI unique index. DMS-1404 already removed `UX_Descriptor_Uri_Discriminator` and
+  `IX_Descriptor_Discriminator_ContentVersion`; neither belongs to this later cleanup inventory.
 
 ### To be added
 
@@ -1225,7 +1303,8 @@ a follow-on to be filed only on evidence and is not part of the T1–T14 rollout
     dedicated resolved document-reference map (`IResolvedDocumentReferenceMap`) rather than a raw
     dictionary keyed by the new `ReferenceLookupKey`. `ReferenceLookupResult` will also lose
     `VerificationIdentityKey` (canary-only) and `ReferentialIdentityResourceKeyId`; `ResourceKeyId`
-    will remain the resolved concrete target key, including abstract matches.
+    will remain the resolved concrete target key, including abstract matches. Resolved descriptors
+    retain `int DescriptorId` alongside `long DocumentId`, including replay/snapshot consumers.
   - `Add{Postgresql,Mssql}ReferenceResolver()` DI extensions will compose the natural-key resolver —
     a behavioral change for hosts that resolve references through the old registration.
 - Abstract identity tables and their union views will add a concrete `ResourceKeyId smallint NOT
@@ -1251,22 +1330,34 @@ descriptor and abstract identity document/resource invariants (columns including
 unchanged); `dms.Descriptor` except for the descriptor unique-index swap, SQL Server's non-persisted
 `UriLowered` computed column, the composite `(DocumentId, ResourceKeyId)` FK back to `dms.Document`,
 and the explicit SQL Server identity collation. The retained descriptor table contract includes
-`ResourceKeyId NOT NULL`, `Discriminator` storage/read compatibility, and the mirrored
-`ContentVersion` / `ContentLastModifiedAt` columns required by descriptor change-version page
-selection on `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId`; the natural-key change must not
+native `int DescriptorId`, unique non-null `bigint DocumentId`, `ResourceKeyId NOT NULL`, stored
+namespace/code components and reconstructed URI output, with no descriptor discriminator or
+physically stored URI. The `ContentVersion` / `ContentLastModifiedAt` columns remain required by
+descriptor change-version page selection on `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId`;
+the natural-key change must not
 move that live descriptor path back to a `dms.Document` join. The logical shapes of
 `UX_<R>_RefKey` / `UX_<R>_NK`; the abstract identity table family, its uniqueness constraints, and
 its trigger topology except for concrete `ResourceKeyId` column population, the composite
 document/resource FK, and explicit SQL Server identity collation; the DocumentCache table family;
 tracked-change tables and triggers; `auth.*`;
-`dms.ResourceKey` / `dms.EffectiveSchema` / `dms.SchemaComponent`; and the read/reconstitution
-pipeline. The SQL Server `dms.UniqueIdentifierTable` TVP type stays: `MssqlRepresentationRestampStore`
+`dms.ResourceKey` / `dms.EffectiveSchema` / `dms.SchemaComponent`; the read/reconstitution pipeline;
+both document stamp columns and current mirror ownership remain in the DMS-1404 baseline.
+DMS-1401 separately owns timestamp removal/authority changes; natural-key work preserves the
+stamp ownership on its implementation baseline.
+The SQL Server `dms.UniqueIdentifierTable` TVP type stays: `MssqlRepresentationRestampStore`
 (DMS-1318) still binds it for restamping by document UUID. `dms.BigIntTable` stays — it serves
-authorization.
+authorization. `RelationalMappingVersion` follows the release
+cadence above; matching `v3` alone does not establish physical compatibility.
 
 ## Release compatibility and rollback
 
-This design is re-provision-only. Environments provisioned with an earlier shape must re-provision.
+The fourteen natural-key stories ship atomically in one release; intermediate trunk states are
+internal checkpoints and are not deployed. DMS-1404 and DMS-1401 are independently deliverable
+and outside that atomicity boundary. Retain `v3` for changes before 8.1 ships; the first qualifying
+post-8.1 mapping change is eligible for `v4`, not one bump per physical change. Deliberate
+reprovisioning and compatible verified templates remain necessary even with a matching fingerprint.
+For the planned DMS-1404 then DMS-1401 sequence, the latter owns the combined template gates and
+consumer pins described in the [compact baseline](#compact-descriptor-storage-baseline).
 
 Rollback is a commit revert while `dms.ReferentialIdentity` remains fully maintained. Once
 descriptor writes stop maintaining RI rows, rollback to the RI resolver requires re-provisioning
@@ -1379,7 +1470,9 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
 - **Dialect SQL unit tests**: statement shape independent of batch size (PostgreSQL), OPENJSON +
   FORCE ORDER + leftmost-input pins, explicit DMS identity collation on every textual OPENJSON key
   operand, and the parameter-budget guard (SQL Server), plus the union-projection single-statement
-  form.
+  form. Unequal descriptor/document IDs pin both result slots and compact joins, including copied
+  descriptor identities; PostgreSQL reconstructs the whole URI and SQL Server computes `UriLowered`
+  from stored components. History routes by stored `ResourceKeyId` after live-owner deletion.
 - **No old-vs-new gates.** The prototype's differential equivalence proof and benchmark matrix stand
   as the transition evidence; neither suite will be ported to the implementation branch. Correctness
   will be carried by the behavior pins below, the existing integration estate (running against the new
@@ -1500,7 +1593,8 @@ Two designs were evaluated (August 2026):
 
 - **Engine-side folding (chosen)** — case folding owned by the database engines: PostgreSQL's
   builtin `pg_c_utf8` collation and SQL Server's CI identity collation; C# never lowercases; no
-  schema additions. The team accepted a PostgreSQL minimum-version floor (17 is the collation's
+  persisted lowered-URI column family. The expression/computed index additions reconstruct from
+  the compact baseline's stored components. The team accepted a PostgreSQL minimum-version floor (17 is the collation's
   requirement; the team later set the floor to 18 for its performance improvements), the
   per-engine non-ASCII verdicts (including SQL Server's lossy version-80 identity aliases), and the
   PostgreSQL major-upgrade `REINDEX` playbook — all recorded in accepted trade-off #8.

@@ -52,6 +52,9 @@ internal static class RelationalModelSystemColumnFactory
         {
             ColumnKind.Ordinal => new RelationalScalarType(ScalarKind.Int32),
             ColumnKind.CollectionKey => new RelationalScalarType(ScalarKind.Int64),
+            ColumnKind.ParentKeyPart
+                when keyColumn.ColumnName.Equals(RelationalNameConventions.DescriptorKeyColumnName) =>
+                new RelationalScalarType(ScalarKind.Int32),
             ColumnKind.ParentKeyPart => new RelationalScalarType(ScalarKind.Int64),
             ColumnKind.DocumentFk => new RelationalScalarType(ScalarKind.Int64),
             _ => throw new InvalidOperationException(

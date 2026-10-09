@@ -1821,10 +1821,8 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
                 ShortDescription: new DbColumnName("ShortDescription"),
                 Description: new DbColumnName("Description"),
                 EffectiveBeginDate: new DbColumnName("EffectiveBeginDate"),
-                EffectiveEndDate: new DbColumnName("EffectiveEndDate"),
-                Discriminator: null
-            ),
-            DiscriminatorStrategy.ResourceKeyId
+                EffectiveEndDate: new DbColumnName("EffectiveEndDate")
+            )
         );
 
         return new MappingSet(

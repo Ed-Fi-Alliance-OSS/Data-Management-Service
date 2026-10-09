@@ -215,6 +215,9 @@ public abstract class SqlDialectBase : ISqlDialect
     public abstract string JsonColumnType { get; }
 
     /// <inheritdoc />
+    public abstract string IdentityIntColumnType { get; }
+
+    /// <inheritdoc />
     public abstract string IdentityBigintColumnType { get; }
 
     /// <inheritdoc />

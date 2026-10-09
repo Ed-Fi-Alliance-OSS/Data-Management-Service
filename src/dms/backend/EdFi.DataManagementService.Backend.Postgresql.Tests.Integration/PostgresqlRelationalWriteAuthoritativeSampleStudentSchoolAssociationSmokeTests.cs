@@ -320,14 +320,14 @@ internal sealed record AuthoritativeSampleStudentSchoolAssociationSeedData(
     long ConflictCalendarDocumentId,
     long StudentDocumentId,
     long StudentSchoolYearTypeDocumentId,
-    long NinthGradeLevelDescriptorId,
-    long TenthGradeLevelDescriptorId,
-    long ResidentMembershipTypeDescriptorId,
-    long TransferMembershipTypeDescriptorId,
-    long PathwayEducationPlanDescriptorId,
-    long InterventionEducationPlanDescriptorId,
-    long CareerEducationPlanDescriptorId,
-    long GraduationPlanTypeDescriptorId,
+    int NinthGradeLevelDescriptorId,
+    int TenthGradeLevelDescriptorId,
+    int ResidentMembershipTypeDescriptorId,
+    int TransferMembershipTypeDescriptorId,
+    int PathwayEducationPlanDescriptorId,
+    int InterventionEducationPlanDescriptorId,
+    int CareerEducationPlanDescriptorId,
+    int GraduationPlanTypeDescriptorId,
     long FoundationGraduationPlanDocumentId,
     long EndorsementGraduationPlanDocumentId,
     long StemGraduationPlanDocumentId
@@ -350,14 +350,14 @@ internal sealed record AuthoritativeSampleStudentSchoolAssociationRow(
     long SchoolDocumentId,
     long StudentDocumentId,
     string StudentUniqueId,
-    long EntryGradeLevelDescriptorId,
+    int EntryGradeLevelDescriptorId,
     DateOnly EntryDate,
     bool PrimarySchool
 );
 
 internal sealed record AuthoritativeSampleStudentSchoolAssociationExtensionRow(
     long DocumentId,
-    long MembershipTypeDescriptorId
+    int MembershipTypeDescriptorId
 );
 
 internal sealed record AuthoritativeSampleStudentSchoolAssociationAlternativeGraduationPlanRow(
@@ -366,7 +366,7 @@ internal sealed record AuthoritativeSampleStudentSchoolAssociationAlternativeGra
     long StudentSchoolAssociationDocumentId,
     long AlternativeGraduationPlanDocumentId,
     long AlternativeGraduationPlanEducationOrganizationId,
-    long AlternativeGraduationPlanGraduationPlanTypeDescriptorId,
+    int AlternativeGraduationPlanGraduationPlanTypeDescriptorId,
     int AlternativeGraduationPlanGraduationSchoolYear
 );
 
@@ -374,7 +374,7 @@ internal sealed record AuthoritativeSampleStudentSchoolAssociationEducationPlanR
     long CollectionItemId,
     int Ordinal,
     long StudentSchoolAssociationDocumentId,
-    long EducationPlanDescriptorId
+    int EducationPlanDescriptorId
 );
 
 internal sealed record AuthoritativeSampleStudentSchoolAssociationPersistedState(
@@ -1406,7 +1406,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             calendarTypeDescriptorResourceKeyId,
             "Ed-Fi",
             "CalendarTypeDescriptor",
-            "Ed-Fi:CalendarTypeDescriptor",
             CalendarTypeDescriptorUri,
             "uri://ed-fi.org/CalendarTypeDescriptor",
             "Instructional",
@@ -1417,7 +1416,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             gradeLevelDescriptorResourceKeyId,
             "Ed-Fi",
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
             NinthGradeLevelDescriptorUri,
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Ninth grade",
@@ -1428,7 +1426,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             gradeLevelDescriptorResourceKeyId,
             "Ed-Fi",
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
             TenthGradeLevelDescriptorUri,
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Tenth grade",
@@ -1439,7 +1436,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             graduationPlanTypeDescriptorResourceKeyId,
             "Ed-Fi",
             "GraduationPlanTypeDescriptor",
-            "Ed-Fi:GraduationPlanTypeDescriptor",
             GraduationPlanTypeDescriptorUri,
             "uri://ed-fi.org/GraduationPlanTypeDescriptor",
             "Foundation",
@@ -1450,7 +1446,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             educationPlanDescriptorResourceKeyId,
             "Ed-Fi",
             "EducationPlanDescriptor",
-            "Ed-Fi:EducationPlanDescriptor",
             PathwayEducationPlanDescriptorUri,
             "uri://ed-fi.org/EducationPlanDescriptor",
             "Pathway",
@@ -1461,7 +1456,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             educationPlanDescriptorResourceKeyId,
             "Ed-Fi",
             "EducationPlanDescriptor",
-            "Ed-Fi:EducationPlanDescriptor",
             InterventionEducationPlanDescriptorUri,
             "uri://ed-fi.org/EducationPlanDescriptor",
             "Intervention",
@@ -1472,7 +1466,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             educationPlanDescriptorResourceKeyId,
             "Ed-Fi",
             "EducationPlanDescriptor",
-            "Ed-Fi:EducationPlanDescriptor",
             CareerEducationPlanDescriptorUri,
             "uri://ed-fi.org/EducationPlanDescriptor",
             "Career",
@@ -1483,7 +1476,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             membershipTypeDescriptorResourceKeyId,
             "Sample",
             "MembershipTypeDescriptor",
-            "Sample:MembershipTypeDescriptor",
             ResidentMembershipTypeDescriptorUri,
             "uri://sample.org/MembershipTypeDescriptor",
             "Resident",
@@ -1494,7 +1486,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             membershipTypeDescriptorResourceKeyId,
             "Sample",
             "MembershipTypeDescriptor",
-            "Sample:MembershipTypeDescriptor",
             TransferMembershipTypeDescriptorUri,
             "uri://sample.org/MembershipTypeDescriptor",
             "Transfer",
@@ -1820,12 +1811,11 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
     }
 
-    private async Task<long> SeedDescriptorAsync(
+    private async Task<int> SeedDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
         string projectName,
         string resourceName,
-        string discriminator,
         string uri,
         string @namespace,
         string codeValue,
@@ -1835,8 +1825,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var documentId = await InsertDescriptorAsync(
             documentUuid,
             resourceKeyId,
-            discriminator,
-            uri,
             @namespace,
             codeValue,
             shortDescription
@@ -1844,26 +1832,25 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
 
         await InsertReferentialIdentityAsync(
             CreateDescriptorReferentialId(projectName, resourceName, uri),
-            documentId,
+            documentId.DocumentId,
             resourceKeyId
         );
 
-        return documentId;
+        return documentId.DescriptorId;
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<SeededDescriptor> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
@@ -1871,9 +1858,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
+                "Description"
             )
             VALUES (
                 @documentId,
@@ -1881,22 +1866,18 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
-            );
+                @description
+            ) RETURNING "DescriptorId";
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),
-            new NpgsqlParameter("description", shortDescription),
-            new NpgsqlParameter("discriminator", discriminator),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("description", shortDescription)
         );
 
-        return documentId;
+        return new(descriptorId, documentId);
     }
 
     private async Task InsertSchoolAsync(long documentId, long schoolId, string nameOfInstitution)
@@ -1962,7 +1943,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         int schoolYear,
         long schoolDocumentId,
         long schoolId,
-        long calendarTypeDescriptorId,
+        int calendarTypeDescriptorId,
         string calendarCode
     )
     {
@@ -2003,7 +1984,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         long educationOrganizationId,
         long graduationSchoolYearDocumentId,
         int graduationSchoolYear,
-        long graduationPlanTypeDescriptorId,
+        int graduationPlanTypeDescriptorId,
         decimal totalRequiredCredits
     )
     {
@@ -2224,7 +2205,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     rows[0],
                     "Student_StudentUniqueId"
                 ),
-                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt32(
                     rows[0],
                     "EntryGradeLevelDescriptor_DescriptorId"
                 ),
@@ -2261,7 +2242,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     rows[0],
                     "DocumentId"
                 ),
-                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt32(
                     rows[0],
                     "MembershipTypeDescriptor_DescriptorId"
                 )
@@ -2310,7 +2291,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     row,
                     "AlternativeGraduationPlan_EducationOrganizationId"
                 ),
-                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt32(
                     row,
                     "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181"
                 ),
@@ -2350,10 +2331,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     row,
                     "StudentSchoolAssociation_DocumentId"
                 ),
-                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
-                    row,
-                    "EducationPlanDescriptor_DescriptorId"
-                )
+                (int)row["EducationPlanDescriptor_DescriptorId"]!
             ))
             .ToArray();
     }
@@ -2365,11 +2343,11 @@ internal sealed record PropagatedReferenceIdentityRuntimeSeedData(
     long AlternateCalendarDocumentId,
     long StudentDocumentId,
     long StudentSchoolYearTypeDocumentId,
-    long NinthGradeLevelDescriptorId,
-    long TenthGradeLevelDescriptorId,
-    long ResidentMembershipTypeDescriptorId,
-    long TransferMembershipTypeDescriptorId,
-    long GraduationPlanTypeDescriptorId,
+    int NinthGradeLevelDescriptorId,
+    int TenthGradeLevelDescriptorId,
+    int ResidentMembershipTypeDescriptorId,
+    int TransferMembershipTypeDescriptorId,
+    int GraduationPlanTypeDescriptorId,
     long FoundationGraduationPlanDocumentId,
     long EndorsementGraduationPlanDocumentId
 );
@@ -2730,7 +2708,6 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
             calendarTypeDescriptorResourceKeyId,
             "Ed-Fi",
             "CalendarTypeDescriptor",
-            "Ed-Fi:CalendarTypeDescriptor",
             CalendarTypeDescriptorUri,
             "uri://ed-fi.org/CalendarTypeDescriptor",
             "Instructional",
@@ -2741,7 +2718,6 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
             gradeLevelDescriptorResourceKeyId,
             "Ed-Fi",
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
             NinthGradeLevelDescriptorUri,
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Ninth grade",
@@ -2752,7 +2728,6 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
             gradeLevelDescriptorResourceKeyId,
             "Ed-Fi",
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
             TenthGradeLevelDescriptorUri,
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Tenth grade",
@@ -2763,7 +2738,6 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
             graduationPlanTypeDescriptorResourceKeyId,
             "Ed-Fi",
             "GraduationPlanTypeDescriptor",
-            "Ed-Fi:GraduationPlanTypeDescriptor",
             GraduationPlanTypeDescriptorUri,
             "uri://ed-fi.org/GraduationPlanTypeDescriptor",
             "Foundation",
@@ -2774,7 +2748,6 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
             membershipTypeDescriptorResourceKeyId,
             "Sample",
             "MembershipTypeDescriptor",
-            "Sample:MembershipTypeDescriptor",
             ResidentMembershipTypeDescriptorUri,
             "uri://sample.org/MembershipTypeDescriptor",
             "Resident",
@@ -2785,7 +2758,6 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
             membershipTypeDescriptorResourceKeyId,
             "Sample",
             "MembershipTypeDescriptor",
-            "Sample:MembershipTypeDescriptor",
             TransferMembershipTypeDescriptorUri,
             "uri://sample.org/MembershipTypeDescriptor",
             "Transfer",
@@ -3036,12 +3008,11 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
         );
     }
 
-    private async Task<long> SeedDescriptorAsync(
+    private async Task<int> SeedDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
         string projectName,
         string resourceName,
-        string discriminator,
         string uri,
         string @namespace,
         string codeValue,
@@ -3051,8 +3022,6 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
         var documentId = await InsertDescriptorAsync(
             documentUuid,
             resourceKeyId,
-            discriminator,
-            uri,
             @namespace,
             codeValue,
             shortDescription
@@ -3060,26 +3029,25 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
 
         await InsertReferentialIdentityAsync(
             CreateDescriptorReferentialId(projectName, resourceName, uri),
-            documentId,
+            documentId.DocumentId,
             resourceKeyId
         );
 
-        return documentId;
+        return documentId.DescriptorId;
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<SeededDescriptor> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
@@ -3087,9 +3055,7 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
+                "Description"
             )
             VALUES (
                 @documentId,
@@ -3097,22 +3063,18 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
-            );
+                @description
+            ) RETURNING "DescriptorId";
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),
-            new NpgsqlParameter("description", shortDescription),
-            new NpgsqlParameter("discriminator", discriminator),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("description", shortDescription)
         );
 
-        return documentId;
+        return new(descriptorId, documentId);
     }
 
     private async Task InsertSchoolAsync(long documentId, long schoolId, string nameOfInstitution)
@@ -3178,7 +3140,7 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
         int schoolYear,
         long schoolDocumentId,
         long schoolId,
-        long calendarTypeDescriptorId,
+        int calendarTypeDescriptorId,
         string calendarCode
     )
     {
@@ -3219,7 +3181,7 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
         long educationOrganizationId,
         long graduationSchoolYearDocumentId,
         int graduationSchoolYear,
-        long graduationPlanTypeDescriptorId,
+        int graduationPlanTypeDescriptorId,
         decimal totalRequiredCredits
     )
     {
@@ -3439,7 +3401,7 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
                     rows[0],
                     "Student_StudentUniqueId"
                 ),
-                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt32(
                     rows[0],
                     "EntryGradeLevelDescriptor_DescriptorId"
                 ),
@@ -3476,7 +3438,7 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
                     rows[0],
                     "DocumentId"
                 ),
-                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt32(
                     rows[0],
                     "MembershipTypeDescriptor_DescriptorId"
                 )
@@ -3525,7 +3487,7 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_R
                     row,
                     "AlternativeGraduationPlan_EducationOrganizationId"
                 ),
-                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt32(
                     row,
                     "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181"
                 ),
@@ -3778,7 +3740,6 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
             calendarTypeDescriptorResourceKeyId,
             "Ed-Fi",
             "CalendarTypeDescriptor",
-            "Ed-Fi:CalendarTypeDescriptor",
             CalendarTypeDescriptorUri,
             "uri://ed-fi.org/CalendarTypeDescriptor",
             "Instructional",
@@ -3789,7 +3750,6 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
             gradeLevelDescriptorResourceKeyId,
             "Ed-Fi",
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
             NinthGradeLevelDescriptorUri,
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Ninth grade",
@@ -3800,7 +3760,6 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
             graduationPlanTypeDescriptorResourceKeyId,
             "Ed-Fi",
             "GraduationPlanTypeDescriptor",
-            "Ed-Fi:GraduationPlanTypeDescriptor",
             GraduationPlanTypeDescriptorUri,
             "uri://ed-fi.org/GraduationPlanTypeDescriptor",
             "Foundation",
@@ -3811,7 +3770,6 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
             educationPlanDescriptorResourceKeyId,
             "Ed-Fi",
             "EducationPlanDescriptor",
-            "Ed-Fi:EducationPlanDescriptor",
             PathwayEducationPlanDescriptorUri,
             "uri://ed-fi.org/EducationPlanDescriptor",
             "Pathway",
@@ -3822,7 +3780,6 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
             educationPlanDescriptorResourceKeyId,
             "Ed-Fi",
             "EducationPlanDescriptor",
-            "Ed-Fi:EducationPlanDescriptor",
             InterventionEducationPlanDescriptorUri,
             "uri://ed-fi.org/EducationPlanDescriptor",
             "Intervention",
@@ -3833,7 +3790,6 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
             educationPlanDescriptorResourceKeyId,
             "Ed-Fi",
             "EducationPlanDescriptor",
-            "Ed-Fi:EducationPlanDescriptor",
             CareerEducationPlanDescriptorUri,
             "uri://ed-fi.org/EducationPlanDescriptor",
             "Career",
@@ -3844,7 +3800,6 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
             membershipTypeDescriptorResourceKeyId,
             "Sample",
             "MembershipTypeDescriptor",
-            "Sample:MembershipTypeDescriptor",
             ResidentMembershipTypeDescriptorUri,
             "uri://sample.org/MembershipTypeDescriptor",
             "Resident",
@@ -3855,7 +3810,6 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
             membershipTypeDescriptorResourceKeyId,
             "Sample",
             "MembershipTypeDescriptor",
-            "Sample:MembershipTypeDescriptor",
             TransferMembershipTypeDescriptorUri,
             "uri://sample.org/MembershipTypeDescriptor",
             "Transfer",
@@ -4157,12 +4111,11 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
         );
     }
 
-    private async Task<long> SeedDescriptorAsync(
+    private async Task<int> SeedDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
         string projectName,
         string resourceName,
-        string discriminator,
         string uri,
         string @namespace,
         string codeValue,
@@ -4172,8 +4125,6 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
         var documentId = await InsertDescriptorAsync(
             documentUuid,
             resourceKeyId,
-            discriminator,
-            uri,
             @namespace,
             codeValue,
             shortDescription
@@ -4181,26 +4132,25 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
 
         await InsertReferentialIdentityAsync(
             CreateDescriptorReferentialId(projectName, resourceName, uri),
-            documentId,
+            documentId.DocumentId,
             resourceKeyId
         );
 
-        return documentId;
+        return documentId.DescriptorId;
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<SeededDescriptor> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
@@ -4208,9 +4158,7 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
+                "Description"
             )
             VALUES (
                 @documentId,
@@ -4218,22 +4166,18 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
-            );
+                @description
+            ) RETURNING "DescriptorId";
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),
-            new NpgsqlParameter("description", shortDescription),
-            new NpgsqlParameter("discriminator", discriminator),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("description", shortDescription)
         );
 
-        return documentId;
+        return new(descriptorId, documentId);
     }
 
     private async Task InsertSchoolAsync(long documentId, long schoolId, string nameOfInstitution)
@@ -4299,7 +4243,7 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
         int schoolYear,
         long schoolDocumentId,
         long schoolId,
-        long calendarTypeDescriptorId,
+        int calendarTypeDescriptorId,
         string calendarCode
     )
     {
@@ -4340,7 +4284,7 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
         long educationOrganizationId,
         long graduationSchoolYearDocumentId,
         int graduationSchoolYear,
-        long graduationPlanTypeDescriptorId,
+        int graduationPlanTypeDescriptorId,
         decimal totalRequiredCredits
     )
     {
@@ -4573,7 +4517,7 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
                     rows[0],
                     "School_SchoolId"
                 ),
-                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
+                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt32(
                     rows[0],
                     "CalendarTypeDescriptor_DescriptorId"
                 ),
@@ -4636,10 +4580,7 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
                     row,
                     "Student_StudentUniqueId"
                 ),
-                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
-                    row,
-                    "EntryGradeLevelDescriptor_DescriptorId"
-                ),
+                (int)row["EntryGradeLevelDescriptor_DescriptorId"]!,
                 AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetDateOnly(
                     row,
                     "EntryDate"
@@ -4666,10 +4607,7 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
 
         return rows.Select(row => new NoProfileAtomicRollbackAssertions.RejectedWriteAssociationExtensionRow(
                 AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(row, "DocumentId"),
-                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
-                    row,
-                    "MembershipTypeDescriptor_DescriptorId"
-                )
+                (int)row["MembershipTypeDescriptor_DescriptorId"]!
             ))
             .ToArray();
     }
@@ -4747,10 +4685,7 @@ public class Given_A_Postgresql_Relational_Write_Key_Unification_Conflict_With_T
                     row,
                     "StudentSchoolAssociation_DocumentId"
                 ),
-                AuthoritativeSampleStudentSchoolAssociationIntegrationTestSupport.GetInt64(
-                    row,
-                    "EducationPlanDescriptor_DescriptorId"
-                )
+                (int)row["EducationPlanDescriptor_DescriptorId"]!
             ))
             .ToArray();
     }

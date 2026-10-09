@@ -50,6 +50,8 @@ public class Given_MssqlReferenceLookupBulkStrategy
         command.CommandText.Should().Contain("[VerificationIdentityKey]");
         command.CommandText.Should().Contain("INNER JOIN [dms].[ReferentialIdentity]");
         command.CommandText.Should().Contain("LEFT JOIN [dms].[Descriptor]");
+        command.CommandText.Should().Contain("referentialIdentity.[DocumentId] AS [DocumentId]");
+        command.CommandText.Should().Contain("descriptor.[DescriptorId] AS [DescriptorId]");
         command.Parameters.Should().ContainSingle();
         command.Parameters[0].Name.Should().Be("@referentialIds");
         command.Parameters[0].Value.Should().BeOfType<DataTable>();
@@ -95,9 +97,13 @@ public class Given_MssqlReferenceLookupBulkStrategy
         command.CommandText.Should().Contain("FROM [edfi].[SchoolClassification_View] source");
         command.CommandText.Should().Contain("N'$.schoolTypeDescriptor='");
         command.CommandText.Should().Contain("FROM [dms].[Descriptor] descriptor");
+        command.CommandText.Should().Contain("descriptor.[DocumentId] = document.[DocumentId]");
+        command.CommandText.Should().Contain("LOWER(descriptor.[Namespace] + N'#' + descriptor.[CodeValue])");
+        command.CommandText.Should().Contain("SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue]");
+        command.CommandText.Should().NotContain("descriptor.[Uri]");
         command
             .CommandText.Should()
-            .Contain("descriptor.[DocumentId] = source.[SchoolTypeDescriptor_DescriptorId]");
+            .Contain("descriptor.[DescriptorId] = source.[SchoolTypeDescriptor_DescriptorId]");
     }
 
     [Test]
@@ -126,7 +132,7 @@ public class Given_MssqlReferenceLookupBulkStrategy
                         ("DocumentId", 303L),
                         ("ResourceKeyId", (short)40),
                         ("ReferentialIdentityResourceKeyId", (short)40),
-                        ("IsDescriptor", true),
+                        ("DescriptorId", 17),
                         (
                             "VerificationIdentityKey",
                             "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
@@ -137,7 +143,7 @@ public class Given_MssqlReferenceLookupBulkStrategy
                         ("DocumentId", 202L),
                         ("ResourceKeyId", (short)21),
                         ("ReferentialIdentityResourceKeyId", (short)30),
-                        ("IsDescriptor", false),
+                        ("DescriptorId", null),
                         ("VerificationIdentityKey", "$.educationOrganizationId=255901")
                     ),
                     RelationalAccessTestData.CreateRow(
@@ -145,7 +151,7 @@ public class Given_MssqlReferenceLookupBulkStrategy
                         ("DocumentId", 101L),
                         ("ResourceKeyId", (short)11),
                         ("ReferentialIdentityResourceKeyId", (short)11),
-                        ("IsDescriptor", false),
+                        ("DescriptorId", null),
                         ("VerificationIdentityKey", "$.schoolId=255901")
                     )
                 ),
@@ -177,13 +183,13 @@ public class Given_MssqlReferenceLookupBulkStrategy
         result
             .Should()
             .Equal(
-                new ReferenceLookupResult(firstFoundReferentialId, 101L, 11, 11, false, "$.schoolId=255901"),
+                new ReferenceLookupResult(firstFoundReferentialId, 101L, 11, 11, null, "$.schoolId=255901"),
                 new ReferenceLookupResult(
                     aliasReferentialId,
                     202L,
                     21,
                     30,
-                    false,
+                    null,
                     "$.educationOrganizationId=255901"
                 ),
                 new ReferenceLookupResult(
@@ -191,7 +197,7 @@ public class Given_MssqlReferenceLookupBulkStrategy
                     303L,
                     40,
                     40,
-                    true,
+                    17,
                     "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                 )
             );

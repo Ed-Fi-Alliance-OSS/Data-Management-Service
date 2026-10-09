@@ -149,7 +149,7 @@ public class Given_Regular_Resources_For_Tracked_Change_Derivation
     }
 
     /// <summary>
-    /// It should expose Id, ChangeVersion, DocumentId, and CreatedAt system columns with no Discriminator.
+    /// It should expose Id, ChangeVersion, DocumentId, and CreatedAt without a descriptor routing column.
     /// </summary>
     [Test]
     public void It_should_expose_the_non_descriptor_system_columns()
@@ -168,7 +168,7 @@ public class Given_Regular_Resources_For_Tracked_Change_Derivation
 
         enrollment
             .SystemColumns.Should()
-            .NotContain(column => column.Role == TrackedChangeSystemColumnRole.Discriminator);
+            .NotContain(column => column.Role == TrackedChangeSystemColumnRole.ResourceKeyId);
     }
 
     /// <summary>
@@ -353,8 +353,9 @@ public class Given_Top_Level_Person_Resources_For_Tracked_Change_Derivation
 /// <summary>
 /// Test fixture for tracked-change derivation over a descriptor-only project.
 /// </summary>
-[TestFixture]
-public class Given_Descriptor_Resources_For_Tracked_Change_Derivation
+[TestFixture(SqlDialect.Pgsql)]
+[TestFixture(SqlDialect.Mssql)]
+public class Given_Descriptor_Resources_For_Tracked_Change_Derivation(SqlDialect dialect)
 {
     private DerivedRelationalModelSet _set = default!;
 
@@ -365,7 +366,9 @@ public class Given_Descriptor_Resources_For_Tracked_Change_Derivation
     public void Setup()
     {
         _set = TrackedChangeDerivationTestHelpers.BuildSet(
-            CommonInventoryTestSchemaBuilder.BuildDescriptorOnlyProjectSchema()
+            CommonInventoryTestSchemaBuilder.BuildDescriptorOnlyProjectSchema(),
+            dialect,
+            dialect is SqlDialect.Pgsql ? new PgsqlDialectRules() : new MssqlDialectRules()
         );
     }
 
@@ -399,30 +402,72 @@ public class Given_Descriptor_Resources_For_Tracked_Change_Derivation
     }
 
     /// <summary>
-    /// It should add a Discriminator system column on the shared descriptor table.
+    /// It should add a ResourceKeyId system column on the shared descriptor table.
     /// </summary>
     [Test]
-    public void It_should_add_a_discriminator_system_column()
+    public void It_should_add_a_resource_key_id_system_column()
     {
         var descriptor = _set.TrackedChangeTablesInNameOrder.Single(table =>
             table.Kind == TrackedChangeTableKind.SharedDescriptor
         );
 
-        var discriminator = TrackedChangeDerivationTestHelpers.SystemColumnByRole(
+        var resourceKeyId = TrackedChangeDerivationTestHelpers.SystemColumnByRole(
             descriptor,
-            TrackedChangeSystemColumnRole.Discriminator
+            TrackedChangeSystemColumnRole.ResourceKeyId
         );
 
-        discriminator.ColumnName.Value.Should().Be("Discriminator");
-        discriminator.ScalarType!.Kind.Should().Be(ScalarKind.String);
-        discriminator.ScalarType.MaxLength.Should().Be(128);
-        discriminator.IsNullable.Should().BeFalse();
-        discriminator.IsPrimaryKey.Should().BeFalse();
+        resourceKeyId.ColumnName.Value.Should().Be("ResourceKeyId");
+        // The fixed ResourceKeyId role renders as smallint, which has no ScalarKind.
+        resourceKeyId.ScalarType.Should().BeNull();
+        resourceKeyId.IsNullable.Should().BeFalse();
+        resourceKeyId.IsPrimaryKey.Should().BeFalse();
+    }
+
+    [Test]
+    public void It_should_index_descriptor_history_by_resource_key_and_change_version()
+    {
+        var descriptor = TrackedChangeDerivationTestHelpers.TableBySourceName(_set, "Descriptor");
+        var index = _set
+            .IndexesInCreateOrder.Where(index => index.Table == descriptor.Table)
+            .Should()
+            .ContainSingle()
+            .Subject;
+
+        index.Name.Value.Should().Be("IX_Descriptor_ResourceKeyId_ChangeVersion");
+        index.KeyColumns.Select(column => column.Value).Should().Equal("ResourceKeyId", "ChangeVersion");
+        index.Kind.Should().Be(DbIndexKind.Explicit);
+        index.IsUnique.Should().BeFalse();
+        descriptor.PrimaryKeyColumns.Select(column => column.Value).Should().Equal("ChangeVersion");
+    }
+
+    [Test]
+    public void It_should_serialize_the_resource_key_routing_role_and_index_without_a_discriminator()
+    {
+        var manifest = JsonNode.Parse(DerivedModelSetManifestEmitter.Emit(_set))!;
+        var descriptor = manifest["tracked_change_tables"]!.AsArray().Single()!;
+        var routing = descriptor["system_columns"]!.AsArray()[0]!;
+
+        routing["role"]!.GetValue<string>().Should().Be("ResourceKeyId");
+        routing["column"]!.GetValue<string>().Should().Be("ResourceKeyId");
+        routing["scalar_type"].Should().BeNull();
+        routing["is_nullable"]!.GetValue<bool>().Should().BeFalse();
+        descriptor.ToJsonString().Should().NotContain("Discriminator");
+        var index = manifest["indexes"]!
+            .AsArray()
+            .Single(index =>
+                index!["name"]!.GetValue<string>() == "IX_Descriptor_ResourceKeyId_ChangeVersion"
+            )!;
+        index["table"]!["schema"]!.GetValue<string>().Should().Be("tracked_changes_edfi");
+        index["key_columns"]!
+            .AsArray()
+            .Select(column => column!.GetValue<string>())
+            .Should()
+            .Equal("ResourceKeyId", "ChangeVersion");
     }
 
     /// <summary>
     /// It should place the DocumentId system column between ChangeVersion and CreatedAt on the shared
-    /// descriptor table, after the Discriminator.
+    /// descriptor table, after the ResourceKeyId.
     /// </summary>
     [Test]
     public void It_should_order_the_shared_descriptor_system_columns_with_document_id()
@@ -435,7 +480,7 @@ public class Given_Descriptor_Resources_For_Tracked_Change_Derivation
             .SystemColumns.Select(column => column.Role)
             .Should()
             .Equal(
-                TrackedChangeSystemColumnRole.Discriminator,
+                TrackedChangeSystemColumnRole.ResourceKeyId,
                 TrackedChangeSystemColumnRole.Id,
                 TrackedChangeSystemColumnRole.ChangeVersion,
                 TrackedChangeSystemColumnRole.DocumentId,
@@ -1047,8 +1092,9 @@ internal static class TransitivePersonSecurableSchemaBuilder
 /// concrete-abstract classification, and merged identity+securable origins) against the authoritative
 /// DS-5.2 + Sample effective schema set, which exercises shapes that hand-built fixtures cannot.
 /// </summary>
-[TestFixture]
-public class Given_The_Authoritative_Schema_Set_For_Tracked_Change_Derivation
+[TestFixture(SqlDialect.Pgsql)]
+[TestFixture(SqlDialect.Mssql)]
+public class Given_The_Authoritative_Schema_Set_For_Tracked_Change_Derivation(SqlDialect dialect)
 {
     private DerivedRelationalModelSet _set = default!;
 
@@ -1091,7 +1137,11 @@ public class Given_The_Authoritative_Schema_Set_For_Tracked_Change_Derivation
         ]);
 
         var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
-        _set = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        _set = builder.Build(
+            schemaSet,
+            dialect,
+            dialect is SqlDialect.Pgsql ? new PgsqlDialectRules() : new MssqlDialectRules()
+        );
     }
 
     /// <summary>
@@ -1219,6 +1269,80 @@ public class Given_The_Authoritative_Schema_Set_For_Tracked_Change_Derivation
             .NotContain(column =>
                 column.OldColumnName.Value == "OldObjectiveGradeLevelDescriptor_DescriptorId"
             );
+    }
+
+    [Test]
+    public void It_should_snapshot_local_and_reference_identity_descriptors_through_compact_source_columns()
+    {
+        var grade = TrackedChangeDerivationTestHelpers.TableBySourceName(_set, "Grade");
+        grade
+            .DescriptorJoins.Select(join => join.SourceColumn.Value)
+            .Should()
+            .Equal(
+                "GradeTypeDescriptor_DescriptorId",
+                "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId"
+            );
+        var roots = _set
+            .ConcreteResourcesInNameOrder.Where(resource =>
+                resource.StorageKind is ResourceStorageKind.RelationalTables
+            )
+            .ToDictionary(
+                resource => resource.RelationalModel.Root.Table,
+                resource => resource.RelationalModel.Root
+            );
+        foreach (var table in _set.TrackedChangeTablesInNameOrder)
+        {
+            foreach (var join in table.DescriptorJoins)
+            {
+                var column = roots[table.SourceTable]
+                    .Columns.Single(column => column.ColumnName == join.SourceColumn);
+                column.Kind.Should().Be(ColumnKind.DescriptorFk);
+                column.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int32));
+                table
+                    .ValueColumnsInTableOrder.Count(column =>
+                        column.DescriptorJoinName == join.DescriptorJoinName
+                    )
+                    .Should()
+                    .Be(2);
+            }
+        }
+    }
+
+    [Test]
+    public void It_should_emit_complete_manifests_with_history_routing_and_unified_descriptor_constraints()
+    {
+        var resources = _set
+            .ConcreteResourcesInNameOrder.Select(resource => resource.ResourceKey.Resource)
+            .ToHashSet();
+        var manifest = JsonNode.Parse(DerivedModelSetManifestEmitter.Emit(_set, resources))!;
+        var history = manifest["tracked_change_tables"]!
+            .AsArray()
+            .Single(table => table!["kind"]!.GetValue<string>() == "SharedDescriptor")!;
+        history["system_columns"]!.AsArray()[0]!["role"]!.GetValue<string>().Should().Be("ResourceKeyId");
+        history.ToJsonString().Should().NotContain("Discriminator");
+
+        var element = manifest["resource_details"]!
+            .AsArray()
+            .Single(resource =>
+                resource!["resource"]!["resource_name"]!.GetValue<string>() == "ProgramEvaluationElement"
+            )!;
+        var root = element["tables"]!.AsArray()[0]!;
+        var deduplication = root["descriptor_fk_deduplications"]!
+            .AsArray()
+            .Single(entry =>
+                entry!["storage_column"]!.GetValue<string>()
+                == "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId"
+            )!;
+        var constraint = root["constraints"]!
+            .AsArray()
+            .Single(entry =>
+                entry!["name"]!.GetValue<string>() == deduplication["constraint_name"]!.GetValue<string>()
+            )!;
+        constraint["target_columns"]!
+            .AsArray()
+            .Select(column => column!.GetValue<string>())
+            .Should()
+            .Equal("DescriptorId");
     }
 
     /// <summary>

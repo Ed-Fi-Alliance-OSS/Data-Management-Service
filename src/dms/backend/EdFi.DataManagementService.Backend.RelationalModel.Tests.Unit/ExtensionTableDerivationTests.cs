@@ -320,6 +320,7 @@ public class Given_Extension_Table_Derivation
         );
 
         descriptorColumn.Kind.Should().Be(ColumnKind.DescriptorFk);
+        descriptorColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int32));
         descriptorColumn.IsNullable.Should().BeTrue();
 
         var descriptorFk = _schoolExtensionRoot
@@ -328,6 +329,8 @@ public class Given_Extension_Table_Derivation
 
         descriptorFk.TargetTable.Schema.Value.Should().Be("dms");
         descriptorFk.TargetTable.Name.Should().Be("Descriptor");
+        descriptorFk.TargetColumns.Should().Equal(RelationalNameConventions.DescriptorKeyColumnName);
+        descriptorFk.OnDelete.Should().Be(ReferentialAction.NoAction);
 
         var descriptorEdge = _schoolModel.DescriptorEdgeSources.Single(edge =>
             edge.DescriptorValuePath.Canonical == "$._ext.sample.favoriteDescriptor"

@@ -24,7 +24,7 @@ and copying the data across -- never patching the published artifact.
 
 | Script | Purpose |
 | --- | --- |
-| [`Copy-NorthridgeDataForward.ps1`](./Copy-NorthridgeDataForward.ps1) | Copy dataset tables from a published dump into a freshly provisioned database, derive `dms.Descriptor.ResourceKeyId`, and assert the post-copy and checkpoint invariants |
+| [`Copy-NorthridgeDataForward.ps1`](./Copy-NorthridgeDataForward.ps1) | Copy dataset tables from a published dump into a freshly provisioned database, allocate compact descriptor keys, remap stored references/history, and assert the post-copy and checkpoint invariants |
 | [`Compare-DmsSchemaSnapshot.ps1`](./Compare-DmsSchemaSnapshot.ps1) | Capture a normalized catalog snapshot of a database -- structure, trigger state, ownership, privileges and routine security attributes -- and diff two snapshots |
 | [`Get-DmsResourceCount.ps1`](./Get-DmsResourceCount.ps1) | Per-resource document counts for PostgreSQL or SQL Server, and the both-direction reconciliation between two count sets |
 | [`Add-NorthridgeGapDocument.ps1`](./Add-NorthridgeGapDocument.ps1) | POST documents through the DMS API from a manifest and verify each with a GET-by-id |
@@ -85,6 +85,84 @@ reads. It needs no database and runs in the same pull-request lane.
 The published restore recipe has to work for a consumer who has Docker and a checkout and nothing
 else. Assuming a host PostgreSQL client installation is the most common reason a documented recipe
 fails for its reader, so the scripts and the recipe below use the same containerized invocation.
+
+## Copy legacy data into the current compact schema
+
+Provision a fresh target and a separate reference database from the current DDL for the exact
+core/extension schema set. Restore the legacy dump into a third database as the source for counts
+and column-shape checks. Stop writers throughout the copy. Existing databases need deliberate
+reprovisioning: `RelationalMappingVersion` remains `v3` for the 8.1 release, and matching
+`EffectiveSchemaHash` values do not prove that an older physical descriptor schema is compatible.
+
+Both Copy and Checkpoint require `-ExpectedModelManifestPath`. Use the reviewed regenerated
+`relational-model.pgsql.manifest.json` for the target's exact schema set, with complete
+`resource_details`. The authoritative core DS 5.2 baseline is
+`src/dms/backend/Fixtures/authoritative/ds-5.2/expected/relational-model.pgsql.manifest.json`;
+core plus Sample uses `Fixtures/authoritative/sample/expected/relational-model.pgsql.manifest.json`,
+and core plus TPDM uses `Fixtures/authoritative/ds-5.2-tpdm/expected/relational-model.pgsql.manifest.json`.
+Use outputs regenerated from the current implementation when package inputs change. A focused
+synthetic manifest cannot verify a production dataset. The copy and
+[`Assert-CompactDescriptor.ps1`](../DatabaseTemplates/Assert-CompactDescriptor.ps1) use the same
+[`inventory reader`](../DatabaseTemplates/Compact-Descriptor.psm1), selecting each canonical stored
+descriptor column once across roots, collections, extensions, copied identities and abstract
+projections. Generated aliases are excluded from writes.
+
+```powershell
+$baseline = './src/dms/backend/Fixtures/authoritative/ds-5.2/expected/relational-model.pgsql.manifest.json'
+./eng/northridge/Copy-NorthridgeDataForward.ps1 -Mode Copy -DumpPath /w/nr.dump `
+    -SourceDatabase nr_source -TargetDatabase nr_target -ReferenceDatabase nr_reference `
+    -ExpectedDocumentCount 10576794 -ExpectedModelManifestPath $baseline `
+    -OutputDirectory /tmp/nr-copy -Container dms-postgresql -WhatIf
+# Remove -WhatIf after reviewing the plan to run the conversion.
+./eng/northridge/Copy-NorthridgeDataForward.ps1 -Mode Checkpoint -CheckpointName C2 `
+    -TargetDatabase nr_target -ReferenceDatabase nr_reference -ExpectedDocumentCount 10576794 `
+    -ExpectedModelManifestPath $baseline -ExpectedSourceIdentity '<source identity from C1>' `
+    -OutputDirectory /tmp/nr-copy -Container dms-postgresql
+```
+
+The copied schemas include every resource and tracked-history schema in the baseline, plus `auth`.
+The preflight verifies the compact target against that baseline, complete source/target table
+coverage, exact column shapes for descriptor conversion and directly restored tables, and unchanged
+resource-key seeds. `dms.Document` retains its staging rules: source-only columns are omitted from
+the target insert, and target columns absent from the source must be nullable, defaulted, identity
+or generated. Source descriptor keys and stored descriptor references must be legacy bigint
+document keys. Descriptor rows keep their bigint `DocumentId`
+and receive native independent int `DescriptorId` values. The exact mapping is saved as
+`descriptor-key-map.<target>.tsv` beside the copy evidence. Descriptor-bearing tables load through
+source-shaped staging and are remapped before target insertion; a non-null reference with no
+mapping stops the copy. Legacy `Uri` and `Discriminator` remain in staging only. History replaces
+`Discriminator` with the qualified catalog `ResourceKeyId` without joining live owners. Exact
+`ProjectName:ResourceName` and `ProjectName.ResourceName` values remain distinct across projects;
+old unqualified resource names are accepted in history only if exactly one descriptor type has
+that name. Unknown or ambiguous history types stop the copy and require resolving the source
+type identity before retrying. Live rows accept those same qualified forms or an unqualified
+resource name matching the owning document's type; their `ResourceKeyId` comes from that document.
+
+Document IDs/UUIDs, document-level RI rows, content stamps and history IDs/versions remain intact.
+Both document stamp columns remain required here; DMS-1401 owns the timestamp change. The tool
+retains row-count, FK, trigger-state, fingerprint, singleton, stamp-distribution and source-identity
+checks. It initializes the native descriptor backing sequence from allocated compact keys. Copy
+and Checkpoint resolve that sequence from catalog ownership and check `last_value`, `is_called`
+and increment against `MAX(DescriptorId)` without calling `nextval`. Document, collection and
+change-version sequences retain their existing checks.
+
+`-WhatIf` opens neither databases nor the baseline file. Failed copies clean their temporary files
+and staging schema but may leave a partially loaded target; discard and reprovision it before
+retrying. A pre-existing staging schema is refused. The conversion is within this copy tool; it
+introduces no in-place migration. The historical restore recipe and provenance below still describe
+the published artifact at its recorded revision. Shared template rebuilds and restore verification
+for the combined DMS-1404/DMS-1401 schema belong to DMS-1401; a full Northridge reload or dataset
+republication is not a DMS-1404 completion gate.
+
+The live regression runs the actual custom-dump conversion on PostgreSQL 16.8, with descriptor
+document keys above `Int32.MaxValue`, unequal native target keys, exact root/nested/extension/
+composite remaps, deleted-row history, retained stamps/RI and a successful next ordinary insert.
+Run it with the disposable-container environment variables described above:
+
+```powershell
+$env:DMS_NORTHRIDGE_PG_FIXTURE_CONTAINER = 'nr-pg-fixture'
+Invoke-Pester -Path ./eng/northridge/tests/CompactDescriptorCarryForward.Tests.ps1 -CI -Output Detailed
+```
 
 ## Artifact identities
 

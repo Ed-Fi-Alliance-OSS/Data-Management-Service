@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 
 [TestFixture]
 [Category("Authoritative")]
-public class Given_AuthoritativeDdl_With_Ds52Core : DdlGoldenFixtureTestBase
+public class Given_AuthoritativeDdl_With_Ds52Core : AuthoritativeCompactDescriptorDdlGoldenFixtureTestBase
 {
     protected override string ResolveFixtureDirectory(string projectRoot) =>
         Path.Combine(projectRoot, "..", "Fixtures", "authoritative", "ds-5.2");
@@ -20,16 +20,24 @@ public class Given_AuthoritativeDdl_With_Ds52Core : DdlGoldenFixtureTestBase
 
 [TestFixture]
 [Category("Authoritative")]
-public class Given_AuthoritativeDdl_With_Ds52Core_And_TpdmExtension : DdlGoldenFixtureTestBase
+public class Given_AuthoritativeDdl_With_Ds52Core_And_TpdmExtension
+    : AuthoritativeCompactDescriptorDdlGoldenFixtureTestBase
 {
+    protected override int ExpectedStoredDescriptorColumns => 688;
+    protected override int ExpectedDescriptorBearingIndexes => 1020;
+
     protected override string ResolveFixtureDirectory(string projectRoot) =>
         Path.Combine(projectRoot, "..", "Fixtures", "authoritative", "ds-5.2-tpdm");
 }
 
 [TestFixture]
 [Category("Authoritative")]
-public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension : DdlGoldenFixtureTestBase
+public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension
+    : AuthoritativeCompactDescriptorDdlGoldenFixtureTestBase
 {
+    protected override int ExpectedStoredDescriptorColumns => 623;
+    protected override int ExpectedDescriptorBearingIndexes => 928;
+
     // Anchored on the CREATE statement (not the table/index name) so existence-guard fragments
     // (PG `IF NOT EXISTS`, MSSQL `WHERE i.name = N'...'`, etc.) don't inflate the count.
     private static readonly Regex _authTableCreateStatement = new(
@@ -337,7 +345,7 @@ public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension : DdlGolde
             "pgsql.sql",
             mssql: false,
             "StudentSchoolAssociation",
-            expectDiscriminator: false
+            expectResourceKeyId: false
         );
     }
 
@@ -348,26 +356,26 @@ public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension : DdlGolde
             "mssql.sql",
             mssql: true,
             "StudentSchoolAssociation",
-            expectDiscriminator: false
+            expectResourceKeyId: false
         );
     }
 
     [Test]
     public void It_should_render_a_concrete_abstract_tracked_change_table_for_pgsql()
     {
-        AssertTrackedChangeTableStructure("pgsql.sql", mssql: false, "School", expectDiscriminator: false);
+        AssertTrackedChangeTableStructure("pgsql.sql", mssql: false, "School", expectResourceKeyId: false);
     }
 
     [Test]
     public void It_should_render_a_concrete_abstract_tracked_change_table_for_mssql()
     {
-        AssertTrackedChangeTableStructure("mssql.sql", mssql: true, "School", expectDiscriminator: false);
+        AssertTrackedChangeTableStructure("mssql.sql", mssql: true, "School", expectResourceKeyId: false);
     }
 
     [Test]
     public void It_should_render_the_shared_descriptor_tracked_change_table_for_pgsql()
     {
-        AssertTrackedChangeTableStructure("pgsql.sql", mssql: false, "Descriptor", expectDiscriminator: true);
+        AssertTrackedChangeTableStructure("pgsql.sql", mssql: false, "Descriptor", expectResourceKeyId: true);
 
         // Old image follows the source nullability (NOT NULL); New image is nullable for tombstones.
         var block = ExtractTrackedChangeTableBlock(ReadActual("pgsql.sql"), mssql: false, "Descriptor");
@@ -375,20 +383,20 @@ public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension : DdlGolde
         block.Should().Contain("\"NewNamespace\" varchar(255) NULL");
         block.Should().Contain("\"OldCodeValue\" varchar(50) NOT NULL");
         block.Should().Contain("\"NewCodeValue\" varchar(50) NULL");
-        block.Should().Contain("\"Discriminator\" varchar(128) NOT NULL");
+        block.Should().Contain("\"ResourceKeyId\" smallint NOT NULL");
     }
 
     [Test]
     public void It_should_render_the_shared_descriptor_tracked_change_table_for_mssql()
     {
-        AssertTrackedChangeTableStructure("mssql.sql", mssql: true, "Descriptor", expectDiscriminator: true);
+        AssertTrackedChangeTableStructure("mssql.sql", mssql: true, "Descriptor", expectResourceKeyId: true);
 
         var block = ExtractTrackedChangeTableBlock(ReadActual("mssql.sql"), mssql: true, "Descriptor");
         block.Should().Contain("[OldNamespace] nvarchar(255) NOT NULL");
         block.Should().Contain("[NewNamespace] nvarchar(255) NULL");
         block.Should().Contain("[OldCodeValue] nvarchar(50) NOT NULL");
         block.Should().Contain("[NewCodeValue] nvarchar(50) NULL");
-        block.Should().Contain("[Discriminator] nvarchar(128) NOT NULL");
+        block.Should().Contain("[ResourceKeyId] smallint NOT NULL");
     }
 
     /// <summary>
@@ -400,7 +408,7 @@ public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension : DdlGolde
         string fileName,
         bool mssql,
         string tableName,
-        bool expectDiscriminator
+        bool expectResourceKeyId
     )
     {
         var (open, close) = mssql ? ("[", "]") : ("\"", "\"");
@@ -443,14 +451,14 @@ public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension : DdlGolde
                 .Contain($"{open}CreatedAt{close} timestamp with time zone NOT NULL DEFAULT now()");
         }
 
-        if (expectDiscriminator)
+        block.Should().NotContain($"{open}Discriminator{close} ");
+        if (expectResourceKeyId)
         {
-            var discriminatorType = mssql ? "nvarchar(128)" : "varchar(128)";
-            block.Should().Contain($"{open}Discriminator{close} {discriminatorType} NOT NULL");
+            block.Should().Contain($"{open}ResourceKeyId{close} smallint NOT NULL");
         }
         else
         {
-            block.Should().NotContain($"{open}Discriminator{close} ");
+            block.Should().NotContain($"{open}ResourceKeyId{close} ");
         }
 
         var primaryKey = mssql

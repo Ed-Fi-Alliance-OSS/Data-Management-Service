@@ -41,13 +41,10 @@ public class Given_PageReconstitutionContext_With_A_Multi_Document_Page
     {
         _context.DescriptorUrisById.Should().HaveCount(2);
         _context
-            .GetDescriptorUriOrThrow(601L)
+            .GetDescriptorUriOrThrow(601)
             .Should()
             .Be("uri://ed-fi.org/SchoolCategoryDescriptor#Alternative");
-        _context
-            .GetDescriptorUriOrThrow(602L)
-            .Should()
-            .Be("uri://ed-fi.org/SchoolCategoryDescriptor#Charter");
+        _context.GetDescriptorUriOrThrow(602).Should().Be("uri://ed-fi.org/SchoolCategoryDescriptor#Charter");
     }
 
     [Test]
@@ -133,7 +130,7 @@ public class Given_PageReconstitutionContext_With_A_Multi_Document_Page
     [Test]
     public void It_should_fail_when_a_descriptor_lookup_is_missing()
     {
-        Action act = () => _context.GetDescriptorUriOrThrow(999L);
+        Action act = () => _context.GetDescriptorUriOrThrow(999);
 
         act.Should()
             .Throw<KeyNotFoundException>()
@@ -761,10 +758,10 @@ file static class PageReconstitutionContextTestData
                 DescriptorRowsInPlanOrder =
                 [
                     new HydratedDescriptorRows([
-                        new DescriptorUriRow(601L, "uri://ed-fi.org/SchoolCategoryDescriptor#Alternative"),
+                        new DescriptorUriRow(601, "uri://ed-fi.org/SchoolCategoryDescriptor#Alternative"),
                     ]),
                     new HydratedDescriptorRows([
-                        new DescriptorUriRow(601L, "uri://ed-fi.org/SchoolCategoryDescriptor#Conflict"),
+                        new DescriptorUriRow(601, "uri://ed-fi.org/SchoolCategoryDescriptor#Conflict"),
                     ]),
                 ],
             },
@@ -851,11 +848,11 @@ file static class PageReconstitutionContextTestData
                 descriptorRowsInPlanOrder:
                 [
                     new HydratedDescriptorRows([
-                        new DescriptorUriRow(601L, "uri://ed-fi.org/SchoolCategoryDescriptor#Alternative"),
+                        new DescriptorUriRow(601, "uri://ed-fi.org/SchoolCategoryDescriptor#Alternative"),
                     ]),
                     new HydratedDescriptorRows([
-                        new DescriptorUriRow(601L, "uri://ed-fi.org/SchoolCategoryDescriptor#Alternative"),
-                        new DescriptorUriRow(602L, "uri://ed-fi.org/SchoolCategoryDescriptor#Charter"),
+                        new DescriptorUriRow(601, "uri://ed-fi.org/SchoolCategoryDescriptor#Alternative"),
+                        new DescriptorUriRow(602, "uri://ed-fi.org/SchoolCategoryDescriptor#Charter"),
                     ]),
                 ]
             ),

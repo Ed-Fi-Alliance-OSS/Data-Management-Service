@@ -170,8 +170,8 @@ internal static class RelationalQueryRequestPreprocessor
                     new PreprocessedRelationalQueryElement(
                         pendingDescriptorResolution.QueryElement,
                         pendingDescriptorResolution.SupportedField,
-                        new PreprocessedRelationalQueryValue.DescriptorDocumentId(
-                            resolvedDescriptorReference.DocumentId
+                        new PreprocessedRelationalQueryValue.DescriptorId(
+                            resolvedDescriptorReference.DescriptorId
                         )
                     );
             }

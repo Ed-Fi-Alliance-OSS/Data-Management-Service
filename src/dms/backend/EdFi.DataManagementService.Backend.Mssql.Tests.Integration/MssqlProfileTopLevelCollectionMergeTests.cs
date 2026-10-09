@@ -415,13 +415,14 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
     public static ImmutableArray<string> HiddenAddressTypeDescriptorPath() =>
         ImmutableArray.Create("addressTypeDescriptor");
 
-    public static async Task<long> SeedAddressTypeDescriptorAsync(
+    public static async Task<int> SeedAddressTypeDescriptorAsync(
         MssqlGeneratedDdlTestDatabase database,
         Guid documentUuid,
         string codeValue
     )
     {
         var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "AddressTypeDescriptor");
+        await database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         var documentId = await database.ExecuteScalarAsync<long>(
             """
             DECLARE @Inserted TABLE ([DocumentId] bigint);
@@ -435,35 +436,32 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
         );
 
         var uri = $"uri://ed-fi.org/AddressTypeDescriptor#{codeValue}";
-        await database.ExecuteNonQueryAsync(
+        var descriptorId = await database.ExecuteScalarAsync<int>(
             """
+            DECLARE @descriptor TABLE ([DescriptorId] int);
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
                 [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
-                [Description],
-                [Discriminator],
-                [Uri]
+                [Description]
             )
+            OUTPUT INSERTED.[DescriptorId] INTO @descriptor ([DescriptorId])
             VALUES (
                 @documentId,
                 @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @codeValue,
-                @codeValue,
-                @discriminator,
-                @uri
+                @codeValue
             );
+            SELECT [DescriptorId] FROM @descriptor;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", "uri://ed-fi.org/AddressTypeDescriptor"),
-            new SqlParameter("@codeValue", codeValue),
-            new SqlParameter("@discriminator", "Ed-Fi:AddressTypeDescriptor"),
-            new SqlParameter("@uri", uri)
+            new SqlParameter("@codeValue", codeValue)
         );
 
         var descriptorReference = CreateAddressTypeDescriptorReference(
@@ -483,7 +481,7 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             new SqlParameter("@resourceKeyId", resourceKeyId)
         );
 
-        return documentId;
+        return descriptorId;
     }
 
     private static CollectionRowAddress CreateCollectionRowAddress(string identityPath, string city) =>

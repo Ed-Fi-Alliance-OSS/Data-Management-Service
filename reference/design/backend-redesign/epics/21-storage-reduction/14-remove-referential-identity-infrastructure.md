@@ -53,10 +53,13 @@ atomically removing all remaining DMS-owned ReferentialIdentity and UUIDv5 infra
   Investigate an absent-RI-row failure as a surviving reader; do not fix it by reseeding.
 - Second, remove `TR_<R>_ReferentialIdentity`, `dms.ReferentialIdentity`, `dms.uuidv5`, DMS-generated
   `CREATE EXTENSION pgcrypto` / `digest()` usage, RI table/index/trigger inventories, RI manifest
-  entries, and legacy `UX_Descriptor_Uri_Discriminator` uniqueness. Keep the SQL Server
-  `dms.UniqueIdentifierTable` TVP type: `MssqlRepresentationRestampStore` (DMS-1318) binds it to
-  select documents by `DocumentUuid` for the DocumentCacheAdmin `--document-uuid` restamp scope; its
-  RI consumer (`MssqlReferenceLookupBulkStrategy`) is already gone with DMS-1454.
+  entries, and the transition's unlowered `UX_Descriptor_ResourceKeyId_Uri` uniqueness.
+  Retain `UX_Descriptor_UriLowered_ResourceKeyId`. DMS-1404 already removed
+  `UX_Descriptor_Uri_Discriminator` and `IX_Descriptor_Discriminator_ContentVersion`;
+  neither is a cleanup prerequisite here. Keep the SQL Server `dms.UniqueIdentifierTable`
+  TVP type: `MssqlRepresentationRestampStore` (DMS-1318) binds it to select documents by
+  `DocumentUuid` for the DocumentCacheAdmin `--document-uuid` restamp scope; its RI consumer
+  (`MssqlReferenceLookupBulkStrategy`) is already gone with DMS-1454.
 - Remove operational remnants: drop `dms."ReferentialIdentity"` from the TRUNCATE list in
   `eng/azure-vm/compose/seed/clone-data.sh` (the script itself stays — it is the general seed-clone
   path referenced by `grandbend.sh` and `eng/azure-vm/docs/infrastructure.md`),
@@ -134,4 +137,14 @@ atomically removing all remaining DMS-owned ReferentialIdentity and UUIDv5 infra
 - PostgreSQL DMS-generated DDL contains no `dms.uuidv5()`, `digest(`, or DMS-owned
   `CREATE EXTENSION pgcrypto`.
 - Derived constraint inventories, manifests, and generated DDL contain no
-  `UX_Descriptor_Uri_Discriminator` uniqueness.
+  `UX_Descriptor_ResourceKeyId_Uri` uniqueness and retain the lowered-URI index; the previously
+  removed `UX_Descriptor_Uri_Discriminator` and `IX_Descriptor_Discriminator_ContentVersion`
+  remain absent.
+- Preserve native int DescriptorId, unique bigint DocumentId, compact stored descriptor references,
+  reconstructed URI output and ResourceKeyId history after the unlowered index is removed.
+- Follow release cadence: current 8.1 changes retain `RelationalMappingVersion=v3`. The next
+  legitimate bump is `v4` at the first qualifying post-8.1 mapping change, at most once per release.
+  Generated DDL/mapping output is not hashed; deliberately reprovision older physical schemas
+  even if startup accepts a matching fingerprint. Do not prescribe a bump per physical change.
+- Rollback after DMS-1454, including after this schema removal, requires re-provisioning with the previous
+  build or an explicitly designed backfill.

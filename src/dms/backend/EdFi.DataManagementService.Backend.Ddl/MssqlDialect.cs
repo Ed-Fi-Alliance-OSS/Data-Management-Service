@@ -60,8 +60,10 @@ public sealed class MssqlDialect : SqlDialectBase
     /// <inheritdoc />
     /// <remarks>
     /// One batch on one session covers the whole script: <c>ddl provision</c> runs every GO-split batch
-    /// on a single connection, and sqlcmd does the same, so these settings govern the filtered
+    /// on a single connection, and sqlcmd does the same, so these settings govern the computed and filtered
     /// <c>CREATE INDEX</c> and are captured into every <c>CREATE OR ALTER TRIGGER</c> that follows.
+    /// At supported database compatibility levels (90 and above), <c>ANSI_WARNINGS ON</c> makes
+    /// <c>ARITHABORT</c> effectively ON, including on ordinary SqlClient runtime connections.
     /// </remarks>
     public override string RenderScriptPrologue() =>
         """
@@ -480,6 +482,9 @@ public sealed class MssqlDialect : SqlDialectBase
 
     /// <inheritdoc />
     public override string JsonColumnType => "nvarchar(max)";
+
+    /// <inheritdoc />
+    public override string IdentityIntColumnType => "int IDENTITY(1,1)";
 
     /// <inheritdoc />
     public override string IdentityBigintColumnType => "bigint IDENTITY(1,1)";

@@ -22,7 +22,7 @@ internal sealed record AuthoritativeSampleSmokeSeedData(
     long SessionDocumentId,
     long SurveyDocumentId,
     long CourseOfferingDocumentId,
-    long AlternateTermDescriptorDocumentId,
+    int AlternateTermDescriptorId,
     long ContactExtensionAuthorCollectionItemId,
     long ContactAddressCollectionItemId,
     long ContactExtensionAddressSchoolDistrictCollectionItemId,
@@ -383,7 +383,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 _seedData.ContactAddressCollectionItemId,
                 _seedData.OtherContactDocumentId,
                 2,
-                _seedData.AlternateTermDescriptorDocumentId
+                _seedData.AlternateTermDescriptorId
             )
         );
     }
@@ -506,12 +506,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     public async Task It_should_stamp_child_inserts()
     {
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
-        var addressTypeDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
-            "Ed-Fi:AddressTypeDescriptor",
-            "Home"
-        );
-        var stateAbbreviationDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
-            "Ed-Fi:StateAbbreviationDescriptor",
+        var addressTypeDescriptorId = await GetDescriptorIdAsync("Ed-Fi", "AddressTypeDescriptor", "Home");
+        var stateAbbreviationDescriptorId = await GetDescriptorIdAsync(
+            "Ed-Fi",
+            "StateAbbreviationDescriptor",
             "TX"
         );
 
@@ -519,8 +517,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         await InsertContactAddressAsync(
             _seedData.ContactDocumentId,
             2,
-            addressTypeDescriptorDocumentId,
-            stateAbbreviationDescriptorDocumentId,
+            addressTypeDescriptorId,
+            stateAbbreviationDescriptorId,
             "Austin",
             "78702",
             "200 Congress Ave"
@@ -545,12 +543,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         // no plan and therefore contributes no plan node at all.
         var rootStampTriggerObjectId = await GetTriggerObjectIdAsync("edfi.TR_Contact_Stamp");
         var childStampTriggerObjectId = await GetTriggerObjectIdAsync("edfi.TR_ContactAddress_Stamp");
-        var addressTypeDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
-            "Ed-Fi:AddressTypeDescriptor",
-            "Home"
-        );
-        var stateAbbreviationDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
-            "Ed-Fi:StateAbbreviationDescriptor",
+        var addressTypeDescriptorId = await GetDescriptorIdAsync("Ed-Fi", "AddressTypeDescriptor", "Home");
+        var stateAbbreviationDescriptorId = await GetDescriptorIdAsync(
+            "Ed-Fi",
+            "StateAbbreviationDescriptor",
             "TX"
         );
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
@@ -570,16 +566,16 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             VALUES (
                 @contactDocumentId,
                 3,
-                @addressTypeDescriptorDocumentId,
-                @stateAbbreviationDescriptorDocumentId,
+                @addressTypeDescriptorId,
+                @stateAbbreviationDescriptorId,
                 N'Austin',
                 N'78703',
                 N'300 Congress Ave'
             );
             """,
             new SqlParameter("@contactDocumentId", _seedData.ContactDocumentId),
-            new SqlParameter("@addressTypeDescriptorDocumentId", addressTypeDescriptorDocumentId),
-            new SqlParameter("@stateAbbreviationDescriptorDocumentId", stateAbbreviationDescriptorDocumentId)
+            new SqlParameter("@addressTypeDescriptorId", addressTypeDescriptorId),
+            new SqlParameter("@stateAbbreviationDescriptorId", stateAbbreviationDescriptorId)
         );
 
         var after = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
@@ -727,9 +723,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
-                [Description],
-                [Discriminator],
-                [Uri]
+                [Description]
             )
             VALUES (
                 @documentId,
@@ -737,9 +731,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 N'uri://ed-fi.org/TermDescriptor',
                 N'Summer',
                 N'Summer',
-                N'Summer',
-                N'Ed-Fi:TermDescriptor',
-                N'uri://ed-fi.org/TermDescriptor#Summer'
+                N'Summer'
             );
             """,
             new SqlParameter("@documentId", documentId),
@@ -1907,11 +1899,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             new SqlParameter("@documentId", _seedData.SchoolDocumentId)
         );
 
-        var gradingPeriodDescriptorDocumentId = await InsertDescriptorAsync(
+        var gradingPeriodDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("d2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2"),
             gradingPeriodDescriptorResourceKeyId,
-            "Ed-Fi:GradingPeriodDescriptor",
-            $"{GradingPeriodDescriptorNamespace}#{GradingPeriodDescriptorCodeValue}",
             GradingPeriodDescriptorNamespace,
             GradingPeriodDescriptorCodeValue,
             "First Six Weeks"
@@ -1928,7 +1918,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             SchoolYear,
             _seedData.SchoolDocumentId,
             seededSchoolId,
-            gradingPeriodDescriptorDocumentId,
+            gradingPeriodDescriptorId,
             "First Grading Period"
         );
 
@@ -1943,7 +1933,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             SchoolYear,
             _seedData.SchoolDocumentId,
             seededSchoolId,
-            gradingPeriodDescriptorDocumentId,
+            gradingPeriodDescriptorId,
             "Second Grading Period"
         );
 
@@ -2039,11 +2029,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             new SqlParameter("@documentId", _seedData.SchoolDocumentId)
         );
 
-        var gradingPeriodDescriptorDocumentId = await InsertDescriptorAsync(
+        var gradingPeriodDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("d5d5d5d5-d5d5-d5d5-d5d5-d5d5d5d5d5d5"),
             gradingPeriodDescriptorResourceKeyId,
-            "Ed-Fi:GradingPeriodDescriptor",
-            $"{GradingPeriodDescriptorNamespace}#{GradingPeriodDescriptorCodeValue}",
             GradingPeriodDescriptorNamespace,
             GradingPeriodDescriptorCodeValue,
             "Second Six Weeks"
@@ -2057,7 +2045,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             SchoolYear,
             _seedData.SchoolDocumentId,
             seededSchoolId,
-            gradingPeriodDescriptorDocumentId,
+            gradingPeriodDescriptorId,
             "Mixed Changed Period"
         );
 
@@ -2072,7 +2060,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             SchoolYear,
             _seedData.SchoolDocumentId,
             seededSchoolId,
-            gradingPeriodDescriptorDocumentId,
+            gradingPeriodDescriptorId,
             "Mixed Unchanged Period"
         );
 
@@ -2142,20 +2130,16 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             new SqlParameter("@documentId", _seedData.SchoolDocumentId)
         );
 
-        var originalDescriptorDocumentId = await InsertDescriptorAsync(
+        var originalDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("e5e5e5e5-e5e5-e5e5-e5e5-e5e5e5e5e5e5"),
             gradingPeriodDescriptorResourceKeyId,
-            "Ed-Fi:GradingPeriodDescriptor",
-            $"{DescriptorNamespace}#FourthSixWeeks",
             DescriptorNamespace,
             "FourthSixWeeks",
             "Fourth Six Weeks"
         );
-        var replacementDescriptorDocumentId = await InsertDescriptorAsync(
+        var replacementDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("e6e6e6e6-e6e6-e6e6-e6e6-e6e6e6e6e6e6"),
             gradingPeriodDescriptorResourceKeyId,
-            "Ed-Fi:GradingPeriodDescriptor",
-            $"{DescriptorNamespace}#FifthSixWeeks",
             DescriptorNamespace,
             "FifthSixWeeks",
             "Fifth Six Weeks"
@@ -2172,7 +2156,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             SchoolYear,
             _seedData.SchoolDocumentId,
             seededSchoolId,
-            originalDescriptorDocumentId,
+            originalDescriptorId,
             "Descriptor Swap Period"
         );
 
@@ -2182,10 +2166,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var rowsAffected = await _database.ExecuteNonQueryAsync(
             """
             UPDATE [edfi].[GradingPeriod]
-            SET [GradingPeriodDescriptor_DescriptorId] = @replacementDescriptorDocumentId
+            SET [GradingPeriodDescriptor_DescriptorId] = @replacementDescriptorId
             WHERE [DocumentId] = @documentId;
             """,
-            new SqlParameter("@replacementDescriptorDocumentId", replacementDescriptorDocumentId),
+            new SqlParameter("@replacementDescriptorId", replacementDescriptorId),
             new SqlParameter("@documentId", gradingPeriodDocumentId)
         );
         rowsAffected.Should().Be(1);
@@ -2546,22 +2530,23 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     }
 
     [Test]
-    public async Task It_should_insert_a_descriptor_tombstone_with_discriminator_on_delete()
+    public async Task It_should_insert_a_descriptor_tombstone_with_resource_key_on_delete()
     {
-        const string DescriptorDiscriminator = "Ed-Fi:TermDescriptor";
         const string DescriptorNamespace = "uri://ed-fi.org/TermDescriptor";
         const string DescriptorCodeValue = "Summer";
 
         var termDescriptorResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "TermDescriptor");
         var descriptorDocumentUuid = Guid.Parse("f1f1f1f1-f1f1-f1f1-f1f1-f1f1f1f1f1f1");
-        var descriptorDocumentId = await InsertDescriptorAsync(
+        var descriptorId = await InsertDescriptorAsync(
             descriptorDocumentUuid,
             termDescriptorResourceKeyId,
-            DescriptorDiscriminator,
-            $"{DescriptorNamespace}#{DescriptorCodeValue}",
             DescriptorNamespace,
             DescriptorCodeValue,
             "Summer"
+        );
+        var descriptorDocumentId = await _database.ExecuteScalarAsync<long>(
+            """SELECT [DocumentId] FROM [dms].[Descriptor] WHERE [DescriptorId] = @descriptorId;""",
+            new SqlParameter("@descriptorId", descriptorId)
         );
         var before = await GetDocumentStampStateAsync(descriptorDocumentId);
 
@@ -2595,7 +2580,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
         trackedRow["Id"].Should().Be(descriptorDocumentUuid);
-        trackedRow["Discriminator"].Should().Be(DescriptorDiscriminator);
+        trackedRow["ResourceKeyId"].Should().Be(termDescriptorResourceKeyId);
         trackedRow["OldNamespace"].Should().Be(DescriptorNamespace);
         trackedRow["OldCodeValue"].Should().Be(DescriptorCodeValue);
         AssertAllNewColumnsAreNull(trackedRow);
@@ -2762,21 +2747,19 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             StudentUniqueId
         );
 
-        var addressTypeDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
-            "Ed-Fi:AddressTypeDescriptor",
-            "Home"
-        );
-        var stateAbbreviationDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
-            "Ed-Fi:StateAbbreviationDescriptor",
+        var addressTypeDescriptorId = await GetDescriptorIdAsync("Ed-Fi", "AddressTypeDescriptor", "Home");
+        var stateAbbreviationDescriptorId = await GetDescriptorIdAsync(
+            "Ed-Fi",
+            "StateAbbreviationDescriptor",
             "TX"
         );
-        var termDescriptorDocumentId = await GetDescriptorDocumentIdAsync("Ed-Fi:TermDescriptor", "Fall");
+        var termDescriptorId = await GetDescriptorIdAsync("Ed-Fi", "TermDescriptor", "Fall");
 
         var addressCollectionItemId = await InsertStudentEducationOrganizationAssociationAddressAsync(
             associationDocumentId,
             1,
-            addressTypeDescriptorDocumentId,
-            stateAbbreviationDescriptorDocumentId,
+            addressTypeDescriptorId,
+            stateAbbreviationDescriptorId,
             "Austin",
             "78701",
             "100 Congress Ave"
@@ -2796,7 +2779,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             addressCollectionItemId,
             associationDocumentId,
             1,
-            termDescriptorDocumentId
+            termDescriptorId
         );
 
         (
@@ -3122,38 +3105,30 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             "Accountability"
         );
 
-        var addressTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var addressTypeDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("33333333-3333-3333-3333-333333333333"),
             addressTypeDescriptorResourceKeyId,
-            "Ed-Fi:AddressTypeDescriptor",
-            "uri://ed-fi.org/AddressTypeDescriptor#Home",
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Home",
             "Home"
         );
-        var stateAbbreviationDescriptorDocumentId = await InsertDescriptorAsync(
+        var stateAbbreviationDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("44444444-4444-4444-4444-444444444444"),
             stateAbbreviationDescriptorResourceKeyId,
-            "Ed-Fi:StateAbbreviationDescriptor",
-            "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
             "uri://ed-fi.org/StateAbbreviationDescriptor",
             "TX",
             "Texas"
         );
-        var termDescriptorDocumentId = await InsertDescriptorAsync(
+        var termDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("55555555-5555-5555-5555-555555555555"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
-            "uri://ed-fi.org/TermDescriptor#Fall",
             "uri://ed-fi.org/TermDescriptor",
             "Fall",
             "Fall"
         );
-        var alternateTermDescriptorDocumentId = await InsertDescriptorAsync(
+        var alternateTermDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("66666666-6666-6666-6666-666666666666"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
-            "uri://ed-fi.org/TermDescriptor#Spring",
             "uri://ed-fi.org/TermDescriptor",
             "Spring",
             "Spring"
@@ -3179,7 +3154,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             2025,
             schoolDocumentId,
             100,
-            termDescriptorDocumentId,
+            termDescriptorId,
             new DateOnly(2025, 8, 1),
             new DateOnly(2025, 12, 31),
             "Fall",
@@ -3235,8 +3210,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var contactAddressCollectionItemId = await InsertContactAddressAsync(
             contactDocumentId,
             1,
-            addressTypeDescriptorDocumentId,
-            stateAbbreviationDescriptorDocumentId,
+            addressTypeDescriptorId,
+            stateAbbreviationDescriptorId,
             "Austin",
             "78701",
             "100 Congress Ave"
@@ -3260,7 +3235,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             contactAddressCollectionItemId,
             contactDocumentId,
             1,
-            termDescriptorDocumentId
+            termDescriptorId
         );
 
         return new(
@@ -3271,7 +3246,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             sessionDocumentId,
             surveyDocumentId,
             courseOfferingDocumentId,
-            alternateTermDescriptorDocumentId,
+            alternateTermDescriptorId,
             contactExtensionAuthorCollectionItemId,
             contactAddressCollectionItemId,
             contactExtensionAddressSchoolDistrictCollectionItemId,
@@ -3295,22 +3270,23 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
     }
 
-    private async Task<long> GetDescriptorDocumentIdAsync(string discriminator, string codeValue)
+    private async Task<int> GetDescriptorIdAsync(string projectName, string resourceName, string codeValue)
     {
-        return await _database.ExecuteScalarAsync<long>(
+        var resourceKeyId = await GetResourceKeyIdAsync(projectName, resourceName);
+        return await _database.ExecuteScalarAsync<int>(
             """
-            SELECT [DocumentId]
+            SELECT [DescriptorId]
             FROM [dms].[Descriptor]
-            WHERE [Discriminator] = @discriminator
-              AND [CodeValue] = @codeValue;
+            WHERE [ResourceKeyId] = @resourceKeyId AND [CodeValue] = @codeValue;
             """,
-            new SqlParameter("@discriminator", discriminator),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@codeValue", codeValue)
         );
     }
 
     private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         return await _database.ExecuteScalarAsync<long>(
             """
             DECLARE @Inserted TABLE ([DocumentId] bigint);
@@ -3332,52 +3308,39 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<int> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
-
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
-            INSERT INTO [dms].[Descriptor] (
-                [DocumentId],
-                [ResourceKeyId],
-                [Namespace],
-                [CodeValue],
-                [ShortDescription],
-                [Description],
-                [Discriminator],
-                [Uri]
-            )
-            VALUES (
-                @documentId,
-                @resourceKeyId,
-                @namespace,
-                @codeValue,
-                @shortDescription,
-                @description,
-                @discriminator,
-                @uri
-            );
+            DECLARE @descriptor TABLE ([DescriptorId] int);
+            INSERT INTO [dms].[Descriptor] ([DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription], [Description])
+            OUTPUT inserted.[DescriptorId] INTO @descriptor
+            VALUES (@documentId, @resourceKeyId, @namespace, @codeValue, @shortDescription, @shortDescription);
+            SELECT [DescriptorId] FROM @descriptor;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
-            new SqlParameter("@shortDescription", shortDescription),
-            new SqlParameter("@description", shortDescription),
-            new SqlParameter("@discriminator", discriminator),
-            new SqlParameter("@uri", uri)
+            new SqlParameter("@shortDescription", shortDescription)
         );
-
-        return documentId;
+        ((long)descriptorId).Should().NotBe(documentId);
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT [DescriptorId] FROM [dms].[Descriptor] WHERE [DocumentId] = @documentId;""",
+                new SqlParameter("@documentId", documentId)
+            )
+        )
+            .Should()
+            .Be(descriptorId);
+        return descriptorId;
     }
 
     private async Task InsertContactAsync(
@@ -3506,7 +3469,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         int schoolYear,
         long schoolDocumentId,
         int schoolId,
-        long termDescriptorDocumentId,
+        int termDescriptorId,
         DateOnly beginDate,
         DateOnly endDate,
         string sessionName,
@@ -3533,7 +3496,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 @schoolYear,
                 @schoolDocumentId,
                 @schoolId,
-                @termDescriptorDocumentId,
+                @termDescriptorId,
                 @beginDate,
                 @endDate,
                 @sessionName,
@@ -3545,12 +3508,21 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             new SqlParameter("@schoolYear", schoolYear),
             new SqlParameter("@schoolDocumentId", schoolDocumentId),
             new SqlParameter("@schoolId", schoolId),
-            new SqlParameter("@termDescriptorDocumentId", termDescriptorDocumentId),
+            new SqlParameter("@termDescriptorId", termDescriptorId),
             new SqlParameter("@beginDate", beginDate),
             new SqlParameter("@endDate", endDate),
             new SqlParameter("@sessionName", sessionName),
             new SqlParameter("@totalInstructionalDays", totalInstructionalDays)
         );
+
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT [TermDescriptor_DescriptorId] FROM [edfi].[Session] WHERE [DocumentId] = @documentId;""",
+                new SqlParameter("@documentId", documentId)
+            )
+        )
+            .Should()
+            .Be(termDescriptorId);
     }
 
     private async Task InsertCourseAsync(
@@ -3767,14 +3739,14 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     private async Task<long> InsertContactAddressAsync(
         long contactDocumentId,
         int ordinal,
-        long addressTypeDescriptorDocumentId,
-        long stateAbbreviationDescriptorDocumentId,
+        int addressTypeDescriptorId,
+        int stateAbbreviationDescriptorId,
         string city,
         string postalCode,
         string streetNumberName
     )
     {
-        return await _database.ExecuteScalarAsync<long>(
+        var collectionItemId = await _database.ExecuteScalarAsync<long>(
             """
             DECLARE @Inserted TABLE ([CollectionItemId] bigint);
             INSERT INTO [edfi].[ContactAddress] (
@@ -3790,8 +3762,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             VALUES (
                 @contactDocumentId,
                 @ordinal,
-                @addressTypeDescriptorDocumentId,
-                @stateAbbreviationDescriptorDocumentId,
+                @addressTypeDescriptorId,
+                @stateAbbreviationDescriptorId,
                 @city,
                 @postalCode,
                 @streetNumberName
@@ -3800,12 +3772,30 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             """,
             new SqlParameter("@contactDocumentId", contactDocumentId),
             new SqlParameter("@ordinal", ordinal),
-            new SqlParameter("@addressTypeDescriptorDocumentId", addressTypeDescriptorDocumentId),
-            new SqlParameter("@stateAbbreviationDescriptorDocumentId", stateAbbreviationDescriptorDocumentId),
+            new SqlParameter("@addressTypeDescriptorId", addressTypeDescriptorId),
+            new SqlParameter("@stateAbbreviationDescriptorId", stateAbbreviationDescriptorId),
             new SqlParameter("@city", city),
             new SqlParameter("@postalCode", postalCode),
             new SqlParameter("@streetNumberName", streetNumberName)
         );
+
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT [AddressTypeDescriptor_DescriptorId] FROM [edfi].[ContactAddress] WHERE [CollectionItemId] = @collectionItemId;""",
+                new SqlParameter("@collectionItemId", collectionItemId)
+            )
+        )
+            .Should()
+            .Be(addressTypeDescriptorId);
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT [StateAbbreviationDescriptor_DescriptorId] FROM [edfi].[ContactAddress] WHERE [CollectionItemId] = @collectionItemId;""",
+                new SqlParameter("@collectionItemId", collectionItemId)
+            )
+        )
+            .Should()
+            .Be(stateAbbreviationDescriptorId);
+        return collectionItemId;
     }
 
     private async Task InsertContactExtensionAddressAsync(
@@ -3860,7 +3850,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         long baseCollectionItemId,
         long contactDocumentId,
         int ordinal,
-        long termDescriptorDocumentId
+        int termDescriptorId
     )
     {
         return await _database.ExecuteScalarAsync<long>(
@@ -3873,13 +3863,13 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [TermDescriptor_DescriptorId]
             )
             OUTPUT INSERTED.[CollectionItemId] INTO @Inserted ([CollectionItemId])
-            VALUES (@baseCollectionItemId, @contactDocumentId, @ordinal, @termDescriptorDocumentId);
+            VALUES (@baseCollectionItemId, @contactDocumentId, @ordinal, @termDescriptorId);
             SELECT TOP (1) [CollectionItemId] FROM @Inserted;
             """,
             new SqlParameter("@baseCollectionItemId", baseCollectionItemId),
             new SqlParameter("@contactDocumentId", contactDocumentId),
             new SqlParameter("@ordinal", ordinal),
-            new SqlParameter("@termDescriptorDocumentId", termDescriptorDocumentId)
+            new SqlParameter("@termDescriptorId", termDescriptorId)
         );
     }
 
@@ -3939,14 +3929,14 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     private async Task<long> InsertStudentEducationOrganizationAssociationAddressAsync(
         long studentEducationOrganizationAssociationDocumentId,
         int ordinal,
-        long addressTypeDescriptorDocumentId,
-        long stateAbbreviationDescriptorDocumentId,
+        int addressTypeDescriptorId,
+        int stateAbbreviationDescriptorId,
         string city,
         string postalCode,
         string streetNumberName
     )
     {
-        return await _database.ExecuteScalarAsync<long>(
+        var collectionItemId = await _database.ExecuteScalarAsync<long>(
             """
             DECLARE @Inserted TABLE ([CollectionItemId] bigint);
             INSERT INTO [edfi].[StudentEducationOrganizationAssociationAddress] (
@@ -3962,8 +3952,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             VALUES (
                 @ordinal,
                 @studentEducationOrganizationAssociationDocumentId,
-                @addressTypeDescriptorDocumentId,
-                @stateAbbreviationDescriptorDocumentId,
+                @addressTypeDescriptorId,
+                @stateAbbreviationDescriptorId,
                 @city,
                 @postalCode,
                 @streetNumberName
@@ -3975,12 +3965,30 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 "@studentEducationOrganizationAssociationDocumentId",
                 studentEducationOrganizationAssociationDocumentId
             ),
-            new SqlParameter("@addressTypeDescriptorDocumentId", addressTypeDescriptorDocumentId),
-            new SqlParameter("@stateAbbreviationDescriptorDocumentId", stateAbbreviationDescriptorDocumentId),
+            new SqlParameter("@addressTypeDescriptorId", addressTypeDescriptorId),
+            new SqlParameter("@stateAbbreviationDescriptorId", stateAbbreviationDescriptorId),
             new SqlParameter("@city", city),
             new SqlParameter("@postalCode", postalCode),
             new SqlParameter("@streetNumberName", streetNumberName)
         );
+
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT [AddressTypeDescriptor_DescriptorId] FROM [edfi].[StudentEducationOrganizationAssociationAddress] WHERE [CollectionItemId] = @collectionItemId;""",
+                new SqlParameter("@collectionItemId", collectionItemId)
+            )
+        )
+            .Should()
+            .Be(addressTypeDescriptorId);
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT [StateAbbreviationDescriptor_DescriptorId] FROM [edfi].[StudentEducationOrganizationAssociationAddress] WHERE [CollectionItemId] = @collectionItemId;""",
+                new SqlParameter("@collectionItemId", collectionItemId)
+            )
+        )
+            .Should()
+            .Be(stateAbbreviationDescriptorId);
+        return collectionItemId;
     }
 
     private async Task InsertStudentEducationOrganizationAssociationExtensionAddressAsync(
@@ -4050,10 +4058,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         long baseCollectionItemId,
         long studentEducationOrganizationAssociationDocumentId,
         int ordinal,
-        long termDescriptorDocumentId
+        int termDescriptorId
     )
     {
-        return await _database.ExecuteScalarAsync<long>(
+        var collectionItemId = await _database.ExecuteScalarAsync<long>(
             """
             DECLARE @Inserted TABLE ([CollectionItemId] bigint);
             INSERT INTO [sample].[StudentEducationOrganizationAssociationExtensionAddressTerm] (
@@ -4067,7 +4075,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 @baseCollectionItemId,
                 @ordinal,
                 @studentEducationOrganizationAssociationDocumentId,
-                @termDescriptorDocumentId
+                @termDescriptorId
             );
             SELECT TOP (1) [CollectionItemId] FROM @Inserted;
             """,
@@ -4077,8 +4085,18 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 "@studentEducationOrganizationAssociationDocumentId",
                 studentEducationOrganizationAssociationDocumentId
             ),
-            new SqlParameter("@termDescriptorDocumentId", termDescriptorDocumentId)
+            new SqlParameter("@termDescriptorId", termDescriptorId)
         );
+
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT [TermDescriptor_DescriptorId] FROM [sample].[StudentEducationOrganizationAssociationExtensionAddressTerm] WHERE [CollectionItemId] = @collectionItemId;""",
+                new SqlParameter("@collectionItemId", collectionItemId)
+            )
+        )
+            .Should()
+            .Be(termDescriptorId);
+        return collectionItemId;
     }
 
     private async Task InsertGradingPeriodAsync(
@@ -4087,7 +4105,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         int schoolYear,
         long schoolDocumentId,
         long schoolId,
-        long gradingPeriodDescriptorDocumentId,
+        int gradingPeriodDescriptorId,
         string gradingPeriodName
     )
     {
@@ -4111,7 +4129,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 @schoolYear,
                 @schoolDocumentId,
                 @schoolId,
-                @gradingPeriodDescriptorDocumentId,
+                @gradingPeriodDescriptorId,
                 @beginDate,
                 @endDate,
                 @gradingPeriodName,
@@ -4123,12 +4141,21 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             new SqlParameter("@schoolYear", schoolYear),
             new SqlParameter("@schoolDocumentId", schoolDocumentId),
             new SqlParameter("@schoolId", schoolId),
-            new SqlParameter("@gradingPeriodDescriptorDocumentId", gradingPeriodDescriptorDocumentId),
+            new SqlParameter("@gradingPeriodDescriptorId", gradingPeriodDescriptorId),
             new SqlParameter("@beginDate", new DateOnly(2025, 8, 1)),
             new SqlParameter("@endDate", new DateOnly(2025, 9, 15)),
             new SqlParameter("@gradingPeriodName", gradingPeriodName),
             new SqlParameter("@totalInstructionalDays", 30)
         );
+
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT [GradingPeriodDescriptor_DescriptorId] FROM [edfi].[GradingPeriod] WHERE [DocumentId] = @documentId;""",
+                new SqlParameter("@documentId", documentId)
+            )
+        )
+            .Should()
+            .Be(gradingPeriodDescriptorId);
     }
 
     private async Task InsertAssessmentAsync(

@@ -1710,7 +1710,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             return true;
         }
 
-        if (storedPart.Value is JsonValue jsonValue && jsonValue.TryGetValue<long>(out var descriptorId))
+        if (storedPart.Value is JsonValue jsonValue && jsonValue.TryGetValue<int>(out var descriptorId))
         {
             storedJson = JsonValue.Create(descriptorId)?.ToJsonString() ?? "null";
             return true;
@@ -1772,7 +1772,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// <summary>
     /// Rewrites each ancestor's <see cref="AncestorCollectionInstance.SemanticIdentityInOrder"/>
     /// in <paramref name="address"/> so descriptor-URI parts are replaced by their resolved
-    /// Int64 ids and document-reference natural-key parts are replaced by their resolved
+    /// Int32 ids and document-reference natural-key parts are replaced by their resolved
     /// document ids. This makes ancestor-keyed index lookups (built at walker construction
     /// from raw Core-emitted addresses) symmetric with recursion-side lookup keys (which the
     /// walker constructs from already-canonicalized current row identities).
@@ -1949,7 +1949,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
             // Build the target parent address pair so per-partition positional fallback can
             // intersect ancestor stored rows (raw URI form) with the right
-            // partition's current rows (canonical Int64 form). Raw form is built from the
+            // partition's current rows (canonical ID form). Raw form is built from the
             // input chain; canonical form uses the in-progress builder so far, mirroring how
             // BuildContainingScopeAddress walks ancestors during the walker's recursion.
             var rawParentAddress = BuildAncestorTargetParentAddress(
@@ -2071,7 +2071,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// count-equal positional pairing cannot resolve the URI, the helper fails closed via
     /// <see cref="InvalidOperationException"/> rather than leaving the URI form in place,
     /// because a URI-form ancestor identity silently mis-buckets the row in the walker's
-    /// address-keyed visible-stored index — recursion looks up by canonical Int64 and a
+    /// address-keyed visible-stored index — recursion looks up by canonical Int32 and a
     /// URI-form bucket and the lookup key would carry different forms.
     /// </summary>
     private static ImmutableArray<SemanticIdentityPart> CanonicalizeAncestorDescriptorParts(
@@ -2106,9 +2106,9 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 continue;
             }
 
-            // Already canonicalized (Int64). The ancestor came from a path that already
+            // Already canonicalized (Int32). The ancestor came from a path that already
             // applied canonicalization (e.g., walker-recursion-built address). Skip.
-            if (part.Value is JsonValue jvAlready && jvAlready.TryGetValue<long>(out _))
+            if (part.Value is JsonValue jvAlready && jvAlready.TryGetValue<int>(out _))
             {
                 continue;
             }
@@ -2130,7 +2130,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 continue;
             }
 
-            long descriptorId;
+            int descriptorId;
             if (
                 resolvedReferenceLookups.TryGetDescriptorIdByUri(
                     column.TargetResource.Value,
@@ -2167,7 +2167,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 // Fail closed when the ancestor descriptor URI cannot be canonicalized.
                 // Leaving the URI form in place silently mis-buckets the row in the walker's
                 // address-keyed visible-stored index because recursion looks up by canonical
-                // Int64 — the bucket and the lookup carry different forms and the planner
+                // Int32 — the bucket and the lookup carry different forms and the planner
                 // mistakes unmatched current rows for hidden preserves. The throw fires only
                 // when the cache misses, scalar matching is absent or ambiguous, and
                 // count-equal positional pairing cannot resolve (counts diverge or the URI
@@ -2223,7 +2223,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// Natural-key matching is descriptor-aware. When the natural key contains a
     /// <see cref="ColumnKind.DescriptorFk"/> part (e.g.,
     /// <c>programReference.programTypeDescriptor</c>), the stored ancestor identity carries
-    /// the URI string while the current row carries the canonical Int64 descriptor id;
+    /// the URI string while the current row carries the canonical Int32 descriptor id;
     /// matching uses the request-cycle URI cache
     /// (<paramref name="resolvedReferenceLookups"/>) to canonicalize the stored URI before
     /// comparing it to the current row's column value. This mirrors what
@@ -2368,12 +2368,12 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// Natural-key matching is descriptor-aware — when the natural key contains a
     /// <see cref="ColumnKind.DescriptorFk"/> part, the stored URI is canonicalized via
     /// <paramref name="resolvedReferenceLookups"/> before comparing against the current
-    /// row's Int64 descriptor id. The shared comparison helper
+    /// row's Int32 descriptor id. The shared comparison helper
     /// <see cref="DocumentReferenceIdentityPartsMatch"/> performs this canonicalization for
     /// both this ancestor path and the per-row <see cref="TryResolveByReferenceFullMatch"/>
     /// path. Without descriptor-aware comparison, a composite natural key with a descriptor
     /// part (e.g., <c>programId + programTypeDescriptor</c>) would never match: stored
-    /// identity carries the URI string and the current row carries the descriptor Int64.
+    /// identity carries the URI string and the current row carries the descriptor Int32.
     /// </para>
     /// </summary>
     private static long? TryResolveAncestorDocumentReferenceIdFromCurrentRows(
@@ -2436,7 +2436,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         string.Join(",", identity.Select(p => $"{p.RelativePath}={p.Value?.ToJsonString() ?? "null"}"));
 
     /// <summary>
-    /// Resolves the canonical Int64 descriptor id for an ancestor's URI-form identity within
+    /// Resolves the canonical Int32 descriptor id for an ancestor's URI-form identity within
     /// the target parent partition. Mirrors the per-row descriptor resolution chain
     /// (cache → scalar → positional → fail-closed throw at the caller) adapted to ancestor canonicalization
     /// using the per-(scope, parent address) partition map so both strategies operate on
@@ -2467,7 +2467,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// the per-parent partitioning rule at <c>05-nested-and-extension-collection-merge.md:47</c>.
     /// </para>
     /// </summary>
-    internal static long? TryResolveAncestorDescriptorIdFromCurrentRows(
+    internal static int? TryResolveAncestorDescriptorIdFromCurrentRows(
         ImmutableArray<SemanticIdentityPart> identity,
         IReadOnlyList<int> descriptorIndices,
         int descriptorIdx,
@@ -2554,7 +2554,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             if (
                 positionalPart.IsPresent
                 && positionalPart.Value is JsonValue jv
-                && jv.TryGetValue<long>(out var positionalId)
+                && jv.TryGetValue<int>(out var positionalId)
             )
             {
                 return positionalId;
@@ -2581,7 +2581,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// and the partition map's canonical keys.
     /// <para>
     /// <paramref name="useCanonicalChain"/> controls whether already-processed ancestors
-    /// come from <paramref name="canonicalBuilder"/> (canonical Int64 form for descriptors)
+    /// come from <paramref name="canonicalBuilder"/> (canonical Int32 form for descriptors)
     /// or from <paramref name="chain"/> directly (raw URI form). The raw form aligns with
     /// <c>VisibleStoredCollectionRow.Address.ParentAddress</c> for filtering ancestor
     /// stored rows; the canonical form aligns with the parent addresses keyed by current
@@ -2657,7 +2657,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// <summary>
     /// Returns the zero-based positions within the table's
     /// <see cref="DbTableIdentityMetadata.SemanticIdentityBindings"/> that require
-    /// URI-to-Int64 canonicalization (i.e. those backed by a <see cref="ColumnKind.DescriptorFk"/>
+    /// URI-to-Int32 canonicalization (i.e. those backed by a <see cref="ColumnKind.DescriptorFk"/>
     /// column). Returns an empty list when no descriptor-backed parts exist.
     /// </summary>
     internal static IReadOnlyList<int> ResolveDescriptorIdentityIndices(TableWritePlan tablePlan)
@@ -2694,7 +2694,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// <summary>
     /// For each <see cref="VisibleRequestCollectionItem"/> in
     /// <paramref name="requestItems"/>, replaces the <see cref="SemanticIdentityPart"/>
-    /// values at every descriptor-identity index with the resolved Int64 descriptor id.
+    /// values at every descriptor-identity index with the resolved Int32 descriptor id.
     /// Items whose descriptor lookup returns null are left unchanged (the planner's
     /// invariant check will surface the mismatch as a fail-closed error).
     /// </summary>
@@ -2742,9 +2742,9 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// <summary>
     /// For each <see cref="VisibleStoredCollectionRow"/> in <paramref name="storedRows"/>,
     /// replaces the <see cref="SemanticIdentityPart"/> values at every descriptor-identity
-    /// index with the resolved Int64 descriptor id, looked up by URI from the request-cycle
+    /// index with the resolved Int32 descriptor id, looked up by URI from the request-cycle
     /// cache. When a stored URI is not in the cache (e.g. delete-by-absence: the row was
-    /// omitted from the request body), falls back to extracting the Int64 from the matching
+    /// omitted from the request body), falls back to extracting the Int32 from the matching
     /// <see cref="CurrentCollectionRowSnapshot"/> — see <see cref="CanonicalizeStoredIdentityParts"/>
     /// for the fallback strategy and its failure conditions.
     /// </summary>
@@ -2850,7 +2850,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
     /// <summary>
     /// Rewrites the descriptor-backed parts of <paramref name="identity"/> for stored-side
-    /// rows by looking up URI → Int64 from the request-cycle cache.
+    /// rows by looking up URI → Int32 from the request-cycle cache.
     ///
     /// <para><b>Fail-closed boundary:</b>
     /// Descriptor-backed top-level collection identity is supported for the common cases
@@ -2864,7 +2864,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// When a stored URI is not in the request-cycle cache — which happens during a PUT that
     /// omits a previously-stored collection item, because the omitted item's descriptor URI
     /// was never resolved as part of the current request body — the method falls back to
-    /// extracting the Int64 descriptor id directly from the matching
+    /// extracting the Int32 descriptor id directly from the matching
     /// <see cref="CurrentCollectionRowSnapshot"/>.</para>
     ///
     /// <para><b>Matching strategy:</b>
@@ -2913,8 +2913,8 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 continue;
             }
 
-            // Check if the value is already an Int64 (already canonicalized or numeric).
-            if (part.Value is JsonValue jv && jv.TryGetValue<long>(out _))
+            // Check if the value is already an Int32 (already canonicalized or numeric).
+            if (part.Value is JsonValue jv && jv.TryGetValue<int>(out _))
             {
                 continue;
             }
@@ -2958,7 +2958,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
             // Cache miss: the stored row references a descriptor URI that was not resolved
             // as part of the current request (typical in delete-by-absence). Fall back to
-            // extracting the Int64 id from the matching CurrentCollectionRowSnapshot.
+            // extracting the Int32 id from the matching CurrentCollectionRowSnapshot.
             var fallbackId = TryResolveDescriptorIdFromCurrentRows(
                 identity,
                 descriptorIdentityIndices,
@@ -2997,7 +2997,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     }
 
     /// <summary>
-    /// Attempts to resolve a descriptor Int64 id for <paramref name="descriptorIdx"/> in
+    /// Attempts to resolve a descriptor Int32 id for <paramref name="descriptorIdx"/> in
     /// <paramref name="identity"/> by matching against <paramref name="currentRows"/>.
     ///
     /// <para>Two strategies are tried in order, regardless of identity shape:</para>
@@ -3019,7 +3019,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// <para>Returns <c>null</c> when neither strategy produces a result and the caller
     /// should throw.</para>
     /// </summary>
-    private static long? TryResolveDescriptorIdFromCurrentRows(
+    private static int? TryResolveDescriptorIdFromCurrentRows(
         ImmutableArray<SemanticIdentityPart> identity,
         IReadOnlyList<int> descriptorIndices,
         int descriptorIdx,
@@ -3069,7 +3069,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         // VisibleStoredRows[storedRowIndex] corresponds to currentRows[storedRowIndex] when
         // currentRows is sorted by StoredOrdinal (see the walker's projection index). This
         // method does NOT independently verify the correspondence — a structural check
-        // would require resolving each current row's Int64 descriptor id back to its URI
+        // would require resolving each current row's Int32 descriptor id back to its URI
         // (a DB roundtrip against the descriptor projection). If the upstream contract is
         // broken (body out of ordinal order, or VisibleStoredRows mis-ordered), positional
         // rewrite would silently swap descriptor ids before the planner runs and downstream
@@ -3102,7 +3102,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 if (
                     positionalPart.IsPresent
                     && positionalPart.Value is JsonValue positionalJv
-                    && positionalJv.TryGetValue<long>(out var positionalId)
+                    && positionalJv.TryGetValue<int>(out var positionalId)
                 )
                 {
                     return positionalId;
@@ -3124,7 +3124,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// on the descriptor part). Caller falls through to positional matching in both
     /// cases.</para>
     /// </summary>
-    private static long? TryResolveByScalarMatch(
+    private static int? TryResolveByScalarMatch(
         ImmutableArray<SemanticIdentityPart> identity,
         IReadOnlyList<int> scalarIndices,
         int descriptorIdx,
@@ -3197,7 +3197,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             return null;
         }
 
-        if (matchedPart.Value is JsonValue matchedJv && matchedJv.TryGetValue<long>(out var matchedId))
+        if (matchedPart.Value is JsonValue matchedJv && matchedJv.TryGetValue<int>(out var matchedId))
         {
             return matchedId;
         }

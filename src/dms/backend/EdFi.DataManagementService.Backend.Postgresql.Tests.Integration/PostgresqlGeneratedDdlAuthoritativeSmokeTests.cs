@@ -20,7 +20,7 @@ internal sealed record AuthoritativeSampleSmokeSeedData(
     long OtherStudentDocumentId,
     long StudentEducationOrganizationAssociationDocumentId,
     long OtherStudentEducationOrganizationAssociationDocumentId,
-    long AlternateTermDescriptorDocumentId,
+    int AlternateTermDescriptorId,
     long SchoolExtensionDirectlyOwnedBusCollectionItemId,
     long StudentEducationOrganizationAssociationAddressCollectionItemId,
     long StudentEducationOrganizationAssociationExtensionAddressSchoolDistrictCollectionItemId,
@@ -495,7 +495,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
                 _seedData.StudentEducationOrganizationAssociationAddressCollectionItemId,
                 _seedData.OtherStudentEducationOrganizationAssociationDocumentId,
                 2,
-                _seedData.AlternateTermDescriptorDocumentId
+                _seedData.AlternateTermDescriptorId
             )
         );
     }
@@ -639,12 +639,10 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         var before = await GetDocumentStampStateAsync(
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
-        var addressTypeDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
-            "Ed-Fi:AddressTypeDescriptor",
-            "Home"
-        );
-        var stateAbbreviationDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
-            "Ed-Fi:StateAbbreviationDescriptor",
+        var addressTypeDescriptorId = await GetDescriptorIdAsync("Ed-Fi", "AddressTypeDescriptor", "Home");
+        var stateAbbreviationDescriptorId = await GetDescriptorIdAsync(
+            "Ed-Fi",
+            "StateAbbreviationDescriptor",
             "TX"
         );
 
@@ -652,8 +650,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         await InsertStudentEducationOrganizationAssociationAddressAsync(
             _seedData.StudentEducationOrganizationAssociationDocumentId,
             2,
-            addressTypeDescriptorDocumentId,
-            stateAbbreviationDescriptorDocumentId,
+            addressTypeDescriptorId,
+            stateAbbreviationDescriptorId,
             "Austin",
             "78702",
             "200 Congress Ave"
@@ -1739,11 +1737,9 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             new NpgsqlParameter("documentId", _seedData.SchoolDocumentId)
         );
 
-        var gradingPeriodDescriptorDocumentId = await InsertDescriptorAsync(
+        var gradingPeriodDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("d2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2"),
             gradingPeriodDescriptorResourceKeyId,
-            "Ed-Fi:GradingPeriodDescriptor",
-            $"{GradingPeriodDescriptorNamespace}#{GradingPeriodDescriptorCodeValue}",
             GradingPeriodDescriptorNamespace,
             GradingPeriodDescriptorCodeValue,
             "First Six Weeks"
@@ -1760,7 +1756,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             SchoolYear,
             _seedData.SchoolDocumentId,
             seededSchoolId,
-            gradingPeriodDescriptorDocumentId,
+            gradingPeriodDescriptorId,
             "First Grading Period"
         );
 
@@ -1775,7 +1771,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             SchoolYear,
             _seedData.SchoolDocumentId,
             seededSchoolId,
-            gradingPeriodDescriptorDocumentId,
+            gradingPeriodDescriptorId,
             "Second Grading Period"
         );
 
@@ -1881,11 +1877,9 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             new NpgsqlParameter("documentId", _seedData.SchoolDocumentId)
         );
 
-        var gradingPeriodDescriptorDocumentId = await InsertDescriptorAsync(
+        var gradingPeriodDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("d6d6d6d6-d6d6-d6d6-d6d6-d6d6d6d6d6d6"),
             gradingPeriodDescriptorResourceKeyId,
-            "Ed-Fi:GradingPeriodDescriptor",
-            $"{GradingPeriodDescriptorNamespace}#{GradingPeriodDescriptorCodeValue}",
             GradingPeriodDescriptorNamespace,
             GradingPeriodDescriptorCodeValue,
             "Second Six Weeks"
@@ -1899,7 +1893,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             SchoolYear,
             _seedData.SchoolDocumentId,
             seededSchoolId,
-            gradingPeriodDescriptorDocumentId,
+            gradingPeriodDescriptorId,
             "Mixed Changed Period"
         );
 
@@ -1914,7 +1908,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             SchoolYear,
             _seedData.SchoolDocumentId,
             seededSchoolId,
-            gradingPeriodDescriptorDocumentId,
+            gradingPeriodDescriptorId,
             "Mixed Unchanged Period"
         );
 
@@ -1993,20 +1987,16 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             new NpgsqlParameter("documentId", _seedData.SchoolDocumentId)
         );
 
-        var originalDescriptorDocumentId = await InsertDescriptorAsync(
+        var originalDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("e5e5e5e5-e5e5-e5e5-e5e5-e5e5e5e5e5e5"),
             gradingPeriodDescriptorResourceKeyId,
-            "Ed-Fi:GradingPeriodDescriptor",
-            $"{DescriptorNamespace}#FourthSixWeeks",
             DescriptorNamespace,
             "FourthSixWeeks",
             "Fourth Six Weeks"
         );
-        var replacementDescriptorDocumentId = await InsertDescriptorAsync(
+        var replacementDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("e6e6e6e6-e6e6-e6e6-e6e6-e6e6e6e6e6e6"),
             gradingPeriodDescriptorResourceKeyId,
-            "Ed-Fi:GradingPeriodDescriptor",
-            $"{DescriptorNamespace}#FifthSixWeeks",
             DescriptorNamespace,
             "FifthSixWeeks",
             "Fifth Six Weeks"
@@ -2023,7 +2013,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             SchoolYear,
             _seedData.SchoolDocumentId,
             seededSchoolId,
-            originalDescriptorDocumentId,
+            originalDescriptorId,
             "Descriptor Swap Period"
         );
 
@@ -2033,10 +2023,10 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         var rowsAffected = await _database.ExecuteNonQueryAsync(
             """
             UPDATE "edfi"."GradingPeriod"
-            SET "GradingPeriodDescriptor_DescriptorId" = @replacementDescriptorDocumentId
+            SET "GradingPeriodDescriptor_DescriptorId" = @replacementDescriptorId
             WHERE "DocumentId" = @documentId;
             """,
-            new NpgsqlParameter("replacementDescriptorDocumentId", replacementDescriptorDocumentId),
+            new NpgsqlParameter("replacementDescriptorId", replacementDescriptorId),
             new NpgsqlParameter("documentId", gradingPeriodDocumentId)
         );
         rowsAffected.Should().Be(1);
@@ -2396,22 +2386,23 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     }
 
     [Test]
-    public async Task It_should_insert_a_descriptor_tombstone_with_discriminator_on_delete()
+    public async Task It_should_insert_a_descriptor_tombstone_with_resource_key_on_delete()
     {
-        const string DescriptorDiscriminator = "Ed-Fi:TermDescriptor";
         const string DescriptorNamespace = "uri://ed-fi.org/TermDescriptor";
         const string DescriptorCodeValue = "Summer";
 
         var termDescriptorResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "TermDescriptor");
         var descriptorDocumentUuid = Guid.Parse("f1f1f1f1-f1f1-f1f1-f1f1-f1f1f1f1f1f1");
-        var descriptorDocumentId = await InsertDescriptorAsync(
+        var descriptorId = await InsertDescriptorAsync(
             descriptorDocumentUuid,
             termDescriptorResourceKeyId,
-            DescriptorDiscriminator,
-            $"{DescriptorNamespace}#{DescriptorCodeValue}",
             DescriptorNamespace,
             DescriptorCodeValue,
             "Summer"
+        );
+        var descriptorDocumentId = await _database.ExecuteScalarAsync<long>(
+            """SELECT "DocumentId" FROM "dms"."Descriptor" WHERE "DescriptorId" = @descriptorId;""",
+            new NpgsqlParameter("descriptorId", descriptorId)
         );
         var before = await GetDocumentStampStateAsync(descriptorDocumentId);
 
@@ -2445,7 +2436,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
         trackedRow["Id"].Should().Be(descriptorDocumentUuid);
-        trackedRow["Discriminator"].Should().Be(DescriptorDiscriminator);
+        trackedRow["ResourceKeyId"].Should().Be(termDescriptorResourceKeyId);
         trackedRow["OldNamespace"].Should().Be(DescriptorNamespace);
         trackedRow["OldCodeValue"].Should().Be(DescriptorCodeValue);
         AssertAllNewColumnsAreNull(trackedRow);
@@ -2918,38 +2909,30 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             "10002"
         );
 
-        var addressTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var addressTypeDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("66666666-6666-6666-6666-666666666666"),
             addressTypeDescriptorResourceKeyId,
-            "Ed-Fi:AddressTypeDescriptor",
-            "uri://ed-fi.org/AddressTypeDescriptor#Home",
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Home",
             "Home"
         );
-        var stateAbbreviationDescriptorDocumentId = await InsertDescriptorAsync(
+        var stateAbbreviationDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("77777777-7777-7777-7777-777777777777"),
             stateAbbreviationDescriptorResourceKeyId,
-            "Ed-Fi:StateAbbreviationDescriptor",
-            "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
             "uri://ed-fi.org/StateAbbreviationDescriptor",
             "TX",
             "Texas"
         );
-        var termDescriptorDocumentId = await InsertDescriptorAsync(
+        var termDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("88888888-8888-8888-8888-888888888888"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
-            "uri://ed-fi.org/TermDescriptor#Fall",
             "uri://ed-fi.org/TermDescriptor",
             "Fall",
             "Fall"
         );
-        var alternateTermDescriptorDocumentId = await InsertDescriptorAsync(
+        var alternateTermDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("99999999-9999-9999-9999-999999999999"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
-            "uri://ed-fi.org/TermDescriptor#Spring",
             "uri://ed-fi.org/TermDescriptor",
             "Spring",
             "Spring"
@@ -2959,8 +2942,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             await InsertStudentEducationOrganizationAssociationAddressAsync(
                 studentEducationOrganizationAssociationDocumentId,
                 1,
-                addressTypeDescriptorDocumentId,
-                stateAbbreviationDescriptorDocumentId,
+                addressTypeDescriptorId,
+                stateAbbreviationDescriptorId,
                 "Austin",
                 "78701",
                 "100 Congress Ave"
@@ -2985,7 +2968,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
                 studentEducationOrganizationAssociationAddressCollectionItemId,
                 studentEducationOrganizationAssociationDocumentId,
                 1,
-                termDescriptorDocumentId
+                termDescriptorId
             );
 
         return new(
@@ -2994,7 +2977,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             otherStudentDocumentId,
             studentEducationOrganizationAssociationDocumentId,
             otherStudentEducationOrganizationAssociationDocumentId,
-            alternateTermDescriptorDocumentId,
+            alternateTermDescriptorId,
             schoolExtensionDirectlyOwnedBusCollectionItemId,
             studentEducationOrganizationAssociationAddressCollectionItemId,
             studentEducationOrganizationAssociationExtensionAddressSchoolDistrictCollectionItemId,
@@ -3016,22 +2999,23 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
     }
 
-    private async Task<long> GetDescriptorDocumentIdAsync(string discriminator, string codeValue)
+    private async Task<int> GetDescriptorIdAsync(string projectName, string resourceName, string codeValue)
     {
-        return await _database.ExecuteScalarAsync<long>(
+        var resourceKeyId = await GetResourceKeyIdAsync(projectName, resourceName);
+        return await _database.ExecuteScalarAsync<int>(
             """
-            SELECT "DocumentId"
+            SELECT "DescriptorId"
             FROM "dms"."Descriptor"
-            WHERE "Discriminator" = @discriminator
-              AND "CodeValue" = @codeValue;
+            WHERE "ResourceKeyId" = @resourceKeyId AND "CodeValue" = @codeValue;
             """,
-            new NpgsqlParameter("discriminator", discriminator),
+            new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("codeValue", codeValue)
         );
     }
 
     private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
@@ -3043,52 +3027,37 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<int> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
-
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
-            INSERT INTO "dms"."Descriptor" (
-                "DocumentId",
-                "ResourceKeyId",
-                "Namespace",
-                "CodeValue",
-                "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
-            )
-            VALUES (
-                @documentId,
-                @resourceKeyId,
-                @namespace,
-                @codeValue,
-                @shortDescription,
-                @description,
-                @discriminator,
-                @uri
-            );
+            INSERT INTO "dms"."Descriptor" ("DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription", "Description")
+            VALUES (@documentId, @resourceKeyId, @namespace, @codeValue, @shortDescription, @shortDescription)
+            RETURNING "DescriptorId";
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
-            new NpgsqlParameter("shortDescription", shortDescription),
-            new NpgsqlParameter("description", shortDescription),
-            new NpgsqlParameter("discriminator", discriminator),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("shortDescription", shortDescription)
         );
-
-        return documentId;
+        ((long)descriptorId).Should().NotBe(documentId);
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT "DescriptorId" FROM "dms"."Descriptor" WHERE "DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", documentId)
+            )
+        )
+            .Should()
+            .Be(descriptorId);
+        return descriptorId;
     }
 
     private async Task InsertSchoolAsync(long documentId, int schoolId, string nameOfInstitution)
@@ -3203,14 +3172,14 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     private async Task<long> InsertStudentEducationOrganizationAssociationAddressAsync(
         long studentEducationOrganizationAssociationDocumentId,
         int ordinal,
-        long addressTypeDescriptorDocumentId,
-        long stateAbbreviationDescriptorDocumentId,
+        int addressTypeDescriptorId,
+        int stateAbbreviationDescriptorId,
         string city,
         string postalCode,
         string streetNumberName
     )
     {
-        return await _database.ExecuteScalarAsync<long>(
+        var collectionItemId = await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "edfi"."StudentEducationOrganizationAssociationAddress" (
                 "Ordinal",
@@ -3224,8 +3193,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             VALUES (
                 @ordinal,
                 @studentEducationOrganizationAssociationDocumentId,
-                @addressTypeDescriptorDocumentId,
-                @stateAbbreviationDescriptorDocumentId,
+                @addressTypeDescriptorId,
+                @stateAbbreviationDescriptorId,
                 @city,
                 @postalCode,
                 @streetNumberName
@@ -3237,15 +3206,30 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
                 "studentEducationOrganizationAssociationDocumentId",
                 studentEducationOrganizationAssociationDocumentId
             ),
-            new NpgsqlParameter("addressTypeDescriptorDocumentId", addressTypeDescriptorDocumentId),
-            new NpgsqlParameter(
-                "stateAbbreviationDescriptorDocumentId",
-                stateAbbreviationDescriptorDocumentId
-            ),
+            new NpgsqlParameter("addressTypeDescriptorId", addressTypeDescriptorId),
+            new NpgsqlParameter("stateAbbreviationDescriptorId", stateAbbreviationDescriptorId),
             new NpgsqlParameter("city", city),
             new NpgsqlParameter("postalCode", postalCode),
             new NpgsqlParameter("streetNumberName", streetNumberName)
         );
+
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT "AddressTypeDescriptor_DescriptorId" FROM "edfi"."StudentEducationOrganizationAssociationAddress" WHERE "CollectionItemId" = @collectionItemId;""",
+                new NpgsqlParameter("collectionItemId", collectionItemId)
+            )
+        )
+            .Should()
+            .Be(addressTypeDescriptorId);
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT "StateAbbreviationDescriptor_DescriptorId" FROM "edfi"."StudentEducationOrganizationAssociationAddress" WHERE "CollectionItemId" = @collectionItemId;""",
+                new NpgsqlParameter("collectionItemId", collectionItemId)
+            )
+        )
+            .Should()
+            .Be(stateAbbreviationDescriptorId);
+        return collectionItemId;
     }
 
     private async Task InsertStudentEducationOrganizationAssociationExtensionAddressAsync(
@@ -3313,10 +3297,10 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         long baseCollectionItemId,
         long studentEducationOrganizationAssociationDocumentId,
         int ordinal,
-        long termDescriptorDocumentId
+        int termDescriptorId
     )
     {
-        return await _database.ExecuteScalarAsync<long>(
+        var collectionItemId = await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "sample"."StudentEducationOrganizationAssociationExtensionAddressTerm" (
                 "BaseCollectionItemId",
@@ -3328,7 +3312,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
                 @baseCollectionItemId,
                 @ordinal,
                 @studentEducationOrganizationAssociationDocumentId,
-                @termDescriptorDocumentId
+                @termDescriptorId
             )
             RETURNING "CollectionItemId";
             """,
@@ -3338,8 +3322,18 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
                 studentEducationOrganizationAssociationDocumentId
             ),
             new NpgsqlParameter("ordinal", ordinal),
-            new NpgsqlParameter("termDescriptorDocumentId", termDescriptorDocumentId)
+            new NpgsqlParameter("termDescriptorId", termDescriptorId)
         );
+
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT "TermDescriptor_DescriptorId" FROM "sample"."StudentEducationOrganizationAssociationExtensionAddressTerm" WHERE "CollectionItemId" = @collectionItemId;""",
+                new NpgsqlParameter("collectionItemId", collectionItemId)
+            )
+        )
+            .Should()
+            .Be(termDescriptorId);
+        return collectionItemId;
     }
 
     private async Task<TrackedChangeKeyChangeAssociationSeedData> SeedKeyChangeStudentEducationOrganizationAssociationAsync()
@@ -3443,7 +3437,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         int schoolYear,
         long schoolDocumentId,
         long schoolId,
-        long gradingPeriodDescriptorDocumentId,
+        int gradingPeriodDescriptorId,
         string gradingPeriodName
     )
     {
@@ -3467,7 +3461,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
                 @schoolYear,
                 @schoolDocumentId,
                 @schoolId,
-                @gradingPeriodDescriptorDocumentId,
+                @gradingPeriodDescriptorId,
                 @beginDate,
                 @endDate,
                 @gradingPeriodName,
@@ -3479,12 +3473,21 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             new NpgsqlParameter("schoolYear", schoolYear),
             new NpgsqlParameter("schoolDocumentId", schoolDocumentId),
             new NpgsqlParameter("schoolId", schoolId),
-            new NpgsqlParameter("gradingPeriodDescriptorDocumentId", gradingPeriodDescriptorDocumentId),
+            new NpgsqlParameter("gradingPeriodDescriptorId", gradingPeriodDescriptorId),
             new NpgsqlParameter("beginDate", new DateOnly(2025, 8, 1)),
             new NpgsqlParameter("endDate", new DateOnly(2025, 9, 15)),
             new NpgsqlParameter("gradingPeriodName", gradingPeriodName),
             new NpgsqlParameter("totalInstructionalDays", 30)
         );
+
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT "GradingPeriodDescriptor_DescriptorId" FROM "edfi"."GradingPeriod" WHERE "DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", documentId)
+            )
+        )
+            .Should()
+            .Be(gradingPeriodDescriptorId);
     }
 
     private async Task InsertAssessmentAsync(

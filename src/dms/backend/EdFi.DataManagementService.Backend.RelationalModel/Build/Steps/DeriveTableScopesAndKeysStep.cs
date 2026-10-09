@@ -188,15 +188,30 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
     }
 
     /// <summary>
-    /// Creates the shared descriptor table root (<c>dms.Descriptor</c>), keyed by <c>DocumentId</c> and
-    /// FK'd to <c>dms.Document</c>.
+    /// Creates the shared descriptor table root, keyed by compact <c>DescriptorId</c> with a unique
+    /// owning <c>DocumentId</c> FK to <c>dms.Document</c>.
     /// </summary>
     private static TableScope CreateDescriptorRootTable()
     {
         var jsonScope = JsonPathExpressionCompiler.FromSegments([]);
-        var key = BuildRootTableKey(_descriptorTableName);
-        var identityMetadata = BuildRootTableIdentityMetadata();
-        var columns = BuildIdentityColumns(identityMetadata);
+        var descriptorId = RelationalNameConventions.DescriptorKeyColumnName;
+        var documentId = RelationalNameConventions.DocumentIdColumnName;
+        var key = new TableKey(
+            ConstraintNaming.BuildPrimaryKeyName(_descriptorTableName),
+            [new DbKeyColumn(descriptorId, ColumnKind.ParentKeyPart)]
+        );
+        var identityMetadata = new DbTableIdentityMetadata(
+            DbTableKind.Root,
+            [descriptorId],
+            [documentId],
+            [],
+            []
+        );
+        DbColumnModel[] columns =
+        [
+            .. RelationalModelSystemColumnFactory.BuildKeyColumns(key.Columns),
+            RelationalModelSystemColumnFactory.CreateKeyColumn(documentId, ColumnKind.DocumentFk),
+        ];
 
         var fkName = ConstraintNaming.BuildForeignKeyName(
             _descriptorTableName,
@@ -205,6 +220,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
 
         TableConstraint[] constraints =
         [
+            new TableConstraint.Unique("UX_Descriptor_DocumentId", [documentId]),
             new TableConstraint.ForeignKey(
                 fkName,
                 [RelationalNameConventions.DocumentIdColumnName],

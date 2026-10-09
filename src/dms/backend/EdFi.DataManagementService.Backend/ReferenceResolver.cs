@@ -240,7 +240,7 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
         }
 
         Dictionary<JsonPath, ResolvedDescriptorReference> successfulDescriptorReferencesByPath = [];
-        Dictionary<DescriptorReferenceKey, long> descriptorDocumentIdByKey = [];
+        Dictionary<DescriptorReferenceKey, (int DescriptorId, long DocumentId)> descriptorIdsByKey = [];
         List<DescriptorReferenceFailure> invalidDescriptorReferences = [];
 
         foreach (var descriptorReferenceOccurrence in descriptorReferenceOccurrences)
@@ -264,28 +264,28 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
                 continue;
             }
 
-            if (lookupResult is null)
+            if (lookupResult is null || lookupResult.DescriptorId is not int descriptorId)
             {
                 throw new InvalidOperationException(
-                    $"Descriptor reference at path '{descriptorReferenceOccurrence.Reference.Path.Value}' was classified as successful without a lookup result."
+                    $"Descriptor reference at path '{descriptorReferenceOccurrence.Reference.Path.Value}' was classified as successful without both descriptor and document ids."
                 );
             }
 
             var descriptorKey = CreateDescriptorReferenceKey(descriptorReferenceOccurrence.Reference);
 
             if (
-                descriptorDocumentIdByKey.TryGetValue(descriptorKey, out var existingDocumentId)
-                && existingDocumentId != lookupResult.DocumentId
+                descriptorIdsByKey.TryGetValue(descriptorKey, out var existingIds)
+                && existingIds != (descriptorId, lookupResult.DocumentId)
             )
             {
                 throw new InvalidOperationException(
                     $"Descriptor reference key '{descriptorKey.NormalizedUri}' for resource "
                         + $"'{descriptorKey.DescriptorResource.ProjectName}/{descriptorKey.DescriptorResource.ResourceName}' "
-                        + "resolved to multiple document ids within the same request."
+                        + "resolved to multiple descriptor or document ids within the same request."
                 );
             }
 
-            descriptorDocumentIdByKey[descriptorKey] = lookupResult.DocumentId;
+            descriptorIdsByKey[descriptorKey] = (descriptorId, lookupResult.DocumentId);
 
             AddSuccessfulDescriptorReference(
                 successfulDescriptorReferencesByPath,
@@ -390,6 +390,10 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
                 descriptorReference.Path,
                 new ResolvedDescriptorReference(
                     Reference: descriptorReference,
+                    DescriptorId: lookupResult.DescriptorId
+                        ?? throw new InvalidOperationException(
+                            "A successful descriptor reference must have a compact descriptor id."
+                        ),
                     DocumentId: lookupResult.DocumentId,
                     ResourceKeyId: lookupResult.ResourceKeyId
                 )

@@ -336,7 +336,8 @@ public class Given_A_Mssql_Empty_Page_With_Document_References
 public class Given_A_Mssql_Descriptor_Only_Resource_Page
 {
     private const string TestSchema = "refpagedesc";
-    private const long GradeLevelDescriptorId = 810;
+    private const int GradeLevelDescriptorId = 810;
+    private const long GradeLevelDescriptorDocumentId = 5000000810;
     private const string GradeLevelUri = "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade";
 
     private string _databaseName = null!;
@@ -374,20 +375,21 @@ public class Given_A_Mssql_Descriptor_Only_Resource_Page
             );
 
             CREATE TABLE dms.[Descriptor] (
-                [DocumentId] bigint PRIMARY KEY,
+                [DescriptorId] int IDENTITY(1,1) PRIMARY KEY,
+                [DocumentId] bigint NOT NULL UNIQUE REFERENCES dms.[Document] ([DocumentId]),
+                [ResourceKeyId] smallint NOT NULL,
                 [Namespace] varchar(255) NOT NULL DEFAULT '',
                 [CodeValue] varchar(50) NOT NULL DEFAULT '',
                 [ShortDescription] varchar(75) NOT NULL DEFAULT '',
                 [Description] varchar(1024) NULL,
                 [EffectiveBeginDate] date NULL,
                 [EffectiveEndDate] date NULL,
-                [Discriminator] varchar(128) NOT NULL DEFAULT '',
-                [Uri] varchar(306) NOT NULL
+                [Uri] AS ([Namespace] + '#' + [CodeValue]) PERSISTED
             );
 
             CREATE TABLE {TestSchema}.[DescriptorOnly] (
                 [DocumentId] bigint PRIMARY KEY,
-                [GradeLevelDescriptor_DescriptorId] bigint NULL
+                [GradeLevelDescriptor_DescriptorId] int NULL
             );
             """
         );
@@ -400,8 +402,13 @@ public class Given_A_Mssql_Descriptor_Only_Resource_Page
                 (901, '00000000-0000-0000-0000-000000000901', 30),
                 (902, '00000000-0000-0000-0000-000000000902', 30);
 
-            INSERT INTO dms.[Descriptor] ([DocumentId], [Uri])
-            VALUES ({GradeLevelDescriptorId}, '{GradeLevelUri}');
+            INSERT INTO dms.[Document] ([DocumentId], [DocumentUuid], [ResourceKeyId])
+            VALUES ({GradeLevelDescriptorDocumentId}, '00000000-0000-0000-0000-005000000810', 31);
+
+            SET IDENTITY_INSERT dms.[Descriptor] ON;
+            INSERT INTO dms.[Descriptor] ([DescriptorId], [DocumentId], [ResourceKeyId], [Namespace], [CodeValue])
+            VALUES ({GradeLevelDescriptorId}, {GradeLevelDescriptorDocumentId}, 31, 'uri://ed-fi.org/GradeLevelDescriptor', 'Tenth grade');
+            SET IDENTITY_INSERT dms.[Descriptor] OFF;
 
             INSERT INTO {TestSchema}.[DescriptorOnly] ([DocumentId], [GradeLevelDescriptor_DescriptorId])
             VALUES (901, {GradeLevelDescriptorId}), (902, NULL);

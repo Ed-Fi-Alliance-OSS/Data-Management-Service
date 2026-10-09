@@ -233,6 +233,7 @@ ADD CONSTRAINT [CK_DataStoreIdentity_Singleton] CHECK ([DataStoreIdentitySinglet
 IF OBJECT_ID(N'dms.Descriptor', N'U') IS NULL
 CREATE TABLE [dms].[Descriptor]
 (
+    [DescriptorId] int IDENTITY(1,1) NOT NULL,
     [DocumentId] bigint NOT NULL,
     [ResourceKeyId] smallint NOT NULL,
     [Namespace] nvarchar(255) NOT NULL,
@@ -241,19 +242,18 @@ CREATE TABLE [dms].[Descriptor]
     [Description] nvarchar(1024) NULL,
     [EffectiveBeginDate] date NULL,
     [EffectiveEndDate] date NULL,
-    [Discriminator] nvarchar(128) NOT NULL,
-    [Uri] nvarchar(306) NOT NULL,
+    [Uri] AS ([Namespace] + N'#' + [CodeValue]),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT 0,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
-    CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DocumentId])
+    CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DescriptorId])
 );
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.key_constraints
-    WHERE name = N'UX_Descriptor_Uri_Discriminator' AND type = 'UQ' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
+    WHERE name = N'UX_Descriptor_DocumentId' AND type = 'UQ' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
 )
 ALTER TABLE [dms].[Descriptor]
-ADD CONSTRAINT [UX_Descriptor_Uri_Discriminator] UNIQUE ([Uri], [Discriminator]);
+ADD CONSTRAINT [UX_Descriptor_DocumentId] UNIQUE ([DocumentId]);
 
 IF OBJECT_ID(N'dms.Document', N'U') IS NULL
 CREATE TABLE [dms].[Document]
@@ -565,6 +565,14 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'dms' AND t.name = N'Descriptor' AND i.name = N'UX_Descriptor_ResourceKeyId_Uri'
+)
+CREATE UNIQUE INDEX [UX_Descriptor_ResourceKeyId_Uri] ON [dms].[Descriptor] ([ResourceKeyId], [Uri]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'dms' AND t.name = N'Document' AND i.name = N'IX_Document_CreatedByOwnershipTokenId'
 )
 CREATE INDEX [IX_Document_CreatedByOwnershipTokenId] ON [dms].[Document] ([CreatedByOwnershipTokenId]) WHERE [CreatedByOwnershipTokenId] IS NOT NULL;
@@ -606,20 +614,20 @@ BEGIN
     SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]
     FROM [dms].[Document] d
     INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-    LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-    WHERE del.[DocumentId] IS NULL;
-    IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE([Namespace]) OR UPDATE([CodeValue]) OR UPDATE([ShortDescription]) OR UPDATE([Description]) OR UPDATE([EffectiveBeginDate]) OR UPDATE([EffectiveEndDate]) OR UPDATE([Discriminator]) OR UPDATE([Uri]))
+    LEFT JOIN deleted del ON del.[DescriptorId] = i.[DescriptorId]
+    WHERE del.[DescriptorId] IS NULL;
+    IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE([Namespace]) OR UPDATE([CodeValue]) OR UPDATE([ShortDescription]) OR UPDATE([Description]) OR UPDATE([EffectiveBeginDate]) OR UPDATE([EffectiveEndDate]))
     BEGIN
         ;WITH affectedDocs AS (
             SELECT i.[DocumentId]
             FROM inserted i
-            LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-            WHERE del.[DocumentId] IS NOT NULL AND ((CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[CodeValue] AS varbinary(max)) <> CAST(del.[CodeValue] AS varbinary(max)) OR (i.[CodeValue] IS NULL AND del.[CodeValue] IS NOT NULL) OR (i.[CodeValue] IS NOT NULL AND del.[CodeValue] IS NULL)) OR (CAST(i.[ShortDescription] AS varbinary(max)) <> CAST(del.[ShortDescription] AS varbinary(max)) OR (i.[ShortDescription] IS NULL AND del.[ShortDescription] IS NOT NULL) OR (i.[ShortDescription] IS NOT NULL AND del.[ShortDescription] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND del.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND del.[Description] IS NULL)) OR (i.[EffectiveBeginDate] <> del.[EffectiveBeginDate] OR (i.[EffectiveBeginDate] IS NULL AND del.[EffectiveBeginDate] IS NOT NULL) OR (i.[EffectiveBeginDate] IS NOT NULL AND del.[EffectiveBeginDate] IS NULL)) OR (i.[EffectiveEndDate] <> del.[EffectiveEndDate] OR (i.[EffectiveEndDate] IS NULL AND del.[EffectiveEndDate] IS NOT NULL) OR (i.[EffectiveEndDate] IS NOT NULL AND del.[EffectiveEndDate] IS NULL)) OR (CAST(i.[Discriminator] AS varbinary(max)) <> CAST(del.[Discriminator] AS varbinary(max)) OR (i.[Discriminator] IS NULL AND del.[Discriminator] IS NOT NULL) OR (i.[Discriminator] IS NOT NULL AND del.[Discriminator] IS NULL)) OR (CAST(i.[Uri] AS varbinary(max)) <> CAST(del.[Uri] AS varbinary(max)) OR (i.[Uri] IS NULL AND del.[Uri] IS NOT NULL) OR (i.[Uri] IS NOT NULL AND del.[Uri] IS NULL)))
+            LEFT JOIN deleted del ON del.[DescriptorId] = i.[DescriptorId]
+            WHERE del.[DescriptorId] IS NOT NULL AND ((CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[CodeValue] AS varbinary(max)) <> CAST(del.[CodeValue] AS varbinary(max)) OR (i.[CodeValue] IS NULL AND del.[CodeValue] IS NOT NULL) OR (i.[CodeValue] IS NOT NULL AND del.[CodeValue] IS NULL)) OR (CAST(i.[ShortDescription] AS varbinary(max)) <> CAST(del.[ShortDescription] AS varbinary(max)) OR (i.[ShortDescription] IS NULL AND del.[ShortDescription] IS NOT NULL) OR (i.[ShortDescription] IS NOT NULL AND del.[ShortDescription] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND del.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND del.[Description] IS NULL)) OR (i.[EffectiveBeginDate] <> del.[EffectiveBeginDate] OR (i.[EffectiveBeginDate] IS NULL AND del.[EffectiveBeginDate] IS NOT NULL) OR (i.[EffectiveBeginDate] IS NOT NULL AND del.[EffectiveBeginDate] IS NULL)) OR (i.[EffectiveEndDate] <> del.[EffectiveEndDate] OR (i.[EffectiveEndDate] IS NULL AND del.[EffectiveEndDate] IS NOT NULL) OR (i.[EffectiveEndDate] IS NOT NULL AND del.[EffectiveEndDate] IS NULL)))
             UNION ALL
             SELECT del.[DocumentId]
             FROM deleted del
-            LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-            WHERE i.[DocumentId] IS NULL
+            LEFT JOIN inserted i ON i.[DescriptorId] = del.[DescriptorId]
+            WHERE i.[DescriptorId] IS NULL
         )
         UPDATE d
         SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
@@ -638,7 +646,7 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
         INSERT INTO [tracked_changes_edfi].[Descriptor] (
-            [Discriminator],
+            [ResourceKeyId],
             [OldNamespace],
             [OldCodeValue],
             [Id],
@@ -646,7 +654,7 @@ BEGIN
             [DocumentId]
         )
         SELECT
-            del.[Discriminator],
+            del.[ResourceKeyId],
             del.[Namespace],
             del.[CodeValue],
             doc.[DocumentUuid],
@@ -798,8 +806,8 @@ CREATE TABLE [edfi].[Assessment]
     [EducationOrganization_EducationOrganizationId] bigint NULL,
     [MandatingEducationOrganization_DocumentId] bigint NULL,
     [MandatingEducationOrganization_EducationOrganizationId] bigint NULL,
-    [AssessmentCategoryDescriptor_DescriptorId] bigint NULL,
-    [ContentStandardPublicationStatusDescriptor_DescriptorId] bigint NULL,
+    [AssessmentCategoryDescriptor_DescriptorId] int NULL,
+    [ContentStandardPublicationStatusDescriptor_DescriptorId] int NULL,
     [AdaptiveAssessment] bit NULL,
     [AssessmentFamily] nvarchar(60) NULL,
     [AssessmentForm] nvarchar(60) NULL,
@@ -830,7 +838,7 @@ CREATE TABLE [edfi].[AssessmentAcademicSubject]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Assessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AcademicSubjectDescriptor_DescriptorId] bigint NOT NULL,
+    [AcademicSubjectDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_AssessmentAcademicSubject] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_AssessmentAcademicSubject_AcademicSubjectDescriptor_DescriptorId_Assessment_DocumentId] UNIQUE ([Assessment_DocumentId], [AcademicSubjectDescriptor_DescriptorId]),
     CONSTRAINT [UX_AssessmentAcademicSubject_Ordinal_Assessment_DocumentId] UNIQUE ([Assessment_DocumentId], [Ordinal])
@@ -842,7 +850,7 @@ CREATE TABLE [edfi].[AssessmentAssessedGradeLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Assessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [GradeLevelDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_AssessmentAssessedGradeLevel] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_AssessmentAssessedGradeLevel_Assessment_DocumentId_GradeLevelDescriptor_DescriptorId] UNIQUE ([Assessment_DocumentId], [GradeLevelDescriptor_DescriptorId]),
     CONSTRAINT [UX_AssessmentAssessedGradeLevel_Ordinal_Assessment_DocumentId] UNIQUE ([Assessment_DocumentId], [Ordinal])
@@ -866,7 +874,7 @@ CREATE TABLE [edfi].[AssessmentIdentificationCode]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Assessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AssessmentIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
+    [AssessmentIdentificationSystemDescriptor_DescriptorId] int NOT NULL,
     [AssigningOrganizationIdentificationCode] nvarchar(60) NULL,
     [IdentificationCode] nvarchar(60) NOT NULL,
     CONSTRAINT [PK_AssessmentIdentificationCode] PRIMARY KEY ([CollectionItemId]),
@@ -880,7 +888,7 @@ CREATE TABLE [edfi].[AssessmentLanguage]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Assessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [LanguageDescriptor_DescriptorId] bigint NOT NULL,
+    [LanguageDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_AssessmentLanguage] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_AssessmentLanguage_Assessment_DocumentId_LanguageDescriptor_DescriptorId] UNIQUE ([Assessment_DocumentId], [LanguageDescriptor_DescriptorId]),
     CONSTRAINT [UX_AssessmentLanguage_Ordinal_Assessment_DocumentId] UNIQUE ([Assessment_DocumentId], [Ordinal])
@@ -892,9 +900,9 @@ CREATE TABLE [edfi].[AssessmentPerformanceLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Assessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AssessmentReportingMethodDescriptor_DescriptorId] bigint NOT NULL,
-    [PerformanceLevelDescriptor_DescriptorId] bigint NOT NULL,
-    [ResultDatatypeTypeDescriptor_DescriptorId] bigint NULL,
+    [AssessmentReportingMethodDescriptor_DescriptorId] int NOT NULL,
+    [PerformanceLevelDescriptor_DescriptorId] int NOT NULL,
+    [ResultDatatypeTypeDescriptor_DescriptorId] int NULL,
     [MaximumScore] nvarchar(35) NULL,
     [MinimumScore] nvarchar(35) NULL,
     [PerformanceLevelIndicatorName] nvarchar(60) NULL,
@@ -909,7 +917,7 @@ CREATE TABLE [edfi].[AssessmentPeriod]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Assessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AssessmentPeriodDescriptor_DescriptorId] bigint NOT NULL,
+    [AssessmentPeriodDescriptor_DescriptorId] int NOT NULL,
     [BeginDate] date NULL,
     [EndDate] date NULL,
     CONSTRAINT [PK_AssessmentPeriod] PRIMARY KEY ([CollectionItemId]),
@@ -923,7 +931,7 @@ CREATE TABLE [edfi].[AssessmentPlatformType]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Assessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [PlatformTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [PlatformTypeDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_AssessmentPlatformType] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_AssessmentPlatformType_Assessment_DocumentId_PlatformTypeDescriptor_DescriptorId] UNIQUE ([Assessment_DocumentId], [PlatformTypeDescriptor_DescriptorId]),
     CONSTRAINT [UX_AssessmentPlatformType_Ordinal_Assessment_DocumentId] UNIQUE ([Assessment_DocumentId], [Ordinal])
@@ -938,7 +946,7 @@ CREATE TABLE [edfi].[AssessmentProgram]
     [SectionOrProgramChoiceProgram_DocumentId] bigint NOT NULL,
     [SectionOrProgramChoiceProgram_EducationOrganizationId] bigint NOT NULL,
     [SectionOrProgramChoiceProgram_ProgramName] nvarchar(60) NOT NULL,
-    [SectionOrProgramChoiceProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [SectionOrProgramChoiceProgram_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_AssessmentProgram] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_AssessmentProgram_Assessment_DocumentId_SectionOrProgramChoiceProgram_DocumentId] UNIQUE ([Assessment_DocumentId], [SectionOrProgramChoiceProgram_DocumentId]),
     CONSTRAINT [UX_AssessmentProgram_Ordinal_Assessment_DocumentId] UNIQUE ([Assessment_DocumentId], [Ordinal]),
@@ -951,8 +959,8 @@ CREATE TABLE [edfi].[AssessmentScore]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Assessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AssessmentReportingMethodDescriptor_DescriptorId] bigint NOT NULL,
-    [ResultDatatypeTypeDescriptor_DescriptorId] bigint NULL,
+    [AssessmentReportingMethodDescriptor_DescriptorId] int NOT NULL,
+    [ResultDatatypeTypeDescriptor_DescriptorId] int NULL,
     [MaximumScore] nvarchar(35) NULL,
     [MinimumScore] nvarchar(35) NULL,
     CONSTRAINT [PK_AssessmentScore] PRIMARY KEY ([CollectionItemId]),
@@ -1104,7 +1112,7 @@ CREATE TABLE [edfi].[AssessmentItem]
     [Assessment_DocumentId] bigint NOT NULL,
     [Assessment_AssessmentIdentifier] nvarchar(60) NOT NULL,
     [Assessment_Namespace] nvarchar(255) NOT NULL,
-    [AssessmentItemCategoryDescriptor_DescriptorId] bigint NULL,
+    [AssessmentItemCategoryDescriptor_DescriptorId] int NULL,
     [AssessmentItemURI] nvarchar(255) NULL,
     [ExpectedTimeAssessed] nvarchar(30) NULL,
     [IdentificationCode] nvarchar(60) NOT NULL,
@@ -1160,7 +1168,7 @@ CREATE TABLE [edfi].[AssessmentScoreRangeLearningStandard]
     [ObjectiveAssessment_AssessmentIdentifier] AS (CASE WHEN [ObjectiveAssessment_DocumentId] IS NULL THEN NULL ELSE [AssessmentIdentifier_Unified] END) PERSISTED,
     [ObjectiveAssessment_Namespace] AS (CASE WHEN [ObjectiveAssessment_DocumentId] IS NULL THEN NULL ELSE [Namespace_Unified] END) PERSISTED,
     [ObjectiveAssessment_IdentificationCode] nvarchar(60) NULL,
-    [AssessmentReportingMethodDescriptor_DescriptorId] bigint NULL,
+    [AssessmentReportingMethodDescriptor_DescriptorId] int NULL,
     [MaximumScore] nvarchar(35) NOT NULL,
     [MinimumScore] nvarchar(35) NOT NULL,
     [ScoreRangeId] nvarchar(60) NOT NULL,
@@ -1204,7 +1212,7 @@ CREATE TABLE [edfi].[BalanceSheetDimensionReportingTag]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [BalanceSheetDimension_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [ReportingTagDescriptor_DescriptorId] bigint NOT NULL,
+    [ReportingTagDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_BalanceSheetDimensionReportingTag] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_BalanceSheetDimensionReportingTag_BalanceSheetDimension_DocumentId_ReportingTagDescriptor_DescriptorId] UNIQUE ([BalanceSheetDimension_DocumentId], [ReportingTagDescriptor_DescriptorId]),
     CONSTRAINT [UX_BalanceSheetDimensionReportingTag_Ordinal_BalanceSheetDimension_DocumentId] UNIQUE ([BalanceSheetDimension_DocumentId], [Ordinal])
@@ -1261,7 +1269,7 @@ CREATE TABLE [edfi].[BellScheduleGradeLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [BellSchedule_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [GradeLevelDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_BellScheduleGradeLevel] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_BellScheduleGradeLevel_BellSchedule_DocumentId_GradeLevelDescriptor_DescriptorId] UNIQUE ([BellSchedule_DocumentId], [GradeLevelDescriptor_DescriptorId]),
     CONSTRAINT [UX_BellScheduleGradeLevel_Ordinal_BellSchedule_DocumentId] UNIQUE ([BellSchedule_DocumentId], [Ordinal])
@@ -1277,7 +1285,7 @@ CREATE TABLE [edfi].[Calendar]
     [SchoolYear_SchoolYear] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
     [School_SchoolId] bigint NOT NULL,
-    [CalendarTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [CalendarTypeDescriptor_DescriptorId] int NOT NULL,
     [CalendarCode] nvarchar(60) NOT NULL,
     CONSTRAINT [PK_Calendar] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_Calendar_NK] UNIQUE ([CalendarCode], [School_DocumentId], [SchoolYear_DocumentId]),
@@ -1292,7 +1300,7 @@ CREATE TABLE [edfi].[CalendarGradeLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Calendar_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [GradeLevelDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_CalendarGradeLevel] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CalendarGradeLevel_Calendar_DocumentId_GradeLevelDescriptor_DescriptorId] UNIQUE ([Calendar_DocumentId], [GradeLevelDescriptor_DescriptorId]),
     CONSTRAINT [UX_CalendarGradeLevel_Ordinal_Calendar_DocumentId] UNIQUE ([Calendar_DocumentId], [Ordinal])
@@ -1321,7 +1329,7 @@ CREATE TABLE [edfi].[CalendarDateCalendarEvent]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CalendarDate_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [CalendarEventDescriptor_DescriptorId] bigint NOT NULL,
+    [CalendarEventDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_CalendarDateCalendarEvent] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CalendarDateCalendarEvent_CalendarDate_DocumentId_CalendarEventDescriptor_DescriptorId] UNIQUE ([CalendarDate_DocumentId], [CalendarEventDescriptor_DescriptorId]),
     CONSTRAINT [UX_CalendarDateCalendarEvent_Ordinal_CalendarDate_DocumentId] UNIQUE ([CalendarDate_DocumentId], [Ordinal])
@@ -1360,7 +1368,7 @@ CREATE TABLE [edfi].[ChartOfAccount]
     [SourceSourceDimension_DocumentId] bigint NULL,
     [SourceSourceDimension_Code] nvarchar(16) NULL,
     [SourceSourceDimension_FiscalYear] AS (CASE WHEN [SourceSourceDimension_DocumentId] IS NULL THEN NULL ELSE [FiscalYear_Unified] END) PERSISTED,
-    [AccountTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [AccountTypeDescriptor_DescriptorId] int NOT NULL,
     [AccountIdentifier] nvarchar(50) NOT NULL,
     [AccountName] nvarchar(100) NULL,
     [FiscalYear] AS ([FiscalYear_Unified]) PERSISTED,
@@ -1384,7 +1392,7 @@ CREATE TABLE [edfi].[ChartOfAccountReportingTag]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [ChartOfAccount_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [ReportingTagDescriptor_DescriptorId] bigint NOT NULL,
+    [ReportingTagDescriptor_DescriptorId] int NOT NULL,
     [TagValue] nvarchar(100) NULL,
     CONSTRAINT [PK_ChartOfAccountReportingTag] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_ChartOfAccountReportingTag_ChartOfAccount_DocumentId_ReportingTagDescriptor_DescriptorId] UNIQUE ([ChartOfAccount_DocumentId], [ReportingTagDescriptor_DescriptorId]),
@@ -1428,9 +1436,9 @@ CREATE TABLE [edfi].[Cohort]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Cohort_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
     [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
-    [AcademicSubjectDescriptor_DescriptorId] bigint NULL,
-    [CohortScopeDescriptor_DescriptorId] bigint NULL,
-    [CohortTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [AcademicSubjectDescriptor_DescriptorId] int NULL,
+    [CohortScopeDescriptor_DescriptorId] int NULL,
+    [CohortTypeDescriptor_DescriptorId] int NOT NULL,
     [CohortDescription] nvarchar(1024) NULL,
     [CohortIdentifier] nvarchar(36) NOT NULL,
     CONSTRAINT [PK_Cohort] PRIMARY KEY ([DocumentId]),
@@ -1448,7 +1456,7 @@ CREATE TABLE [edfi].[CohortProgram]
     [ProgramProgram_DocumentId] bigint NOT NULL,
     [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
-    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_CohortProgram] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CohortProgram_Cohort_DocumentId_ProgramProgram_DocumentId] UNIQUE ([Cohort_DocumentId], [ProgramProgram_DocumentId]),
     CONSTRAINT [UX_CohortProgram_Ordinal_Cohort_DocumentId] UNIQUE ([Cohort_DocumentId], [Ordinal]),
@@ -1461,7 +1469,7 @@ CREATE TABLE [edfi].[CommunityOrganization]
     [DocumentId] bigint NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CommunityOrganization_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CommunityOrganization_ContentVersion] DEFAULT 0,
-    [OperationalStatusDescriptor_DescriptorId] bigint NULL,
+    [OperationalStatusDescriptor_DescriptorId] int NULL,
     [CommunityOrganizationId] bigint NOT NULL,
     [NameOfInstitution] nvarchar(75) NOT NULL,
     [ShortNameOfInstitution] nvarchar(75) NULL,
@@ -1477,9 +1485,9 @@ CREATE TABLE [edfi].[CommunityOrganizationAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityOrganization_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [LocaleDescriptor_DescriptorId] bigint NULL,
-    [StateAbbreviationDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [LocaleDescriptor_DescriptorId] int NULL,
+    [StateAbbreviationDescriptor_DescriptorId] int NOT NULL,
     [ApartmentRoomSuiteNumber] nvarchar(50) NULL,
     [BuildingSiteNumber] nvarchar(20) NULL,
     [City] nvarchar(30) NOT NULL,
@@ -1503,7 +1511,7 @@ CREATE TABLE [edfi].[CommunityOrganizationCategory]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityOrganization_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [EducationOrganizationCategoryDescriptor_DescriptorId] bigint NOT NULL,
+    [EducationOrganizationCategoryDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_CommunityOrganizationCategory] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CommunityOrganizationCategory_CommunityOrganization_DocumentId_EducationOrganizationCategoryDescriptor_DescriptorId] UNIQUE ([CommunityOrganization_DocumentId], [EducationOrganizationCategoryDescriptor_DescriptorId]),
     CONSTRAINT [UX_CommunityOrganizationCategory_Ordinal_CommunityOrganization_DocumentId] UNIQUE ([CommunityOrganization_DocumentId], [Ordinal])
@@ -1515,7 +1523,7 @@ CREATE TABLE [edfi].[CommunityOrganizationIdentificationCode]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityOrganization_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
+    [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] int NOT NULL,
     [IdentificationCode] nvarchar(60) NOT NULL,
     CONSTRAINT [PK_CommunityOrganizationIdentificationCode] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CommunityOrganizationIdentificationCode_CommunityOrganization_DocumentId_EducationOrganizationIdentificationSystem_82956715bc] UNIQUE ([CommunityOrganization_DocumentId], [EducationOrganizationIdentificationSystemDescriptor_DescriptorId]),
@@ -1528,9 +1536,9 @@ CREATE TABLE [edfi].[CommunityOrganizationIndicator]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityOrganization_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [IndicatorDescriptor_DescriptorId] bigint NOT NULL,
-    [IndicatorGroupDescriptor_DescriptorId] bigint NULL,
-    [IndicatorLevelDescriptor_DescriptorId] bigint NULL,
+    [IndicatorDescriptor_DescriptorId] int NOT NULL,
+    [IndicatorGroupDescriptor_DescriptorId] int NULL,
+    [IndicatorLevelDescriptor_DescriptorId] int NULL,
     [DesignatedBy] nvarchar(60) NULL,
     [IndicatorValue] nvarchar(60) NULL,
     CONSTRAINT [PK_CommunityOrganizationIndicator] PRIMARY KEY ([CollectionItemId]),
@@ -1545,7 +1553,7 @@ CREATE TABLE [edfi].[CommunityOrganizationInstitutionTelephone]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityOrganization_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] int NOT NULL,
     [TelephoneNumber] nvarchar(24) NOT NULL,
     CONSTRAINT [PK_CommunityOrganizationInstitutionTelephone] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CommunityOrganizationInstitutionTelephone_CommunityOrganization_DocumentId_InstitutionTelephoneNumberTypeDescripto_237f8def85] UNIQUE ([CommunityOrganization_DocumentId], [InstitutionTelephoneNumberTypeDescriptor_DescriptorId]),
@@ -1558,8 +1566,8 @@ CREATE TABLE [edfi].[CommunityOrganizationInternationalAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityOrganization_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [CountryDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [CountryDescriptor_DescriptorId] int NOT NULL,
     [AddressLine1] nvarchar(150) NOT NULL,
     [AddressLine2] nvarchar(150) NULL,
     [AddressLine3] nvarchar(150) NULL,
@@ -1609,10 +1617,10 @@ CREATE TABLE [edfi].[CommunityProvider]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CommunityProvider_ContentVersion] DEFAULT 0,
     [CommunityOrganization_DocumentId] bigint NULL,
     [CommunityOrganization_CommunityOrganizationId] bigint NULL,
-    [OperationalStatusDescriptor_DescriptorId] bigint NULL,
-    [ProviderCategoryDescriptor_DescriptorId] bigint NOT NULL,
-    [ProviderProfitabilityDescriptor_DescriptorId] bigint NULL,
-    [ProviderStatusDescriptor_DescriptorId] bigint NOT NULL,
+    [OperationalStatusDescriptor_DescriptorId] int NULL,
+    [ProviderCategoryDescriptor_DescriptorId] int NOT NULL,
+    [ProviderProfitabilityDescriptor_DescriptorId] int NULL,
+    [ProviderStatusDescriptor_DescriptorId] int NOT NULL,
     [CommunityProviderId] bigint NOT NULL,
     [LicenseExemptIndicator] bit NULL,
     [NameOfInstitution] nvarchar(75) NOT NULL,
@@ -1631,9 +1639,9 @@ CREATE TABLE [edfi].[CommunityProviderAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityProvider_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [LocaleDescriptor_DescriptorId] bigint NULL,
-    [StateAbbreviationDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [LocaleDescriptor_DescriptorId] int NULL,
+    [StateAbbreviationDescriptor_DescriptorId] int NOT NULL,
     [ApartmentRoomSuiteNumber] nvarchar(50) NULL,
     [BuildingSiteNumber] nvarchar(20) NULL,
     [City] nvarchar(30) NOT NULL,
@@ -1657,7 +1665,7 @@ CREATE TABLE [edfi].[CommunityProviderCategory]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityProvider_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [EducationOrganizationCategoryDescriptor_DescriptorId] bigint NOT NULL,
+    [EducationOrganizationCategoryDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_CommunityProviderCategory] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CommunityProviderCategory_CommunityProvider_DocumentId_EducationOrganizationCategoryDescriptor_DescriptorId] UNIQUE ([CommunityProvider_DocumentId], [EducationOrganizationCategoryDescriptor_DescriptorId]),
     CONSTRAINT [UX_CommunityProviderCategory_Ordinal_CommunityProvider_DocumentId] UNIQUE ([CommunityProvider_DocumentId], [Ordinal])
@@ -1669,7 +1677,7 @@ CREATE TABLE [edfi].[CommunityProviderIdentificationCode]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityProvider_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
+    [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] int NOT NULL,
     [IdentificationCode] nvarchar(60) NOT NULL,
     CONSTRAINT [PK_CommunityProviderIdentificationCode] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CommunityProviderIdentificationCode_CommunityProvider_DocumentId_EducationOrganizationIdentificationSystemDescript_a0137882c2] UNIQUE ([CommunityProvider_DocumentId], [EducationOrganizationIdentificationSystemDescriptor_DescriptorId]),
@@ -1682,9 +1690,9 @@ CREATE TABLE [edfi].[CommunityProviderIndicator]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityProvider_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [IndicatorDescriptor_DescriptorId] bigint NOT NULL,
-    [IndicatorGroupDescriptor_DescriptorId] bigint NULL,
-    [IndicatorLevelDescriptor_DescriptorId] bigint NULL,
+    [IndicatorDescriptor_DescriptorId] int NOT NULL,
+    [IndicatorGroupDescriptor_DescriptorId] int NULL,
+    [IndicatorLevelDescriptor_DescriptorId] int NULL,
     [DesignatedBy] nvarchar(60) NULL,
     [IndicatorValue] nvarchar(60) NULL,
     CONSTRAINT [PK_CommunityProviderIndicator] PRIMARY KEY ([CollectionItemId]),
@@ -1699,7 +1707,7 @@ CREATE TABLE [edfi].[CommunityProviderInstitutionTelephone]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityProvider_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] int NOT NULL,
     [TelephoneNumber] nvarchar(24) NOT NULL,
     CONSTRAINT [PK_CommunityProviderInstitutionTelephone] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CommunityProviderInstitutionTelephone_CommunityProvider_DocumentId_InstitutionTelephoneNumberTypeDescriptor_DescriptorId] UNIQUE ([CommunityProvider_DocumentId], [InstitutionTelephoneNumberTypeDescriptor_DescriptorId]),
@@ -1712,8 +1720,8 @@ CREATE TABLE [edfi].[CommunityProviderInternationalAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityProvider_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [CountryDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [CountryDescriptor_DescriptorId] int NOT NULL,
     [AddressLine1] nvarchar(150) NOT NULL,
     [AddressLine2] nvarchar(150) NULL,
     [AddressLine3] nvarchar(150) NULL,
@@ -1763,8 +1771,8 @@ CREATE TABLE [edfi].[CommunityProviderLicense]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CommunityProviderLicense_ContentVersion] DEFAULT 0,
     [CommunityProvider_DocumentId] bigint NOT NULL,
     [CommunityProvider_CommunityProviderId] bigint NOT NULL,
-    [LicenseStatusDescriptor_DescriptorId] bigint NULL,
-    [LicenseTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [LicenseStatusDescriptor_DescriptorId] int NULL,
+    [LicenseTypeDescriptor_DescriptorId] int NOT NULL,
     [AuthorizedFacilityCapacity] int NULL,
     [LicenseEffectiveDate] date NOT NULL,
     [LicenseExpirationDate] date NULL,
@@ -1786,7 +1794,7 @@ CREATE TABLE [edfi].[CompetencyObjective]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CompetencyObjective_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
     [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
-    [ObjectiveGradeLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [ObjectiveGradeLevelDescriptor_DescriptorId] int NOT NULL,
     [CompetencyObjectiveId] nvarchar(60) NULL,
     [Description] nvarchar(1024) NULL,
     [Objective] nvarchar(60) NOT NULL,
@@ -1805,9 +1813,9 @@ CREATE TABLE [edfi].[Contact]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Contact_ContentVersion] DEFAULT 0,
     [Person_DocumentId] bigint NULL,
     [Person_PersonId] nvarchar(32) NULL,
-    [Person_SourceSystemDescriptor_DescriptorId] bigint NULL,
-    [HighestCompletedLevelOfEducationDescriptor_DescriptorId] bigint NULL,
-    [SexDescriptor_DescriptorId] bigint NULL,
+    [Person_SourceSystemDescriptor_DescriptorId] int NULL,
+    [HighestCompletedLevelOfEducationDescriptor_DescriptorId] int NULL,
+    [SexDescriptor_DescriptorId] int NULL,
     [ContactUniqueId] nvarchar(32) NOT NULL,
     [FirstName] nvarchar(75) NOT NULL,
     [GenderIdentity] nvarchar(60) NULL,
@@ -1831,9 +1839,9 @@ CREATE TABLE [edfi].[ContactAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Contact_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [LocaleDescriptor_DescriptorId] bigint NULL,
-    [StateAbbreviationDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [LocaleDescriptor_DescriptorId] int NULL,
+    [StateAbbreviationDescriptor_DescriptorId] int NOT NULL,
     [ApartmentRoomSuiteNumber] nvarchar(50) NULL,
     [BuildingSiteNumber] nvarchar(20) NULL,
     [City] nvarchar(30) NOT NULL,
@@ -1857,7 +1865,7 @@ CREATE TABLE [edfi].[ContactElectronicMail]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Contact_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [ElectronicMailTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ElectronicMailTypeDescriptor_DescriptorId] int NOT NULL,
     [DoNotPublishIndicator] bit NULL,
     [ElectronicMailAddress] nvarchar(128) NOT NULL,
     [PrimaryEmailAddressIndicator] bit NULL,
@@ -1872,8 +1880,8 @@ CREATE TABLE [edfi].[ContactInternationalAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Contact_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [CountryDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [CountryDescriptor_DescriptorId] int NOT NULL,
     [AddressLine1] nvarchar(150) NOT NULL,
     [AddressLine2] nvarchar(150) NULL,
     [AddressLine3] nvarchar(150) NULL,
@@ -1893,7 +1901,7 @@ CREATE TABLE [edfi].[ContactLanguage]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Contact_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [LanguageDescriptor_DescriptorId] bigint NOT NULL,
+    [LanguageDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_ContactLanguage] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_ContactLanguage_CollectionItemId_Contact_DocumentId] UNIQUE ([CollectionItemId], [Contact_DocumentId]),
     CONSTRAINT [UX_ContactLanguage_Contact_DocumentId_LanguageDescriptor_DescriptorId] UNIQUE ([Contact_DocumentId], [LanguageDescriptor_DescriptorId]),
@@ -1906,7 +1914,7 @@ CREATE TABLE [edfi].[ContactOtherName]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Contact_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [OtherNameTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [OtherNameTypeDescriptor_DescriptorId] int NOT NULL,
     [FirstName] nvarchar(75) NOT NULL,
     [GenerationCodeSuffix] nvarchar(10) NULL,
     [LastSurname] nvarchar(75) NOT NULL,
@@ -1923,9 +1931,9 @@ CREATE TABLE [edfi].[ContactPersonalIdentificationDocument]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Contact_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [IdentificationDocumentUseDescriptor_DescriptorId] bigint NOT NULL,
-    [IssuerCountryDescriptor_DescriptorId] bigint NULL,
-    [PersonalInformationVerificationDescriptor_DescriptorId] bigint NOT NULL,
+    [IdentificationDocumentUseDescriptor_DescriptorId] int NOT NULL,
+    [IssuerCountryDescriptor_DescriptorId] int NULL,
+    [PersonalInformationVerificationDescriptor_DescriptorId] int NOT NULL,
     [PersonalDocumentExpirationDate] date NULL,
     [PersonalDocumentTitle] nvarchar(60) NULL,
     [PersonalIssuerDocumentIdentificationCode] nvarchar(60) NULL,
@@ -1941,7 +1949,7 @@ CREATE TABLE [edfi].[ContactTelephone]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Contact_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [TelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [TelephoneNumberTypeDescriptor_DescriptorId] int NOT NULL,
     [DoNotPublishIndicator] bit NULL,
     [OrderOfPriority] int NULL,
     [TelephoneNumber] nvarchar(24) NOT NULL,
@@ -1972,7 +1980,7 @@ CREATE TABLE [edfi].[ContactLanguageUs]
     [Contact_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
-    [LanguageUseDescriptor_DescriptorId] bigint NOT NULL,
+    [LanguageUseDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_ContactLanguageUs] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_ContactLanguageUs_Ordinal_ParentCollectionItemId] UNIQUE ([ParentCollectionItemId], [Ordinal]),
     CONSTRAINT [UX_ContactLanguageUs_ParentCollectionItemId_LanguageUseDescriptor_DescriptorId] UNIQUE ([ParentCollectionItemId], [LanguageUseDescriptor_DescriptorId])
@@ -1986,11 +1994,11 @@ CREATE TABLE [edfi].[Course]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Course_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
     [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
-    [CareerPathwayDescriptor_DescriptorId] bigint NULL,
-    [CourseDefinedByDescriptor_DescriptorId] bigint NULL,
-    [CourseGPAApplicabilityDescriptor_DescriptorId] bigint NULL,
-    [MaximumAvailableCreditTypeDescriptor_DescriptorId] bigint NULL,
-    [MinimumAvailableCreditTypeDescriptor_DescriptorId] bigint NULL,
+    [CareerPathwayDescriptor_DescriptorId] int NULL,
+    [CourseDefinedByDescriptor_DescriptorId] int NULL,
+    [CourseGPAApplicabilityDescriptor_DescriptorId] int NULL,
+    [MaximumAvailableCreditTypeDescriptor_DescriptorId] int NULL,
+    [MinimumAvailableCreditTypeDescriptor_DescriptorId] int NULL,
     [CourseCode] nvarchar(60) NOT NULL,
     [CourseDescription] nvarchar(1024) NULL,
     [CourseTitle] nvarchar(60) NOT NULL,
@@ -2015,7 +2023,7 @@ CREATE TABLE [edfi].[CourseAcademicSubject]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Course_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AcademicSubjectDescriptor_DescriptorId] bigint NOT NULL,
+    [AcademicSubjectDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_CourseAcademicSubject] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CourseAcademicSubject_AcademicSubjectDescriptor_DescriptorId_Course_DocumentId] UNIQUE ([Course_DocumentId], [AcademicSubjectDescriptor_DescriptorId]),
     CONSTRAINT [UX_CourseAcademicSubject_Ordinal_Course_DocumentId] UNIQUE ([Course_DocumentId], [Ordinal])
@@ -2027,7 +2035,7 @@ CREATE TABLE [edfi].[CourseCompetencyLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Course_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [CompetencyLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [CompetencyLevelDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_CourseCompetencyLevel] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CourseCompetencyLevel_CompetencyLevelDescriptor_DescriptorId_Course_DocumentId] UNIQUE ([Course_DocumentId], [CompetencyLevelDescriptor_DescriptorId]),
     CONSTRAINT [UX_CourseCompetencyLevel_Ordinal_Course_DocumentId] UNIQUE ([Course_DocumentId], [Ordinal])
@@ -2039,7 +2047,7 @@ CREATE TABLE [edfi].[CourseIdentificationCode]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Course_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [CourseIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
+    [CourseIdentificationSystemDescriptor_DescriptorId] int NOT NULL,
     [AssigningOrganizationIdentificationCode] nvarchar(60) NULL,
     [CourseCatalogURL] nvarchar(255) NULL,
     [IdentificationCode] nvarchar(60) NOT NULL,
@@ -2068,7 +2076,7 @@ CREATE TABLE [edfi].[CourseLevelCharacteristic]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Course_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [CourseLevelCharacteristicDescriptor_DescriptorId] bigint NOT NULL,
+    [CourseLevelCharacteristicDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_CourseLevelCharacteristic] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CourseLevelCharacteristic_Course_DocumentId_CourseLevelCharacteristicDescriptor_DescriptorId] UNIQUE ([Course_DocumentId], [CourseLevelCharacteristicDescriptor_DescriptorId]),
     CONSTRAINT [UX_CourseLevelCharacteristic_Ordinal_Course_DocumentId] UNIQUE ([Course_DocumentId], [Ordinal])
@@ -2080,7 +2088,7 @@ CREATE TABLE [edfi].[CourseOfferedGradeLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Course_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [GradeLevelDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_CourseOfferedGradeLevel] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CourseOfferedGradeLevel_Course_DocumentId_GradeLevelDescriptor_DescriptorId] UNIQUE ([Course_DocumentId], [GradeLevelDescriptor_DescriptorId]),
     CONSTRAINT [UX_CourseOfferedGradeLevel_Ordinal_Course_DocumentId] UNIQUE ([Course_DocumentId], [Ordinal])
@@ -2119,7 +2127,7 @@ CREATE TABLE [edfi].[CourseOfferingCourseLevelCharacteristic]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CourseOffering_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [CourseLevelCharacteristicDescriptor_DescriptorId] bigint NOT NULL,
+    [CourseLevelCharacteristicDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_CourseOfferingCourseLevelCharacteristic] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CourseOfferingCourseLevelCharacteristic_CourseLevelCharacteristicDescriptor_DescriptorId_CourseOffering_DocumentId] UNIQUE ([CourseOffering_DocumentId], [CourseLevelCharacteristicDescriptor_DescriptorId]),
     CONSTRAINT [UX_CourseOfferingCourseLevelCharacteristic_Ordinal_CourseOffering_DocumentId] UNIQUE ([CourseOffering_DocumentId], [Ordinal])
@@ -2131,7 +2139,7 @@ CREATE TABLE [edfi].[CourseOfferingCurriculumUsed]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CourseOffering_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [CurriculumUsedDescriptor_DescriptorId] bigint NOT NULL,
+    [CurriculumUsedDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_CourseOfferingCurriculumUsed] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CourseOfferingCurriculumUsed_CourseOffering_DocumentId_CurriculumUsedDescriptor_DescriptorId] UNIQUE ([CourseOffering_DocumentId], [CurriculumUsedDescriptor_DescriptorId]),
     CONSTRAINT [UX_CourseOfferingCurriculumUsed_Ordinal_CourseOffering_DocumentId] UNIQUE ([CourseOffering_DocumentId], [Ordinal])
@@ -2143,7 +2151,7 @@ CREATE TABLE [edfi].[CourseOfferingOfferedGradeLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CourseOffering_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [GradeLevelDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_CourseOfferingOfferedGradeLevel] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CourseOfferingOfferedGradeLevel_CourseOffering_DocumentId_GradeLevelDescriptor_DescriptorId] UNIQUE ([CourseOffering_DocumentId], [GradeLevelDescriptor_DescriptorId]),
     CONSTRAINT [UX_CourseOfferingOfferedGradeLevel_Ordinal_CourseOffering_DocumentId] UNIQUE ([CourseOffering_DocumentId], [Ordinal])
@@ -2166,13 +2174,13 @@ CREATE TABLE [edfi].[CourseTranscript]
     [StudentAcademicRecord_EducationOrganizationId] bigint NOT NULL,
     [StudentAcademicRecord_SchoolYear] int NOT NULL,
     [StudentAcademicRecord_StudentUniqueId] nvarchar(32) NOT NULL,
-    [StudentAcademicRecord_TermDescriptor_DescriptorId] bigint NOT NULL,
-    [AttemptedCreditTypeDescriptor_DescriptorId] bigint NULL,
-    [CourseAttemptResultDescriptor_DescriptorId] bigint NOT NULL,
-    [CourseRepeatCodeDescriptor_DescriptorId] bigint NULL,
-    [EarnedCreditTypeDescriptor_DescriptorId] bigint NULL,
-    [MethodCreditEarnedDescriptor_DescriptorId] bigint NULL,
-    [WhenTakenGradeLevelDescriptor_DescriptorId] bigint NULL,
+    [StudentAcademicRecord_TermDescriptor_DescriptorId] int NOT NULL,
+    [AttemptedCreditTypeDescriptor_DescriptorId] int NULL,
+    [CourseAttemptResultDescriptor_DescriptorId] int NOT NULL,
+    [CourseRepeatCodeDescriptor_DescriptorId] int NULL,
+    [EarnedCreditTypeDescriptor_DescriptorId] int NULL,
+    [MethodCreditEarnedDescriptor_DescriptorId] int NULL,
+    [WhenTakenGradeLevelDescriptor_DescriptorId] int NULL,
     [AlternativeCourseTitle] nvarchar(60) NULL,
     [AssigningOrganizationIdentificationCode] nvarchar(60) NULL,
     [AttemptedCreditConversion] decimal(9,2) NULL,
@@ -2198,7 +2206,7 @@ CREATE TABLE [edfi].[CourseTranscriptAcademicSubject]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CourseTranscript_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AcademicSubjectDescriptor_DescriptorId] bigint NOT NULL,
+    [AcademicSubjectDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_CourseTranscriptAcademicSubject] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CourseTranscriptAcademicSubject_AcademicSubjectDescriptor_DescriptorId_CourseTranscript_DocumentId] UNIQUE ([CourseTranscript_DocumentId], [AcademicSubjectDescriptor_DescriptorId]),
     CONSTRAINT [UX_CourseTranscriptAcademicSubject_Ordinal_CourseTranscript_DocumentId] UNIQUE ([CourseTranscript_DocumentId], [Ordinal])
@@ -2210,7 +2218,7 @@ CREATE TABLE [edfi].[CourseTranscriptAlternativeCourseIdentificationCode]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CourseTranscript_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [CourseIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
+    [CourseIdentificationSystemDescriptor_DescriptorId] int NOT NULL,
     [AlternativeAssigningOrganizationIdentificationCode] nvarchar(60) NULL,
     [AlternativeCourseCatalogURL] nvarchar(255) NULL,
     [AlternativeIdentificationCode] nvarchar(60) NOT NULL,
@@ -2228,7 +2236,7 @@ CREATE TABLE [edfi].[CourseTranscriptCourseProgram]
     [CourseProgram_DocumentId] bigint NOT NULL,
     [CourseProgram_EducationOrganizationId] bigint NOT NULL,
     [CourseProgram_ProgramName] nvarchar(60) NOT NULL,
-    [CourseProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [CourseProgram_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_CourseTranscriptCourseProgram] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CourseTranscriptCourseProgram_CourseProgram_DocumentId_CourseTranscript_DocumentId] UNIQUE ([CourseTranscript_DocumentId], [CourseProgram_DocumentId]),
     CONSTRAINT [UX_CourseTranscriptCourseProgram_Ordinal_CourseTranscript_DocumentId] UNIQUE ([CourseTranscript_DocumentId], [Ordinal]),
@@ -2241,7 +2249,7 @@ CREATE TABLE [edfi].[CourseTranscriptCreditCategory]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CourseTranscript_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [CreditCategoryDescriptor_DescriptorId] bigint NOT NULL,
+    [CreditCategoryDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_CourseTranscriptCreditCategory] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CourseTranscriptCreditCategory_CourseTranscript_DocumentId_CreditCategoryDescriptor_DescriptorId] UNIQUE ([CourseTranscript_DocumentId], [CreditCategoryDescriptor_DescriptorId]),
     CONSTRAINT [UX_CourseTranscriptCreditCategory_Ordinal_CourseTranscript_DocumentId] UNIQUE ([CourseTranscript_DocumentId], [Ordinal])
@@ -2253,7 +2261,7 @@ CREATE TABLE [edfi].[CourseTranscriptEarnedAdditionalCredits]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CourseTranscript_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AdditionalCreditTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [AdditionalCreditTypeDescriptor_DescriptorId] int NOT NULL,
     [EarnedCredits] decimal(9,3) NOT NULL,
     CONSTRAINT [PK_CourseTranscriptEarnedAdditionalCredits] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CourseTranscriptEarnedAdditionalCredits_AdditionalCreditTypeDescriptor_DescriptorId_CourseTranscript_DocumentId] UNIQUE ([CourseTranscript_DocumentId], [AdditionalCreditTypeDescriptor_DescriptorId]),
@@ -2266,7 +2274,7 @@ CREATE TABLE [edfi].[CourseTranscriptPartialCourseTranscriptAwards]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CourseTranscript_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [MethodCreditEarnedDescriptor_DescriptorId] bigint NULL,
+    [MethodCreditEarnedDescriptor_DescriptorId] int NULL,
     [AwardDate] date NOT NULL,
     [EarnedCredits] decimal(9,3) NOT NULL,
     [LetterGradeEarned] nvarchar(20) NULL,
@@ -2300,11 +2308,11 @@ CREATE TABLE [edfi].[Credential]
     [DocumentId] bigint NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Credential_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Credential_ContentVersion] DEFAULT 0,
-    [CredentialFieldDescriptor_DescriptorId] bigint NULL,
-    [CredentialTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [StateOfIssueStateAbbreviationDescriptor_DescriptorId] bigint NOT NULL,
-    [TeachingCredentialBasisDescriptor_DescriptorId] bigint NULL,
-    [TeachingCredentialDescriptor_DescriptorId] bigint NULL,
+    [CredentialFieldDescriptor_DescriptorId] int NULL,
+    [CredentialTypeDescriptor_DescriptorId] int NOT NULL,
+    [StateOfIssueStateAbbreviationDescriptor_DescriptorId] int NOT NULL,
+    [TeachingCredentialBasisDescriptor_DescriptorId] int NULL,
+    [TeachingCredentialDescriptor_DescriptorId] int NULL,
     [CredentialIdentifier] nvarchar(60) NOT NULL,
     [EffectiveDate] date NULL,
     [ExpirationDate] date NULL,
@@ -2321,7 +2329,7 @@ CREATE TABLE [edfi].[CredentialAcademicSubject]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Credential_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AcademicSubjectDescriptor_DescriptorId] bigint NOT NULL,
+    [AcademicSubjectDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_CredentialAcademicSubject] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CredentialAcademicSubject_AcademicSubjectDescriptor_DescriptorId_Credential_DocumentId] UNIQUE ([Credential_DocumentId], [AcademicSubjectDescriptor_DescriptorId]),
     CONSTRAINT [UX_CredentialAcademicSubject_Ordinal_Credential_DocumentId] UNIQUE ([Credential_DocumentId], [Ordinal])
@@ -2345,7 +2353,7 @@ CREATE TABLE [edfi].[CredentialGradeLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Credential_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [GradeLevelDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_CredentialGradeLevel] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_CredentialGradeLevel_Credential_DocumentId_GradeLevelDescriptor_DescriptorId] UNIQUE ([Credential_DocumentId], [GradeLevelDescriptor_DescriptorId]),
     CONSTRAINT [UX_CredentialGradeLevel_Ordinal_Credential_DocumentId] UNIQUE ([Credential_DocumentId], [Ordinal])
@@ -2357,7 +2365,7 @@ CREATE TABLE [edfi].[CrisisEvent]
     [DocumentId] bigint NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CrisisEvent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CrisisEvent_ContentVersion] DEFAULT 0,
-    [CrisisTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [CrisisTypeDescriptor_DescriptorId] int NOT NULL,
     [CrisisDescription] nvarchar(1024) NULL,
     [CrisisEndDate] date NULL,
     [CrisisEventName] nvarchar(100) NOT NULL,
@@ -2387,7 +2395,7 @@ CREATE TABLE [edfi].[DescriptorMappingModelEntity]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [DescriptorMapping_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [ModelEntityDescriptor_DescriptorId] bigint NOT NULL,
+    [ModelEntityDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_DescriptorMappingModelEntity] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_DescriptorMappingModelEntity_DescriptorMapping_DocumentId_ModelEntityDescriptor_DescriptorId] UNIQUE ([DescriptorMapping_DocumentId], [ModelEntityDescriptor_DescriptorId]),
     CONSTRAINT [UX_DescriptorMappingModelEntity_Ordinal_DescriptorMapping_DocumentId] UNIQUE ([DescriptorMapping_DocumentId], [Ordinal])
@@ -2405,7 +2413,7 @@ CREATE TABLE [edfi].[DisciplineAction]
     [ResponsibilitySchool_SchoolId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId] bigint NULL,
+    [DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId] int NULL,
     [ActualDisciplineActionLength] decimal(5,2) NULL,
     [DisciplineActionIdentifier] nvarchar(36) NOT NULL,
     [DisciplineActionLength] decimal(5,2) NULL,
@@ -2425,7 +2433,7 @@ CREATE TABLE [edfi].[DisciplineActionDiscipline]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [DisciplineAction_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [DisciplineDescriptor_DescriptorId] bigint NOT NULL,
+    [DisciplineDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_DisciplineActionDiscipline] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_DisciplineActionDiscipline_DisciplineAction_DocumentId_DisciplineDescriptor_DescriptorId] UNIQUE ([DisciplineAction_DocumentId], [DisciplineDescriptor_DescriptorId]),
     CONSTRAINT [UX_DisciplineActionDiscipline_Ordinal_DisciplineAction_DocumentId] UNIQUE ([DisciplineAction_DocumentId], [Ordinal])
@@ -2452,7 +2460,7 @@ CREATE TABLE [edfi].[DisciplineActionStudentDisciplineIncidentBehaviorAssociatio
     [DisciplineAction_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [StudentDisciplineIncidentBehaviorAssociation_DocumentId] bigint NOT NULL,
-    [StudentDisciplineIncidentBehaviorAssociation_BehaviorDescriptor_DescriptorId] bigint NOT NULL,
+    [StudentDisciplineIncidentBehaviorAssociation_BehaviorDescriptor_DescriptorId] int NOT NULL,
     [StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier] nvarchar(36) NOT NULL,
     [StudentDisciplineIncidentBehaviorAssociation_SchoolId] bigint NOT NULL,
     [StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId] nvarchar(32) NOT NULL,
@@ -2470,8 +2478,8 @@ CREATE TABLE [edfi].[DisciplineIncident]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_DisciplineIncident_ContentVersion] DEFAULT 0,
     [School_DocumentId] bigint NOT NULL,
     [School_SchoolId] bigint NOT NULL,
-    [IncidentLocationDescriptor_DescriptorId] bigint NULL,
-    [ReporterDescriptionDescriptor_DescriptorId] bigint NULL,
+    [IncidentLocationDescriptor_DescriptorId] int NULL,
+    [ReporterDescriptionDescriptor_DescriptorId] int NULL,
     [CaseNumber] nvarchar(20) NULL,
     [IncidentCost] decimal(19,4) NULL,
     [IncidentDate] date NOT NULL,
@@ -2492,7 +2500,7 @@ CREATE TABLE [edfi].[DisciplineIncidentBehavior]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [DisciplineIncident_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [BehaviorDescriptor_DescriptorId] bigint NOT NULL,
+    [BehaviorDescriptor_DescriptorId] int NOT NULL,
     [BehaviorDetailedDescription] nvarchar(1024) NULL,
     CONSTRAINT [PK_DisciplineIncidentBehavior] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_DisciplineIncidentBehavior_BehaviorDescriptor_DescriptorId_DisciplineIncident_DocumentId] UNIQUE ([DisciplineIncident_DocumentId], [BehaviorDescriptor_DescriptorId]),
@@ -2505,7 +2513,7 @@ CREATE TABLE [edfi].[DisciplineIncidentExternalParticipant]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [DisciplineIncident_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [DisciplineIncidentParticipationCodeDescriptor_DescriptorId] bigint NOT NULL,
+    [DisciplineIncidentParticipationCodeDescriptor_DescriptorId] int NOT NULL,
     [FirstName] nvarchar(75) NOT NULL,
     [LastSurname] nvarchar(75) NOT NULL,
     CONSTRAINT [PK_DisciplineIncidentExternalParticipant] PRIMARY KEY ([CollectionItemId]),
@@ -2519,7 +2527,7 @@ CREATE TABLE [edfi].[DisciplineIncidentWeapon]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [DisciplineIncident_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [WeaponDescriptor_DescriptorId] bigint NOT NULL,
+    [WeaponDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_DisciplineIncidentWeapon] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_DisciplineIncidentWeapon_DisciplineIncident_DocumentId_WeaponDescriptor_DescriptorId] UNIQUE ([DisciplineIncident_DocumentId], [WeaponDescriptor_DescriptorId]),
     CONSTRAINT [UX_DisciplineIncidentWeapon_Ordinal_DisciplineIncident_DocumentId] UNIQUE ([DisciplineIncident_DocumentId], [Ordinal])
@@ -2533,9 +2541,9 @@ CREATE TABLE [edfi].[EducationContent]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EducationContent_ContentVersion] DEFAULT 0,
     [LearningResourceChoiceLearningResourceLearningStandard_DocumentId] bigint NULL,
     [LearningResourceChoiceLearningResourceLearningStandard_LearningStandardId] nvarchar(60) NULL,
-    [ContentClassDescriptor_DescriptorId] bigint NULL,
-    [CostRateDescriptor_DescriptorId] bigint NULL,
-    [InteractivityStyleDescriptor_DescriptorId] bigint NULL,
+    [ContentClassDescriptor_DescriptorId] int NULL,
+    [CostRateDescriptor_DescriptorId] int NULL,
+    [InteractivityStyleDescriptor_DescriptorId] int NULL,
     [AdditionalAuthorsIndicator] bit NULL,
     [ContentIdentifier] nvarchar(225) NOT NULL,
     [Cost] decimal(19,4) NULL,
@@ -2561,7 +2569,7 @@ CREATE TABLE [edfi].[EducationContentAppropriateGradeLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationContent_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [GradeLevelDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_EducationContentAppropriateGradeLevel] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_EducationContentAppropriateGradeLevel_EducationContent_DocumentId_GradeLevelDescriptor_DescriptorId] UNIQUE ([EducationContent_DocumentId], [GradeLevelDescriptor_DescriptorId]),
     CONSTRAINT [UX_EducationContentAppropriateGradeLevel_Ordinal_EducationContent_DocumentId] UNIQUE ([EducationContent_DocumentId], [Ordinal])
@@ -2573,7 +2581,7 @@ CREATE TABLE [edfi].[EducationContentAppropriateSex]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationContent_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [SexDescriptor_DescriptorId] bigint NOT NULL,
+    [SexDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_EducationContentAppropriateSex] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_EducationContentAppropriateSex_EducationContent_DocumentId_SexDescriptor_DescriptorId] UNIQUE ([EducationContent_DocumentId], [SexDescriptor_DescriptorId]),
     CONSTRAINT [UX_EducationContentAppropriateSex_Ordinal_EducationContent_DocumentId] UNIQUE ([EducationContent_DocumentId], [Ordinal])
@@ -2635,7 +2643,7 @@ CREATE TABLE [edfi].[EducationContentLanguage]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationContent_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [LanguageDescriptor_DescriptorId] bigint NOT NULL,
+    [LanguageDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_EducationContentLanguage] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_EducationContentLanguage_EducationContent_DocumentId_LanguageDescriptor_DescriptorId] UNIQUE ([EducationContent_DocumentId], [LanguageDescriptor_DescriptorId]),
     CONSTRAINT [UX_EducationContentLanguage_Ordinal_EducationContent_DocumentId] UNIQUE ([EducationContent_DocumentId], [Ordinal])
@@ -2666,8 +2674,8 @@ CREATE TABLE [edfi].[EducationOrganizationNetwork]
     [DocumentId] bigint NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationOrganizationNetwork_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EducationOrganizationNetwork_ContentVersion] DEFAULT 0,
-    [NetworkPurposeDescriptor_DescriptorId] bigint NOT NULL,
-    [OperationalStatusDescriptor_DescriptorId] bigint NULL,
+    [NetworkPurposeDescriptor_DescriptorId] int NOT NULL,
+    [OperationalStatusDescriptor_DescriptorId] int NULL,
     [EducationOrganizationNetworkId] bigint NOT NULL,
     [NameOfInstitution] nvarchar(75) NOT NULL,
     [ShortNameOfInstitution] nvarchar(75) NULL,
@@ -2683,9 +2691,9 @@ CREATE TABLE [edfi].[EducationOrganizationNetworkAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationOrganizationNetwork_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [LocaleDescriptor_DescriptorId] bigint NULL,
-    [StateAbbreviationDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [LocaleDescriptor_DescriptorId] int NULL,
+    [StateAbbreviationDescriptor_DescriptorId] int NOT NULL,
     [ApartmentRoomSuiteNumber] nvarchar(50) NULL,
     [BuildingSiteNumber] nvarchar(20) NULL,
     [City] nvarchar(30) NOT NULL,
@@ -2709,7 +2717,7 @@ CREATE TABLE [edfi].[EducationOrganizationNetworkCategory]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationOrganizationNetwork_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [EducationOrganizationCategoryDescriptor_DescriptorId] bigint NOT NULL,
+    [EducationOrganizationCategoryDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_EducationOrganizationNetworkCategory] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_EducationOrganizationNetworkCategory_EducationOrganizationCategoryDescriptor_DescriptorId_EducationOrganizationNet_5558d272d7] UNIQUE ([EducationOrganizationNetwork_DocumentId], [EducationOrganizationCategoryDescriptor_DescriptorId]),
     CONSTRAINT [UX_EducationOrganizationNetworkCategory_Ordinal_EducationOrganizationNetwork_DocumentId] UNIQUE ([EducationOrganizationNetwork_DocumentId], [Ordinal])
@@ -2721,7 +2729,7 @@ CREATE TABLE [edfi].[EducationOrganizationNetworkIdentificationCode]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationOrganizationNetwork_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
+    [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] int NOT NULL,
     [IdentificationCode] nvarchar(60) NOT NULL,
     CONSTRAINT [PK_EducationOrganizationNetworkIdentificationCode] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_EducationOrganizationNetworkIdentificationCode_EducationOrganizationIdentificationSystemDescriptor_DescriptorId_Ed_03791941a4] UNIQUE ([EducationOrganizationNetwork_DocumentId], [EducationOrganizationIdentificationSystemDescriptor_DescriptorId]),
@@ -2734,9 +2742,9 @@ CREATE TABLE [edfi].[EducationOrganizationNetworkIndicator]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationOrganizationNetwork_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [IndicatorDescriptor_DescriptorId] bigint NOT NULL,
-    [IndicatorGroupDescriptor_DescriptorId] bigint NULL,
-    [IndicatorLevelDescriptor_DescriptorId] bigint NULL,
+    [IndicatorDescriptor_DescriptorId] int NOT NULL,
+    [IndicatorGroupDescriptor_DescriptorId] int NULL,
+    [IndicatorLevelDescriptor_DescriptorId] int NULL,
     [DesignatedBy] nvarchar(60) NULL,
     [IndicatorValue] nvarchar(60) NULL,
     CONSTRAINT [PK_EducationOrganizationNetworkIndicator] PRIMARY KEY ([CollectionItemId]),
@@ -2751,7 +2759,7 @@ CREATE TABLE [edfi].[EducationOrganizationNetworkInstitutionTelephone]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationOrganizationNetwork_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] int NOT NULL,
     [TelephoneNumber] nvarchar(24) NOT NULL,
     CONSTRAINT [PK_EducationOrganizationNetworkInstitutionTelephone] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_EducationOrganizationNetworkInstitutionTelephone_EducationOrganizationNetwork_DocumentId_InstitutionTelephoneNumbe_b4175ce89e] UNIQUE ([EducationOrganizationNetwork_DocumentId], [InstitutionTelephoneNumberTypeDescriptor_DescriptorId]),
@@ -2764,8 +2772,8 @@ CREATE TABLE [edfi].[EducationOrganizationNetworkInternationalAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationOrganizationNetwork_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [CountryDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [CountryDescriptor_DescriptorId] int NOT NULL,
     [AddressLine1] nvarchar(150) NOT NULL,
     [AddressLine2] nvarchar(150) NULL,
     [AddressLine3] nvarchar(150) NULL,
@@ -2849,7 +2857,7 @@ CREATE TABLE [edfi].[EducationServiceCenter]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EducationServiceCenter_ContentVersion] DEFAULT 0,
     [StateEducationAgency_DocumentId] bigint NULL,
     [StateEducationAgency_StateEducationAgencyId] bigint NULL,
-    [OperationalStatusDescriptor_DescriptorId] bigint NULL,
+    [OperationalStatusDescriptor_DescriptorId] int NULL,
     [EducationServiceCenterId] bigint NOT NULL,
     [NameOfInstitution] nvarchar(75) NOT NULL,
     [ShortNameOfInstitution] nvarchar(75) NULL,
@@ -2866,9 +2874,9 @@ CREATE TABLE [edfi].[EducationServiceCenterAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationServiceCenter_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [LocaleDescriptor_DescriptorId] bigint NULL,
-    [StateAbbreviationDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [LocaleDescriptor_DescriptorId] int NULL,
+    [StateAbbreviationDescriptor_DescriptorId] int NOT NULL,
     [ApartmentRoomSuiteNumber] nvarchar(50) NULL,
     [BuildingSiteNumber] nvarchar(20) NULL,
     [City] nvarchar(30) NOT NULL,
@@ -2892,7 +2900,7 @@ CREATE TABLE [edfi].[EducationServiceCenterCategory]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationServiceCenter_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [EducationOrganizationCategoryDescriptor_DescriptorId] bigint NOT NULL,
+    [EducationOrganizationCategoryDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_EducationServiceCenterCategory] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_EducationServiceCenterCategory_EducationOrganizationCategoryDescriptor_DescriptorId_EducationServiceCenter_DocumentId] UNIQUE ([EducationServiceCenter_DocumentId], [EducationOrganizationCategoryDescriptor_DescriptorId]),
     CONSTRAINT [UX_EducationServiceCenterCategory_Ordinal_EducationServiceCenter_DocumentId] UNIQUE ([EducationServiceCenter_DocumentId], [Ordinal])
@@ -2904,7 +2912,7 @@ CREATE TABLE [edfi].[EducationServiceCenterIdentificationCode]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationServiceCenter_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
+    [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] int NOT NULL,
     [IdentificationCode] nvarchar(60) NOT NULL,
     CONSTRAINT [PK_EducationServiceCenterIdentificationCode] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_EducationServiceCenterIdentificationCode_EducationOrganizationIdentificationSystemDescriptor_DescriptorId_Educatio_8eb2a3d118] UNIQUE ([EducationServiceCenter_DocumentId], [EducationOrganizationIdentificationSystemDescriptor_DescriptorId]),
@@ -2917,9 +2925,9 @@ CREATE TABLE [edfi].[EducationServiceCenterIndicator]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationServiceCenter_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [IndicatorDescriptor_DescriptorId] bigint NOT NULL,
-    [IndicatorGroupDescriptor_DescriptorId] bigint NULL,
-    [IndicatorLevelDescriptor_DescriptorId] bigint NULL,
+    [IndicatorDescriptor_DescriptorId] int NOT NULL,
+    [IndicatorGroupDescriptor_DescriptorId] int NULL,
+    [IndicatorLevelDescriptor_DescriptorId] int NULL,
     [DesignatedBy] nvarchar(60) NULL,
     [IndicatorValue] nvarchar(60) NULL,
     CONSTRAINT [PK_EducationServiceCenterIndicator] PRIMARY KEY ([CollectionItemId]),
@@ -2934,7 +2942,7 @@ CREATE TABLE [edfi].[EducationServiceCenterInstitutionTelephone]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationServiceCenter_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] int NOT NULL,
     [TelephoneNumber] nvarchar(24) NOT NULL,
     CONSTRAINT [PK_EducationServiceCenterInstitutionTelephone] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_EducationServiceCenterInstitutionTelephone_EducationServiceCenter_DocumentId_InstitutionTelephoneNumberTypeDescrip_8ff825b876] UNIQUE ([EducationServiceCenter_DocumentId], [InstitutionTelephoneNumberTypeDescriptor_DescriptorId]),
@@ -2947,8 +2955,8 @@ CREATE TABLE [edfi].[EducationServiceCenterInternationalAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationServiceCenter_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [CountryDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [CountryDescriptor_DescriptorId] int NOT NULL,
     [AddressLine1] nvarchar(150) NOT NULL,
     [AddressLine2] nvarchar(150) NULL,
     [AddressLine3] nvarchar(150) NULL,
@@ -2999,12 +3007,12 @@ CREATE TABLE [edfi].[EvaluationRubricDimension]
     [ProgramEvaluationElement_DocumentId] bigint NOT NULL,
     [ProgramEvaluationElement_ProgramEvaluationElementTitle] nvarchar(50) NOT NULL,
     [ProgramEvaluationElement_ProgramEducationOrganizationId] bigint NOT NULL,
-    [ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] int NOT NULL,
     [ProgramEvaluationElement_ProgramEvaluationTitle] nvarchar(50) NOT NULL,
-    [ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] int NOT NULL,
     [ProgramEvaluationElement_ProgramName] nvarchar(60) NOT NULL,
-    [ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [EvaluationRubricRatingLevelDescriptor_DescriptorId] bigint NULL,
+    [ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
+    [EvaluationRubricRatingLevelDescriptor_DescriptorId] int NULL,
     [EvaluationCriterionDescription] nvarchar(1024) NOT NULL,
     [EvaluationRubricRating] int NOT NULL,
     [RubricDimensionSortOrder] int NULL,
@@ -3052,7 +3060,7 @@ CREATE TABLE [edfi].[FunctionDimensionReportingTag]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [FunctionDimension_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [ReportingTagDescriptor_DescriptorId] bigint NOT NULL,
+    [ReportingTagDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_FunctionDimensionReportingTag] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_FunctionDimensionReportingTag_FunctionDimension_DocumentId_ReportingTagDescriptor_DescriptorId] UNIQUE ([FunctionDimension_DocumentId], [ReportingTagDescriptor_DescriptorId]),
     CONSTRAINT [UX_FunctionDimensionReportingTag_Ordinal_FunctionDimension_DocumentId] UNIQUE ([FunctionDimension_DocumentId], [Ordinal])
@@ -3078,7 +3086,7 @@ CREATE TABLE [edfi].[FundDimensionReportingTag]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [FundDimension_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [ReportingTagDescriptor_DescriptorId] bigint NOT NULL,
+    [ReportingTagDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_FundDimensionReportingTag] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_FundDimensionReportingTag_FundDimension_DocumentId_ReportingTagDescriptor_DescriptorId] UNIQUE ([FundDimension_DocumentId], [ReportingTagDescriptor_DescriptorId]),
     CONSTRAINT [UX_FundDimensionReportingTag_Ordinal_FundDimension_DocumentId] UNIQUE ([FundDimension_DocumentId], [Ordinal])
@@ -3093,7 +3101,7 @@ CREATE TABLE [edfi].[Grade]
     [SchoolId_Unified] bigint NOT NULL,
     [SchoolYear_Unified] int NOT NULL,
     [GradingPeriodGradingPeriod_DocumentId] bigint NOT NULL,
-    [GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] bigint NOT NULL,
+    [GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] int NOT NULL,
     [GradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) NOT NULL,
     [GradingPeriodGradingPeriod_SchoolId] AS (CASE WHEN [GradingPeriodGradingPeriod_DocumentId] IS NULL THEN NULL ELSE [SchoolId_Unified] END) PERSISTED,
     [GradingPeriodGradingPeriod_SchoolYear] AS (CASE WHEN [GradingPeriodGradingPeriod_DocumentId] IS NULL THEN NULL ELSE [SchoolYear_Unified] END) PERSISTED,
@@ -3105,8 +3113,8 @@ CREATE TABLE [edfi].[Grade]
     [StudentSectionAssociation_SectionIdentifier] nvarchar(255) NOT NULL,
     [StudentSectionAssociation_SessionName] nvarchar(60) NOT NULL,
     [StudentSectionAssociation_StudentUniqueId] nvarchar(32) NOT NULL,
-    [GradeTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [PerformanceBaseConversionDescriptor_DescriptorId] bigint NULL,
+    [GradeTypeDescriptor_DescriptorId] int NOT NULL,
+    [PerformanceBaseConversionDescriptor_DescriptorId] int NULL,
     [CurrentGradeAsOfDate] date NULL,
     [CurrentGradeIndicator] bit NULL,
     [DiagnosticStatement] nvarchar(1024) NULL,
@@ -3128,7 +3136,7 @@ CREATE TABLE [edfi].[GradeLearningStandardGrade]
     [Ordinal] int NOT NULL,
     [LearningStandardGradeLearningStandard_DocumentId] bigint NOT NULL,
     [LearningStandardGradeLearningStandard_LearningStandardId] nvarchar(60) NOT NULL,
-    [PerformanceBaseConversionDescriptor_DescriptorId] bigint NULL,
+    [PerformanceBaseConversionDescriptor_DescriptorId] int NULL,
     [DiagnosticStatement] nvarchar(1024) NULL,
     [LetterGradeEarned] nvarchar(20) NULL,
     [NumericGradeEarned] decimal(9,2) NULL,
@@ -3147,7 +3155,7 @@ CREATE TABLE [edfi].[GradebookEntry]
     [SchoolId_Unified] bigint NULL,
     [SchoolYear_Unified] int NULL,
     [GradingPeriod_DocumentId] bigint NULL,
-    [GradingPeriod_GradingPeriodDescriptor_DescriptorId] bigint NULL,
+    [GradingPeriod_GradingPeriodDescriptor_DescriptorId] int NULL,
     [GradingPeriod_GradingPeriodName] nvarchar(60) NULL,
     [GradingPeriod_SchoolId] AS (CASE WHEN [GradingPeriod_DocumentId] IS NULL THEN NULL ELSE [SchoolId_Unified] END) PERSISTED,
     [GradingPeriod_SchoolYear] AS (CASE WHEN [GradingPeriod_DocumentId] IS NULL THEN NULL ELSE [SchoolYear_Unified] END) PERSISTED,
@@ -3157,7 +3165,7 @@ CREATE TABLE [edfi].[GradebookEntry]
     [Section_SchoolYear] AS (CASE WHEN [Section_DocumentId] IS NULL THEN NULL ELSE [SchoolYear_Unified] END) PERSISTED,
     [Section_SessionName] nvarchar(60) NULL,
     [Section_SectionIdentifier] nvarchar(255) NULL,
-    [GradebookEntryTypeDescriptor_DescriptorId] bigint NULL,
+    [GradebookEntryTypeDescriptor_DescriptorId] int NULL,
     [DateAssigned] date NOT NULL,
     [Description] nvarchar(1024) NULL,
     [DueDate] date NULL,
@@ -3198,7 +3206,7 @@ CREATE TABLE [edfi].[GradingPeriod]
     [SchoolYear_SchoolYear] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
     [School_SchoolId] bigint NOT NULL,
-    [GradingPeriodDescriptor_DescriptorId] bigint NOT NULL,
+    [GradingPeriodDescriptor_DescriptorId] int NOT NULL,
     [BeginDate] date NOT NULL,
     [EndDate] date NOT NULL,
     [GradingPeriodName] nvarchar(60) NOT NULL,
@@ -3221,8 +3229,8 @@ CREATE TABLE [edfi].[GraduationPlan]
     [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [GraduationSchoolYear_DocumentId] bigint NOT NULL,
     [GraduationSchoolYear_GraduationSchoolYear] int NOT NULL,
-    [GraduationPlanTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [TotalRequiredCreditTypeDescriptor_DescriptorId] bigint NULL,
+    [GraduationPlanTypeDescriptor_DescriptorId] int NOT NULL,
+    [TotalRequiredCreditTypeDescriptor_DescriptorId] int NULL,
     [IndividualPlan] bit NULL,
     [TotalRequiredCreditConversion] decimal(9,2) NULL,
     [TotalRequiredCredits] decimal(9,3) NOT NULL,
@@ -3239,8 +3247,8 @@ CREATE TABLE [edfi].[GraduationPlanCreditsByCours]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [GraduationPlan_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [CreditTypeDescriptor_DescriptorId] bigint NULL,
-    [WhenTakenGradeLevelDescriptor_DescriptorId] bigint NULL,
+    [CreditTypeDescriptor_DescriptorId] int NULL,
+    [WhenTakenGradeLevelDescriptor_DescriptorId] int NULL,
     [CourseSetName] nvarchar(120) NOT NULL,
     [CreditConversion] decimal(9,2) NULL,
     [Credits] decimal(9,3) NOT NULL,
@@ -3256,8 +3264,8 @@ CREATE TABLE [edfi].[GraduationPlanCreditsByCreditCategory]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [GraduationPlan_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [CreditCategoryDescriptor_DescriptorId] bigint NOT NULL,
-    [CreditTypeDescriptor_DescriptorId] bigint NULL,
+    [CreditCategoryDescriptor_DescriptorId] int NOT NULL,
+    [CreditTypeDescriptor_DescriptorId] int NULL,
     [CreditConversion] decimal(9,2) NULL,
     [Credits] decimal(9,3) NOT NULL,
     CONSTRAINT [PK_GraduationPlanCreditsByCreditCategory] PRIMARY KEY ([CollectionItemId]),
@@ -3271,8 +3279,8 @@ CREATE TABLE [edfi].[GraduationPlanCreditsBySubject]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [GraduationPlan_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AcademicSubjectDescriptor_DescriptorId] bigint NOT NULL,
-    [CreditTypeDescriptor_DescriptorId] bigint NULL,
+    [AcademicSubjectDescriptor_DescriptorId] int NOT NULL,
+    [CreditTypeDescriptor_DescriptorId] int NULL,
     [CreditConversion] decimal(9,2) NULL,
     [Credits] decimal(9,3) NOT NULL,
     CONSTRAINT [PK_GraduationPlanCreditsBySubject] PRIMARY KEY ([CollectionItemId]),
@@ -3289,9 +3297,9 @@ CREATE TABLE [edfi].[GraduationPlanRequiredAssessment]
     [RequiredAssessmentAssessment_DocumentId] bigint NOT NULL,
     [RequiredAssessmentAssessment_AssessmentIdentifier] nvarchar(60) NOT NULL,
     [RequiredAssessmentAssessment_Namespace] nvarchar(255) NOT NULL,
-    [PerformanceLevelAssessmentReportingMethodDescriptor_DescriptorId] bigint NULL,
-    [PerformanceLevelPerformanceLevelDescriptor_DescriptorId] bigint NULL,
-    [PerformanceLevelResultDatatypeTypeDescriptor_DescriptorId] bigint NULL,
+    [PerformanceLevelAssessmentReportingMethodDescriptor_DescriptorId] int NULL,
+    [PerformanceLevelPerformanceLevelDescriptor_DescriptorId] int NULL,
+    [PerformanceLevelResultDatatypeTypeDescriptor_DescriptorId] int NULL,
     [RequiredMaximumScore] nvarchar(35) NULL,
     [RequiredMinimumScore] nvarchar(35) NULL,
     [RequiredPerformanceLevelIndicatorName] nvarchar(60) NULL,
@@ -3325,8 +3333,8 @@ CREATE TABLE [edfi].[GraduationPlanRequiredAssessmentScore]
     [GraduationPlan_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
-    [AssessmentReportingMethodDescriptor_DescriptorId] bigint NOT NULL,
-    [ResultDatatypeTypeDescriptor_DescriptorId] bigint NULL,
+    [AssessmentReportingMethodDescriptor_DescriptorId] int NOT NULL,
+    [ResultDatatypeTypeDescriptor_DescriptorId] int NULL,
     [RequiredMaximumScore] nvarchar(35) NULL,
     [RequiredMinimumScore] nvarchar(35) NULL,
     CONSTRAINT [PK_GraduationPlanRequiredAssessmentScore] PRIMARY KEY ([CollectionItemId]),
@@ -3342,8 +3350,8 @@ CREATE TABLE [edfi].[Intervention]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Intervention_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
     [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
-    [DeliveryMethodDescriptor_DescriptorId] bigint NOT NULL,
-    [InterventionClassDescriptor_DescriptorId] bigint NOT NULL,
+    [DeliveryMethodDescriptor_DescriptorId] int NOT NULL,
+    [InterventionClassDescriptor_DescriptorId] int NOT NULL,
     [BeginDate] date NOT NULL,
     [EndDate] date NULL,
     [InterventionIdentificationCode] nvarchar(60) NOT NULL,
@@ -3362,7 +3370,7 @@ CREATE TABLE [edfi].[InterventionAppropriateGradeLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Intervention_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [GradeLevelDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_InterventionAppropriateGradeLevel] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_InterventionAppropriateGradeLevel_GradeLevelDescriptor_DescriptorId_Intervention_DocumentId] UNIQUE ([Intervention_DocumentId], [GradeLevelDescriptor_DescriptorId]),
     CONSTRAINT [UX_InterventionAppropriateGradeLevel_Ordinal_Intervention_DocumentId] UNIQUE ([Intervention_DocumentId], [Ordinal])
@@ -3374,7 +3382,7 @@ CREATE TABLE [edfi].[InterventionAppropriateSex]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Intervention_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [SexDescriptor_DescriptorId] bigint NOT NULL,
+    [SexDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_InterventionAppropriateSex] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_InterventionAppropriateSex_Intervention_DocumentId_SexDescriptor_DescriptorId] UNIQUE ([Intervention_DocumentId], [SexDescriptor_DescriptorId]),
     CONSTRAINT [UX_InterventionAppropriateSex_Ordinal_Intervention_DocumentId] UNIQUE ([Intervention_DocumentId], [Ordinal])
@@ -3386,7 +3394,7 @@ CREATE TABLE [edfi].[InterventionDiagnos]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Intervention_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [DiagnosisDescriptor_DescriptorId] bigint NOT NULL,
+    [DiagnosisDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_InterventionDiagnos] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_InterventionDiagnos_DiagnosisDescriptor_DescriptorId_Intervention_DocumentId] UNIQUE ([Intervention_DocumentId], [DiagnosisDescriptor_DescriptorId]),
     CONSTRAINT [UX_InterventionDiagnos_Ordinal_Intervention_DocumentId] UNIQUE ([Intervention_DocumentId], [Ordinal])
@@ -3452,7 +3460,7 @@ CREATE TABLE [edfi].[InterventionPopulationServed]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Intervention_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [PopulationServedDescriptor_DescriptorId] bigint NOT NULL,
+    [PopulationServedDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_InterventionPopulationServed] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_InterventionPopulationServed_Intervention_DocumentId_PopulationServedDescriptor_DescriptorId] UNIQUE ([Intervention_DocumentId], [PopulationServedDescriptor_DescriptorId]),
     CONSTRAINT [UX_InterventionPopulationServed_Ordinal_Intervention_DocumentId] UNIQUE ([Intervention_DocumentId], [Ordinal])
@@ -3492,8 +3500,8 @@ CREATE TABLE [edfi].[InterventionPrescription]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_InterventionPrescription_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
     [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
-    [DeliveryMethodDescriptor_DescriptorId] bigint NOT NULL,
-    [InterventionClassDescriptor_DescriptorId] bigint NOT NULL,
+    [DeliveryMethodDescriptor_DescriptorId] int NOT NULL,
+    [InterventionClassDescriptor_DescriptorId] int NOT NULL,
     [InterventionPrescriptionIdentificationCode] nvarchar(60) NOT NULL,
     [MaxDosage] int NULL,
     [MinDosage] int NULL,
@@ -3510,7 +3518,7 @@ CREATE TABLE [edfi].[InterventionPrescriptionAppropriateGradeLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionPrescription_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [GradeLevelDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_InterventionPrescriptionAppropriateGradeLevel] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_InterventionPrescriptionAppropriateGradeLevel_GradeLevelDescriptor_DescriptorId_InterventionPrescription_DocumentId] UNIQUE ([InterventionPrescription_DocumentId], [GradeLevelDescriptor_DescriptorId]),
     CONSTRAINT [UX_InterventionPrescriptionAppropriateGradeLevel_Ordinal_InterventionPrescription_DocumentId] UNIQUE ([InterventionPrescription_DocumentId], [Ordinal])
@@ -3522,7 +3530,7 @@ CREATE TABLE [edfi].[InterventionPrescriptionAppropriateSex]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionPrescription_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [SexDescriptor_DescriptorId] bigint NOT NULL,
+    [SexDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_InterventionPrescriptionAppropriateSex] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_InterventionPrescriptionAppropriateSex_InterventionPrescription_DocumentId_SexDescriptor_DescriptorId] UNIQUE ([InterventionPrescription_DocumentId], [SexDescriptor_DescriptorId]),
     CONSTRAINT [UX_InterventionPrescriptionAppropriateSex_Ordinal_InterventionPrescription_DocumentId] UNIQUE ([InterventionPrescription_DocumentId], [Ordinal])
@@ -3534,7 +3542,7 @@ CREATE TABLE [edfi].[InterventionPrescriptionDiagnos]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionPrescription_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [DiagnosisDescriptor_DescriptorId] bigint NOT NULL,
+    [DiagnosisDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_InterventionPrescriptionDiagnos] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_InterventionPrescriptionDiagnos_DiagnosisDescriptor_DescriptorId_InterventionPrescription_DocumentId] UNIQUE ([InterventionPrescription_DocumentId], [DiagnosisDescriptor_DescriptorId]),
     CONSTRAINT [UX_InterventionPrescriptionDiagnos_Ordinal_InterventionPrescription_DocumentId] UNIQUE ([InterventionPrescription_DocumentId], [Ordinal])
@@ -3572,7 +3580,7 @@ CREATE TABLE [edfi].[InterventionPrescriptionPopulationServed]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionPrescription_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [PopulationServedDescriptor_DescriptorId] bigint NOT NULL,
+    [PopulationServedDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_InterventionPrescriptionPopulationServed] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_InterventionPrescriptionPopulationServed_InterventionPrescription_DocumentId_PopulationServedDescriptor_DescriptorId] UNIQUE ([InterventionPrescription_DocumentId], [PopulationServedDescriptor_DescriptorId]),
     CONSTRAINT [UX_InterventionPrescriptionPopulationServed_Ordinal_InterventionPrescription_DocumentId] UNIQUE ([InterventionPrescription_DocumentId], [Ordinal])
@@ -3601,8 +3609,8 @@ CREATE TABLE [edfi].[InterventionStudy]
     [InterventionPrescriptionInterventionPrescription_DocumentId] bigint NOT NULL,
     [InterventionPrescriptionInterventionPrescription_EducationOrganizationId] bigint NOT NULL,
     [InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] nvarchar(60) NOT NULL,
-    [DeliveryMethodDescriptor_DescriptorId] bigint NOT NULL,
-    [InterventionClassDescriptor_DescriptorId] bigint NOT NULL,
+    [DeliveryMethodDescriptor_DescriptorId] int NOT NULL,
+    [InterventionClassDescriptor_DescriptorId] int NOT NULL,
     [InterventionStudyIdentificationCode] nvarchar(60) NOT NULL,
     [Participants] int NOT NULL,
     CONSTRAINT [PK_InterventionStudy] PRIMARY KEY ([DocumentId]),
@@ -3617,7 +3625,7 @@ CREATE TABLE [edfi].[InterventionStudyAppropriateGradeLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionStudy_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [GradeLevelDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_InterventionStudyAppropriateGradeLevel] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_InterventionStudyAppropriateGradeLevel_GradeLevelDescriptor_DescriptorId_InterventionStudy_DocumentId] UNIQUE ([InterventionStudy_DocumentId], [GradeLevelDescriptor_DescriptorId]),
     CONSTRAINT [UX_InterventionStudyAppropriateGradeLevel_Ordinal_InterventionStudy_DocumentId] UNIQUE ([InterventionStudy_DocumentId], [Ordinal])
@@ -3629,7 +3637,7 @@ CREATE TABLE [edfi].[InterventionStudyAppropriateSex]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionStudy_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [SexDescriptor_DescriptorId] bigint NOT NULL,
+    [SexDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_InterventionStudyAppropriateSex] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_InterventionStudyAppropriateSex_InterventionStudy_DocumentId_SexDescriptor_DescriptorId] UNIQUE ([InterventionStudy_DocumentId], [SexDescriptor_DescriptorId]),
     CONSTRAINT [UX_InterventionStudyAppropriateSex_Ordinal_InterventionStudy_DocumentId] UNIQUE ([InterventionStudy_DocumentId], [Ordinal])
@@ -3655,10 +3663,10 @@ CREATE TABLE [edfi].[InterventionStudyInterventionEffectiveness]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionStudy_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [DiagnosisDescriptor_DescriptorId] bigint NOT NULL,
-    [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
-    [InterventionEffectivenessRatingDescriptor_DescriptorId] bigint NOT NULL,
-    [PopulationServedDescriptor_DescriptorId] bigint NOT NULL,
+    [DiagnosisDescriptor_DescriptorId] int NOT NULL,
+    [GradeLevelDescriptor_DescriptorId] int NOT NULL,
+    [InterventionEffectivenessRatingDescriptor_DescriptorId] int NOT NULL,
+    [PopulationServedDescriptor_DescriptorId] int NOT NULL,
     [ImprovementIndex] int NULL,
     CONSTRAINT [PK_InterventionStudyInterventionEffectiveness] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_InterventionStudyInterventionEffectiveness_DiagnosisDescriptor_DescriptorId_GradeLevelDescriptor_DescriptorId_Inte_d84d897426] UNIQUE ([InterventionStudy_DocumentId], [DiagnosisDescriptor_DescriptorId], [GradeLevelDescriptor_DescriptorId], [PopulationServedDescriptor_DescriptorId]),
@@ -3683,7 +3691,7 @@ CREATE TABLE [edfi].[InterventionStudyPopulationServed]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionStudy_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [PopulationServedDescriptor_DescriptorId] bigint NOT NULL,
+    [PopulationServedDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_InterventionStudyPopulationServed] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_InterventionStudyPopulationServed_InterventionStudy_DocumentId_PopulationServedDescriptor_DescriptorId] UNIQUE ([InterventionStudy_DocumentId], [PopulationServedDescriptor_DescriptorId]),
     CONSTRAINT [UX_InterventionStudyPopulationServed_Ordinal_InterventionStudy_DocumentId] UNIQUE ([InterventionStudy_DocumentId], [Ordinal])
@@ -3695,7 +3703,7 @@ CREATE TABLE [edfi].[InterventionStudyStateAbbreviation]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionStudy_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [StateAbbreviationDescriptor_DescriptorId] bigint NOT NULL,
+    [StateAbbreviationDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_InterventionStudyStateAbbreviation] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_InterventionStudyStateAbbreviation_InterventionStudy_DocumentId_StateAbbreviationDescriptor_DescriptorId] UNIQUE ([InterventionStudy_DocumentId], [StateAbbreviationDescriptor_DescriptorId]),
     CONSTRAINT [UX_InterventionStudyStateAbbreviation_Ordinal_InterventionStudy_DocumentId] UNIQUE ([InterventionStudy_DocumentId], [Ordinal])
@@ -3723,9 +3731,9 @@ CREATE TABLE [edfi].[LearningStandard]
     [MandatingEducationOrganization_EducationOrganizationId] bigint NULL,
     [ParentLearningStandard_DocumentId] bigint NULL,
     [ParentLearningStandard_LearningStandardId] nvarchar(60) NULL,
-    [ContentStandardPublicationStatusDescriptor_DescriptorId] bigint NULL,
-    [LearningStandardCategoryDescriptor_DescriptorId] bigint NULL,
-    [LearningStandardScopeDescriptor_DescriptorId] bigint NULL,
+    [ContentStandardPublicationStatusDescriptor_DescriptorId] int NULL,
+    [LearningStandardCategoryDescriptor_DescriptorId] int NULL,
+    [LearningStandardScopeDescriptor_DescriptorId] int NULL,
     [ContentStandardBeginDate] date NULL,
     [ContentStandardEndDate] date NULL,
     [ContentStandardPublicationDate] date NULL,
@@ -3753,7 +3761,7 @@ CREATE TABLE [edfi].[LearningStandardAcademicSubject]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LearningStandard_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AcademicSubjectDescriptor_DescriptorId] bigint NOT NULL,
+    [AcademicSubjectDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_LearningStandardAcademicSubject] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_LearningStandardAcademicSubject_AcademicSubjectDescriptor_DescriptorId_LearningStandard_DocumentId] UNIQUE ([LearningStandard_DocumentId], [AcademicSubjectDescriptor_DescriptorId]),
     CONSTRAINT [UX_LearningStandardAcademicSubject_Ordinal_LearningStandard_DocumentId] UNIQUE ([LearningStandard_DocumentId], [Ordinal])
@@ -3777,7 +3785,7 @@ CREATE TABLE [edfi].[LearningStandardGradeLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LearningStandard_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [GradeLevelDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_LearningStandardGradeLevel] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_LearningStandardGradeLevel_GradeLevelDescriptor_DescriptorId_LearningStandard_DocumentId] UNIQUE ([LearningStandard_DocumentId], [GradeLevelDescriptor_DescriptorId]),
     CONSTRAINT [UX_LearningStandardGradeLevel_Ordinal_LearningStandard_DocumentId] UNIQUE ([LearningStandard_DocumentId], [Ordinal])
@@ -3806,7 +3814,7 @@ CREATE TABLE [edfi].[LearningStandardEquivalenceAssociation]
     [SourceLearningStandard_LearningStandardId] nvarchar(60) NOT NULL,
     [TargetLearningStandard_DocumentId] bigint NOT NULL,
     [TargetLearningStandard_LearningStandardId] nvarchar(60) NOT NULL,
-    [LearningStandardEquivalenceStrengthDescriptor_DescriptorId] bigint NULL,
+    [LearningStandardEquivalenceStrengthDescriptor_DescriptorId] int NULL,
     [EffectiveDate] date NULL,
     [LearningStandardEquivalenceStrengthDescription] nvarchar(255) NULL,
     [Namespace] nvarchar(255) NOT NULL,
@@ -3845,7 +3853,7 @@ CREATE TABLE [edfi].[LocalAccountReportingTag]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LocalAccount_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [ReportingTagDescriptor_DescriptorId] bigint NOT NULL,
+    [ReportingTagDescriptor_DescriptorId] int NOT NULL,
     [TagValue] nvarchar(100) NULL,
     CONSTRAINT [PK_LocalAccountReportingTag] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_LocalAccountReportingTag_LocalAccount_DocumentId_ReportingTagDescriptor_DescriptorId] UNIQUE ([LocalAccount_DocumentId], [ReportingTagDescriptor_DescriptorId]),
@@ -3862,7 +3870,7 @@ CREATE TABLE [edfi].[LocalActual]
     [LocalAccount_AccountIdentifier] nvarchar(50) NOT NULL,
     [LocalAccount_EducationOrganizationId] bigint NOT NULL,
     [LocalAccount_FiscalYear] int NOT NULL,
-    [FinancialCollectionDescriptor_DescriptorId] bigint NULL,
+    [FinancialCollectionDescriptor_DescriptorId] int NULL,
     [Amount] decimal(19,4) NOT NULL,
     [AsOfDate] date NOT NULL,
     CONSTRAINT [PK_LocalActual] PRIMARY KEY ([DocumentId]),
@@ -3880,7 +3888,7 @@ CREATE TABLE [edfi].[LocalBudget]
     [LocalAccount_AccountIdentifier] nvarchar(50) NOT NULL,
     [LocalAccount_EducationOrganizationId] bigint NOT NULL,
     [LocalAccount_FiscalYear] int NOT NULL,
-    [FinancialCollectionDescriptor_DescriptorId] bigint NULL,
+    [FinancialCollectionDescriptor_DescriptorId] int NULL,
     [Amount] decimal(19,4) NOT NULL,
     [AsOfDate] date NOT NULL,
     CONSTRAINT [PK_LocalBudget] PRIMARY KEY ([DocumentId]),
@@ -3900,7 +3908,7 @@ CREATE TABLE [edfi].[LocalContractedStaff]
     [LocalAccount_FiscalYear] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [Staff_StaffUniqueId] nvarchar(32) NOT NULL,
-    [FinancialCollectionDescriptor_DescriptorId] bigint NULL,
+    [FinancialCollectionDescriptor_DescriptorId] int NULL,
     [Amount] decimal(19,4) NOT NULL,
     [AsOfDate] date NOT NULL,
     CONSTRAINT [PK_LocalContractedStaff] PRIMARY KEY ([DocumentId]),
@@ -3921,9 +3929,9 @@ CREATE TABLE [edfi].[LocalEducationAgency]
     [ParentLocalEducationAgency_LocalEducationAgencyId] bigint NULL,
     [StateEducationAgency_DocumentId] bigint NULL,
     [StateEducationAgency_StateEducationAgencyId] bigint NULL,
-    [CharterStatusDescriptor_DescriptorId] bigint NULL,
-    [LocalEducationAgencyCategoryDescriptor_DescriptorId] bigint NOT NULL,
-    [OperationalStatusDescriptor_DescriptorId] bigint NULL,
+    [CharterStatusDescriptor_DescriptorId] int NULL,
+    [LocalEducationAgencyCategoryDescriptor_DescriptorId] int NOT NULL,
+    [OperationalStatusDescriptor_DescriptorId] int NULL,
     [LocalEducationAgencyId] bigint NOT NULL,
     [NameOfInstitution] nvarchar(75) NOT NULL,
     [ShortNameOfInstitution] nvarchar(75) NULL,
@@ -3944,8 +3952,8 @@ CREATE TABLE [edfi].[LocalEducationAgencyAccountability]
     [Ordinal] int NOT NULL,
     [LocalEducationAgencyAccountabilitySchoolYear_DocumentId] bigint NOT NULL,
     [LocalEducationAgencyAccountabilitySchoolYear_SchoolYear] int NOT NULL,
-    [GunFreeSchoolsActReportingStatusDescriptor_DescriptorId] bigint NULL,
-    [SchoolChoiceImplementStatusDescriptor_DescriptorId] bigint NULL,
+    [GunFreeSchoolsActReportingStatusDescriptor_DescriptorId] int NULL,
+    [SchoolChoiceImplementStatusDescriptor_DescriptorId] int NULL,
     CONSTRAINT [PK_LocalEducationAgencyAccountability] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_LocalEducationAgencyAccountability_LocalEducationAgency_DocumentId_LocalEducationAgencyAccountabilitySchoolYear_DocumentId] UNIQUE ([LocalEducationAgency_DocumentId], [LocalEducationAgencyAccountabilitySchoolYear_DocumentId]),
     CONSTRAINT [UX_LocalEducationAgencyAccountability_Ordinal_LocalEducationAgency_DocumentId] UNIQUE ([LocalEducationAgency_DocumentId], [Ordinal]),
@@ -3958,9 +3966,9 @@ CREATE TABLE [edfi].[LocalEducationAgencyAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LocalEducationAgency_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [LocaleDescriptor_DescriptorId] bigint NULL,
-    [StateAbbreviationDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [LocaleDescriptor_DescriptorId] int NULL,
+    [StateAbbreviationDescriptor_DescriptorId] int NOT NULL,
     [ApartmentRoomSuiteNumber] nvarchar(50) NULL,
     [BuildingSiteNumber] nvarchar(20) NULL,
     [City] nvarchar(30) NOT NULL,
@@ -3984,7 +3992,7 @@ CREATE TABLE [edfi].[LocalEducationAgencyCategory]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LocalEducationAgency_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [EducationOrganizationCategoryDescriptor_DescriptorId] bigint NOT NULL,
+    [EducationOrganizationCategoryDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_LocalEducationAgencyCategory] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_LocalEducationAgencyCategory_EducationOrganizationCategoryDescriptor_DescriptorId_LocalEducationAgency_DocumentId] UNIQUE ([LocalEducationAgency_DocumentId], [EducationOrganizationCategoryDescriptor_DescriptorId]),
     CONSTRAINT [UX_LocalEducationAgencyCategory_Ordinal_LocalEducationAgency_DocumentId] UNIQUE ([LocalEducationAgency_DocumentId], [Ordinal])
@@ -4016,7 +4024,7 @@ CREATE TABLE [edfi].[LocalEducationAgencyIdentificationCode]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LocalEducationAgency_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
+    [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] int NOT NULL,
     [IdentificationCode] nvarchar(60) NOT NULL,
     CONSTRAINT [PK_LocalEducationAgencyIdentificationCode] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_LocalEducationAgencyIdentificationCode_EducationOrganizationIdentificationSystemDescriptor_DescriptorId_LocalEduca_f71ca68ab2] UNIQUE ([LocalEducationAgency_DocumentId], [EducationOrganizationIdentificationSystemDescriptor_DescriptorId]),
@@ -4029,9 +4037,9 @@ CREATE TABLE [edfi].[LocalEducationAgencyIndicator]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LocalEducationAgency_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [IndicatorDescriptor_DescriptorId] bigint NOT NULL,
-    [IndicatorGroupDescriptor_DescriptorId] bigint NULL,
-    [IndicatorLevelDescriptor_DescriptorId] bigint NULL,
+    [IndicatorDescriptor_DescriptorId] int NOT NULL,
+    [IndicatorGroupDescriptor_DescriptorId] int NULL,
+    [IndicatorLevelDescriptor_DescriptorId] int NULL,
     [DesignatedBy] nvarchar(60) NULL,
     [IndicatorValue] nvarchar(60) NULL,
     CONSTRAINT [PK_LocalEducationAgencyIndicator] PRIMARY KEY ([CollectionItemId]),
@@ -4046,7 +4054,7 @@ CREATE TABLE [edfi].[LocalEducationAgencyInstitutionTelephone]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LocalEducationAgency_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] int NOT NULL,
     [TelephoneNumber] nvarchar(24) NOT NULL,
     CONSTRAINT [PK_LocalEducationAgencyInstitutionTelephone] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_LocalEducationAgencyInstitutionTelephone_InstitutionTelephoneNumberTypeDescriptor_DescriptorId_LocalEducationAgenc_4a68c151c0] UNIQUE ([LocalEducationAgency_DocumentId], [InstitutionTelephoneNumberTypeDescriptor_DescriptorId]),
@@ -4059,8 +4067,8 @@ CREATE TABLE [edfi].[LocalEducationAgencyInternationalAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LocalEducationAgency_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [CountryDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [CountryDescriptor_DescriptorId] int NOT NULL,
     [AddressLine1] nvarchar(150) NOT NULL,
     [AddressLine2] nvarchar(150) NULL,
     [AddressLine3] nvarchar(150) NULL,
@@ -4112,7 +4120,7 @@ CREATE TABLE [edfi].[LocalEncumbrance]
     [LocalAccount_AccountIdentifier] nvarchar(50) NOT NULL,
     [LocalAccount_EducationOrganizationId] bigint NOT NULL,
     [LocalAccount_FiscalYear] int NOT NULL,
-    [FinancialCollectionDescriptor_DescriptorId] bigint NULL,
+    [FinancialCollectionDescriptor_DescriptorId] int NULL,
     [Amount] decimal(19,4) NOT NULL,
     [AsOfDate] date NOT NULL,
     CONSTRAINT [PK_LocalEncumbrance] PRIMARY KEY ([DocumentId]),
@@ -4132,7 +4140,7 @@ CREATE TABLE [edfi].[LocalPayroll]
     [LocalAccount_FiscalYear] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [Staff_StaffUniqueId] nvarchar(32) NOT NULL,
-    [FinancialCollectionDescriptor_DescriptorId] bigint NULL,
+    [FinancialCollectionDescriptor_DescriptorId] int NULL,
     [Amount] decimal(19,4) NOT NULL,
     [AsOfDate] date NOT NULL,
     CONSTRAINT [PK_LocalPayroll] PRIMARY KEY ([DocumentId]),
@@ -4178,7 +4186,7 @@ CREATE TABLE [edfi].[ObjectDimensionReportingTag]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [ObjectDimension_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [ReportingTagDescriptor_DescriptorId] bigint NOT NULL,
+    [ReportingTagDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_ObjectDimensionReportingTag] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_ObjectDimensionReportingTag_ObjectDimension_DocumentId_ReportingTagDescriptor_DescriptorId] UNIQUE ([ObjectDimension_DocumentId], [ReportingTagDescriptor_DescriptorId]),
     CONSTRAINT [UX_ObjectDimensionReportingTag_Ordinal_ObjectDimension_DocumentId] UNIQUE ([ObjectDimension_DocumentId], [Ordinal])
@@ -4199,7 +4207,7 @@ CREATE TABLE [edfi].[ObjectiveAssessment]
     [ParentObjectiveAssessment_AssessmentIdentifier] AS (CASE WHEN [ParentObjectiveAssessment_DocumentId] IS NULL THEN NULL ELSE [AssessmentIdentifier_Unified] END) PERSISTED,
     [ParentObjectiveAssessment_Namespace] AS (CASE WHEN [ParentObjectiveAssessment_DocumentId] IS NULL THEN NULL ELSE [Namespace_Unified] END) PERSISTED,
     [ParentObjectiveAssessment_IdentificationCode] nvarchar(60) NULL,
-    [AcademicSubjectDescriptor_DescriptorId] bigint NULL,
+    [AcademicSubjectDescriptor_DescriptorId] int NULL,
     [Description] nvarchar(1024) NULL,
     [IdentificationCode] nvarchar(60) NOT NULL,
     [MaxRawScore] decimal(15,5) NULL,
@@ -4248,9 +4256,9 @@ CREATE TABLE [edfi].[ObjectiveAssessmentPerformanceLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [ObjectiveAssessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AssessmentReportingMethodDescriptor_DescriptorId] bigint NOT NULL,
-    [PerformanceLevelDescriptor_DescriptorId] bigint NOT NULL,
-    [ResultDatatypeTypeDescriptor_DescriptorId] bigint NULL,
+    [AssessmentReportingMethodDescriptor_DescriptorId] int NOT NULL,
+    [PerformanceLevelDescriptor_DescriptorId] int NOT NULL,
+    [ResultDatatypeTypeDescriptor_DescriptorId] int NULL,
     [MaximumScore] nvarchar(35) NULL,
     [MinimumScore] nvarchar(35) NULL,
     [PerformanceLevelIndicatorName] nvarchar(60) NULL,
@@ -4265,8 +4273,8 @@ CREATE TABLE [edfi].[ObjectiveAssessmentScore]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [ObjectiveAssessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AssessmentReportingMethodDescriptor_DescriptorId] bigint NOT NULL,
-    [ResultDatatypeTypeDescriptor_DescriptorId] bigint NULL,
+    [AssessmentReportingMethodDescriptor_DescriptorId] int NOT NULL,
+    [ResultDatatypeTypeDescriptor_DescriptorId] int NULL,
     [MaximumScore] nvarchar(35) NULL,
     [MinimumScore] nvarchar(35) NULL,
     CONSTRAINT [PK_ObjectiveAssessmentScore] PRIMARY KEY ([CollectionItemId]),
@@ -4282,10 +4290,10 @@ CREATE TABLE [edfi].[OpenStaffPosition]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_OpenStaffPosition_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
     [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
-    [EmploymentStatusDescriptor_DescriptorId] bigint NOT NULL,
-    [PostingResultDescriptor_DescriptorId] bigint NULL,
-    [ProgramAssignmentDescriptor_DescriptorId] bigint NULL,
-    [StaffClassificationDescriptor_DescriptorId] bigint NOT NULL,
+    [EmploymentStatusDescriptor_DescriptorId] int NOT NULL,
+    [PostingResultDescriptor_DescriptorId] int NULL,
+    [ProgramAssignmentDescriptor_DescriptorId] int NULL,
+    [StaffClassificationDescriptor_DescriptorId] int NOT NULL,
     [DatePosted] date NOT NULL,
     [DatePostingRemoved] date NULL,
     [PositionTitle] nvarchar(100) NULL,
@@ -4301,7 +4309,7 @@ CREATE TABLE [edfi].[OpenStaffPositionAcademicSubject]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [OpenStaffPosition_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [AcademicSubjectDescriptor_DescriptorId] bigint NOT NULL,
+    [AcademicSubjectDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_OpenStaffPositionAcademicSubject] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_OpenStaffPositionAcademicSubject_AcademicSubjectDescriptor_DescriptorId_OpenStaffPosition_DocumentId] UNIQUE ([OpenStaffPosition_DocumentId], [AcademicSubjectDescriptor_DescriptorId]),
     CONSTRAINT [UX_OpenStaffPositionAcademicSubject_Ordinal_OpenStaffPosition_DocumentId] UNIQUE ([OpenStaffPosition_DocumentId], [Ordinal])
@@ -4313,7 +4321,7 @@ CREATE TABLE [edfi].[OpenStaffPositionInstructionalGradeLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [OpenStaffPosition_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [GradeLevelDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_OpenStaffPositionInstructionalGradeLevel] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_OpenStaffPositionInstructionalGradeLevel_GradeLevelDescriptor_DescriptorId_OpenStaffPosition_DocumentId] UNIQUE ([OpenStaffPosition_DocumentId], [GradeLevelDescriptor_DescriptorId]),
     CONSTRAINT [UX_OpenStaffPositionInstructionalGradeLevel_Ordinal_OpenStaffPosition_DocumentId] UNIQUE ([OpenStaffPosition_DocumentId], [Ordinal])
@@ -4339,7 +4347,7 @@ CREATE TABLE [edfi].[OperationalUnitDimensionReportingTag]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [OperationalUnitDimension_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
-    [ReportingTagDescriptor_DescriptorId] bigint NOT NULL,
+    [ReportingTagDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_OperationalUnitDimensionReportingTag] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_OperationalUnitDimensionReportingTag_OperationalUnitDimension_DocumentId_ReportingTagDescriptor_DescriptorId] UNIQUE ([OperationalUnitDimension_DocumentId], [ReportingTagDescriptor_DescriptorId]),
     CONSTRAINT [UX_OperationalUnitDimensionReportingTag_Ordinal_OperationalUnitDimension_DocumentId] UNIQUE ([OperationalUnitDimension_DocumentId], [Ordinal])
@@ -4353,8 +4361,8 @@ CREATE TABLE [edfi].[OrganizationDepartment]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_OrganizationDepartment_ContentVersion] DEFAULT 0,
     [ParentEducationOrganization_DocumentId] bigint NULL,
     [ParentEducationOrganization_EducationOrganizationId] bigint NULL,
-    [AcademicSubjectDescriptor_DescriptorId] bigint NULL,
-    [OperationalStatusDescriptor_DescriptorId] bigint NULL,
+    [AcademicSubjectDescriptor_DescriptorId] int NULL,
+    [OperationalStatusDescriptor_DescriptorId] int NULL,
     [NameOfInstitution] nvarchar(75) NOT NULL,
     [OrganizationDepartmentId] bigint NOT NULL,
     [ShortNameOfInstitution] nvarchar(75) NULL,
@@ -4370,9 +4378,9 @@ CREATE TABLE [edfi].[OrganizationDepartmentAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [OrganizationDepartment_DocumentId] bigint NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [LocaleDescriptor_DescriptorId] bigint NULL,
-    [StateAbbreviationDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [LocaleDescriptor_DescriptorId] int NULL,
+    [StateAbbreviationDescriptor_DescriptorId] int NOT NULL,
     [ApartmentRoomSuiteNumber] nvarchar(50) NULL,
     [BuildingSiteNumber] nvarchar(20) NULL,
     [City] nvarchar(30) NOT NULL,
@@ -4396,7 +4404,7 @@ CREATE TABLE [edfi].[OrganizationDepartmentCategory]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [OrganizationDepartment_DocumentId] bigint NOT NULL,
-    [EducationOrganizationCategoryDescriptor_DescriptorId] bigint NOT NULL,
+    [EducationOrganizationCategoryDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_OrganizationDepartmentCategory] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_OrganizationDepartmentCategory_EducationOrganizationCategoryDescriptor_DescriptorId_OrganizationDepartment_DocumentId] UNIQUE ([OrganizationDepartment_DocumentId], [EducationOrganizationCategoryDescriptor_DescriptorId]),
     CONSTRAINT [UX_OrganizationDepartmentCategory_Ordinal_OrganizationDepartment_DocumentId] UNIQUE ([OrganizationDepartment_DocumentId], [Ordinal])
@@ -4408,7 +4416,7 @@ CREATE TABLE [edfi].[OrganizationDepartmentIdentificationCode]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [OrganizationDepartment_DocumentId] bigint NOT NULL,
-    [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
+    [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] int NOT NULL,
     [IdentificationCode] nvarchar(60) NOT NULL,
     CONSTRAINT [PK_OrganizationDepartmentIdentificationCode] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_OrganizationDepartmentIdentificationCode_EducationOrganizationIdentificationSystemDescriptor_DescriptorId_Organiza_7b150114ab] UNIQUE ([OrganizationDepartment_DocumentId], [EducationOrganizationIdentificationSystemDescriptor_DescriptorId]),
@@ -4421,9 +4429,9 @@ CREATE TABLE [edfi].[OrganizationDepartmentIndicator]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [OrganizationDepartment_DocumentId] bigint NOT NULL,
-    [IndicatorDescriptor_DescriptorId] bigint NOT NULL,
-    [IndicatorGroupDescriptor_DescriptorId] bigint NULL,
-    [IndicatorLevelDescriptor_DescriptorId] bigint NULL,
+    [IndicatorDescriptor_DescriptorId] int NOT NULL,
+    [IndicatorGroupDescriptor_DescriptorId] int NULL,
+    [IndicatorLevelDescriptor_DescriptorId] int NULL,
     [DesignatedBy] nvarchar(60) NULL,
     [IndicatorValue] nvarchar(60) NULL,
     CONSTRAINT [PK_OrganizationDepartmentIndicator] PRIMARY KEY ([CollectionItemId]),
@@ -4438,7 +4446,7 @@ CREATE TABLE [edfi].[OrganizationDepartmentInstitutionTelephone]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [OrganizationDepartment_DocumentId] bigint NOT NULL,
-    [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] int NOT NULL,
     [TelephoneNumber] nvarchar(24) NOT NULL,
     CONSTRAINT [PK_OrganizationDepartmentInstitutionTelephone] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_OrganizationDepartmentInstitutionTelephone_InstitutionTelephoneNumberTypeDescriptor_DescriptorId_OrganizationDepar_12e9ac27b2] UNIQUE ([OrganizationDepartment_DocumentId], [InstitutionTelephoneNumberTypeDescriptor_DescriptorId]),
@@ -4451,8 +4459,8 @@ CREATE TABLE [edfi].[OrganizationDepartmentInternationalAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [OrganizationDepartment_DocumentId] bigint NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [CountryDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [CountryDescriptor_DescriptorId] int NOT NULL,
     [AddressLine1] nvarchar(150) NOT NULL,
     [AddressLine2] nvarchar(150) NULL,
     [AddressLine3] nvarchar(150) NULL,
@@ -4500,7 +4508,7 @@ CREATE TABLE [edfi].[Person]
     [DocumentId] bigint NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Person_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Person_ContentVersion] DEFAULT 0,
-    [SourceSystemDescriptor_DescriptorId] bigint NOT NULL,
+    [SourceSystemDescriptor_DescriptorId] int NOT NULL,
     [PersonId] nvarchar(32) NOT NULL,
     CONSTRAINT [PK_Person] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_Person_NK] UNIQUE ([PersonId], [SourceSystemDescriptor_DescriptorId]),
@@ -4517,7 +4525,7 @@ CREATE TABLE [edfi].[PostSecondaryEvent]
     [PostSecondaryInstitution_PostSecondaryInstitutionId] bigint NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [PostSecondaryEventCategoryDescriptor_DescriptorId] bigint NOT NULL,
+    [PostSecondaryEventCategoryDescriptor_DescriptorId] int NOT NULL,
     [EventDate] date NOT NULL,
     CONSTRAINT [PK_PostSecondaryEvent] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_PostSecondaryEvent_NK] UNIQUE ([EventDate], [PostSecondaryEventCategoryDescriptor_DescriptorId], [Student_DocumentId]),
@@ -4531,9 +4539,9 @@ CREATE TABLE [edfi].[PostSecondaryInstitution]
     [DocumentId] bigint NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_PostSecondaryInstitution_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_PostSecondaryInstitution_ContentVersion] DEFAULT 0,
-    [AdministrativeFundingControlDescriptor_DescriptorId] bigint NULL,
-    [OperationalStatusDescriptor_DescriptorId] bigint NULL,
-    [PostSecondaryInstitutionLevelDescriptor_DescriptorId] bigint NULL,
+    [AdministrativeFundingControlDescriptor_DescriptorId] int NULL,
+    [OperationalStatusDescriptor_DescriptorId] int NULL,
+    [PostSecondaryInstitutionLevelDescriptor_DescriptorId] int NULL,
     [NameOfInstitution] nvarchar(75) NOT NULL,
     [PostSecondaryInstitutionId] bigint NOT NULL,
     [ShortNameOfInstitution] nvarchar(75) NULL,
@@ -4549,9 +4557,9 @@ CREATE TABLE [edfi].[PostSecondaryInstitutionAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [PostSecondaryInstitution_DocumentId] bigint NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [LocaleDescriptor_DescriptorId] bigint NULL,
-    [StateAbbreviationDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [LocaleDescriptor_DescriptorId] int NULL,
+    [StateAbbreviationDescriptor_DescriptorId] int NOT NULL,
     [ApartmentRoomSuiteNumber] nvarchar(50) NULL,
     [BuildingSiteNumber] nvarchar(20) NULL,
     [City] nvarchar(30) NOT NULL,
@@ -4575,7 +4583,7 @@ CREATE TABLE [edfi].[PostSecondaryInstitutionCategory]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [PostSecondaryInstitution_DocumentId] bigint NOT NULL,
-    [EducationOrganizationCategoryDescriptor_DescriptorId] bigint NOT NULL,
+    [EducationOrganizationCategoryDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_PostSecondaryInstitutionCategory] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_PostSecondaryInstitutionCategory_EducationOrganizationCategoryDescriptor_DescriptorId_PostSecondaryInstitution_DocumentId] UNIQUE ([PostSecondaryInstitution_DocumentId], [EducationOrganizationCategoryDescriptor_DescriptorId]),
     CONSTRAINT [UX_PostSecondaryInstitutionCategory_Ordinal_PostSecondaryInstitution_DocumentId] UNIQUE ([PostSecondaryInstitution_DocumentId], [Ordinal])
@@ -4587,7 +4595,7 @@ CREATE TABLE [edfi].[PostSecondaryInstitutionIdentificationCode]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [PostSecondaryInstitution_DocumentId] bigint NOT NULL,
-    [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
+    [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] int NOT NULL,
     [IdentificationCode] nvarchar(60) NOT NULL,
     CONSTRAINT [PK_PostSecondaryInstitutionIdentificationCode] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_PostSecondaryInstitutionIdentificationCode_EducationOrganizationIdentificationSystemDescriptor_DescriptorId_PostSe_2eac965986] UNIQUE ([PostSecondaryInstitution_DocumentId], [EducationOrganizationIdentificationSystemDescriptor_DescriptorId]),
@@ -4600,9 +4608,9 @@ CREATE TABLE [edfi].[PostSecondaryInstitutionIndicator]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [PostSecondaryInstitution_DocumentId] bigint NOT NULL,
-    [IndicatorDescriptor_DescriptorId] bigint NOT NULL,
-    [IndicatorGroupDescriptor_DescriptorId] bigint NULL,
-    [IndicatorLevelDescriptor_DescriptorId] bigint NULL,
+    [IndicatorDescriptor_DescriptorId] int NOT NULL,
+    [IndicatorGroupDescriptor_DescriptorId] int NULL,
+    [IndicatorLevelDescriptor_DescriptorId] int NULL,
     [DesignatedBy] nvarchar(60) NULL,
     [IndicatorValue] nvarchar(60) NULL,
     CONSTRAINT [PK_PostSecondaryInstitutionIndicator] PRIMARY KEY ([CollectionItemId]),
@@ -4617,7 +4625,7 @@ CREATE TABLE [edfi].[PostSecondaryInstitutionInstitutionTelephone]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [PostSecondaryInstitution_DocumentId] bigint NOT NULL,
-    [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] int NOT NULL,
     [TelephoneNumber] nvarchar(24) NOT NULL,
     CONSTRAINT [PK_PostSecondaryInstitutionInstitutionTelephone] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_PostSecondaryInstitutionInstitutionTelephone_InstitutionTelephoneNumberTypeDescriptor_DescriptorId_PostSecondaryIn_c87875ca8a] UNIQUE ([PostSecondaryInstitution_DocumentId], [InstitutionTelephoneNumberTypeDescriptor_DescriptorId]),
@@ -4630,8 +4638,8 @@ CREATE TABLE [edfi].[PostSecondaryInstitutionInternationalAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [PostSecondaryInstitution_DocumentId] bigint NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [CountryDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [CountryDescriptor_DescriptorId] int NOT NULL,
     [AddressLine1] nvarchar(150) NOT NULL,
     [AddressLine2] nvarchar(150) NULL,
     [AddressLine3] nvarchar(150) NULL,
@@ -4651,7 +4659,7 @@ CREATE TABLE [edfi].[PostSecondaryInstitutionMediumOfInstruction]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [PostSecondaryInstitution_DocumentId] bigint NOT NULL,
-    [MediumOfInstructionDescriptor_DescriptorId] bigint NOT NULL,
+    [MediumOfInstructionDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_PostSecondaryInstitutionMediumOfInstruction] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_PostSecondaryInstitutionMediumOfInstruction_MediumOfInstructionDescriptor_DescriptorId_PostSecondaryInstitution_DocumentId] UNIQUE ([PostSecondaryInstitution_DocumentId], [MediumOfInstructionDescriptor_DescriptorId]),
     CONSTRAINT [UX_PostSecondaryInstitutionMediumOfInstruction_Ordinal_PostSecondaryInstitution_DocumentId] UNIQUE ([PostSecondaryInstitution_DocumentId], [Ordinal])
@@ -4693,7 +4701,7 @@ CREATE TABLE [edfi].[Program]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Program_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
     [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
-    [ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [ProgramId] nvarchar(20) NULL,
     [ProgramName] nvarchar(60) NOT NULL,
     CONSTRAINT [PK_Program] PRIMARY KEY ([DocumentId]),
@@ -4708,7 +4716,7 @@ CREATE TABLE [edfi].[ProgramCharacteristic]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Program_DocumentId] bigint NOT NULL,
-    [ProgramCharacteristicDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramCharacteristicDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_ProgramCharacteristic] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_ProgramCharacteristic_Ordinal_Program_DocumentId] UNIQUE ([Program_DocumentId], [Ordinal]),
     CONSTRAINT [UX_ProgramCharacteristic_Program_DocumentId_ProgramCharacteristicDescriptor_DescriptorId] UNIQUE ([Program_DocumentId], [ProgramCharacteristicDescriptor_DescriptorId])
@@ -4734,7 +4742,7 @@ CREATE TABLE [edfi].[ProgramSponsor]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Program_DocumentId] bigint NOT NULL,
-    [ProgramSponsorDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramSponsorDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_ProgramSponsor] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_ProgramSponsor_Ordinal_Program_DocumentId] UNIQUE ([Program_DocumentId], [Ordinal]),
     CONSTRAINT [UX_ProgramSponsor_Program_DocumentId_ProgramSponsorDescriptor_DescriptorId] UNIQUE ([Program_DocumentId], [ProgramSponsorDescriptor_DescriptorId])
@@ -4760,7 +4768,7 @@ CREATE TABLE [edfi].[ProgramDimensionReportingTag]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ProgramDimension_DocumentId] bigint NOT NULL,
-    [ReportingTagDescriptor_DescriptorId] bigint NOT NULL,
+    [ReportingTagDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_ProgramDimensionReportingTag] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_ProgramDimensionReportingTag_Ordinal_ProgramDimension_DocumentId] UNIQUE ([ProgramDimension_DocumentId], [Ordinal]),
     CONSTRAINT [UX_ProgramDimensionReportingTag_ProgramDimension_DocumentId_ReportingTagDescriptor_DescriptorId] UNIQUE ([ProgramDimension_DocumentId], [ReportingTagDescriptor_DescriptorId])
@@ -4775,9 +4783,9 @@ CREATE TABLE [edfi].[ProgramEvaluation]
     [ProgramProgram_DocumentId] bigint NOT NULL,
     [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
-    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [ProgramEvaluationPeriodDescriptor_DescriptorId] bigint NOT NULL,
-    [ProgramEvaluationTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
+    [ProgramEvaluationPeriodDescriptor_DescriptorId] int NOT NULL,
+    [ProgramEvaluationTypeDescriptor_DescriptorId] int NOT NULL,
     [EvaluationMaxNumericRating] decimal(6,3) NULL,
     [EvaluationMinNumericRating] decimal(6,3) NULL,
     [ProgramEvaluationDescription] nvarchar(255) NULL,
@@ -4794,7 +4802,7 @@ CREATE TABLE [edfi].[ProgramEvaluationLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ProgramEvaluation_DocumentId] bigint NOT NULL,
-    [RatingLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [RatingLevelDescriptor_DescriptorId] int NOT NULL,
     [MaxNumericRating] decimal(6,3) NULL,
     [MinNumericRating] decimal(6,3) NULL,
     CONSTRAINT [PK_ProgramEvaluationLevel] PRIMARY KEY ([CollectionItemId]),
@@ -4809,11 +4817,11 @@ CREATE TABLE [edfi].[ProgramEvaluationElement]
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProgramEvaluationElement_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ProgramEvaluationElement_ContentVersion] DEFAULT 0,
     [ProgramEducationOrganizationId_Unified] bigint NOT NULL,
-    [ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] bigint NOT NULL,
+    [ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] int NOT NULL,
     [ProgramEvaluationTitle_Unified] nvarchar(50) NOT NULL,
-    [ProgramEvaluationTypeDescriptor_Unified_DescriptorId] bigint NOT NULL,
+    [ProgramEvaluationTypeDescriptor_Unified_DescriptorId] int NOT NULL,
     [ProgramName_Unified] nvarchar(60) NOT NULL,
-    [ProgramTypeDescriptor_Unified_DescriptorId] bigint NOT NULL,
+    [ProgramTypeDescriptor_Unified_DescriptorId] int NOT NULL,
     [ProgramEvaluationObjective_DocumentId] bigint NULL,
     [ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] nvarchar(50) NULL,
     [ProgramEvaluationObjective_ProgramEducationOrganizationId] AS (CASE WHEN [ProgramEvaluationObjective_DocumentId] IS NULL THEN NULL ELSE [ProgramEducationOrganizationId_Unified] END) PERSISTED,
@@ -4847,7 +4855,7 @@ CREATE TABLE [edfi].[ProgramEvaluationElementProgramEvaluationLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ProgramEvaluationElement_DocumentId] bigint NOT NULL,
-    [RatingLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [RatingLevelDescriptor_DescriptorId] int NOT NULL,
     [ElementMaxNumericRating] decimal(6,3) NULL,
     [ElementMinNumericRating] decimal(6,3) NULL,
     CONSTRAINT [PK_ProgramEvaluationElementProgramEvaluationLevel] PRIMARY KEY ([CollectionItemId]),
@@ -4862,12 +4870,12 @@ CREATE TABLE [edfi].[ProgramEvaluationObjective]
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProgramEvaluationObjective_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ProgramEvaluationObjective_ContentVersion] DEFAULT 0,
     [ProgramEvaluation_DocumentId] bigint NOT NULL,
-    [ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] int NOT NULL,
     [ProgramEvaluation_ProgramEvaluationTitle] nvarchar(50) NOT NULL,
-    [ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] int NOT NULL,
     [ProgramEvaluation_ProgramEducationOrganizationId] bigint NOT NULL,
     [ProgramEvaluation_ProgramName] nvarchar(60) NOT NULL,
-    [ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [ObjectiveMaxNumericRating] decimal(6,3) NULL,
     [ObjectiveMinNumericRating] decimal(6,3) NULL,
     [ObjectiveSortOrder] int NULL,
@@ -4885,7 +4893,7 @@ CREATE TABLE [edfi].[ProgramEvaluationObjectiveProgramEvaluationLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ProgramEvaluationObjective_DocumentId] bigint NOT NULL,
-    [RatingLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [RatingLevelDescriptor_DescriptorId] int NOT NULL,
     [ObjectiveMaxNumericRating] decimal(6,3) NULL,
     [ObjectiveMinNumericRating] decimal(6,3) NULL,
     CONSTRAINT [PK_ProgramEvaluationObjectiveProgramEvaluationLevel] PRIMARY KEY ([CollectionItemId]),
@@ -4913,7 +4921,7 @@ CREATE TABLE [edfi].[ProjectDimensionReportingTag]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ProjectDimension_DocumentId] bigint NOT NULL,
-    [ReportingTagDescriptor_DescriptorId] bigint NOT NULL,
+    [ReportingTagDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_ProjectDimensionReportingTag] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_ProjectDimensionReportingTag_Ordinal_ProjectDimension_DocumentId] UNIQUE ([ProjectDimension_DocumentId], [Ordinal]),
     CONSTRAINT [UX_ProjectDimensionReportingTag_ProjectDimension_DocumentId_ReportingTagDescriptor_DescriptorId] UNIQUE ([ProjectDimension_DocumentId], [ReportingTagDescriptor_DescriptorId])
@@ -4928,7 +4936,7 @@ CREATE TABLE [edfi].[ReportCard]
     [EducationOrganization_DocumentId] bigint NOT NULL,
     [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [GradingPeriodGradingPeriod_DocumentId] bigint NOT NULL,
-    [GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] bigint NOT NULL,
+    [GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] int NOT NULL,
     [GradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) NOT NULL,
     [GradingPeriodGradingPeriod_SchoolId] bigint NOT NULL,
     [GradingPeriodGradingPeriod_SchoolYear] int NOT NULL,
@@ -4951,7 +4959,7 @@ CREATE TABLE [edfi].[ReportCardGradePointAverage]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ReportCard_DocumentId] bigint NOT NULL,
-    [GradePointAverageTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [GradePointAverageTypeDescriptor_DescriptorId] int NOT NULL,
     [GradePointAverageValue] decimal(18,4) NOT NULL,
     [IsCumulative] bit NULL,
     [MaxGradePointAverageValue] decimal(18,4) NULL,
@@ -4968,8 +4976,8 @@ CREATE TABLE [edfi].[ReportCardGrade]
     [ReportCard_DocumentId] bigint NOT NULL,
     [SchoolId_Unified] bigint NOT NULL,
     [Grade_DocumentId] bigint NOT NULL,
-    [Grade_GradeTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [Grade_GradingPeriodDescriptor_DescriptorId] bigint NOT NULL,
+    [Grade_GradeTypeDescriptor_DescriptorId] int NOT NULL,
+    [Grade_GradingPeriodDescriptor_DescriptorId] int NOT NULL,
     [Grade_GradingPeriodName] nvarchar(60) NOT NULL,
     [Grade_GradingPeriodReferenceSchoolId] AS (CASE WHEN [Grade_DocumentId] IS NULL THEN NULL ELSE [SchoolId_Unified] END) PERSISTED,
     [Grade_GradingPeriodSchoolYear] int NOT NULL,
@@ -4993,13 +5001,13 @@ CREATE TABLE [edfi].[ReportCardStudentCompetencyObjective]
     [Ordinal] int NOT NULL,
     [ReportCard_DocumentId] bigint NOT NULL,
     [StudentCompetencyObjective_DocumentId] bigint NOT NULL,
-    [StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId] bigint NOT NULL,
+    [StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId] int NOT NULL,
     [StudentCompetencyObjective_GradingPeriodName] nvarchar(60) NOT NULL,
     [StudentCompetencyObjective_GradingPeriodSchoolId] bigint NOT NULL,
     [StudentCompetencyObjective_GradingPeriodSchoolYear] int NOT NULL,
     [StudentCompetencyObjective_ObjectiveEducationOrganizationId] bigint NOT NULL,
     [StudentCompetencyObjective_Objective] nvarchar(60) NOT NULL,
-    [StudentCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [StudentCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] int NOT NULL,
     [StudentCompetencyObjective_StudentUniqueId] nvarchar(32) NOT NULL,
     CONSTRAINT [PK_ReportCardStudentCompetencyObjective] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_ReportCardStudentCompetencyObjective_Ordinal_ReportCard_DocumentId] UNIQUE ([ReportCard_DocumentId], [Ordinal]),
@@ -5021,7 +5029,7 @@ CREATE TABLE [edfi].[RestraintEvent]
     [School_SchoolId] AS (CASE WHEN [School_DocumentId] IS NULL THEN NULL ELSE [SchoolId_Unified] END) PERSISTED,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [EducationalEnvironmentDescriptor_DescriptorId] bigint NULL,
+    [EducationalEnvironmentDescriptor_DescriptorId] int NULL,
     [EventDate] date NOT NULL,
     [RestraintEventIdentifier] nvarchar(36) NOT NULL,
     CONSTRAINT [PK_RestraintEvent] PRIMARY KEY ([DocumentId]),
@@ -5040,7 +5048,7 @@ CREATE TABLE [edfi].[RestraintEventProgram]
     [Program_DocumentId] bigint NOT NULL,
     [Program_EducationOrganizationId] bigint NOT NULL,
     [Program_ProgramName] nvarchar(60) NOT NULL,
-    [Program_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [Program_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_RestraintEventProgram] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_RestraintEventProgram_Ordinal_RestraintEvent_DocumentId] UNIQUE ([RestraintEvent_DocumentId], [Ordinal]),
     CONSTRAINT [UX_RestraintEventProgram_Program_DocumentId_RestraintEvent_DocumentId] UNIQUE ([RestraintEvent_DocumentId], [Program_DocumentId]),
@@ -5053,7 +5061,7 @@ CREATE TABLE [edfi].[RestraintEventReason]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [RestraintEvent_DocumentId] bigint NOT NULL,
-    [RestraintEventReasonDescriptor_DescriptorId] bigint NOT NULL,
+    [RestraintEventReasonDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_RestraintEventReason] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_RestraintEventReason_Ordinal_RestraintEvent_DocumentId] UNIQUE ([RestraintEvent_DocumentId], [Ordinal]),
     CONSTRAINT [UX_RestraintEventReason_RestraintEvent_DocumentId_RestraintEventReasonDescriptor_DescriptorId] UNIQUE ([RestraintEvent_DocumentId], [RestraintEventReasonDescriptor_DescriptorId])
@@ -5069,14 +5077,14 @@ CREATE TABLE [edfi].[School]
     [CharterApprovalSchoolYear_CharterApprovalSchoolYear] int NULL,
     [LocalEducationAgency_DocumentId] bigint NULL,
     [LocalEducationAgency_LocalEducationAgencyId] bigint NULL,
-    [AdministrativeFundingControlDescriptor_DescriptorId] bigint NULL,
-    [CharterApprovalAgencyTypeDescriptor_DescriptorId] bigint NULL,
-    [CharterStatusDescriptor_DescriptorId] bigint NULL,
-    [InternetAccessDescriptor_DescriptorId] bigint NULL,
-    [MagnetSpecialProgramEmphasisSchoolDescriptor_DescriptorId] bigint NULL,
-    [OperationalStatusDescriptor_DescriptorId] bigint NULL,
-    [SchoolTypeDescriptor_DescriptorId] bigint NULL,
-    [TitleIPartASchoolDesignationDescriptor_DescriptorId] bigint NULL,
+    [AdministrativeFundingControlDescriptor_DescriptorId] int NULL,
+    [CharterApprovalAgencyTypeDescriptor_DescriptorId] int NULL,
+    [CharterStatusDescriptor_DescriptorId] int NULL,
+    [InternetAccessDescriptor_DescriptorId] int NULL,
+    [MagnetSpecialProgramEmphasisSchoolDescriptor_DescriptorId] int NULL,
+    [OperationalStatusDescriptor_DescriptorId] int NULL,
+    [SchoolTypeDescriptor_DescriptorId] int NULL,
+    [TitleIPartASchoolDesignationDescriptor_DescriptorId] int NULL,
     [NameOfInstitution] nvarchar(75) NOT NULL,
     [SchoolId] bigint NOT NULL,
     [ShortNameOfInstitution] nvarchar(75) NULL,
@@ -5094,9 +5102,9 @@ CREATE TABLE [edfi].[SchoolAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [LocaleDescriptor_DescriptorId] bigint NULL,
-    [StateAbbreviationDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [LocaleDescriptor_DescriptorId] int NULL,
+    [StateAbbreviationDescriptor_DescriptorId] int NOT NULL,
     [ApartmentRoomSuiteNumber] nvarchar(50) NULL,
     [BuildingSiteNumber] nvarchar(20) NULL,
     [City] nvarchar(30) NOT NULL,
@@ -5120,7 +5128,7 @@ CREATE TABLE [edfi].[SchoolEducationOrganizationCategory]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
-    [EducationOrganizationCategoryDescriptor_DescriptorId] bigint NOT NULL,
+    [EducationOrganizationCategoryDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_SchoolEducationOrganizationCategory] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_SchoolEducationOrganizationCategory_EducationOrganizationCategoryDescriptor_DescriptorId_School_DocumentId] UNIQUE ([School_DocumentId], [EducationOrganizationCategoryDescriptor_DescriptorId]),
     CONSTRAINT [UX_SchoolEducationOrganizationCategory_Ordinal_School_DocumentId] UNIQUE ([School_DocumentId], [Ordinal])
@@ -5132,7 +5140,7 @@ CREATE TABLE [edfi].[SchoolGradeLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
-    [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [GradeLevelDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_SchoolGradeLevel] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_SchoolGradeLevel_GradeLevelDescriptor_DescriptorId_School_DocumentId] UNIQUE ([School_DocumentId], [GradeLevelDescriptor_DescriptorId]),
     CONSTRAINT [UX_SchoolGradeLevel_Ordinal_School_DocumentId] UNIQUE ([School_DocumentId], [Ordinal])
@@ -5144,7 +5152,7 @@ CREATE TABLE [edfi].[SchoolIdentificationCode]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
-    [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
+    [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] int NOT NULL,
     [IdentificationCode] nvarchar(60) NOT NULL,
     CONSTRAINT [PK_SchoolIdentificationCode] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_SchoolIdentificationCode_EducationOrganizationIdentificationSystemDescriptor_DescriptorId_School_DocumentId] UNIQUE ([School_DocumentId], [EducationOrganizationIdentificationSystemDescriptor_DescriptorId]),
@@ -5157,9 +5165,9 @@ CREATE TABLE [edfi].[SchoolIndicator]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
-    [IndicatorDescriptor_DescriptorId] bigint NOT NULL,
-    [IndicatorGroupDescriptor_DescriptorId] bigint NULL,
-    [IndicatorLevelDescriptor_DescriptorId] bigint NULL,
+    [IndicatorDescriptor_DescriptorId] int NOT NULL,
+    [IndicatorGroupDescriptor_DescriptorId] int NULL,
+    [IndicatorLevelDescriptor_DescriptorId] int NULL,
     [DesignatedBy] nvarchar(60) NULL,
     [IndicatorValue] nvarchar(60) NULL,
     CONSTRAINT [PK_SchoolIndicator] PRIMARY KEY ([CollectionItemId]),
@@ -5174,7 +5182,7 @@ CREATE TABLE [edfi].[SchoolInstitutionTelephone]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
-    [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] int NOT NULL,
     [TelephoneNumber] nvarchar(24) NOT NULL,
     CONSTRAINT [PK_SchoolInstitutionTelephone] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_SchoolInstitutionTelephone_InstitutionTelephoneNumberTypeDescriptor_DescriptorId_School_DocumentId] UNIQUE ([School_DocumentId], [InstitutionTelephoneNumberTypeDescriptor_DescriptorId]),
@@ -5187,8 +5195,8 @@ CREATE TABLE [edfi].[SchoolInternationalAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [CountryDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [CountryDescriptor_DescriptorId] int NOT NULL,
     [AddressLine1] nvarchar(150) NOT NULL,
     [AddressLine2] nvarchar(150) NULL,
     [AddressLine3] nvarchar(150) NULL,
@@ -5208,7 +5216,7 @@ CREATE TABLE [edfi].[SchoolCategory]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
-    [SchoolCategoryDescriptor_DescriptorId] bigint NOT NULL,
+    [SchoolCategoryDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_SchoolCategory] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_SchoolCategory_Ordinal_School_DocumentId] UNIQUE ([School_DocumentId], [Ordinal]),
     CONSTRAINT [UX_SchoolCategory_School_DocumentId_SchoolCategoryDescriptor_DescriptorId] UNIQUE ([School_DocumentId], [SchoolCategoryDescriptor_DescriptorId])
@@ -5275,12 +5283,12 @@ CREATE TABLE [edfi].[Section]
     [LocationLocation_SchoolId] AS (CASE WHEN [LocationLocation_DocumentId] IS NULL THEN NULL ELSE [SchoolId_U35501e03_Unified] END) PERSISTED,
     [LocationSchool_DocumentId] bigint NULL,
     [LocationSchool_SchoolId] AS (CASE WHEN [LocationSchool_DocumentId] IS NULL THEN NULL ELSE [SchoolId_U35501e03_Unified] END) PERSISTED,
-    [AvailableCreditTypeDescriptor_DescriptorId] bigint NULL,
-    [EducationalEnvironmentDescriptor_DescriptorId] bigint NULL,
-    [InstructionLanguageDescriptor_DescriptorId] bigint NULL,
-    [MediumOfInstructionDescriptor_DescriptorId] bigint NULL,
-    [PopulationServedDescriptor_DescriptorId] bigint NULL,
-    [SectionTypeDescriptor_DescriptorId] bigint NULL,
+    [AvailableCreditTypeDescriptor_DescriptorId] int NULL,
+    [EducationalEnvironmentDescriptor_DescriptorId] int NULL,
+    [InstructionLanguageDescriptor_DescriptorId] int NULL,
+    [MediumOfInstructionDescriptor_DescriptorId] int NULL,
+    [PopulationServedDescriptor_DescriptorId] int NULL,
+    [SectionTypeDescriptor_DescriptorId] int NULL,
     [AvailableCreditConversion] decimal(9,2) NULL,
     [AvailableCredits] decimal(9,3) NULL,
     [OfficialAttendancePeriod] bit NULL,
@@ -5301,7 +5309,7 @@ CREATE TABLE [edfi].[SectionCharacteristic]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Section_DocumentId] bigint NOT NULL,
-    [SectionCharacteristicDescriptor_DescriptorId] bigint NOT NULL,
+    [SectionCharacteristicDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_SectionCharacteristic] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_SectionCharacteristic_Ordinal_Section_DocumentId] UNIQUE ([Section_DocumentId], [Ordinal]),
     CONSTRAINT [UX_SectionCharacteristic_Section_DocumentId_SectionCharacteristicDescriptor_DescriptorId] UNIQUE ([Section_DocumentId], [SectionCharacteristicDescriptor_DescriptorId])
@@ -5328,7 +5336,7 @@ CREATE TABLE [edfi].[SectionCourseLevelCharacteristic]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Section_DocumentId] bigint NOT NULL,
-    [CourseLevelCharacteristicDescriptor_DescriptorId] bigint NOT NULL,
+    [CourseLevelCharacteristicDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_SectionCourseLevelCharacteristic] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_SectionCourseLevelCharacteristic_CourseLevelCharacteristicDescriptor_DescriptorId_Section_DocumentId] UNIQUE ([Section_DocumentId], [CourseLevelCharacteristicDescriptor_DescriptorId]),
     CONSTRAINT [UX_SectionCourseLevelCharacteristic_Ordinal_Section_DocumentId] UNIQUE ([Section_DocumentId], [Ordinal])
@@ -5340,7 +5348,7 @@ CREATE TABLE [edfi].[SectionOfferedGradeLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Section_DocumentId] bigint NOT NULL,
-    [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [GradeLevelDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_SectionOfferedGradeLevel] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_SectionOfferedGradeLevel_GradeLevelDescriptor_DescriptorId_Section_DocumentId] UNIQUE ([Section_DocumentId], [GradeLevelDescriptor_DescriptorId]),
     CONSTRAINT [UX_SectionOfferedGradeLevel_Ordinal_Section_DocumentId] UNIQUE ([Section_DocumentId], [Ordinal])
@@ -5355,7 +5363,7 @@ CREATE TABLE [edfi].[SectionProgram]
     [Program_DocumentId] bigint NOT NULL,
     [Program_EducationOrganizationId] bigint NOT NULL,
     [Program_ProgramName] nvarchar(60) NOT NULL,
-    [Program_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [Program_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_SectionProgram] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_SectionProgram_Ordinal_Section_DocumentId] UNIQUE ([Section_DocumentId], [Ordinal]),
     CONSTRAINT [UX_SectionProgram_Program_DocumentId_Section_DocumentId] UNIQUE ([Section_DocumentId], [Program_DocumentId]),
@@ -5401,7 +5409,7 @@ CREATE TABLE [edfi].[Session]
     [SchoolYear_SchoolYear] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
     [School_SchoolId] bigint NOT NULL,
-    [TermDescriptor_DescriptorId] bigint NOT NULL,
+    [TermDescriptor_DescriptorId] int NOT NULL,
     [BeginDate] date NOT NULL,
     [EndDate] date NOT NULL,
     [SessionName] nvarchar(60) NOT NULL,
@@ -5435,7 +5443,7 @@ CREATE TABLE [edfi].[SessionGradingPeriod]
     [Ordinal] int NOT NULL,
     [Session_DocumentId] bigint NOT NULL,
     [GradingPeriod_DocumentId] bigint NOT NULL,
-    [GradingPeriod_GradingPeriodDescriptor_DescriptorId] bigint NOT NULL,
+    [GradingPeriod_GradingPeriodDescriptor_DescriptorId] int NOT NULL,
     [GradingPeriod_GradingPeriodName] nvarchar(60) NOT NULL,
     [GradingPeriod_SchoolId] bigint NOT NULL,
     [GradingPeriod_SchoolYear] int NOT NULL,
@@ -5465,7 +5473,7 @@ CREATE TABLE [edfi].[SourceDimensionReportingTag]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [SourceDimension_DocumentId] bigint NOT NULL,
-    [ReportingTagDescriptor_DescriptorId] bigint NOT NULL,
+    [ReportingTagDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_SourceDimensionReportingTag] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_SourceDimensionReportingTag_Ordinal_SourceDimension_DocumentId] UNIQUE ([SourceDimension_DocumentId], [Ordinal]),
     CONSTRAINT [UX_SourceDimensionReportingTag_ReportingTagDescriptor_DescriptorId_SourceDimension_DocumentId] UNIQUE ([SourceDimension_DocumentId], [ReportingTagDescriptor_DescriptorId])
@@ -5479,10 +5487,10 @@ CREATE TABLE [edfi].[Staff]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Staff_ContentVersion] DEFAULT 0,
     [Person_DocumentId] bigint NULL,
     [Person_PersonId] nvarchar(32) NULL,
-    [Person_SourceSystemDescriptor_DescriptorId] bigint NULL,
-    [CitizenshipStatusDescriptor_DescriptorId] bigint NULL,
-    [HighestCompletedLevelOfEducationDescriptor_DescriptorId] bigint NULL,
-    [SexDescriptor_DescriptorId] bigint NULL,
+    [Person_SourceSystemDescriptor_DescriptorId] int NULL,
+    [CitizenshipStatusDescriptor_DescriptorId] int NULL,
+    [HighestCompletedLevelOfEducationDescriptor_DescriptorId] int NULL,
+    [SexDescriptor_DescriptorId] int NULL,
     [BirthDate] date NULL,
     [FirstName] nvarchar(75) NOT NULL,
     [GenderIdentity] nvarchar(60) NULL,
@@ -5511,9 +5519,9 @@ CREATE TABLE [edfi].[StaffAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [LocaleDescriptor_DescriptorId] bigint NULL,
-    [StateAbbreviationDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [LocaleDescriptor_DescriptorId] int NULL,
+    [StateAbbreviationDescriptor_DescriptorId] int NOT NULL,
     [ApartmentRoomSuiteNumber] nvarchar(50) NULL,
     [BuildingSiteNumber] nvarchar(20) NULL,
     [City] nvarchar(30) NOT NULL,
@@ -5537,7 +5545,7 @@ CREATE TABLE [edfi].[StaffAncestryEthnicOrigin]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
-    [AncestryEthnicOriginDescriptor_DescriptorId] bigint NOT NULL,
+    [AncestryEthnicOriginDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StaffAncestryEthnicOrigin] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StaffAncestryEthnicOrigin_AncestryEthnicOriginDescriptor_DescriptorId_Staff_DocumentId] UNIQUE ([Staff_DocumentId], [AncestryEthnicOriginDescriptor_DescriptorId]),
     CONSTRAINT [UX_StaffAncestryEthnicOrigin_Ordinal_Staff_DocumentId] UNIQUE ([Staff_DocumentId], [Ordinal])
@@ -5551,7 +5559,7 @@ CREATE TABLE [edfi].[StaffCredential]
     [Staff_DocumentId] bigint NOT NULL,
     [Credential_DocumentId] bigint NOT NULL,
     [Credential_CredentialIdentifier] nvarchar(60) NOT NULL,
-    [Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] bigint NOT NULL,
+    [Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StaffCredential] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StaffCredential_Credential_DocumentId_Staff_DocumentId] UNIQUE ([Staff_DocumentId], [Credential_DocumentId]),
     CONSTRAINT [UX_StaffCredential_Ordinal_Staff_DocumentId] UNIQUE ([Staff_DocumentId], [Ordinal]),
@@ -5564,7 +5572,7 @@ CREATE TABLE [edfi].[StaffElectronicMail]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
-    [ElectronicMailTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ElectronicMailTypeDescriptor_DescriptorId] int NOT NULL,
     [DoNotPublishIndicator] bit NULL,
     [ElectronicMailAddress] nvarchar(128) NOT NULL,
     [PrimaryEmailAddressIndicator] bit NULL,
@@ -5579,7 +5587,7 @@ CREATE TABLE [edfi].[StaffIdentificationCode]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
-    [StaffIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
+    [StaffIdentificationSystemDescriptor_DescriptorId] int NOT NULL,
     [AssigningOrganizationIdentificationCode] nvarchar(60) NULL,
     [IdentificationCode] nvarchar(60) NOT NULL,
     CONSTRAINT [PK_StaffIdentificationCode] PRIMARY KEY ([CollectionItemId]),
@@ -5593,9 +5601,9 @@ CREATE TABLE [edfi].[StaffIdentificationDocument]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
-    [IdentificationDocumentUseDescriptor_DescriptorId] bigint NULL,
-    [IssuerCountryDescriptor_DescriptorId] bigint NULL,
-    [PersonalInformationVerificationDescriptor_DescriptorId] bigint NULL,
+    [IdentificationDocumentUseDescriptor_DescriptorId] int NULL,
+    [IssuerCountryDescriptor_DescriptorId] int NULL,
+    [PersonalInformationVerificationDescriptor_DescriptorId] int NULL,
     [DocumentExpirationDate] date NULL,
     [DocumentTitle] nvarchar(60) NULL,
     [IssuerDocumentIdentificationCode] nvarchar(60) NULL,
@@ -5611,8 +5619,8 @@ CREATE TABLE [edfi].[StaffInternationalAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [CountryDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [CountryDescriptor_DescriptorId] int NOT NULL,
     [AddressLine1] nvarchar(150) NOT NULL,
     [AddressLine2] nvarchar(150) NULL,
     [AddressLine3] nvarchar(150) NULL,
@@ -5632,7 +5640,7 @@ CREATE TABLE [edfi].[StaffLanguage]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
-    [LanguageDescriptor_DescriptorId] bigint NOT NULL,
+    [LanguageDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StaffLanguage] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StaffLanguage_CollectionItemId_Staff_DocumentId] UNIQUE ([CollectionItemId], [Staff_DocumentId]),
     CONSTRAINT [UX_StaffLanguage_LanguageDescriptor_DescriptorId_Staff_DocumentId] UNIQUE ([Staff_DocumentId], [LanguageDescriptor_DescriptorId]),
@@ -5645,7 +5653,7 @@ CREATE TABLE [edfi].[StaffOtherName]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
-    [OtherNameTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [OtherNameTypeDescriptor_DescriptorId] int NOT NULL,
     [FirstName] nvarchar(75) NOT NULL,
     [GenerationCodeSuffix] nvarchar(10) NULL,
     [LastSurname] nvarchar(75) NOT NULL,
@@ -5662,9 +5670,9 @@ CREATE TABLE [edfi].[StaffPersonalIdentificationDocument]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
-    [IdentificationDocumentUseDescriptor_DescriptorId] bigint NOT NULL,
-    [IssuerCountryDescriptor_DescriptorId] bigint NULL,
-    [PersonalInformationVerificationDescriptor_DescriptorId] bigint NOT NULL,
+    [IdentificationDocumentUseDescriptor_DescriptorId] int NOT NULL,
+    [IssuerCountryDescriptor_DescriptorId] int NULL,
+    [PersonalInformationVerificationDescriptor_DescriptorId] int NOT NULL,
     [PersonalDocumentExpirationDate] date NULL,
     [PersonalDocumentTitle] nvarchar(60) NULL,
     [PersonalIssuerDocumentIdentificationCode] nvarchar(60) NULL,
@@ -5680,7 +5688,7 @@ CREATE TABLE [edfi].[StaffRace]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
-    [RaceDescriptor_DescriptorId] bigint NOT NULL,
+    [RaceDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StaffRace] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StaffRace_Ordinal_Staff_DocumentId] UNIQUE ([Staff_DocumentId], [Ordinal]),
     CONSTRAINT [UX_StaffRace_RaceDescriptor_DescriptorId_Staff_DocumentId] UNIQUE ([Staff_DocumentId], [RaceDescriptor_DescriptorId])
@@ -5692,8 +5700,8 @@ CREATE TABLE [edfi].[StaffRecognition]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
-    [AchievementCategoryDescriptor_DescriptorId] bigint NULL,
-    [RecognitionTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [AchievementCategoryDescriptor_DescriptorId] int NULL,
+    [RecognitionTypeDescriptor_DescriptorId] int NOT NULL,
     [AchievementCategorySystem] nvarchar(60) NULL,
     [AchievementTitle] nvarchar(60) NULL,
     [Criteria] nvarchar(150) NULL,
@@ -5716,7 +5724,7 @@ CREATE TABLE [edfi].[StaffTelephone]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
-    [TelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [TelephoneNumberTypeDescriptor_DescriptorId] int NOT NULL,
     [DoNotPublishIndicator] bit NULL,
     [OrderOfPriority] int NULL,
     [TelephoneNumber] nvarchar(24) NOT NULL,
@@ -5732,7 +5740,7 @@ CREATE TABLE [edfi].[StaffTribalAffiliation]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
-    [TribalAffiliationDescriptor_DescriptorId] bigint NOT NULL,
+    [TribalAffiliationDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StaffTribalAffiliation] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StaffTribalAffiliation_Ordinal_Staff_DocumentId] UNIQUE ([Staff_DocumentId], [Ordinal]),
     CONSTRAINT [UX_StaffTribalAffiliation_Staff_DocumentId_TribalAffiliationDescriptor_DescriptorId] UNIQUE ([Staff_DocumentId], [TribalAffiliationDescriptor_DescriptorId])
@@ -5744,7 +5752,7 @@ CREATE TABLE [edfi].[StaffVisa]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
-    [VisaDescriptor_DescriptorId] bigint NOT NULL,
+    [VisaDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StaffVisa] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StaffVisa_Ordinal_Staff_DocumentId] UNIQUE ([Staff_DocumentId], [Ordinal]),
     CONSTRAINT [UX_StaffVisa_Staff_DocumentId_VisaDescriptor_DescriptorId] UNIQUE ([Staff_DocumentId], [VisaDescriptor_DescriptorId])
@@ -5771,7 +5779,7 @@ CREATE TABLE [edfi].[StaffLanguageUs]
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
-    [LanguageUseDescriptor_DescriptorId] bigint NOT NULL,
+    [LanguageUseDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StaffLanguageUs] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StaffLanguageUs_Ordinal_ParentCollectionItemId] UNIQUE ([ParentCollectionItemId], [Ordinal]),
     CONSTRAINT [UX_StaffLanguageUs_ParentCollectionItemId_LanguageUseDescriptor_DescriptorId] UNIQUE ([ParentCollectionItemId], [LanguageUseDescriptor_DescriptorId])
@@ -5785,7 +5793,7 @@ CREATE TABLE [edfi].[StaffAbsenceEvent]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffAbsenceEvent_ContentVersion] DEFAULT 0,
     [Staff_DocumentId] bigint NOT NULL,
     [Staff_StaffUniqueId] nvarchar(32) NOT NULL,
-    [AbsenceEventCategoryDescriptor_DescriptorId] bigint NOT NULL,
+    [AbsenceEventCategoryDescriptor_DescriptorId] int NOT NULL,
     [AbsenceEventReason] nvarchar(40) NULL,
     [EventDate] date NOT NULL,
     [HoursAbsent] decimal(18,2) NULL,
@@ -5837,7 +5845,7 @@ CREATE TABLE [edfi].[StaffDisciplineIncidentAssociationDisciplineIncidentPartici
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StaffDisciplineIncidentAssociation_DocumentId] bigint NOT NULL,
-    [DisciplineIncidentParticipationCodeDescriptor_DescriptorId] bigint NOT NULL,
+    [DisciplineIncidentParticipationCodeDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StaffDisciplineIncidentAssociationDisciplineIncidentParticipationCode] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StaffDisciplineIncidentAssociationDisciplineIncidentParticipationCode_DisciplineIncidentParticipationCodeDescripto_8ab6e4f1c6] UNIQUE ([StaffDisciplineIncidentAssociation_DocumentId], [DisciplineIncidentParticipationCodeDescriptor_DescriptorId]),
     CONSTRAINT [UX_StaffDisciplineIncidentAssociationDisciplineIncidentParticipationCode_Ordinal_StaffDisciplineIncidentAssociation_DocumentId] UNIQUE ([StaffDisciplineIncidentAssociation_DocumentId], [Ordinal])
@@ -5852,17 +5860,17 @@ CREATE TABLE [edfi].[StaffEducationOrganizationAssignmentAssociation]
     [StaffUniqueId_Unified] nvarchar(32) NOT NULL,
     [Credential_DocumentId] bigint NULL,
     [Credential_CredentialIdentifier] nvarchar(60) NULL,
-    [Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] bigint NULL,
+    [Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] int NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
     [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [EmploymentStaffEducationOrganizationEmploymentAssociation_DocumentId] bigint NULL,
     [EmploymentStaffEducationOrganizationEmploymentAssociation_EducationOrganizationId] bigint NULL,
-    [EmploymentStaffEducationOrganizationEmploymentAssociation_EmploymentStatusDescriptor_DescriptorId] bigint NULL,
+    [EmploymentStaffEducationOrganizationEmploymentAssociation_EmploymentStatusDescriptor_DescriptorId] int NULL,
     [EmploymentStaffEducationOrganizationEmploymentAssociation_HireDate] date NULL,
     [EmploymentStaffEducationOrganizationEmploymentAssociation_StaffUniqueId] AS (CASE WHEN [EmploymentStaffEducationOrganizationEmploymentAssociation_DocumentId] IS NULL THEN NULL ELSE [StaffUniqueId_Unified] END) PERSISTED,
     [Staff_DocumentId] bigint NOT NULL,
     [Staff_StaffUniqueId] AS (CASE WHEN [Staff_DocumentId] IS NULL THEN NULL ELSE [StaffUniqueId_Unified] END) PERSISTED,
-    [StaffClassificationDescriptor_DescriptorId] bigint NOT NULL,
+    [StaffClassificationDescriptor_DescriptorId] int NOT NULL,
     [BeginDate] date NOT NULL,
     [EndDate] date NULL,
     [FullTimeEquivalency] decimal(5,4) NULL,
@@ -5886,10 +5894,10 @@ CREATE TABLE [edfi].[StaffEducationOrganizationContactAssociation]
     [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [Staff_StaffUniqueId] nvarchar(32) NOT NULL,
-    [AddressAddressTypeDescriptor_DescriptorId] bigint NULL,
-    [AddressLocaleDescriptor_DescriptorId] bigint NULL,
-    [AddressStateAbbreviationDescriptor_DescriptorId] bigint NULL,
-    [ContactTypeDescriptor_DescriptorId] bigint NULL,
+    [AddressAddressTypeDescriptor_DescriptorId] int NULL,
+    [AddressLocaleDescriptor_DescriptorId] int NULL,
+    [AddressStateAbbreviationDescriptor_DescriptorId] int NULL,
+    [ContactTypeDescriptor_DescriptorId] int NULL,
     [AddressApartmentRoomSuiteNumber] nvarchar(50) NULL,
     [AddressBuildingSiteNumber] nvarchar(20) NULL,
     [AddressCity] nvarchar(30) NULL,
@@ -5928,7 +5936,7 @@ CREATE TABLE [edfi].[StaffEducationOrganizationContactAssociationTelephone]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StaffEducationOrganizationContactAssociation_DocumentId] bigint NOT NULL,
-    [TelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [TelephoneNumberTypeDescriptor_DescriptorId] int NOT NULL,
     [DoNotPublishIndicator] bit NULL,
     [OrderOfPriority] int NULL,
     [TelephoneNumber] nvarchar(24) NOT NULL,
@@ -5946,14 +5954,14 @@ CREATE TABLE [edfi].[StaffEducationOrganizationEmploymentAssociation]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffEducationOrganizationEmploymentAssociation_ContentVersion] DEFAULT 0,
     [Credential_DocumentId] bigint NULL,
     [Credential_CredentialIdentifier] nvarchar(60) NULL,
-    [Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] bigint NULL,
+    [Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] int NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
     [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [Staff_StaffUniqueId] nvarchar(32) NOT NULL,
-    [EmploymentStatusDescriptor_DescriptorId] bigint NOT NULL,
-    [SeparationDescriptor_DescriptorId] bigint NULL,
-    [SeparationReasonDescriptor_DescriptorId] bigint NULL,
+    [EmploymentStatusDescriptor_DescriptorId] int NOT NULL,
+    [SeparationDescriptor_DescriptorId] int NULL,
+    [SeparationReasonDescriptor_DescriptorId] int NULL,
     [AnnualWage] decimal(19,4) NULL,
     [Department] nvarchar(60) NULL,
     [EndDate] date NULL,
@@ -5977,7 +5985,7 @@ CREATE TABLE [edfi].[StaffLeave]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffLeave_ContentVersion] DEFAULT 0,
     [Staff_DocumentId] bigint NOT NULL,
     [Staff_StaffUniqueId] nvarchar(32) NOT NULL,
-    [StaffLeaveEventCategoryDescriptor_DescriptorId] bigint NOT NULL,
+    [StaffLeaveEventCategoryDescriptor_DescriptorId] int NOT NULL,
     [BeginDate] date NOT NULL,
     [EndDate] date NULL,
     [Reason] nvarchar(40) NULL,
@@ -5996,7 +6004,7 @@ CREATE TABLE [edfi].[StaffProgramAssociation]
     [ProgramProgram_DocumentId] bigint NOT NULL,
     [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
-    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [Staff_StaffUniqueId] nvarchar(32) NOT NULL,
     [BeginDate] date NOT NULL,
@@ -6026,7 +6034,7 @@ CREATE TABLE [edfi].[StaffSchoolAssociation]
     [School_SchoolId] AS (CASE WHEN [School_DocumentId] IS NULL THEN NULL ELSE [SchoolId_Unified] END) PERSISTED,
     [Staff_DocumentId] bigint NOT NULL,
     [Staff_StaffUniqueId] nvarchar(32) NOT NULL,
-    [ProgramAssignmentDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramAssignmentDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StaffSchoolAssociation] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_StaffSchoolAssociation_NK] UNIQUE ([ProgramAssignmentDescriptor_DescriptorId], [School_DocumentId], [Staff_DocumentId]),
     CONSTRAINT [CK_StaffSchoolAssociation_Calendar_AllNone] CHECK (([Calendar_DocumentId] IS NULL AND [Calendar_CalendarCode] IS NULL AND [Calendar_SchoolId] IS NULL AND [Calendar_SchoolYear] IS NULL) OR ([Calendar_DocumentId] IS NOT NULL AND [Calendar_CalendarCode] IS NOT NULL AND [Calendar_SchoolId] IS NOT NULL AND [Calendar_SchoolYear] IS NOT NULL)),
@@ -6041,7 +6049,7 @@ CREATE TABLE [edfi].[StaffSchoolAssociationAcademicSubject]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StaffSchoolAssociation_DocumentId] bigint NOT NULL,
-    [AcademicSubjectDescriptor_DescriptorId] bigint NOT NULL,
+    [AcademicSubjectDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StaffSchoolAssociationAcademicSubject] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StaffSchoolAssociationAcademicSubject_AcademicSubjectDescriptor_DescriptorId_StaffSchoolAssociation_DocumentId] UNIQUE ([StaffSchoolAssociation_DocumentId], [AcademicSubjectDescriptor_DescriptorId]),
     CONSTRAINT [UX_StaffSchoolAssociationAcademicSubject_Ordinal_StaffSchoolAssociation_DocumentId] UNIQUE ([StaffSchoolAssociation_DocumentId], [Ordinal])
@@ -6053,7 +6061,7 @@ CREATE TABLE [edfi].[StaffSchoolAssociationGradeLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StaffSchoolAssociation_DocumentId] bigint NOT NULL,
-    [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [GradeLevelDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StaffSchoolAssociationGradeLevel] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StaffSchoolAssociationGradeLevel_GradeLevelDescriptor_DescriptorId_StaffSchoolAssociation_DocumentId] UNIQUE ([StaffSchoolAssociation_DocumentId], [GradeLevelDescriptor_DescriptorId]),
     CONSTRAINT [UX_StaffSchoolAssociationGradeLevel_Ordinal_StaffSchoolAssociation_DocumentId] UNIQUE ([StaffSchoolAssociation_DocumentId], [Ordinal])
@@ -6073,7 +6081,7 @@ CREATE TABLE [edfi].[StaffSectionAssociation]
     [Section_SectionIdentifier] nvarchar(255) NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [Staff_StaffUniqueId] nvarchar(32) NOT NULL,
-    [ClassroomPositionDescriptor_DescriptorId] bigint NOT NULL,
+    [ClassroomPositionDescriptor_DescriptorId] int NOT NULL,
     [BeginDate] date NOT NULL,
     [EndDate] date NULL,
     [HighlyQualifiedTeacher] bit NULL,
@@ -6091,7 +6099,7 @@ CREATE TABLE [edfi].[StateEducationAgency]
     [DocumentId] bigint NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StateEducationAgency_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StateEducationAgency_ContentVersion] DEFAULT 0,
-    [OperationalStatusDescriptor_DescriptorId] bigint NULL,
+    [OperationalStatusDescriptor_DescriptorId] int NULL,
     [NameOfInstitution] nvarchar(75) NOT NULL,
     [ShortNameOfInstitution] nvarchar(75) NULL,
     [StateEducationAgencyId] bigint NOT NULL,
@@ -6122,9 +6130,9 @@ CREATE TABLE [edfi].[StateEducationAgencyAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StateEducationAgency_DocumentId] bigint NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [LocaleDescriptor_DescriptorId] bigint NULL,
-    [StateAbbreviationDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [LocaleDescriptor_DescriptorId] int NULL,
+    [StateAbbreviationDescriptor_DescriptorId] int NOT NULL,
     [ApartmentRoomSuiteNumber] nvarchar(50) NULL,
     [BuildingSiteNumber] nvarchar(20) NULL,
     [City] nvarchar(30) NOT NULL,
@@ -6148,7 +6156,7 @@ CREATE TABLE [edfi].[StateEducationAgencyCategory]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StateEducationAgency_DocumentId] bigint NOT NULL,
-    [EducationOrganizationCategoryDescriptor_DescriptorId] bigint NOT NULL,
+    [EducationOrganizationCategoryDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StateEducationAgencyCategory] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StateEducationAgencyCategory_EducationOrganizationCategoryDescriptor_DescriptorId_StateEducationAgency_DocumentId] UNIQUE ([StateEducationAgency_DocumentId], [EducationOrganizationCategoryDescriptor_DescriptorId]),
     CONSTRAINT [UX_StateEducationAgencyCategory_Ordinal_StateEducationAgency_DocumentId] UNIQUE ([StateEducationAgency_DocumentId], [Ordinal])
@@ -6173,7 +6181,7 @@ CREATE TABLE [edfi].[StateEducationAgencyIdentificationCode]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StateEducationAgency_DocumentId] bigint NOT NULL,
-    [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
+    [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] int NOT NULL,
     [IdentificationCode] nvarchar(60) NOT NULL,
     CONSTRAINT [PK_StateEducationAgencyIdentificationCode] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StateEducationAgencyIdentificationCode_EducationOrganizationIdentificationSystemDescriptor_DescriptorId_StateEduca_a449a8b727] UNIQUE ([StateEducationAgency_DocumentId], [EducationOrganizationIdentificationSystemDescriptor_DescriptorId]),
@@ -6186,9 +6194,9 @@ CREATE TABLE [edfi].[StateEducationAgencyIndicator]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StateEducationAgency_DocumentId] bigint NOT NULL,
-    [IndicatorDescriptor_DescriptorId] bigint NOT NULL,
-    [IndicatorGroupDescriptor_DescriptorId] bigint NULL,
-    [IndicatorLevelDescriptor_DescriptorId] bigint NULL,
+    [IndicatorDescriptor_DescriptorId] int NOT NULL,
+    [IndicatorGroupDescriptor_DescriptorId] int NULL,
+    [IndicatorLevelDescriptor_DescriptorId] int NULL,
     [DesignatedBy] nvarchar(60) NULL,
     [IndicatorValue] nvarchar(60) NULL,
     CONSTRAINT [PK_StateEducationAgencyIndicator] PRIMARY KEY ([CollectionItemId]),
@@ -6203,7 +6211,7 @@ CREATE TABLE [edfi].[StateEducationAgencyInstitutionTelephone]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StateEducationAgency_DocumentId] bigint NOT NULL,
-    [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] int NOT NULL,
     [TelephoneNumber] nvarchar(24) NOT NULL,
     CONSTRAINT [PK_StateEducationAgencyInstitutionTelephone] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StateEducationAgencyInstitutionTelephone_InstitutionTelephoneNumberTypeDescriptor_DescriptorId_StateEducationAgenc_f14e95bf4c] UNIQUE ([StateEducationAgency_DocumentId], [InstitutionTelephoneNumberTypeDescriptor_DescriptorId]),
@@ -6216,8 +6224,8 @@ CREATE TABLE [edfi].[StateEducationAgencyInternationalAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StateEducationAgency_DocumentId] bigint NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [CountryDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [CountryDescriptor_DescriptorId] int NOT NULL,
     [AddressLine1] nvarchar(150) NOT NULL,
     [AddressLine2] nvarchar(150) NULL,
     [AddressLine3] nvarchar(150) NULL,
@@ -6267,11 +6275,11 @@ CREATE TABLE [edfi].[Student]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Student_ContentVersion] DEFAULT 0,
     [Person_DocumentId] bigint NULL,
     [Person_PersonId] nvarchar(32) NULL,
-    [Person_SourceSystemDescriptor_DescriptorId] bigint NULL,
-    [BirthCountryDescriptor_DescriptorId] bigint NULL,
-    [BirthSexDescriptor_DescriptorId] bigint NULL,
-    [BirthStateAbbreviationDescriptor_DescriptorId] bigint NULL,
-    [CitizenshipStatusDescriptor_DescriptorId] bigint NULL,
+    [Person_SourceSystemDescriptor_DescriptorId] int NULL,
+    [BirthCountryDescriptor_DescriptorId] int NULL,
+    [BirthSexDescriptor_DescriptorId] int NULL,
+    [BirthStateAbbreviationDescriptor_DescriptorId] int NULL,
+    [CitizenshipStatusDescriptor_DescriptorId] int NULL,
     [BirthCity] nvarchar(30) NULL,
     [BirthDate] date NOT NULL,
     [BirthInternationalProvince] nvarchar(150) NULL,
@@ -6298,9 +6306,9 @@ CREATE TABLE [edfi].[StudentIdentificationDocument]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
-    [IdentificationDocumentUseDescriptor_DescriptorId] bigint NULL,
-    [IssuerCountryDescriptor_DescriptorId] bigint NULL,
-    [PersonalInformationVerificationDescriptor_DescriptorId] bigint NULL,
+    [IdentificationDocumentUseDescriptor_DescriptorId] int NULL,
+    [IssuerCountryDescriptor_DescriptorId] int NULL,
+    [PersonalInformationVerificationDescriptor_DescriptorId] int NULL,
     [DocumentExpirationDate] date NULL,
     [DocumentTitle] nvarchar(60) NULL,
     [IssuerDocumentIdentificationCode] nvarchar(60) NULL,
@@ -6316,7 +6324,7 @@ CREATE TABLE [edfi].[StudentOtherName]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
-    [OtherNameTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [OtherNameTypeDescriptor_DescriptorId] int NOT NULL,
     [FirstName] nvarchar(75) NOT NULL,
     [GenerationCodeSuffix] nvarchar(10) NULL,
     [LastSurname] nvarchar(75) NOT NULL,
@@ -6333,9 +6341,9 @@ CREATE TABLE [edfi].[StudentPersonalIdentificationDocument]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
-    [IdentificationDocumentUseDescriptor_DescriptorId] bigint NOT NULL,
-    [IssuerCountryDescriptor_DescriptorId] bigint NULL,
-    [PersonalInformationVerificationDescriptor_DescriptorId] bigint NOT NULL,
+    [IdentificationDocumentUseDescriptor_DescriptorId] int NOT NULL,
+    [IssuerCountryDescriptor_DescriptorId] int NULL,
+    [PersonalInformationVerificationDescriptor_DescriptorId] int NOT NULL,
     [PersonalDocumentExpirationDate] date NULL,
     [PersonalDocumentTitle] nvarchar(60) NULL,
     [PersonalIssuerDocumentIdentificationCode] nvarchar(60) NULL,
@@ -6351,7 +6359,7 @@ CREATE TABLE [edfi].[StudentVisa]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
-    [VisaDescriptor_DescriptorId] bigint NOT NULL,
+    [VisaDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StudentVisa] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentVisa_Ordinal_Student_DocumentId] UNIQUE ([Student_DocumentId], [Ordinal]),
     CONSTRAINT [UX_StudentVisa_Student_DocumentId_VisaDescriptor_DescriptorId] UNIQUE ([Student_DocumentId], [VisaDescriptor_DescriptorId])
@@ -6369,11 +6377,11 @@ CREATE TABLE [edfi].[StudentAcademicRecord]
     [SchoolYear_SchoolYear] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [CumulativeAttemptedCreditTypeDescriptor_DescriptorId] bigint NULL,
-    [CumulativeEarnedCreditTypeDescriptor_DescriptorId] bigint NULL,
-    [SessionAttemptedCreditTypeDescriptor_DescriptorId] bigint NULL,
-    [SessionEarnedCreditTypeDescriptor_DescriptorId] bigint NULL,
-    [TermDescriptor_DescriptorId] bigint NOT NULL,
+    [CumulativeAttemptedCreditTypeDescriptor_DescriptorId] int NULL,
+    [CumulativeEarnedCreditTypeDescriptor_DescriptorId] int NULL,
+    [SessionAttemptedCreditTypeDescriptor_DescriptorId] int NULL,
+    [SessionEarnedCreditTypeDescriptor_DescriptorId] int NULL,
+    [TermDescriptor_DescriptorId] int NOT NULL,
     [ClassRankingClassRank] int NULL,
     [ClassRankingClassRankingDate] date NULL,
     [ClassRankingPercentageRanking] int NULL,
@@ -6401,8 +6409,8 @@ CREATE TABLE [edfi].[StudentAcademicRecordAcademicHonor]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAcademicRecord_DocumentId] bigint NOT NULL,
-    [AcademicHonorCategoryDescriptor_DescriptorId] bigint NOT NULL,
-    [AchievementCategoryDescriptor_DescriptorId] bigint NULL,
+    [AcademicHonorCategoryDescriptor_DescriptorId] int NOT NULL,
+    [AchievementCategoryDescriptor_DescriptorId] int NULL,
     [AchievementCategorySystem] nvarchar(60) NULL,
     [AchievementTitle] nvarchar(60) NULL,
     [Criteria] nvarchar(150) NULL,
@@ -6425,9 +6433,9 @@ CREATE TABLE [edfi].[StudentAcademicRecordDiploma]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAcademicRecord_DocumentId] bigint NOT NULL,
-    [AchievementCategoryDescriptor_DescriptorId] bigint NULL,
-    [DiplomaLevelDescriptor_DescriptorId] bigint NULL,
-    [DiplomaTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [AchievementCategoryDescriptor_DescriptorId] int NULL,
+    [DiplomaLevelDescriptor_DescriptorId] int NULL,
+    [DiplomaTypeDescriptor_DescriptorId] int NOT NULL,
     [AchievementCategorySystem] nvarchar(60) NULL,
     [AchievementTitle] nvarchar(60) NULL,
     [Criteria] nvarchar(150) NULL,
@@ -6451,7 +6459,7 @@ CREATE TABLE [edfi].[StudentAcademicRecordGradePointAverage]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAcademicRecord_DocumentId] bigint NOT NULL,
-    [GradePointAverageTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [GradePointAverageTypeDescriptor_DescriptorId] int NOT NULL,
     [GradePointAverageValue] decimal(18,4) NOT NULL,
     [IsCumulative] bit NULL,
     [MaxGradePointAverageValue] decimal(18,4) NULL,
@@ -6466,8 +6474,8 @@ CREATE TABLE [edfi].[StudentAcademicRecordRecognition]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAcademicRecord_DocumentId] bigint NOT NULL,
-    [AchievementCategoryDescriptor_DescriptorId] bigint NULL,
-    [RecognitionTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [AchievementCategoryDescriptor_DescriptorId] int NULL,
+    [RecognitionTypeDescriptor_DescriptorId] int NOT NULL,
     [AchievementCategorySystem] nvarchar(60) NULL,
     [AchievementTitle] nvarchar(60) NULL,
     [Criteria] nvarchar(150) NULL,
@@ -6492,7 +6500,7 @@ CREATE TABLE [edfi].[StudentAcademicRecordReportCard]
     [StudentAcademicRecord_DocumentId] bigint NOT NULL,
     [ReportCard_DocumentId] bigint NOT NULL,
     [ReportCard_EducationOrganizationId] bigint NOT NULL,
-    [ReportCard_GradingPeriodDescriptor_DescriptorId] bigint NOT NULL,
+    [ReportCard_GradingPeriodDescriptor_DescriptorId] int NOT NULL,
     [ReportCard_GradingPeriodName] nvarchar(60) NOT NULL,
     [ReportCard_GradingPeriodSchoolId] bigint NOT NULL,
     [ReportCard_GradingPeriodSchoolYear] int NOT NULL,
@@ -6518,14 +6526,14 @@ CREATE TABLE [edfi].[StudentAssessment]
     [SchoolYear_SchoolYear] int NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [AdministrationEnvironmentDescriptor_DescriptorId] bigint NULL,
-    [AdministrationLanguageDescriptor_DescriptorId] bigint NULL,
-    [EventCircumstanceDescriptor_DescriptorId] bigint NULL,
-    [PeriodAssessmentPeriodDescriptor_DescriptorId] bigint NULL,
-    [PlatformTypeDescriptor_DescriptorId] bigint NULL,
-    [ReasonNotTestedDescriptor_DescriptorId] bigint NULL,
-    [RetestIndicatorDescriptor_DescriptorId] bigint NULL,
-    [WhenAssessedGradeLevelDescriptor_DescriptorId] bigint NULL,
+    [AdministrationEnvironmentDescriptor_DescriptorId] int NULL,
+    [AdministrationLanguageDescriptor_DescriptorId] int NULL,
+    [EventCircumstanceDescriptor_DescriptorId] int NULL,
+    [PeriodAssessmentPeriodDescriptor_DescriptorId] int NULL,
+    [PlatformTypeDescriptor_DescriptorId] int NULL,
+    [ReasonNotTestedDescriptor_DescriptorId] int NULL,
+    [RetestIndicatorDescriptor_DescriptorId] int NULL,
+    [WhenAssessedGradeLevelDescriptor_DescriptorId] int NULL,
     [AdministrationDate] datetime2(7) NULL,
     [AdministrationEndDate] datetime2(7) NULL,
     [AssessedMinutes] int NULL,
@@ -6550,7 +6558,7 @@ CREATE TABLE [edfi].[StudentAssessmentAccommodation]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAssessment_DocumentId] bigint NOT NULL,
-    [AccommodationDescriptor_DescriptorId] bigint NOT NULL,
+    [AccommodationDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StudentAssessmentAccommodation] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentAssessmentAccommodation_AccommodationDescriptor_DescriptorId_StudentAssessment_DocumentId] UNIQUE ([StudentAssessment_DocumentId], [AccommodationDescriptor_DescriptorId]),
     CONSTRAINT [UX_StudentAssessmentAccommodation_Ordinal_StudentAssessment_DocumentId] UNIQUE ([StudentAssessment_DocumentId], [Ordinal])
@@ -6566,8 +6574,8 @@ CREATE TABLE [edfi].[StudentAssessmentItem]
     [StudentAssessmentItemAssessmentItem_AssessmentIdentifier] nvarchar(60) NOT NULL,
     [StudentAssessmentItemAssessmentItem_Namespace] nvarchar(255) NOT NULL,
     [StudentAssessmentItemAssessmentItem_IdentificationCode] nvarchar(60) NOT NULL,
-    [AssessmentItemResultDescriptor_DescriptorId] bigint NOT NULL,
-    [ResponseIndicatorDescriptor_DescriptorId] bigint NULL,
+    [AssessmentItemResultDescriptor_DescriptorId] int NOT NULL,
+    [ResponseIndicatorDescriptor_DescriptorId] int NULL,
     [AssessmentResponse] nvarchar(255) NULL,
     [DescriptiveFeedback] nvarchar(1024) NULL,
     [ItemNumber] int NULL,
@@ -6585,8 +6593,8 @@ CREATE TABLE [edfi].[StudentAssessmentPerformanceLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAssessment_DocumentId] bigint NOT NULL,
-    [AssessmentReportingMethodDescriptor_DescriptorId] bigint NOT NULL,
-    [PerformanceLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [AssessmentReportingMethodDescriptor_DescriptorId] int NOT NULL,
+    [PerformanceLevelDescriptor_DescriptorId] int NOT NULL,
     [PerformanceLevelIndicatorName] nvarchar(60) NULL,
     CONSTRAINT [PK_StudentAssessmentPerformanceLevel] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentAssessmentPerformanceLevel_AssessmentReportingMethodDescriptor_DescriptorId_PerformanceLevelDescriptor_Desc_ab647d5bf7] UNIQUE ([StudentAssessment_DocumentId], [AssessmentReportingMethodDescriptor_DescriptorId], [PerformanceLevelDescriptor_DescriptorId]),
@@ -6599,8 +6607,8 @@ CREATE TABLE [edfi].[StudentAssessmentScoreResult]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAssessment_DocumentId] bigint NOT NULL,
-    [AssessmentReportingMethodDescriptor_DescriptorId] bigint NOT NULL,
-    [ResultDatatypeTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [AssessmentReportingMethodDescriptor_DescriptorId] int NOT NULL,
+    [ResultDatatypeTypeDescriptor_DescriptorId] int NOT NULL,
     [Result] nvarchar(35) NOT NULL,
     CONSTRAINT [PK_StudentAssessmentScoreResult] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentAssessmentScoreResult_AssessmentReportingMethodDescriptor_DescriptorId_StudentAssessment_DocumentId] UNIQUE ([StudentAssessment_DocumentId], [AssessmentReportingMethodDescriptor_DescriptorId]),
@@ -6634,8 +6642,8 @@ CREATE TABLE [edfi].[StudentAssessmentStudentObjectiveAssessmentPerformanceLevel
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [StudentAssessment_DocumentId] bigint NOT NULL,
-    [AssessmentReportingMethodDescriptor_DescriptorId] bigint NOT NULL,
-    [PerformanceLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [AssessmentReportingMethodDescriptor_DescriptorId] int NOT NULL,
+    [PerformanceLevelDescriptor_DescriptorId] int NOT NULL,
     [PerformanceLevelIndicatorName] nvarchar(60) NULL,
     CONSTRAINT [PK_StudentAssessmentStudentObjectiveAssessmentPerformanceLevel] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentAssessmentStudentObjectiveAssessmentPerformanceLevel_Ordinal_ParentCollectionItemId] UNIQUE ([ParentCollectionItemId], [Ordinal]),
@@ -6649,8 +6657,8 @@ CREATE TABLE [edfi].[StudentAssessmentStudentObjectiveAssessmentScoreResult]
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [StudentAssessment_DocumentId] bigint NOT NULL,
-    [AssessmentReportingMethodDescriptor_DescriptorId] bigint NOT NULL,
-    [ResultDatatypeTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [AssessmentReportingMethodDescriptor_DescriptorId] int NOT NULL,
+    [ResultDatatypeTypeDescriptor_DescriptorId] int NOT NULL,
     [Result] nvarchar(35) NOT NULL,
     CONSTRAINT [PK_StudentAssessmentStudentObjectiveAssessmentScoreResult] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentAssessmentStudentObjectiveAssessmentScoreResult_Ordinal_ParentCollectionItemId] UNIQUE ([ParentCollectionItemId], [Ordinal]),
@@ -6672,7 +6680,7 @@ CREATE TABLE [edfi].[StudentAssessmentEducationOrganizationAssociation]
     [StudentAssessment_Namespace] nvarchar(255) NOT NULL,
     [StudentAssessment_StudentAssessmentIdentifier] nvarchar(60) NOT NULL,
     [StudentAssessment_StudentUniqueId] nvarchar(32) NOT NULL,
-    [EducationOrganizationAssociationTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [EducationOrganizationAssociationTypeDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StudentAssessmentEducationOrganizationAssociation] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_StudentAssessmentEducationOrganizationAssociation_NK] UNIQUE ([EducationOrganizationAssociationTypeDescriptor_DescriptorId], [EducationOrganization_DocumentId], [StudentAssessment_DocumentId]),
     CONSTRAINT [CK_StudentAssessmentEducationOrganizationAssociation_EducationOrganization_AllNone] CHECK (([EducationOrganization_DocumentId] IS NULL AND [EducationOrganization_EducationOrganizationId] IS NULL) OR ([EducationOrganization_DocumentId] IS NOT NULL AND [EducationOrganization_EducationOrganizationId] IS NOT NULL)),
@@ -6706,8 +6714,8 @@ CREATE TABLE [edfi].[StudentAssessmentRegistration]
     [StudentSchoolAssociation_StudentUniqueId] AS (CASE WHEN [StudentSchoolAssociation_DocumentId] IS NULL THEN NULL ELSE [StudentUniqueId_Unified] END) PERSISTED,
     [TestingEducationOrganization_DocumentId] bigint NULL,
     [TestingEducationOrganization_EducationOrganizationId] bigint NULL,
-    [AssessmentGradeLevelDescriptor_DescriptorId] bigint NULL,
-    [PlatformTypeDescriptor_DescriptorId] bigint NULL,
+    [AssessmentGradeLevelDescriptor_DescriptorId] int NULL,
+    [PlatformTypeDescriptor_DescriptorId] int NULL,
     CONSTRAINT [PK_StudentAssessmentRegistration] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_StudentAssessmentRegistration_NK] UNIQUE ([AssessmentAdministration_DocumentId], [StudentEducationOrganizationAssociation_DocumentId]),
     CONSTRAINT [UX_StudentAssessmentRegistration_RefKey] UNIQUE ([AssessmentAdministration_AdministrationIdentifier], [AssessmentAdministration_AssessmentIdentifier], [AssessmentAdministration_AssigningEducationOrganizationId], [AssessmentAdministration_Namespace], [StudentEducationOrganizationAssociation_EducationOrganizationId], [StudentUniqueId_Unified], [DocumentId]),
@@ -6725,7 +6733,7 @@ CREATE TABLE [edfi].[StudentAssessmentRegistrationAssessmentAccommodation]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAssessmentRegistration_DocumentId] bigint NOT NULL,
-    [AccommodationDescriptor_DescriptorId] bigint NOT NULL,
+    [AccommodationDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StudentAssessmentRegistrationAssessmentAccommodation] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentAssessmentRegistrationAssessmentAccommodation_AccommodationDescriptor_DescriptorId_StudentAssessmentRegistr_6ba059ea60] UNIQUE ([StudentAssessmentRegistration_DocumentId], [AccommodationDescriptor_DescriptorId]),
     CONSTRAINT [UX_StudentAssessmentRegistrationAssessmentAccommodation_Ordinal_StudentAssessmentRegistration_DocumentId] UNIQUE ([StudentAssessmentRegistration_DocumentId], [Ordinal])
@@ -6775,7 +6783,7 @@ CREATE TABLE [edfi].[StudentAssessmentRegistrationBatteryPartAssociationAccommod
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAssessmentRegistrationBatteryPartAssociation_DocumentId] bigint NOT NULL,
-    [AccommodationDescriptor_DescriptorId] bigint NOT NULL,
+    [AccommodationDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StudentAssessmentRegistrationBatteryPartAssociationAccommodation] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentAssessmentRegistrationBatteryPartAssociationAccommodation_AccommodationDescriptor_DescriptorId_StudentAsses_bcad4ff1d6] UNIQUE ([StudentAssessmentRegistrationBatteryPartAssociation_DocumentId], [AccommodationDescriptor_DescriptorId]),
     CONSTRAINT [UX_StudentAssessmentRegistrationBatteryPartAssociationAccommodation_Ordinal_StudentAssessmentRegistrationBatteryPartA_5ae43b3f7d] UNIQUE ([StudentAssessmentRegistrationBatteryPartAssociation_DocumentId], [Ordinal])
@@ -6792,11 +6800,11 @@ CREATE TABLE [edfi].[StudentCTEProgramAssociation]
     [ProgramProgram_DocumentId] bigint NOT NULL,
     [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
-    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [ReasonExitedDescriptor_DescriptorId] bigint NULL,
-    [TechnicalSkillsAssessmentDescriptor_DescriptorId] bigint NULL,
+    [ReasonExitedDescriptor_DescriptorId] int NULL,
+    [TechnicalSkillsAssessmentDescriptor_DescriptorId] int NULL,
     [BeginDate] date NOT NULL,
     [EndDate] date NULL,
     [NonTraditionalGenderStatus] bit NULL,
@@ -6815,7 +6823,7 @@ CREATE TABLE [edfi].[StudentCTEProgramAssociationCteProgramService]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentCTEProgramAssociation_DocumentId] bigint NOT NULL,
-    [CteProgramServiceDescriptor_DescriptorId] bigint NOT NULL,
+    [CteProgramServiceDescriptor_DescriptorId] int NOT NULL,
     [CipCode] nvarchar(120) NULL,
     [PrimaryIndicator] bit NULL,
     [ServiceBeginDate] date NULL,
@@ -6831,7 +6839,7 @@ CREATE TABLE [edfi].[StudentCTEProgramAssociationProgramParticipationStatus]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentCTEProgramAssociation_DocumentId] bigint NOT NULL,
-    [ParticipationStatusDescriptor_DescriptorId] bigint NOT NULL,
+    [ParticipationStatusDescriptor_DescriptorId] int NOT NULL,
     [DesignatedBy] nvarchar(60) NULL,
     [StatusBeginDate] date NOT NULL,
     [StatusEndDate] date NULL,
@@ -6884,17 +6892,17 @@ CREATE TABLE [edfi].[StudentCompetencyObjective]
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentCompetencyObjective_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentCompetencyObjective_ContentVersion] DEFAULT 0,
     [GradingPeriodGradingPeriod_DocumentId] bigint NOT NULL,
-    [GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] bigint NOT NULL,
+    [GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] int NOT NULL,
     [GradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) NOT NULL,
     [GradingPeriodGradingPeriod_SchoolId] bigint NOT NULL,
     [GradingPeriodGradingPeriod_SchoolYear] int NOT NULL,
     [ObjectiveCompetencyObjective_DocumentId] bigint NOT NULL,
     [ObjectiveCompetencyObjective_EducationOrganizationId] bigint NOT NULL,
     [ObjectiveCompetencyObjective_Objective] nvarchar(60) NOT NULL,
-    [ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [CompetencyLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [CompetencyLevelDescriptor_DescriptorId] int NOT NULL,
     [DiagnosticStatement] nvarchar(1024) NULL,
     CONSTRAINT [PK_StudentCompetencyObjective] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_StudentCompetencyObjective_NK] UNIQUE ([GradingPeriodGradingPeriod_DocumentId], [ObjectiveCompetencyObjective_DocumentId], [Student_DocumentId]),
@@ -6915,7 +6923,7 @@ CREATE TABLE [edfi].[StudentCompetencyObjectiveGeneralStudentProgramAssociation]
     [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_EducationOrganizationId] bigint NOT NULL,
     [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramEducationOrganizationId] bigint NOT NULL,
     [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramName] nvarchar(60) NOT NULL,
-    [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_StudentUniqueId] nvarchar(32) NOT NULL,
     CONSTRAINT [PK_StudentCompetencyObjectiveGeneralStudentProgramAssociation] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentCompetencyObjectiveGeneralStudentProgramAssociation_Ordinal_StudentCompetencyObjective_DocumentId] UNIQUE ([StudentCompetencyObjective_DocumentId], [Ordinal]),
@@ -6953,7 +6961,7 @@ CREATE TABLE [edfi].[StudentContactAssociation]
     [Contact_ContactUniqueId] nvarchar(32) NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [RelationDescriptor_DescriptorId] bigint NULL,
+    [RelationDescriptor_DescriptorId] int NULL,
     [ContactPriority] int NULL,
     [ContactRestrictions] nvarchar(250) NULL,
     [EmergencyContactStatus] bit NULL,
@@ -6977,7 +6985,7 @@ CREATE TABLE [edfi].[StudentDisciplineIncidentBehaviorAssociation]
     [DisciplineIncident_SchoolId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [BehaviorDescriptor_DescriptorId] bigint NOT NULL,
+    [BehaviorDescriptor_DescriptorId] int NOT NULL,
     [BehaviorDetailedDescription] nvarchar(1024) NULL,
     CONSTRAINT [PK_StudentDisciplineIncidentBehaviorAssociation] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_StudentDisciplineIncidentBehaviorAssociation_NK] UNIQUE ([BehaviorDescriptor_DescriptorId], [DisciplineIncident_DocumentId], [Student_DocumentId]),
@@ -6992,7 +7000,7 @@ CREATE TABLE [edfi].[StudentDisciplineIncidentBehaviorAssociationDisciplineIncid
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentDisciplineIncidentBehaviorAssociation_DocumentId] bigint NOT NULL,
-    [DisciplineIncidentParticipationCodeDescriptor_DescriptorId] bigint NOT NULL,
+    [DisciplineIncidentParticipationCodeDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StudentDisciplineIncidentBehaviorAssociationDisciplineIncidentParticipationCode] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentDisciplineIncidentBehaviorAssociationDisciplineIncidentParticipationCode_DisciplineIncidentParticipationCod_cf6fcb596a] UNIQUE ([StudentDisciplineIncidentBehaviorAssociation_DocumentId], [DisciplineIncidentParticipationCodeDescriptor_DescriptorId]),
     CONSTRAINT [UX_StudentDisciplineIncidentBehaviorAssociationDisciplineIncidentParticipationCode_Ordinal_StudentDisciplineIncidentB_96390d3c8f] UNIQUE ([StudentDisciplineIncidentBehaviorAssociation_DocumentId], [Ordinal])
@@ -7004,7 +7012,7 @@ CREATE TABLE [edfi].[StudentDisciplineIncidentBehaviorAssociationWeapon]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentDisciplineIncidentBehaviorAssociation_DocumentId] bigint NOT NULL,
-    [WeaponDescriptor_DescriptorId] bigint NOT NULL,
+    [WeaponDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StudentDisciplineIncidentBehaviorAssociationWeapon] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentDisciplineIncidentBehaviorAssociationWeapon_Ordinal_StudentDisciplineIncidentBehaviorAssociation_DocumentId] UNIQUE ([StudentDisciplineIncidentBehaviorAssociation_DocumentId], [Ordinal]),
     CONSTRAINT [UX_StudentDisciplineIncidentBehaviorAssociationWeapon_StudentDisciplineIncidentBehaviorAssociation_DocumentId_WeaponD_3caa35edb7] UNIQUE ([StudentDisciplineIncidentBehaviorAssociation_DocumentId], [WeaponDescriptor_DescriptorId])
@@ -7033,7 +7041,7 @@ CREATE TABLE [edfi].[StudentDisciplineIncidentNonOffenderAssociationDisciplineIn
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentDisciplineIncidentNonOffenderAssociation_DocumentId] bigint NOT NULL,
-    [DisciplineIncidentParticipationCodeDescriptor_DescriptorId] bigint NOT NULL,
+    [DisciplineIncidentParticipationCodeDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StudentDisciplineIncidentNonOffenderAssociationDisciplineIncidentParticipationCode] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentDisciplineIncidentNonOffenderAssociationDisciplineIncidentParticipationCode_DisciplineIncidentParticipation_e4f28c9e93] UNIQUE ([StudentDisciplineIncidentNonOffenderAssociation_DocumentId], [DisciplineIncidentParticipationCodeDescriptor_DescriptorId]),
     CONSTRAINT [UX_StudentDisciplineIncidentNonOffenderAssociationDisciplineIncidentParticipationCode_Ordinal_StudentDisciplineIncide_70425df271] UNIQUE ([StudentDisciplineIncidentNonOffenderAssociation_DocumentId], [Ordinal])
@@ -7062,7 +7070,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssessmentAccommodationGeneralA
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssessmentAccommodation_DocumentId] bigint NOT NULL,
-    [AccommodationDescriptor_DescriptorId] bigint NOT NULL,
+    [AccommodationDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StudentEducationOrganizationAssessmentAccommodationGeneralAccommodation] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentEducationOrganizationAssessmentAccommodationGeneralAccommodation_AccommodationDescriptor_DescriptorId_Stude_3dc6aa1b56] UNIQUE ([StudentEducationOrganizationAssessmentAccommodation_DocumentId], [AccommodationDescriptor_DescriptorId]),
     CONSTRAINT [UX_StudentEducationOrganizationAssessmentAccommodationGeneralAccommodation_Ordinal_StudentEducationOrganizationAssess_e9c1ecc1b8] UNIQUE ([StudentEducationOrganizationAssessmentAccommodation_DocumentId], [Ordinal])
@@ -7078,15 +7086,15 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociation]
     [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [BarrierToInternetAccessInResidenceDescriptor_DescriptorId] bigint NULL,
-    [InternetAccessTypeInResidenceDescriptor_DescriptorId] bigint NULL,
-    [InternetPerformanceInResidenceDescriptor_DescriptorId] bigint NULL,
-    [LimitedEnglishProficiencyDescriptor_DescriptorId] bigint NULL,
-    [PrimaryLearningDeviceAccessDescriptor_DescriptorId] bigint NULL,
-    [PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId] bigint NULL,
-    [PrimaryLearningDeviceProviderDescriptor_DescriptorId] bigint NULL,
-    [SexDescriptor_DescriptorId] bigint NULL,
-    [SupporterMilitaryConnectionDescriptor_DescriptorId] bigint NULL,
+    [BarrierToInternetAccessInResidenceDescriptor_DescriptorId] int NULL,
+    [InternetAccessTypeInResidenceDescriptor_DescriptorId] int NULL,
+    [InternetPerformanceInResidenceDescriptor_DescriptorId] int NULL,
+    [LimitedEnglishProficiencyDescriptor_DescriptorId] int NULL,
+    [PrimaryLearningDeviceAccessDescriptor_DescriptorId] int NULL,
+    [PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId] int NULL,
+    [PrimaryLearningDeviceProviderDescriptor_DescriptorId] int NULL,
+    [SexDescriptor_DescriptorId] int NULL,
+    [SupporterMilitaryConnectionDescriptor_DescriptorId] int NULL,
     [GenderIdentity] nvarchar(60) NULL,
     [HispanicLatinoEthnicity] bit NULL,
     [InternetAccessInResidence] bit NULL,
@@ -7105,9 +7113,9 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationAddress]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [LocaleDescriptor_DescriptorId] bigint NULL,
-    [StateAbbreviationDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [LocaleDescriptor_DescriptorId] int NULL,
+    [StateAbbreviationDescriptor_DescriptorId] int NOT NULL,
     [ApartmentRoomSuiteNumber] nvarchar(50) NULL,
     [BuildingSiteNumber] nvarchar(20) NULL,
     [City] nvarchar(30) NOT NULL,
@@ -7131,7 +7139,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationAncestryEthnicOrigin
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
-    [AncestryEthnicOriginDescriptor_DescriptorId] bigint NOT NULL,
+    [AncestryEthnicOriginDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StudentEducationOrganizationAssociationAncestryEthnicOrigin] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentEducationOrganizationAssociationAncestryEthnicOrigin_AncestryEthnicOriginDescriptor_DescriptorId_StudentEdu_82c4aa29b4] UNIQUE ([StudentEducationOrganizationAssociation_DocumentId], [AncestryEthnicOriginDescriptor_DescriptorId]),
     CONSTRAINT [UX_StudentEducationOrganizationAssociationAncestryEthnicOrigin_Ordinal_StudentEducationOrganizationAssociation_DocumentId] UNIQUE ([StudentEducationOrganizationAssociation_DocumentId], [Ordinal])
@@ -7145,8 +7153,8 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationCohortYear]
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
     [CohortYearSchoolYear_DocumentId] bigint NOT NULL,
     [CohortYearSchoolYear_SchoolYear] int NOT NULL,
-    [CohortYearTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [TermDescriptor_DescriptorId] bigint NULL,
+    [CohortYearTypeDescriptor_DescriptorId] int NOT NULL,
+    [TermDescriptor_DescriptorId] int NULL,
     CONSTRAINT [PK_StudentEducationOrganizationAssociationCohortYear] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentEducationOrganizationAssociationCohortYear_CohortYearSchoolYear_DocumentId_CohortYearTypeDescriptor_Descrip_33afeb7297] UNIQUE ([StudentEducationOrganizationAssociation_DocumentId], [CohortYearTypeDescriptor_DescriptorId], [CohortYearSchoolYear_DocumentId]),
     CONSTRAINT [UX_StudentEducationOrganizationAssociationCohortYear_Ordinal_StudentEducationOrganizationAssociation_DocumentId] UNIQUE ([StudentEducationOrganizationAssociation_DocumentId], [Ordinal]),
@@ -7159,8 +7167,8 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationDisability]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
-    [DisabilityDescriptor_DescriptorId] bigint NOT NULL,
-    [DisabilityDeterminationSourceTypeDescriptor_DescriptorId] bigint NULL,
+    [DisabilityDescriptor_DescriptorId] int NOT NULL,
+    [DisabilityDeterminationSourceTypeDescriptor_DescriptorId] int NULL,
     [DisabilityDiagnosis] nvarchar(80) NULL,
     [OrderOfDisability] int NULL,
     CONSTRAINT [PK_StudentEducationOrganizationAssociationDisability] PRIMARY KEY ([CollectionItemId]),
@@ -7177,7 +7185,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationDisplacedStudent]
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
     [DisplacedStudentCrisisEvent_DocumentId] bigint NOT NULL,
     [DisplacedStudentCrisisEvent_CrisisEventName] nvarchar(100) NOT NULL,
-    [DisplacedStudentStatusDescriptor_DescriptorId] bigint NOT NULL,
+    [DisplacedStudentStatusDescriptor_DescriptorId] int NOT NULL,
     [CrisisHomelessnessIndicator] bit NULL,
     [DisplacedStudentEndDate] date NULL,
     [DisplacedStudentStartDate] date NULL,
@@ -7193,7 +7201,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationElectronicMail]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
-    [ElectronicMailTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ElectronicMailTypeDescriptor_DescriptorId] int NOT NULL,
     [DoNotPublishIndicator] bit NULL,
     [ElectronicMailAddress] nvarchar(128) NOT NULL,
     [PrimaryEmailAddressIndicator] bit NULL,
@@ -7208,8 +7216,8 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationInternationalAddress
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
-    [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [CountryDescriptor_DescriptorId] bigint NOT NULL,
+    [AddressTypeDescriptor_DescriptorId] int NOT NULL,
+    [CountryDescriptor_DescriptorId] int NOT NULL,
     [AddressLine1] nvarchar(150) NOT NULL,
     [AddressLine2] nvarchar(150) NULL,
     [AddressLine3] nvarchar(150) NULL,
@@ -7229,7 +7237,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationLanguage]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
-    [LanguageDescriptor_DescriptorId] bigint NOT NULL,
+    [LanguageDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StudentEducationOrganizationAssociationLanguage] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentEducationOrganizationAssociationLanguage_CollectionItemId_StudentEducationOrganizationAssociation_DocumentId] UNIQUE ([CollectionItemId], [StudentEducationOrganizationAssociation_DocumentId]),
     CONSTRAINT [UX_StudentEducationOrganizationAssociationLanguage_LanguageDescriptor_DescriptorId_StudentEducationOrganizationAssoci_b58e723050] UNIQUE ([StudentEducationOrganizationAssociation_DocumentId], [LanguageDescriptor_DescriptorId]),
@@ -7242,7 +7250,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationRace]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
-    [RaceDescriptor_DescriptorId] bigint NOT NULL,
+    [RaceDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StudentEducationOrganizationAssociationRace] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentEducationOrganizationAssociationRace_Ordinal_StudentEducationOrganizationAssociation_DocumentId] UNIQUE ([StudentEducationOrganizationAssociation_DocumentId], [Ordinal]),
     CONSTRAINT [UX_StudentEducationOrganizationAssociationRace_RaceDescriptor_DescriptorId_StudentEducationOrganizationAssociation_DocumentId] UNIQUE ([StudentEducationOrganizationAssociation_DocumentId], [RaceDescriptor_DescriptorId])
@@ -7254,7 +7262,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationStudentCharacteristi
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
-    [StudentCharacteristicDescriptor_DescriptorId] bigint NOT NULL,
+    [StudentCharacteristicDescriptor_DescriptorId] int NOT NULL,
     [DesignatedBy] nvarchar(60) NULL,
     CONSTRAINT [PK_StudentEducationOrganizationAssociationStudentCharacteristic] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentEducationOrganizationAssociationStudentCharacteristic_CollectionItemId_StudentEducationOrganizationAssociat_0a5d1dc795] UNIQUE ([CollectionItemId], [StudentEducationOrganizationAssociation_DocumentId]),
@@ -7268,7 +7276,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationStudentIdentificatio
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
-    [StudentIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
+    [StudentIdentificationSystemDescriptor_DescriptorId] int NOT NULL,
     [AssigningOrganizationIdentificationCode] nvarchar(60) NOT NULL,
     [IdentificationCode] nvarchar(60) NOT NULL,
     CONSTRAINT [PK_StudentEducationOrganizationAssociationStudentIdentificationCode] PRIMARY KEY ([CollectionItemId]),
@@ -7298,7 +7306,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationTelephone]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
-    [TelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [TelephoneNumberTypeDescriptor_DescriptorId] int NOT NULL,
     [DoNotPublishIndicator] bit NULL,
     [OrderOfPriority] int NULL,
     [TelephoneNumber] nvarchar(24) NOT NULL,
@@ -7314,7 +7322,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationTribalAffiliation]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
-    [TribalAffiliationDescriptor_DescriptorId] bigint NOT NULL,
+    [TribalAffiliationDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StudentEducationOrganizationAssociationTribalAffiliation] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentEducationOrganizationAssociationTribalAffiliation_Ordinal_StudentEducationOrganizationAssociation_DocumentId] UNIQUE ([StudentEducationOrganizationAssociation_DocumentId], [Ordinal]),
     CONSTRAINT [UX_StudentEducationOrganizationAssociationTribalAffiliation_StudentEducationOrganizationAssociation_DocumentId_Tribal_8f8e9cac9d] UNIQUE ([StudentEducationOrganizationAssociation_DocumentId], [TribalAffiliationDescriptor_DescriptorId])
@@ -7341,7 +7349,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationDisabilityDesignatio
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
-    [DisabilityDesignationDescriptor_DescriptorId] bigint NOT NULL,
+    [DisabilityDesignationDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StudentEducationOrganizationAssociationDisabilityDesignation] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentEducationOrganizationAssociationDisabilityDesignation_Ordinal_ParentCollectionItemId] UNIQUE ([ParentCollectionItemId], [Ordinal]),
     CONSTRAINT [UX_StudentEducationOrganizationAssociationDisabilityDesignation_ParentCollectionItemId_DisabilityDesignationDescripto_0c3481bbdd] UNIQUE ([ParentCollectionItemId], [DisabilityDesignationDescriptor_DescriptorId])
@@ -7354,7 +7362,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationLanguageUs]
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
-    [LanguageUseDescriptor_DescriptorId] bigint NOT NULL,
+    [LanguageUseDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StudentEducationOrganizationAssociationLanguageUs] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentEducationOrganizationAssociationLanguageUs_Ordinal_ParentCollectionItemId] UNIQUE ([ParentCollectionItemId], [Ordinal]),
     CONSTRAINT [UX_StudentEducationOrganizationAssociationLanguageUs_ParentCollectionItemId_LanguageUseDescriptor_DescriptorId] UNIQUE ([ParentCollectionItemId], [LanguageUseDescriptor_DescriptorId])
@@ -7398,7 +7406,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationResponsibilityAssociation]
     [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [ResponsibilityDescriptor_DescriptorId] bigint NOT NULL,
+    [ResponsibilityDescriptor_DescriptorId] int NOT NULL,
     [BeginDate] date NOT NULL,
     [EndDate] date NULL,
     CONSTRAINT [PK_StudentEducationOrganizationResponsibilityAssociation] PRIMARY KEY ([DocumentId]),
@@ -7418,9 +7426,9 @@ CREATE TABLE [edfi].[StudentGradebookEntry]
     [GradebookEntry_Namespace] nvarchar(255) NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [AssignmentLateStatusDescriptor_DescriptorId] bigint NULL,
-    [CompetencyLevelDescriptor_DescriptorId] bigint NULL,
-    [SubmissionStatusDescriptor_DescriptorId] bigint NULL,
+    [AssignmentLateStatusDescriptor_DescriptorId] int NULL,
+    [CompetencyLevelDescriptor_DescriptorId] int NULL,
+    [SubmissionStatusDescriptor_DescriptorId] int NULL,
     [DateFulfilled] date NULL,
     [DiagnosticStatement] nvarchar(1024) NULL,
     [LetterGradeEarned] nvarchar(20) NULL,
@@ -7443,7 +7451,7 @@ CREATE TABLE [edfi].[StudentHealth]
     [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [NonMedicalImmunizationExemptionDescriptor_DescriptorId] bigint NULL,
+    [NonMedicalImmunizationExemptionDescriptor_DescriptorId] int NULL,
     [AsOfDate] date NOT NULL,
     [NonMedicalImmunizationExemptionDate] date NULL,
     CONSTRAINT [PK_StudentHealth] PRIMARY KEY ([DocumentId]),
@@ -7471,7 +7479,7 @@ CREATE TABLE [edfi].[StudentHealthRequiredImmunization]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentHealth_DocumentId] bigint NOT NULL,
-    [ImmunizationTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ImmunizationTypeDescriptor_DescriptorId] int NOT NULL,
     [MedicalExemption] nvarchar(1024) NULL,
     [MedicalExemptionDate] date NULL,
     CONSTRAINT [PK_StudentHealthRequiredImmunization] PRIMARY KEY ([CollectionItemId]),
@@ -7517,11 +7525,11 @@ CREATE TABLE [edfi].[StudentHomelessProgramAssociation]
     [ProgramProgram_DocumentId] bigint NOT NULL,
     [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
-    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [HomelessPrimaryNighttimeResidenceDescriptor_DescriptorId] bigint NULL,
-    [ReasonExitedDescriptor_DescriptorId] bigint NULL,
+    [HomelessPrimaryNighttimeResidenceDescriptor_DescriptorId] int NULL,
+    [ReasonExitedDescriptor_DescriptorId] int NULL,
     [AwaitingFosterCare] bit NULL,
     [BeginDate] date NOT NULL,
     [EndDate] date NULL,
@@ -7540,7 +7548,7 @@ CREATE TABLE [edfi].[StudentHomelessProgramAssociationHomelessProgramService]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentHomelessProgramAssociation_DocumentId] bigint NOT NULL,
-    [HomelessProgramServiceDescriptor_DescriptorId] bigint NOT NULL,
+    [HomelessProgramServiceDescriptor_DescriptorId] int NOT NULL,
     [PrimaryIndicator] bit NULL,
     [ServiceBeginDate] date NULL,
     [ServiceEndDate] date NULL,
@@ -7555,7 +7563,7 @@ CREATE TABLE [edfi].[StudentHomelessProgramAssociationProgramParticipationStatus
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentHomelessProgramAssociation_DocumentId] bigint NOT NULL,
-    [ParticipationStatusDescriptor_DescriptorId] bigint NOT NULL,
+    [ParticipationStatusDescriptor_DescriptorId] int NOT NULL,
     [DesignatedBy] nvarchar(60) NULL,
     [StatusBeginDate] date NOT NULL,
     [StatusEndDate] date NULL,
@@ -7593,10 +7601,10 @@ CREATE TABLE [edfi].[StudentInterventionAssociationInterventionEffectiveness]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentInterventionAssociation_DocumentId] bigint NOT NULL,
-    [DiagnosisDescriptor_DescriptorId] bigint NOT NULL,
-    [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
-    [InterventionEffectivenessRatingDescriptor_DescriptorId] bigint NOT NULL,
-    [PopulationServedDescriptor_DescriptorId] bigint NOT NULL,
+    [DiagnosisDescriptor_DescriptorId] int NOT NULL,
+    [GradeLevelDescriptor_DescriptorId] int NOT NULL,
+    [InterventionEffectivenessRatingDescriptor_DescriptorId] int NOT NULL,
+    [PopulationServedDescriptor_DescriptorId] int NOT NULL,
     [ImprovementIndex] int NULL,
     CONSTRAINT [PK_StudentInterventionAssociationInterventionEffectiveness] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentInterventionAssociationInterventionEffectiveness_DiagnosisDescriptor_DescriptorId_GradeLevelDescriptor_Desc_d2f0f8aa0b] UNIQUE ([StudentInterventionAssociation_DocumentId], [DiagnosisDescriptor_DescriptorId], [GradeLevelDescriptor_DescriptorId], [PopulationServedDescriptor_DescriptorId]),
@@ -7614,8 +7622,8 @@ CREATE TABLE [edfi].[StudentInterventionAttendanceEvent]
     [Intervention_InterventionIdentificationCode] nvarchar(60) NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [AttendanceEventCategoryDescriptor_DescriptorId] bigint NOT NULL,
-    [EducationalEnvironmentDescriptor_DescriptorId] bigint NULL,
+    [AttendanceEventCategoryDescriptor_DescriptorId] int NOT NULL,
+    [EducationalEnvironmentDescriptor_DescriptorId] int NULL,
     [AttendanceEventReason] nvarchar(255) NULL,
     [EventDate] date NOT NULL,
     [EventDuration] decimal(3,2) NULL,
@@ -7637,10 +7645,10 @@ CREATE TABLE [edfi].[StudentLanguageInstructionProgramAssociation]
     [ProgramProgram_DocumentId] bigint NOT NULL,
     [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
-    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [ReasonExitedDescriptor_DescriptorId] bigint NULL,
+    [ReasonExitedDescriptor_DescriptorId] int NULL,
     [BeginDate] date NOT NULL,
     [Dosage] int NULL,
     [EndDate] date NULL,
@@ -7661,10 +7669,10 @@ CREATE TABLE [edfi].[StudentLanguageInstructionProgramAssociationEnglishLanguage
     [StudentLanguageInstructionProgramAssociation_DocumentId] bigint NOT NULL,
     [EnglishLanguageProficiencyAssessmentSchoolYear_DocumentId] bigint NOT NULL,
     [EnglishLanguageProficiencyAssessmentSchoolYear_SchoolYear] int NOT NULL,
-    [MonitoredDescriptor_DescriptorId] bigint NULL,
-    [ParticipationDescriptor_DescriptorId] bigint NULL,
-    [ProficiencyDescriptor_DescriptorId] bigint NULL,
-    [ProgressDescriptor_DescriptorId] bigint NULL,
+    [MonitoredDescriptor_DescriptorId] int NULL,
+    [ParticipationDescriptor_DescriptorId] int NULL,
+    [ProficiencyDescriptor_DescriptorId] int NULL,
+    [ProgressDescriptor_DescriptorId] int NULL,
     CONSTRAINT [PK_StudentLanguageInstructionProgramAssociationEnglishLanguageProficiencyAssessment] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentLanguageInstructionProgramAssociationEnglishLanguageProficiencyAssessment_EnglishLanguageProficiencyAssessm_268944e25b] UNIQUE ([StudentLanguageInstructionProgramAssociation_DocumentId], [EnglishLanguageProficiencyAssessmentSchoolYear_DocumentId]),
     CONSTRAINT [UX_StudentLanguageInstructionProgramAssociationEnglishLanguageProficiencyAssessment_Ordinal_StudentLanguageInstructio_f0e8c9857b] UNIQUE ([StudentLanguageInstructionProgramAssociation_DocumentId], [Ordinal]),
@@ -7677,7 +7685,7 @@ CREATE TABLE [edfi].[StudentLanguageInstructionProgramAssociationLanguageInstruc
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentLanguageInstructionProgramAssociation_DocumentId] bigint NOT NULL,
-    [LanguageInstructionProgramServiceDescriptor_DescriptorId] bigint NOT NULL,
+    [LanguageInstructionProgramServiceDescriptor_DescriptorId] int NOT NULL,
     [PrimaryIndicator] bit NULL,
     [ServiceBeginDate] date NULL,
     [ServiceEndDate] date NULL,
@@ -7692,7 +7700,7 @@ CREATE TABLE [edfi].[StudentLanguageInstructionProgramAssociationProgramParticip
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentLanguageInstructionProgramAssociation_DocumentId] bigint NOT NULL,
-    [ParticipationStatusDescriptor_DescriptorId] bigint NOT NULL,
+    [ParticipationStatusDescriptor_DescriptorId] int NOT NULL,
     [DesignatedBy] nvarchar(60) NULL,
     [StatusBeginDate] date NOT NULL,
     [StatusEndDate] date NULL,
@@ -7712,11 +7720,11 @@ CREATE TABLE [edfi].[StudentMigrantEducationProgramAssociation]
     [ProgramProgram_DocumentId] bigint NOT NULL,
     [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
-    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [ContinuationOfServicesReasonDescriptor_DescriptorId] bigint NULL,
-    [ReasonExitedDescriptor_DescriptorId] bigint NULL,
+    [ContinuationOfServicesReasonDescriptor_DescriptorId] int NULL,
+    [ReasonExitedDescriptor_DescriptorId] int NULL,
     [BeginDate] date NOT NULL,
     [EligibilityExpirationDate] date NULL,
     [EndDate] date NULL,
@@ -7741,7 +7749,7 @@ CREATE TABLE [edfi].[StudentMigrantEducationProgramAssociationMigrantEducationPr
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentMigrantEducationProgramAssociation_DocumentId] bigint NOT NULL,
-    [MigrantEducationProgramServiceDescriptor_DescriptorId] bigint NOT NULL,
+    [MigrantEducationProgramServiceDescriptor_DescriptorId] int NOT NULL,
     [PrimaryIndicator] bit NULL,
     [ServiceBeginDate] date NULL,
     [ServiceEndDate] date NULL,
@@ -7756,7 +7764,7 @@ CREATE TABLE [edfi].[StudentMigrantEducationProgramAssociationProgramParticipati
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentMigrantEducationProgramAssociation_DocumentId] bigint NOT NULL,
-    [ParticipationStatusDescriptor_DescriptorId] bigint NOT NULL,
+    [ParticipationStatusDescriptor_DescriptorId] int NOT NULL,
     [DesignatedBy] nvarchar(60) NULL,
     [StatusBeginDate] date NOT NULL,
     [StatusEndDate] date NULL,
@@ -7776,13 +7784,13 @@ CREATE TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociation]
     [ProgramProgram_DocumentId] bigint NOT NULL,
     [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
-    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [ElaProgressLevelDescriptor_DescriptorId] bigint NULL,
-    [MathematicsProgressLevelDescriptor_DescriptorId] bigint NULL,
-    [NeglectedOrDelinquentProgramDescriptor_DescriptorId] bigint NULL,
-    [ReasonExitedDescriptor_DescriptorId] bigint NULL,
+    [ElaProgressLevelDescriptor_DescriptorId] int NULL,
+    [MathematicsProgressLevelDescriptor_DescriptorId] int NULL,
+    [NeglectedOrDelinquentProgramDescriptor_DescriptorId] int NULL,
+    [ReasonExitedDescriptor_DescriptorId] int NULL,
     [BeginDate] date NOT NULL,
     [EndDate] date NULL,
     [ServedOutsideOfRegularSession] bit NULL,
@@ -7799,7 +7807,7 @@ CREATE TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociationNeglectedOrDe
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentNeglectedOrDelinquentProgramAssociation_DocumentId] bigint NOT NULL,
-    [NeglectedOrDelinquentProgramServiceDescriptor_DescriptorId] bigint NOT NULL,
+    [NeglectedOrDelinquentProgramServiceDescriptor_DescriptorId] int NOT NULL,
     [PrimaryIndicator] bit NULL,
     [ServiceBeginDate] date NULL,
     [ServiceEndDate] date NULL,
@@ -7814,7 +7822,7 @@ CREATE TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociationProgramPartic
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentNeglectedOrDelinquentProgramAssociation_DocumentId] bigint NOT NULL,
-    [ParticipationStatusDescriptor_DescriptorId] bigint NOT NULL,
+    [ParticipationStatusDescriptor_DescriptorId] int NOT NULL,
     [DesignatedBy] nvarchar(60) NULL,
     [StatusBeginDate] date NOT NULL,
     [StatusEndDate] date NULL,
@@ -7834,10 +7842,10 @@ CREATE TABLE [edfi].[StudentProgramAssociation]
     [ProgramProgram_DocumentId] bigint NOT NULL,
     [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
-    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [ReasonExitedDescriptor_DescriptorId] bigint NULL,
+    [ReasonExitedDescriptor_DescriptorId] int NULL,
     [BeginDate] date NOT NULL,
     [EndDate] date NULL,
     [ServedOutsideOfRegularSession] bit NULL,
@@ -7854,7 +7862,7 @@ CREATE TABLE [edfi].[StudentProgramAssociationProgramParticipationStatus]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentProgramAssociation_DocumentId] bigint NOT NULL,
-    [ParticipationStatusDescriptor_DescriptorId] bigint NOT NULL,
+    [ParticipationStatusDescriptor_DescriptorId] int NOT NULL,
     [DesignatedBy] nvarchar(60) NULL,
     [StatusBeginDate] date NOT NULL,
     [StatusEndDate] date NULL,
@@ -7869,7 +7877,7 @@ CREATE TABLE [edfi].[StudentProgramAssociationService]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentProgramAssociation_DocumentId] bigint NOT NULL,
-    [ServiceDescriptor_DescriptorId] bigint NOT NULL,
+    [ServiceDescriptor_DescriptorId] int NOT NULL,
     [PrimaryIndicator] bit NULL,
     [ServiceBeginDate] date NULL,
     [ServiceEndDate] date NULL,
@@ -7889,11 +7897,11 @@ CREATE TABLE [edfi].[StudentProgramAttendanceEvent]
     [ProgramProgram_DocumentId] bigint NOT NULL,
     [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
-    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [AttendanceEventCategoryDescriptor_DescriptorId] bigint NOT NULL,
-    [EducationalEnvironmentDescriptor_DescriptorId] bigint NULL,
+    [AttendanceEventCategoryDescriptor_DescriptorId] int NOT NULL,
+    [EducationalEnvironmentDescriptor_DescriptorId] int NULL,
     [AttendanceEventReason] nvarchar(255) NULL,
     [EventDate] date NOT NULL,
     [EventDuration] decimal(3,2) NULL,
@@ -7914,17 +7922,17 @@ CREATE TABLE [edfi].[StudentProgramEvaluation]
     [EducationOrganization_DocumentId] bigint NULL,
     [EducationOrganization_EducationOrganizationId] bigint NULL,
     [ProgramEvaluation_DocumentId] bigint NOT NULL,
-    [ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] int NOT NULL,
     [ProgramEvaluation_ProgramEvaluationTitle] nvarchar(50) NOT NULL,
-    [ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] int NOT NULL,
     [ProgramEvaluation_ProgramEducationOrganizationId] bigint NOT NULL,
     [ProgramEvaluation_ProgramName] nvarchar(60) NOT NULL,
-    [ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [StaffEvaluatorStaff_DocumentId] bigint NULL,
     [StaffEvaluatorStaff_StaffUniqueId] nvarchar(32) NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [SummaryEvaluationRatingLevelDescriptor_DescriptorId] bigint NULL,
+    [SummaryEvaluationRatingLevelDescriptor_DescriptorId] int NULL,
     [EvaluationDate] date NOT NULL,
     [EvaluationDuration] int NULL,
     [SummaryEvaluationComment] nvarchar(1024) NULL,
@@ -7958,12 +7966,12 @@ CREATE TABLE [edfi].[StudentProgramEvaluationStudentEvaluationElement]
     [StudentEvaluationElementProgramEvaluationElement_DocumentId] bigint NOT NULL,
     [StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationElementTitle] nvarchar(50) NOT NULL,
     [StudentEvaluationElementProgramEvaluationElement_ProgramEducationOrganizationId] bigint NOT NULL,
-    [StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] bigint NOT NULL,
+    [StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] int NOT NULL,
     [StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationTitle] nvarchar(50) NOT NULL,
-    [StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] int NOT NULL,
     [StudentEvaluationElementProgramEvaluationElement_ProgramName] nvarchar(60) NOT NULL,
-    [StudentEvaluationElementProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [EvaluationElementRatingLevelDescriptor_DescriptorId] bigint NULL,
+    [StudentEvaluationElementProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
+    [EvaluationElementRatingLevelDescriptor_DescriptorId] int NULL,
     [EvaluationElementNumericRating] decimal(6,3) NULL,
     CONSTRAINT [PK_StudentProgramEvaluationStudentEvaluationElement] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentProgramEvaluationStudentEvaluationElement_Ordinal_StudentProgramEvaluation_DocumentId] UNIQUE ([StudentProgramEvaluation_DocumentId], [Ordinal]),
@@ -7980,12 +7988,12 @@ CREATE TABLE [edfi].[StudentProgramEvaluationStudentEvaluationObjective]
     [StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId] bigint NOT NULL,
     [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] nvarchar(50) NOT NULL,
     [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEducationOrganizationId] bigint NOT NULL,
-    [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationPeriodDescriptor_DescriptorId] bigint NOT NULL,
+    [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationPeriodDescriptor_DescriptorId] int NOT NULL,
     [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationTitle] nvarchar(50) NOT NULL,
-    [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationTypeDescriptor_DescriptorId] int NOT NULL,
     [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramName] nvarchar(60) NOT NULL,
-    [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [EvaluationObjectiveRatingLevelDescriptor_DescriptorId] bigint NULL,
+    [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
+    [EvaluationObjectiveRatingLevelDescriptor_DescriptorId] int NULL,
     [EvaluationObjectiveNumericRating] decimal(6,3) NULL,
     CONSTRAINT [PK_StudentProgramEvaluationStudentEvaluationObjective] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentProgramEvaluationStudentEvaluationObjective_Ordinal_StudentProgramEvaluation_DocumentId] UNIQUE ([StudentProgramEvaluation_DocumentId], [Ordinal]),
@@ -8009,7 +8017,7 @@ CREATE TABLE [edfi].[StudentSchoolAssociation]
     [ClassOfSchoolYear_ClassOfSchoolYear] int NULL,
     [GraduationPlan_DocumentId] bigint NULL,
     [GraduationPlan_EducationOrganizationId] bigint NULL,
-    [GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] bigint NULL,
+    [GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] int NULL,
     [GraduationPlan_GraduationSchoolYear] int NULL,
     [NextYearSchool_DocumentId] bigint NULL,
     [NextYearSchool_SchoolId] bigint NULL,
@@ -8019,14 +8027,14 @@ CREATE TABLE [edfi].[StudentSchoolAssociation]
     [School_SchoolId] AS (CASE WHEN [School_DocumentId] IS NULL THEN NULL ELSE [SchoolId_Unified] END) PERSISTED,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [EnrollmentTypeDescriptor_DescriptorId] bigint NULL,
-    [EntryGradeLevelDescriptor_DescriptorId] bigint NOT NULL,
-    [EntryGradeLevelReasonDescriptor_DescriptorId] bigint NULL,
-    [EntryTypeDescriptor_DescriptorId] bigint NULL,
-    [ExitWithdrawTypeDescriptor_DescriptorId] bigint NULL,
-    [NextYearGradeLevelDescriptor_DescriptorId] bigint NULL,
-    [ResidencyStatusDescriptor_DescriptorId] bigint NULL,
-    [SchoolChoiceBasisDescriptor_DescriptorId] bigint NULL,
+    [EnrollmentTypeDescriptor_DescriptorId] int NULL,
+    [EntryGradeLevelDescriptor_DescriptorId] int NOT NULL,
+    [EntryGradeLevelReasonDescriptor_DescriptorId] int NULL,
+    [EntryTypeDescriptor_DescriptorId] int NULL,
+    [ExitWithdrawTypeDescriptor_DescriptorId] int NULL,
+    [NextYearGradeLevelDescriptor_DescriptorId] int NULL,
+    [ResidencyStatusDescriptor_DescriptorId] int NULL,
+    [SchoolChoiceBasisDescriptor_DescriptorId] int NULL,
     [EmployedWhileEnrolled] bit NULL,
     [EntryDate] date NOT NULL,
     [ExitWithdrawDate] date NULL,
@@ -8056,7 +8064,7 @@ CREATE TABLE [edfi].[StudentSchoolAssociationAlternativeGraduationPlan]
     [StudentSchoolAssociation_DocumentId] bigint NOT NULL,
     [AlternativeGraduationPlan_DocumentId] bigint NOT NULL,
     [AlternativeGraduationPlan_EducationOrganizationId] bigint NOT NULL,
-    [AlternativeGraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [AlternativeGraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] int NOT NULL,
     [AlternativeGraduationPlan_GraduationSchoolYear] int NOT NULL,
     CONSTRAINT [PK_StudentSchoolAssociationAlternativeGraduationPlan] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentSchoolAssociationAlternativeGraduationPlan_AlternativeGraduationPlan_DocumentId_StudentSchoolAssociation_DocumentId] UNIQUE ([StudentSchoolAssociation_DocumentId], [AlternativeGraduationPlan_DocumentId]),
@@ -8070,7 +8078,7 @@ CREATE TABLE [edfi].[StudentSchoolAssociationEducationPlan]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentSchoolAssociation_DocumentId] bigint NOT NULL,
-    [EducationPlanDescriptor_DescriptorId] bigint NOT NULL,
+    [EducationPlanDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StudentSchoolAssociationEducationPlan] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentSchoolAssociationEducationPlan_EducationPlanDescriptor_DescriptorId_StudentSchoolAssociation_DocumentId] UNIQUE ([StudentSchoolAssociation_DocumentId], [EducationPlanDescriptor_DescriptorId]),
     CONSTRAINT [UX_StudentSchoolAssociationEducationPlan_Ordinal_StudentSchoolAssociation_DocumentId] UNIQUE ([StudentSchoolAssociation_DocumentId], [Ordinal])
@@ -8091,8 +8099,8 @@ CREATE TABLE [edfi].[StudentSchoolAttendanceEvent]
     [Session_SessionName] nvarchar(60) NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [AttendanceEventCategoryDescriptor_DescriptorId] bigint NOT NULL,
-    [EducationalEnvironmentDescriptor_DescriptorId] bigint NULL,
+    [AttendanceEventCategoryDescriptor_DescriptorId] int NOT NULL,
+    [EducationalEnvironmentDescriptor_DescriptorId] int NULL,
     [ArrivalTime] time(7) NULL,
     [AttendanceEventReason] nvarchar(255) NULL,
     [DepartureTime] time(7) NULL,
@@ -8117,10 +8125,10 @@ CREATE TABLE [edfi].[StudentSchoolFoodServiceProgramAssociation]
     [ProgramProgram_DocumentId] bigint NOT NULL,
     [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
-    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [ReasonExitedDescriptor_DescriptorId] bigint NULL,
+    [ReasonExitedDescriptor_DescriptorId] int NULL,
     [BeginDate] date NOT NULL,
     [DirectCertification] bit NULL,
     [EndDate] date NULL,
@@ -8138,7 +8146,7 @@ CREATE TABLE [edfi].[StudentSchoolFoodServiceProgramAssociationProgramParticipat
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentSchoolFoodServiceProgramAssociation_DocumentId] bigint NOT NULL,
-    [ParticipationStatusDescriptor_DescriptorId] bigint NOT NULL,
+    [ParticipationStatusDescriptor_DescriptorId] int NOT NULL,
     [DesignatedBy] nvarchar(60) NULL,
     [StatusBeginDate] date NOT NULL,
     [StatusEndDate] date NULL,
@@ -8153,7 +8161,7 @@ CREATE TABLE [edfi].[StudentSchoolFoodServiceProgramAssociationSchoolFoodService
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentSchoolFoodServiceProgramAssociation_DocumentId] bigint NOT NULL,
-    [SchoolFoodServiceProgramServiceDescriptor_DescriptorId] bigint NOT NULL,
+    [SchoolFoodServiceProgramServiceDescriptor_DescriptorId] int NOT NULL,
     [PrimaryIndicator] bit NULL,
     [ServiceBeginDate] date NULL,
     [ServiceEndDate] date NULL,
@@ -8173,11 +8181,11 @@ CREATE TABLE [edfi].[StudentSection504ProgramAssociation]
     [ProgramProgram_DocumentId] bigint NOT NULL,
     [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
-    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [ReasonExitedDescriptor_DescriptorId] bigint NULL,
-    [Section504DisabilityDescriptor_DescriptorId] bigint NULL,
+    [ReasonExitedDescriptor_DescriptorId] int NULL,
+    [Section504DisabilityDescriptor_DescriptorId] int NULL,
     [AccommodationPlan] bit NULL,
     [BeginDate] date NOT NULL,
     [EndDate] date NULL,
@@ -8198,7 +8206,7 @@ CREATE TABLE [edfi].[StudentSection504ProgramAssociationProgramParticipationStat
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentSection504ProgramAssociation_DocumentId] bigint NOT NULL,
-    [ParticipationStatusDescriptor_DescriptorId] bigint NOT NULL,
+    [ParticipationStatusDescriptor_DescriptorId] int NOT NULL,
     [DesignatedBy] nvarchar(60) NULL,
     [StatusBeginDate] date NOT NULL,
     [StatusEndDate] date NULL,
@@ -8223,10 +8231,10 @@ CREATE TABLE [edfi].[StudentSectionAssociation]
     [Section_SectionIdentifier] nvarchar(255) NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [AttemptStatusDescriptor_DescriptorId] bigint NULL,
-    [DualCreditInstitutionDescriptor_DescriptorId] bigint NULL,
-    [DualCreditTypeDescriptor_DescriptorId] bigint NULL,
-    [RepeatIdentifierDescriptor_DescriptorId] bigint NULL,
+    [AttemptStatusDescriptor_DescriptorId] int NULL,
+    [DualCreditInstitutionDescriptor_DescriptorId] int NULL,
+    [DualCreditTypeDescriptor_DescriptorId] int NULL,
+    [RepeatIdentifierDescriptor_DescriptorId] int NULL,
     [BeginDate] date NOT NULL,
     [DualCreditIndicator] bit NULL,
     [DualHighSchoolCreditIndicator] bit NULL,
@@ -8250,7 +8258,7 @@ CREATE TABLE [edfi].[StudentSectionAssociationProgram]
     [Program_DocumentId] bigint NOT NULL,
     [Program_EducationOrganizationId] bigint NOT NULL,
     [Program_ProgramName] nvarchar(60) NOT NULL,
-    [Program_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [Program_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StudentSectionAssociationProgram] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentSectionAssociationProgram_Ordinal_StudentSectionAssociation_DocumentId] UNIQUE ([StudentSectionAssociation_DocumentId], [Ordinal]),
     CONSTRAINT [UX_StudentSectionAssociationProgram_Program_DocumentId_StudentSectionAssociation_DocumentId] UNIQUE ([StudentSectionAssociation_DocumentId], [Program_DocumentId]),
@@ -8271,8 +8279,8 @@ CREATE TABLE [edfi].[StudentSectionAttendanceEvent]
     [Section_SectionIdentifier] nvarchar(255) NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [AttendanceEventCategoryDescriptor_DescriptorId] bigint NOT NULL,
-    [EducationalEnvironmentDescriptor_DescriptorId] bigint NULL,
+    [AttendanceEventCategoryDescriptor_DescriptorId] int NOT NULL,
+    [EducationalEnvironmentDescriptor_DescriptorId] int NULL,
     [ArrivalTime] time(7) NULL,
     [AttendanceEventReason] nvarchar(255) NULL,
     [DepartureTime] time(7) NULL,
@@ -8311,12 +8319,12 @@ CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociation]
     [ProgramProgram_DocumentId] bigint NOT NULL,
     [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
-    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [ReasonExitedDescriptor_DescriptorId] bigint NULL,
-    [SpecialEducationExitReasonDescriptor_DescriptorId] bigint NULL,
-    [SpecialEducationSettingDescriptor_DescriptorId] bigint NULL,
+    [ReasonExitedDescriptor_DescriptorId] int NULL,
+    [SpecialEducationExitReasonDescriptor_DescriptorId] int NULL,
+    [SpecialEducationSettingDescriptor_DescriptorId] int NULL,
     [BeginDate] date NOT NULL,
     [EndDate] date NULL,
     [IdeaEligibility] bit NULL,
@@ -8346,8 +8354,8 @@ CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociationDisability]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentSpecialEducationProgramAssociation_DocumentId] bigint NOT NULL,
-    [DisabilityDescriptor_DescriptorId] bigint NOT NULL,
-    [DisabilityDeterminationSourceTypeDescriptor_DescriptorId] bigint NULL,
+    [DisabilityDescriptor_DescriptorId] int NOT NULL,
+    [DisabilityDeterminationSourceTypeDescriptor_DescriptorId] int NULL,
     [DisabilityDiagnosis] nvarchar(80) NULL,
     [OrderOfDisability] int NULL,
     CONSTRAINT [PK_StudentSpecialEducationProgramAssociationDisability] PRIMARY KEY ([CollectionItemId]),
@@ -8362,7 +8370,7 @@ CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociationProgramParticipati
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentSpecialEducationProgramAssociation_DocumentId] bigint NOT NULL,
-    [ParticipationStatusDescriptor_DescriptorId] bigint NOT NULL,
+    [ParticipationStatusDescriptor_DescriptorId] int NOT NULL,
     [DesignatedBy] nvarchar(60) NULL,
     [StatusBeginDate] date NOT NULL,
     [StatusEndDate] date NULL,
@@ -8392,7 +8400,7 @@ CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociationSpecialEducationPr
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentSpecialEducationProgramAssociation_DocumentId] bigint NOT NULL,
-    [SpecialEducationProgramServiceDescriptor_DescriptorId] bigint NOT NULL,
+    [SpecialEducationProgramServiceDescriptor_DescriptorId] int NOT NULL,
     [PrimaryIndicator] bit NULL,
     [ServiceBeginDate] date NULL,
     [ServiceEndDate] date NULL,
@@ -8409,7 +8417,7 @@ CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociationDisabilityDesignat
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [StudentSpecialEducationProgramAssociation_DocumentId] bigint NOT NULL,
-    [DisabilityDesignationDescriptor_DescriptorId] bigint NOT NULL,
+    [DisabilityDesignationDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StudentSpecialEducationProgramAssociationDisabilityDesignation] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentSpecialEducationProgramAssociationDisabilityDesignation_Ordinal_ParentCollectionItemId] UNIQUE ([ParentCollectionItemId], [Ordinal]),
     CONSTRAINT [UX_StudentSpecialEducationProgramAssociationDisabilityDesignation_ParentCollectionItemId_DisabilityDesignationDescrip_1996e0cd9e] UNIQUE ([ParentCollectionItemId], [DisabilityDesignationDescriptor_DescriptorId])
@@ -8442,13 +8450,13 @@ CREATE TABLE [edfi].[StudentSpecialEducationProgramEligibilityAssociation]
     [ProgramProgram_DocumentId] bigint NOT NULL,
     [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
-    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [EligibilityDelayReasonDescriptor_DescriptorId] bigint NULL,
-    [EligibilityEvaluationTypeDescriptor_DescriptorId] bigint NULL,
-    [EvaluationDelayReasonDescriptor_DescriptorId] bigint NULL,
-    [IdeaPartDescriptor_DescriptorId] bigint NOT NULL,
+    [EligibilityDelayReasonDescriptor_DescriptorId] int NULL,
+    [EligibilityEvaluationTypeDescriptor_DescriptorId] int NULL,
+    [EvaluationDelayReasonDescriptor_DescriptorId] int NULL,
+    [IdeaPartDescriptor_DescriptorId] int NOT NULL,
     [ConsentToEvaluationDate] date NULL,
     [ConsentToEvaluationReceivedDate] date NOT NULL,
     [EligibilityConferenceDate] date NULL,
@@ -8479,11 +8487,11 @@ CREATE TABLE [edfi].[StudentTitleIPartAProgramAssociation]
     [ProgramProgram_DocumentId] bigint NOT NULL,
     [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
-    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [ProgramProgram_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
-    [ReasonExitedDescriptor_DescriptorId] bigint NULL,
-    [TitleIPartAParticipantDescriptor_DescriptorId] bigint NOT NULL,
+    [ReasonExitedDescriptor_DescriptorId] int NULL,
+    [TitleIPartAParticipantDescriptor_DescriptorId] int NOT NULL,
     [BeginDate] date NOT NULL,
     [EndDate] date NULL,
     [ServedOutsideOfRegularSession] bit NULL,
@@ -8500,7 +8508,7 @@ CREATE TABLE [edfi].[StudentTitleIPartAProgramAssociationProgramParticipationSta
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentTitleIPartAProgramAssociation_DocumentId] bigint NOT NULL,
-    [ParticipationStatusDescriptor_DescriptorId] bigint NOT NULL,
+    [ParticipationStatusDescriptor_DescriptorId] int NOT NULL,
     [DesignatedBy] nvarchar(60) NULL,
     [StatusBeginDate] date NOT NULL,
     [StatusEndDate] date NULL,
@@ -8515,7 +8523,7 @@ CREATE TABLE [edfi].[StudentTitleIPartAProgramAssociationTitleIPartAProgramServi
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentTitleIPartAProgramAssociation_DocumentId] bigint NOT NULL,
-    [TitleIPartAProgramServiceDescriptor_DescriptorId] bigint NOT NULL,
+    [TitleIPartAProgramServiceDescriptor_DescriptorId] int NOT NULL,
     [PrimaryIndicator] bit NULL,
     [ServiceBeginDate] date NULL,
     [ServiceEndDate] date NULL,
@@ -8534,9 +8542,9 @@ CREATE TABLE [edfi].[StudentTransportation]
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
     [TransportationEducationOrganization_DocumentId] bigint NOT NULL,
     [TransportationEducationOrganization_EducationOrganizationId] bigint NOT NULL,
-    [StudentBusDetailsBusRouteDescriptor_DescriptorId] bigint NULL,
-    [TransportationPublicExpenseEligibilityTypeDescriptor_DescriptorId] bigint NULL,
-    [TransportationTypeDescriptor_DescriptorId] bigint NULL,
+    [StudentBusDetailsBusRouteDescriptor_DescriptorId] int NULL,
+    [TransportationPublicExpenseEligibilityTypeDescriptor_DescriptorId] int NULL,
+    [TransportationTypeDescriptor_DescriptorId] int NULL,
     [SpecialAccomodationRequirements] nvarchar(1024) NULL,
     [StudentBusDetailsBusNumber] nvarchar(36) NULL,
     [StudentBusDetailsMileage] decimal(5,2) NULL,
@@ -8552,7 +8560,7 @@ CREATE TABLE [edfi].[StudentTransportationTravelDayofWeek]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentTransportation_DocumentId] bigint NOT NULL,
-    [TravelDayofWeekDescriptor_DescriptorId] bigint NOT NULL,
+    [TravelDayofWeekDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StudentTransportationTravelDayofWeek] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentTransportationTravelDayofWeek_Ordinal_StudentTransportation_DocumentId] UNIQUE ([StudentTransportation_DocumentId], [Ordinal]),
     CONSTRAINT [UX_StudentTransportationTravelDayofWeek_StudentTransportation_DocumentId_TravelDayofWeekDescriptor_DescriptorId] UNIQUE ([StudentTransportation_DocumentId], [TravelDayofWeekDescriptor_DescriptorId])
@@ -8564,7 +8572,7 @@ CREATE TABLE [edfi].[StudentTransportationTravelDirection]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentTransportation_DocumentId] bigint NOT NULL,
-    [TravelDirectionDescriptor_DescriptorId] bigint NOT NULL,
+    [TravelDirectionDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_StudentTransportationTravelDirection] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentTransportationTravelDirection_Ordinal_StudentTransportation_DocumentId] UNIQUE ([StudentTransportation_DocumentId], [Ordinal]),
     CONSTRAINT [UX_StudentTransportationTravelDirection_StudentTransportation_DocumentId_TravelDirectionDescriptor_DescriptorId] UNIQUE ([StudentTransportation_DocumentId], [TravelDirectionDescriptor_DescriptorId])
@@ -8585,7 +8593,7 @@ CREATE TABLE [edfi].[Survey]
     [Session_SchoolId] bigint NULL,
     [Session_SchoolYear] AS (CASE WHEN [Session_DocumentId] IS NULL THEN NULL ELSE [SchoolYear_Unified] END) PERSISTED,
     [Session_SessionName] nvarchar(60) NULL,
-    [SurveyCategoryDescriptor_DescriptorId] bigint NULL,
+    [SurveyCategoryDescriptor_DescriptorId] int NULL,
     [Namespace] nvarchar(255) NOT NULL,
     [NumberAdministered] int NULL,
     [SurveyIdentifier] nvarchar(60) NOT NULL,
@@ -8625,7 +8633,7 @@ CREATE TABLE [edfi].[SurveyProgramAssociation]
     [Program_DocumentId] bigint NOT NULL,
     [Program_EducationOrganizationId] bigint NOT NULL,
     [Program_ProgramName] nvarchar(60) NOT NULL,
-    [Program_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [Program_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [Survey_DocumentId] bigint NOT NULL,
     [Survey_Namespace] nvarchar(255) NOT NULL,
     [Survey_SurveyIdentifier] nvarchar(60) NOT NULL,
@@ -8650,7 +8658,7 @@ CREATE TABLE [edfi].[SurveyQuestion]
     [Survey_DocumentId] bigint NOT NULL,
     [Survey_Namespace] AS (CASE WHEN [Survey_DocumentId] IS NULL THEN NULL ELSE [Namespace_Unified] END) PERSISTED,
     [Survey_SurveyIdentifier] AS (CASE WHEN [Survey_DocumentId] IS NULL THEN NULL ELSE [SurveyIdentifier_Unified] END) PERSISTED,
-    [QuestionFormDescriptor_DescriptorId] bigint NOT NULL,
+    [QuestionFormDescriptor_DescriptorId] int NOT NULL,
     [QuestionCode] nvarchar(60) NOT NULL,
     [QuestionText] nvarchar(1024) NOT NULL,
     CONSTRAINT [PK_SurveyQuestion] PRIMARY KEY ([DocumentId]),
@@ -8779,7 +8787,7 @@ CREATE TABLE [edfi].[SurveyResponseSurveyLevel]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [SurveyResponse_DocumentId] bigint NOT NULL,
-    [SurveyLevelDescriptor_DescriptorId] bigint NOT NULL,
+    [SurveyLevelDescriptor_DescriptorId] int NOT NULL,
     CONSTRAINT [PK_SurveyResponseSurveyLevel] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_SurveyResponseSurveyLevel_Ordinal_SurveyResponse_DocumentId] UNIQUE ([SurveyResponse_DocumentId], [Ordinal]),
     CONSTRAINT [UX_SurveyResponseSurveyLevel_SurveyLevelDescriptor_DescriptorId_SurveyResponse_DocumentId] UNIQUE ([SurveyResponse_DocumentId], [SurveyLevelDescriptor_DescriptorId])
@@ -9341,7 +9349,7 @@ CREATE TABLE [tracked_changes_edfi].[Descriptor]
     [NewNamespace] nvarchar(255) NULL,
     [OldCodeValue] nvarchar(50) NOT NULL,
     [NewCodeValue] nvarchar(50) NULL,
-    [Discriminator] nvarchar(128) NOT NULL,
+    [ResourceKeyId] smallint NOT NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [DocumentId] bigint NOT NULL,
@@ -11588,7 +11596,7 @@ CREATE TABLE [edfi].[GeneralStudentProgramAssociationIdentity]
     [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [Program_EducationOrganizationId] bigint NOT NULL,
     [Program_ProgramName] nvarchar(60) NOT NULL,
-    [Program_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
+    [Program_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
     [Discriminator] nvarchar(256) NOT NULL,
     CONSTRAINT [PK_GeneralStudentProgramAssociationIdentity] PRIMARY KEY ([DocumentId]),
@@ -11658,7 +11666,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Assessment]
 ADD CONSTRAINT [FK_Assessment_AssessmentCategoryDescriptor]
 FOREIGN KEY ([AssessmentCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -11669,7 +11677,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Assessment]
 ADD CONSTRAINT [FK_Assessment_ContentStandardPublicationStatusDescriptor]
 FOREIGN KEY ([ContentStandardPublicationStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -11713,7 +11721,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[AssessmentAcademicSubject]
 ADD CONSTRAINT [FK_AssessmentAcademicSubject_AcademicSubjectDescriptor]
 FOREIGN KEY ([AcademicSubjectDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -11746,7 +11754,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[AssessmentAssessedGradeLevel]
 ADD CONSTRAINT [FK_AssessmentAssessedGradeLevel_GradeLevelDescriptor]
 FOREIGN KEY ([GradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -11779,7 +11787,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[AssessmentIdentificationCode]
 ADD CONSTRAINT [FK_AssessmentIdentificationCode_AssessmentIdentificationSystemDescriptor]
 FOREIGN KEY ([AssessmentIdentificationSystemDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -11801,7 +11809,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[AssessmentLanguage]
 ADD CONSTRAINT [FK_AssessmentLanguage_LanguageDescriptor]
 FOREIGN KEY ([LanguageDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -11823,7 +11831,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[AssessmentPerformanceLevel]
 ADD CONSTRAINT [FK_AssessmentPerformanceLevel_AssessmentReportingMethodDescriptor]
 FOREIGN KEY ([AssessmentReportingMethodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -11834,7 +11842,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[AssessmentPerformanceLevel]
 ADD CONSTRAINT [FK_AssessmentPerformanceLevel_PerformanceLevelDescriptor]
 FOREIGN KEY ([PerformanceLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -11845,7 +11853,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[AssessmentPerformanceLevel]
 ADD CONSTRAINT [FK_AssessmentPerformanceLevel_ResultDatatypeTypeDescriptor]
 FOREIGN KEY ([ResultDatatypeTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -11867,7 +11875,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[AssessmentPeriod]
 ADD CONSTRAINT [FK_AssessmentPeriod_AssessmentPeriodDescriptor]
 FOREIGN KEY ([AssessmentPeriodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -11889,7 +11897,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[AssessmentPlatformType]
 ADD CONSTRAINT [FK_AssessmentPlatformType_PlatformTypeDescriptor]
 FOREIGN KEY ([PlatformTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -11911,7 +11919,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[AssessmentProgram]
 ADD CONSTRAINT [FK_AssessmentProgram_SectionOrProgramChoiceProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([SectionOrProgramChoiceProgram_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -11944,7 +11952,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[AssessmentScore]
 ADD CONSTRAINT [FK_AssessmentScore_AssessmentReportingMethodDescriptor]
 FOREIGN KEY ([AssessmentReportingMethodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -11955,7 +11963,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[AssessmentScore]
 ADD CONSTRAINT [FK_AssessmentScore_ResultDatatypeTypeDescriptor]
 FOREIGN KEY ([ResultDatatypeTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12153,7 +12161,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[AssessmentItem]
 ADD CONSTRAINT [FK_AssessmentItem_AssessmentItemCategoryDescriptor]
 FOREIGN KEY ([AssessmentItemCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12219,7 +12227,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[AssessmentScoreRangeLearningStandard]
 ADD CONSTRAINT [FK_AssessmentScoreRangeLearningStandard_AssessmentReportingMethodDescriptor]
 FOREIGN KEY ([AssessmentReportingMethodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12307,7 +12315,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[BalanceSheetDimensionReportingTag]
 ADD CONSTRAINT [FK_BalanceSheetDimensionReportingTag_ReportingTagDescriptor]
 FOREIGN KEY ([ReportingTagDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12384,7 +12392,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[BellScheduleGradeLevel]
 ADD CONSTRAINT [FK_BellScheduleGradeLevel_GradeLevelDescriptor]
 FOREIGN KEY ([GradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12395,7 +12403,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Calendar]
 ADD CONSTRAINT [FK_Calendar_CalendarTypeDescriptor]
 FOREIGN KEY ([CalendarTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12450,7 +12458,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CalendarGradeLevel]
 ADD CONSTRAINT [FK_CalendarGradeLevel_GradeLevelDescriptor]
 FOREIGN KEY ([GradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12494,7 +12502,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CalendarDateCalendarEvent]
 ADD CONSTRAINT [FK_CalendarDateCalendarEvent_CalendarEventDescriptor]
 FOREIGN KEY ([CalendarEventDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12505,7 +12513,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ChartOfAccount]
 ADD CONSTRAINT [FK_ChartOfAccount_AccountTypeDescriptor]
 FOREIGN KEY ([AccountTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12637,7 +12645,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ChartOfAccountReportingTag]
 ADD CONSTRAINT [FK_ChartOfAccountReportingTag_ReportingTagDescriptor]
 FOREIGN KEY ([ReportingTagDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12681,7 +12689,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Cohort]
 ADD CONSTRAINT [FK_Cohort_AcademicSubjectDescriptor]
 FOREIGN KEY ([AcademicSubjectDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12692,7 +12700,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Cohort]
 ADD CONSTRAINT [FK_Cohort_CohortScopeDescriptor]
 FOREIGN KEY ([CohortScopeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12703,7 +12711,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Cohort]
 ADD CONSTRAINT [FK_Cohort_CohortTypeDescriptor]
 FOREIGN KEY ([CohortTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12747,7 +12755,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CohortProgram]
 ADD CONSTRAINT [FK_CohortProgram_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12780,7 +12788,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityOrganization]
 ADD CONSTRAINT [FK_CommunityOrganization_OperationalStatusDescriptor]
 FOREIGN KEY ([OperationalStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12791,7 +12799,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityOrganizationAddress]
 ADD CONSTRAINT [FK_CommunityOrganizationAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12813,7 +12821,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityOrganizationAddress]
 ADD CONSTRAINT [FK_CommunityOrganizationAddress_LocaleDescriptor]
 FOREIGN KEY ([LocaleDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12824,7 +12832,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityOrganizationAddress]
 ADD CONSTRAINT [FK_CommunityOrganizationAddress_StateAbbreviationDescriptor]
 FOREIGN KEY ([StateAbbreviationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12846,7 +12854,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityOrganizationCategory]
 ADD CONSTRAINT [FK_CommunityOrganizationCategory_EducationOrganizationCategoryDescriptor]
 FOREIGN KEY ([EducationOrganizationCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12868,7 +12876,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityOrganizationIdentificationCode]
 ADD CONSTRAINT [FK_CommunityOrganizationIdentificationCode_EducationOrganizationIdentificationSystemDescriptor]
 FOREIGN KEY ([EducationOrganizationIdentificationSystemDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12890,7 +12898,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityOrganizationIndicator]
 ADD CONSTRAINT [FK_CommunityOrganizationIndicator_IndicatorDescriptor]
 FOREIGN KEY ([IndicatorDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12901,7 +12909,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityOrganizationIndicator]
 ADD CONSTRAINT [FK_CommunityOrganizationIndicator_IndicatorGroupDescriptor]
 FOREIGN KEY ([IndicatorGroupDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12912,7 +12920,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityOrganizationIndicator]
 ADD CONSTRAINT [FK_CommunityOrganizationIndicator_IndicatorLevelDescriptor]
 FOREIGN KEY ([IndicatorLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12934,7 +12942,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityOrganizationInstitutionTelephone]
 ADD CONSTRAINT [FK_CommunityOrganizationInstitutionTelephone_InstitutionTelephoneNumberTypeDescriptor]
 FOREIGN KEY ([InstitutionTelephoneNumberTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12945,7 +12953,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityOrganizationInternationalAddress]
 ADD CONSTRAINT [FK_CommunityOrganizationInternationalAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -12967,7 +12975,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityOrganizationInternationalAddress]
 ADD CONSTRAINT [FK_CommunityOrganizationInternationalAddress_CountryDescriptor]
 FOREIGN KEY ([CountryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13022,7 +13030,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityProvider]
 ADD CONSTRAINT [FK_CommunityProvider_OperationalStatusDescriptor]
 FOREIGN KEY ([OperationalStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13033,7 +13041,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityProvider]
 ADD CONSTRAINT [FK_CommunityProvider_ProviderCategoryDescriptor]
 FOREIGN KEY ([ProviderCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13044,7 +13052,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityProvider]
 ADD CONSTRAINT [FK_CommunityProvider_ProviderProfitabilityDescriptor]
 FOREIGN KEY ([ProviderProfitabilityDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13055,7 +13063,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityProvider]
 ADD CONSTRAINT [FK_CommunityProvider_ProviderStatusDescriptor]
 FOREIGN KEY ([ProviderStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13066,7 +13074,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityProviderAddress]
 ADD CONSTRAINT [FK_CommunityProviderAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13088,7 +13096,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityProviderAddress]
 ADD CONSTRAINT [FK_CommunityProviderAddress_LocaleDescriptor]
 FOREIGN KEY ([LocaleDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13099,7 +13107,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityProviderAddress]
 ADD CONSTRAINT [FK_CommunityProviderAddress_StateAbbreviationDescriptor]
 FOREIGN KEY ([StateAbbreviationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13121,7 +13129,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityProviderCategory]
 ADD CONSTRAINT [FK_CommunityProviderCategory_EducationOrganizationCategoryDescriptor]
 FOREIGN KEY ([EducationOrganizationCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13143,7 +13151,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityProviderIdentificationCode]
 ADD CONSTRAINT [FK_CommunityProviderIdentificationCode_EducationOrganizationIdentificationSystemDescriptor]
 FOREIGN KEY ([EducationOrganizationIdentificationSystemDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13165,7 +13173,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityProviderIndicator]
 ADD CONSTRAINT [FK_CommunityProviderIndicator_IndicatorDescriptor]
 FOREIGN KEY ([IndicatorDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13176,7 +13184,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityProviderIndicator]
 ADD CONSTRAINT [FK_CommunityProviderIndicator_IndicatorGroupDescriptor]
 FOREIGN KEY ([IndicatorGroupDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13187,7 +13195,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityProviderIndicator]
 ADD CONSTRAINT [FK_CommunityProviderIndicator_IndicatorLevelDescriptor]
 FOREIGN KEY ([IndicatorLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13209,7 +13217,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityProviderInstitutionTelephone]
 ADD CONSTRAINT [FK_CommunityProviderInstitutionTelephone_InstitutionTelephoneNumberTypeDescriptor]
 FOREIGN KEY ([InstitutionTelephoneNumberTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13220,7 +13228,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityProviderInternationalAddress]
 ADD CONSTRAINT [FK_CommunityProviderInternationalAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13242,7 +13250,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityProviderInternationalAddress]
 ADD CONSTRAINT [FK_CommunityProviderInternationalAddress_CountryDescriptor]
 FOREIGN KEY ([CountryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13297,7 +13305,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityProviderLicense]
 ADD CONSTRAINT [FK_CommunityProviderLicense_LicenseStatusDescriptor]
 FOREIGN KEY ([LicenseStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13308,7 +13316,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CommunityProviderLicense]
 ADD CONSTRAINT [FK_CommunityProviderLicense_LicenseTypeDescriptor]
 FOREIGN KEY ([LicenseTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13341,7 +13349,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CompetencyObjective]
 ADD CONSTRAINT [FK_CompetencyObjective_ObjectiveGradeLevelDescriptor]
 FOREIGN KEY ([ObjectiveGradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13363,7 +13371,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Contact]
 ADD CONSTRAINT [FK_Contact_HighestCompletedLevelOfEducationDescriptor]
 FOREIGN KEY ([HighestCompletedLevelOfEducationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13385,7 +13393,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Contact]
 ADD CONSTRAINT [FK_Contact_Person_SourceSystemDescriptor]
 FOREIGN KEY ([Person_SourceSystemDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13396,7 +13404,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Contact]
 ADD CONSTRAINT [FK_Contact_SexDescriptor]
 FOREIGN KEY ([SexDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13407,7 +13415,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ContactAddress]
 ADD CONSTRAINT [FK_ContactAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13429,7 +13437,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ContactAddress]
 ADD CONSTRAINT [FK_ContactAddress_LocaleDescriptor]
 FOREIGN KEY ([LocaleDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13440,7 +13448,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ContactAddress]
 ADD CONSTRAINT [FK_ContactAddress_StateAbbreviationDescriptor]
 FOREIGN KEY ([StateAbbreviationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13462,7 +13470,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ContactElectronicMail]
 ADD CONSTRAINT [FK_ContactElectronicMail_ElectronicMailTypeDescriptor]
 FOREIGN KEY ([ElectronicMailTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13473,7 +13481,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ContactInternationalAddress]
 ADD CONSTRAINT [FK_ContactInternationalAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13495,7 +13503,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ContactInternationalAddress]
 ADD CONSTRAINT [FK_ContactInternationalAddress_CountryDescriptor]
 FOREIGN KEY ([CountryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13517,7 +13525,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ContactLanguage]
 ADD CONSTRAINT [FK_ContactLanguage_LanguageDescriptor]
 FOREIGN KEY ([LanguageDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13539,7 +13547,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ContactOtherName]
 ADD CONSTRAINT [FK_ContactOtherName_OtherNameTypeDescriptor]
 FOREIGN KEY ([OtherNameTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13561,7 +13569,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ContactPersonalIdentificationDocument]
 ADD CONSTRAINT [FK_ContactPersonalIdentificationDocument_IdentificationDocumentUseDescriptor]
 FOREIGN KEY ([IdentificationDocumentUseDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13572,7 +13580,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ContactPersonalIdentificationDocument]
 ADD CONSTRAINT [FK_ContactPersonalIdentificationDocument_IssuerCountryDescriptor]
 FOREIGN KEY ([IssuerCountryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13583,7 +13591,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ContactPersonalIdentificationDocument]
 ADD CONSTRAINT [FK_ContactPersonalIdentificationDocument_PersonalInformationVerificationDescriptor]
 FOREIGN KEY ([PersonalInformationVerificationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13605,7 +13613,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ContactTelephone]
 ADD CONSTRAINT [FK_ContactTelephone_TelephoneNumberTypeDescriptor]
 FOREIGN KEY ([TelephoneNumberTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13638,7 +13646,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ContactLanguageUs]
 ADD CONSTRAINT [FK_ContactLanguageUs_LanguageUseDescriptor]
 FOREIGN KEY ([LanguageUseDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13649,7 +13657,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Course]
 ADD CONSTRAINT [FK_Course_CareerPathwayDescriptor]
 FOREIGN KEY ([CareerPathwayDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13660,7 +13668,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Course]
 ADD CONSTRAINT [FK_Course_CourseDefinedByDescriptor]
 FOREIGN KEY ([CourseDefinedByDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13671,7 +13679,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Course]
 ADD CONSTRAINT [FK_Course_CourseGPAApplicabilityDescriptor]
 FOREIGN KEY ([CourseGPAApplicabilityDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13704,7 +13712,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Course]
 ADD CONSTRAINT [FK_Course_MaximumAvailableCreditTypeDescriptor]
 FOREIGN KEY ([MaximumAvailableCreditTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13715,7 +13723,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Course]
 ADD CONSTRAINT [FK_Course_MinimumAvailableCreditTypeDescriptor]
 FOREIGN KEY ([MinimumAvailableCreditTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13726,7 +13734,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseAcademicSubject]
 ADD CONSTRAINT [FK_CourseAcademicSubject_AcademicSubjectDescriptor]
 FOREIGN KEY ([AcademicSubjectDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13748,7 +13756,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseCompetencyLevel]
 ADD CONSTRAINT [FK_CourseCompetencyLevel_CompetencyLevelDescriptor]
 FOREIGN KEY ([CompetencyLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13781,7 +13789,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseIdentificationCode]
 ADD CONSTRAINT [FK_CourseIdentificationCode_CourseIdentificationSystemDescriptor]
 FOREIGN KEY ([CourseIdentificationSystemDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13825,7 +13833,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseLevelCharacteristic]
 ADD CONSTRAINT [FK_CourseLevelCharacteristic_CourseLevelCharacteristicDescriptor]
 FOREIGN KEY ([CourseLevelCharacteristicDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13847,7 +13855,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseOfferedGradeLevel]
 ADD CONSTRAINT [FK_CourseOfferedGradeLevel_GradeLevelDescriptor]
 FOREIGN KEY ([GradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13902,7 +13910,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseOfferingCourseLevelCharacteristic]
 ADD CONSTRAINT [FK_CourseOfferingCourseLevelCharacteristic_CourseLevelCharacteristicDescriptor]
 FOREIGN KEY ([CourseLevelCharacteristicDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13935,7 +13943,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseOfferingCurriculumUsed]
 ADD CONSTRAINT [FK_CourseOfferingCurriculumUsed_CurriculumUsedDescriptor]
 FOREIGN KEY ([CurriculumUsedDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13957,7 +13965,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseOfferingOfferedGradeLevel]
 ADD CONSTRAINT [FK_CourseOfferingOfferedGradeLevel_GradeLevelDescriptor]
 FOREIGN KEY ([GradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13968,7 +13976,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseTranscript]
 ADD CONSTRAINT [FK_CourseTranscript_AttemptedCreditTypeDescriptor]
 FOREIGN KEY ([AttemptedCreditTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -13979,7 +13987,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseTranscript]
 ADD CONSTRAINT [FK_CourseTranscript_CourseAttemptResultDescriptor]
 FOREIGN KEY ([CourseAttemptResultDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14001,7 +14009,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseTranscript]
 ADD CONSTRAINT [FK_CourseTranscript_CourseRepeatCodeDescriptor]
 FOREIGN KEY ([CourseRepeatCodeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14023,7 +14031,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseTranscript]
 ADD CONSTRAINT [FK_CourseTranscript_EarnedCreditTypeDescriptor]
 FOREIGN KEY ([EarnedCreditTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14045,7 +14053,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseTranscript]
 ADD CONSTRAINT [FK_CourseTranscript_MethodCreditEarnedDescriptor]
 FOREIGN KEY ([MethodCreditEarnedDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14078,7 +14086,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseTranscript]
 ADD CONSTRAINT [FK_CourseTranscript_StudentAcademicRecord_TermDescriptor]
 FOREIGN KEY ([StudentAcademicRecord_TermDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14089,7 +14097,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseTranscript]
 ADD CONSTRAINT [FK_CourseTranscript_WhenTakenGradeLevelDescriptor]
 FOREIGN KEY ([WhenTakenGradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14100,7 +14108,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseTranscriptAcademicSubject]
 ADD CONSTRAINT [FK_CourseTranscriptAcademicSubject_AcademicSubjectDescriptor]
 FOREIGN KEY ([AcademicSubjectDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14122,7 +14130,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseTranscriptAlternativeCourseIdentificationCode]
 ADD CONSTRAINT [FK_CourseTranscriptAlternativeCourseIdentificationCode_CourseIdentificationSystemDescriptor]
 FOREIGN KEY ([CourseIdentificationSystemDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14144,7 +14152,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseTranscriptCourseProgram]
 ADD CONSTRAINT [FK_CourseTranscriptCourseProgram_CourseProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([CourseProgram_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14188,7 +14196,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseTranscriptCreditCategory]
 ADD CONSTRAINT [FK_CourseTranscriptCreditCategory_CreditCategoryDescriptor]
 FOREIGN KEY ([CreditCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14199,7 +14207,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseTranscriptEarnedAdditionalCredits]
 ADD CONSTRAINT [FK_CourseTranscriptEarnedAdditionalCredits_AdditionalCreditTypeDescriptor]
 FOREIGN KEY ([AdditionalCreditTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14232,7 +14240,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CourseTranscriptPartialCourseTranscriptAwards]
 ADD CONSTRAINT [FK_CourseTranscriptPartialCourseTranscriptAwards_MethodCreditEarnedDescriptor]
 FOREIGN KEY ([MethodCreditEarnedDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14265,7 +14273,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Credential]
 ADD CONSTRAINT [FK_Credential_CredentialFieldDescriptor]
 FOREIGN KEY ([CredentialFieldDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14276,7 +14284,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Credential]
 ADD CONSTRAINT [FK_Credential_CredentialTypeDescriptor]
 FOREIGN KEY ([CredentialTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14298,7 +14306,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Credential]
 ADD CONSTRAINT [FK_Credential_StateOfIssueStateAbbreviationDescriptor]
 FOREIGN KEY ([StateOfIssueStateAbbreviationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14309,7 +14317,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Credential]
 ADD CONSTRAINT [FK_Credential_TeachingCredentialBasisDescriptor]
 FOREIGN KEY ([TeachingCredentialBasisDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14320,7 +14328,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Credential]
 ADD CONSTRAINT [FK_Credential_TeachingCredentialDescriptor]
 FOREIGN KEY ([TeachingCredentialDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14331,7 +14339,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CredentialAcademicSubject]
 ADD CONSTRAINT [FK_CredentialAcademicSubject_AcademicSubjectDescriptor]
 FOREIGN KEY ([AcademicSubjectDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14375,7 +14383,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CredentialGradeLevel]
 ADD CONSTRAINT [FK_CredentialGradeLevel_GradeLevelDescriptor]
 FOREIGN KEY ([GradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14386,7 +14394,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[CrisisEvent]
 ADD CONSTRAINT [FK_CrisisEvent_CrisisTypeDescriptor]
 FOREIGN KEY ([CrisisTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14430,7 +14438,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[DescriptorMappingModelEntity]
 ADD CONSTRAINT [FK_DescriptorMappingModelEntity_ModelEntityDescriptor]
 FOREIGN KEY ([ModelEntityDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14452,7 +14460,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[DisciplineAction]
 ADD CONSTRAINT [FK_DisciplineAction_DisciplineActionLengthDifferenceReasonDescriptor]
 FOREIGN KEY ([DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14507,7 +14515,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[DisciplineActionDiscipline]
 ADD CONSTRAINT [FK_DisciplineActionDiscipline_DisciplineDescriptor]
 FOREIGN KEY ([DisciplineDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14551,7 +14559,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[DisciplineActionStudentDisciplineIncidentBehaviorAssociation]
 ADD CONSTRAINT [FK_DisciplineActionStudentDisciplineIncidentBehaviorAssociation_StudentDisciplineIncidentBehaviorAssociation_BehaviorDescriptor]
 FOREIGN KEY ([StudentDisciplineIncidentBehaviorAssociation_BehaviorDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14584,7 +14592,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[DisciplineIncident]
 ADD CONSTRAINT [FK_DisciplineIncident_IncidentLocationDescriptor]
 FOREIGN KEY ([IncidentLocationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14595,7 +14603,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[DisciplineIncident]
 ADD CONSTRAINT [FK_DisciplineIncident_ReporterDescriptionDescriptor]
 FOREIGN KEY ([ReporterDescriptionDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14617,7 +14625,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[DisciplineIncidentBehavior]
 ADD CONSTRAINT [FK_DisciplineIncidentBehavior_BehaviorDescriptor]
 FOREIGN KEY ([BehaviorDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14650,7 +14658,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[DisciplineIncidentExternalParticipant]
 ADD CONSTRAINT [FK_DisciplineIncidentExternalParticipant_DisciplineIncidentParticipationCodeDescriptor]
 FOREIGN KEY ([DisciplineIncidentParticipationCodeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14672,7 +14680,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[DisciplineIncidentWeapon]
 ADD CONSTRAINT [FK_DisciplineIncidentWeapon_WeaponDescriptor]
 FOREIGN KEY ([WeaponDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14683,7 +14691,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationContent]
 ADD CONSTRAINT [FK_EducationContent_ContentClassDescriptor]
 FOREIGN KEY ([ContentClassDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14694,7 +14702,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationContent]
 ADD CONSTRAINT [FK_EducationContent_CostRateDescriptor]
 FOREIGN KEY ([CostRateDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14716,7 +14724,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationContent]
 ADD CONSTRAINT [FK_EducationContent_InteractivityStyleDescriptor]
 FOREIGN KEY ([InteractivityStyleDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14749,7 +14757,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationContentAppropriateGradeLevel]
 ADD CONSTRAINT [FK_EducationContentAppropriateGradeLevel_GradeLevelDescriptor]
 FOREIGN KEY ([GradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14771,7 +14779,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationContentAppropriateSex]
 ADD CONSTRAINT [FK_EducationContentAppropriateSex_SexDescriptor]
 FOREIGN KEY ([SexDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14848,7 +14856,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationContentLanguage]
 ADD CONSTRAINT [FK_EducationContentLanguage_LanguageDescriptor]
 FOREIGN KEY ([LanguageDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14903,7 +14911,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationOrganizationNetwork]
 ADD CONSTRAINT [FK_EducationOrganizationNetwork_NetworkPurposeDescriptor]
 FOREIGN KEY ([NetworkPurposeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14914,7 +14922,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationOrganizationNetwork]
 ADD CONSTRAINT [FK_EducationOrganizationNetwork_OperationalStatusDescriptor]
 FOREIGN KEY ([OperationalStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14925,7 +14933,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationOrganizationNetworkAddress]
 ADD CONSTRAINT [FK_EducationOrganizationNetworkAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14947,7 +14955,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationOrganizationNetworkAddress]
 ADD CONSTRAINT [FK_EducationOrganizationNetworkAddress_LocaleDescriptor]
 FOREIGN KEY ([LocaleDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14958,7 +14966,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationOrganizationNetworkAddress]
 ADD CONSTRAINT [FK_EducationOrganizationNetworkAddress_StateAbbreviationDescriptor]
 FOREIGN KEY ([StateAbbreviationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14969,7 +14977,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationOrganizationNetworkCategory]
 ADD CONSTRAINT [FK_EducationOrganizationNetworkCategory_EducationOrganizationCategoryDescriptor]
 FOREIGN KEY ([EducationOrganizationCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -14991,7 +14999,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationOrganizationNetworkIdentificationCode]
 ADD CONSTRAINT [FK_EducationOrganizationNetworkIdentificationCode_EducationOrganizationIdentificationSystemDescriptor]
 FOREIGN KEY ([EducationOrganizationIdentificationSystemDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15024,7 +15032,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationOrganizationNetworkIndicator]
 ADD CONSTRAINT [FK_EducationOrganizationNetworkIndicator_IndicatorDescriptor]
 FOREIGN KEY ([IndicatorDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15035,7 +15043,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationOrganizationNetworkIndicator]
 ADD CONSTRAINT [FK_EducationOrganizationNetworkIndicator_IndicatorGroupDescriptor]
 FOREIGN KEY ([IndicatorGroupDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15046,7 +15054,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationOrganizationNetworkIndicator]
 ADD CONSTRAINT [FK_EducationOrganizationNetworkIndicator_IndicatorLevelDescriptor]
 FOREIGN KEY ([IndicatorLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15068,7 +15076,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationOrganizationNetworkInstitutionTelephone]
 ADD CONSTRAINT [FK_EducationOrganizationNetworkInstitutionTelephone_InstitutionTelephoneNumberTypeDescriptor]
 FOREIGN KEY ([InstitutionTelephoneNumberTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15079,7 +15087,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationOrganizationNetworkInternationalAddress]
 ADD CONSTRAINT [FK_EducationOrganizationNetworkInternationalAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15090,7 +15098,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationOrganizationNetworkInternationalAddress]
 ADD CONSTRAINT [FK_EducationOrganizationNetworkInternationalAddress_CountryDescriptor]
 FOREIGN KEY ([CountryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15211,7 +15219,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationServiceCenter]
 ADD CONSTRAINT [FK_EducationServiceCenter_OperationalStatusDescriptor]
 FOREIGN KEY ([OperationalStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15233,7 +15241,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationServiceCenterAddress]
 ADD CONSTRAINT [FK_EducationServiceCenterAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15255,7 +15263,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationServiceCenterAddress]
 ADD CONSTRAINT [FK_EducationServiceCenterAddress_LocaleDescriptor]
 FOREIGN KEY ([LocaleDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15266,7 +15274,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationServiceCenterAddress]
 ADD CONSTRAINT [FK_EducationServiceCenterAddress_StateAbbreviationDescriptor]
 FOREIGN KEY ([StateAbbreviationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15277,7 +15285,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationServiceCenterCategory]
 ADD CONSTRAINT [FK_EducationServiceCenterCategory_EducationOrganizationCategoryDescriptor]
 FOREIGN KEY ([EducationOrganizationCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15299,7 +15307,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationServiceCenterIdentificationCode]
 ADD CONSTRAINT [FK_EducationServiceCenterIdentificationCode_EducationOrganizationIdentificationSystemDescriptor]
 FOREIGN KEY ([EducationOrganizationIdentificationSystemDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15332,7 +15340,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationServiceCenterIndicator]
 ADD CONSTRAINT [FK_EducationServiceCenterIndicator_IndicatorDescriptor]
 FOREIGN KEY ([IndicatorDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15343,7 +15351,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationServiceCenterIndicator]
 ADD CONSTRAINT [FK_EducationServiceCenterIndicator_IndicatorGroupDescriptor]
 FOREIGN KEY ([IndicatorGroupDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15354,7 +15362,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationServiceCenterIndicator]
 ADD CONSTRAINT [FK_EducationServiceCenterIndicator_IndicatorLevelDescriptor]
 FOREIGN KEY ([IndicatorLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15376,7 +15384,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationServiceCenterInstitutionTelephone]
 ADD CONSTRAINT [FK_EducationServiceCenterInstitutionTelephone_InstitutionTelephoneNumberTypeDescriptor]
 FOREIGN KEY ([InstitutionTelephoneNumberTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15387,7 +15395,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationServiceCenterInternationalAddress]
 ADD CONSTRAINT [FK_EducationServiceCenterInternationalAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15398,7 +15406,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EducationServiceCenterInternationalAddress]
 ADD CONSTRAINT [FK_EducationServiceCenterInternationalAddress_CountryDescriptor]
 FOREIGN KEY ([CountryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15453,7 +15461,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EvaluationRubricDimension]
 ADD CONSTRAINT [FK_EvaluationRubricDimension_EvaluationRubricRatingLevelDescriptor]
 FOREIGN KEY ([EvaluationRubricRatingLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15464,7 +15472,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EvaluationRubricDimension]
 ADD CONSTRAINT [FK_EvaluationRubricDimension_ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor]
 FOREIGN KEY ([ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15475,7 +15483,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EvaluationRubricDimension]
 ADD CONSTRAINT [FK_EvaluationRubricDimension_ProgramEvaluationElement_ProgramEvaluationTypeDescriptor]
 FOREIGN KEY ([ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15486,7 +15494,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[EvaluationRubricDimension]
 ADD CONSTRAINT [FK_EvaluationRubricDimension_ProgramEvaluationElement_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15563,7 +15571,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[FunctionDimensionReportingTag]
 ADD CONSTRAINT [FK_FunctionDimensionReportingTag_ReportingTagDescriptor]
 FOREIGN KEY ([ReportingTagDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15596,7 +15604,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[FundDimensionReportingTag]
 ADD CONSTRAINT [FK_FundDimensionReportingTag_ReportingTagDescriptor]
 FOREIGN KEY ([ReportingTagDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15618,7 +15626,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Grade]
 ADD CONSTRAINT [FK_Grade_GradeTypeDescriptor]
 FOREIGN KEY ([GradeTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15629,7 +15637,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Grade]
 ADD CONSTRAINT [FK_Grade_GradingPeriodGradingPeriod_GradingPeriodDescriptor]
 FOREIGN KEY ([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15651,7 +15659,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Grade]
 ADD CONSTRAINT [FK_Grade_PerformanceBaseConversionDescriptor]
 FOREIGN KEY ([PerformanceBaseConversionDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15695,7 +15703,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[GradeLearningStandardGrade]
 ADD CONSTRAINT [FK_GradeLearningStandardGrade_PerformanceBaseConversionDescriptor]
 FOREIGN KEY ([PerformanceBaseConversionDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15717,7 +15725,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[GradebookEntry]
 ADD CONSTRAINT [FK_GradebookEntry_GradebookEntryTypeDescriptor]
 FOREIGN KEY ([GradebookEntryTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15728,7 +15736,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[GradebookEntry]
 ADD CONSTRAINT [FK_GradebookEntry_GradingPeriod_GradingPeriodDescriptor]
 FOREIGN KEY ([GradingPeriod_GradingPeriodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15794,7 +15802,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[GradingPeriod]
 ADD CONSTRAINT [FK_GradingPeriod_GradingPeriodDescriptor]
 FOREIGN KEY ([GradingPeriodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15849,7 +15857,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[GraduationPlan]
 ADD CONSTRAINT [FK_GraduationPlan_GraduationPlanTypeDescriptor]
 FOREIGN KEY ([GraduationPlanTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15871,7 +15879,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[GraduationPlan]
 ADD CONSTRAINT [FK_GraduationPlan_TotalRequiredCreditTypeDescriptor]
 FOREIGN KEY ([TotalRequiredCreditTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15882,7 +15890,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[GraduationPlanCreditsByCours]
 ADD CONSTRAINT [FK_GraduationPlanCreditsByCours_CreditTypeDescriptor]
 FOREIGN KEY ([CreditTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15904,7 +15912,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[GraduationPlanCreditsByCours]
 ADD CONSTRAINT [FK_GraduationPlanCreditsByCours_WhenTakenGradeLevelDescriptor]
 FOREIGN KEY ([WhenTakenGradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15915,7 +15923,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[GraduationPlanCreditsByCreditCategory]
 ADD CONSTRAINT [FK_GraduationPlanCreditsByCreditCategory_CreditCategoryDescriptor]
 FOREIGN KEY ([CreditCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15926,7 +15934,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[GraduationPlanCreditsByCreditCategory]
 ADD CONSTRAINT [FK_GraduationPlanCreditsByCreditCategory_CreditTypeDescriptor]
 FOREIGN KEY ([CreditTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15948,7 +15956,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[GraduationPlanCreditsBySubject]
 ADD CONSTRAINT [FK_GraduationPlanCreditsBySubject_AcademicSubjectDescriptor]
 FOREIGN KEY ([AcademicSubjectDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15959,7 +15967,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[GraduationPlanCreditsBySubject]
 ADD CONSTRAINT [FK_GraduationPlanCreditsBySubject_CreditTypeDescriptor]
 FOREIGN KEY ([CreditTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -15992,7 +16000,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[GraduationPlanRequiredAssessment]
 ADD CONSTRAINT [FK_GraduationPlanRequiredAssessment_PerformanceLevelAssessmentReportingMethodDescriptor]
 FOREIGN KEY ([PerformanceLevelAssessmentReportingMethodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16003,7 +16011,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[GraduationPlanRequiredAssessment]
 ADD CONSTRAINT [FK_GraduationPlanRequiredAssessment_PerformanceLevelPerformanceLevelDescriptor]
 FOREIGN KEY ([PerformanceLevelPerformanceLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16014,7 +16022,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[GraduationPlanRequiredAssessment]
 ADD CONSTRAINT [FK_GraduationPlanRequiredAssessment_PerformanceLevelResultDatatypeTypeDescriptor]
 FOREIGN KEY ([PerformanceLevelResultDatatypeTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16058,7 +16066,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[GraduationPlanRequiredAssessmentScore]
 ADD CONSTRAINT [FK_GraduationPlanRequiredAssessmentScore_AssessmentReportingMethodDescriptor]
 FOREIGN KEY ([AssessmentReportingMethodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16080,7 +16088,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[GraduationPlanRequiredAssessmentScore]
 ADD CONSTRAINT [FK_GraduationPlanRequiredAssessmentScore_ResultDatatypeTypeDescriptor]
 FOREIGN KEY ([ResultDatatypeTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16091,7 +16099,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Intervention]
 ADD CONSTRAINT [FK_Intervention_DeliveryMethodDescriptor]
 FOREIGN KEY ([DeliveryMethodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16124,7 +16132,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Intervention]
 ADD CONSTRAINT [FK_Intervention_InterventionClassDescriptor]
 FOREIGN KEY ([InterventionClassDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16135,7 +16143,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[InterventionAppropriateGradeLevel]
 ADD CONSTRAINT [FK_InterventionAppropriateGradeLevel_GradeLevelDescriptor]
 FOREIGN KEY ([GradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16168,7 +16176,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[InterventionAppropriateSex]
 ADD CONSTRAINT [FK_InterventionAppropriateSex_SexDescriptor]
 FOREIGN KEY ([SexDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16179,7 +16187,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[InterventionDiagnos]
 ADD CONSTRAINT [FK_InterventionDiagnos_DiagnosisDescriptor]
 FOREIGN KEY ([DiagnosisDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16278,7 +16286,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[InterventionPopulationServed]
 ADD CONSTRAINT [FK_InterventionPopulationServed_PopulationServedDescriptor]
 FOREIGN KEY ([PopulationServedDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16322,7 +16330,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[InterventionPrescription]
 ADD CONSTRAINT [FK_InterventionPrescription_DeliveryMethodDescriptor]
 FOREIGN KEY ([DeliveryMethodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16355,7 +16363,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[InterventionPrescription]
 ADD CONSTRAINT [FK_InterventionPrescription_InterventionClassDescriptor]
 FOREIGN KEY ([InterventionClassDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16366,7 +16374,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[InterventionPrescriptionAppropriateGradeLevel]
 ADD CONSTRAINT [FK_InterventionPrescriptionAppropriateGradeLevel_GradeLevelDescriptor]
 FOREIGN KEY ([GradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16399,7 +16407,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[InterventionPrescriptionAppropriateSex]
 ADD CONSTRAINT [FK_InterventionPrescriptionAppropriateSex_SexDescriptor]
 FOREIGN KEY ([SexDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16410,7 +16418,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[InterventionPrescriptionDiagnos]
 ADD CONSTRAINT [FK_InterventionPrescriptionDiagnos_DiagnosisDescriptor]
 FOREIGN KEY ([DiagnosisDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16476,7 +16484,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[InterventionPrescriptionPopulationServed]
 ADD CONSTRAINT [FK_InterventionPrescriptionPopulationServed_PopulationServedDescriptor]
 FOREIGN KEY ([PopulationServedDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16498,7 +16506,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[InterventionStudy]
 ADD CONSTRAINT [FK_InterventionStudy_DeliveryMethodDescriptor]
 FOREIGN KEY ([DeliveryMethodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16531,7 +16539,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[InterventionStudy]
 ADD CONSTRAINT [FK_InterventionStudy_InterventionClassDescriptor]
 FOREIGN KEY ([InterventionClassDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16553,7 +16561,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[InterventionStudyAppropriateGradeLevel]
 ADD CONSTRAINT [FK_InterventionStudyAppropriateGradeLevel_GradeLevelDescriptor]
 FOREIGN KEY ([GradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16586,7 +16594,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[InterventionStudyAppropriateSex]
 ADD CONSTRAINT [FK_InterventionStudyAppropriateSex_SexDescriptor]
 FOREIGN KEY ([SexDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16619,7 +16627,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[InterventionStudyInterventionEffectiveness]
 ADD CONSTRAINT [FK_InterventionStudyInterventionEffectiveness_DiagnosisDescriptor]
 FOREIGN KEY ([DiagnosisDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16630,7 +16638,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[InterventionStudyInterventionEffectiveness]
 ADD CONSTRAINT [FK_InterventionStudyInterventionEffectiveness_GradeLevelDescriptor]
 FOREIGN KEY ([GradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16641,7 +16649,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[InterventionStudyInterventionEffectiveness]
 ADD CONSTRAINT [FK_InterventionStudyInterventionEffectiveness_InterventionEffectivenessRatingDescriptor]
 FOREIGN KEY ([InterventionEffectivenessRatingDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16663,7 +16671,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[InterventionStudyInterventionEffectiveness]
 ADD CONSTRAINT [FK_InterventionStudyInterventionEffectiveness_PopulationServedDescriptor]
 FOREIGN KEY ([PopulationServedDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16696,7 +16704,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[InterventionStudyPopulationServed]
 ADD CONSTRAINT [FK_InterventionStudyPopulationServed_PopulationServedDescriptor]
 FOREIGN KEY ([PopulationServedDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16718,7 +16726,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[InterventionStudyStateAbbreviation]
 ADD CONSTRAINT [FK_InterventionStudyStateAbbreviation_StateAbbreviationDescriptor]
 FOREIGN KEY ([StateAbbreviationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16740,7 +16748,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LearningStandard]
 ADD CONSTRAINT [FK_LearningStandard_ContentStandardPublicationStatusDescriptor]
 FOREIGN KEY ([ContentStandardPublicationStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16762,7 +16770,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LearningStandard]
 ADD CONSTRAINT [FK_LearningStandard_LearningStandardCategoryDescriptor]
 FOREIGN KEY ([LearningStandardCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16773,7 +16781,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LearningStandard]
 ADD CONSTRAINT [FK_LearningStandard_LearningStandardScopeDescriptor]
 FOREIGN KEY ([LearningStandardScopeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16806,7 +16814,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LearningStandardAcademicSubject]
 ADD CONSTRAINT [FK_LearningStandardAcademicSubject_AcademicSubjectDescriptor]
 FOREIGN KEY ([AcademicSubjectDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16839,7 +16847,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LearningStandardGradeLevel]
 ADD CONSTRAINT [FK_LearningStandardGradeLevel_GradeLevelDescriptor]
 FOREIGN KEY ([GradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16883,7 +16891,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LearningStandardEquivalenceAssociation]
 ADD CONSTRAINT [FK_LearningStandardEquivalenceAssociation_LearningStandardEquivalenceStrengthDescriptor]
 FOREIGN KEY ([LearningStandardEquivalenceStrengthDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16960,7 +16968,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalAccountReportingTag]
 ADD CONSTRAINT [FK_LocalAccountReportingTag_ReportingTagDescriptor]
 FOREIGN KEY ([ReportingTagDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -16982,7 +16990,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalActual]
 ADD CONSTRAINT [FK_LocalActual_FinancialCollectionDescriptor]
 FOREIGN KEY ([FinancialCollectionDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17015,7 +17023,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalBudget]
 ADD CONSTRAINT [FK_LocalBudget_FinancialCollectionDescriptor]
 FOREIGN KEY ([FinancialCollectionDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17048,7 +17056,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalContractedStaff]
 ADD CONSTRAINT [FK_LocalContractedStaff_FinancialCollectionDescriptor]
 FOREIGN KEY ([FinancialCollectionDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17081,7 +17089,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalEducationAgency]
 ADD CONSTRAINT [FK_LocalEducationAgency_CharterStatusDescriptor]
 FOREIGN KEY ([CharterStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17114,7 +17122,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalEducationAgency]
 ADD CONSTRAINT [FK_LocalEducationAgency_LocalEducationAgencyCategoryDescriptor]
 FOREIGN KEY ([LocalEducationAgencyCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17125,7 +17133,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalEducationAgency]
 ADD CONSTRAINT [FK_LocalEducationAgency_OperationalStatusDescriptor]
 FOREIGN KEY ([OperationalStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17158,7 +17166,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalEducationAgencyAccountability]
 ADD CONSTRAINT [FK_LocalEducationAgencyAccountability_GunFreeSchoolsActReportingStatusDescriptor]
 FOREIGN KEY ([GunFreeSchoolsActReportingStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17191,7 +17199,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalEducationAgencyAccountability]
 ADD CONSTRAINT [FK_LocalEducationAgencyAccountability_SchoolChoiceImplementStatusDescriptor]
 FOREIGN KEY ([SchoolChoiceImplementStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17202,7 +17210,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalEducationAgencyAddress]
 ADD CONSTRAINT [FK_LocalEducationAgencyAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17224,7 +17232,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalEducationAgencyAddress]
 ADD CONSTRAINT [FK_LocalEducationAgencyAddress_LocaleDescriptor]
 FOREIGN KEY ([LocaleDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17235,7 +17243,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalEducationAgencyAddress]
 ADD CONSTRAINT [FK_LocalEducationAgencyAddress_StateAbbreviationDescriptor]
 FOREIGN KEY ([StateAbbreviationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17246,7 +17254,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalEducationAgencyCategory]
 ADD CONSTRAINT [FK_LocalEducationAgencyCategory_EducationOrganizationCategoryDescriptor]
 FOREIGN KEY ([EducationOrganizationCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17279,7 +17287,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalEducationAgencyIdentificationCode]
 ADD CONSTRAINT [FK_LocalEducationAgencyIdentificationCode_EducationOrganizationIdentificationSystemDescriptor]
 FOREIGN KEY ([EducationOrganizationIdentificationSystemDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17301,7 +17309,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalEducationAgencyIndicator]
 ADD CONSTRAINT [FK_LocalEducationAgencyIndicator_IndicatorDescriptor]
 FOREIGN KEY ([IndicatorDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17312,7 +17320,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalEducationAgencyIndicator]
 ADD CONSTRAINT [FK_LocalEducationAgencyIndicator_IndicatorGroupDescriptor]
 FOREIGN KEY ([IndicatorGroupDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17323,7 +17331,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalEducationAgencyIndicator]
 ADD CONSTRAINT [FK_LocalEducationAgencyIndicator_IndicatorLevelDescriptor]
 FOREIGN KEY ([IndicatorLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17345,7 +17353,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalEducationAgencyInstitutionTelephone]
 ADD CONSTRAINT [FK_LocalEducationAgencyInstitutionTelephone_InstitutionTelephoneNumberTypeDescriptor]
 FOREIGN KEY ([InstitutionTelephoneNumberTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17367,7 +17375,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalEducationAgencyInternationalAddress]
 ADD CONSTRAINT [FK_LocalEducationAgencyInternationalAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17378,7 +17386,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalEducationAgencyInternationalAddress]
 ADD CONSTRAINT [FK_LocalEducationAgencyInternationalAddress_CountryDescriptor]
 FOREIGN KEY ([CountryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17433,7 +17441,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalEncumbrance]
 ADD CONSTRAINT [FK_LocalEncumbrance_FinancialCollectionDescriptor]
 FOREIGN KEY ([FinancialCollectionDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17466,7 +17474,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[LocalPayroll]
 ADD CONSTRAINT [FK_LocalPayroll_FinancialCollectionDescriptor]
 FOREIGN KEY ([FinancialCollectionDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17543,7 +17551,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ObjectDimensionReportingTag]
 ADD CONSTRAINT [FK_ObjectDimensionReportingTag_ReportingTagDescriptor]
 FOREIGN KEY ([ReportingTagDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17554,7 +17562,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ObjectiveAssessment]
 ADD CONSTRAINT [FK_ObjectiveAssessment_AcademicSubjectDescriptor]
 FOREIGN KEY ([AcademicSubjectDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17642,7 +17650,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ObjectiveAssessmentPerformanceLevel]
 ADD CONSTRAINT [FK_ObjectiveAssessmentPerformanceLevel_AssessmentReportingMethodDescriptor]
 FOREIGN KEY ([AssessmentReportingMethodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17664,7 +17672,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ObjectiveAssessmentPerformanceLevel]
 ADD CONSTRAINT [FK_ObjectiveAssessmentPerformanceLevel_PerformanceLevelDescriptor]
 FOREIGN KEY ([PerformanceLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17675,7 +17683,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ObjectiveAssessmentPerformanceLevel]
 ADD CONSTRAINT [FK_ObjectiveAssessmentPerformanceLevel_ResultDatatypeTypeDescriptor]
 FOREIGN KEY ([ResultDatatypeTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17686,7 +17694,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ObjectiveAssessmentScore]
 ADD CONSTRAINT [FK_ObjectiveAssessmentScore_AssessmentReportingMethodDescriptor]
 FOREIGN KEY ([AssessmentReportingMethodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17708,7 +17716,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ObjectiveAssessmentScore]
 ADD CONSTRAINT [FK_ObjectiveAssessmentScore_ResultDatatypeTypeDescriptor]
 FOREIGN KEY ([ResultDatatypeTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17741,7 +17749,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[OpenStaffPosition]
 ADD CONSTRAINT [FK_OpenStaffPosition_EmploymentStatusDescriptor]
 FOREIGN KEY ([EmploymentStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17752,7 +17760,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[OpenStaffPosition]
 ADD CONSTRAINT [FK_OpenStaffPosition_PostingResultDescriptor]
 FOREIGN KEY ([PostingResultDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17763,7 +17771,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[OpenStaffPosition]
 ADD CONSTRAINT [FK_OpenStaffPosition_ProgramAssignmentDescriptor]
 FOREIGN KEY ([ProgramAssignmentDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17774,7 +17782,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[OpenStaffPosition]
 ADD CONSTRAINT [FK_OpenStaffPosition_StaffClassificationDescriptor]
 FOREIGN KEY ([StaffClassificationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17785,7 +17793,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[OpenStaffPositionAcademicSubject]
 ADD CONSTRAINT [FK_OpenStaffPositionAcademicSubject_AcademicSubjectDescriptor]
 FOREIGN KEY ([AcademicSubjectDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17807,7 +17815,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[OpenStaffPositionInstructionalGradeLevel]
 ADD CONSTRAINT [FK_OpenStaffPositionInstructionalGradeLevel_GradeLevelDescriptor]
 FOREIGN KEY ([GradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17851,7 +17859,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[OperationalUnitDimensionReportingTag]
 ADD CONSTRAINT [FK_OperationalUnitDimensionReportingTag_ReportingTagDescriptor]
 FOREIGN KEY ([ReportingTagDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17862,7 +17870,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[OrganizationDepartment]
 ADD CONSTRAINT [FK_OrganizationDepartment_AcademicSubjectDescriptor]
 FOREIGN KEY ([AcademicSubjectDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17884,7 +17892,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[OrganizationDepartment]
 ADD CONSTRAINT [FK_OrganizationDepartment_OperationalStatusDescriptor]
 FOREIGN KEY ([OperationalStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17906,7 +17914,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[OrganizationDepartmentAddress]
 ADD CONSTRAINT [FK_OrganizationDepartmentAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17917,7 +17925,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[OrganizationDepartmentAddress]
 ADD CONSTRAINT [FK_OrganizationDepartmentAddress_LocaleDescriptor]
 FOREIGN KEY ([LocaleDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17939,7 +17947,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[OrganizationDepartmentAddress]
 ADD CONSTRAINT [FK_OrganizationDepartmentAddress_StateAbbreviationDescriptor]
 FOREIGN KEY ([StateAbbreviationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17950,7 +17958,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[OrganizationDepartmentCategory]
 ADD CONSTRAINT [FK_OrganizationDepartmentCategory_EducationOrganizationCategoryDescriptor]
 FOREIGN KEY ([EducationOrganizationCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17972,7 +17980,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[OrganizationDepartmentIdentificationCode]
 ADD CONSTRAINT [FK_OrganizationDepartmentIdentificationCode_EducationOrganizationIdentificationSystemDescriptor]
 FOREIGN KEY ([EducationOrganizationIdentificationSystemDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -17994,7 +18002,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[OrganizationDepartmentIndicator]
 ADD CONSTRAINT [FK_OrganizationDepartmentIndicator_IndicatorDescriptor]
 FOREIGN KEY ([IndicatorDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18005,7 +18013,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[OrganizationDepartmentIndicator]
 ADD CONSTRAINT [FK_OrganizationDepartmentIndicator_IndicatorGroupDescriptor]
 FOREIGN KEY ([IndicatorGroupDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18016,7 +18024,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[OrganizationDepartmentIndicator]
 ADD CONSTRAINT [FK_OrganizationDepartmentIndicator_IndicatorLevelDescriptor]
 FOREIGN KEY ([IndicatorLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18038,7 +18046,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[OrganizationDepartmentInstitutionTelephone]
 ADD CONSTRAINT [FK_OrganizationDepartmentInstitutionTelephone_InstitutionTelephoneNumberTypeDescriptor]
 FOREIGN KEY ([InstitutionTelephoneNumberTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18060,7 +18068,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[OrganizationDepartmentInternationalAddress]
 ADD CONSTRAINT [FK_OrganizationDepartmentInternationalAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18071,7 +18079,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[OrganizationDepartmentInternationalAddress]
 ADD CONSTRAINT [FK_OrganizationDepartmentInternationalAddress_CountryDescriptor]
 FOREIGN KEY ([CountryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18126,7 +18134,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Person]
 ADD CONSTRAINT [FK_Person_SourceSystemDescriptor]
 FOREIGN KEY ([SourceSystemDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18148,7 +18156,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[PostSecondaryEvent]
 ADD CONSTRAINT [FK_PostSecondaryEvent_PostSecondaryEventCategoryDescriptor]
 FOREIGN KEY ([PostSecondaryEventCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18181,7 +18189,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[PostSecondaryInstitution]
 ADD CONSTRAINT [FK_PostSecondaryInstitution_AdministrativeFundingControlDescriptor]
 FOREIGN KEY ([AdministrativeFundingControlDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18203,7 +18211,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[PostSecondaryInstitution]
 ADD CONSTRAINT [FK_PostSecondaryInstitution_OperationalStatusDescriptor]
 FOREIGN KEY ([OperationalStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18214,7 +18222,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[PostSecondaryInstitution]
 ADD CONSTRAINT [FK_PostSecondaryInstitution_PostSecondaryInstitutionLevelDescriptor]
 FOREIGN KEY ([PostSecondaryInstitutionLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18225,7 +18233,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[PostSecondaryInstitutionAddress]
 ADD CONSTRAINT [FK_PostSecondaryInstitutionAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18236,7 +18244,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[PostSecondaryInstitutionAddress]
 ADD CONSTRAINT [FK_PostSecondaryInstitutionAddress_LocaleDescriptor]
 FOREIGN KEY ([LocaleDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18258,7 +18266,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[PostSecondaryInstitutionAddress]
 ADD CONSTRAINT [FK_PostSecondaryInstitutionAddress_StateAbbreviationDescriptor]
 FOREIGN KEY ([StateAbbreviationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18269,7 +18277,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[PostSecondaryInstitutionCategory]
 ADD CONSTRAINT [FK_PostSecondaryInstitutionCategory_EducationOrganizationCategoryDescriptor]
 FOREIGN KEY ([EducationOrganizationCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18291,7 +18299,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[PostSecondaryInstitutionIdentificationCode]
 ADD CONSTRAINT [FK_PostSecondaryInstitutionIdentificationCode_EducationOrganizationIdentificationSystemDescriptor]
 FOREIGN KEY ([EducationOrganizationIdentificationSystemDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18313,7 +18321,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[PostSecondaryInstitutionIndicator]
 ADD CONSTRAINT [FK_PostSecondaryInstitutionIndicator_IndicatorDescriptor]
 FOREIGN KEY ([IndicatorDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18324,7 +18332,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[PostSecondaryInstitutionIndicator]
 ADD CONSTRAINT [FK_PostSecondaryInstitutionIndicator_IndicatorGroupDescriptor]
 FOREIGN KEY ([IndicatorGroupDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18335,7 +18343,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[PostSecondaryInstitutionIndicator]
 ADD CONSTRAINT [FK_PostSecondaryInstitutionIndicator_IndicatorLevelDescriptor]
 FOREIGN KEY ([IndicatorLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18357,7 +18365,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[PostSecondaryInstitutionInstitutionTelephone]
 ADD CONSTRAINT [FK_PostSecondaryInstitutionInstitutionTelephone_InstitutionTelephoneNumberTypeDescriptor]
 FOREIGN KEY ([InstitutionTelephoneNumberTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18379,7 +18387,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[PostSecondaryInstitutionInternationalAddress]
 ADD CONSTRAINT [FK_PostSecondaryInstitutionInternationalAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18390,7 +18398,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[PostSecondaryInstitutionInternationalAddress]
 ADD CONSTRAINT [FK_PostSecondaryInstitutionInternationalAddress_CountryDescriptor]
 FOREIGN KEY ([CountryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18412,7 +18420,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[PostSecondaryInstitutionMediumOfInstruction]
 ADD CONSTRAINT [FK_PostSecondaryInstitutionMediumOfInstruction_MediumOfInstructionDescriptor]
 FOREIGN KEY ([MediumOfInstructionDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18478,7 +18486,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Program]
 ADD CONSTRAINT [FK_Program_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18500,7 +18508,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ProgramCharacteristic]
 ADD CONSTRAINT [FK_ProgramCharacteristic_ProgramCharacteristicDescriptor]
 FOREIGN KEY ([ProgramCharacteristicDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18544,7 +18552,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ProgramSponsor]
 ADD CONSTRAINT [FK_ProgramSponsor_ProgramSponsorDescriptor]
 FOREIGN KEY ([ProgramSponsorDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18577,7 +18585,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ProgramDimensionReportingTag]
 ADD CONSTRAINT [FK_ProgramDimensionReportingTag_ReportingTagDescriptor]
 FOREIGN KEY ([ReportingTagDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18599,7 +18607,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ProgramEvaluation]
 ADD CONSTRAINT [FK_ProgramEvaluation_ProgramEvaluationPeriodDescriptor]
 FOREIGN KEY ([ProgramEvaluationPeriodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18610,7 +18618,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ProgramEvaluation]
 ADD CONSTRAINT [FK_ProgramEvaluation_ProgramEvaluationTypeDescriptor]
 FOREIGN KEY ([ProgramEvaluationTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18621,7 +18629,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ProgramEvaluation]
 ADD CONSTRAINT [FK_ProgramEvaluation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18654,7 +18662,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ProgramEvaluationLevel]
 ADD CONSTRAINT [FK_ProgramEvaluationLevel_RatingLevelDescriptor]
 FOREIGN KEY ([RatingLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18687,7 +18695,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ProgramEvaluationElement]
 ADD CONSTRAINT [FK_ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_Unified]
 FOREIGN KEY ([ProgramEvaluationPeriodDescriptor_Unified_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18698,7 +18706,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ProgramEvaluationElement]
 ADD CONSTRAINT [FK_ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_Unified]
 FOREIGN KEY ([ProgramEvaluationTypeDescriptor_Unified_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18720,7 +18728,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ProgramEvaluationElement]
 ADD CONSTRAINT [FK_ProgramEvaluationElement_ProgramTypeDescriptor_Unified]
 FOREIGN KEY ([ProgramTypeDescriptor_Unified_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18742,7 +18750,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ProgramEvaluationElementProgramEvaluationLevel]
 ADD CONSTRAINT [FK_ProgramEvaluationElementProgramEvaluationLevel_RatingLevelDescriptor]
 FOREIGN KEY ([RatingLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18764,7 +18772,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ProgramEvaluationObjective]
 ADD CONSTRAINT [FK_ProgramEvaluationObjective_ProgramEvaluation_ProgramEvaluationPeriodDescriptor]
 FOREIGN KEY ([ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18775,7 +18783,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ProgramEvaluationObjective]
 ADD CONSTRAINT [FK_ProgramEvaluationObjective_ProgramEvaluation_ProgramEvaluationTypeDescriptor]
 FOREIGN KEY ([ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18786,7 +18794,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ProgramEvaluationObjective]
 ADD CONSTRAINT [FK_ProgramEvaluationObjective_ProgramEvaluation_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramEvaluation_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18819,7 +18827,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ProgramEvaluationObjectiveProgramEvaluationLevel]
 ADD CONSTRAINT [FK_ProgramEvaluationObjectiveProgramEvaluationLevel_RatingLevelDescriptor]
 FOREIGN KEY ([RatingLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18852,7 +18860,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ProjectDimensionReportingTag]
 ADD CONSTRAINT [FK_ProjectDimensionReportingTag_ReportingTagDescriptor]
 FOREIGN KEY ([ReportingTagDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18885,7 +18893,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ReportCard]
 ADD CONSTRAINT [FK_ReportCard_GradingPeriodGradingPeriod_GradingPeriodDescriptor]
 FOREIGN KEY ([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18918,7 +18926,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ReportCardGradePointAverage]
 ADD CONSTRAINT [FK_ReportCardGradePointAverage_GradePointAverageTypeDescriptor]
 FOREIGN KEY ([GradePointAverageTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18940,7 +18948,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ReportCardGrade]
 ADD CONSTRAINT [FK_ReportCardGrade_Grade_GradeTypeDescriptor]
 FOREIGN KEY ([Grade_GradeTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18951,7 +18959,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ReportCardGrade]
 ADD CONSTRAINT [FK_ReportCardGrade_Grade_GradingPeriodDescriptor]
 FOREIGN KEY ([Grade_GradingPeriodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -18995,7 +19003,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ReportCardStudentCompetencyObjective]
 ADD CONSTRAINT [FK_ReportCardStudentCompetencyObjective_StudentCompetencyObjective_GradingPeriodDescriptor]
 FOREIGN KEY ([StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19006,7 +19014,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[ReportCardStudentCompetencyObjective]
 ADD CONSTRAINT [FK_ReportCardStudentCompetencyObjective_StudentCompetencyObjective_ObjectiveGradeLevelDescriptor]
 FOREIGN KEY ([StudentCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19050,7 +19058,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[RestraintEvent]
 ADD CONSTRAINT [FK_RestraintEvent_EducationalEnvironmentDescriptor]
 FOREIGN KEY ([EducationalEnvironmentDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19083,7 +19091,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[RestraintEventProgram]
 ADD CONSTRAINT [FK_RestraintEventProgram_Program_ProgramTypeDescriptor]
 FOREIGN KEY ([Program_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19127,7 +19135,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[RestraintEventReason]
 ADD CONSTRAINT [FK_RestraintEventReason_RestraintEventReasonDescriptor]
 FOREIGN KEY ([RestraintEventReasonDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19138,7 +19146,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[School]
 ADD CONSTRAINT [FK_School_AdministrativeFundingControlDescriptor]
 FOREIGN KEY ([AdministrativeFundingControlDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19149,7 +19157,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[School]
 ADD CONSTRAINT [FK_School_CharterApprovalAgencyTypeDescriptor]
 FOREIGN KEY ([CharterApprovalAgencyTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19171,7 +19179,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[School]
 ADD CONSTRAINT [FK_School_CharterStatusDescriptor]
 FOREIGN KEY ([CharterStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19193,7 +19201,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[School]
 ADD CONSTRAINT [FK_School_InternetAccessDescriptor]
 FOREIGN KEY ([InternetAccessDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19215,7 +19223,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[School]
 ADD CONSTRAINT [FK_School_MagnetSpecialProgramEmphasisSchoolDescriptor]
 FOREIGN KEY ([MagnetSpecialProgramEmphasisSchoolDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19226,7 +19234,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[School]
 ADD CONSTRAINT [FK_School_OperationalStatusDescriptor]
 FOREIGN KEY ([OperationalStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19237,7 +19245,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[School]
 ADD CONSTRAINT [FK_School_SchoolTypeDescriptor]
 FOREIGN KEY ([SchoolTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19248,7 +19256,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[School]
 ADD CONSTRAINT [FK_School_TitleIPartASchoolDesignationDescriptor]
 FOREIGN KEY ([TitleIPartASchoolDesignationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19259,7 +19267,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SchoolAddress]
 ADD CONSTRAINT [FK_SchoolAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19270,7 +19278,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SchoolAddress]
 ADD CONSTRAINT [FK_SchoolAddress_LocaleDescriptor]
 FOREIGN KEY ([LocaleDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19292,7 +19300,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SchoolAddress]
 ADD CONSTRAINT [FK_SchoolAddress_StateAbbreviationDescriptor]
 FOREIGN KEY ([StateAbbreviationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19303,7 +19311,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SchoolEducationOrganizationCategory]
 ADD CONSTRAINT [FK_SchoolEducationOrganizationCategory_EducationOrganizationCategoryDescriptor]
 FOREIGN KEY ([EducationOrganizationCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19325,7 +19333,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SchoolGradeLevel]
 ADD CONSTRAINT [FK_SchoolGradeLevel_GradeLevelDescriptor]
 FOREIGN KEY ([GradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19347,7 +19355,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SchoolIdentificationCode]
 ADD CONSTRAINT [FK_SchoolIdentificationCode_EducationOrganizationIdentificationSystemDescriptor]
 FOREIGN KEY ([EducationOrganizationIdentificationSystemDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19369,7 +19377,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SchoolIndicator]
 ADD CONSTRAINT [FK_SchoolIndicator_IndicatorDescriptor]
 FOREIGN KEY ([IndicatorDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19380,7 +19388,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SchoolIndicator]
 ADD CONSTRAINT [FK_SchoolIndicator_IndicatorGroupDescriptor]
 FOREIGN KEY ([IndicatorGroupDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19391,7 +19399,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SchoolIndicator]
 ADD CONSTRAINT [FK_SchoolIndicator_IndicatorLevelDescriptor]
 FOREIGN KEY ([IndicatorLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19413,7 +19421,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SchoolInstitutionTelephone]
 ADD CONSTRAINT [FK_SchoolInstitutionTelephone_InstitutionTelephoneNumberTypeDescriptor]
 FOREIGN KEY ([InstitutionTelephoneNumberTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19435,7 +19443,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SchoolInternationalAddress]
 ADD CONSTRAINT [FK_SchoolInternationalAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19446,7 +19454,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SchoolInternationalAddress]
 ADD CONSTRAINT [FK_SchoolInternationalAddress_CountryDescriptor]
 FOREIGN KEY ([CountryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19479,7 +19487,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SchoolCategory]
 ADD CONSTRAINT [FK_SchoolCategory_SchoolCategoryDescriptor]
 FOREIGN KEY ([SchoolCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19523,7 +19531,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Section]
 ADD CONSTRAINT [FK_Section_AvailableCreditTypeDescriptor]
 FOREIGN KEY ([AvailableCreditTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19556,7 +19564,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Section]
 ADD CONSTRAINT [FK_Section_EducationalEnvironmentDescriptor]
 FOREIGN KEY ([EducationalEnvironmentDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19567,7 +19575,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Section]
 ADD CONSTRAINT [FK_Section_InstructionLanguageDescriptor]
 FOREIGN KEY ([InstructionLanguageDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19600,7 +19608,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Section]
 ADD CONSTRAINT [FK_Section_MediumOfInstructionDescriptor]
 FOREIGN KEY ([MediumOfInstructionDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19611,7 +19619,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Section]
 ADD CONSTRAINT [FK_Section_PopulationServedDescriptor]
 FOREIGN KEY ([PopulationServedDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19622,7 +19630,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Section]
 ADD CONSTRAINT [FK_Section_SectionTypeDescriptor]
 FOREIGN KEY ([SectionTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19644,7 +19652,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SectionCharacteristic]
 ADD CONSTRAINT [FK_SectionCharacteristic_SectionCharacteristicDescriptor]
 FOREIGN KEY ([SectionCharacteristicDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19677,7 +19685,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SectionCourseLevelCharacteristic]
 ADD CONSTRAINT [FK_SectionCourseLevelCharacteristic_CourseLevelCharacteristicDescriptor]
 FOREIGN KEY ([CourseLevelCharacteristicDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19699,7 +19707,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SectionOfferedGradeLevel]
 ADD CONSTRAINT [FK_SectionOfferedGradeLevel_GradeLevelDescriptor]
 FOREIGN KEY ([GradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19721,7 +19729,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SectionProgram]
 ADD CONSTRAINT [FK_SectionProgram_Program_ProgramTypeDescriptor]
 FOREIGN KEY ([Program_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19831,7 +19839,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Session]
 ADD CONSTRAINT [FK_Session_TermDescriptor]
 FOREIGN KEY ([TermDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19864,7 +19872,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SessionGradingPeriod]
 ADD CONSTRAINT [FK_SessionGradingPeriod_GradingPeriod_GradingPeriodDescriptor]
 FOREIGN KEY ([GradingPeriod_GradingPeriodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19908,7 +19916,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SourceDimensionReportingTag]
 ADD CONSTRAINT [FK_SourceDimensionReportingTag_ReportingTagDescriptor]
 FOREIGN KEY ([ReportingTagDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19930,7 +19938,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Staff]
 ADD CONSTRAINT [FK_Staff_CitizenshipStatusDescriptor]
 FOREIGN KEY ([CitizenshipStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19952,7 +19960,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Staff]
 ADD CONSTRAINT [FK_Staff_HighestCompletedLevelOfEducationDescriptor]
 FOREIGN KEY ([HighestCompletedLevelOfEducationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19974,7 +19982,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Staff]
 ADD CONSTRAINT [FK_Staff_Person_SourceSystemDescriptor]
 FOREIGN KEY ([Person_SourceSystemDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19985,7 +19993,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Staff]
 ADD CONSTRAINT [FK_Staff_SexDescriptor]
 FOREIGN KEY ([SexDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -19996,7 +20004,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffAddress]
 ADD CONSTRAINT [FK_StaffAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20007,7 +20015,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffAddress]
 ADD CONSTRAINT [FK_StaffAddress_LocaleDescriptor]
 FOREIGN KEY ([LocaleDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20029,7 +20037,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffAddress]
 ADD CONSTRAINT [FK_StaffAddress_StateAbbreviationDescriptor]
 FOREIGN KEY ([StateAbbreviationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20040,7 +20048,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffAncestryEthnicOrigin]
 ADD CONSTRAINT [FK_StaffAncestryEthnicOrigin_AncestryEthnicOriginDescriptor]
 FOREIGN KEY ([AncestryEthnicOriginDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20073,7 +20081,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffCredential]
 ADD CONSTRAINT [FK_StaffCredential_Credential_StateOfIssueStateAbbreviationDescriptor]
 FOREIGN KEY ([Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20095,7 +20103,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffElectronicMail]
 ADD CONSTRAINT [FK_StaffElectronicMail_ElectronicMailTypeDescriptor]
 FOREIGN KEY ([ElectronicMailTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20128,7 +20136,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffIdentificationCode]
 ADD CONSTRAINT [FK_StaffIdentificationCode_StaffIdentificationSystemDescriptor]
 FOREIGN KEY ([StaffIdentificationSystemDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20139,7 +20147,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffIdentificationDocument]
 ADD CONSTRAINT [FK_StaffIdentificationDocument_IdentificationDocumentUseDescriptor]
 FOREIGN KEY ([IdentificationDocumentUseDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20150,7 +20158,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffIdentificationDocument]
 ADD CONSTRAINT [FK_StaffIdentificationDocument_IssuerCountryDescriptor]
 FOREIGN KEY ([IssuerCountryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20161,7 +20169,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffIdentificationDocument]
 ADD CONSTRAINT [FK_StaffIdentificationDocument_PersonalInformationVerificationDescriptor]
 FOREIGN KEY ([PersonalInformationVerificationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20183,7 +20191,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffInternationalAddress]
 ADD CONSTRAINT [FK_StaffInternationalAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20194,7 +20202,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffInternationalAddress]
 ADD CONSTRAINT [FK_StaffInternationalAddress_CountryDescriptor]
 FOREIGN KEY ([CountryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20216,7 +20224,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffLanguage]
 ADD CONSTRAINT [FK_StaffLanguage_LanguageDescriptor]
 FOREIGN KEY ([LanguageDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20238,7 +20246,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffOtherName]
 ADD CONSTRAINT [FK_StaffOtherName_OtherNameTypeDescriptor]
 FOREIGN KEY ([OtherNameTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20260,7 +20268,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffPersonalIdentificationDocument]
 ADD CONSTRAINT [FK_StaffPersonalIdentificationDocument_IdentificationDocumentUseDescriptor]
 FOREIGN KEY ([IdentificationDocumentUseDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20271,7 +20279,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffPersonalIdentificationDocument]
 ADD CONSTRAINT [FK_StaffPersonalIdentificationDocument_IssuerCountryDescriptor]
 FOREIGN KEY ([IssuerCountryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20282,7 +20290,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffPersonalIdentificationDocument]
 ADD CONSTRAINT [FK_StaffPersonalIdentificationDocument_PersonalInformationVerificationDescriptor]
 FOREIGN KEY ([PersonalInformationVerificationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20304,7 +20312,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffRace]
 ADD CONSTRAINT [FK_StaffRace_RaceDescriptor]
 FOREIGN KEY ([RaceDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20326,7 +20334,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffRecognition]
 ADD CONSTRAINT [FK_StaffRecognition_AchievementCategoryDescriptor]
 FOREIGN KEY ([AchievementCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20337,7 +20345,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffRecognition]
 ADD CONSTRAINT [FK_StaffRecognition_RecognitionTypeDescriptor]
 FOREIGN KEY ([RecognitionTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20370,7 +20378,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffTelephone]
 ADD CONSTRAINT [FK_StaffTelephone_TelephoneNumberTypeDescriptor]
 FOREIGN KEY ([TelephoneNumberTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20392,7 +20400,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffTribalAffiliation]
 ADD CONSTRAINT [FK_StaffTribalAffiliation_TribalAffiliationDescriptor]
 FOREIGN KEY ([TribalAffiliationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20414,7 +20422,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffVisa]
 ADD CONSTRAINT [FK_StaffVisa_VisaDescriptor]
 FOREIGN KEY ([VisaDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20436,7 +20444,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffLanguageUs]
 ADD CONSTRAINT [FK_StaffLanguageUs_LanguageUseDescriptor]
 FOREIGN KEY ([LanguageUseDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20458,7 +20466,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffAbsenceEvent]
 ADD CONSTRAINT [FK_StaffAbsenceEvent_AbsenceEventCategoryDescriptor]
 FOREIGN KEY ([AbsenceEventCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20557,7 +20565,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffDisciplineIncidentAssociationDisciplineIncidentParticipationCode]
 ADD CONSTRAINT [FK_StaffDisciplineIncidentAssociationDisciplineIncidentParticipationCode_DisciplineIncidentParticipationCodeDescriptor]
 FOREIGN KEY ([DisciplineIncidentParticipationCodeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20590,7 +20598,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffEducationOrganizationAssignmentAssociation]
 ADD CONSTRAINT [FK_StaffEducationOrganizationAssignmentAssociation_Credential_StateOfIssueStateAbbreviationDescriptor]
 FOREIGN KEY ([Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20618,12 +20626,12 @@ ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StaffEducationOrganizationAssignmentAssociation_EmploymentStaffEducationOrganizationEmploymentAssociation_Employme_ac93af6f23' AND parent_object_id = OBJECT_ID(N'edfi.StaffEducationOrganizationAssignmentAssociation')
+    WHERE name = N'FK_StaffEducationOrganizationAssignmentAssociation_EmploymentStaffEducationOrganizationEmploymentAssociation_Employme_5f7f59a5d7' AND parent_object_id = OBJECT_ID(N'edfi.StaffEducationOrganizationAssignmentAssociation')
 )
 ALTER TABLE [edfi].[StaffEducationOrganizationAssignmentAssociation]
-ADD CONSTRAINT [FK_StaffEducationOrganizationAssignmentAssociation_EmploymentStaffEducationOrganizationEmploymentAssociation_Employme_ac93af6f23]
+ADD CONSTRAINT [FK_StaffEducationOrganizationAssignmentAssociation_EmploymentStaffEducationOrganizationEmploymentAssociation_Employme_5f7f59a5d7]
 FOREIGN KEY ([EmploymentStaffEducationOrganizationEmploymentAssociation_EmploymentStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20645,7 +20653,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffEducationOrganizationAssignmentAssociation]
 ADD CONSTRAINT [FK_StaffEducationOrganizationAssignmentAssociation_StaffClassificationDescriptor]
 FOREIGN KEY ([StaffClassificationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20667,7 +20675,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffEducationOrganizationContactAssociation]
 ADD CONSTRAINT [FK_StaffEducationOrganizationContactAssociation_AddressAddressTypeDescriptor]
 FOREIGN KEY ([AddressAddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20678,7 +20686,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffEducationOrganizationContactAssociation]
 ADD CONSTRAINT [FK_StaffEducationOrganizationContactAssociation_AddressLocaleDescriptor]
 FOREIGN KEY ([AddressLocaleDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20689,7 +20697,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffEducationOrganizationContactAssociation]
 ADD CONSTRAINT [FK_StaffEducationOrganizationContactAssociation_AddressStateAbbreviationDescriptor]
 FOREIGN KEY ([AddressStateAbbreviationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20700,7 +20708,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffEducationOrganizationContactAssociation]
 ADD CONSTRAINT [FK_StaffEducationOrganizationContactAssociation_ContactTypeDescriptor]
 FOREIGN KEY ([ContactTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20766,7 +20774,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffEducationOrganizationContactAssociationTelephone]
 ADD CONSTRAINT [FK_StaffEducationOrganizationContactAssociationTelephone_TelephoneNumberTypeDescriptor]
 FOREIGN KEY ([TelephoneNumberTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20788,7 +20796,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffEducationOrganizationEmploymentAssociation]
 ADD CONSTRAINT [FK_StaffEducationOrganizationEmploymentAssociation_Credential_StateOfIssueStateAbbreviationDescriptor]
 FOREIGN KEY ([Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20821,7 +20829,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffEducationOrganizationEmploymentAssociation]
 ADD CONSTRAINT [FK_StaffEducationOrganizationEmploymentAssociation_EmploymentStatusDescriptor]
 FOREIGN KEY ([EmploymentStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20832,7 +20840,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffEducationOrganizationEmploymentAssociation]
 ADD CONSTRAINT [FK_StaffEducationOrganizationEmploymentAssociation_SeparationDescriptor]
 FOREIGN KEY ([SeparationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20843,7 +20851,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffEducationOrganizationEmploymentAssociation]
 ADD CONSTRAINT [FK_StaffEducationOrganizationEmploymentAssociation_SeparationReasonDescriptor]
 FOREIGN KEY ([SeparationReasonDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20876,7 +20884,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffLeave]
 ADD CONSTRAINT [FK_StaffLeave_StaffLeaveEventCategoryDescriptor]
 FOREIGN KEY ([StaffLeaveEventCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20909,7 +20917,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffProgramAssociation]
 ADD CONSTRAINT [FK_StaffProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -20964,7 +20972,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffSchoolAssociation]
 ADD CONSTRAINT [FK_StaffSchoolAssociation_ProgramAssignmentDescriptor]
 FOREIGN KEY ([ProgramAssignmentDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21008,7 +21016,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffSchoolAssociationAcademicSubject]
 ADD CONSTRAINT [FK_StaffSchoolAssociationAcademicSubject_AcademicSubjectDescriptor]
 FOREIGN KEY ([AcademicSubjectDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21030,7 +21038,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffSchoolAssociationGradeLevel]
 ADD CONSTRAINT [FK_StaffSchoolAssociationGradeLevel_GradeLevelDescriptor]
 FOREIGN KEY ([GradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21052,7 +21060,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StaffSectionAssociation]
 ADD CONSTRAINT [FK_StaffSectionAssociation_ClassroomPositionDescriptor]
 FOREIGN KEY ([ClassroomPositionDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21107,7 +21115,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StateEducationAgency]
 ADD CONSTRAINT [FK_StateEducationAgency_OperationalStatusDescriptor]
 FOREIGN KEY ([OperationalStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21140,7 +21148,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StateEducationAgencyAddress]
 ADD CONSTRAINT [FK_StateEducationAgencyAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21151,7 +21159,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StateEducationAgencyAddress]
 ADD CONSTRAINT [FK_StateEducationAgencyAddress_LocaleDescriptor]
 FOREIGN KEY ([LocaleDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21162,7 +21170,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StateEducationAgencyAddress]
 ADD CONSTRAINT [FK_StateEducationAgencyAddress_StateAbbreviationDescriptor]
 FOREIGN KEY ([StateAbbreviationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21184,7 +21192,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StateEducationAgencyCategory]
 ADD CONSTRAINT [FK_StateEducationAgencyCategory_EducationOrganizationCategoryDescriptor]
 FOREIGN KEY ([EducationOrganizationCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21217,7 +21225,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StateEducationAgencyIdentificationCode]
 ADD CONSTRAINT [FK_StateEducationAgencyIdentificationCode_EducationOrganizationIdentificationSystemDescriptor]
 FOREIGN KEY ([EducationOrganizationIdentificationSystemDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21239,7 +21247,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StateEducationAgencyIndicator]
 ADD CONSTRAINT [FK_StateEducationAgencyIndicator_IndicatorDescriptor]
 FOREIGN KEY ([IndicatorDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21250,7 +21258,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StateEducationAgencyIndicator]
 ADD CONSTRAINT [FK_StateEducationAgencyIndicator_IndicatorGroupDescriptor]
 FOREIGN KEY ([IndicatorGroupDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21261,7 +21269,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StateEducationAgencyIndicator]
 ADD CONSTRAINT [FK_StateEducationAgencyIndicator_IndicatorLevelDescriptor]
 FOREIGN KEY ([IndicatorLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21283,7 +21291,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StateEducationAgencyInstitutionTelephone]
 ADD CONSTRAINT [FK_StateEducationAgencyInstitutionTelephone_InstitutionTelephoneNumberTypeDescriptor]
 FOREIGN KEY ([InstitutionTelephoneNumberTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21305,7 +21313,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StateEducationAgencyInternationalAddress]
 ADD CONSTRAINT [FK_StateEducationAgencyInternationalAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21316,7 +21324,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StateEducationAgencyInternationalAddress]
 ADD CONSTRAINT [FK_StateEducationAgencyInternationalAddress_CountryDescriptor]
 FOREIGN KEY ([CountryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21360,7 +21368,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Student]
 ADD CONSTRAINT [FK_Student_BirthCountryDescriptor]
 FOREIGN KEY ([BirthCountryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21371,7 +21379,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Student]
 ADD CONSTRAINT [FK_Student_BirthSexDescriptor]
 FOREIGN KEY ([BirthSexDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21382,7 +21390,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Student]
 ADD CONSTRAINT [FK_Student_BirthStateAbbreviationDescriptor]
 FOREIGN KEY ([BirthStateAbbreviationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21393,7 +21401,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Student]
 ADD CONSTRAINT [FK_Student_CitizenshipStatusDescriptor]
 FOREIGN KEY ([CitizenshipStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21426,7 +21434,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Student]
 ADD CONSTRAINT [FK_Student_Person_SourceSystemDescriptor]
 FOREIGN KEY ([Person_SourceSystemDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21437,7 +21445,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentIdentificationDocument]
 ADD CONSTRAINT [FK_StudentIdentificationDocument_IdentificationDocumentUseDescriptor]
 FOREIGN KEY ([IdentificationDocumentUseDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21448,7 +21456,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentIdentificationDocument]
 ADD CONSTRAINT [FK_StudentIdentificationDocument_IssuerCountryDescriptor]
 FOREIGN KEY ([IssuerCountryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21459,7 +21467,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentIdentificationDocument]
 ADD CONSTRAINT [FK_StudentIdentificationDocument_PersonalInformationVerificationDescriptor]
 FOREIGN KEY ([PersonalInformationVerificationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21481,7 +21489,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentOtherName]
 ADD CONSTRAINT [FK_StudentOtherName_OtherNameTypeDescriptor]
 FOREIGN KEY ([OtherNameTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21503,7 +21511,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentPersonalIdentificationDocument]
 ADD CONSTRAINT [FK_StudentPersonalIdentificationDocument_IdentificationDocumentUseDescriptor]
 FOREIGN KEY ([IdentificationDocumentUseDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21514,7 +21522,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentPersonalIdentificationDocument]
 ADD CONSTRAINT [FK_StudentPersonalIdentificationDocument_IssuerCountryDescriptor]
 FOREIGN KEY ([IssuerCountryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21525,7 +21533,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentPersonalIdentificationDocument]
 ADD CONSTRAINT [FK_StudentPersonalIdentificationDocument_PersonalInformationVerificationDescriptor]
 FOREIGN KEY ([PersonalInformationVerificationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21558,7 +21566,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentVisa]
 ADD CONSTRAINT [FK_StudentVisa_VisaDescriptor]
 FOREIGN KEY ([VisaDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21569,7 +21577,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAcademicRecord]
 ADD CONSTRAINT [FK_StudentAcademicRecord_CumulativeAttemptedCreditTypeDescriptor]
 FOREIGN KEY ([CumulativeAttemptedCreditTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21580,7 +21588,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAcademicRecord]
 ADD CONSTRAINT [FK_StudentAcademicRecord_CumulativeEarnedCreditTypeDescriptor]
 FOREIGN KEY ([CumulativeEarnedCreditTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21624,7 +21632,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAcademicRecord]
 ADD CONSTRAINT [FK_StudentAcademicRecord_SessionAttemptedCreditTypeDescriptor]
 FOREIGN KEY ([SessionAttemptedCreditTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21635,7 +21643,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAcademicRecord]
 ADD CONSTRAINT [FK_StudentAcademicRecord_SessionEarnedCreditTypeDescriptor]
 FOREIGN KEY ([SessionEarnedCreditTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21657,7 +21665,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAcademicRecord]
 ADD CONSTRAINT [FK_StudentAcademicRecord_TermDescriptor]
 FOREIGN KEY ([TermDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21668,7 +21676,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAcademicRecordAcademicHonor]
 ADD CONSTRAINT [FK_StudentAcademicRecordAcademicHonor_AcademicHonorCategoryDescriptor]
 FOREIGN KEY ([AcademicHonorCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21679,7 +21687,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAcademicRecordAcademicHonor]
 ADD CONSTRAINT [FK_StudentAcademicRecordAcademicHonor_AchievementCategoryDescriptor]
 FOREIGN KEY ([AchievementCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21701,7 +21709,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAcademicRecordDiploma]
 ADD CONSTRAINT [FK_StudentAcademicRecordDiploma_AchievementCategoryDescriptor]
 FOREIGN KEY ([AchievementCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21712,7 +21720,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAcademicRecordDiploma]
 ADD CONSTRAINT [FK_StudentAcademicRecordDiploma_DiplomaLevelDescriptor]
 FOREIGN KEY ([DiplomaLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21723,7 +21731,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAcademicRecordDiploma]
 ADD CONSTRAINT [FK_StudentAcademicRecordDiploma_DiplomaTypeDescriptor]
 FOREIGN KEY ([DiplomaTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21745,7 +21753,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAcademicRecordGradePointAverage]
 ADD CONSTRAINT [FK_StudentAcademicRecordGradePointAverage_GradePointAverageTypeDescriptor]
 FOREIGN KEY ([GradePointAverageTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21767,7 +21775,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAcademicRecordRecognition]
 ADD CONSTRAINT [FK_StudentAcademicRecordRecognition_AchievementCategoryDescriptor]
 FOREIGN KEY ([AchievementCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21778,7 +21786,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAcademicRecordRecognition]
 ADD CONSTRAINT [FK_StudentAcademicRecordRecognition_RecognitionTypeDescriptor]
 FOREIGN KEY ([RecognitionTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21800,7 +21808,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAcademicRecordReportCard]
 ADD CONSTRAINT [FK_StudentAcademicRecordReportCard_ReportCard_GradingPeriodDescriptor]
 FOREIGN KEY ([ReportCard_GradingPeriodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21833,7 +21841,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessment]
 ADD CONSTRAINT [FK_StudentAssessment_AdministrationEnvironmentDescriptor]
 FOREIGN KEY ([AdministrationEnvironmentDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21844,7 +21852,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessment]
 ADD CONSTRAINT [FK_StudentAssessment_AdministrationLanguageDescriptor]
 FOREIGN KEY ([AdministrationLanguageDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21877,7 +21885,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessment]
 ADD CONSTRAINT [FK_StudentAssessment_EventCircumstanceDescriptor]
 FOREIGN KEY ([EventCircumstanceDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21888,7 +21896,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessment]
 ADD CONSTRAINT [FK_StudentAssessment_PeriodAssessmentPeriodDescriptor]
 FOREIGN KEY ([PeriodAssessmentPeriodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21899,7 +21907,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessment]
 ADD CONSTRAINT [FK_StudentAssessment_PlatformTypeDescriptor]
 FOREIGN KEY ([PlatformTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21910,7 +21918,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessment]
 ADD CONSTRAINT [FK_StudentAssessment_ReasonNotTestedDescriptor]
 FOREIGN KEY ([ReasonNotTestedDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21932,7 +21940,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessment]
 ADD CONSTRAINT [FK_StudentAssessment_RetestIndicatorDescriptor]
 FOREIGN KEY ([RetestIndicatorDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21965,7 +21973,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessment]
 ADD CONSTRAINT [FK_StudentAssessment_WhenAssessedGradeLevelDescriptor]
 FOREIGN KEY ([WhenAssessedGradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21976,7 +21984,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessmentAccommodation]
 ADD CONSTRAINT [FK_StudentAssessmentAccommodation_AccommodationDescriptor]
 FOREIGN KEY ([AccommodationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -21998,7 +22006,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessmentItem]
 ADD CONSTRAINT [FK_StudentAssessmentItem_AssessmentItemResultDescriptor]
 FOREIGN KEY ([AssessmentItemResultDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22009,7 +22017,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessmentItem]
 ADD CONSTRAINT [FK_StudentAssessmentItem_ResponseIndicatorDescriptor]
 FOREIGN KEY ([ResponseIndicatorDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22042,7 +22050,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessmentPerformanceLevel]
 ADD CONSTRAINT [FK_StudentAssessmentPerformanceLevel_AssessmentReportingMethodDescriptor]
 FOREIGN KEY ([AssessmentReportingMethodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22053,7 +22061,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessmentPerformanceLevel]
 ADD CONSTRAINT [FK_StudentAssessmentPerformanceLevel_PerformanceLevelDescriptor]
 FOREIGN KEY ([PerformanceLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22075,7 +22083,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessmentScoreResult]
 ADD CONSTRAINT [FK_StudentAssessmentScoreResult_AssessmentReportingMethodDescriptor]
 FOREIGN KEY ([AssessmentReportingMethodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22086,7 +22094,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessmentScoreResult]
 ADD CONSTRAINT [FK_StudentAssessmentScoreResult_ResultDatatypeTypeDescriptor]
 FOREIGN KEY ([ResultDatatypeTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22130,7 +22138,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessmentStudentObjectiveAssessmentPerformanceLevel]
 ADD CONSTRAINT [FK_StudentAssessmentStudentObjectiveAssessmentPerformanceLevel_AssessmentReportingMethodDescriptor]
 FOREIGN KEY ([AssessmentReportingMethodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22141,7 +22149,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessmentStudentObjectiveAssessmentPerformanceLevel]
 ADD CONSTRAINT [FK_StudentAssessmentStudentObjectiveAssessmentPerformanceLevel_PerformanceLevelDescriptor]
 FOREIGN KEY ([PerformanceLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22163,7 +22171,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessmentStudentObjectiveAssessmentScoreResult]
 ADD CONSTRAINT [FK_StudentAssessmentStudentObjectiveAssessmentScoreResult_AssessmentReportingMethodDescriptor]
 FOREIGN KEY ([AssessmentReportingMethodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22174,7 +22182,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessmentStudentObjectiveAssessmentScoreResult]
 ADD CONSTRAINT [FK_StudentAssessmentStudentObjectiveAssessmentScoreResult_ResultDatatypeTypeDescriptor]
 FOREIGN KEY ([ResultDatatypeTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22207,7 +22215,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessmentEducationOrganizationAssociation]
 ADD CONSTRAINT [FK_StudentAssessmentEducationOrganizationAssociation_EducationOrganizationAssociationTypeDescriptor]
 FOREIGN KEY ([EducationOrganizationAssociationTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22262,7 +22270,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessmentRegistration]
 ADD CONSTRAINT [FK_StudentAssessmentRegistration_AssessmentGradeLevelDescriptor]
 FOREIGN KEY ([AssessmentGradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22284,7 +22292,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessmentRegistration]
 ADD CONSTRAINT [FK_StudentAssessmentRegistration_PlatformTypeDescriptor]
 FOREIGN KEY ([PlatformTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22350,7 +22358,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessmentRegistrationAssessmentAccommodation]
 ADD CONSTRAINT [FK_StudentAssessmentRegistrationAssessmentAccommodation_AccommodationDescriptor]
 FOREIGN KEY ([AccommodationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22416,7 +22424,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentAssessmentRegistrationBatteryPartAssociationAccommodation]
 ADD CONSTRAINT [FK_StudentAssessmentRegistrationBatteryPartAssociationAccommodation_AccommodationDescriptor]
 FOREIGN KEY ([AccommodationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22460,7 +22468,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentCTEProgramAssociation]
 ADD CONSTRAINT [FK_StudentCTEProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22482,7 +22490,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentCTEProgramAssociation]
 ADD CONSTRAINT [FK_StudentCTEProgramAssociation_ReasonExitedDescriptor]
 FOREIGN KEY ([ReasonExitedDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22504,7 +22512,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentCTEProgramAssociation]
 ADD CONSTRAINT [FK_StudentCTEProgramAssociation_TechnicalSkillsAssessmentDescriptor]
 FOREIGN KEY ([TechnicalSkillsAssessmentDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22515,7 +22523,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentCTEProgramAssociationCteProgramService]
 ADD CONSTRAINT [FK_StudentCTEProgramAssociationCteProgramService_CteProgramServiceDescriptor]
 FOREIGN KEY ([CteProgramServiceDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22537,7 +22545,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentCTEProgramAssociationProgramParticipationStatus]
 ADD CONSTRAINT [FK_StudentCTEProgramAssociationProgramParticipationStatus_ParticipationStatusDescriptor]
 FOREIGN KEY ([ParticipationStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22614,7 +22622,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentCompetencyObjective]
 ADD CONSTRAINT [FK_StudentCompetencyObjective_CompetencyLevelDescriptor]
 FOREIGN KEY ([CompetencyLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22636,7 +22644,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentCompetencyObjective]
 ADD CONSTRAINT [FK_StudentCompetencyObjective_GradingPeriodGradingPeriod_GradingPeriodDescriptor]
 FOREIGN KEY ([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22658,7 +22666,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentCompetencyObjective]
 ADD CONSTRAINT [FK_StudentCompetencyObjective_ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor]
 FOREIGN KEY ([ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22697,12 +22705,12 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentCompetencyObjectiveGeneralStudentProgramAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceGeneral_3ad4c8bec3' AND parent_object_id = OBJECT_ID(N'edfi.StudentCompetencyObjectiveGeneralStudentProgramAssociation')
+    WHERE name = N'FK_StudentCompetencyObjectiveGeneralStudentProgramAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceGeneral_b30e6bf1cb' AND parent_object_id = OBJECT_ID(N'edfi.StudentCompetencyObjectiveGeneralStudentProgramAssociation')
 )
 ALTER TABLE [edfi].[StudentCompetencyObjectiveGeneralStudentProgramAssociation]
-ADD CONSTRAINT [FK_StudentCompetencyObjectiveGeneralStudentProgramAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceGeneral_3ad4c8bec3]
+ADD CONSTRAINT [FK_StudentCompetencyObjectiveGeneralStudentProgramAssociation_StudentCompetencyObjectiveSectionOrProgramChoiceGeneral_b30e6bf1cb]
 FOREIGN KEY ([StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22768,7 +22776,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentContactAssociation]
 ADD CONSTRAINT [FK_StudentContactAssociation_RelationDescriptor]
 FOREIGN KEY ([RelationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22790,7 +22798,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentDisciplineIncidentBehaviorAssociation]
 ADD CONSTRAINT [FK_StudentDisciplineIncidentBehaviorAssociation_BehaviorDescriptor]
 FOREIGN KEY ([BehaviorDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22834,7 +22842,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentDisciplineIncidentBehaviorAssociationDisciplineIncidentParticipationCode]
 ADD CONSTRAINT [FK_StudentDisciplineIncidentBehaviorAssociationDisciplineIncidentParticipationCode_DisciplineIncidentParticipationCodeDescriptor]
 FOREIGN KEY ([DisciplineIncidentParticipationCodeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22867,7 +22875,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentDisciplineIncidentBehaviorAssociationWeapon]
 ADD CONSTRAINT [FK_StudentDisciplineIncidentBehaviorAssociationWeapon_WeaponDescriptor]
 FOREIGN KEY ([WeaponDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22906,12 +22914,12 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentDisciplineIncidentNonOffenderAssociationDisciplineIncidentParticipationCode_DisciplineIncidentParticipation_a85f2750fb' AND parent_object_id = OBJECT_ID(N'edfi.StudentDisciplineIncidentNonOffenderAssociationDisciplineIncidentParticipationCode')
+    WHERE name = N'FK_StudentDisciplineIncidentNonOffenderAssociationDisciplineIncidentParticipationCode_DisciplineIncidentParticipation_1d9c5ece8c' AND parent_object_id = OBJECT_ID(N'edfi.StudentDisciplineIncidentNonOffenderAssociationDisciplineIncidentParticipationCode')
 )
 ALTER TABLE [edfi].[StudentDisciplineIncidentNonOffenderAssociationDisciplineIncidentParticipationCode]
-ADD CONSTRAINT [FK_StudentDisciplineIncidentNonOffenderAssociationDisciplineIncidentParticipationCode_DisciplineIncidentParticipation_a85f2750fb]
+ADD CONSTRAINT [FK_StudentDisciplineIncidentNonOffenderAssociationDisciplineIncidentParticipationCode_DisciplineIncidentParticipation_1d9c5ece8c]
 FOREIGN KEY ([DisciplineIncidentParticipationCodeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22966,7 +22974,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssessmentAccommodationGeneralAccommodation]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssessmentAccommodationGeneralAccommodation_AccommodationDescriptor]
 FOREIGN KEY ([AccommodationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -22988,7 +22996,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociation]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociation_BarrierToInternetAccessInResidenceDescriptor]
 FOREIGN KEY ([BarrierToInternetAccessInResidenceDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23021,7 +23029,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociation]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociation_InternetAccessTypeInResidenceDescriptor]
 FOREIGN KEY ([InternetAccessTypeInResidenceDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23032,7 +23040,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociation]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociation_InternetPerformanceInResidenceDescriptor]
 FOREIGN KEY ([InternetPerformanceInResidenceDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23043,7 +23051,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociation]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociation_LimitedEnglishProficiencyDescriptor]
 FOREIGN KEY ([LimitedEnglishProficiencyDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23054,7 +23062,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociation]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociation_PrimaryLearningDeviceAccessDescriptor]
 FOREIGN KEY ([PrimaryLearningDeviceAccessDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23065,7 +23073,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociation]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociation_PrimaryLearningDeviceAwayFromSchoolDescriptor]
 FOREIGN KEY ([PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23076,7 +23084,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociation]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociation_PrimaryLearningDeviceProviderDescriptor]
 FOREIGN KEY ([PrimaryLearningDeviceProviderDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23087,7 +23095,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociation]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociation_SexDescriptor]
 FOREIGN KEY ([SexDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23109,7 +23117,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociation]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociation_SupporterMilitaryConnectionDescriptor]
 FOREIGN KEY ([SupporterMilitaryConnectionDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23120,7 +23128,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationAddress]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23131,7 +23139,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationAddress]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationAddress_LocaleDescriptor]
 FOREIGN KEY ([LocaleDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23142,7 +23150,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationAddress]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationAddress_StateAbbreviationDescriptor]
 FOREIGN KEY ([StateAbbreviationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23164,7 +23172,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationAncestryEthnicOrigin]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationAncestryEthnicOrigin_AncestryEthnicOriginDescriptor]
 FOREIGN KEY ([AncestryEthnicOriginDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23197,7 +23205,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationCohortYear]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationCohortYear_CohortYearTypeDescriptor]
 FOREIGN KEY ([CohortYearTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23219,7 +23227,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationCohortYear]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationCohortYear_TermDescriptor]
 FOREIGN KEY ([TermDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23230,7 +23238,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationDisability]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationDisability_DisabilityDescriptor]
 FOREIGN KEY ([DisabilityDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23241,7 +23249,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationDisability]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationDisability_DisabilityDeterminationSourceTypeDescriptor]
 FOREIGN KEY ([DisabilityDeterminationSourceTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23274,7 +23282,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationDisplacedStudent]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationDisplacedStudent_DisplacedStudentStatusDescriptor]
 FOREIGN KEY ([DisplacedStudentStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23296,7 +23304,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationElectronicMail]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationElectronicMail_ElectronicMailTypeDescriptor]
 FOREIGN KEY ([ElectronicMailTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23318,7 +23326,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationInternationalAddress]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationInternationalAddress_AddressTypeDescriptor]
 FOREIGN KEY ([AddressTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23329,7 +23337,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationInternationalAddress]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationInternationalAddress_CountryDescriptor]
 FOREIGN KEY ([CountryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23351,7 +23359,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationLanguage]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationLanguage_LanguageDescriptor]
 FOREIGN KEY ([LanguageDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23373,7 +23381,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationRace]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationRace_RaceDescriptor]
 FOREIGN KEY ([RaceDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23395,7 +23403,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationStudentCharacteristic]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationStudentCharacteristic_StudentCharacteristicDescriptor]
 FOREIGN KEY ([StudentCharacteristicDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23428,7 +23436,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationStudentIdentificationCode]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationStudentIdentificationCode_StudentIdentificationSystemDescriptor]
 FOREIGN KEY ([StudentIdentificationSystemDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23461,7 +23469,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationTelephone]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationTelephone_TelephoneNumberTypeDescriptor]
 FOREIGN KEY ([TelephoneNumberTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23483,7 +23491,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationTribalAffiliation]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationTribalAffiliation_TribalAffiliationDescriptor]
 FOREIGN KEY ([TribalAffiliationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23505,7 +23513,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationDisabilityDesignation]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationDisabilityDesignation_DisabilityDesignationDescriptor]
 FOREIGN KEY ([DisabilityDesignationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23527,7 +23535,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationLanguageUs]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationLanguageUs_LanguageUseDescriptor]
 FOREIGN KEY ([LanguageUseDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23593,7 +23601,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentEducationOrganizationResponsibilityAssociation]
 ADD CONSTRAINT [FK_StudentEducationOrganizationResponsibilityAssociation_ResponsibilityDescriptor]
 FOREIGN KEY ([ResponsibilityDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23615,7 +23623,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentGradebookEntry]
 ADD CONSTRAINT [FK_StudentGradebookEntry_AssignmentLateStatusDescriptor]
 FOREIGN KEY ([AssignmentLateStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23626,7 +23634,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentGradebookEntry]
 ADD CONSTRAINT [FK_StudentGradebookEntry_CompetencyLevelDescriptor]
 FOREIGN KEY ([CompetencyLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23670,7 +23678,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentGradebookEntry]
 ADD CONSTRAINT [FK_StudentGradebookEntry_SubmissionStatusDescriptor]
 FOREIGN KEY ([SubmissionStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23703,7 +23711,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentHealth]
 ADD CONSTRAINT [FK_StudentHealth_NonMedicalImmunizationExemptionDescriptor]
 FOREIGN KEY ([NonMedicalImmunizationExemptionDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23736,7 +23744,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentHealthRequiredImmunization]
 ADD CONSTRAINT [FK_StudentHealthRequiredImmunization_ImmunizationTypeDescriptor]
 FOREIGN KEY ([ImmunizationTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23802,7 +23810,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentHomelessProgramAssociation]
 ADD CONSTRAINT [FK_StudentHomelessProgramAssociation_HomelessPrimaryNighttimeResidenceDescriptor]
 FOREIGN KEY ([HomelessPrimaryNighttimeResidenceDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23813,7 +23821,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentHomelessProgramAssociation]
 ADD CONSTRAINT [FK_StudentHomelessProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23835,7 +23843,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentHomelessProgramAssociation]
 ADD CONSTRAINT [FK_StudentHomelessProgramAssociation_ReasonExitedDescriptor]
 FOREIGN KEY ([ReasonExitedDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23857,7 +23865,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentHomelessProgramAssociationHomelessProgramService]
 ADD CONSTRAINT [FK_StudentHomelessProgramAssociationHomelessProgramService_HomelessProgramServiceDescriptor]
 FOREIGN KEY ([HomelessProgramServiceDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23879,7 +23887,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentHomelessProgramAssociationProgramParticipationStatus]
 ADD CONSTRAINT [FK_StudentHomelessProgramAssociationProgramParticipationStatus_ParticipationStatusDescriptor]
 FOREIGN KEY ([ParticipationStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23945,7 +23953,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentInterventionAssociationInterventionEffectiveness]
 ADD CONSTRAINT [FK_StudentInterventionAssociationInterventionEffectiveness_DiagnosisDescriptor]
 FOREIGN KEY ([DiagnosisDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23956,7 +23964,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentInterventionAssociationInterventionEffectiveness]
 ADD CONSTRAINT [FK_StudentInterventionAssociationInterventionEffectiveness_GradeLevelDescriptor]
 FOREIGN KEY ([GradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23967,7 +23975,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentInterventionAssociationInterventionEffectiveness]
 ADD CONSTRAINT [FK_StudentInterventionAssociationInterventionEffectiveness_InterventionEffectivenessRatingDescriptor]
 FOREIGN KEY ([InterventionEffectivenessRatingDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -23978,7 +23986,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentInterventionAssociationInterventionEffectiveness]
 ADD CONSTRAINT [FK_StudentInterventionAssociationInterventionEffectiveness_PopulationServedDescriptor]
 FOREIGN KEY ([PopulationServedDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24000,7 +24008,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentInterventionAttendanceEvent]
 ADD CONSTRAINT [FK_StudentInterventionAttendanceEvent_AttendanceEventCategoryDescriptor]
 FOREIGN KEY ([AttendanceEventCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24022,7 +24030,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentInterventionAttendanceEvent]
 ADD CONSTRAINT [FK_StudentInterventionAttendanceEvent_EducationalEnvironmentDescriptor]
 FOREIGN KEY ([EducationalEnvironmentDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24077,7 +24085,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentLanguageInstructionProgramAssociation]
 ADD CONSTRAINT [FK_StudentLanguageInstructionProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24099,7 +24107,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentLanguageInstructionProgramAssociation]
 ADD CONSTRAINT [FK_StudentLanguageInstructionProgramAssociation_ReasonExitedDescriptor]
 FOREIGN KEY ([ReasonExitedDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24132,7 +24140,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentLanguageInstructionProgramAssociationEnglishLanguageProficiencyAssessment]
 ADD CONSTRAINT [FK_StudentLanguageInstructionProgramAssociationEnglishLanguageProficiencyAssessment_MonitoredDescriptor]
 FOREIGN KEY ([MonitoredDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24143,7 +24151,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentLanguageInstructionProgramAssociationEnglishLanguageProficiencyAssessment]
 ADD CONSTRAINT [FK_StudentLanguageInstructionProgramAssociationEnglishLanguageProficiencyAssessment_ParticipationDescriptor]
 FOREIGN KEY ([ParticipationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24154,7 +24162,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentLanguageInstructionProgramAssociationEnglishLanguageProficiencyAssessment]
 ADD CONSTRAINT [FK_StudentLanguageInstructionProgramAssociationEnglishLanguageProficiencyAssessment_ProficiencyDescriptor]
 FOREIGN KEY ([ProficiencyDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24165,7 +24173,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentLanguageInstructionProgramAssociationEnglishLanguageProficiencyAssessment]
 ADD CONSTRAINT [FK_StudentLanguageInstructionProgramAssociationEnglishLanguageProficiencyAssessment_ProgressDescriptor]
 FOREIGN KEY ([ProgressDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24187,7 +24195,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentLanguageInstructionProgramAssociationLanguageInstructionProgramService]
 ADD CONSTRAINT [FK_StudentLanguageInstructionProgramAssociationLanguageInstructionProgramService_LanguageInstructionProgramServiceDescriptor]
 FOREIGN KEY ([LanguageInstructionProgramServiceDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24209,7 +24217,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentLanguageInstructionProgramAssociationProgramParticipationStatus]
 ADD CONSTRAINT [FK_StudentLanguageInstructionProgramAssociationProgramParticipationStatus_ParticipationStatusDescriptor]
 FOREIGN KEY ([ParticipationStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24231,7 +24239,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentMigrantEducationProgramAssociation]
 ADD CONSTRAINT [FK_StudentMigrantEducationProgramAssociation_ContinuationOfServicesReasonDescriptor]
 FOREIGN KEY ([ContinuationOfServicesReasonDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24264,7 +24272,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentMigrantEducationProgramAssociation]
 ADD CONSTRAINT [FK_StudentMigrantEducationProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24286,7 +24294,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentMigrantEducationProgramAssociation]
 ADD CONSTRAINT [FK_StudentMigrantEducationProgramAssociation_ReasonExitedDescriptor]
 FOREIGN KEY ([ReasonExitedDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24308,7 +24316,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentMigrantEducationProgramAssociationMigrantEducationProgramService]
 ADD CONSTRAINT [FK_StudentMigrantEducationProgramAssociationMigrantEducationProgramService_MigrantEducationProgramServiceDescriptor]
 FOREIGN KEY ([MigrantEducationProgramServiceDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24330,7 +24338,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentMigrantEducationProgramAssociationProgramParticipationStatus]
 ADD CONSTRAINT [FK_StudentMigrantEducationProgramAssociationProgramParticipationStatus_ParticipationStatusDescriptor]
 FOREIGN KEY ([ParticipationStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24374,7 +24382,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociation]
 ADD CONSTRAINT [FK_StudentNeglectedOrDelinquentProgramAssociation_ElaProgressLevelDescriptor]
 FOREIGN KEY ([ElaProgressLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24385,7 +24393,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociation]
 ADD CONSTRAINT [FK_StudentNeglectedOrDelinquentProgramAssociation_MathematicsProgressLevelDescriptor]
 FOREIGN KEY ([MathematicsProgressLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24396,7 +24404,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociation]
 ADD CONSTRAINT [FK_StudentNeglectedOrDelinquentProgramAssociation_NeglectedOrDelinquentProgramDescriptor]
 FOREIGN KEY ([NeglectedOrDelinquentProgramDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24407,7 +24415,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociation]
 ADD CONSTRAINT [FK_StudentNeglectedOrDelinquentProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24429,7 +24437,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociation]
 ADD CONSTRAINT [FK_StudentNeglectedOrDelinquentProgramAssociation_ReasonExitedDescriptor]
 FOREIGN KEY ([ReasonExitedDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24446,12 +24454,12 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentNeglectedOrDelinquentProgramAssociationNeglectedOrDelinquentProgramService_NeglectedOrDelinquentProgramServ_d598e62cb1' AND parent_object_id = OBJECT_ID(N'edfi.StudentNeglectedOrDelinquentProgramAssociationNeglectedOrDelinquentProgramService')
+    WHERE name = N'FK_StudentNeglectedOrDelinquentProgramAssociationNeglectedOrDelinquentProgramService_NeglectedOrDelinquentProgramServ_ac8eae63ef' AND parent_object_id = OBJECT_ID(N'edfi.StudentNeglectedOrDelinquentProgramAssociationNeglectedOrDelinquentProgramService')
 )
 ALTER TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociationNeglectedOrDelinquentProgramService]
-ADD CONSTRAINT [FK_StudentNeglectedOrDelinquentProgramAssociationNeglectedOrDelinquentProgramService_NeglectedOrDelinquentProgramServ_d598e62cb1]
+ADD CONSTRAINT [FK_StudentNeglectedOrDelinquentProgramAssociationNeglectedOrDelinquentProgramService_NeglectedOrDelinquentProgramServ_ac8eae63ef]
 FOREIGN KEY ([NeglectedOrDelinquentProgramServiceDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24473,7 +24481,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociationProgramParticipationStatus]
 ADD CONSTRAINT [FK_StudentNeglectedOrDelinquentProgramAssociationProgramParticipationStatus_ParticipationStatusDescriptor]
 FOREIGN KEY ([ParticipationStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24517,7 +24525,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentProgramAssociation]
 ADD CONSTRAINT [FK_StudentProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24539,7 +24547,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentProgramAssociation]
 ADD CONSTRAINT [FK_StudentProgramAssociation_ReasonExitedDescriptor]
 FOREIGN KEY ([ReasonExitedDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24561,7 +24569,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentProgramAssociationProgramParticipationStatus]
 ADD CONSTRAINT [FK_StudentProgramAssociationProgramParticipationStatus_ParticipationStatusDescriptor]
 FOREIGN KEY ([ParticipationStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24583,7 +24591,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentProgramAssociationService]
 ADD CONSTRAINT [FK_StudentProgramAssociationService_ServiceDescriptor]
 FOREIGN KEY ([ServiceDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24605,7 +24613,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentProgramAttendanceEvent]
 ADD CONSTRAINT [FK_StudentProgramAttendanceEvent_AttendanceEventCategoryDescriptor]
 FOREIGN KEY ([AttendanceEventCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24638,7 +24646,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentProgramAttendanceEvent]
 ADD CONSTRAINT [FK_StudentProgramAttendanceEvent_EducationalEnvironmentDescriptor]
 FOREIGN KEY ([EducationalEnvironmentDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24649,7 +24657,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentProgramAttendanceEvent]
 ADD CONSTRAINT [FK_StudentProgramAttendanceEvent_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24704,7 +24712,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentProgramEvaluation]
 ADD CONSTRAINT [FK_StudentProgramEvaluation_ProgramEvaluation_ProgramEvaluationPeriodDescriptor]
 FOREIGN KEY ([ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24715,7 +24723,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentProgramEvaluation]
 ADD CONSTRAINT [FK_StudentProgramEvaluation_ProgramEvaluation_ProgramEvaluationTypeDescriptor]
 FOREIGN KEY ([ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24726,7 +24734,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentProgramEvaluation]
 ADD CONSTRAINT [FK_StudentProgramEvaluation_ProgramEvaluation_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramEvaluation_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24770,7 +24778,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentProgramEvaluation]
 ADD CONSTRAINT [FK_StudentProgramEvaluation_SummaryEvaluationRatingLevelDescriptor]
 FOREIGN KEY ([SummaryEvaluationRatingLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24792,29 +24800,29 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentProgramEvaluationStudentEvaluationElement]
 ADD CONSTRAINT [FK_StudentProgramEvaluationStudentEvaluationElement_EvaluationElementRatingLevelDescriptor]
 FOREIGN KEY ([EvaluationElementRatingLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement_ProgramEvaluatio_98a4d86359' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramEvaluationStudentEvaluationElement')
+    WHERE name = N'FK_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement_ProgramEvaluatio_173a5f2e5c' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramEvaluationStudentEvaluationElement')
 )
 ALTER TABLE [edfi].[StudentProgramEvaluationStudentEvaluationElement]
-ADD CONSTRAINT [FK_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement_ProgramEvaluatio_98a4d86359]
-FOREIGN KEY ([StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement_ProgramEvaluatio_d57421b9eb' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramEvaluationStudentEvaluationElement')
-)
-ALTER TABLE [edfi].[StudentProgramEvaluationStudentEvaluationElement]
-ADD CONSTRAINT [FK_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement_ProgramEvaluatio_d57421b9eb]
+ADD CONSTRAINT [FK_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement_ProgramEvaluatio_173a5f2e5c]
 FOREIGN KEY ([StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement_ProgramEvaluatio_71237e4b22' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramEvaluationStudentEvaluationElement')
+)
+ALTER TABLE [edfi].[StudentProgramEvaluationStudentEvaluationElement]
+ADD CONSTRAINT [FK_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement_ProgramEvaluatio_71237e4b22]
+FOREIGN KEY ([StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24825,7 +24833,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentProgramEvaluationStudentEvaluationElement]
 ADD CONSTRAINT [FK_StudentProgramEvaluationStudentEvaluationElement_StudentEvaluationElementProgramEvaluationElement_ProgramTypeDescriptor]
 FOREIGN KEY ([StudentEvaluationElementProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24858,29 +24866,29 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentProgramEvaluationStudentEvaluationObjective]
 ADD CONSTRAINT [FK_StudentProgramEvaluationStudentEvaluationObjective_EvaluationObjectiveRatingLevelDescriptor]
 FOREIGN KEY ([EvaluationObjectiveRatingLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEva_1bced26720' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramEvaluationStudentEvaluationObjective')
+    WHERE name = N'FK_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEva_2017a79138' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramEvaluationStudentEvaluationObjective')
 )
 ALTER TABLE [edfi].[StudentProgramEvaluationStudentEvaluationObjective]
-ADD CONSTRAINT [FK_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEva_1bced26720]
+ADD CONSTRAINT [FK_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEva_2017a79138]
 FOREIGN KEY ([StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEva_2bd6a5311c' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramEvaluationStudentEvaluationObjective')
+    WHERE name = N'FK_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEva_7f2b2f9be7' AND parent_object_id = OBJECT_ID(N'edfi.StudentProgramEvaluationStudentEvaluationObjective')
 )
 ALTER TABLE [edfi].[StudentProgramEvaluationStudentEvaluationObjective]
-ADD CONSTRAINT [FK_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEva_2bd6a5311c]
+ADD CONSTRAINT [FK_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEva_7f2b2f9be7]
 FOREIGN KEY ([StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationPeriodDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24891,7 +24899,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentProgramEvaluationStudentEvaluationObjective]
 ADD CONSTRAINT [FK_StudentProgramEvaluationStudentEvaluationObjective_StudentEvaluationObjectiveProgramEvaluationObjective_ProgramTypeDescriptor]
 FOREIGN KEY ([StudentEvaluationObjectiveProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24957,7 +24965,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSchoolAssociation]
 ADD CONSTRAINT [FK_StudentSchoolAssociation_EnrollmentTypeDescriptor]
 FOREIGN KEY ([EnrollmentTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24968,7 +24976,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSchoolAssociation]
 ADD CONSTRAINT [FK_StudentSchoolAssociation_EntryGradeLevelDescriptor]
 FOREIGN KEY ([EntryGradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24979,7 +24987,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSchoolAssociation]
 ADD CONSTRAINT [FK_StudentSchoolAssociation_EntryGradeLevelReasonDescriptor]
 FOREIGN KEY ([EntryGradeLevelReasonDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -24990,7 +24998,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSchoolAssociation]
 ADD CONSTRAINT [FK_StudentSchoolAssociation_EntryTypeDescriptor]
 FOREIGN KEY ([EntryTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25001,7 +25009,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSchoolAssociation]
 ADD CONSTRAINT [FK_StudentSchoolAssociation_ExitWithdrawTypeDescriptor]
 FOREIGN KEY ([ExitWithdrawTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25012,7 +25020,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSchoolAssociation]
 ADD CONSTRAINT [FK_StudentSchoolAssociation_GraduationPlan_GraduationPlanTypeDescriptor]
 FOREIGN KEY ([GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25034,7 +25042,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSchoolAssociation]
 ADD CONSTRAINT [FK_StudentSchoolAssociation_NextYearGradeLevelDescriptor]
 FOREIGN KEY ([NextYearGradeLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25056,7 +25064,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSchoolAssociation]
 ADD CONSTRAINT [FK_StudentSchoolAssociation_ResidencyStatusDescriptor]
 FOREIGN KEY ([ResidencyStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25067,7 +25075,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSchoolAssociation]
 ADD CONSTRAINT [FK_StudentSchoolAssociation_SchoolChoiceBasisDescriptor]
 FOREIGN KEY ([SchoolChoiceBasisDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25111,7 +25119,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSchoolAssociationAlternativeGraduationPlan]
 ADD CONSTRAINT [FK_StudentSchoolAssociationAlternativeGraduationPlan_AlternativeGraduationPlan_GraduationPlanTypeDescriptor]
 FOREIGN KEY ([AlternativeGraduationPlan_GraduationPlanTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25144,7 +25152,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSchoolAssociationEducationPlan]
 ADD CONSTRAINT [FK_StudentSchoolAssociationEducationPlan_EducationPlanDescriptor]
 FOREIGN KEY ([EducationPlanDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25166,7 +25174,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSchoolAttendanceEvent]
 ADD CONSTRAINT [FK_StudentSchoolAttendanceEvent_AttendanceEventCategoryDescriptor]
 FOREIGN KEY ([AttendanceEventCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25188,7 +25196,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSchoolAttendanceEvent]
 ADD CONSTRAINT [FK_StudentSchoolAttendanceEvent_EducationalEnvironmentDescriptor]
 FOREIGN KEY ([EducationalEnvironmentDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25254,7 +25262,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSchoolFoodServiceProgramAssociation]
 ADD CONSTRAINT [FK_StudentSchoolFoodServiceProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25276,7 +25284,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSchoolFoodServiceProgramAssociation]
 ADD CONSTRAINT [FK_StudentSchoolFoodServiceProgramAssociation_ReasonExitedDescriptor]
 FOREIGN KEY ([ReasonExitedDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25298,7 +25306,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSchoolFoodServiceProgramAssociationProgramParticipationStatus]
 ADD CONSTRAINT [FK_StudentSchoolFoodServiceProgramAssociationProgramParticipationStatus_ParticipationStatusDescriptor]
 FOREIGN KEY ([ParticipationStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25320,7 +25328,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSchoolFoodServiceProgramAssociationSchoolFoodServiceProgramService]
 ADD CONSTRAINT [FK_StudentSchoolFoodServiceProgramAssociationSchoolFoodServiceProgramService_SchoolFoodServiceProgramServiceDescriptor]
 FOREIGN KEY ([SchoolFoodServiceProgramServiceDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25364,7 +25372,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSection504ProgramAssociation]
 ADD CONSTRAINT [FK_StudentSection504ProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25386,7 +25394,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSection504ProgramAssociation]
 ADD CONSTRAINT [FK_StudentSection504ProgramAssociation_ReasonExitedDescriptor]
 FOREIGN KEY ([ReasonExitedDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25397,7 +25405,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSection504ProgramAssociation]
 ADD CONSTRAINT [FK_StudentSection504ProgramAssociation_Section504DisabilityDescriptor]
 FOREIGN KEY ([Section504DisabilityDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25419,7 +25427,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSection504ProgramAssociationProgramParticipationStatus]
 ADD CONSTRAINT [FK_StudentSection504ProgramAssociationProgramParticipationStatus_ParticipationStatusDescriptor]
 FOREIGN KEY ([ParticipationStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25441,7 +25449,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSectionAssociation]
 ADD CONSTRAINT [FK_StudentSectionAssociation_AttemptStatusDescriptor]
 FOREIGN KEY ([AttemptStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25474,7 +25482,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSectionAssociation]
 ADD CONSTRAINT [FK_StudentSectionAssociation_DualCreditInstitutionDescriptor]
 FOREIGN KEY ([DualCreditInstitutionDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25485,7 +25493,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSectionAssociation]
 ADD CONSTRAINT [FK_StudentSectionAssociation_DualCreditTypeDescriptor]
 FOREIGN KEY ([DualCreditTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25496,7 +25504,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSectionAssociation]
 ADD CONSTRAINT [FK_StudentSectionAssociation_RepeatIdentifierDescriptor]
 FOREIGN KEY ([RepeatIdentifierDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25529,7 +25537,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSectionAssociationProgram]
 ADD CONSTRAINT [FK_StudentSectionAssociationProgram_Program_ProgramTypeDescriptor]
 FOREIGN KEY ([Program_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25562,7 +25570,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSectionAttendanceEvent]
 ADD CONSTRAINT [FK_StudentSectionAttendanceEvent_AttendanceEventCategoryDescriptor]
 FOREIGN KEY ([AttendanceEventCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25584,7 +25592,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSectionAttendanceEvent]
 ADD CONSTRAINT [FK_StudentSectionAttendanceEvent_EducationalEnvironmentDescriptor]
 FOREIGN KEY ([EducationalEnvironmentDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25661,7 +25669,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSpecialEducationProgramAssociation]
 ADD CONSTRAINT [FK_StudentSpecialEducationProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25683,7 +25691,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSpecialEducationProgramAssociation]
 ADD CONSTRAINT [FK_StudentSpecialEducationProgramAssociation_ReasonExitedDescriptor]
 FOREIGN KEY ([ReasonExitedDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25694,7 +25702,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSpecialEducationProgramAssociation]
 ADD CONSTRAINT [FK_StudentSpecialEducationProgramAssociation_SpecialEducationExitReasonDescriptor]
 FOREIGN KEY ([SpecialEducationExitReasonDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25705,7 +25713,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSpecialEducationProgramAssociation]
 ADD CONSTRAINT [FK_StudentSpecialEducationProgramAssociation_SpecialEducationSettingDescriptor]
 FOREIGN KEY ([SpecialEducationSettingDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25727,7 +25735,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSpecialEducationProgramAssociationDisability]
 ADD CONSTRAINT [FK_StudentSpecialEducationProgramAssociationDisability_DisabilityDescriptor]
 FOREIGN KEY ([DisabilityDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25738,7 +25746,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSpecialEducationProgramAssociationDisability]
 ADD CONSTRAINT [FK_StudentSpecialEducationProgramAssociationDisability_DisabilityDeterminationSourceTypeDescriptor]
 FOREIGN KEY ([DisabilityDeterminationSourceTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25760,7 +25768,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSpecialEducationProgramAssociationProgramParticipationStatus]
 ADD CONSTRAINT [FK_StudentSpecialEducationProgramAssociationProgramParticipationStatus_ParticipationStatusDescriptor]
 FOREIGN KEY ([ParticipationStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25804,7 +25812,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSpecialEducationProgramAssociationSpecialEducationProgramService]
 ADD CONSTRAINT [FK_StudentSpecialEducationProgramAssociationSpecialEducationProgramService_SpecialEducationProgramServiceDescriptor]
 FOREIGN KEY ([SpecialEducationProgramServiceDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25826,7 +25834,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSpecialEducationProgramAssociationDisabilityDesignation]
 ADD CONSTRAINT [FK_StudentSpecialEducationProgramAssociationDisabilityDesignation_DisabilityDesignationDescriptor]
 FOREIGN KEY ([DisabilityDesignationDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25892,7 +25900,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSpecialEducationProgramEligibilityAssociation]
 ADD CONSTRAINT [FK_StudentSpecialEducationProgramEligibilityAssociation_EligibilityDelayReasonDescriptor]
 FOREIGN KEY ([EligibilityDelayReasonDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25903,7 +25911,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSpecialEducationProgramEligibilityAssociation]
 ADD CONSTRAINT [FK_StudentSpecialEducationProgramEligibilityAssociation_EligibilityEvaluationTypeDescriptor]
 FOREIGN KEY ([EligibilityEvaluationTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25914,7 +25922,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSpecialEducationProgramEligibilityAssociation]
 ADD CONSTRAINT [FK_StudentSpecialEducationProgramEligibilityAssociation_EvaluationDelayReasonDescriptor]
 FOREIGN KEY ([EvaluationDelayReasonDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25925,7 +25933,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSpecialEducationProgramEligibilityAssociation]
 ADD CONSTRAINT [FK_StudentSpecialEducationProgramEligibilityAssociation_IdeaPartDescriptor]
 FOREIGN KEY ([IdeaPartDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25936,7 +25944,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentSpecialEducationProgramEligibilityAssociation]
 ADD CONSTRAINT [FK_StudentSpecialEducationProgramEligibilityAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -25991,7 +25999,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentTitleIPartAProgramAssociation]
 ADD CONSTRAINT [FK_StudentTitleIPartAProgramAssociation_ProgramProgram_ProgramTypeDescriptor]
 FOREIGN KEY ([ProgramProgram_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -26013,7 +26021,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentTitleIPartAProgramAssociation]
 ADD CONSTRAINT [FK_StudentTitleIPartAProgramAssociation_ReasonExitedDescriptor]
 FOREIGN KEY ([ReasonExitedDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -26035,7 +26043,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentTitleIPartAProgramAssociation]
 ADD CONSTRAINT [FK_StudentTitleIPartAProgramAssociation_TitleIPartAParticipantDescriptor]
 FOREIGN KEY ([TitleIPartAParticipantDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -26046,7 +26054,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentTitleIPartAProgramAssociationProgramParticipationStatus]
 ADD CONSTRAINT [FK_StudentTitleIPartAProgramAssociationProgramParticipationStatus_ParticipationStatusDescriptor]
 FOREIGN KEY ([ParticipationStatusDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -26079,7 +26087,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentTitleIPartAProgramAssociationTitleIPartAProgramService]
 ADD CONSTRAINT [FK_StudentTitleIPartAProgramAssociationTitleIPartAProgramService_TitleIPartAProgramServiceDescriptor]
 FOREIGN KEY ([TitleIPartAProgramServiceDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -26101,7 +26109,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentTransportation]
 ADD CONSTRAINT [FK_StudentTransportation_StudentBusDetailsBusRouteDescriptor]
 FOREIGN KEY ([StudentBusDetailsBusRouteDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -26134,7 +26142,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentTransportation]
 ADD CONSTRAINT [FK_StudentTransportation_TransportationPublicExpenseEligibilityTypeDescriptor]
 FOREIGN KEY ([TransportationPublicExpenseEligibilityTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -26145,7 +26153,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentTransportation]
 ADD CONSTRAINT [FK_StudentTransportation_TransportationTypeDescriptor]
 FOREIGN KEY ([TransportationTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -26167,7 +26175,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentTransportationTravelDayofWeek]
 ADD CONSTRAINT [FK_StudentTransportationTravelDayofWeek_TravelDayofWeekDescriptor]
 FOREIGN KEY ([TravelDayofWeekDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -26189,7 +26197,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[StudentTransportationTravelDirection]
 ADD CONSTRAINT [FK_StudentTransportationTravelDirection_TravelDirectionDescriptor]
 FOREIGN KEY ([TravelDirectionDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -26244,7 +26252,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[Survey]
 ADD CONSTRAINT [FK_Survey_SurveyCategoryDescriptor]
 FOREIGN KEY ([SurveyCategoryDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -26299,7 +26307,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SurveyProgramAssociation]
 ADD CONSTRAINT [FK_SurveyProgramAssociation_Program_ProgramTypeDescriptor]
 FOREIGN KEY ([Program_ProgramTypeDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -26343,7 +26351,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SurveyQuestion]
 ADD CONSTRAINT [FK_SurveyQuestion_QuestionFormDescriptor]
 FOREIGN KEY ([QuestionFormDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -26508,7 +26516,7 @@ IF NOT EXISTS (
 ALTER TABLE [edfi].[SurveyResponseSurveyLevel]
 ADD CONSTRAINT [FK_SurveyResponseSurveyLevel_SurveyLevelDescriptor]
 FOREIGN KEY ([SurveyLevelDescriptor_DescriptorId])
-REFERENCES [dms].[Descriptor] ([DocumentId])
+REFERENCES [dms].[Descriptor] ([DescriptorId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -26772,14 +26780,6 @@ IF NOT EXISTS (
     WHERE s.name = N'auth' AND t.name = N'EducationOrganizationIdToEducationOrganizationId' AND i.name = N'IX_EducationOrganizationIdToEducationOrganizationId_Target'
 )
 CREATE INDEX [IX_EducationOrganizationIdToEducationOrganizationId_Target] ON [auth].[EducationOrganizationIdToEducationOrganizationId] ([TargetEducationOrganizationId]) INCLUDE ([SourceEducationOrganizationId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'dms' AND t.name = N'Descriptor' AND i.name = N'IX_Descriptor_Discriminator_ContentVersion'
-)
-CREATE INDEX [IX_Descriptor_Discriminator_ContentVersion] ON [dms].[Descriptor] ([Discriminator], [ContentVersion]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -36549,6 +36549,14 @@ IF NOT EXISTS (
 )
 CREATE INDEX [IX_SurveySectionResponseStaffTargetAssociation_Staff_StaffUniqueId_Staff_DocumentId] ON [edfi].[SurveySectionResponseStaffTargetAssociation] ([Staff_StaffUniqueId], [Staff_DocumentId]);
 
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'tracked_changes_edfi' AND t.name = N'Descriptor' AND i.name = N'IX_Descriptor_ResourceKeyId_ChangeVersion'
+)
+CREATE INDEX [IX_Descriptor_ResourceKeyId_ChangeVersion] ON [tracked_changes_edfi].[Descriptor] ([ResourceKeyId], [ChangeVersion]);
+
 GO
 CREATE OR ALTER VIEW [edfi].[EducationOrganization_View] AS
 SELECT [DocumentId] AS [DocumentId], [CommunityOrganizationId] AS [EducationOrganizationId], CAST(N'Ed-Fi:CommunityOrganization' AS nvarchar(256)) AS [Discriminator]
@@ -41054,7 +41062,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 54;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCompetencyObjective' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.objective=' + i.[Objective] + N'#' + N'$.objectiveGradeLevelDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ObjectiveGradeLevelDescriptor_DescriptorId]))), i.[DocumentId], 54
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCompetencyObjective' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.objective=' + i.[Objective] + N'#' + N'$.objectiveGradeLevelDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ObjectiveGradeLevelDescriptor_DescriptorId]))), i.[DocumentId], 54
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([Objective]) OR UPDATE([ObjectiveGradeLevelDescriptor_DescriptorId]))
@@ -41069,7 +41077,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 54;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCompetencyObjective' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.objective=' + i.[Objective] + N'#' + N'$.objectiveGradeLevelDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ObjectiveGradeLevelDescriptor_DescriptorId]))), i.[DocumentId], 54
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCompetencyObjective' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.objective=' + i.[Objective] + N'#' + N'$.objectiveGradeLevelDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ObjectiveGradeLevelDescriptor_DescriptorId]))), i.[DocumentId], 54
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -41141,7 +41149,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ObjectiveGradeLevelDescriptor_DescriptorId];
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ObjectiveGradeLevelDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -41181,8 +41189,8 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ObjectiveGradeLevelDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ObjectiveGradeLevelDescriptor_DescriptorId];
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ObjectiveGradeLevelDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[ObjectiveGradeLevelDescriptor_DescriptorId];
         END
     END
 END;
@@ -42297,7 +42305,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 69;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseTranscript' AS nvarchar(max)) + N'$.courseAttemptResultDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[CourseAttemptResultDescriptor_DescriptorId])) + N'#' + N'$.courseReference.courseCode=' + i.[CourseCourse_CourseCode] + N'#' + N'$.courseReference.educationOrganizationId=' + CAST(i.[CourseCourse_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.educationOrganizationId=' + CAST(i.[StudentAcademicRecord_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.schoolYear=' + CAST(i.[StudentAcademicRecord_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.studentUniqueId=' + i.[StudentAcademicRecord_StudentUniqueId] + N'#' + N'$.studentAcademicRecordReference.termDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[StudentAcademicRecord_TermDescriptor_DescriptorId]))), i.[DocumentId], 69
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseTranscript' AS nvarchar(max)) + N'$.courseAttemptResultDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[CourseAttemptResultDescriptor_DescriptorId])) + N'#' + N'$.courseReference.courseCode=' + i.[CourseCourse_CourseCode] + N'#' + N'$.courseReference.educationOrganizationId=' + CAST(i.[CourseCourse_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.educationOrganizationId=' + CAST(i.[StudentAcademicRecord_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.schoolYear=' + CAST(i.[StudentAcademicRecord_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.studentUniqueId=' + i.[StudentAcademicRecord_StudentUniqueId] + N'#' + N'$.studentAcademicRecordReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[StudentAcademicRecord_TermDescriptor_DescriptorId]))), i.[DocumentId], 69
         FROM inserted i;
     END
     ELSE IF (UPDATE([CourseAttemptResultDescriptor_DescriptorId]) OR UPDATE([CourseCourse_CourseCode]) OR UPDATE([CourseCourse_EducationOrganizationId]) OR UPDATE([StudentAcademicRecord_EducationOrganizationId]) OR UPDATE([StudentAcademicRecord_SchoolYear]) OR UPDATE([StudentAcademicRecord_StudentUniqueId]) OR UPDATE([StudentAcademicRecord_TermDescriptor_DescriptorId]))
@@ -42312,7 +42320,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 69;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseTranscript' AS nvarchar(max)) + N'$.courseAttemptResultDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[CourseAttemptResultDescriptor_DescriptorId])) + N'#' + N'$.courseReference.courseCode=' + i.[CourseCourse_CourseCode] + N'#' + N'$.courseReference.educationOrganizationId=' + CAST(i.[CourseCourse_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.educationOrganizationId=' + CAST(i.[StudentAcademicRecord_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.schoolYear=' + CAST(i.[StudentAcademicRecord_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.studentUniqueId=' + i.[StudentAcademicRecord_StudentUniqueId] + N'#' + N'$.studentAcademicRecordReference.termDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[StudentAcademicRecord_TermDescriptor_DescriptorId]))), i.[DocumentId], 69
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseTranscript' AS nvarchar(max)) + N'$.courseAttemptResultDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[CourseAttemptResultDescriptor_DescriptorId])) + N'#' + N'$.courseReference.courseCode=' + i.[CourseCourse_CourseCode] + N'#' + N'$.courseReference.educationOrganizationId=' + CAST(i.[CourseCourse_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.educationOrganizationId=' + CAST(i.[StudentAcademicRecord_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.schoolYear=' + CAST(i.[StudentAcademicRecord_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.studentUniqueId=' + i.[StudentAcademicRecord_StudentUniqueId] + N'#' + N'$.studentAcademicRecordReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[StudentAcademicRecord_TermDescriptor_DescriptorId]))), i.[DocumentId], 69
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -42396,8 +42404,8 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[CourseAttemptResultDescriptor_DescriptorId]
-        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[StudentAcademicRecord_TermDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[CourseAttemptResultDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DescriptorId] = del.[StudentAcademicRecord_TermDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentAcademicRecord_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -42462,11 +42470,11 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[CourseAttemptResultDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[StudentAcademicRecord_TermDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[CourseAttemptResultDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DescriptorId] = del.[StudentAcademicRecord_TermDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentAcademicRecord_StudentUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[CourseAttemptResultDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DocumentId] = i.[StudentAcademicRecord_TermDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[CourseAttemptResultDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DescriptorId] = i.[StudentAcademicRecord_TermDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[StudentAcademicRecord_StudentUniqueId];
         END
     END
@@ -42757,7 +42765,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 70;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCredential' AS nvarchar(max)) + N'$.credentialIdentifier=' + i.[CredentialIdentifier] + N'#' + N'$.stateOfIssueStateAbbreviationDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId]))), i.[DocumentId], 70
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCredential' AS nvarchar(max)) + N'$.credentialIdentifier=' + i.[CredentialIdentifier] + N'#' + N'$.stateOfIssueStateAbbreviationDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId]))), i.[DocumentId], 70
         FROM inserted i;
     END
     ELSE IF (UPDATE([CredentialIdentifier]) OR UPDATE([StateOfIssueStateAbbreviationDescriptor_DescriptorId]))
@@ -42772,7 +42780,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 70;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCredential' AS nvarchar(max)) + N'$.credentialIdentifier=' + i.[CredentialIdentifier] + N'#' + N'$.stateOfIssueStateAbbreviationDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId]))), i.[DocumentId], 70
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCredential' AS nvarchar(max)) + N'$.credentialIdentifier=' + i.[CredentialIdentifier] + N'#' + N'$.stateOfIssueStateAbbreviationDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId]))), i.[DocumentId], 70
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -42844,7 +42852,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StateOfIssueStateAbbreviationDescriptor_DescriptorId];
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[StateOfIssueStateAbbreviationDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -42884,8 +42892,8 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StateOfIssueStateAbbreviationDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId];
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[StateOfIssueStateAbbreviationDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId];
         END
     END
 END;
@@ -45731,7 +45739,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 114;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEvaluationRubricDimension' AS nvarchar(max)) + N'$.evaluationRubricRating=' + CAST(i.[EvaluationRubricRating] AS nvarchar(max)) + N'#' + N'$.programEvaluationElementReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluationElement_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationElementReference.programEvaluationElementTitle=' + i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] + N'#' + N'$.programEvaluationElementReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationElementReference.programEvaluationTitle=' + i.[ProgramEvaluationElement_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationElementReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationElementReference.programName=' + i.[ProgramEvaluationElement_ProgramName] + N'#' + N'$.programEvaluationElementReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 114
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEvaluationRubricDimension' AS nvarchar(max)) + N'$.evaluationRubricRating=' + CAST(i.[EvaluationRubricRating] AS nvarchar(max)) + N'#' + N'$.programEvaluationElementReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluationElement_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationElementReference.programEvaluationElementTitle=' + i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] + N'#' + N'$.programEvaluationElementReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationElementReference.programEvaluationTitle=' + i.[ProgramEvaluationElement_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationElementReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationElementReference.programName=' + i.[ProgramEvaluationElement_ProgramName] + N'#' + N'$.programEvaluationElementReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 114
         FROM inserted i;
     END
     ELSE IF (UPDATE([EvaluationRubricRating]) OR UPDATE([ProgramEvaluationElement_ProgramEducationOrganizationId]) OR UPDATE([ProgramEvaluationElement_ProgramEvaluationElementTitle]) OR UPDATE([ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluationElement_ProgramEvaluationTitle]) OR UPDATE([ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluationElement_ProgramName]) OR UPDATE([ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId]))
@@ -45746,7 +45754,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 114;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEvaluationRubricDimension' AS nvarchar(max)) + N'$.evaluationRubricRating=' + CAST(i.[EvaluationRubricRating] AS nvarchar(max)) + N'#' + N'$.programEvaluationElementReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluationElement_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationElementReference.programEvaluationElementTitle=' + i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] + N'#' + N'$.programEvaluationElementReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationElementReference.programEvaluationTitle=' + i.[ProgramEvaluationElement_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationElementReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationElementReference.programName=' + i.[ProgramEvaluationElement_ProgramName] + N'#' + N'$.programEvaluationElementReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 114
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEvaluationRubricDimension' AS nvarchar(max)) + N'$.evaluationRubricRating=' + CAST(i.[EvaluationRubricRating] AS nvarchar(max)) + N'#' + N'$.programEvaluationElementReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluationElement_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationElementReference.programEvaluationElementTitle=' + i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] + N'#' + N'$.programEvaluationElementReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationElementReference.programEvaluationTitle=' + i.[ProgramEvaluationElement_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationElementReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationElementReference.programName=' + i.[ProgramEvaluationElement_ProgramName] + N'#' + N'$.programEvaluationElementReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 114
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -45832,9 +45840,9 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId]
-        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId]
-        INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId];
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DescriptorId] = del.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DescriptorId] = del.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -45902,12 +45910,12 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DocumentId] = i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj2 ON newDj2.[DocumentId] = i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId];
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DescriptorId] = del.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DescriptorId] = del.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DescriptorId] = i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj2 ON newDj2.[DescriptorId] = i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId];
         END
     END
 END;
@@ -46398,7 +46406,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 122;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGrade' AS nvarchar(max)) + N'$.gradeTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[GradeTypeDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.beginDate=' + CONVERT(nvarchar(10), i.[StudentSectionAssociation_BeginDate], 23) + N'#' + N'$.studentSectionAssociationReference.localCourseCode=' + i.[StudentSectionAssociation_LocalCourseCode] + N'#' + N'$.studentSectionAssociationReference.schoolId=' + CAST(i.[StudentSectionAssociation_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.schoolYear=' + CAST(i.[StudentSectionAssociation_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.sectionIdentifier=' + i.[StudentSectionAssociation_SectionIdentifier] + N'#' + N'$.studentSectionAssociationReference.sessionName=' + i.[StudentSectionAssociation_SessionName] + N'#' + N'$.studentSectionAssociationReference.studentUniqueId=' + i.[StudentSectionAssociation_StudentUniqueId]), i.[DocumentId], 122
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGrade' AS nvarchar(max)) + N'$.gradeTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GradeTypeDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.beginDate=' + CONVERT(nvarchar(10), i.[StudentSectionAssociation_BeginDate], 23) + N'#' + N'$.studentSectionAssociationReference.localCourseCode=' + i.[StudentSectionAssociation_LocalCourseCode] + N'#' + N'$.studentSectionAssociationReference.schoolId=' + CAST(i.[StudentSectionAssociation_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.schoolYear=' + CAST(i.[StudentSectionAssociation_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.sectionIdentifier=' + i.[StudentSectionAssociation_SectionIdentifier] + N'#' + N'$.studentSectionAssociationReference.sessionName=' + i.[StudentSectionAssociation_SessionName] + N'#' + N'$.studentSectionAssociationReference.studentUniqueId=' + i.[StudentSectionAssociation_StudentUniqueId]), i.[DocumentId], 122
         FROM inserted i;
     END
     ELSE IF (UPDATE([GradeTypeDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodName]) OR UPDATE([SchoolId_Unified]) OR UPDATE([SchoolYear_Unified]) OR UPDATE([StudentSectionAssociation_BeginDate]) OR UPDATE([StudentSectionAssociation_LocalCourseCode]) OR UPDATE([StudentSectionAssociation_SectionIdentifier]) OR UPDATE([StudentSectionAssociation_SessionName]) OR UPDATE([StudentSectionAssociation_StudentUniqueId]))
@@ -46413,7 +46421,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 122;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGrade' AS nvarchar(max)) + N'$.gradeTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[GradeTypeDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.beginDate=' + CONVERT(nvarchar(10), i.[StudentSectionAssociation_BeginDate], 23) + N'#' + N'$.studentSectionAssociationReference.localCourseCode=' + i.[StudentSectionAssociation_LocalCourseCode] + N'#' + N'$.studentSectionAssociationReference.schoolId=' + CAST(i.[StudentSectionAssociation_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.schoolYear=' + CAST(i.[StudentSectionAssociation_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.sectionIdentifier=' + i.[StudentSectionAssociation_SectionIdentifier] + N'#' + N'$.studentSectionAssociationReference.sessionName=' + i.[StudentSectionAssociation_SessionName] + N'#' + N'$.studentSectionAssociationReference.studentUniqueId=' + i.[StudentSectionAssociation_StudentUniqueId]), i.[DocumentId], 122
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGrade' AS nvarchar(max)) + N'$.gradeTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GradeTypeDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.beginDate=' + CONVERT(nvarchar(10), i.[StudentSectionAssociation_BeginDate], 23) + N'#' + N'$.studentSectionAssociationReference.localCourseCode=' + i.[StudentSectionAssociation_LocalCourseCode] + N'#' + N'$.studentSectionAssociationReference.schoolId=' + CAST(i.[StudentSectionAssociation_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.schoolYear=' + CAST(i.[StudentSectionAssociation_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.sectionIdentifier=' + i.[StudentSectionAssociation_SectionIdentifier] + N'#' + N'$.studentSectionAssociationReference.sessionName=' + i.[StudentSectionAssociation_SessionName] + N'#' + N'$.studentSectionAssociationReference.studentUniqueId=' + i.[StudentSectionAssociation_StudentUniqueId]), i.[DocumentId], 122
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -46503,8 +46511,8 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradeTypeDescriptor_DescriptorId]
-        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[GradeTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DescriptorId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentSectionAssociation_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -46581,11 +46589,11 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradeTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[GradeTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DescriptorId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentSectionAssociation_StudentUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[GradeTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DocumentId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[GradeTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DescriptorId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[StudentSectionAssociation_StudentUniqueId];
         END
     END
@@ -46811,7 +46819,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 128;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGradingPeriod' AS nvarchar(max)) + N'$.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodName=' + i.[GradingPeriodName] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 128
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGradingPeriod' AS nvarchar(max)) + N'$.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodName=' + i.[GradingPeriodName] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 128
         FROM inserted i;
     END
     ELSE IF (UPDATE([GradingPeriodDescriptor_DescriptorId]) OR UPDATE([GradingPeriodName]) OR UPDATE([School_SchoolId]) OR UPDATE([SchoolYear_SchoolYear]))
@@ -46826,7 +46834,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 128;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGradingPeriod' AS nvarchar(max)) + N'$.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodName=' + i.[GradingPeriodName] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 128
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGradingPeriod' AS nvarchar(max)) + N'$.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodName=' + i.[GradingPeriodName] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 128
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -46900,7 +46908,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodDescriptor_DescriptorId];
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[GradingPeriodDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -46944,8 +46952,8 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[GradingPeriodDescriptor_DescriptorId];
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[GradingPeriodDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[GradingPeriodDescriptor_DescriptorId];
         END
     END
 END;
@@ -46962,7 +46970,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 130;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGraduationPlan' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.graduationPlanTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[GraduationPlanTypeDescriptor_DescriptorId])) + N'#' + N'$.graduationSchoolYearTypeReference.schoolYear=' + CAST(i.[GraduationSchoolYear_GraduationSchoolYear] AS nvarchar(max))), i.[DocumentId], 130
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGraduationPlan' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.graduationPlanTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GraduationPlanTypeDescriptor_DescriptorId])) + N'#' + N'$.graduationSchoolYearTypeReference.schoolYear=' + CAST(i.[GraduationSchoolYear_GraduationSchoolYear] AS nvarchar(max))), i.[DocumentId], 130
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([GraduationPlanTypeDescriptor_DescriptorId]) OR UPDATE([GraduationSchoolYear_GraduationSchoolYear]))
@@ -46977,7 +46985,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 130;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGraduationPlan' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.graduationPlanTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[GraduationPlanTypeDescriptor_DescriptorId])) + N'#' + N'$.graduationSchoolYearTypeReference.schoolYear=' + CAST(i.[GraduationSchoolYear_GraduationSchoolYear] AS nvarchar(max))), i.[DocumentId], 130
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGraduationPlan' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.graduationPlanTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GraduationPlanTypeDescriptor_DescriptorId])) + N'#' + N'$.graduationSchoolYearTypeReference.schoolYear=' + CAST(i.[GraduationSchoolYear_GraduationSchoolYear] AS nvarchar(max))), i.[DocumentId], 130
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -47049,7 +47057,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GraduationPlanTypeDescriptor_DescriptorId];
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[GraduationPlanTypeDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -47089,8 +47097,8 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GraduationPlanTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[GraduationPlanTypeDescriptor_DescriptorId];
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[GraduationPlanTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[GraduationPlanTypeDescriptor_DescriptorId];
         END
     END
 END;
@@ -52387,7 +52395,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 195;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPerson' AS nvarchar(max)) + N'$.personId=' + i.[PersonId] + N'#' + N'$.sourceSystemDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[SourceSystemDescriptor_DescriptorId]))), i.[DocumentId], 195
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPerson' AS nvarchar(max)) + N'$.personId=' + i.[PersonId] + N'#' + N'$.sourceSystemDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[SourceSystemDescriptor_DescriptorId]))), i.[DocumentId], 195
         FROM inserted i;
     END
     ELSE IF (UPDATE([PersonId]) OR UPDATE([SourceSystemDescriptor_DescriptorId]))
@@ -52402,7 +52410,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 195;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPerson' AS nvarchar(max)) + N'$.personId=' + i.[PersonId] + N'#' + N'$.sourceSystemDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[SourceSystemDescriptor_DescriptorId]))), i.[DocumentId], 195
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPerson' AS nvarchar(max)) + N'$.personId=' + i.[PersonId] + N'#' + N'$.sourceSystemDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[SourceSystemDescriptor_DescriptorId]))), i.[DocumentId], 195
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -52472,7 +52480,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[SourceSystemDescriptor_DescriptorId];
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[SourceSystemDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -52508,8 +52516,8 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[SourceSystemDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[SourceSystemDescriptor_DescriptorId];
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[SourceSystemDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[SourceSystemDescriptor_DescriptorId];
         END
     END
 END;
@@ -52526,7 +52534,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 199;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPostSecondaryEvent' AS nvarchar(max)) + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.postSecondaryEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[PostSecondaryEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 199
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPostSecondaryEvent' AS nvarchar(max)) + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.postSecondaryEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PostSecondaryEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 199
         FROM inserted i;
     END
     ELSE IF (UPDATE([EventDate]) OR UPDATE([PostSecondaryEventCategoryDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -52541,7 +52549,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 199;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPostSecondaryEvent' AS nvarchar(max)) + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.postSecondaryEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[PostSecondaryEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 199
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPostSecondaryEvent' AS nvarchar(max)) + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.postSecondaryEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PostSecondaryEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 199
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -52615,7 +52623,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[PostSecondaryEventCategoryDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[PostSecondaryEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -52660,9 +52668,9 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[PostSecondaryEventCategoryDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[PostSecondaryEventCategoryDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[PostSecondaryEventCategoryDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[PostSecondaryEventCategoryDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
@@ -53209,7 +53217,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 208;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgram' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programName=' + i.[ProgramName] + N'#' + N'$.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 208
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgram' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programName=' + i.[ProgramName] + N'#' + N'$.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 208
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramName]) OR UPDATE([ProgramTypeDescriptor_DescriptorId]))
@@ -53224,7 +53232,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 208;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgram' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programName=' + i.[ProgramName] + N'#' + N'$.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 208
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgram' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programName=' + i.[ProgramName] + N'#' + N'$.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 208
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -53296,7 +53304,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramTypeDescriptor_DescriptorId];
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramTypeDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53336,8 +53344,8 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ProgramTypeDescriptor_DescriptorId];
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId];
         END
     END
 END;
@@ -53562,7 +53570,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 212;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluation' AS nvarchar(max)) + N'$.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationTitle=' + i.[ProgramEvaluationTitle] + N'#' + N'$.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 212
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluation' AS nvarchar(max)) + N'$.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationTitle=' + i.[ProgramEvaluationTitle] + N'#' + N'$.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 212
         FROM inserted i;
     END
     ELSE IF (UPDATE([ProgramEvaluationPeriodDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluationTitle]) OR UPDATE([ProgramEvaluationTypeDescriptor_DescriptorId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]))
@@ -53577,7 +53585,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 212;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluation' AS nvarchar(max)) + N'$.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationTitle=' + i.[ProgramEvaluationTitle] + N'#' + N'$.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 212
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluation' AS nvarchar(max)) + N'$.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationTitle=' + i.[ProgramEvaluationTitle] + N'#' + N'$.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 212
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -53659,9 +53667,9 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluationPeriodDescriptor_DescriptorId]
-        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluationTypeDescriptor_DescriptorId]
-        INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId];
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramEvaluationPeriodDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DescriptorId] = del.[ProgramEvaluationTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DescriptorId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53721,12 +53729,12 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluationPeriodDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluationTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ProgramEvaluationPeriodDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DocumentId] = i.[ProgramEvaluationTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj2 ON newDj2.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId];
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramEvaluationPeriodDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DescriptorId] = del.[ProgramEvaluationTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DescriptorId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[ProgramEvaluationPeriodDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DescriptorId] = i.[ProgramEvaluationTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj2 ON newDj2.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId];
         END
     END
 END;
@@ -53743,7 +53751,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 213;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluationElement' AS nvarchar(max)) + N'$.programEvaluationElementTitle=' + i.[ProgramEvaluationElementTitle] + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 213
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluationElement' AS nvarchar(max)) + N'$.programEvaluationElementTitle=' + i.[ProgramEvaluationElementTitle] + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 213
         FROM inserted i;
     END
     ELSE IF (UPDATE([ProgramEvaluationElementTitle]) OR UPDATE([ProgramEducationOrganizationId_Unified]) OR UPDATE([ProgramEvaluationPeriodDescriptor_Unified_DescriptorId]) OR UPDATE([ProgramEvaluationTitle_Unified]) OR UPDATE([ProgramEvaluationTypeDescriptor_Unified_DescriptorId]) OR UPDATE([ProgramName_Unified]) OR UPDATE([ProgramTypeDescriptor_Unified_DescriptorId]))
@@ -53758,7 +53766,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 213;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluationElement' AS nvarchar(max)) + N'$.programEvaluationElementTitle=' + i.[ProgramEvaluationElementTitle] + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 213
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluationElement' AS nvarchar(max)) + N'$.programEvaluationElementTitle=' + i.[ProgramEvaluationElementTitle] + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 213
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -53842,9 +53850,9 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
-        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
-        INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId];
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DescriptorId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DescriptorId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53908,12 +53916,12 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DocumentId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj2 ON newDj2.[DocumentId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId];
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DescriptorId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DescriptorId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj2 ON newDj2.[DescriptorId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId];
         END
     END
 END;
@@ -54008,7 +54016,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 214;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluationObjective' AS nvarchar(max)) + N'$.programEvaluationObjectiveTitle=' + i.[ProgramEvaluationObjectiveTitle] + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 214
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluationObjective' AS nvarchar(max)) + N'$.programEvaluationObjectiveTitle=' + i.[ProgramEvaluationObjectiveTitle] + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 214
         FROM inserted i;
     END
     ELSE IF (UPDATE([ProgramEvaluationObjectiveTitle]) OR UPDATE([ProgramEvaluation_ProgramEducationOrganizationId]) OR UPDATE([ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluation_ProgramEvaluationTitle]) OR UPDATE([ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluation_ProgramName]) OR UPDATE([ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]))
@@ -54023,7 +54031,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 214;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluationObjective' AS nvarchar(max)) + N'$.programEvaluationObjectiveTitle=' + i.[ProgramEvaluationObjectiveTitle] + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 214
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluationObjective' AS nvarchar(max)) + N'$.programEvaluationObjectiveTitle=' + i.[ProgramEvaluationObjectiveTitle] + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 214
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -54107,9 +54115,9 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
-        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
-        INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId];
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DescriptorId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DescriptorId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -54173,12 +54181,12 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DocumentId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj2 ON newDj2.[DocumentId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId];
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DescriptorId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DescriptorId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj2 ON newDj2.[DescriptorId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId];
         END
     END
 END;
@@ -54481,7 +54489,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 234;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiReportCard' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 234
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiReportCard' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 234
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodName]) OR UPDATE([GradingPeriodGradingPeriod_SchoolId]) OR UPDATE([GradingPeriodGradingPeriod_SchoolYear]) OR UPDATE([Student_StudentUniqueId]))
@@ -54496,7 +54504,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 234;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiReportCard' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 234
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiReportCard' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 234
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -54576,7 +54584,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -54633,9 +54641,9 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
@@ -56808,7 +56816,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 267;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffAbsenceEvent' AS nvarchar(max)) + N'$.absenceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[AbsenceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 267
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffAbsenceEvent' AS nvarchar(max)) + N'$.absenceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AbsenceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 267
         FROM inserted i;
     END
     ELSE IF (UPDATE([AbsenceEventCategoryDescriptor_DescriptorId]) OR UPDATE([EventDate]) OR UPDATE([Staff_StaffUniqueId]))
@@ -56823,7 +56831,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 267;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffAbsenceEvent' AS nvarchar(max)) + N'$.absenceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[AbsenceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 267
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffAbsenceEvent' AS nvarchar(max)) + N'$.absenceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AbsenceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 267
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -56897,7 +56905,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AbsenceEventCategoryDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[AbsenceEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -56942,9 +56950,9 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AbsenceEventCategoryDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[AbsenceEventCategoryDescriptor_DescriptorId]
             INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[AbsenceEventCategoryDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[AbsenceEventCategoryDescriptor_DescriptorId]
             INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[Staff_StaffUniqueId];
         END
     END
@@ -57453,7 +57461,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 271;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationAssignmentAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.staffClassificationDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[StaffClassificationDescriptor_DescriptorId])) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 271
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationAssignmentAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.staffClassificationDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[StaffClassificationDescriptor_DescriptorId])) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 271
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([StaffClassificationDescriptor_DescriptorId]) OR UPDATE([StaffUniqueId_Unified]))
@@ -57468,7 +57476,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 271;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationAssignmentAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.staffClassificationDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[StaffClassificationDescriptor_DescriptorId])) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 271
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationAssignmentAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.staffClassificationDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[StaffClassificationDescriptor_DescriptorId])) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 271
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -57544,7 +57552,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StaffClassificationDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[StaffClassificationDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[StaffUniqueId_Unified];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -57593,9 +57601,9 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StaffClassificationDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[StaffClassificationDescriptor_DescriptorId]
             INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[StaffUniqueId_Unified]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[StaffClassificationDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[StaffClassificationDescriptor_DescriptorId]
             INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[StaffUniqueId_Unified];
         END
     END
@@ -57836,7 +57844,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 273;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationEmploymentAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.employmentStatusDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[EmploymentStatusDescriptor_DescriptorId])) + N'#' + N'$.hireDate=' + CONVERT(nvarchar(10), i.[HireDate], 23) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 273
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationEmploymentAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.employmentStatusDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EmploymentStatusDescriptor_DescriptorId])) + N'#' + N'$.hireDate=' + CONVERT(nvarchar(10), i.[HireDate], 23) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 273
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([EmploymentStatusDescriptor_DescriptorId]) OR UPDATE([HireDate]) OR UPDATE([Staff_StaffUniqueId]))
@@ -57851,7 +57859,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 273;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationEmploymentAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.employmentStatusDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[EmploymentStatusDescriptor_DescriptorId])) + N'#' + N'$.hireDate=' + CONVERT(nvarchar(10), i.[HireDate], 23) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 273
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationEmploymentAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.employmentStatusDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EmploymentStatusDescriptor_DescriptorId])) + N'#' + N'$.hireDate=' + CONVERT(nvarchar(10), i.[HireDate], 23) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 273
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -57927,7 +57935,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[EmploymentStatusDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[EmploymentStatusDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -57976,9 +57984,9 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[EmploymentStatusDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[EmploymentStatusDescriptor_DescriptorId]
             INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[EmploymentStatusDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[EmploymentStatusDescriptor_DescriptorId]
             INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[Staff_StaffUniqueId];
         END
     END
@@ -58230,7 +58238,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 275;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffLeave' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.staffLeaveEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[StaffLeaveEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 275
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffLeave' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.staffLeaveEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[StaffLeaveEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 275
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([StaffLeaveEventCategoryDescriptor_DescriptorId]) OR UPDATE([Staff_StaffUniqueId]))
@@ -58245,7 +58253,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 275;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffLeave' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.staffLeaveEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[StaffLeaveEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 275
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffLeave' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.staffLeaveEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[StaffLeaveEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 275
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -58319,7 +58327,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StaffLeaveEventCategoryDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[StaffLeaveEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -58364,9 +58372,9 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[StaffLeaveEventCategoryDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[StaffLeaveEventCategoryDescriptor_DescriptorId]
             INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[StaffLeaveEventCategoryDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[StaffLeaveEventCategoryDescriptor_DescriptorId]
             INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[Staff_StaffUniqueId];
         END
     END
@@ -58462,7 +58470,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 277;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 277
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 277
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Staff_StaffUniqueId]))
@@ -58477,7 +58485,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 277;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 277
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 277
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -58555,7 +58563,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -58608,9 +58616,9 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
             INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
             INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[Staff_StaffUniqueId];
         END
     END
@@ -58706,7 +58714,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 278;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffSchoolAssociation' AS nvarchar(max)) + N'$.programAssignmentDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramAssignmentDescriptor_DescriptorId])) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 278
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffSchoolAssociation' AS nvarchar(max)) + N'$.programAssignmentDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramAssignmentDescriptor_DescriptorId])) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 278
         FROM inserted i;
     END
     ELSE IF (UPDATE([ProgramAssignmentDescriptor_DescriptorId]) OR UPDATE([SchoolId_Unified]) OR UPDATE([Staff_StaffUniqueId]))
@@ -58721,7 +58729,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 278;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffSchoolAssociation' AS nvarchar(max)) + N'$.programAssignmentDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramAssignmentDescriptor_DescriptorId])) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 278
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffSchoolAssociation' AS nvarchar(max)) + N'$.programAssignmentDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramAssignmentDescriptor_DescriptorId])) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 278
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -58795,7 +58803,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramAssignmentDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramAssignmentDescriptor_DescriptorId]
         INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -58840,9 +58848,9 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramAssignmentDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramAssignmentDescriptor_DescriptorId]
             INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ProgramAssignmentDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[ProgramAssignmentDescriptor_DescriptorId]
             INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[Staff_StaffUniqueId];
         END
     END
@@ -59916,7 +59924,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 283;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAcademicRecord' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId] + N'#' + N'$.termDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[TermDescriptor_DescriptorId]))), i.[DocumentId], 283
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAcademicRecord' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId] + N'#' + N'$.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[TermDescriptor_DescriptorId]))), i.[DocumentId], 283
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([SchoolYear_SchoolYear]) OR UPDATE([Student_StudentUniqueId]) OR UPDATE([TermDescriptor_DescriptorId]))
@@ -59931,7 +59939,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 283;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAcademicRecord' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId] + N'#' + N'$.termDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[TermDescriptor_DescriptorId]))), i.[DocumentId], 283
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAcademicRecord' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId] + N'#' + N'$.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[TermDescriptor_DescriptorId]))), i.[DocumentId], 283
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -60007,7 +60015,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[TermDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[TermDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -60056,9 +60064,9 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[TermDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[TermDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[TermDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[TermDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
@@ -60467,7 +60475,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 285;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentEducationOrganizationAssociation' AS nvarchar(max)) + N'$.educationOrganizationAssociationTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId])) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAssessmentReference.assessmentIdentifier=' + i.[StudentAssessment_AssessmentIdentifier] + N'#' + N'$.studentAssessmentReference.namespace=' + i.[StudentAssessment_Namespace] + N'#' + N'$.studentAssessmentReference.studentAssessmentIdentifier=' + i.[StudentAssessment_StudentAssessmentIdentifier] + N'#' + N'$.studentAssessmentReference.studentUniqueId=' + i.[StudentAssessment_StudentUniqueId]), i.[DocumentId], 285
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentEducationOrganizationAssociation' AS nvarchar(max)) + N'$.educationOrganizationAssociationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId])) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAssessmentReference.assessmentIdentifier=' + i.[StudentAssessment_AssessmentIdentifier] + N'#' + N'$.studentAssessmentReference.namespace=' + i.[StudentAssessment_Namespace] + N'#' + N'$.studentAssessmentReference.studentAssessmentIdentifier=' + i.[StudentAssessment_StudentAssessmentIdentifier] + N'#' + N'$.studentAssessmentReference.studentUniqueId=' + i.[StudentAssessment_StudentUniqueId]), i.[DocumentId], 285
         FROM inserted i;
     END
     ELSE IF (UPDATE([EducationOrganizationAssociationTypeDescriptor_DescriptorId]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([StudentAssessment_AssessmentIdentifier]) OR UPDATE([StudentAssessment_Namespace]) OR UPDATE([StudentAssessment_StudentAssessmentIdentifier]) OR UPDATE([StudentAssessment_StudentUniqueId]))
@@ -60482,7 +60490,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 285;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentEducationOrganizationAssociation' AS nvarchar(max)) + N'$.educationOrganizationAssociationTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId])) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAssessmentReference.assessmentIdentifier=' + i.[StudentAssessment_AssessmentIdentifier] + N'#' + N'$.studentAssessmentReference.namespace=' + i.[StudentAssessment_Namespace] + N'#' + N'$.studentAssessmentReference.studentAssessmentIdentifier=' + i.[StudentAssessment_StudentAssessmentIdentifier] + N'#' + N'$.studentAssessmentReference.studentUniqueId=' + i.[StudentAssessment_StudentUniqueId]), i.[DocumentId], 285
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentEducationOrganizationAssociation' AS nvarchar(max)) + N'$.educationOrganizationAssociationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId])) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAssessmentReference.assessmentIdentifier=' + i.[StudentAssessment_AssessmentIdentifier] + N'#' + N'$.studentAssessmentReference.namespace=' + i.[StudentAssessment_Namespace] + N'#' + N'$.studentAssessmentReference.studentAssessmentIdentifier=' + i.[StudentAssessment_StudentAssessmentIdentifier] + N'#' + N'$.studentAssessmentReference.studentUniqueId=' + i.[StudentAssessment_StudentUniqueId]), i.[DocumentId], 285
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -60562,7 +60570,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[EducationOrganizationAssociationTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[EducationOrganizationAssociationTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentAssessment_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -60619,9 +60627,9 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[EducationOrganizationAssociationTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[EducationOrganizationAssociationTypeDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentAssessment_StudentUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[StudentAssessment_StudentUniqueId];
         END
     END
@@ -61368,12 +61376,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 288;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCTEProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 288
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCTEProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 288
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -61388,12 +61396,12 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 288;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCTEProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 288
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCTEProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 288
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -61473,7 +61481,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
@@ -61758,7 +61766,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 291;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCompetencyObjective' AS nvarchar(max)) + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.objectiveCompetencyObjectiveReference.educationOrganizationId=' + CAST(i.[ObjectiveCompetencyObjective_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.objectiveCompetencyObjectiveReference.objective=' + i.[ObjectiveCompetencyObjective_Objective] + N'#' + N'$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 291
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCompetencyObjective' AS nvarchar(max)) + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.objectiveCompetencyObjectiveReference.educationOrganizationId=' + CAST(i.[ObjectiveCompetencyObjective_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.objectiveCompetencyObjectiveReference.objective=' + i.[ObjectiveCompetencyObjective_Objective] + N'#' + N'$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 291
         FROM inserted i;
     END
     ELSE IF (UPDATE([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodName]) OR UPDATE([GradingPeriodGradingPeriod_SchoolId]) OR UPDATE([GradingPeriodGradingPeriod_SchoolYear]) OR UPDATE([ObjectiveCompetencyObjective_EducationOrganizationId]) OR UPDATE([ObjectiveCompetencyObjective_Objective]) OR UPDATE([ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -61773,7 +61781,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 291;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCompetencyObjective' AS nvarchar(max)) + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.objectiveCompetencyObjectiveReference.educationOrganizationId=' + CAST(i.[ObjectiveCompetencyObjective_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.objectiveCompetencyObjectiveReference.objective=' + i.[ObjectiveCompetencyObjective_Objective] + N'#' + N'$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 291
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCompetencyObjective' AS nvarchar(max)) + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.objectiveCompetencyObjectiveReference.educationOrganizationId=' + CAST(i.[ObjectiveCompetencyObjective_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.objectiveCompetencyObjectiveReference.objective=' + i.[ObjectiveCompetencyObjective_Objective] + N'#' + N'$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 291
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -61859,8 +61867,8 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
-        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DescriptorId] = del.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -61929,11 +61937,11 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DescriptorId] = del.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DocumentId] = i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DescriptorId] = i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
@@ -62177,7 +62185,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 293;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentDisciplineIncidentBehaviorAssociation' AS nvarchar(max)) + N'$.behaviorDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[BehaviorDescriptor_DescriptorId])) + N'#' + N'$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 293
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentDisciplineIncidentBehaviorAssociation' AS nvarchar(max)) + N'$.behaviorDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[BehaviorDescriptor_DescriptorId])) + N'#' + N'$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 293
         FROM inserted i;
     END
     ELSE IF (UPDATE([BehaviorDescriptor_DescriptorId]) OR UPDATE([DisciplineIncident_IncidentIdentifier]) OR UPDATE([DisciplineIncident_SchoolId]) OR UPDATE([Student_StudentUniqueId]))
@@ -62192,7 +62200,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 293;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentDisciplineIncidentBehaviorAssociation' AS nvarchar(max)) + N'$.behaviorDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[BehaviorDescriptor_DescriptorId])) + N'#' + N'$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 293
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentDisciplineIncidentBehaviorAssociation' AS nvarchar(max)) + N'$.behaviorDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[BehaviorDescriptor_DescriptorId])) + N'#' + N'$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 293
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -62268,7 +62276,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[BehaviorDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[BehaviorDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -62317,9 +62325,9 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[BehaviorDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[BehaviorDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[BehaviorDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[BehaviorDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
@@ -63657,7 +63665,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 297;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationResponsibilityAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.responsibilityDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ResponsibilityDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 297
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationResponsibilityAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.responsibilityDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ResponsibilityDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 297
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ResponsibilityDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -63672,7 +63680,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 297;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationResponsibilityAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.responsibilityDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ResponsibilityDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 297
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationResponsibilityAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.responsibilityDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ResponsibilityDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 297
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -63748,7 +63756,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ResponsibilityDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ResponsibilityDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -63797,9 +63805,9 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ResponsibilityDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ResponsibilityDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ResponsibilityDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[ResponsibilityDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
@@ -64303,12 +64311,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 300;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentHomelessProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 300
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentHomelessProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 300
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -64323,12 +64331,12 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 300;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentHomelessProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 300
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentHomelessProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 300
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -64408,7 +64416,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
@@ -64726,7 +64734,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 303;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentInterventionAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.interventionReference.educationOrganizationId=' + CAST(i.[Intervention_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionReference.interventionIdentificationCode=' + i.[Intervention_InterventionIdentificationCode] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 303
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentInterventionAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.interventionReference.educationOrganizationId=' + CAST(i.[Intervention_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionReference.interventionIdentificationCode=' + i.[Intervention_InterventionIdentificationCode] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 303
         FROM inserted i;
     END
     ELSE IF (UPDATE([AttendanceEventCategoryDescriptor_DescriptorId]) OR UPDATE([EventDate]) OR UPDATE([Intervention_EducationOrganizationId]) OR UPDATE([Intervention_InterventionIdentificationCode]) OR UPDATE([Student_StudentUniqueId]))
@@ -64741,7 +64749,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 303;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentInterventionAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.interventionReference.educationOrganizationId=' + CAST(i.[Intervention_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionReference.interventionIdentificationCode=' + i.[Intervention_InterventionIdentificationCode] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 303
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentInterventionAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.interventionReference.educationOrganizationId=' + CAST(i.[Intervention_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionReference.interventionIdentificationCode=' + i.[Intervention_InterventionIdentificationCode] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 303
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -64819,7 +64827,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -64872,9 +64880,9 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[AttendanceEventCategoryDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
@@ -64938,12 +64946,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 304;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentLanguageInstructionProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 304
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentLanguageInstructionProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 304
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -64958,12 +64966,12 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 304;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentLanguageInstructionProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 304
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentLanguageInstructionProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 304
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -65043,7 +65051,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
@@ -65223,12 +65231,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 305;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentMigrantEducationProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 305
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentMigrantEducationProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 305
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -65243,12 +65251,12 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 305;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentMigrantEducationProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 305
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentMigrantEducationProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 305
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -65328,7 +65336,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
@@ -65469,12 +65477,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 306;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentNeglectedOrDelinquentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 306
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentNeglectedOrDelinquentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 306
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -65489,12 +65497,12 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 306;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentNeglectedOrDelinquentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 306
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentNeglectedOrDelinquentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 306
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -65574,7 +65582,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
@@ -65793,12 +65801,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 307;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 307
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 307
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -65813,12 +65821,12 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 307;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 307
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 307
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -65898,7 +65906,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
@@ -65993,7 +66001,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 308;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 308
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 308
         FROM inserted i;
     END
     ELSE IF (UPDATE([AttendanceEventCategoryDescriptor_DescriptorId]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([EventDate]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -66008,7 +66016,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 308;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 308
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 308
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -66092,8 +66100,8 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
-        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DescriptorId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -66158,11 +66166,11 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DescriptorId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[AttendanceEventCategoryDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
@@ -66180,7 +66188,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 309;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramEvaluation' AS nvarchar(max)) + N'$.evaluationDate=' + CONVERT(nvarchar(10), i.[EvaluationDate], 23) + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 309
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramEvaluation' AS nvarchar(max)) + N'$.evaluationDate=' + CONVERT(nvarchar(10), i.[EvaluationDate], 23) + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 309
         FROM inserted i;
     END
     ELSE IF (UPDATE([EvaluationDate]) OR UPDATE([ProgramEvaluation_ProgramEducationOrganizationId]) OR UPDATE([ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluation_ProgramEvaluationTitle]) OR UPDATE([ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluation_ProgramName]) OR UPDATE([ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -66195,7 +66203,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 309;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramEvaluation' AS nvarchar(max)) + N'$.evaluationDate=' + CONVERT(nvarchar(10), i.[EvaluationDate], 23) + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 309
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramEvaluation' AS nvarchar(max)) + N'$.evaluationDate=' + CONVERT(nvarchar(10), i.[EvaluationDate], 23) + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 309
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -66283,9 +66291,9 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
-        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
-        INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DescriptorId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DescriptorId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -66358,13 +66366,13 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DocumentId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DescriptorId] = del.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj2 ON oldDj2.[DescriptorId] = del.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DocumentId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj2 ON newDj2.[DocumentId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj2 ON newDj2.[DescriptorId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
@@ -66722,7 +66730,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 311;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolId=' + CAST(i.[Session_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolYear=' + CAST(i.[Session_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sessionReference.sessionName=' + i.[Session_SessionName] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 311
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolId=' + CAST(i.[Session_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolYear=' + CAST(i.[Session_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sessionReference.sessionName=' + i.[Session_SessionName] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 311
         FROM inserted i;
     END
     ELSE IF (UPDATE([AttendanceEventCategoryDescriptor_DescriptorId]) OR UPDATE([EventDate]) OR UPDATE([SchoolId_Unified]) OR UPDATE([Session_SchoolYear]) OR UPDATE([Session_SessionName]) OR UPDATE([Student_StudentUniqueId]))
@@ -66737,7 +66745,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 311;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolId=' + CAST(i.[Session_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolYear=' + CAST(i.[Session_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sessionReference.sessionName=' + i.[Session_SessionName] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 311
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolId=' + CAST(i.[Session_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolYear=' + CAST(i.[Session_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sessionReference.sessionName=' + i.[Session_SessionName] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 311
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -66817,7 +66825,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -66874,9 +66882,9 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[AttendanceEventCategoryDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
@@ -66940,12 +66948,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 312;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolFoodServiceProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 312
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolFoodServiceProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 312
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -66960,12 +66968,12 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 312;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolFoodServiceProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 312
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolFoodServiceProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 312
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -67045,7 +67053,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
@@ -67186,12 +67194,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 313;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSection504ProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 313
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSection504ProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 313
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -67206,12 +67214,12 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 313;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSection504ProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 313
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSection504ProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 313
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -67291,7 +67299,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
@@ -67555,7 +67563,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 315;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSectionAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 315
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSectionAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 315
         FROM inserted i;
     END
     ELSE IF (UPDATE([AttendanceEventCategoryDescriptor_DescriptorId]) OR UPDATE([EventDate]) OR UPDATE([Section_LocalCourseCode]) OR UPDATE([Section_SchoolId]) OR UPDATE([Section_SchoolYear]) OR UPDATE([Section_SectionIdentifier]) OR UPDATE([Section_SessionName]) OR UPDATE([Student_StudentUniqueId]))
@@ -67570,7 +67578,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 315;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSectionAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 315
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSectionAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 315
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -67654,7 +67662,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -67719,9 +67727,9 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[AttendanceEventCategoryDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[AttendanceEventCategoryDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
@@ -67824,12 +67832,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 316;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSpecialEducationProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 316
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSpecialEducationProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 316
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -67844,12 +67852,12 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 316;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSpecialEducationProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 316
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSpecialEducationProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 316
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -67929,7 +67937,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
@@ -68180,7 +68188,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 317;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSpecialEducationProgramEligibilityAssociation' AS nvarchar(max)) + N'$.consentToEvaluationReceivedDate=' + CONVERT(nvarchar(10), i.[ConsentToEvaluationReceivedDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 317
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSpecialEducationProgramEligibilityAssociation' AS nvarchar(max)) + N'$.consentToEvaluationReceivedDate=' + CONVERT(nvarchar(10), i.[ConsentToEvaluationReceivedDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 317
         FROM inserted i;
     END
     ELSE IF (UPDATE([ConsentToEvaluationReceivedDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -68195,7 +68203,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 317;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSpecialEducationProgramEligibilityAssociation' AS nvarchar(max)) + N'$.consentToEvaluationReceivedDate=' + CONVERT(nvarchar(10), i.[ConsentToEvaluationReceivedDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 317
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSpecialEducationProgramEligibilityAssociation' AS nvarchar(max)) + N'$.consentToEvaluationReceivedDate=' + CONVERT(nvarchar(10), i.[ConsentToEvaluationReceivedDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 317
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -68275,7 +68283,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -68332,9 +68340,9 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
         END
     END
@@ -68398,12 +68406,12 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 318;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentTitleIPartAProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 318
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentTitleIPartAProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 318
         FROM inserted i;
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
         FROM inserted i;
     END
     ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
@@ -68418,12 +68426,12 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 318;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentTitleIPartAProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 318
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentTitleIPartAProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 318
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -68503,7 +68511,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId];
     END
 END;
@@ -69126,7 +69134,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 326;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyProgramAssociation' AS nvarchar(max)) + N'$.programReference.educationOrganizationId=' + CAST(i.[Program_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[Program_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[Program_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 326
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyProgramAssociation' AS nvarchar(max)) + N'$.programReference.educationOrganizationId=' + CAST(i.[Program_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[Program_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Program_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 326
         FROM inserted i;
     END
     ELSE IF (UPDATE([Program_EducationOrganizationId]) OR UPDATE([Program_ProgramName]) OR UPDATE([Program_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Survey_Namespace]) OR UPDATE([Survey_SurveyIdentifier]))
@@ -69141,7 +69149,7 @@ BEGIN
             DELETE FROM [dms].[ReferentialIdentity]
             WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 326;
             INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyProgramAssociation' AS nvarchar(max)) + N'$.programReference.educationOrganizationId=' + CAST(i.[Program_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[Program_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Uri] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DocumentId] = i.[Program_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 326
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyProgramAssociation' AS nvarchar(max)) + N'$.programReference.educationOrganizationId=' + CAST(i.[Program_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[Program_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Program_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 326
             FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
@@ -69217,7 +69225,7 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[Program_ProgramTypeDescriptor_DescriptorId];
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[Program_ProgramTypeDescriptor_DescriptorId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -69265,8 +69273,8 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[Program_ProgramTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[Program_ProgramTypeDescriptor_DescriptorId];
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[Program_ProgramTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[Program_ProgramTypeDescriptor_DescriptorId];
         END
     END
 END;

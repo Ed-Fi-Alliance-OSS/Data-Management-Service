@@ -38,21 +38,19 @@ public static class PgsqlPerfFixtureLoaderSql
         """;
 
     /// <summary>
-    /// Mirrors the production descriptor write: Uri is namespace#codeValue, Discriminator is
-    /// the resource name, and ShortDescription echoes the code value. ContentVersion is
-    /// stamped by the production trigger.
+    /// Inserts stored descriptor fields and captures the native compact key independently of
+    /// the owning document key. ContentVersion is stamped by the production trigger.
     /// </summary>
     public static string DescriptorInsertSql(string resourceName) =>
         $"""
-            INSERT INTO "dms"."Descriptor" ("DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription", "Discriminator", "Uri")
+            INSERT INTO "dms"."Descriptor" ("DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription")
             VALUES (
                 @{PerfFixtureLoaderParameters.DescriptorDocumentId},
                 @{PerfFixtureLoaderParameters.ResourceKeyId},
                 '{PerfFixtureDefinition.DescriptorNamespaceFor(resourceName)}',
                 '{PerfFixtureDefinition.DescriptorCodeValue}',
-                '{PerfFixtureDefinition.DescriptorCodeValue}',
-                '{resourceName}',
-                '{PerfFixtureDefinition.DescriptorUriFor(resourceName)}');
+                '{PerfFixtureDefinition.DescriptorCodeValue}')
+            RETURNING "DescriptorId";
             """;
 
     /// <summary>
@@ -280,5 +278,6 @@ public static class PgsqlPerfFixtureLoaderSql
                 """SELECT COUNT(*) FROM "edfi"."StudentVisa";""",
                 definition.RowCount
             ),
+            .. PerfDescriptorBindingVerificationQueries.Create(definition),
         ];
 }

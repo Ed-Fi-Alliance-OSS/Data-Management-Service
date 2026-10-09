@@ -719,7 +719,10 @@ public class ReadChangesAuthorizationPlannerTests
                             new DbColumnName(
                                 "OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue"
                             ),
-                            new QualifiedResourceName("Ed-Fi", "GradingPeriodDescriptor")
+                            new QualifiedResourceName("Ed-Fi", "GradingPeriodDescriptor"),
+                            _ds52.Value.MappingSet.ResourceKeyIdByResource[
+                                new("Ed-Fi", "GradingPeriodDescriptor")
+                            ]
                         ),
                     ],
                     []
@@ -1031,6 +1034,7 @@ public class ReadChangesAuthorizationPlannerTests
             .BeEquivalentTo(
                 new ReadChangesCustomViewBasis.DescriptorSeek(
                     new QualifiedResourceName("Ed-Fi", "GradeTypeDescriptor"),
+                    _ds52.Value.MappingSet.ResourceKeyIdByResource[new("Ed-Fi", "GradeTypeDescriptor")],
                     new DbColumnName("OldGradeTypeDescriptor_Namespace"),
                     new DbColumnName("OldGradeTypeDescriptor_CodeValue"),
                     null
@@ -1052,12 +1056,13 @@ public class ReadChangesAuthorizationPlannerTests
             .BeEquivalentTo(
                 new ReadChangesCustomViewBasis.DescriptorSeek(
                     new QualifiedResourceName("Ed-Fi", "GradingPeriodDescriptor"),
+                    _ds52.Value.MappingSet.ResourceKeyIdByResource[new("Ed-Fi", "GradingPeriodDescriptor")],
                     new DbColumnName("OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace"),
                     new DbColumnName("OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue"),
                     new ReadChangesCustomViewDescriptorProbeArm(
                         new DbTableName(_trackedSchema, "Descriptor"),
                         _documentId,
-                        new DbColumnName("Discriminator"),
+                        new DbColumnName("ResourceKeyId"),
                         new DbColumnName("OldNamespace"),
                         new DbColumnName("OldCodeValue")
                     )
@@ -1554,10 +1559,8 @@ public class ReadChangesAuthorizationPlannerTests
                     null,
                     null,
                     null,
-                    null,
                     null
-                ),
-                DiscriminatorStrategy.ResourceKeyId
+                )
             )
         );
     }

@@ -286,8 +286,7 @@ public class Given_DocumentCacheMaterializer_Coherence
             "Alternative",
             "Alternative school type",
             null,
-            null,
-            "SchoolTypeDescriptor"
+            null
         );
 
     private static MaterializerTestContext CreateMaterializerTestContext()

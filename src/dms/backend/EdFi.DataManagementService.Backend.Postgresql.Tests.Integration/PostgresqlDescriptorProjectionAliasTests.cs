@@ -20,18 +20,18 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 /// Uses schema <c>"descprojaliasinttest"</c>, table <c>"UnifiedAliasResource"</c> with:
 /// <list type="bullet">
 /// <item><c>DocumentId bigint PRIMARY KEY</c></item>
-/// <item><c>Canonical_DescriptorId bigint NULL</c> — physical storage column (no SourceJsonPath)</item>
-/// <item><c>Alias1_DescriptorId bigint GENERATED ALWAYS AS ("Canonical_DescriptorId") STORED</c> — first alias ($.subject1Descriptor)</item>
-/// <item><c>Alias2_DescriptorId bigint GENERATED ALWAYS AS ("Canonical_DescriptorId") STORED</c> — second alias ($.subject2Descriptor)</item>
+/// <item><c>Canonical_DescriptorId int NULL</c> — physical storage column (no SourceJsonPath)</item>
+/// <item><c>Alias1_DescriptorId int GENERATED ALWAYS AS ("Canonical_DescriptorId") STORED</c> — first alias ($.subject1Descriptor)</item>
+/// <item><c>Alias2_DescriptorId int GENERATED ALWAYS AS ("Canonical_DescriptorId") STORED</c> — second alias ($.subject2Descriptor)</item>
 /// </list>
-/// DocumentIds 820–821 and DescriptorId 920 are reserved for these fixtures.
+/// Resource DocumentIds 820–821 are reserved; the descriptor key allocates independently for a wide owning DocumentId.
 /// </remarks>
 internal static class DescriptorProjectionAliasFixture
 {
     internal const string TestSchema = "descprojaliasinttest";
     internal const long DocumentId820 = 820L;
     internal const long DocumentId821 = 821L;
-    internal const long DescriptorId920 = 920L;
+    internal static int DescriptorId920 { get; private set; }
     internal const string Uri920 = "uri://ed-fi.org/SubjectDescriptor#Mathematics";
 
     internal static readonly DbSchemaName Schema = new(TestSchema);
@@ -88,7 +88,7 @@ internal static class DescriptorProjectionAliasFixture
                 new DbColumnModel(
                     ColumnName: CanonicalFkColumn,
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: null,
                     TargetResource: SubjectDescriptorResource
@@ -96,7 +96,7 @@ internal static class DescriptorProjectionAliasFixture
                 new DbColumnModel(
                     ColumnName: Alias1FkColumn,
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: Subject1DescriptorPath,
                     TargetResource: SubjectDescriptorResource,
@@ -105,7 +105,7 @@ internal static class DescriptorProjectionAliasFixture
                 new DbColumnModel(
                     ColumnName: Alias2FkColumn,
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: Subject2DescriptorPath,
                     TargetResource: SubjectDescriptorResource,
@@ -177,22 +177,22 @@ internal static class DescriptorProjectionAliasFixture
             );
 
             CREATE TABLE IF NOT EXISTS dms."Descriptor" (
-                "DocumentId" bigint PRIMARY KEY,
+                "DescriptorId" int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                "DocumentId" bigint NOT NULL UNIQUE REFERENCES dms."Document" ("DocumentId"),
+                "ResourceKeyId" smallint NOT NULL,
                 "Namespace" varchar(255) NOT NULL DEFAULT '',
                 "CodeValue" varchar(50) NOT NULL DEFAULT '',
                 "ShortDescription" varchar(75) NOT NULL DEFAULT '',
                 "Description" varchar(1024) NULL,
                 "EffectiveBeginDate" date NULL,
-                "EffectiveEndDate" date NULL,
-                "Discriminator" varchar(128) NOT NULL DEFAULT '',
-                "Uri" varchar(306) NOT NULL
+                "EffectiveEndDate" date NULL
             );
 
             CREATE TABLE {TestSchema}."UnifiedAliasResource" (
                 "DocumentId" bigint PRIMARY KEY,
-                "Canonical_DescriptorId" bigint NULL,
-                "Alias1_DescriptorId" bigint GENERATED ALWAYS AS ("Canonical_DescriptorId") STORED,
-                "Alias2_DescriptorId" bigint GENERATED ALWAYS AS ("Canonical_DescriptorId") STORED
+                "Canonical_DescriptorId" int NULL,
+                "Alias1_DescriptorId" int GENERATED ALWAYS AS ("Canonical_DescriptorId") STORED,
+                "Alias2_DescriptorId" int GENERATED ALWAYS AS ("Canonical_DescriptorId") STORED
             );
             """,
             connection
@@ -204,19 +204,24 @@ internal static class DescriptorProjectionAliasFixture
     {
         await using var cmd = new NpgsqlCommand(
             $"""
-            DELETE FROM dms."Descriptor" WHERE "DocumentId" = 920;
+            DELETE FROM dms."Descriptor" WHERE "DocumentId" = 5000000920;
+            DELETE FROM dms."Document" WHERE "DocumentId" = 5000000920;
             DELETE FROM dms."Document" WHERE "DocumentId" IN (820, 821);
 
             INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion") VALUES
                 (820, '82000000-0000-0000-0000-000000000820', 0, 1),
                 (821, '82100000-0000-0000-0000-000000000821', 0, 1);
 
-            INSERT INTO dms."Descriptor" ("DocumentId", "Namespace", "CodeValue", "ShortDescription", "Discriminator", "Uri") VALUES
-                (920, 'uri://ed-fi.org/SubjectDescriptor', 'Mathematics', 'Mathematics', 'edfi.SubjectDescriptor', '{Uri920}');
             """,
             connection
         );
         await cmd.ExecuteNonQueryAsync();
+        DescriptorId920 = await PostgresqlDescriptorProjectionSeedSupport.SeedAsync(
+            connection,
+            5000000920L,
+            "uri://ed-fi.org/SubjectDescriptor",
+            "Mathematics"
+        );
     }
 
     internal static async Task DropSchemaAsync(NpgsqlConnection connection)
@@ -224,7 +229,8 @@ internal static class DescriptorProjectionAliasFixture
         await using var cmd = new NpgsqlCommand(
             $"""
             DROP SCHEMA IF EXISTS {TestSchema} CASCADE;
-            DELETE FROM dms."Descriptor" WHERE "DocumentId" = 920;
+            DELETE FROM dms."Descriptor" WHERE "DocumentId" = 5000000920;
+            DELETE FROM dms."Document" WHERE "DocumentId" = 5000000920;
             DELETE FROM dms."Document" WHERE "DocumentId" IN (820, 821);
             """,
             connection
@@ -244,7 +250,7 @@ internal static class DescriptorProjectionAliasFixture
 public class Given_Key_Unified_Alias_Descriptor_FK_Executor_Returns_URI_From_Canonical_Column
 {
     private NpgsqlDataSource _dataSource = null!;
-    private IReadOnlyDictionary<long, string> _lookup = null!;
+    private IReadOnlyDictionary<int, string> _lookup = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()

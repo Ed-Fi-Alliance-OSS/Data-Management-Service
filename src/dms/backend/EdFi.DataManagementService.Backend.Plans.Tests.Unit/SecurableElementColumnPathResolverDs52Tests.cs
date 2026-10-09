@@ -167,11 +167,13 @@ public class Given_SecurableElementColumnPathResolver_with_DS52_schema
     {
         var path = ResolveBasisPath("StudentTransportation", "TransportationTypeDescriptor");
 
-        path.Should().ContainSingle();
+        path.Should().HaveCount(2);
         path[0].SourceTable.Should().Be(EdFiTable("StudentTransportation"));
         path[0].SourceColumnName.Should().Be(Column("TransportationTypeDescriptor_DescriptorId"));
         path[0].TargetTable.Should().Be(DmsTable("Descriptor"));
-        path[0].TargetColumnName.Should().Be(Column("DocumentId"));
+        path[0].TargetColumnName.Should().Be(Column("DescriptorId"));
+        path[1].SourceColumnName.Should().Be(Column("DocumentId"));
+        path[1].TargetTable.Should().BeNull();
     }
 
     [Test]
@@ -179,7 +181,7 @@ public class Given_SecurableElementColumnPathResolver_with_DS52_schema
     {
         var path = ResolveBasisPath("StudentSectionAssociation", "MediumOfInstructionDescriptor");
 
-        path.Should().HaveCount(2);
+        path.Should().HaveCount(3);
         path[0].SourceTable.Should().Be(EdFiTable("StudentSectionAssociation"));
         path[0].SourceColumnName.Should().Be(Column("Section_DocumentId"));
         path[0].TargetTable.Should().Be(EdFiTable("Section"));
@@ -187,7 +189,9 @@ public class Given_SecurableElementColumnPathResolver_with_DS52_schema
         path[1].SourceTable.Should().Be(EdFiTable("Section"));
         path[1].SourceColumnName.Should().Be(Column("MediumOfInstructionDescriptor_DescriptorId"));
         path[1].TargetTable.Should().Be(DmsTable("Descriptor"));
-        path[1].TargetColumnName.Should().Be(Column("DocumentId"));
+        path[1].TargetColumnName.Should().Be(Column("DescriptorId"));
+        path[2].SourceColumnName.Should().Be(Column("DocumentId"));
+        path[2].TargetTable.Should().BeNull();
     }
 
     [Test]

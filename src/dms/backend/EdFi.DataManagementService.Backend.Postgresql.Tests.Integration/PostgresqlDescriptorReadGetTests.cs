@@ -208,8 +208,7 @@ public class Given_A_Postgresql_DescriptorRead_Get_Request
             DocumentUuid: new DocumentUuid(Guid.Parse("30000000-0000-0000-0000-000000000105")),
             Namespace: "uri://ed-fi.org/SchoolTypeDescriptor",
             CodeValue: "Magnet",
-            ShortDescription: "Magnet",
-            Discriminator: "Ed-Fi:GradeLevelDescriptor"
+            ShortDescription: "Magnet"
         );
 
         await PostgresqlDescriptorReadTestSupport.SeedDescriptorAsync(

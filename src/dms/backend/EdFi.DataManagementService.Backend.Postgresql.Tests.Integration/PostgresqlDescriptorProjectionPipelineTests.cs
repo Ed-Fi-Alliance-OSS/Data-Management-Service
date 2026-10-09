@@ -22,8 +22,8 @@ internal static class DescriptorProjectionPipelineFixture
     internal const string TestSchema = "descprojpipelinetest";
     internal const long DocumentId810 = 810L;
     internal const long DocumentId811 = 811L;
-    internal const long DescriptorId910 = 910L;
-    internal const long DescriptorId911 = 911L;
+    internal static int DescriptorId910 { get; private set; }
+    internal static int DescriptorId911 { get; private set; }
     internal const string Uri910 = "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts";
     internal const string Uri911 = "uri://ed-fi.org/InstructionLanguageDescriptor#English";
 
@@ -109,7 +109,7 @@ internal static class DescriptorProjectionPipelineFixture
                 new DbColumnModel(
                     ColumnName: AcademicSubjectFkColumn,
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: false,
                     SourceJsonPath: AcademicSubjectDescriptorPath,
                     TargetResource: AcademicSubjectDescriptorResource
@@ -117,7 +117,7 @@ internal static class DescriptorProjectionPipelineFixture
                 new DbColumnModel(
                     ColumnName: InstructionLanguageFkColumn,
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: InstructionLanguageDescriptorPath,
                     TargetResource: InstructionLanguageDescriptorResource
@@ -154,21 +154,21 @@ internal static class DescriptorProjectionPipelineFixture
             );
 
             CREATE TABLE IF NOT EXISTS dms."Descriptor" (
-                "DocumentId" bigint PRIMARY KEY,
+                "DescriptorId" int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                "DocumentId" bigint NOT NULL UNIQUE REFERENCES dms."Document" ("DocumentId"),
+                "ResourceKeyId" smallint NOT NULL,
                 "Namespace" varchar(255) NOT NULL DEFAULT '',
                 "CodeValue" varchar(50) NOT NULL DEFAULT '',
                 "ShortDescription" varchar(75) NOT NULL DEFAULT '',
                 "Description" varchar(1024) NULL,
                 "EffectiveBeginDate" date NULL,
-                "EffectiveEndDate" date NULL,
-                "Discriminator" varchar(128) NOT NULL DEFAULT '',
-                "Uri" varchar(306) NOT NULL
+                "EffectiveEndDate" date NULL
             );
 
             CREATE TABLE "{TestSchema}"."CourseOffering" (
                 "DocumentId" bigint PRIMARY KEY,
-                "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
-                "InstructionLanguageDescriptor_DescriptorId" bigint NULL
+                "AcademicSubjectDescriptor_DescriptorId" int NOT NULL,
+                "InstructionLanguageDescriptor_DescriptorId" int NULL
             );
             """
         );
@@ -181,8 +181,8 @@ internal static class DescriptorProjectionPipelineFixture
             $"""
             DROP SCHEMA IF EXISTS "{TestSchema}" CASCADE;
 
-            DELETE FROM dms."Descriptor"
-            WHERE "DocumentId" IN ({DescriptorId910}, {DescriptorId911});
+            DELETE FROM dms."Descriptor" WHERE "DocumentId" IN (5000000910, 5000000911);
+            DELETE FROM dms."Document" WHERE "DocumentId" IN (5000000910, 5000000911);
 
             DELETE FROM dms."Document"
             WHERE "DocumentId" IN ({DocumentId810}, {DocumentId811});
@@ -195,8 +195,8 @@ internal static class DescriptorProjectionPipelineFixture
         await ExecuteSqlAsync(
             connection,
             $"""
-            DELETE FROM dms."Descriptor"
-            WHERE "DocumentId" IN ({DescriptorId910}, {DescriptorId911});
+            DELETE FROM dms."Descriptor" WHERE "DocumentId" IN (5000000910, 5000000911);
+            DELETE FROM dms."Document" WHERE "DocumentId" IN (5000000910, 5000000911);
 
             DELETE FROM dms."Document"
             WHERE "DocumentId" IN ({DocumentId810}, {DocumentId811});
@@ -205,10 +205,19 @@ internal static class DescriptorProjectionPipelineFixture
                 ({DocumentId810}, '81000000-0000-0000-0000-000000000810', 0, 1),
                 ({DocumentId811}, '81100000-0000-0000-0000-000000000811', 0, 1);
 
-            INSERT INTO dms."Descriptor" ("DocumentId", "Namespace", "CodeValue", "ShortDescription", "Discriminator", "Uri") VALUES
-                ({DescriptorId910}, 'uri://ed-fi.org/AcademicSubjectDescriptor', 'English Language Arts', 'English Language Arts', 'edfi.AcademicSubjectDescriptor', '{Uri910}'),
-                ({DescriptorId911}, 'uri://ed-fi.org/InstructionLanguageDescriptor', 'English', 'English', 'edfi.InstructionLanguageDescriptor', '{Uri911}');
             """
+        );
+        DescriptorId910 = await PostgresqlDescriptorProjectionSeedSupport.SeedAsync(
+            connection,
+            5000000910L,
+            "uri://ed-fi.org/AcademicSubjectDescriptor",
+            "English Language Arts"
+        );
+        DescriptorId911 = await PostgresqlDescriptorProjectionSeedSupport.SeedAsync(
+            connection,
+            5000000911L,
+            "uri://ed-fi.org/InstructionLanguageDescriptor",
+            "English"
         );
     }
 

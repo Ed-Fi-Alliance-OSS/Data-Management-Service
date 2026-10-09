@@ -850,6 +850,12 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteString("physical_schema", model.PhysicalSchema.Value);
         writer.WriteString("storage_kind", model.StorageKind.ToString());
 
+        if (model.StorageKind is ResourceStorageKind.SharedDescriptorTable)
+        {
+            writer.WritePropertyName("shared_descriptor_table");
+            WriteTable(writer, model.Root);
+        }
+
         writer.WritePropertyName("tables");
         writer.WriteStartArray();
         if (model.StorageKind != ResourceStorageKind.SharedDescriptorTable)

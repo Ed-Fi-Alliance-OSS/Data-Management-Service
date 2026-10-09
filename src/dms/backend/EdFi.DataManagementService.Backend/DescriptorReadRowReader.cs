@@ -23,8 +23,6 @@ internal interface IDescriptorReadCandidateMetadata
 
     string CodeValue { get; }
 
-    string? Discriminator { get; }
-
     /// <summary>
     /// The <c>ContentVersion</c> page selection ordered this row by, projected out of the page-selection
     /// relation itself, or <see langword="null"/> when this row did not come from a
@@ -55,7 +53,6 @@ internal sealed record DescriptorReadRow(
     string? Description,
     DateOnly? EffectiveBeginDate,
     DateOnly? EffectiveEndDate,
-    string? Discriminator,
     long? SelectedAnchor = null
 ) : IDescriptorReadCandidateMetadata;
 
@@ -67,7 +64,6 @@ internal sealed record DescriptorReadCandidateRow(
     short ResourceKeyId,
     string? Namespace,
     string CodeValue,
-    string? Discriminator,
     long? SelectedAnchor = null
 ) : IDescriptorReadCandidateMetadata;
 
@@ -90,7 +86,6 @@ internal static class DescriptorReadRowReader
     private const string DescriptionColumnName = "Description";
     private const string EffectiveBeginDateColumnName = "EffectiveBeginDate";
     private const string EffectiveEndDateColumnName = "EffectiveEndDate";
-    private const string DiscriminatorColumnName = "Discriminator";
 
     /// <summary>
     /// The alias the page-rows statement projects the page-selection anchor under. Deliberately not
@@ -189,7 +184,6 @@ internal static class DescriptorReadRowReader
             Description: reader.GetNullableFieldValue<string>(DescriptionColumnName),
             EffectiveBeginDate: reader.GetNullableDateFieldValue(EffectiveBeginDateColumnName),
             EffectiveEndDate: reader.GetNullableDateFieldValue(EffectiveEndDateColumnName),
-            Discriminator: ReadOptionalStringField(reader, DiscriminatorColumnName),
             SelectedAnchor: ReadSelectedAnchor(reader, carriesSelectedAnchor)
         );
     }
@@ -269,7 +263,6 @@ internal static class DescriptorReadRowReader
                 documentId,
                 resourceKeyId
             ),
-            Discriminator: ReadOptionalStringField(reader, DiscriminatorColumnName),
             SelectedAnchor: ReadSelectedAnchor(reader, carriesSelectedAnchor)
         );
     }
@@ -326,22 +319,6 @@ internal static class DescriptorReadRowReader
                     + $"but received '{value.GetType().Name}'."
             ),
         };
-    }
-
-    private static string? ReadOptionalStringField(IRelationalCommandReader reader, string columnName)
-    {
-        int ordinal;
-
-        try
-        {
-            ordinal = reader.GetOrdinal(columnName);
-        }
-        catch (IndexOutOfRangeException)
-        {
-            return null;
-        }
-
-        return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<string>(ordinal);
     }
 
     /// <summary>

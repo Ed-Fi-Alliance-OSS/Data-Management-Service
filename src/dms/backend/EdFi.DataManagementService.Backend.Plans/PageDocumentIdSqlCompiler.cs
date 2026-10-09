@@ -1035,8 +1035,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         // single step when the basis is the subject itself or is referenced by a root-owned FK, and a
         // child-table edge is prefixed with a root-to-child step (making the path two steps). The FK already
         // holds the basis resource's DocumentId, so the column can be filtered against the auth view
-        // directly. This covers descriptor bases too — their terminal step carries dms.Descriptor/DocumentId
-        // as a target, but the extra root re-scan those targets would drive is redundant.
+        // directly. Descriptor bases use a separate hop through DescriptorId to the owning DocumentId.
         if (pathSteps.Count == 1)
         {
             if (!terminalStep.SourceTable.Equals(rootTable))

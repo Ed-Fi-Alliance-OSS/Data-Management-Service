@@ -6,12 +6,12 @@
 namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 
 /// <summary>
-/// Validates that foreign keys reference direct stored columns on both local and target sides.
+/// Validates stored FK endpoints and the compact descriptor-reference type and target contract.
 /// </summary>
 public sealed class ValidateForeignKeyStorageInvariantPass : IRelationalModelSetPass
 {
     /// <summary>
-    /// Applies storage-only foreign-key endpoint invariants across the derived model set.
+    /// Applies foreign-key storage invariants across the derived model set.
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
@@ -27,8 +27,26 @@ public sealed class ValidateForeignKeyStorageInvariantPass : IRelationalModelSet
         {
             var localTableMetadata = tableMetadataByName[table.Table];
 
+            if (
+                table.Columns.FirstOrDefault(column =>
+                    column.Kind is ColumnKind.DescriptorFk
+                    && column.ScalarType is not { Kind: ScalarKind.Int32 }
+                ) is
+                { } column
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Descriptor column '{table.Table}.{column.ColumnName.Value}' must use Int32 storage."
+                );
+            }
+
             foreach (var foreignKey in table.Constraints.OfType<TableConstraint.ForeignKey>())
             {
+                if (IsDescriptorTable(foreignKey.TargetTable))
+                {
+                    ValidateDescriptorForeignKey(foreignKey, table, localTableMetadata);
+                }
+
                 if (!tablesByName.TryGetValue(foreignKey.TargetTable, out var targetTable))
                 {
                     if (IsDocumentTable(foreignKey.TargetTable))
@@ -76,6 +94,42 @@ public sealed class ValidateForeignKeyStorageInvariantPass : IRelationalModelSet
                 );
             }
         }
+    }
+
+    /// <summary>
+    /// Rejects descriptor references that confuse compact descriptor identity with owning document identity.
+    /// </summary>
+    private static void ValidateDescriptorForeignKey(
+        TableConstraint.ForeignKey foreignKey,
+        DbTableModel table,
+        UnifiedAliasStorageResolver.TableMetadata tableMetadata
+    )
+    {
+        if (
+            foreignKey.TargetColumns.Count != 1
+            || !foreignKey.TargetColumns[0].Equals(RelationalNameConventions.DescriptorKeyColumnName)
+            || foreignKey.Columns.Count != 1
+        )
+        {
+            throw new InvalidOperationException(
+                $"Foreign key '{foreignKey.Name}' from table '{table.Table}' must target only dms.Descriptor.DescriptorId."
+            );
+        }
+
+        if (
+            tableMetadata.ColumnsByName.TryGetValue(foreignKey.Columns[0], out var column)
+            && column.ScalarType is not { Kind: ScalarKind.Int32 }
+        )
+        {
+            throw new InvalidOperationException(
+                $"Descriptor foreign key '{foreignKey.Name}' from table '{table.Table}' must use Int32 storage."
+            );
+        }
+    }
+
+    private static bool IsDescriptorTable(DbTableName table)
+    {
+        return table.Equals(new DbTableName(new DbSchemaName("dms"), "Descriptor"));
     }
 
     /// <summary>

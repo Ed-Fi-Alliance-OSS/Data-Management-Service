@@ -458,10 +458,8 @@ public class Given_NamespaceAuthorizationPlanner
                     ShortDescription: Col("ShortDescription"),
                     Description: Col("Description"),
                     EffectiveBeginDate: Col("EffectiveBeginDate"),
-                    EffectiveEndDate: Col("EffectiveEndDate"),
-                    Discriminator: null
-                ),
-                DiscriminatorStrategy.ResourceKeyId
+                    EffectiveEndDate: Col("EffectiveEndDate")
+                )
             )
             : null;
 

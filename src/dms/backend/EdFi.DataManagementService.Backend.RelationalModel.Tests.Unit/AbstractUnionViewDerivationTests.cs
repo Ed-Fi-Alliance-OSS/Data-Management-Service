@@ -143,7 +143,7 @@ public class Given_Abstract_Union_View_Derivation_With_Descriptor_Identity
     public void It_should_preserve_descriptor_reference_metadata_on_output_columns()
     {
         _descriptorOutputColumn.ColumnName.Value.Should().Be("ProgramTypeDescriptor_DescriptorId");
-        _descriptorOutputColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int64));
+        _descriptorOutputColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int32));
         _descriptorOutputColumn
             .TargetResource.Should()
             .Be(new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor"));

@@ -189,7 +189,7 @@ public class Given_MssqlReferenceResolverTestDatabase
             ["dms.Descriptor"] = await ReadJsonAsync(
                 connectionString,
                 """
-                SELECT [DocumentId], [Namespace], [CodeValue], [ShortDescription], [Discriminator], [Uri]
+                SELECT [DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription], [Namespace] + N'#' + [CodeValue] AS [Uri]
                 FROM [dms].[Descriptor]
                 ORDER BY [DocumentId]
                 FOR JSON PATH, INCLUDE_NULL_VALUES;
