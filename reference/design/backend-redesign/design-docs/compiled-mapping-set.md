@@ -460,9 +460,9 @@ reference resolution. Its physical storage is the compact baseline above; the na
 workstream owns the later lookup/equality/index transition.
 
 > **Mapping-pack alignment pending.** The natural-key probe metadata (`NaturalKeyProbeTargets`,
-> `OwnNaturalKeyProbesByResource`, `DescriptorProbeTarget`, `NaturalKeyProbeKeyBinding`) and
-> `DbColumnModel.UsesSqlServerIdentityCollation` below are proposed for the later natural-key runtime
-> but are not yet reflected in [`mpack-format-v1.md`](mpack-format-v1.md) or
+> `OwnNaturalKeyProbesByResource`, `DescriptorProbeTarget`, `NaturalKeyProbeKeyBinding`), proposed
+> for the later natural-key runtime, and `DbColumnModel.UsesSqlServerIdentityCollation` (derived
+> since DMS-1443) are not yet reflected in [`mpack-format-v1.md`](mpack-format-v1.md) or
 > [`aot-compilation.md`](aot-compilation.md). Mapping packs are out of scope for E21 (see
 > [natural-key-resolution.md § Out of scope](natural-key-resolution.md#out-of-scope)); E05 owns the
 > payload/loader alignment before any pack is built.

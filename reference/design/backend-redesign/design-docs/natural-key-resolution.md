@@ -90,7 +90,7 @@ DMS-1404 retains the RI-based runtime on currently supported engines and supplie
 | Owning document key | Unique, non-null `bigint DocumentId` FK to `dms.Document`; used for RI, UUID lookup, locks, concurrency, document metadata, cache/work/restamp operations and document membership in auth views. Never narrow or reuse it as `DescriptorId`. |
 | Descriptor type | Non-null `smallint ResourceKeyId`; stamping triggers enforce descriptor/document agreement, with separate document and resource-catalog FKs. No live descriptor `Discriminator` exists. Abstract discriminators remain unchanged. |
 | URI | Reconstructed whole `Namespace + '#' + CodeValue`, preserving original case. PostgreSQL has no `Uri` column; SQL Server has non-persisted `Uri AS ([Namespace] + N'#' + [CodeValue])`. |
-| Uniqueness | `UX_Descriptor_ResourceKeyId_Uri`: PostgreSQL `(ResourceKeyId, (Namespace \|\| '#' \|\| CodeValue))`, SQL Server `(ResourceKeyId, Uri)`, under the former provider-default URI collation. No lowered identity index or new identity collation. |
+| Uniqueness | `UX_Descriptor_ResourceKeyId_Uri`: PostgreSQL `(ResourceKeyId, (Namespace \|\| '#' \|\| CodeValue))`, SQL Server `(ResourceKeyId, Uri)`. DMS-1404 kept the provider-default URI collation; DMS-1443 pins SQL Server `Namespace`/`CodeValue` (and therefore `Uri`) to `SQL_Latin1_General_CP1_CI_AS`. No lowered identity index. |
 | Descriptor history | Shared history routes by stored `ResourceKeyId`, retaining owning `DocumentId`, UUID and old/new namespace/code snapshots without a live-owner FK. No descriptor history `Discriminator` exists. |
 
 The current batched RI join returns **both** `DescriptorId` and `DocumentId` without another round

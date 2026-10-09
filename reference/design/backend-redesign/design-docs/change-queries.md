@@ -1352,7 +1352,8 @@ Both live and historical descriptor type predicates use the qualified `ResourceK
 primary key is independently allocated `int DescriptorId`; `bigint DocumentId` is its unique,
 non-null document association and remains the paging key when that anchor is selected. Uniqueness
 uses `UX_Descriptor_ResourceKeyId_Uri`: PostgreSQL indexes the unlowered whole-URI expression,
-and SQL Server indexes a non-persisted computed Uri under existing collation. Current recreation
+and SQL Server indexes a non-persisted computed Uri that inherits the DMS identity collation
+(`SQL_Latin1_General_CP1_CI_AS`) of its `Namespace` and `CodeValue` components. Current recreation
 probes retain component comparisons and must not be described as lowered-URI index seeks.
 
 **Compiled-mapping-set additions** (defined in [compiled-mapping-set.md](compiled-mapping-set.md)):
@@ -1974,11 +1975,12 @@ For DMS, emit `*_RefKey` with `DocumentId` last: `(<identity storage columns...>
 
 `*_RefKey` is emitted only for resources that some other resource references (`EnsureTargetUnique`). Never-referenced resources have no RefKey; their recreated-row anti-join keeps the plan available from `UX_<Table>_NK` (a partial seek on leading scalar identity parts plus a residual filter). That is the pre-existing behavior and is not changed by the natural-key design. If measurement shows it is too slow on high-volume never-referenced tables, the agreed remedy is to re-shape the anti-join onto the resource's own natural key using the compiled `OwnNaturalKeyProbe` in the future natural-key workstream (reference-sourced parts resolved by scalar subselects over the referenced targets' `RefKey`s, bound from the tombstone `Old*` scalars; descriptor parts via the lowered-URI + `ResourceKeyId` subselect), so the outer join seeks `UX_<Table>_NK`. See `natural-key-resolution.md` § "`/deletes` recreated-row detection on never-referenced resources".
 
-Descriptor `/deletes` retains its component-wise anti-join under existing provider collation:
-`ResourceKeyId`, `Namespace`, and `CodeValue`. Exact same-type component recreation suppresses
-the old tombstone; a different qualified descriptor type does not. The required regressions show
-case-only and trailing-namespace-space recreation suppressed on the tested SQL Server collation,
-but retained on PostgreSQL. Different component pairs that reconstruct the exact same URI remain
+Descriptor `/deletes` retains its component-wise anti-join: `ResourceKeyId`, `Namespace`, and
+`CodeValue`. On SQL Server both sides of the component comparison carry the DMS identity collation
+(`SQL_Latin1_General_CP1_CI_AS`), independent of the database default; PostgreSQL compares under its
+existing collation. Exact same-type component recreation suppresses the old tombstone; a different
+qualified descriptor type does not. The required regressions show case-only and
+trailing-namespace-space recreation suppressed on SQL Server, but retained on PostgreSQL. Different component pairs that reconstruct the exact same URI remain
 distinct for this history comparison on both providers. Responses still reconstruct the whole
 original-case URI from old components. Later DMS-1455 owns lowered-whole-URI recreation equality.
 
@@ -2326,8 +2328,9 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
 
 - `TrackedChangeTableInfo` creation for regular resources, concrete abstract resources, and the shared descriptor table.
 - `TrackedChangeColumnInfo` old/new column pairs and separate old/new nullability for identity paths, securable element paths, canonical key-unification storage columns, descriptor `Namespace`/`CodeValue` projections, and person `DocumentId` projections.
-- DMS-1404 emitted history strings and recreation predicates retain existing provider collation;
-  routing uses `smallint ResourceKeyId`. Explicit identity collation/lowered-URI probes remain future work.
+- SQL Server tracked-change `Old*`/`New*` string columns whose origin includes identity carry
+  `COLLATE SQL_Latin1_General_CP1_CI_AS`; PostgreSQL history strings keep the database collation.
+  Routing uses `smallint ResourceKeyId`. Lowered-URI probes remain future work.
 - `TrackedChangeDescriptorJoinInfo` and `TrackedChangePersonJoinInfo` paths used by trigger emitters, with value columns referencing them by join name rather than duplicating join definitions.
 - `DocumentStamping.ChangeTracking` attachment to the correct `TriggerKindParameters.DocumentStamping` trigger entries.
 - ChangeTracking key-change rows using the owning `DbTriggerInfo.IdentityProjectionColumns` workset, including key-unification cases where canonical storage columns change without direct alias-column updates, and presence-only alias changes do not emit key-change rows when the canonical identity storage values are unchanged.

@@ -37,8 +37,9 @@ Source documents:
 - Current references and POST upserts retain RI calculation, lookup and maintenance. Generated
   natural-key/lowered-URI probes and their equality, validation and platform changes are future
   work in [natural-key-resolution.md](natural-key-resolution.md).
-- SQL Server + PostgreSQL API parity preserves existing provider collation verdicts; compact
-  descriptor storage introduces no new identity collation or normalization.
+- SQL Server identity string columns carry the explicit DMS collation
+  `SQL_Latin1_General_CP1_CI_AS`, independent of the database default; PostgreSQL keeps its
+  existing collation verdicts. Compact descriptor storage introduces no normalization.
 - `DocumentCache`, `DocumentProjectionWork`, and the constrained lifecycle singleton are
   always provisioned. Canonical transactions record coalesced work in every
   enqueue-enabled lifecycle state; optional projection/read behavior and relational CDC
