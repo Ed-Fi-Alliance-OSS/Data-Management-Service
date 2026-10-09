@@ -486,7 +486,14 @@ development producer registered there (see the next section).
 
 Restore never accepts an unattested package, so a package built on your machine must be signed
 by a producer the trust policy knows. These are the commands the
-`tests/Invoke-BootstrapRestoreSmoke.ps1` smoke runs; start from `eng/docker-compose`.
+`tests/Invoke-BootstrapRestoreSmoke.ps1` smoke runs. Run them in one PowerShell session, starting
+from `eng/docker-compose`, and choose the template kind and package directory once; every later
+step reads them.
+
+```powershell
+$kind = 'Minimal'   # or 'Populated'; selects the seed, settings file, package, and restore
+$packageDirectory = 'C:\path\to\packages'
+```
 
 1. Register a development signer, once per machine. The private key lands in the git-ignored
    `eng/DatabaseTemplates/.dev-trust/` directory, and the public half is registered as the
@@ -497,29 +504,29 @@ by a producer the trust policy knows. These are the commands the
    ../DatabaseTemplates/new-template-dev-trust.ps1 -Purpose Dev
    ```
 
-2. Bring up a seeded source stack with a dedicated Configuration Service database. The package
-   build refuses a source database that also holds the CMS `dmscs` schema or the OpenIddict
-   stores, which is where the default shared topology puts them. Add the same
-   `-DatabaseEngine`, `-DataStandardVersion`, and `-EnvironmentFile` you will restore with.
+2. Bring up a source stack seeded with the same template kind and a dedicated Configuration
+   Service database. The package build refuses a source database that also holds the CMS
+   `dmscs` schema or the OpenIddict stores, which is where the default shared topology puts
+   them. Add the same `-DatabaseEngine`, `-DataStandardVersion`, and `-EnvironmentFile` you will
+   restore with.
 
    ```powershell
-   ./bootstrap-local-dms.ps1 -SeparateConfigDatabase -LoadSeedData -SeedTemplate Minimal
+   ./bootstrap-local-dms.ps1 -SeparateConfigDatabase -LoadSeedData -SeedTemplate $kind
    ```
 
 3. Build and attest the package. `Template-Management.psm1` resolves its `../` module imports
    and `Build-TemplateNuGetPackage` writes its outputs relative to the current directory, so
    import and run both from `eng/DatabaseTemplates`. `-StandardVersion` is the Data Standard
    segment of the package id (`5.2.0` or `6.1.0`); `-PackageVersion` is the package's own NuGet
-   version. Use `-ConfigFilePath ./PopulatedTemplateSettings.psd1 -TemplateKind Populated` for
-   a Populated package, `-DatabaseEngine mssql` for SQL Server, and `-DatabaseName` when the
-   env file changes `POSTGRES_DB_NAME` or `MSSQL_DB_NAME`.
+   version. Use `-DatabaseEngine mssql` for SQL Server, and `-DatabaseName` when the env file
+   changes `POSTGRES_DB_NAME` or `MSSQL_DB_NAME`.
 
    ```powershell
    Push-Location ../DatabaseTemplates
    Import-Module ./Template-Management.psm1 -Force
    Build-TemplateNuGetPackage `
-       -ConfigFilePath ./MinimalTemplateSettings.psd1 `
-       -TemplateKind Minimal `
+       -ConfigFilePath "./${kind}TemplateSettings.psd1" `
+       -TemplateKind $kind `
        -StandardVersion 5.2.0 `
        -PackageVersion 1.0.999 `
        -DumpAllUserSchemas `
@@ -529,12 +536,13 @@ by a producer the trust policy knows. These are the commands the
    Pop-Location
    ```
 
-4. Move the package and its sibling attestation into an empty directory, and delete the other
-   build outputs (the `.sql` or `.bak` dump and the `.csproj` are not git-ignored).
+4. Move the package and its sibling attestation into the package directory, which must hold no
+   other template package, and delete the other build outputs (the `.sql` or `.bak` dump and
+   the `.csproj` are not git-ignored).
 
    ```powershell
-   $packages = New-Item -ItemType Directory -Path C:\path\to\packages -Force
-   Get-ChildItem ../DatabaseTemplates -File -Filter 'EdFi.Api.Minimal.Template.*' | ForEach-Object {
+   $packages = New-Item -ItemType Directory -Path $packageDirectory -Force
+   Get-ChildItem ../DatabaseTemplates -File -Filter "EdFi.Api.$kind.Template.*" | ForEach-Object {
        if ($_.Extension -in '.nupkg', '.json') { Move-Item -LiteralPath $_.FullName -Destination $packages }
        else { Remove-Item -LiteralPath $_.FullName }
    }
@@ -544,8 +552,13 @@ by a producer the trust policy knows. These are the commands the
    The directory then holds the template `.nupkg`, its `.nupkg.attestation.json`, and the
    companion `.Attestation.` package, which restore ignores.
 
-5. Stop the source stack with `./bootstrap-local-dms.ps1 -d` (same infrastructure flags; volumes
-   are kept), then restore with `-RestoreTemplate Minimal -PackageDirectory C:\path\to\packages`.
+5. Stop the source stack (volumes are kept), then restore the same kind. Pass the same
+   infrastructure flags to both commands.
+
+   ```powershell
+   ./bootstrap-local-dms.ps1 -d
+   ./bootstrap-local-dms.ps1 -RestoreTemplate $kind -PackageDirectory $packageDirectory
+   ```
 
 ### Recovering from a failed scratch validation
 

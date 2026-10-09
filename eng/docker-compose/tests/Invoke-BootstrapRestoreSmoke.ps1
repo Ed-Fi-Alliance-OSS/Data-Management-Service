@@ -108,14 +108,14 @@
     built .nupkg's SHA-256 (each package fixture - default-minimal, core-only-minimal,
     default-populated - has its own package directory and binding). On the
     first successful restore of a package, while that stack is up, the smoke inspects the package
-    independently: it replays (PostgreSQL) or restores (SQL Server) the artifact from that exact
-    .nupkg into a run-owned scratch database restore_smoke_inspect_<12 hex>, selects the identity,
-    and drops the database again, on failure too; it never reseeds it and never reads the identity
-    from the artifact's text. The inspected identity must equal the bound pre-backup capture. Every
-    successful restore must leave exactly one valid, nonzero UUID in the target, different from the
-    package's identity and from every earlier restore's in the run. The results record each
-    capture, inspection (with its cleanup), and restored identity, and a run is final evidence only
-    when each successful restore its legs perform has that complete identity proof.
+    independently: it replays (PostgreSQL) or restores (SQL Server) the artifact from that
+    exact .nupkg into a run-owned scratch database restore_smoke_inspect_<12 hex>, selects the
+    identity, and drops the database again, on failure too; it never reseeds it and never reads the
+    identity from the artifact's text. The inspected identity must equal the bound pre-backup
+    capture. Every successful restore must leave exactly one valid, nonzero UUID in the target,
+    different from the package's identity and from every earlier restore's in the run. The results
+    record each capture, inspection (with its cleanup), and restored identity, and a run is final
+    evidence only when each successful restore its legs perform has that complete identity proof.
 
     Trust: the smoke NEVER bypasses attestation. It registers an ephemeral development
     producer (restore-smoke-<hex>) in the git-ignored local trust overlay via
