@@ -47,7 +47,8 @@ internal static partial class ProvisionTestHelper
         string dialect,
         string connectionString,
         string[]? schemaPaths = null,
-        bool createDatabase = false
+        bool createDatabase = false,
+        TimeSpan? processTimeout = null
     )
     {
         schemaPaths ??= [CliTestHelper.GetMinimalSchemaPath()];
@@ -66,7 +67,9 @@ internal static partial class ProvisionTestHelper
         {
             args.Add("--create-database");
         }
-        return CliTestHelper.RunCli([.. args]);
+        return processTimeout is null
+            ? CliTestHelper.RunCli([.. args])
+            : CliTestHelper.RunCliWithTimeout(processTimeout.Value, [.. args]);
     }
 
     internal static void AssertCoreTablesExist(DbConnection connection)

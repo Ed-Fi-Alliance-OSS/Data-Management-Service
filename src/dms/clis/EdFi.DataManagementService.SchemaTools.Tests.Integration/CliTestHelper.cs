@@ -14,9 +14,11 @@ public static class CliTestHelper
     public static (int ExitCode, string Output, string Error) RunProcess(
         string fileName,
         IEnumerable<string> arguments,
-        IDictionary<string, string>? environmentVariables = null
+        IDictionary<string, string>? environmentVariables = null,
+        TimeSpan? processTimeout = null
     )
     {
+        TimeSpan effectiveTimeout = processTimeout ?? _processTimeout;
         var startInfo = new ProcessStartInfo
         {
             FileName = fileName,
@@ -43,7 +45,7 @@ public static class CliTestHelper
         var outputTask = process.StandardOutput.ReadToEndAsync();
         var errorTask = process.StandardError.ReadToEndAsync();
 
-        if (!process.WaitForExit((int)_processTimeout.TotalMilliseconds))
+        if (!process.WaitForExit((int)effectiveTimeout.TotalMilliseconds))
         {
             process.Kill(entireProcessTree: true);
             process.WaitForExit(5000);
@@ -52,7 +54,7 @@ public static class CliTestHelper
             var partialErr = errorTask.IsCompleted ? errorTask.Result : "(not captured)";
 
             Assert.Fail(
-                $"Process '{fileName}' timed out after {_processTimeout.TotalSeconds}s."
+                $"Process '{fileName}' timed out after {effectiveTimeout.TotalSeconds}s."
                     + $"\nArgs: {string.Join(" ", arguments)}"
                     + $"\nstdout: {partialOut}\nstderr: {partialErr}"
             );
@@ -109,6 +111,18 @@ public static class CliTestHelper
         }
 
         return RunProcess(exePath, args);
+    }
+
+    public static (int ExitCode, string Output, string Error) RunCliWithTimeout(
+        TimeSpan processTimeout,
+        params string[] args
+    )
+    {
+        var exePath = GetExecutablePath();
+
+        return exePath.EndsWith(".dll")
+            ? RunProcess("dotnet", [exePath, .. args], processTimeout: processTimeout)
+            : RunProcess(exePath, args, processTimeout: processTimeout);
     }
 
     public static string[] GetAuthoritativeSchemaPaths()
