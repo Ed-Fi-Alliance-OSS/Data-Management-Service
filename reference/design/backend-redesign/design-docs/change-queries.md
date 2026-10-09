@@ -1804,9 +1804,9 @@ Both endpoints already build `FROM tracked_changes_x.Y c WHERE ...` and splice `
 The plan carries a `ReadChangesCustomViewCheckSpec` carrying the configured strategy, its CMS local order, the view name, the probe flag, and a basis resolution with three shapes:
 
 - **Stored DocumentId.** A self basis reads the `DocumentId` system column. A person basis reads the existing person `Old*_DocumentId` column, chosen by matching the resolved path against the person join chains as the relationship planner does today; when the resolved path is not a securable person path, no such column exists and the basis falls through to the live seek below. The predicate is `c.X IN (SELECT DocumentId FROM auth.View)`, so the basis is authorized by its current membership.
-- **Live seek.** For every other basis. The planner resolves the path with `SecurableElementColumnPathResolver` under the same preferred-path rule as the live page planner, then walks each hop's `DocumentReferenceBinding.IdentityBindings` from the basis back to the subject root to pair each basis identity column with the canonical tombstone column holding its old value. Descriptor identity parts pair the basis FK column with a `dms.Descriptor` row matched on the tombstone's old `Namespace` and `CodeValue`, reusing the shape of `BuildDescriptorIdentityJoin`. An abstract basis seeks the abstract union view by its identity column. A first hop whose values are not on the tombstone fails planning; see the error section below.
-- **Live seek plus tombstone probe.** When the strategy name carries the suffix, the live seek is unioned with one arm per basis tracked-change table. Each arm seeks that table's `Old*` identity columns with the same paired values and returns its `DocumentId`. Descriptor parts compare old `Namespace` and `CodeValue` directly, with no descriptor join. An abstract basis gets one arm per concrete member table, derived from the union view's arms.
-- **Descriptor basis.** When the basis resource is itself a descriptor, the check seeks `dms.Descriptor` on the tombstone's old `Namespace` and `CodeValue`, restricted to that descriptor's discriminator, and tests the matched row's `DocumentId` against the view. With the suffix, the same union shape adds one arm over the shared `tracked_changes_edfi.Descriptor` table, filtered by the same discriminator and returning the tombstone's `DocumentId`.
+- **Live seek.** For every other basis. The planner resolves the path with `SecurableElementColumnPathResolver` under the same preferred-path rule as the live page planner, then walks each hop's `DocumentReferenceBinding.IdentityBindings` from the basis back to the subject root to pair each basis identity column with the canonical tombstone column holding its old value. Descriptor identity parts pair the basis FK column with the `dms.Descriptor` row whose lowered URI matches the tombstone's lowered old `<namespace>#<codeValue>` under the descriptor resource's compile-time `ResourceKeyId`, the same lookup `/deletes` recreated-row detection uses ([natural-key-resolution.md](natural-key-resolution.md), DMS-1455). An abstract basis seeks the abstract union view by its identity column. A first hop whose values are not on the tombstone fails planning; see the error section below.
+- **Live seek plus tombstone probe.** When the strategy name carries the suffix, the live seek is unioned with one arm per basis tracked-change table. Each arm seeks that table's `Old*` identity columns with the same paired values and returns its `DocumentId`. Descriptor parts compare the lowered old `<namespace>#<codeValue>` of both tracked-change rows under the per-engine descriptor fold (`lower(… COLLATE "pg_c_utf8")` on PostgreSQL, `LOWER` under the DMS identity collation on SQL Server), with no descriptor join. An abstract basis gets one arm per concrete member table, derived from the union view's arms.
+- **Descriptor basis.** When the basis resource is itself a descriptor, the check seeks `dms.Descriptor` by lowered URI against the tombstone's lowered old `<namespace>#<codeValue>`, restricted to that descriptor's compile-time `ResourceKeyId` (never its discriminator), and tests the matched row's `DocumentId` against the view. With the suffix, the same union shape adds one arm over the shared `tracked_changes_edfi.Descriptor` table, filtered to the basis descriptor's discriminator values, comparing the lowered old values of both tracked-change rows under the same fold, and returning the tombstone's `DocumentId`.
 
 ```sql
 -- /studentSchoolAssociations/deletes with SchoolWithAlternativeTypeIncludingDeletes
@@ -1820,7 +1820,7 @@ AND EXISTS (
 )
 ```
 
-`TrackedChangeAuthorizationSqlEmitter` appends custom-view predicates as separate AND terms after the namespace predicate and the relationship OR-group, in CMS order, which is the composition rule in [auth.md](auth.md); the predicate list is `[namespace, relationship OR-group, custom views...]`, so requests without custom views render the same SQL as before. Custom views bind no claim parameters; the only parameters they add are descriptor discriminator values (`@CustomViewDescriptorDiscriminator{n}` and its `Qualified` twin, numbered across the plan's custom views and distinct from the planner's `@DescriptorDiscriminator{n}`), so they enter the existing SQL Server parameter-cap check without a new rule. A null old value on a nullable securable first hop never matches, so the row is denied without special casing, the same outcome the relationship strategies produce.
+`TrackedChangeAuthorizationSqlEmitter` appends custom-view predicates as separate AND terms after the namespace predicate and the relationship OR-group, in CMS order, which is the composition rule in [auth.md](auth.md); the predicate list is `[namespace, relationship OR-group, custom views...]`, so requests without custom views render the same SQL as before. Custom views bind no claim parameters; the only parameters they add are the descriptor discriminator values (`@CustomViewDescriptorDiscriminator{n}` and its `Qualified` twin, numbered across the plan's custom views and distinct from the planner's `@Discriminator`/`@QualifiedDiscriminator`) that the `DescriptorSeek` tombstone probe arm routes by. Live descriptor-identity lookups use the descriptor's compile-time `ResourceKeyId` as a literal and bind nothing, so the discriminator parameters fall under the existing SQL Server parameter-cap check without a new rule. A null old value on a nullable securable first hop never matches, so the row is denied without special casing, the same outcome the relationship strategies produce.
 
 The first hop of the path may be an identity reference or any securable element the tombstone stores; later hops are identity-only. This is what the shared resolver already returns, and it is wider than the ODS rule, which admits identifying properties only. The difference is deliberate: DMS tombstones store securable values that ODS tombstones lack (ODS stores model-declared authorization columns such as `DisciplineAction.OldResponsibilitySchoolId`, but not C#-level overrides such as StudentAssessment's reported school), and the built-in relationship strategies already authorize those tombstones from those columns, so restricting custom views to identity references would protect nothing. In Data Standard 5.2 and 6.1 the non-identity securable elements are the EdOrg paths on `disciplineActions` (responsibility school), `organizationDepartments` (parent EdOrg), and `studentAssessments` (reported school, nullable), plus the Namespace paths on namespace-secured resources; none are person paths.
 
@@ -1888,14 +1888,14 @@ SELECT
 FROM 
   tracked_changes_edfi.Grade AS c
   LEFT JOIN dms.Descriptor AS OldGradeTypeDescriptor 
-    ON OldGradeTypeDescriptor.ResourceKeyId = @GradeTypeDescriptorResourceKeyId
+    ON OldGradeTypeDescriptor.ResourceKeyId = 42 -- compile-time literal for GradeTypeDescriptor
     AND OldGradeTypeDescriptor.UriLowered = LOWER(CONCAT(
       c.OldGradeTypeDescriptor_Namespace,
       '#',
       c.OldGradeTypeDescriptor_CodeValue) COLLATE SQL_Latin1_General_CP1_CI_AS)
 
   LEFT JOIN dms.Descriptor AS OldGradingPeriodDescriptor
-    ON OldGradingPeriodDescriptor.ResourceKeyId = @GradingPeriodDescriptorResourceKeyId
+    ON OldGradingPeriodDescriptor.ResourceKeyId = 57 -- compile-time literal for GradingPeriodDescriptor
     AND OldGradingPeriodDescriptor.UriLowered = LOWER(CONCAT(
       c.OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace,
       '#',
@@ -1929,7 +1929,7 @@ ORDER BY
   c.ChangeVersion OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
 ```
 
-In the SQL Server example above, we join with the live table using identifying values instead of surrogate keys so that we can hide entries that were recreated. Descriptor-valued identity parts use the same descriptor identity as write-time resolution: the computed `UriLowered` plus the descriptor resource's compile-time `ResourceKeyId`. The PostgreSQL renderer emits the equivalent `lower(descriptor."Uri" COLLATE "pg_c_utf8") = lower((old_namespace || '#' || old_code_value) COLLATE "pg_c_utf8")` expression so `UX_Descriptor_UriLowered_ResourceKeyId` serves the join on both engines without inheriting the database default collation. The `ResourceKeyId` parameters come from `MappingSet.ResourceKeyIdByResource` through each `TrackedChangeDescriptorJoinInfo.DescriptorResource`.
+In the SQL Server example above, we join with the live table using identifying values instead of surrogate keys so that we can hide entries that were recreated. Descriptor-valued identity parts use the same descriptor identity as write-time resolution: the computed `UriLowered` plus the descriptor resource's compile-time `ResourceKeyId`. The PostgreSQL renderer emits the equivalent `lower(descriptor."Uri" COLLATE "pg_c_utf8") = lower((old_namespace || '#' || old_code_value) COLLATE "pg_c_utf8")` expression so `UX_Descriptor_UriLowered_ResourceKeyId` serves the join on both engines without inheriting the database default collation. The `ResourceKeyId` values are compile-time literals resolved from `MappingSet.ResourceKeyIdByResource` through each `TrackedChangeDescriptorJoinInfo.DescriptorResource`; they bind no parameters.
 
 #### `*_RefKey` index ordering for `/deletes`
 
@@ -1956,10 +1956,10 @@ SELECT DISTINCT
 FROM 
   tracked_changes_edfi.Descriptor AS c 
   LEFT JOIN dms.Descriptor AS src 
-    ON src.ResourceKeyId = @CrisisTypeDescriptorResourceKeyId
+    ON src.ResourceKeyId = 31 -- compile-time literal for CrisisTypeDescriptor
     AND src.UriLowered = LOWER(CONCAT(c.OldNamespace, '#', c.OldCodeValue) COLLATE SQL_Latin1_General_CP1_CI_AS)
 WHERE 
-  c.Discriminator = @CrisisTypeDescriptorDiscriminator -- Route rows in the shared tombstone table only
+  c.Discriminator IN (@Discriminator, @QualifiedDiscriminator) -- route shared tombstone rows
   AND src.DocumentId IS NULL             -- Exclude entries that were recreated
   AND c.NewCodeValue IS NULL            -- Exclude key changes, use any New* identity column
   AND (

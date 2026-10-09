@@ -20,7 +20,7 @@ RI resolver fully functional until the atomic resolver cutover.
 
 - Depends on [DMS-1443 — SQL Server identity collation contract](01-sql-server-identity-collation-contract.md).
 - Depends on [DMS-1444 — document/resource invariant and abstract ResourceKeyId](02-document-resource-invariant-and-abstract-resource-key.md).
-- Depends on [DMS-1447 — PostgreSQL floor and descriptor-collation upgrade](05-postgresql-17-and-descriptor-collation-upgrade.md).
+- Depends on [DMS-1447 — PostgreSQL floor and descriptor-collation upgrade](05-postgresql-18-and-descriptor-collation-upgrade.md).
 - Together with DMS-1445, this story blocks DMS-1449 and DMS-1455.
 
 ## Implementation Scope
@@ -41,7 +41,8 @@ RI resolver fully functional until the atomic resolver cutover.
 - On SQL Server, emit non-persisted `UriLowered AS LOWER([Uri])` and a unique index on
   `(UriLowered, ResourceKeyId)`.
 - Remove `FK_Descriptor_Document` and `FK_Descriptor_ResourceKey`, replacing them with the single
-  `FK_Descriptor_DocumentResourceKey` foreign key on `(DocumentId, ResourceKeyId)`.
+  `FK_Descriptor_DocumentResourceKey` foreign key on `(DocumentId, ResourceKeyId)`, which keeps
+  DMS-1268's `Restrict` delete action (RESTRICT on PostgreSQL, NO ACTION on SQL Server).
 - Retire the `ResourceKeyId` equality guard at the top of `TF_/TR_Descriptor_Stamp_Document`
   (both dialects: the `IF NOT EXISTS (… dms.Document WHERE DocumentId = NEW.DocumentId AND
   ResourceKeyId = NEW.ResourceKeyId) THEN RAISE/THROW` block in `CoreDdlEmitter`) and the emitter

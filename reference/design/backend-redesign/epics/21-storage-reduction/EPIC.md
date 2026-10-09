@@ -58,10 +58,12 @@ recorded in
 is accepted on trunk between DMS-1451 and DMS-1452/DMS-1454.
 
 E2E gating is engine-asymmetric: PostgreSQL runs the full suite, SQL Server runs only the
-`@MssqlRepresentative` cross-section. Every E2E scenario added by this epic that must gate SQL Server
-carries that tag (DMS-1451, DMS-1453, DMS-1454), engine-divergent verdicts use the `@PostgresqlOnly` /
-`@MssqlOnly` categories DMS-1443 introduces or stay at the integration level, and the representative
-set grows by roughly half a dozen scenarios as an accepted lane-time cost.
+`@MssqlRepresentative` or `@MssqlOnly` cross-section plus the DS 6.1 set in its own lane. Every E2E
+scenario added by this epic that must gate SQL Server carries one of those tags (DMS-1443,
+DMS-1451, DMS-1453, DMS-1454; DS 6.1 scenarios gate through `@StandardVersion-6_1`),
+engine-divergent verdicts use the `@PostgresqlOnly` / `@MssqlOnly`
+categories DMS-1443 introduces or stay at the integration level, and the representative set grows
+by roughly half a dozen scenarios as an accepted lane-time cost.
 
 ## Stories
 
@@ -69,7 +71,7 @@ set grows by roughly half a dozen scenarios as an accepted lane-time cost.
 - **DMS-1444 (T2)** — [`02-document-resource-invariant-and-abstract-resource-key.md`](02-document-resource-invariant-and-abstract-resource-key.md) — Add the document/resource invariant and abstract `ResourceKeyId`.
 - **DMS-1445 (T3)** — [`03-natural-key-probe-metadata.md`](03-natural-key-probe-metadata.md) — Compile natural-key probe metadata.
 - **DMS-1446 (T4)** — [`04-probe-based-duplicate-identity-and-constraint-diagnostics.md`](04-probe-based-duplicate-identity-and-constraint-diagnostics.md) — Move duplicate-identity and constraint diagnostics to compiled probes.
-- **DMS-1447 (T5)** — [`05-postgresql-17-and-descriptor-collation-upgrade.md`](05-postgresql-17-and-descriptor-collation-upgrade.md) — Raise the PostgreSQL floor and publish the descriptor-collation upgrade contract.
+- **DMS-1447 (T5)** — [`05-postgresql-18-and-descriptor-collation-upgrade.md`](05-postgresql-18-and-descriptor-collation-upgrade.md) — Raise the PostgreSQL floor and publish the descriptor-collation upgrade contract.
 - **DMS-1448 (T6)** — [`06-descriptor-validation-index-and-fk-foundations.md`](06-descriptor-validation-index-and-fk-foundations.md) — Add descriptor validation, index, and foreign-key foundations.
 - **DMS-1449 (T7)** — [`07-natural-key-sql-builders-and-cardinality-contracts.md`](07-natural-key-sql-builders-and-cardinality-contracts.md) — Implement natural-key SQL builders and cardinality contracts.
 - **DMS-1450 (T8)** — [`08-natural-key-resolver-internal-seam.md`](08-natural-key-resolver-internal-seam.md) — Implement the natural-key resolver behind an internal seam.

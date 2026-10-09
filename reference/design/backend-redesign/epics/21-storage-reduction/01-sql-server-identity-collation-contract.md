@@ -25,7 +25,10 @@ every textual identity value, independent of the database default collation.
 
 - Emit `COLLATE SQL_Latin1_General_CP1_CI_AS` on every generated SQL Server string column that stores
   or copies an identity value, including root natural keys, RefKey copies, abstract identities,
-  descriptor identity, tracked-change old/new identity copies, and local collection identity members.
+  descriptor identity (`dms.Descriptor.Uri`, `Namespace`, `CodeValue`), tracked-change old/new
+  identity copies (both the shared descriptor tracked-change table's `OldNamespace`/`OldCodeValue`
+  and the `Old*Descriptor_Namespace`/`_CodeValue` reference copies on resource tracked-change
+  tables), and local collection identity members.
 - Preserve purpose-specific explicit collations.
 - Introduce the backend identity-equality contract used by DDL and runtime composition. Select
   `OrdinalIgnoreCase` for SQL Server and `Ordinal` for PostgreSQL.
@@ -60,12 +63,14 @@ every textual identity value, independent of the database default collation.
   a case-variant `?field=` on an identity string column matches on SQL Server and a plan assertion
   proves an index seek on that column; the DMS-993 case-sensitive-filter pins
   (`It_enforces_case_sensitive_string_filtering_for_sql_server` and the descriptor read-filter
-  equivalent) are inverted; the ignored E2E mixed-case-value query scenarios run with per-engine
+  equivalent) are inverted; E2E case-variant `?field=value` query scenarios run with per-engine
   expectations, using the engine-tagged scenario mechanism introduced here (see below) or, where a
   single scenario cannot express both verdicts, integration-level pins.
-- E2E gains `@PostgresqlOnly` and `@MssqlOnly` categories: `run-e2e-tests` excludes `@MssqlOnly`,
-  `run-e2e-tests-mssql` includes `@MssqlOnly` alongside `@MssqlRepresentative` and excludes
-  `@PostgresqlOnly`; `build-dms.ps1 E2ETest` and the E2E README document the filters. Every E2E
-  scenario added by this epic that must gate SQL Server carries `@MssqlRepresentative`; the SQL
-  Server lane runs only that cross-section.
+- E2E gains `@PostgresqlOnly` and `@MssqlOnly` categories: `run-e2e-tests`, `run-e2e-tests-ds61`,
+  and `run-e2e-tests-partition-sizing` exclude `@MssqlOnly`; `run-e2e-tests-mssql` runs
+  `@MssqlRepresentative` or `@MssqlOnly`; `run-e2e-tests-mssql-ds61` keeps its data-standard filter
+  and excludes `@PostgresqlOnly`; `build-dms.ps1 E2ETest` and the E2E README document the filters.
+  Every E2E scenario added by this epic that must gate SQL Server carries `@MssqlRepresentative` or
+  `@MssqlOnly` (DS 6.1 scenarios gate through `@StandardVersion-6_1`); the SQL Server lanes run only
+  that cross-section (`run-e2e-tests-mssql`) and the DS 6.1 set (`run-e2e-tests-mssql-ds61`).
 - PostgreSQL DDL, comparer, and query-filter behavior remain unchanged.
