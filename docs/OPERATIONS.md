@@ -30,6 +30,53 @@ earlier versions reject, so on PostgreSQL 13 or 14 the upgrade stops and the
 Configuration Service does not start. Upgrade PostgreSQL before upgrading the
 Configuration Service.
 
+DMS requires PostgreSQL 18 or later with a UTF-8 database encoding. Descriptor
+identity will depend on PostgreSQL's builtin `pg_c_utf8` collation, which exists
+only in UTF-8 databases. A server shared by DMS and the Configuration Service must
+meet the DMS floor. SQL Server deployments are unaffected.
+
+SchemaTools (`ddl provision`) checks both requirements before it runs any DDL:
+
+- With `--create-database`, it first connects to the server's `postgres`
+  maintenance database and checks `server_version_num` (at least `180000`) and the
+  encoding of the target database if it exists, or of `template1` if it does not.
+  Only then does it run `CREATE DATABASE "<name>" ENCODING 'UTF8'`. It does not
+  select `template0` or a locale to force UTF-8 onto a cluster whose `template1`
+  is not UTF-8; initialize such a cluster with a UTF-8 encoding instead.
+- Before any DDL, with or without `--create-database`, it checks the server
+  version and the encoding of the target database itself.
+
+A failed check stops provisioning before anything is created and prints this
+message, followed by the value that failed:
+
+```text
+DMS requires PostgreSQL 18 or later with a UTF-8 database encoding. Upgrade the server to PostgreSQL 18 or later and provision into a UTF-8 database; when SchemaTools creates the database, the server's template1 database must be UTF-8. Detected: server_version_num 170000.
+```
+
+The detected value is `server_version_num <n>`, `target database encoding <encoding>`
+or `template1 encoding <encoding>`. Managed (CDC) provisioning checks the server
+before it records the database-creation intent, so after upgrading the server the
+same command can be run again.
+
+PostgreSQL cannot change the encoding of an existing database. A database that
+is not UTF-8 must be re-created as UTF-8 and its data moved into it, for example
+with `pg_dump` and `pg_restore`, before DMS is upgraded.
+
+**Docker volumes created before PostgreSQL 18.** From PostgreSQL 18 the official
+`postgres` image keeps its cluster in a versioned directory below a volume mounted
+at `/var/lib/postgresql`, where earlier images mounted the volume at
+`/var/lib/postgresql/data`. A PostgreSQL 16 volume mounted at the new location is
+not read: PostgreSQL 18 initializes a new, empty cluster beside the old files.
+Before the first start on 18, either remove the old volume (its data is lost) or
+upgrade it with `pg_upgrade`. This applies to developer volumes from
+`eng/docker-compose/postgresql.yml`. The security-review VM's `update.sh` refuses
+to update such a volume; see
+[its update runbook](../eng/azure-vm/provision/UPDATE.md#part-b-update-to-a-newer-build--bash).
+
+A later PostgreSQL major upgrade can change how `pg_c_utf8` folds case. Follow
+[PostgreSQL major upgrades](POSTGRESQL-MAJOR-UPGRADE.md) before reopening DMS to
+writes after such an upgrade.
+
 ## Plugins
 
 A plugin is a directory of already-published assemblies that the Ed-Fi API loads at
