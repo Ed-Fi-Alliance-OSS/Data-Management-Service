@@ -1181,11 +1181,17 @@ Tracked-change system columns are fixed by role, not by ApiSchema value metadata
 
 The `TrackedChangeColumnInfo` value-column list should include the corresponding columns that result from combining the `IdentityJsonPaths` and `SecurableElements` paths from the resource's ApiSchema.json. They should be included twice, with `Old` and `New` prefixes applied directly to the source column name, for example `OldSchoolId_Unified` and `NewStudent_DocumentId`.
 
-DMS-1404 retains each provider's existing collation for historical identity/component strings.
-Current descriptor recreation and history custom-view seeks compare retained `Namespace` and
-`CodeValue` components separately. They do not adopt the future lowered-whole-URI equality or a
-new identity collation. Explicit SQL Server identity collation and whole-URI recreation probes are
-later Epic 21 work (DMS-1443 and DMS-1455); they do not gate this compact schema.
+On SQL Server, every string `TrackedChangeColumnInfo` whose origin includes identity is a copied
+identity value and must be emitted with the DMS identity collation,
+`COLLATE SQL_Latin1_General_CP1_CI_AS`. This includes descriptor `Namespace`/`CodeValue`
+projections and the shared descriptor table's `Old*`/`New*` `Namespace`/`CodeValue`. Change Query
+`/deletes` anti-joins compare these historical `Old*` values to live identity columns to detect
+recreated rows; letting them inherit a case-sensitive database default would make those probes
+default-dependent or collation-conflicted. Routing-only values such as the shared descriptor
+`ResourceKeyId` are not identity text. Current descriptor recreation and history custom-view seeks
+compare the retained `Namespace` and `CodeValue` components separately; whole-URI recreation probes
+are later work. This identity-collation contract is owned by Epic 21 (DMS-1443, SQL Server identity
+collation contract; DMS-1455 for the Change Query descriptor probes).
 
 Each `TrackedChangeColumnInfo` carries `IsOldColumnNullable` and `IsNewColumnNullable` separately because tombstones populate only old values. `IsOldColumnNullable` follows the tracked source value's nullability. `IsNewColumnNullable` is normally `true` because delete tombstones leave `New*` columns null; key-change rows populate the new values when present.
 
@@ -1215,30 +1221,30 @@ MSSQL table definition example for the Grade resource:
 ```sql
 CREATE TABLE [tracked_changes_edfi].[Grade]
 (
-    [OldGradeTypeDescriptor_Namespace] nvarchar(255) NOT NULL,
-    [NewGradeTypeDescriptor_Namespace] nvarchar(255) NULL,
-    [OldGradeTypeDescriptor_CodeValue] nvarchar(50) NOT NULL,
-    [NewGradeTypeDescriptor_CodeValue] nvarchar(50) NULL,
-    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) NOT NULL,
-    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) NULL,
-    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) NOT NULL,
-    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) NULL,
-    [OldGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) NOT NULL,
-    [NewGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) NULL,
+    [OldGradeTypeDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewGradeTypeDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldGradeTypeDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewGradeTypeDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [OldSchoolId_Unified] bigint NOT NULL,
     [NewSchoolId_Unified] bigint NULL,
     [OldSchoolYear_Unified] int NOT NULL,
     [NewSchoolYear_Unified] int NULL,
     [OldStudentSectionAssociation_BeginDate] date NOT NULL,
     [NewStudentSectionAssociation_BeginDate] date NULL,
-    [OldStudentSectionAssociation_LocalCourseCode] nvarchar(60) NOT NULL,
-    [NewStudentSectionAssociation_LocalCourseCode] nvarchar(60) NULL,
-    [OldStudentSectionAssociation_SectionIdentifier] nvarchar(255) NOT NULL,
-    [NewStudentSectionAssociation_SectionIdentifier] nvarchar(255) NULL,
-    [OldStudentSectionAssociation_SessionName] nvarchar(60) NOT NULL,
-    [NewStudentSectionAssociation_SessionName] nvarchar(60) NULL,
-    [OldStudentSectionAssociation_StudentUniqueId] nvarchar(32) NOT NULL,
-    [NewStudentSectionAssociation_StudentUniqueId] nvarchar(32) NULL,
+    [OldStudentSectionAssociation_LocalCourseCode] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewStudentSectionAssociation_LocalCourseCode] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldStudentSectionAssociation_SectionIdentifier] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewStudentSectionAssociation_SectionIdentifier] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldStudentSectionAssociation_SessionName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewStudentSectionAssociation_SessionName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldStudentSectionAssociation_StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewStudentSectionAssociation_StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [OldStudentSectionAssociation_Student_DocumentId] bigint NOT NULL,
     [NewStudentSectionAssociation_Student_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
@@ -1256,10 +1262,10 @@ MSSQL table definition example for the shared `tracked_changes_edfi.Descriptor`:
 ```sql
 CREATE TABLE [tracked_changes_edfi].[Descriptor]
 (
-    [OldNamespace] nvarchar(255) NOT NULL,
-    [NewNamespace] nvarchar(255) NULL,
-    [OldCodeValue] nvarchar(50) NOT NULL,
-    [NewCodeValue] nvarchar(50) NULL,
+    [OldNamespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewNamespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldCodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewCodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [ResourceKeyId] smallint NOT NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
