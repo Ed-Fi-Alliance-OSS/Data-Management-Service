@@ -10,11 +10,12 @@ stored descriptors collide.
 ## Why a major upgrade affects descriptor identity
 
 Descriptor identity is case-insensitive. On PostgreSQL the descriptor identity index
-folds each descriptor URI with `lower("Uri" COLLATE "pg_c_utf8")`:
+folds each descriptor URI, rebuilt from its stored namespace and code value, with
+`lower(("Namespace" || '#' || "CodeValue") COLLATE "pg_c_utf8")`:
 
 ```sql
 CREATE UNIQUE INDEX "UX_Descriptor_UriLowered_ResourceKeyId"
-    ON dms."Descriptor" (lower("Uri" COLLATE "pg_c_utf8"), "ResourceKeyId");
+    ON dms."Descriptor" (lower(("Namespace" || '#' || "CodeValue") COLLATE "pg_c_utf8"), "ResourceKeyId");
 ```
 
 `pg_c_utf8` uses Unicode simple case mapping and compares by code point. PostgreSQL
@@ -68,9 +69,9 @@ Save the output, including the full `index_definition`: step 4 may need it to
 re-create an index. With the descriptor index in place, the expected output is:
 
 ```text
- schema_name | table_name |               index_name               |                                                                     index_definition
--------------+------------+----------------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------
- dms         | Descriptor | UX_Descriptor_UriLowered_ResourceKeyId | CREATE UNIQUE INDEX "UX_Descriptor_UriLowered_ResourceKeyId" ON dms."Descriptor" USING btree (lower((("Uri")::text COLLATE pg_c_utf8)), "ResourceKeyId")
+ schema_name | table_name |               index_name               |                                                                                            index_definition
+-------------+------------+----------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ dms         | Descriptor | UX_Descriptor_UriLowered_ResourceKeyId | CREATE UNIQUE INDEX "UX_Descriptor_UriLowered_ResourceKeyId" ON dms."Descriptor" USING btree (lower((((("Namespace")::text || '#'::text) || ("CodeValue")::text) COLLATE pg_c_utf8)), "ResourceKeyId")
 (1 row)
 ```
 
@@ -104,11 +105,11 @@ SET LOCAL enable_indexscan = off;
 SET LOCAL enable_indexonlyscan = off;
 SET LOCAL enable_bitmapscan = off;
 
-SELECT lower(d."Uri" COLLATE "pg_c_utf8") AS uri_lowered,
+SELECT lower((d."Namespace" || '#' || d."CodeValue") COLLATE "pg_c_utf8") AS uri_lowered,
        d."ResourceKeyId",
        count(*) AS row_count,
        array_agg(d."DocumentId" ORDER BY d."DocumentId") AS document_ids,
-       array_agg(d."Uri" ORDER BY d."DocumentId") AS uris
+       array_agg(d."Namespace" || '#' || d."CodeValue" ORDER BY d."DocumentId") AS uris
 FROM dms."Descriptor" d
 GROUP BY 1, 2
 HAVING count(*) > 1
@@ -177,7 +178,7 @@ If `existing_index` is empty, because the restore could not build it, run the
 are kept. For the descriptor index that is:
 
 ```sql
-CREATE UNIQUE INDEX "UX_Descriptor_UriLowered_ResourceKeyId" ON dms."Descriptor" USING btree (lower((("Uri")::text COLLATE pg_c_utf8)), "ResourceKeyId");
+CREATE UNIQUE INDEX "UX_Descriptor_UriLowered_ResourceKeyId" ON dms."Descriptor" USING btree (lower((((("Namespace")::text || '#'::text) || ("CodeValue")::text) COLLATE pg_c_utf8)), "ResourceKeyId");
 ```
 
 `REINDEX` takes an `ACCESS EXCLUSIVE` lock on the index while it runs, and
@@ -232,13 +233,14 @@ There are no collisions: run step 3 again. It returns `(0 rows)`.
 
 A descriptor is found case-insensitively through the index. Use a URI and
 `ResourceKeyId` from your data, given in a different case than it is stored; the
-example below looks up `uri://ed-fi.org/GradeLevelDescriptor#Ninth grade` stored
-with `ResourceKeyId` 1. The lookup returns exactly one row, the stored descriptor:
+example below looks up `uri://ed-fi.org/GradeLevelDescriptor#Ninth grade` (namespace
+`uri://ed-fi.org/GradeLevelDescriptor`, code value `Ninth grade`) stored with
+`ResourceKeyId` 1. The lookup returns exactly one row, the stored descriptor:
 
 ```sql
-SELECT "DocumentId", "Uri"
+SELECT "DocumentId", "Namespace", "CodeValue"
 FROM dms."Descriptor"
-WHERE lower("Uri" COLLATE "pg_c_utf8") =
+WHERE lower(("Namespace" || '#' || "CodeValue") COLLATE "pg_c_utf8") =
       lower('URI://ED-FI.ORG/GRADELEVELDESCRIPTOR#NINTH GRADE' COLLATE "pg_c_utf8")
   AND "ResourceKeyId" = 1;
 ```
@@ -251,9 +253,9 @@ correctly prefer a sequential scan:
 BEGIN;
 SET LOCAL enable_seqscan = off;
 EXPLAIN (COSTS OFF)
-SELECT "DocumentId", "Uri"
+SELECT "DocumentId", "Namespace", "CodeValue"
 FROM dms."Descriptor"
-WHERE lower("Uri" COLLATE "pg_c_utf8") =
+WHERE lower(("Namespace" || '#' || "CodeValue") COLLATE "pg_c_utf8") =
       lower('URI://ED-FI.ORG/GRADELEVELDESCRIPTOR#NINTH GRADE' COLLATE "pg_c_utf8")
   AND "ResourceKeyId" = 1;
 ROLLBACK;
@@ -265,7 +267,7 @@ The plan names `UX_Descriptor_UriLowered_ResourceKeyId`, as an `Index Scan` or a
 
 ```text
  Index Scan using "UX_Descriptor_UriLowered_ResourceKeyId" on "Descriptor"
-   Index Cond: ((lower(("Uri")::text) = 'uri://ed-fi.org/gradeleveldescriptor#ninth grade'::text COLLATE pg_c_utf8) AND ("ResourceKeyId" = 1))
+   Index Cond: ((lower((((("Namespace")::text || '#'::text) || ("CodeValue")::text))::text) = 'uri://ed-fi.org/gradeleveldescriptor#ninth grade'::text COLLATE pg_c_utf8) AND ("ResourceKeyId" = 1))
 ```
 
 Optionally, `amcheck` can confirm that every table row has a matching index entry
