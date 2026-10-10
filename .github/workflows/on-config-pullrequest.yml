@@ -211,6 +211,13 @@ jobs:
               throw "$($result.FailedCount) lock-file parity test(s) failed."
           }
 
+      - name: Run Published Image SQL Server Runtime Tests
+        run: |
+          $result = Invoke-Pester -Path "eng/docker-compose/tests/PublishedImageSqlServerRuntime.Tests.ps1" -Output Detailed -PassThru
+          if ($result.FailedCount -gt 0) {
+              throw "$($result.FailedCount) published-image SQL Server runtime test(s) failed."
+          }
+
       - name: Run OpenIddict Crypto Tests
         run: |
           $result = Invoke-Pester -Path "eng/docker-compose/tests/OpenIddictCrypto.Tests.ps1" -Output Detailed -PassThru
