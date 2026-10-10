@@ -3913,6 +3913,11 @@ Describe "Get-RestoreSmokeConfigTopologyEvidence" {
         @{ Case = "one setting under two spellings"; Arguments = @{ Environment = '["AppSettings__Datastore=postgresql","appsettings__datastore=mssql","DatabaseSettings__DatabaseConnection=host=dms-postgresql;password=S3cret-Value_9;database=edfi_datamanagementservice"]' }; Expected = "the config service container sets AppSettings:Datastore under 2 environment names, so the value the service reads is not resolved" }
         @{ Case = "an unknown datastore"; Arguments = @{ Environment = '["AppSettings__Datastore=sqlserver","DatabaseSettings__DatabaseConnection=Server=dms-mssql;Password=S3cret-Value_9;Database=edfi_datamanagementservice"]' }; Expected = "the config service datastore 'sqlserver' is neither postgresql nor mssql" }
         @{ Case = "no connection string"; Arguments = @{ Environment = '["AppSettings__Datastore=postgresql"]' }; Expected = "the config service container sets no value for DatabaseSettings:DatabaseConnection" }
+        @{ Case = "a PostgreSQL database name with a quoted trailing space"; Arguments = @{ Environment = '["AppSettings__Datastore=postgresql","DatabaseSettings__DatabaseConnection=host=dms-postgresql;password=S3cret-Value_9;database=\"edfi_datamanagementservice \";"]' }; Expected = "the config service connection string names a database or server that is blank or carries surrounding whitespace or control characters, so the topology is not judged on an altered name (its text is withheld)" }
+        @{ Case = "a blank PostgreSQL database name"; Arguments = @{ Environment = '["AppSettings__Datastore=postgresql","DatabaseSettings__DatabaseConnection=host=dms-postgresql;password=S3cret-Value_9;database=\"\";"]' }; Expected = "the config service connection string names a database or server that is blank or carries surrounding whitespace or control characters, so the topology is not judged on an altered name (its text is withheld)" }
+        @{ Case = "a whitespace-only PostgreSQL database name"; Arguments = @{ Environment = '["AppSettings__Datastore=postgresql","DatabaseSettings__DatabaseConnection=host=dms-postgresql;password=S3cret-Value_9;database=\"   \";"]' }; Expected = "the config service connection string names a database or server that is blank or carries surrounding whitespace or control characters, so the topology is not judged on an altered name (its text is withheld)" }
+        @{ Case = "a blank SQL Server database name"; Arguments = @{ Environment = '["AppSettings__Datastore=mssql","DatabaseSettings__DatabaseConnection=Server=dms-mssql,1433;Password=S3cret-Value_9;Database=\"\";"]' }; Expected = "the config service connection string names a database or server that is blank or carries surrounding whitespace or control characters, so the topology is not judged on an altered name (its text is withheld)" }
+        @{ Case = "a SQL Server database name with a quoted trailing space"; Arguments = @{ Environment = '["AppSettings__Datastore=mssql","DatabaseSettings__DatabaseConnection=Server=dms-mssql,1433;Password=S3cret-Value_9;Database=\"edfi_datamanagementservice \";"]' }; Expected = "the config service connection string names a database or server that is blank or carries surrounding whitespace or control characters, so the topology is not judged on an altered name (its text is withheld)" }
         @{ Case = "a connection string of the other engine"; Arguments = @{ Environment = '["AppSettings__Datastore=postgresql","DatabaseSettings__DatabaseConnection=Server=dms-mssql;Initial Catalog=edfi_datamanagementservice;Password=S3cret-Value_9"]' }; Expected = "the config service connection string is not a valid postgresql connection string (its text is withheld)" }
     ) {
         Reset-TopologyDocker @Arguments
@@ -3963,6 +3968,13 @@ Describe "Resolve-RestoreSmokeConfigTopology (<engine>)" -ForEach @(
         @{ Case = "the same database name is behind a host-published port"; Evidence = { New-TestConfigTopology -Engine $Engine -HostName "host.docker.internal" -Port "5435" }; Expected = "the Configuration Service connects to 'host.docker.internal' port 5435, not the composed database service '$ServiceHost' port $ServicePort, so whether it shares the target's server is not resolved" }
         @{ Case = "the connection string names two servers"; Evidence = { $e = New-TestConfigTopology -Engine $Engine; $e.Endpoints = @($e.Endpoints[0], [pscustomobject]@{ Host = "replica"; Port = $ServicePort }); $e }; Expected = "the Configuration Service connection string names 2 servers; expected one" }
         @{ Case = "the connection string names no database"; Evidence = { $e = New-TestConfigTopology -Engine $Engine; $e.DatabaseNames = @(); $e }; Expected = "the Configuration Service connection string names 0 databases; expected one" }
+        @{ Case = "the database name is empty"; Evidence = { $e = New-TestConfigTopology -Engine $Engine; $e.DatabaseNames = @(""); $e }; Expected = "the Configuration Service connection string names a blank database" }
+        @{ Case = "the database name is whitespace"; Evidence = { New-TestConfigTopology -Engine $Engine -Database "   " }; Expected = "the Configuration Service connection string names a blank database" }
+        @{ Case = "the target name carries a trailing space"; Evidence = { New-TestConfigTopology -Engine $Engine -Database "edfi_datamanagementservice " }; Expected = "the Configuration Service database name carries surrounding whitespace or control characters, so it is not compared" }
+        @{ Case = "another name carries a leading space"; Evidence = { New-TestConfigTopology -Engine $Engine -Database " edfi_configurationservice" }; Expected = "the Configuration Service database name carries surrounding whitespace or control characters, so it is not compared" }
+        @{ Case = "the database name carries a control character"; Evidence = { New-TestConfigTopology -Engine $Engine -Database "edfi_datamanagementservice`t" }; Expected = "the Configuration Service database name carries surrounding whitespace or control characters, so it is not compared" }
+        @{ Case = "the recorded host carries a leading space"; Evidence = { New-TestConfigTopology -Engine $Engine -HostName " $ServiceHost" }; Expected = "the Configuration Service server name or port is blank or carries surrounding whitespace or control characters, so it is not compared" }
+        @{ Case = "the recorded port carries a trailing space"; Evidence = { New-TestConfigTopology -Engine $Engine -Port "$ServicePort " }; Expected = "the Configuration Service server name or port is blank or carries surrounding whitespace or control characters, so it is not compared" }
         @{ Case = "the database differs only in case"; Evidence = { New-TestConfigTopology -Engine $Engine -Database "EdFi_DataManagementService" }; Expected = "the Configuration Service database 'EdFi_DataManagementService' differs from the target 'edfi_datamanagementservice' only in case, whose meaning depends on the server's collation" }
     ) {
         $topology = Resolve-RestoreSmokeConfigTopology -Evidence (& $Evidence) -DatabaseEngine $Engine -TargetDatabaseName "edfi_datamanagementservice"
@@ -4349,6 +4361,8 @@ Describe "Get-RestoreSmokeResultClassification for extension-selection" {
         @{ Case = "the config service evidence is unreadable"; Mutate = { param($p) $p.SelectionProofs[0].ConfigTopology.Reason = "docker ps exited 1: refused" }; Expected = @("restore extension-selection#1: the Configuration Service topology is unresolved: the Configuration Service's effective configuration could not be read: docker ps exited 1: refused") }
         @{ Case = "the config service evidence is missing"; Mutate = { param($p) $p.SelectionProofs[0].ConfigTopology = $null }; Expected = @("restore extension-selection#1: the Configuration Service topology is unresolved: the Configuration Service's effective configuration was not recorded") }
         @{ Case = "the config service names the target database on another server"; Mutate = { param($p) $p.SelectionProofs[0].ConfigTopology.Endpoints = @([pscustomobject]@{ Host = "cms-db.example.internal"; Port = "5432" }) }; Expected = @("restore extension-selection#1: the Configuration Service topology is unresolved: the Configuration Service connects to 'cms-db.example.internal' port 5432, not the composed database service 'dms-postgresql' port 5432, so whether it shares the target's server is not resolved") }
+        @{ Case = "the config service names a blank database"; Mutate = { param($p) $p.SelectionProofs[0].ConfigTopology.DatabaseNames = @("") }; Expected = @("restore extension-selection#1: the Configuration Service topology is unresolved: the Configuration Service connection string names a blank database") }
+        @{ Case = "the config service database carries a trailing space"; Mutate = { param($p) $p.SelectionProofs[0].ConfigTopology.DatabaseNames = @("edfi_datamanagementservice ") }; Expected = @("restore extension-selection#1: the Configuration Service topology is unresolved: the Configuration Service database name carries surrounding whitespace or control characters, so it is not compared") }
         @{ Case = "the run's engine is not recorded"; Mutate = { param($p) $p.Remove("DatabaseEngine") }; Expected = @("restore extension-selection#1: the Configuration Service topology is unresolved: the run's database engine '' is not postgresql or mssql") }
         @{ Case = "the catalog still counts dmscs as a project"; Mutate = { param($p) $p.SelectionProofs[0].Catalog.ProjectSchemas = @("dmscs", "edfi") }; Expected = @("restore extension-selection#1: the target catalog holds project schemas [dmscs, edfi], expected [edfi]") }
         @{ Case = "the proof names the default package"; Mutate = { param($p) $p.SelectionProofs[0].PackageSha256 = "d1" * 32 }; Expected = @("restore extension-selection#1: the selection proof's package SHA-256 '$("d1" * 32)' is not a core-only-minimal package built in this run", "restore extension-selection#1: no package record exists for the restored package, so its restore manifest is unknown") }
@@ -4388,6 +4402,22 @@ Describe "Get-RestoreSmokeResultClassification for extension-selection" {
 
         @($classification.Reasons) | Should -BeNullOrEmpty
         $classification.Final | Should -BeTrue
+    }
+
+    It "is non-final for an MSSQL run whose config service names <case>" -ForEach @(
+        @{ Case = "a blank database"; Names = @(""); Expected = "the Configuration Service connection string names a blank database" }
+        @{ Case = "the target with a trailing space"; Names = @("edfi_datamanagementservice "); Expected = "the Configuration Service database name carries surrounding whitespace or control characters, so it is not compared" }
+    ) {
+        $provenance = New-ExtensionProvenance
+        $provenance.DatabaseEngine = "mssql"
+        $provenance.SelectionProofs[0].Catalog.SchemaNames = @("auth", "dbo", "dms", "dmscs", "edfi")
+        $provenance.SelectionProofs[0].ConfigTopology = New-TestConfigTopology -Engine mssql
+        $provenance.SelectionProofs[0].ConfigTopology.DatabaseNames = $Names
+
+        $classification = Get-RestoreSmokeResultClassification -Provenance $provenance
+
+        $classification.Final | Should -BeFalse
+        @($classification.Reasons) | Should -Be @("restore extension-selection#1: the Configuration Service topology is unresolved: $Expected")
     }
 
     It "is final for a separate Configuration Service whose target holds no dmscs" {

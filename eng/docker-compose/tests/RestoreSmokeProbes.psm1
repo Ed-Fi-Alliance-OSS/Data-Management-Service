@@ -2865,6 +2865,18 @@ function Test-RestoreSmokeConfigurationServiceSchemaName {
     return ([string]$Name).Equals("dmscs", [System.StringComparison]::OrdinalIgnoreCase)
 }
 
+function Test-RestoreSmokeExactName {
+    # True when a recorded name is not blank and is its own log-safe form (no surrounding whitespace
+    # or control characters), so the topology can compare it exactly as recorded, never trimmed.
+    param(
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    return (-not [string]::IsNullOrWhiteSpace($Value)) -and ((ConvertTo-RestoreSmokeLogSafeText $Value) -ceq $Value)
+}
+
 function Get-RestoreSmokeConfigTopologyEvidence {
     <#
     .SYNOPSIS
@@ -2978,13 +2990,23 @@ function Get-RestoreSmokeConfigTopologyEvidence {
         $record.Reason = "the config service connection string is not a valid $grammar connection string (its text is withheld)"
         return [pscustomobject]$record
     }
+
+    # The topology is judged on the exact parsed names. A blank name, or one the log-safe form would
+    # alter (surrounding whitespace, control characters - Npgsql keeps a quoted trailing space), is
+    # never recorded in altered form: the topology is left unresolved instead.
+    $alteredNames = @($databaseNames | Where-Object { -not (Test-RestoreSmokeExactName ([string]$_)) }).Count +
+        @($endpoints | Where-Object { -not (Test-RestoreSmokeExactName ([string]$_.Host)) -or (-not [string]::IsNullOrWhiteSpace([string]$_.Port) -and -not (Test-RestoreSmokeExactName ([string]$_.Port))) }).Count
+    if ($alteredNames -gt 0) {
+        $record.Reason = "the config service connection string names a database or server that is blank or carries surrounding whitespace or control characters, so the topology is not judged on an altered name (its text is withheld)"
+        return [pscustomobject]$record
+    }
     $record.Endpoints = @($endpoints | ForEach-Object {
             [pscustomobject]@{
-                Host = ConvertTo-RestoreSmokeLogSafeText ([string]$_.Host)
-                Port = if ([string]::IsNullOrWhiteSpace([string]$_.Port)) { $null } else { ConvertTo-RestoreSmokeLogSafeText ([string]$_.Port) }
+                Host = [string]$_.Host
+                Port = if ([string]::IsNullOrWhiteSpace([string]$_.Port)) { $null } else { [string]$_.Port }
             }
         })
-    $record.DatabaseNames = @($databaseNames | ForEach-Object { ConvertTo-RestoreSmokeLogSafeText ([string]$_) })
+    $record.DatabaseNames = @($databaseNames | ForEach-Object { [string]$_ })
     return [pscustomobject]$record
 }
 
@@ -2997,9 +3019,10 @@ function Resolve-RestoreSmokeConfigTopology {
     the target database by exact name; "separate" when it connects to that service but to another
     database; otherwise "unknown" with the reason. A matching database name alone never decides:
     another server, a server list, another engine, a name that differs only in case (whose meaning
-    depends on the server's collation), or evidence that is missing or unreadable is not resolved,
-    and the caller reports it as a defect rather than assuming either answer. Pure: the classifier
-    re-judges a results record with it.
+    depends on the server's collation), a blank name or one carrying surrounding whitespace or
+    control characters (compared exactly as recorded, never trimmed), or evidence that is missing or
+    unreadable is not resolved, and the caller reports it as a defect rather than assuming either
+    answer. Pure: the classifier re-judges a results record with it.
     #>
     param(
         [AllowNull()]
@@ -3043,17 +3066,28 @@ function Resolve-RestoreSmokeConfigTopology {
         return & $topologyRecord "unknown" "the Configuration Service connection string names $($databaseNames.Count) databases; expected one"
     }
 
+    # Recorded names are compared exactly as recorded, never in their log-safe form: a blank name, or
+    # one that form would alter, is unresolved rather than trimmed into a match.
     $expected = $script:ComposedDatabaseEndpoints[$DatabaseEngine]
-    $hostName = ConvertTo-RestoreSmokeLogSafeText ([string](Get-RestoreSmokeEvidenceValue $endpoints[0] "Host"))
+    $hostName = [string](Get-RestoreSmokeEvidenceValue $endpoints[0] "Host")
     $port = [string](Get-RestoreSmokeEvidenceValue $endpoints[0] "Port")
+    if (-not (Test-RestoreSmokeExactName $hostName) -or (-not [string]::IsNullOrWhiteSpace($port) -and -not (Test-RestoreSmokeExactName $port))) {
+        return & $topologyRecord "unknown" "the Configuration Service server name or port is blank or carries surrounding whitespace or control characters, so it is not compared"
+    }
     if ([string]::IsNullOrWhiteSpace($port)) {
         $port = $expected.Port
     }
     if (-not $hostName.Equals($expected.Host, [System.StringComparison]::OrdinalIgnoreCase) -or -not (Test-PortNumberEquivalent -Left $port -Right $expected.Port)) {
-        return & $topologyRecord "unknown" "the Configuration Service connects to '$hostName' port $(ConvertTo-RestoreSmokeLogSafeText $port), not the composed database service '$($expected.Host)' port $($expected.Port), so whether it shares the target's server is not resolved"
+        return & $topologyRecord "unknown" "the Configuration Service connects to '$hostName' port $port, not the composed database service '$($expected.Host)' port $($expected.Port), so whether it shares the target's server is not resolved"
     }
 
-    $databaseName = ConvertTo-RestoreSmokeLogSafeText ([string]$databaseNames[0])
+    $databaseName = [string]$databaseNames[0]
+    if ([string]::IsNullOrWhiteSpace($databaseName)) {
+        return & $topologyRecord "unknown" "the Configuration Service connection string names a blank database"
+    }
+    if (-not (Test-RestoreSmokeExactName $databaseName)) {
+        return & $topologyRecord "unknown" "the Configuration Service database name carries surrounding whitespace or control characters, so it is not compared"
+    }
     if ($databaseName -ceq $TargetDatabaseName) {
         return & $topologyRecord "shared" $null
     }
