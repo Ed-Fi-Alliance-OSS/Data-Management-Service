@@ -402,6 +402,10 @@ Describe "Invoke-BootstrapRestoreSmoke static contract" {
             $judgeIndex | Should -BeGreaterThan $recordIndex
             $selectionBody.Contains('Read-RestoreSmokeWorkspaceSelection -BootstrapRoot $script:BootstrapRoot') | Should -BeTrue
             $selectionBody.Contains('Get-RestoreSmokeCatalogSelection -DatabaseEngine $DatabaseEngine -DatabaseName $script:TargetDatabaseName') | Should -BeTrue
+            $topologyIndex = $selectionBody.IndexOf('ConfigTopology   = (Get-RestoreSmokeConfigTopologyEvidence -ComposeProject $script:WrapperProfile.ComposeProject)')
+            $topologyIndex | Should -BeGreaterThan 0
+            $topologyIndex | Should -BeLessThan $recordIndex
+            $selectionBody.Contains('-ExpectedPackage ([string[]]@($environments[0].SelectedPackages)) -DatabaseEngine $DatabaseEngine)') | Should -BeTrue
         }
     }
 

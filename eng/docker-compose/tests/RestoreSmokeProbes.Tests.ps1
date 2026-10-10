@@ -37,6 +37,32 @@ BeforeAll {
         return $output
     }
 
+    function script:New-TestConfigTopology {
+        # Recorded Configuration Service evidence (Get-RestoreSmokeConfigTopologyEvidence) for a
+        # running config service on the composed database service of -Engine.
+        param(
+            [ValidateSet("postgresql", "mssql")]
+            [string]$Engine = "postgresql",
+            [string]$Database = "edfi_datamanagementservice",
+            [string]$HostName,
+            [AllowNull()]
+            [object]$Port = "default"
+        )
+
+        if (-not $HostName) { $HostName = if ($Engine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" } }
+        if ($Port -is [string] -and $Port -eq "default") { $Port = if ($Engine -eq "mssql") { "1433" } else { "5432" } }
+        return [pscustomobject]@{
+            Source         = "docker inspect .Config.Env of the project's running config service container"
+            ComposeProject = "dms-published"
+            Container      = "ed-fi-api-config-service"
+            ContainerId    = "0123456789ab"
+            Datastore      = $Engine
+            Endpoints      = @([pscustomobject]@{ Host = $HostName; Port = $Port })
+            DatabaseNames  = @($Database)
+            Reason         = $null
+        }
+    }
+
     function script:New-CleanTestRepository {
         param([string]$Directory)
 
@@ -3697,6 +3723,8 @@ Describe "Get-RestoreSmokeCatalogSelection and Get-RestoreSmokeRefusalState" {
         $record.Reason | Should -BeNullOrEmpty
         @($record.SchemaNames) | Should -Be @("auth", "dms", "edfi", "public", "tracked_changes_edfi")
         @($record.ProjectSchemas) | Should -Be @("edfi")
+        @($record.ConfigurationServiceSchemas) | Should -BeNullOrEmpty
+        $null -eq $record.ConfigurationServiceSchemas | Should -BeFalse
         @($record.TrackedChangesProjects) | Should -Be @("edfi")
         $record.EffectiveSchemaHash | Should -BeExactly $script:coreHash
         $calls = $global:RestoreSmokeSelectionTest.Calls
@@ -3713,6 +3741,30 @@ Describe "Get-RestoreSmokeCatalogSelection and Get-RestoreSmokeRefusalState" {
         @($record.TrackedChangesProjects) | Should -Be @("tpdm")
         $global:RestoreSmokeSelectionTest.Calls[0].Contains("/opt/mssql-tools18/bin/sqlcmd") | Should -BeTrue
         $global:RestoreSmokeSelectionTest.Calls[0].EndsWith((Get-InventorySchemaQuerySql -DatabaseEngine mssql -Purpose InventoryEnumeration)) | Should -BeTrue
+    }
+
+    It "keeps the complete <engine> inventory and records dmscs apart from the projects, which keep an unrelated schema" -ForEach @(
+        @{ Engine = "postgresql"; AlwaysPresent = "public" }
+        @{ Engine = "mssql"; AlwaysPresent = "dbo" }
+    ) {
+        Reset-SelectionDocker -SchemaRows @("auth", "dms", "dmscs", "edfi", "sample", $AlwaysPresent, "tracked_changes_edfi")
+
+        $record = Get-RestoreSmokeCatalogSelection -DatabaseEngine $Engine -DatabaseName "edfi_datamanagementservice"
+
+        $record.Reason | Should -BeNullOrEmpty
+        @($record.SchemaNames) | Should -Be @("auth", "dms", "dmscs", "edfi", "sample", $AlwaysPresent, "tracked_changes_edfi")
+        @($record.ProjectSchemas) | Should -Be @("edfi", "sample")
+        @($record.ConfigurationServiceSchemas) | Should -Be @("dmscs")
+        @($record.TrackedChangesProjects) | Should -Be @("edfi")
+    }
+
+    It "matches the Configuration Service schema as the package gate does, ignoring case" {
+        Reset-SelectionDocker -SchemaRows @("dms", "DMSCS", "edfi", "public")
+
+        $record = Get-RestoreSmokeCatalogSelection -DatabaseEngine postgresql -DatabaseName "edfi_datamanagementservice"
+
+        @($record.ProjectSchemas) | Should -Be @("edfi")
+        @($record.ConfigurationServiceSchemas) | Should -Be @("DMSCS")
     }
 
     It "reports, without throwing, <case>" -ForEach @(
@@ -3767,6 +3819,235 @@ Describe "Get-RestoreSmokeCatalogSelection and Get-RestoreSmokeRefusalState" {
     }
 }
 
+Describe "Get-RestoreSmokeConfigTopologyEvidence" {
+    BeforeAll {
+        $script:secret = "S3cret-Value_9"
+
+        # A fake daemon answered from $global:RestoreSmokeTopologyTest: the config service listing,
+        # the inspected environment, and per-step failures.
+        Mock docker -ModuleName RestoreSmokeProbes {
+            $state = $global:RestoreSmokeTopologyTest
+            $state.Calls.Add(($args -join " "))
+            $step = if ($args[0] -eq "ps") { "ps" } elseif ($args[0] -eq "inspect") { "inspect" } else { "unknown" }
+            if ($state.Fail.ContainsKey($step)) {
+                $global:LASTEXITCODE = 1
+                return $state.Fail[$step]
+            }
+            $global:LASTEXITCODE = 0
+            switch ($step) {
+                "ps" { return $state.Containers }
+                "inspect" { return $state.Environment }
+                default { $global:LASTEXITCODE = 99; return "unexpected docker call" }
+            }
+        }
+
+        function script:Reset-TopologyDocker {
+            param(
+                [string[]]$Containers = @("0123456789ab|ed-fi-api-config-service"),
+                [AllowNull()]
+                [object]$Environment,
+                [hashtable]$Fail = @{}
+            )
+
+            $global:RestoreSmokeTopologyTest = @{
+                Calls       = [System.Collections.Generic.List[string]]::new()
+                Containers  = $Containers
+                Environment = $Environment
+                Fail        = $Fail
+            }
+        }
+
+        function script:ConvertTo-EnvironmentJson {
+            param([string[]]$Assignment)
+            return (ConvertTo-Json -InputObject @($Assignment) -Compress)
+        }
+    }
+
+    AfterAll {
+        Remove-Variable -Name RestoreSmokeTopologyTest -Scope Global -ErrorAction SilentlyContinue
+    }
+
+    It "records the <engine> datastore, endpoint, and database of the running config service, never the connection string" -ForEach @(
+        @{ Engine = "postgresql"; Datastore = "postgresql"; Connection = "host=dms-postgresql;port=5432;username=postgres;password=S3cret-Value_9;database=edfi_datamanagementservice;"; HostName = "dms-postgresql"; Port = "5432" }
+        @{ Engine = "mssql"; Datastore = "mssql"; Connection = "Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=S3cret-Value_9;TrustServerCertificate=true"; HostName = "dms-mssql"; Port = "1433" }
+    ) {
+        Reset-TopologyDocker -Environment (ConvertTo-EnvironmentJson @("PATH=/usr/bin", "AppSettings__Datastore=$Datastore", "DatabaseSettings__DatabaseConnection=$Connection", "DatabaseSettings__EncryptionKey=$($script:secret)"))
+
+        $record = Get-RestoreSmokeConfigTopologyEvidence -ComposeProject "dms-published"
+
+        $record.Reason | Should -BeNullOrEmpty
+        $record.Container | Should -BeExactly "ed-fi-api-config-service"
+        $record.ContainerId | Should -BeExactly "0123456789ab"
+        $record.Datastore | Should -BeExactly $Datastore
+        @($record.Endpoints).Count | Should -Be 1
+        $record.Endpoints[0].Host | Should -BeExactly $HostName
+        $record.Endpoints[0].Port | Should -BeExactly $Port
+        @($record.DatabaseNames) | Should -Be @("edfi_datamanagementservice")
+        (ConvertTo-Json -InputObject $record -Depth 6).Contains($script:secret) | Should -BeFalse
+        @($global:RestoreSmokeTopologyTest.Calls) | Should -Be @(
+            "ps --filter label=com.docker.compose.project=dms-published --filter label=com.docker.compose.service=config --format {{.ID}}|{{.Names}}"
+            "inspect 0123456789ab --format {{json .Config.Env}}"
+        )
+    }
+
+    It "records a separate database and an omitted port, reading keys as the service's configuration does" {
+        Reset-TopologyDocker -Environment (ConvertTo-EnvironmentJson @("appsettings__datastore=PostgreSQL", "DATABASESETTINGS__DATABASECONNECTION=host=dms-postgresql;username=postgres;password=S3cret-Value_9;database=edfi_configurationservice;"))
+
+        $record = Get-RestoreSmokeConfigTopologyEvidence -ComposeProject "dms-published"
+
+        $record.Reason | Should -BeNullOrEmpty
+        $record.Datastore | Should -BeExactly "PostgreSQL"
+        $record.Endpoints[0].Port | Should -BeNullOrEmpty
+        @($record.DatabaseNames) | Should -Be @("edfi_configurationservice")
+    }
+
+    It "reports, without throwing or quoting the environment, <case>" -ForEach @(
+        @{ Case = "a failed listing"; Arguments = @{ Fail = @{ ps = "Cannot connect to the Docker daemon" } }; Expected = "docker ps exited 1: Cannot connect to the Docker daemon" }
+        @{ Case = "no running config service"; Arguments = @{ Containers = @() }; Expected = "the project 'dms-published' runs 0 config service containers; expected exactly one" }
+        @{ Case = "two config services"; Arguments = @{ Containers = @("01|a", "02|b") }; Expected = "the project 'dms-published' runs 2 config service containers; expected exactly one" }
+        @{ Case = "a failed inspect"; Arguments = @{ Fail = @{ inspect = "Error: No such object: 0123456789ab" } }; Expected = "docker inspect of the config service container exited 1: Error: No such object: 0123456789ab" }
+        @{ Case = "an environment that is not JSON"; Arguments = @{ Environment = "password=S3cret-Value_9 not json" }; Expected = "the config service container's environment is not a JSON list of NAME=value strings (its text is withheld)" }
+        @{ Case = "an environment that is not a string list"; Arguments = @{ Environment = '[{"password":"S3cret-Value_9"}]' }; Expected = "the config service container's environment is not a JSON list of NAME=value strings (its text is withheld)" }
+        @{ Case = "no datastore setting"; Arguments = @{ Environment = '["DatabaseSettings__DatabaseConnection=host=dms-postgresql;password=S3cret-Value_9;database=edfi_datamanagementservice"]' }; Expected = "the config service container sets no value for AppSettings:Datastore" }
+        @{ Case = "an empty datastore setting"; Arguments = @{ Environment = '["AppSettings__Datastore=","DatabaseSettings__DatabaseConnection=host=dms-postgresql;password=S3cret-Value_9;database=edfi_datamanagementservice"]' }; Expected = "the config service container sets no value for AppSettings:Datastore" }
+        @{ Case = "one setting under two spellings"; Arguments = @{ Environment = '["AppSettings__Datastore=postgresql","appsettings__datastore=mssql","DatabaseSettings__DatabaseConnection=host=dms-postgresql;password=S3cret-Value_9;database=edfi_datamanagementservice"]' }; Expected = "the config service container sets AppSettings:Datastore under 2 environment names, so the value the service reads is not resolved" }
+        @{ Case = "an unknown datastore"; Arguments = @{ Environment = '["AppSettings__Datastore=sqlserver","DatabaseSettings__DatabaseConnection=Server=dms-mssql;Password=S3cret-Value_9;Database=edfi_datamanagementservice"]' }; Expected = "the config service datastore 'sqlserver' is neither postgresql nor mssql" }
+        @{ Case = "no connection string"; Arguments = @{ Environment = '["AppSettings__Datastore=postgresql"]' }; Expected = "the config service container sets no value for DatabaseSettings:DatabaseConnection" }
+        @{ Case = "a connection string of the other engine"; Arguments = @{ Environment = '["AppSettings__Datastore=postgresql","DatabaseSettings__DatabaseConnection=Server=dms-mssql;Initial Catalog=edfi_datamanagementservice;Password=S3cret-Value_9"]' }; Expected = "the config service connection string is not a valid postgresql connection string (its text is withheld)" }
+    ) {
+        Reset-TopologyDocker @Arguments
+
+        $record = Get-RestoreSmokeConfigTopologyEvidence -ComposeProject "dms-published"
+
+        $record.Reason | Should -BeExactly $Expected
+        $record.Endpoints | Should -BeNullOrEmpty
+        $record.DatabaseNames | Should -BeNullOrEmpty
+        (ConvertTo-Json -InputObject $record -Depth 6).Contains($script:secret) | Should -BeFalse
+    }
+}
+
+Describe "Resolve-RestoreSmokeConfigTopology (<engine>)" -ForEach @(
+    @{ Engine = "postgresql"; ServiceHost = "dms-postgresql"; ServicePort = "5432"; OtherEngine = "mssql" }
+    @{ Engine = "mssql"; ServiceHost = "dms-mssql"; ServicePort = "1433"; OtherEngine = "postgresql" }
+) {
+    It "is shared when the config service uses the composed service and the target database" {
+        $topology = Resolve-RestoreSmokeConfigTopology -Evidence (New-TestConfigTopology -Engine $Engine) -DatabaseEngine $Engine -TargetDatabaseName "edfi_datamanagementservice"
+
+        $topology.Topology | Should -BeExactly "shared"
+        $topology.Reason | Should -BeNullOrEmpty
+    }
+
+    It "is shared for an omitted port, an equivalent port spelling, and a host in another case" {
+        foreach ($evidence in @(
+                (New-TestConfigTopology -Engine $Engine -Port $null)
+                (New-TestConfigTopology -Engine $Engine -Port "0$ServicePort")
+                (New-TestConfigTopology -Engine $Engine -HostName $ServiceHost.ToUpperInvariant())
+            )) {
+            (Resolve-RestoreSmokeConfigTopology -Evidence $evidence -DatabaseEngine $Engine -TargetDatabaseName "edfi_datamanagementservice").Topology | Should -BeExactly "shared"
+        }
+    }
+
+    It "is separate when the config service uses another database on the composed service" {
+        $topology = Resolve-RestoreSmokeConfigTopology -Evidence (New-TestConfigTopology -Engine $Engine -Database "edfi_configurationservice") -DatabaseEngine $Engine -TargetDatabaseName "edfi_datamanagementservice"
+
+        $topology.Topology | Should -BeExactly "separate"
+        $topology.Reason | Should -BeNullOrEmpty
+    }
+
+    It "is unknown, with the reason, when <case>" -ForEach @(
+        @{ Case = "the evidence was not recorded"; Evidence = { $null }; Expected = "the Configuration Service's effective configuration was not recorded" }
+        @{ Case = "the evidence could not be read"; Evidence = { $e = New-TestConfigTopology -Engine $Engine; $e.Reason = "docker ps exited 1: refused"; $e }; Expected = "the Configuration Service's effective configuration could not be read: docker ps exited 1: refused" }
+        @{ Case = "the datastore is the other engine"; Evidence = { $e = New-TestConfigTopology -Engine $Engine; $e.Datastore = $OtherEngine; $e }; Expected = "the Configuration Service datastore is '$OtherEngine', not the target's $Engine" }
+        @{ Case = "the same database name is on another server"; Evidence = { New-TestConfigTopology -Engine $Engine -HostName "cms-db.example.internal" }; Expected = "the Configuration Service connects to 'cms-db.example.internal' port $ServicePort, not the composed database service '$ServiceHost' port $ServicePort, so whether it shares the target's server is not resolved" }
+        @{ Case = "the same database name is on another port"; Evidence = { New-TestConfigTopology -Engine $Engine -Port "15999" }; Expected = "the Configuration Service connects to '$ServiceHost' port 15999, not the composed database service '$ServiceHost' port $ServicePort, so whether it shares the target's server is not resolved" }
+        @{ Case = "the same database name is behind a host-published port"; Evidence = { New-TestConfigTopology -Engine $Engine -HostName "host.docker.internal" -Port "5435" }; Expected = "the Configuration Service connects to 'host.docker.internal' port 5435, not the composed database service '$ServiceHost' port $ServicePort, so whether it shares the target's server is not resolved" }
+        @{ Case = "the connection string names two servers"; Evidence = { $e = New-TestConfigTopology -Engine $Engine; $e.Endpoints = @($e.Endpoints[0], [pscustomobject]@{ Host = "replica"; Port = $ServicePort }); $e }; Expected = "the Configuration Service connection string names 2 servers; expected one" }
+        @{ Case = "the connection string names no database"; Evidence = { $e = New-TestConfigTopology -Engine $Engine; $e.DatabaseNames = @(); $e }; Expected = "the Configuration Service connection string names 0 databases; expected one" }
+        @{ Case = "the database differs only in case"; Evidence = { New-TestConfigTopology -Engine $Engine -Database "EdFi_DataManagementService" }; Expected = "the Configuration Service database 'EdFi_DataManagementService' differs from the target 'edfi_datamanagementservice' only in case, whose meaning depends on the server's collation" }
+    ) {
+        $topology = Resolve-RestoreSmokeConfigTopology -Evidence (& $Evidence) -DatabaseEngine $Engine -TargetDatabaseName "edfi_datamanagementservice"
+
+        $topology.Topology | Should -BeExactly "unknown"
+        $topology.Reason | Should -BeExactly $Expected
+    }
+
+    It "is unknown when the run's engine or the target is not recorded" {
+        (Resolve-RestoreSmokeConfigTopology -Evidence (New-TestConfigTopology -Engine $Engine) -DatabaseEngine "" -TargetDatabaseName "edfi_datamanagementservice").Reason | Should -BeExactly "the run's database engine '' is not postgresql or mssql"
+        (Resolve-RestoreSmokeConfigTopology -Evidence (New-TestConfigTopology -Engine $Engine) -DatabaseEngine $Engine -TargetDatabaseName "").Reason | Should -BeExactly "the target database name was not recorded"
+    }
+}
+
+Describe "Get-RestoreSmokeSelectionDefect with the Configuration Service topology (<engine>)" -ForEach @(
+    @{ Engine = "postgresql"; AlwaysPresent = "public" }
+    @{ Engine = "mssql"; AlwaysPresent = "dbo" }
+) {
+    BeforeAll {
+        $script:coreHash = "c0" * 32
+        $script:corePackageId = "EdFi.DataStandard52.ApiSchema@1.0.335"
+
+        function script:New-TopologyProof {
+            param([string]$Engine, [string]$AlwaysPresent, [string]$Topology)
+
+            $shared = $Topology -eq "shared"
+            $schemas = if ($shared) { @("auth", "dms", "dmscs", "edfi", $AlwaysPresent, "tracked_changes_edfi") } else { @("auth", "dms", "edfi", $AlwaysPresent, "tracked_changes_edfi") }
+            return [pscustomobject]@{
+                RestoreExecution = "extension-selection#1"
+                PackageFixture   = "core-only-minimal"
+                PackageSha256    = ("c1" * 32)
+                Workspace        = [pscustomobject]@{ Manifest = "bootstrap-manifest.json"; SelectedPackages = @($script:corePackageId); SelectedExtensions = @(); CoreProjectEndpointName = "ed-fi"; ProjectSchemas = @("edfi"); EffectiveSchemaHash = $script:coreHash; Reason = $null }
+                Catalog          = [pscustomobject]@{ DatabaseName = "edfi_datamanagementservice"; SchemaNames = $schemas; ProjectSchemas = @("edfi"); ConfigurationServiceSchemas = $(if ($shared) { @("dmscs") } else { @() }); TrackedChangesProjects = @("edfi"); EffectiveSchemaHash = $script:coreHash; Reason = $null }
+                ConfigTopology   = $(if ($shared) { New-TestConfigTopology -Engine $Engine } else { New-TestConfigTopology -Engine $Engine -Database "edfi_configurationservice" })
+            }
+        }
+
+        function script:Get-TopologyDefect {
+            param([object]$Proof, [string]$Engine)
+
+            $package = [pscustomobject]@{ PackageFixture = "core-only-minimal"; TemplateKind = "Minimal"; Sha256 = ("c1" * 32); RestoreManifestProjects = @("edfi"); RestoreManifestEffectiveSchemaHash = $script:coreHash; Verified = $true }
+            return @(Get-RestoreSmokeSelectionDefect -Proof $Proof -Package $package -ExpectedProject @("edfi") -ExpectedPackage @($script:corePackageId) -DatabaseEngine $Engine)
+        }
+    }
+
+    It "finds no defect for a <topology> Configuration Service" -ForEach @(
+        @{ Topology = "shared" }
+        @{ Topology = "separate" }
+    ) {
+        Get-TopologyDefect -Proof (New-TopologyProof -Engine $Engine -AlwaysPresent $AlwaysPresent -Topology $Topology) -Engine $Engine | Should -BeNullOrEmpty
+    }
+
+    It "reports exactly one defect when <case>" -ForEach @(
+        @{ Case = "a shared target holds no dmscs"; Topology = "shared"; Mutate = { param($p) $p.Catalog.SchemaNames = @($p.Catalog.SchemaNames | Where-Object { $_ -ne "dmscs" }); $p.Catalog.ConfigurationServiceSchemas = @() }; Expected = "the Configuration Service shares the target database, so the target catalog must hold [dmscs]; it holds []" }
+        @{ Case = "a shared target holds dmscs only in another case"; Topology = "shared"; Mutate = { param($p) $p.Catalog.SchemaNames = @($p.Catalog.SchemaNames | ForEach-Object { if ($_ -eq "dmscs") { "DMSCS" } else { $_ } }); $p.Catalog.ConfigurationServiceSchemas = @("DMSCS") }; Expected = "the Configuration Service shares the target database, so the target catalog must hold [dmscs]; it holds [DMSCS]" }
+        @{ Case = "a separate target holds dmscs"; Topology = "separate"; Mutate = { param($p) $p.Catalog.SchemaNames = @($p.Catalog.SchemaNames) + "dmscs"; $p.Catalog.ConfigurationServiceSchemas = @("dmscs") }; Expected = "the Configuration Service uses its own database, but the target catalog holds [dmscs]" }
+        @{ Case = "the topology evidence is missing"; Topology = "shared"; Mutate = { param($p) $p.ConfigTopology = $null }; Expected = "the Configuration Service topology is unresolved: the Configuration Service's effective configuration was not recorded" }
+        @{ Case = "the config service could not be inspected"; Topology = "shared"; Mutate = { param($p) $p.ConfigTopology.Reason = "the project 'dms-published' runs 0 config service containers; expected exactly one" }; Expected = "the Configuration Service topology is unresolved: the Configuration Service's effective configuration could not be read: the project 'dms-published' runs 0 config service containers; expected exactly one" }
+        @{ Case = "the config service names the target database on another server"; Topology = "shared"; Mutate = { param($p) $p.ConfigTopology.Endpoints = @([pscustomobject]@{ Host = "cms-db.example.internal"; Port = $null }) }; Expected = "the Configuration Service topology is unresolved: the Configuration Service connects to 'cms-db.example.internal' port $(if ($Engine -eq 'mssql') { '1433' } else { '5432' }), not the composed database service '$(if ($Engine -eq 'mssql') { 'dms-mssql' } else { 'dms-postgresql' })' port $(if ($Engine -eq 'mssql') { '1433' } else { '5432' }), so whether it shares the target's server is not resolved" }
+        @{ Case = "an unrelated schema sits beside the core project"; Topology = "shared"; Mutate = { param($p) $p.Catalog.SchemaNames = @($p.Catalog.SchemaNames) + "sample"; $p.Catalog.ProjectSchemas = @("edfi", "sample") }; Expected = "the target catalog holds project schemas [edfi, sample], expected [edfi]" }
+        @{ Case = "dmscs has a tracked_changes companion"; Topology = "shared"; Mutate = { param($p) $p.Catalog.SchemaNames = @($p.Catalog.SchemaNames) + "tracked_changes_dmscs"; $p.Catalog.TrackedChangesProjects = @("edfi", "dmscs") }; Expected = "the target catalog holds tracked_changes companions of projects outside the selection: [dmscs]" }
+        @{ Case = "dmscs is still counted as a project"; Topology = "shared"; Mutate = { param($p) $p.Catalog.ProjectSchemas = @("dmscs", "edfi") }; Expected = "the target catalog holds project schemas [dmscs, edfi], expected [edfi]" }
+    ) {
+        $proof = New-TopologyProof -Engine $Engine -AlwaysPresent $AlwaysPresent -Topology $Topology
+        & $Mutate $proof
+
+        Get-TopologyDefect -Proof $proof -Engine $Engine | Should -Be @($Expected)
+    }
+
+    It "reports a recorded Configuration Service schema list that disagrees with the inventory" {
+        $proof = New-TopologyProof -Engine $Engine -AlwaysPresent $AlwaysPresent -Topology "shared"
+        $proof.Catalog.ConfigurationServiceSchemas = @()
+
+        Get-TopologyDefect -Proof $proof -Engine $Engine | Should -Be @("the target catalog records Configuration Service schemas [], but its schema inventory holds [dmscs]")
+    }
+
+    It "judges the topology for the run's engine, not the evidence's" {
+        $other = if ($Engine -eq "mssql") { "postgresql" } else { "mssql" }
+        $proof = New-TopologyProof -Engine $Engine -AlwaysPresent $AlwaysPresent -Topology "shared"
+
+        Get-TopologyDefect -Proof $proof -Engine $other | Should -Be @("the Configuration Service topology is unresolved: the Configuration Service datastore is '$Engine', not the target's $other")
+        Get-TopologyDefect -Proof $proof -Engine "" | Should -Be @("the Configuration Service topology is unresolved: the run's database engine '' is not postgresql or mssql")
+    }
+}
+
 Describe "Get-RestoreSmokeSelectionDefect" {
     BeforeAll {
         $script:coreHash = "c0" * 32
@@ -3780,7 +4061,8 @@ Describe "Get-RestoreSmokeSelectionDefect" {
                 PackageFixture   = "core-only-minimal"
                 PackageSha256    = ("c1" * 32)
                 Workspace        = [pscustomobject]@{ Manifest = "bootstrap-manifest.json"; SelectedPackages = @($script:corePackageId); SelectedExtensions = @(); CoreProjectEndpointName = "ed-fi"; ProjectSchemas = @("edfi"); EffectiveSchemaHash = $script:coreHash; Reason = $null }
-                Catalog          = [pscustomobject]@{ DatabaseName = "edfi_datamanagementservice"; SchemaNames = @("auth", "dms", "edfi", "public"); ProjectSchemas = @("edfi"); TrackedChangesProjects = @("edfi"); EffectiveSchemaHash = $script:coreHash; Reason = $null }
+                Catalog          = [pscustomobject]@{ DatabaseName = "edfi_datamanagementservice"; SchemaNames = @("auth", "dms", "dmscs", "edfi", "public", "tracked_changes_edfi"); ProjectSchemas = @("edfi"); ConfigurationServiceSchemas = @("dmscs"); TrackedChangesProjects = @("edfi"); EffectiveSchemaHash = $script:coreHash; Reason = $null }
+                ConfigTopology   = (New-TestConfigTopology -Engine postgresql)
             }
         }
 
@@ -3790,14 +4072,14 @@ Describe "Get-RestoreSmokeSelectionDefect" {
     }
 
     It "finds no defect when the workspace, the restore manifest, and the catalog all select the core project" {
-        @(Get-RestoreSmokeSelectionDefect -Proof (New-SelectionProof) -Package (New-SelectionPackage) -ExpectedProject @("edfi") -ExpectedPackage @($script:corePackageId)) | Should -BeNullOrEmpty
+        @(Get-RestoreSmokeSelectionDefect -Proof (New-SelectionProof) -Package (New-SelectionPackage) -ExpectedProject @("edfi") -ExpectedPackage @($script:corePackageId) -DatabaseEngine postgresql) | Should -BeNullOrEmpty
     }
 
     It "compares package identities case-insensitively, as the wrapper does" {
         $proof = New-SelectionProof
         $proof.Workspace.SelectedPackages = @($script:corePackageId.ToLowerInvariant())
 
-        @(Get-RestoreSmokeSelectionDefect -Proof $proof -Package (New-SelectionPackage) -ExpectedProject @("edfi") -ExpectedPackage @($script:corePackageId)) | Should -BeNullOrEmpty
+        @(Get-RestoreSmokeSelectionDefect -Proof $proof -Package (New-SelectionPackage) -ExpectedProject @("edfi") -ExpectedPackage @($script:corePackageId) -DatabaseEngine postgresql) | Should -BeNullOrEmpty
     }
 
     It "reports exactly one defect when <case>" -ForEach @(
@@ -3824,11 +4106,11 @@ Describe "Get-RestoreSmokeSelectionDefect" {
         $package = New-SelectionPackage
         & $Mutate ([pscustomobject]@{ Proof = $proof; Package = $package })
 
-        @(Get-RestoreSmokeSelectionDefect -Proof $proof -Package $package -ExpectedProject @("edfi") -ExpectedPackage @($script:corePackageId)) | Should -Be @($Expected)
+        @(Get-RestoreSmokeSelectionDefect -Proof $proof -Package $package -ExpectedProject @("edfi") -ExpectedPackage @($script:corePackageId) -DatabaseEngine postgresql) | Should -Be @($Expected)
     }
 
     It "reports a missing package record" {
-        @(Get-RestoreSmokeSelectionDefect -Proof (New-SelectionProof) -Package $null -ExpectedProject @("edfi") -ExpectedPackage @($script:corePackageId)) | Should -Be @("no package record exists for the restored package, so its restore manifest is unknown")
+        @(Get-RestoreSmokeSelectionDefect -Proof (New-SelectionProof) -Package $null -ExpectedProject @("edfi") -ExpectedPackage @($script:corePackageId) -DatabaseEngine postgresql) | Should -Be @("no package record exists for the restored package, so its restore manifest is unknown")
     }
 
     It "reports undefined expectations instead of passing" {
@@ -4011,6 +4293,7 @@ Describe "Get-RestoreSmokeResultClassification for extension-selection" {
             $restored.Add([pscustomobject]@{ RestoreExecution = "extension-selection#1"; PackageFixture = "core-only-minimal"; TemplateKind = "Minimal"; PackageSha256 = $script:coreSha; ExitCode = 0; Rows = @($script:restoredIdentity); Identity = $script:restoredIdentity; Reason = $null })
             $refusalState = { [pscustomobject]@{ ComposeProject = "dms-published"; Containers = @(); Volumes = @(); WorkspacePresent = $false; CandidateDirectories = @(); Reason = $null } }
             return [ordered]@{
+                DatabaseEngine         = "postgresql"
                 Legs                   = @("extension-selection")
                 ExploratoryPackage     = $false
                 SourceAtStart          = [pscustomobject]@{ Revision = ("1" * 40); Observed = $true; Clean = $true; Porcelain = @(); Reason = $null }
@@ -4033,7 +4316,8 @@ Describe "Get-RestoreSmokeResultClassification for extension-selection" {
                         PackageFixture   = "core-only-minimal"
                         PackageSha256    = $script:coreSha
                         Workspace        = [pscustomobject]@{ SelectedPackages = @($script:corePackageId); SelectedExtensions = @(); CoreProjectEndpointName = "ed-fi"; ProjectSchemas = @("edfi"); EffectiveSchemaHash = $script:coreHash; Reason = $null }
-                        Catalog          = [pscustomobject]@{ ProjectSchemas = @("edfi"); TrackedChangesProjects = @(); EffectiveSchemaHash = $script:coreHash; Reason = $null }
+                        Catalog          = [pscustomobject]@{ DatabaseName = "edfi_datamanagementservice"; SchemaNames = @("auth", "dms", "dmscs", "edfi", "public"); ProjectSchemas = @("edfi"); ConfigurationServiceSchemas = @("dmscs"); TrackedChangesProjects = @(); EffectiveSchemaHash = $script:coreHash; Reason = $null }
+                        ConfigTopology   = (New-TestConfigTopology -Engine postgresql)
                     })
                 SelectionRefusals      = @([pscustomobject]@{
                         Leg           = "extension-selection"
@@ -4060,6 +4344,13 @@ Describe "Get-RestoreSmokeResultClassification for extension-selection" {
         @{ Case = "two selection proofs were recorded"; Mutate = { param($p) $p.SelectionProofs = @($p.SelectionProofs[0], $p.SelectionProofs[0]) }; Expected = @("restore extension-selection#1: 2 selection proofs were recorded; expected exactly one") }
         @{ Case = "the workspace staged TPDM too"; Mutate = { param($p) $p.SelectionProofs[0].Workspace.SelectedPackages = @("EdFi.DataStandard52.ApiSchema@1.0.335", "EdFi.DataStandard52.TPDM.ApiSchema@1.0.335") }; Expected = @("restore extension-selection#1: the workspace staged packages [EdFi.DataStandard52.ApiSchema@1.0.335, EdFi.DataStandard52.TPDM.ApiSchema@1.0.335], but the selection env selects [EdFi.DataStandard52.ApiSchema@1.0.335]") }
         @{ Case = "the catalog holds TPDM"; Mutate = { param($p) $p.SelectionProofs[0].Catalog.ProjectSchemas = @("edfi", "tpdm") }; Expected = @("restore extension-selection#1: the target catalog holds project schemas [edfi, tpdm], expected [edfi]") }
+        @{ Case = "the shared target lost its dmscs schema"; Mutate = { param($p) $p.SelectionProofs[0].Catalog.SchemaNames = @("auth", "dms", "edfi", "public"); $p.SelectionProofs[0].Catalog.ConfigurationServiceSchemas = @() }; Expected = @("restore extension-selection#1: the Configuration Service shares the target database, so the target catalog must hold [dmscs]; it holds []") }
+        @{ Case = "the recorded topology is separate but the target holds dmscs"; Mutate = { param($p) $p.SelectionProofs[0].ConfigTopology.DatabaseNames = @("edfi_configurationservice") }; Expected = @("restore extension-selection#1: the Configuration Service uses its own database, but the target catalog holds [dmscs]") }
+        @{ Case = "the config service evidence is unreadable"; Mutate = { param($p) $p.SelectionProofs[0].ConfigTopology.Reason = "docker ps exited 1: refused" }; Expected = @("restore extension-selection#1: the Configuration Service topology is unresolved: the Configuration Service's effective configuration could not be read: docker ps exited 1: refused") }
+        @{ Case = "the config service evidence is missing"; Mutate = { param($p) $p.SelectionProofs[0].ConfigTopology = $null }; Expected = @("restore extension-selection#1: the Configuration Service topology is unresolved: the Configuration Service's effective configuration was not recorded") }
+        @{ Case = "the config service names the target database on another server"; Mutate = { param($p) $p.SelectionProofs[0].ConfigTopology.Endpoints = @([pscustomobject]@{ Host = "cms-db.example.internal"; Port = "5432" }) }; Expected = @("restore extension-selection#1: the Configuration Service topology is unresolved: the Configuration Service connects to 'cms-db.example.internal' port 5432, not the composed database service 'dms-postgresql' port 5432, so whether it shares the target's server is not resolved") }
+        @{ Case = "the run's engine is not recorded"; Mutate = { param($p) $p.Remove("DatabaseEngine") }; Expected = @("restore extension-selection#1: the Configuration Service topology is unresolved: the run's database engine '' is not postgresql or mssql") }
+        @{ Case = "the catalog still counts dmscs as a project"; Mutate = { param($p) $p.SelectionProofs[0].Catalog.ProjectSchemas = @("dmscs", "edfi") }; Expected = @("restore extension-selection#1: the target catalog holds project schemas [dmscs, edfi], expected [edfi]") }
         @{ Case = "the proof names the default package"; Mutate = { param($p) $p.SelectionProofs[0].PackageSha256 = "d1" * 32 }; Expected = @("restore extension-selection#1: the selection proof's package SHA-256 '$("d1" * 32)' is not a core-only-minimal package built in this run", "restore extension-selection#1: no package record exists for the restored package, so its restore manifest is unknown") }
         @{ Case = "a proof names a restore no leg requires"; Mutate = { param($p) $p.SelectionProofs = @($p.SelectionProofs[0], [pscustomobject]@{ RestoreExecution = "package-directory#1" }) }; Expected = @("a selection proof was recorded for restore package-directory#1, which no selected leg requires") }
         @{ Case = "the core-only env was not recorded"; Mutate = { param($p) $p.SelectionEnvironments = @() }; Expected = @("leg-extension-selection: stack start 'stack-start#1' used the 'core-only' selection, which has 0 recorded envs; expected exactly one", "restore extension-selection#1: expected one recorded core-only env, found 0", "restore extension-selection#1: the selection env records no selected packages") }
@@ -4085,6 +4376,43 @@ Describe "Get-RestoreSmokeResultClassification for extension-selection" {
 
         $classification.Final | Should -BeFalse
         @($classification.Reasons) | Should -Be $Expected
+    }
+
+    It "is final for an MSSQL run whose Configuration Service shares the target" {
+        $provenance = New-ExtensionProvenance
+        $provenance.DatabaseEngine = "mssql"
+        $provenance.SelectionProofs[0].Catalog.SchemaNames = @("auth", "dbo", "dms", "dmscs", "edfi")
+        $provenance.SelectionProofs[0].ConfigTopology = New-TestConfigTopology -Engine mssql
+
+        $classification = Get-RestoreSmokeResultClassification -Provenance $provenance
+
+        @($classification.Reasons) | Should -BeNullOrEmpty
+        $classification.Final | Should -BeTrue
+    }
+
+    It "is final for a separate Configuration Service whose target holds no dmscs" {
+        $provenance = New-ExtensionProvenance
+        $provenance.SelectionProofs[0].Catalog.SchemaNames = @("auth", "dms", "edfi", "public")
+        $provenance.SelectionProofs[0].Catalog.ConfigurationServiceSchemas = @()
+        $provenance.SelectionProofs[0].ConfigTopology = New-TestConfigTopology -Engine postgresql -Database "edfi_configurationservice"
+
+        $classification = Get-RestoreSmokeResultClassification -Provenance $provenance
+
+        @($classification.Reasons) | Should -BeNullOrEmpty
+        $classification.Final | Should -BeTrue
+    }
+
+    It "re-judges the live L4 PostgreSQL record's shape as final once dmscs is recorded apart" {
+        # The catalog the failed L4 PostgreSQL run recorded (live-L4-postgresql/l4-results.json),
+        # with the partition this step records and the shared topology of the default env.
+        $provenance = New-ExtensionProvenance
+        $provenance.SelectionProofs[0].Catalog.SchemaNames = @("auth", "dms", "dmscs", "edfi", "public", "tracked_changes_edfi")
+        $provenance.SelectionProofs[0].Catalog.TrackedChangesProjects = @("edfi")
+
+        @((Get-RestoreSmokeResultClassification -Provenance $provenance).Reasons) | Should -BeNullOrEmpty
+
+        $provenance.SelectionProofs[0].Catalog.ProjectSchemas = @("edfi", "dmscs")
+        @((Get-RestoreSmokeResultClassification -Provenance $provenance).Reasons) | Should -Be @("restore extension-selection#1: the target catalog holds project schemas [dmscs, edfi], expected [edfi]")
     }
 
     It "reports a refusal or a selection proof recorded when extension-selection is not selected" {

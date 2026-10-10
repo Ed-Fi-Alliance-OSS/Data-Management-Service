@@ -582,10 +582,11 @@ function Assert-RestoredSelection {
     <#
     .SYNOPSIS
     The selection proof for one successful restore of a non-default selection: records, under
-    -RestoreExecution and before judging, what the active workspace staged and selected and what the
-    restored target's catalog holds, then throws on any defect Get-RestoreSmokeSelectionDefect finds
-    against the fixture's projects, the selection env's packages, and the restored package's restore
-    manifest (its package record, by SHA-256 and fixture).
+    -RestoreExecution and before judging, what the active workspace staged and selected, what the
+    restored target's catalog holds, and where the running Configuration Service keeps its data (its
+    container's effective configuration), then throws on any defect Get-RestoreSmokeSelectionDefect
+    finds against the fixture's projects, the selection env's packages, the restored package's restore
+    manifest (its package record, by SHA-256 and fixture), and that topology.
     #>
     param(
         [Parameter(Mandatory)]
@@ -608,6 +609,7 @@ function Assert-RestoredSelection {
         PackageSha256    = $package.Sha256
         Workspace        = (Read-RestoreSmokeWorkspaceSelection -BootstrapRoot $script:BootstrapRoot)
         Catalog          = (Get-RestoreSmokeCatalogSelection -DatabaseEngine $DatabaseEngine -DatabaseName $script:TargetDatabaseName)
+        ConfigTopology   = (Get-RestoreSmokeConfigTopologyEvidence -ComposeProject $script:WrapperProfile.ComposeProject)
     }
     $script:Provenance.SelectionProofs.Add($proof)
 
@@ -620,11 +622,12 @@ function Assert-RestoredSelection {
     if ($packageRecords.Count -eq 1) {
         $packageRecord = $packageRecords[0]
     }
-    $defects = @(Get-RestoreSmokeSelectionDefect -Proof $proof -Package $packageRecord -ExpectedProject ([string[]]@($fixture.ProjectSchemas)) -ExpectedPackage ([string[]]@($environments[0].SelectedPackages)))
+    $defects = @(Get-RestoreSmokeSelectionDefect -Proof $proof -Package $packageRecord -ExpectedProject ([string[]]@($fixture.ProjectSchemas)) -ExpectedPackage ([string[]]@($environments[0].SelectedPackages)) -DatabaseEngine $DatabaseEngine)
     if ($defects.Count -gt 0) {
         throw "Restore ${RestoreExecution} did not take the $($fixture.Selection) selection: $($defects -join '; ')."
     }
-    Write-Host "[restore-smoke] restore $RestoreExecution selection: workspace, restore manifest, and catalog select $(@($fixture.ProjectSchemas) -join ', ') with effective schema hash $($proof.Catalog.EffectiveSchemaHash)"
+    $topology = Resolve-RestoreSmokeConfigTopology -Evidence $proof.ConfigTopology -DatabaseEngine $DatabaseEngine -TargetDatabaseName $script:TargetDatabaseName
+    Write-Host "[restore-smoke] restore $RestoreExecution selection: workspace, restore manifest, and catalog select $(@($fixture.ProjectSchemas) -join ', ') with effective schema hash $($proof.Catalog.EffectiveSchemaHash); Configuration Service topology $($topology.Topology), catalog Configuration Service schemas [$(@($proof.Catalog.ConfigurationServiceSchemas) -join ', ')]"
 }
 
 function Assert-SmokeSelectionRefusal {

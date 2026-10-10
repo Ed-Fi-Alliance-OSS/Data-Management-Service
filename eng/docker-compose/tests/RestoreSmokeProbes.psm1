@@ -80,6 +80,13 @@ $script:EngineContainerNames = @{
     mssql      = "dms-mssql"
 }
 
+# The composed database service the configure phase registers the restored target on
+# (configure-local-data-store.ps1), on the compose network the Configuration Service also uses.
+$script:ComposedDatabaseEndpoints = @{
+    postgresql = [pscustomobject]@{ Host = "dms-postgresql"; Port = "5432" }
+    mssql      = [pscustomobject]@{ Host = "dms-mssql"; Port = "1433" }
+}
+
 # Relative to the DMS base URL. Descriptors exist in every seeded template; schools only in Populated.
 $script:ApiProbeDescriptorPath = "data/ed-fi/academicSubjectDescriptors?limit=5"
 $script:ApiProbeSchoolPath = "data/ed-fi/schools?limit=5"
@@ -2846,6 +2853,216 @@ function Read-RestoreSmokeWorkspaceSelection {
     return [pscustomobject]$record
 }
 
+function Test-RestoreSmokeConfigurationServiceSchemaName {
+    # The Configuration Service's own schema, matched as the package contamination gate
+    # (Assert-DmsOnlyInventory) matches it. A restore package must never hold it; a live target the
+    # Configuration Service shares does.
+    param(
+        [AllowNull()]
+        [object]$Name
+    )
+
+    return ([string]$Name).Equals("dmscs", [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Get-RestoreSmokeConfigTopologyEvidence {
+    <#
+    .SYNOPSIS
+    Where the started stack's Configuration Service keeps its data, read from the effective
+    configuration of its running container: the environment Compose created it with (docker inspect
+    .Config.Env), which already carries every env file, overlay, and override the wrapper composed.
+    Records the datastore (AppSettings__Datastore) and the server endpoints and database names that
+    the connection string (DatabaseSettings__DatabaseConnection) names, parsed with the start
+    phase's own engine grammars. Never records the connection string or any other environment
+    value, and never throws: anything it cannot read is a Reason, and Resolve-RestoreSmokeConfigTopology
+    judges the record.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$ComposeProject
+    )
+
+    $record = [ordered]@{
+        Source         = "docker inspect .Config.Env of the project's running config service container"
+        ComposeProject = $ComposeProject
+        Container      = $null
+        ContainerId    = $null
+        Datastore      = $null
+        Endpoints      = $null
+        DatabaseNames  = $null
+        Reason         = $null
+    }
+
+    $listing = Invoke-RestoreSmokeDockerCommand -ArgumentList @("ps", "--filter", "label=com.docker.compose.project=$ComposeProject", "--filter", "label=com.docker.compose.service=config", "--format", "{{.ID}}|{{.Names}}")
+    if ($listing.ExitCode -ne 0) {
+        $record.Reason = "docker ps exited $($listing.ExitCode): $(Get-RestoreSmokeDockerFailureText -Result $listing)"
+        return [pscustomobject]$record
+    }
+    $containers = @($listing.Output | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($containers.Count -ne 1) {
+        $record.Reason = "the project '$(ConvertTo-RestoreSmokeLogSafeText $ComposeProject)' runs $($containers.Count) config service containers; expected exactly one"
+        return [pscustomobject]$record
+    }
+    $fields = ([string]$containers[0]).Split("|")
+    $record.ContainerId = ConvertTo-RestoreSmokeLogSafeText $fields[0]
+    if ($fields.Count -gt 1) {
+        $record.Container = ConvertTo-RestoreSmokeLogSafeText $fields[1]
+    }
+
+    $inspect = Invoke-RestoreSmokeDockerCommand -ArgumentList @("inspect", $fields[0], "--format", "{{json .Config.Env}}")
+    if ($inspect.ExitCode -ne 0) {
+        $record.Reason = "docker inspect of the config service container exited $($inspect.ExitCode): $(Get-RestoreSmokeDockerFailureText -Result $inspect)"
+        return [pscustomobject]$record
+    }
+
+    # The environment holds credentials: past this point no output text reaches a Reason.
+    $variables = [System.Collections.Generic.List[object]]::new()
+    try {
+        $assignments = @(([string]::Join("`n", [string[]]@($inspect.Output))) | ConvertFrom-Json -ErrorAction Stop)
+        foreach ($assignment in $assignments) {
+            if ($assignment -isnot [string]) {
+                throw "not a string list"
+            }
+            $separator = $assignment.IndexOf("=")
+            if ($separator -gt 0) {
+                $variables.Add([pscustomobject]@{ Name = $assignment.Substring(0, $separator); Value = $assignment.Substring($separator + 1) })
+            }
+        }
+    }
+    catch {
+        $record.Reason = "the config service container's environment is not a JSON list of NAME=value strings (its text is withheld)"
+        return [pscustomobject]$record
+    }
+
+    # A configuration key as the service's environment-variable provider reads it: '__' is the
+    # section separator and keys are case-insensitive. Two spellings of one key leave the value the
+    # service reads unresolved, so that is a Reason rather than a guess.
+    $readSetting = {
+        param([string]$Key)
+
+        $matched = @($variables | Where-Object { $_.Name.Replace("__", ":").Equals($Key, [System.StringComparison]::OrdinalIgnoreCase) })
+        if ($matched.Count -gt 1) {
+            return [pscustomobject]@{ Value = $null; Reason = "the config service container sets $Key under $($matched.Count) environment names, so the value the service reads is not resolved" }
+        }
+        if ($matched.Count -eq 0 -or [string]::IsNullOrWhiteSpace($matched[0].Value)) {
+            return [pscustomobject]@{ Value = $null; Reason = "the config service container sets no value for $Key" }
+        }
+        return [pscustomobject]@{ Value = $matched[0].Value; Reason = $null }
+    }
+
+    $datastoreSetting = & $readSetting "AppSettings:Datastore"
+    if ($null -ne $datastoreSetting.Reason) {
+        $record.Reason = $datastoreSetting.Reason
+        return [pscustomobject]$record
+    }
+    $datastore = $datastoreSetting.Value
+    $record.Datastore = ConvertTo-RestoreSmokeLogSafeText $datastore
+    $grammar = @("postgresql", "mssql") | Where-Object { $_.Equals($datastore, [System.StringComparison]::OrdinalIgnoreCase) }
+    if ($null -eq $grammar) {
+        $record.Reason = "the config service datastore '$($record.Datastore)' is neither postgresql nor mssql"
+        return [pscustomobject]$record
+    }
+
+    $connectionSetting = & $readSetting "DatabaseSettings:DatabaseConnection"
+    if ($null -ne $connectionSetting.Reason) {
+        $record.Reason = $connectionSetting.Reason
+        return [pscustomobject]$record
+    }
+    $connectionString = $connectionSetting.Value
+    try {
+        $databaseNames = @(Get-DatabaseNameFromResolvedConnectionString -ConnectionString $connectionString -DatabaseEngine $grammar)
+        $endpoints = @(Get-EndpointFromResolvedConnectionString -ConnectionString $connectionString -DatabaseEngine $grammar)
+    }
+    catch {
+        # The parsers' messages can quote the value, so a fixed sentence replaces them.
+        $record.Reason = "the config service connection string is not a valid $grammar connection string (its text is withheld)"
+        return [pscustomobject]$record
+    }
+    $record.Endpoints = @($endpoints | ForEach-Object {
+            [pscustomobject]@{
+                Host = ConvertTo-RestoreSmokeLogSafeText ([string]$_.Host)
+                Port = if ([string]::IsNullOrWhiteSpace([string]$_.Port)) { $null } else { ConvertTo-RestoreSmokeLogSafeText ([string]$_.Port) }
+            }
+        })
+    $record.DatabaseNames = @($databaseNames | ForEach-Object { ConvertTo-RestoreSmokeLogSafeText ([string]$_) })
+    return [pscustomobject]$record
+}
+
+function Resolve-RestoreSmokeConfigTopology {
+    <#
+    .SYNOPSIS
+    Judges recorded Configuration Service evidence (Get-RestoreSmokeConfigTopologyEvidence) against
+    the restored target: "shared" when the Configuration Service connects to the composed database
+    service of the run's engine (host and port, an omitted port being the provider default) AND to
+    the target database by exact name; "separate" when it connects to that service but to another
+    database; otherwise "unknown" with the reason. A matching database name alone never decides:
+    another server, a server list, another engine, a name that differs only in case (whose meaning
+    depends on the server's collation), or evidence that is missing or unreadable is not resolved,
+    and the caller reports it as a defect rather than assuming either answer. Pure: the classifier
+    re-judges a results record with it.
+    #>
+    param(
+        [AllowNull()]
+        [object]$Evidence,
+
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$DatabaseEngine,
+
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$TargetDatabaseName
+    )
+
+    $topologyRecord = { param($Topology, $Reason) [pscustomobject]@{ Topology = $Topology; Reason = $Reason } }
+
+    if ($DatabaseEngine -cnotin @("postgresql", "mssql")) {
+        return & $topologyRecord "unknown" "the run's database engine '$(ConvertTo-RestoreSmokeLogSafeText $DatabaseEngine)' is not postgresql or mssql"
+    }
+    if ([string]::IsNullOrWhiteSpace($TargetDatabaseName)) {
+        return & $topologyRecord "unknown" "the target database name was not recorded"
+    }
+    if ($null -eq $Evidence) {
+        return & $topologyRecord "unknown" "the Configuration Service's effective configuration was not recorded"
+    }
+    $evidenceReason = [string](Get-RestoreSmokeEvidenceValue $Evidence "Reason")
+    if (-not [string]::IsNullOrWhiteSpace($evidenceReason)) {
+        return & $topologyRecord "unknown" "the Configuration Service's effective configuration could not be read: $(ConvertTo-RestoreSmokeLogSafeText $evidenceReason)"
+    }
+
+    $datastore = [string](Get-RestoreSmokeEvidenceValue $Evidence "Datastore")
+    if (-not $datastore.Equals($DatabaseEngine, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return & $topologyRecord "unknown" "the Configuration Service datastore is '$(ConvertTo-RestoreSmokeLogSafeText $datastore)', not the target's $DatabaseEngine"
+    }
+    $endpoints = Get-RestoreSmokeEvidenceList $Evidence "Endpoints"
+    if ($endpoints.Count -ne 1) {
+        return & $topologyRecord "unknown" "the Configuration Service connection string names $($endpoints.Count) servers; expected one"
+    }
+    $databaseNames = Get-RestoreSmokeEvidenceList $Evidence "DatabaseNames"
+    if ($databaseNames.Count -ne 1) {
+        return & $topologyRecord "unknown" "the Configuration Service connection string names $($databaseNames.Count) databases; expected one"
+    }
+
+    $expected = $script:ComposedDatabaseEndpoints[$DatabaseEngine]
+    $hostName = ConvertTo-RestoreSmokeLogSafeText ([string](Get-RestoreSmokeEvidenceValue $endpoints[0] "Host"))
+    $port = [string](Get-RestoreSmokeEvidenceValue $endpoints[0] "Port")
+    if ([string]::IsNullOrWhiteSpace($port)) {
+        $port = $expected.Port
+    }
+    if (-not $hostName.Equals($expected.Host, [System.StringComparison]::OrdinalIgnoreCase) -or -not (Test-PortNumberEquivalent -Left $port -Right $expected.Port)) {
+        return & $topologyRecord "unknown" "the Configuration Service connects to '$hostName' port $(ConvertTo-RestoreSmokeLogSafeText $port), not the composed database service '$($expected.Host)' port $($expected.Port), so whether it shares the target's server is not resolved"
+    }
+
+    $databaseName = ConvertTo-RestoreSmokeLogSafeText ([string]$databaseNames[0])
+    if ($databaseName -ceq $TargetDatabaseName) {
+        return & $topologyRecord "shared" $null
+    }
+    if ($databaseName -ieq $TargetDatabaseName) {
+        return & $topologyRecord "unknown" "the Configuration Service database '$databaseName' differs from the target '$(ConvertTo-RestoreSmokeLogSafeText $TargetDatabaseName)' only in case, whose meaning depends on the server's collation"
+    }
+    return & $topologyRecord "separate" $null
+}
+
 function Get-RestoreSmokeCatalogSelection {
     <#
     .SYNOPSIS
@@ -2855,6 +3072,12 @@ function Get-RestoreSmokeCatalogSelection {
     tracked_changes companions, and the dms.EffectiveSchema singleton's hash
     (Get-EffectiveSchemaRowQuerySql + ConvertFrom-EffectiveSchemaRow). Never throws: a failed query or
     an unreadable row is a Reason.
+
+    SchemaNames keeps the complete inventory. The Configuration Service's own schema (dmscs, matched
+    as the package contamination gate matches it) is moved out of the project schemas into
+    ConfigurationServiceSchemas: a live target the Configuration Service shares holds it beside the
+    restored projects, so Get-RestoreSmokeSelectionDefect judges it against the recorded topology
+    instead. Every other name stays where the consumer's partition puts it.
     #>
     param(
         [Parameter(Mandatory)]
@@ -2866,12 +3089,13 @@ function Get-RestoreSmokeCatalogSelection {
     )
 
     $record = [ordered]@{
-        DatabaseName           = $DatabaseName
-        SchemaNames            = $null
-        ProjectSchemas         = $null
-        TrackedChangesProjects = $null
-        EffectiveSchemaHash    = $null
-        Reason                 = $null
+        DatabaseName                = $DatabaseName
+        SchemaNames                 = $null
+        ProjectSchemas              = $null
+        ConfigurationServiceSchemas = $null
+        TrackedChangesProjects      = $null
+        EffectiveSchemaHash         = $null
+        Reason                      = $null
     }
 
     $schemaQuery = Invoke-RestoreSmokeEngineQuery -DatabaseEngine $DatabaseEngine -DatabaseName $DatabaseName -Query (Get-InventorySchemaQuerySql -DatabaseEngine $DatabaseEngine -Purpose InventoryEnumeration)
@@ -2881,7 +3105,8 @@ function Get-RestoreSmokeCatalogSelection {
     }
     $record.SchemaNames = @($schemaQuery.Rows)
     $partition = Get-TemplateProjectSchemaPartition -DatabaseEngine $DatabaseEngine -SchemaName ([string[]]@($schemaQuery.Rows))
-    $record.ProjectSchemas = @($partition.ProjectSchemaNames)
+    $record.ProjectSchemas = @($partition.ProjectSchemaNames | Where-Object { -not (Test-RestoreSmokeConfigurationServiceSchemaName $_) })
+    $record.ConfigurationServiceSchemas = @($partition.ProjectSchemaNames | Where-Object { Test-RestoreSmokeConfigurationServiceSchemaName $_ })
     $record.TrackedChangesProjects = @($partition.TrackedChangesProjectNames)
 
     $effectiveSchemaQuery = Invoke-RestoreSmokeEngineQuery -DatabaseEngine $DatabaseEngine -DatabaseName $DatabaseName -Query (Get-EffectiveSchemaRowQuerySql -DatabaseEngine $DatabaseEngine)
@@ -2954,8 +3179,13 @@ function Get-RestoreSmokeSelectionDefect {
     each equal -ExpectedProject exactly, with no tracked_changes companion of another project; the
     workspace, restore-manifest, and catalog effective schema hashes must be 64 lowercase hex and
     equal. Each disagreement is its own defect; a complete proof returns none. Values are read from
-    the recorded evidence (-Proof's Workspace and Catalog, -Package's restore manifest), so the
-    classifier can re-judge a results record.
+    the recorded evidence (-Proof's Workspace, Catalog, and ConfigTopology, -Package's restore
+    manifest), so the classifier can re-judge a results record.
+
+    The Configuration Service's schema (dmscs) is judged from the catalog's complete schema inventory
+    against the topology Resolve-RestoreSmokeConfigTopology derives from -Proof's ConfigTopology: a
+    shared topology requires exactly [dmscs], a separate one forbids it, and an unresolved one is a
+    defect. The catalog's recorded ConfigurationServiceSchemas must agree with the inventory.
     #>
     param(
         [AllowNull()]
@@ -2972,7 +3202,12 @@ function Get-RestoreSmokeSelectionDefect {
         # The selection env's "<name>@<version>" identities (Write-RestoreSmokeCoreOnlyEnvironmentFile).
         [AllowNull()]
         [AllowEmptyCollection()]
-        [string[]]$ExpectedPackage
+        [string[]]$ExpectedPackage,
+
+        # The run's engine: selects the composed database service the topology is judged against.
+        [AllowNull()]
+        [AllowEmptyString()]
+        [string]$DatabaseEngine
     )
 
     $defects = [System.Collections.Generic.List[string]]::new()
@@ -3041,6 +3276,29 @@ function Get-RestoreSmokeSelectionDefect {
         $foreignTracked = @($trackedChanges | Where-Object { [string]$_ -cnotin $expectedProjects })
         if ($foreignTracked.Count -gt 0) {
             $defects.Add("the target catalog holds tracked_changes companions of projects outside the selection: $(Format-RestoreSmokeNameSet $foreignTracked)")
+        }
+
+        $inventory = Get-RestoreSmokeEvidenceList $catalog "SchemaNames"
+        $inventoryConfiguration = @($inventory | Where-Object { Test-RestoreSmokeConfigurationServiceSchemaName $_ })
+        $recordedConfiguration = Get-RestoreSmokeEvidenceList $catalog "ConfigurationServiceSchemas"
+        if (-not (Test-RestoreSmokeNameSetEqual -Actual $recordedConfiguration -Expected $inventoryConfiguration)) {
+            $defects.Add("the target catalog records Configuration Service schemas $(Format-RestoreSmokeNameSet $recordedConfiguration), but its schema inventory holds $(Format-RestoreSmokeNameSet $inventoryConfiguration)")
+        }
+        $topology = Resolve-RestoreSmokeConfigTopology -Evidence (Get-RestoreSmokeEvidenceValue $Proof "ConfigTopology") -DatabaseEngine $DatabaseEngine -TargetDatabaseName ([string](Get-RestoreSmokeEvidenceValue $catalog "DatabaseName"))
+        switch ($topology.Topology) {
+            "shared" {
+                if (-not (Test-RestoreSmokeNameSetEqual -Actual $inventoryConfiguration -Expected @("dmscs"))) {
+                    $defects.Add("the Configuration Service shares the target database, so the target catalog must hold [dmscs]; it holds $(Format-RestoreSmokeNameSet $inventoryConfiguration)")
+                }
+            }
+            "separate" {
+                if ($inventoryConfiguration.Count -gt 0) {
+                    $defects.Add("the Configuration Service uses its own database, but the target catalog holds $(Format-RestoreSmokeNameSet $inventoryConfiguration)")
+                }
+            }
+            default {
+                $defects.Add("the Configuration Service topology is unresolved: $($topology.Reason)")
+            }
         }
         $hashes["target catalog"] = [string](Get-RestoreSmokeEvidenceValue $catalog "EffectiveSchemaHash")
     }
@@ -3441,7 +3699,7 @@ function Get-RestoreSmokeSelectionReason {
         else {
             $packageRecord = $restoredPackage[0]
         }
-        foreach ($defect in @(Get-RestoreSmokeSelectionDefect -Proof $records[0] -Package $packageRecord -ExpectedProject ([string[]]@($fixture.ProjectSchemas)) -ExpectedPackage ([string[]]@($expectedPackages)))) {
+        foreach ($defect in @(Get-RestoreSmokeSelectionDefect -Proof $records[0] -Package $packageRecord -ExpectedProject ([string[]]@($fixture.ProjectSchemas)) -ExpectedPackage ([string[]]@($expectedPackages)) -DatabaseEngine ([string](Get-RestoreSmokeEvidenceValue $Provenance "DatabaseEngine")))) {
             $reasons.Add("restore ${id}: $defect")
         }
     }
@@ -4043,6 +4301,8 @@ Export-ModuleMember -Function `
     Get-RestoreSmokeRestoredIdentityDefect, `
     Read-RestoreSmokeWorkspaceSelection, `
     Get-RestoreSmokeCatalogSelection, `
+    Get-RestoreSmokeConfigTopologyEvidence, `
+    Resolve-RestoreSmokeConfigTopology, `
     Get-RestoreSmokeRefusalState, `
     Get-RestoreSmokeSelectionDefect, `
     Get-RestoreSmokeSelectionRefusalExpectedMessage, `
