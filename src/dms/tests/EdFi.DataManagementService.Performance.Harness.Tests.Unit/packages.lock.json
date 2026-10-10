@@ -150,6 +150,11 @@
           "Json.More.Net": "2.0.1.2"
         }
       },
+      "librdkafka.redist": {
+        "type": "Transitive",
+        "resolved": "2.6.1",
+        "contentHash": "RcpH/eqmfp08RmfeQdHeJEz0OaAcYWJo8EqQiU4ohDrBygIXbWhCTksUFkhYGqap/5Ycm+HC9RVSlwetFo9SlA=="
+      },
       "Microsoft.AspNetCore.TestHost": {
         "type": "Transitive",
         "resolved": "10.0.1",
@@ -615,6 +620,26 @@
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )"
         }
       },
+      "EdFi.Api.SchemaTools": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend.Cdc": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
+          "EdFi.DataManagementService.Core": "[1.0.0, )",
+          "Microsoft.Data.SqlClient": "[6.1.4, )",
+          "Microsoft.Extensions.Configuration.EnvironmentVariables": "[10.0.1, )",
+          "Microsoft.Extensions.Configuration.Json": "[10.0.1, )",
+          "Microsoft.Extensions.DependencyInjection": "[10.0.1, )",
+          "Microsoft.Extensions.Logging": "[10.0.1, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
+          "Npgsql": "[8.0.4, )",
+          "Serilog": "[4.2.0, )",
+          "Serilog.Extensions.Logging": "[8.0.0, )",
+          "Serilog.Sinks.Console": "[6.0.0, )",
+          "Serilog.Sinks.File": "[6.0.0, )",
+          "System.CommandLine": "[2.0.0-rc.1.25451.107, )"
+        }
+      },
       "edfi.datamanagementservice.backend": {
         "type": "Project",
         "dependencies": {
@@ -630,11 +655,28 @@
           "Microsoft.Extensions.Resilience": "[10.1.0, )"
         }
       },
+      "edfi.datamanagementservice.backend.cdc": {
+        "type": "Project",
+        "dependencies": {
+          "Confluent.Kafka": "[2.6.1, )",
+          "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.DocumentCacheRuntime": "[1.0.0, )",
+          "EdFi.DataManagementService.Core": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )"
+        }
+      },
       "edfi.datamanagementservice.backend.ddl": {
         "type": "Project",
         "dependencies": {
           "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.RelationalModel": "[1.0.0, )"
+        }
+      },
+      "edfi.datamanagementservice.backend.documentcacheruntime": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend.Mssql": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Postgresql": "[1.0.0, )"
         }
       },
       "edfi.datamanagementservice.backend.external": {
@@ -779,6 +821,7 @@
       "edfi.datamanagementservice.tests.integration": {
         "type": "Project",
         "dependencies": {
+          "EdFi.Api.SchemaTools": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Tests.Common": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Tests.Integration.Common": "[1.0.0, )",
@@ -814,6 +857,15 @@
         "requested": "[4.0.0, )",
         "resolved": "4.0.0",
         "contentHash": "ssdML8g+JqdP2BbDxg/bqzUBz81RD3SCGAbop6qs+o1xCGPXnlCSNAOp22TDKTtFmHfp+sKSPuWL0JONf3fYYA=="
+      },
+      "Confluent.Kafka": {
+        "type": "CentralTransitive",
+        "requested": "[2.6.1, )",
+        "resolved": "2.6.1",
+        "contentHash": "DCap4xzbUzItoFVBCmBbng6q4XbaxfqLgR/b56b67L9S0iUTIwrSAvk3MPegyQNn56+1C/m3ytwy1YU+nAuqDA==",
+        "dependencies": {
+          "librdkafka.redist": "2.6.1"
+        }
       },
       "EdFi.DataStandard52.ApiSchema": {
         "type": "CentralTransitive",
@@ -1224,6 +1276,12 @@
           "Grpc.Net.Client": "2.70.0",
           "Serilog": "4.2.0"
         }
+      },
+      "System.CommandLine": {
+        "type": "CentralTransitive",
+        "requested": "[2.0.0-rc.1.25451.107, )",
+        "resolved": "2.0.0-rc.1.25451.107",
+        "contentHash": "j+0Yg2TZ5rwbGTRArdF9w993dGWCPRbD+lg3S0D6MLckrKQ3J70s52TlbxKlISsoXUP/X+e6uPocbkKjP3wSag=="
       },
       "System.IdentityModel.Tokens.Jwt": {
         "type": "CentralTransitive",

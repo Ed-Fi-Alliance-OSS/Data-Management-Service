@@ -455,9 +455,9 @@ The DDL generation utility is a **provisioning** tool, not a schema migration en
 
 ### Create-only (no migrations / upgrades)
 
-- The utility targets **new/empty** databases only.
-- There is **no upgrade/migration** capability and no support for evolving an already-provisioned database from one `EffectiveSchemaHash` to another.
-- The utility is not required to preserve data or compute diffs/reconcile drift for previously provisioned databases.
+- Ordinary `ddl provision` targets **new/empty** databases and same-hash reruns.
+- Ordinary provisioning has **no upgrade/migration** capability and cannot evolve an already-provisioned database from one `EffectiveSchemaHash` to another. The separate, bounded `ddl re-stamp` metadata operation described below records an independently completed physical migration.
+- Ordinary provisioning is not required to compute diffs/reconcile drift for previously provisioned databases; same-hash reruns retain the preservation safeguards defined in this design.
 
 DMS-1404 keeps the current 8.1 `RelationalMappingVersion` at `v3`, following the once-per-release
 cadence. `EffectiveSchemaHash` excludes generated DDL and mapping-set output, so a mapping-only
@@ -514,6 +514,17 @@ reconciler. Feature-specific phase-zero checks remain bounded to safety-critical
 fingerprints, singleton preservation, known incompatible legacy artifacts, and required
 provisioning security prerequisites. Other incompatible existing objects may fail through
 ordinary provider DDL execution inside the provisioning transaction.
+
+An operator may use the separate `api-schema-tools ddl re-stamp` command after an
+independently designed and validated physical migration to update a compatible fingerprint
+transition. This bounded metadata operation validates the existing singleton, resource-key
+seed, and schema-component rows and atomically updates the effective hash and child hash
+associations. It does not execute physical DDL, certify physical schema shape or CDC
+continuity, or change ordinary provisioning: `ddl provision` continues to reject a different
+hash unless the explicit re-stamp operation has already recorded the validated target. The
+operator must stop services and other writers, run the physical migration, re-stamp, run
+ordinary provisioning separately, and restart services. Fresh provisioning remains the
+normal path; this is not a named-release upgrade recipe or automatic rollback guarantee.
 
 ### Seed data semantics
 

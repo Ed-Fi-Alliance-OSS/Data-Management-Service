@@ -7,6 +7,7 @@ using System.CommandLine;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.SchemaTools.Cdc;
 using EdFi.DataManagementService.SchemaTools.Commands;
+using EdFi.DataManagementService.SchemaTools.Restamping;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
@@ -16,12 +17,13 @@ using Serilog.Events;
 // created before System.CommandLine parses the full command tree.
 var verbose = Array.Exists(args, a => a is "--verbose" or "-v");
 var cdcInvocation = Array.Find(args, argument => argument is "cdc" or "ddl" or "hash") == "cdc";
+var restampInvocation = args.Contains("re-stamp", StringComparer.Ordinal);
 
 var serviceCollection = new ServiceCollection();
-ConfigureServices(serviceCollection, verbose && !cdcInvocation);
-if (cdcInvocation)
+ConfigureServices(serviceCollection, verbose && !cdcInvocation && !restampInvocation);
+if (cdcInvocation || restampInvocation)
 {
-    // Shared schema loaders can log paths/provider details; CDC emits only typed diagnostics.
+    // Shared schema loaders can log paths/provider details; these commands emit typed diagnostics.
     serviceCollection.AddLogging(logging => logging.ClearProviders());
 }
 await using var serviceProvider = serviceCollection.BuildServiceProvider();
@@ -61,12 +63,25 @@ try
     var ddlCommand = new Command("ddl", "DDL generation commands");
     ddlCommand.Subcommands.Add(DdlEmitCommand.Create(logger, fileLoader, schemaSetBuilder));
     ddlCommand.Subcommands.Add(DdlProvisionCommand.Create(logger, fileLoader, schemaSetBuilder));
+    var restampCommand = DdlRestampCommand.Create(
+        logger,
+        fileLoader,
+        schemaSetBuilder,
+        new SchemaRestamper(logger),
+        Console.Out,
+        Console.Error
+    );
+    ddlCommand.Subcommands.Add(restampCommand);
     rootCommand.Subcommands.Add(ddlCommand);
     rootCommand.Subcommands.Add(
         CdcCommandHost.Create(new CdcCommandRunner(fileLoader, schemaSetBuilder), Console.Out, Console.Error)
     );
 
     var parseResult = rootCommand.Parse(args);
+    if (ReferenceEquals(parseResult.CommandResult.Command, restampCommand))
+    {
+        return await DdlRestampCommand.InvokeAsync(parseResult, Console.Out, Console.Error);
+    }
     return await parseResult.InvokeAsync();
 }
 finally
