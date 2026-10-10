@@ -53,7 +53,7 @@ param(
 
     [string] $MssqlContainerName = 'dms-mssql-integration-2025',
 
-    [string] $ExpectedPostgresDigest = 'sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0',
+    [string] $ExpectedPostgresDigest = 'sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873',
 
     [string] $ExpectedMssqlDigest = 'sha256:86cc6144ef39bb0fbed2329e1ad79b13ee82e7b2e4739213a0db0800e668a74a',
 

@@ -177,6 +177,8 @@ public class Given_Managed_Database_Provisioning_With_A_Real_Provider(string dia
         bool loseReceipt
     ) : ICdcManagedDatabaseProvisioner
     {
+        public void CheckPlatformPreconditions() => provider.CheckPlatformPreconditions(connection);
+
         public bool CreateDatabase()
         {
             bool created = provider.CreateDatabaseIfNotExists(connection);

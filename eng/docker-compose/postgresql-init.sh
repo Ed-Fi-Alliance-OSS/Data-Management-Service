@@ -1,7 +1,7 @@
 #!/bin/sh
 
-echo "host    replication    postgres         kafka-postgresql-source    trust" >> /var/lib/postgresql/data/pg_hba.conf
-echo "wal_level = logical" >> /var/lib/postgresql/data/postgresql.conf
+echo "host    replication    postgres         kafka-postgresql-source    trust" >> "$PGDATA/pg_hba.conf"
+echo "wal_level = logical" >> "$PGDATA/postgresql.conf"
 
 # createdb, not psql -c: the database name travels as ONE quoted command argument and is never
 # interpolated into SQL text, so createdb quotes the identifier for us. Interpolating it built the

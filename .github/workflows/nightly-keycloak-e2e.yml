@@ -118,8 +118,9 @@ jobs:
               if ($container -eq "dms-postgresql") {
                   $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
                   docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
-                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
-                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  $postgresDataPath = docker exec $container printenv PGDATA 2>$null
+                  docker exec $container df -h $postgresDataPath >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh $postgresDataPath >> $postgresDiagnosticsPath 2>&1
               }
           }
 

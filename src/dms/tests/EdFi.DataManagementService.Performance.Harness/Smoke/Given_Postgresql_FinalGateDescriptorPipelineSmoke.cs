@@ -73,8 +73,8 @@ public class Given_Postgresql_FinalGateDescriptorPipelineSmoke : PostgresqlApiIn
             resultsDirectoryBase,
             GitIdentity.HeadCommit(AppContext.BaseDirectory),
             new PerfEvidenceRunSettings(
-                ImageTag: "postgres:16.8-alpine",
-                ImageDigest: "sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+                ImageTag: "postgres:18.6-alpine",
+                ImageDigest: "sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
                 StorageNote: "local docker volume, not tmpfs",
                 AllowCi: true,
                 AllowedDirtyPrefixes: [PerfEvidenceRunSettings.DefaultAllowedDirtyPrefix],

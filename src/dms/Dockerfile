@@ -138,7 +138,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0.9-alpine3.23@sha256:f03685b2735e0d3d25
 # Install OpenSSL on the 3.5 line and runtime helpers. icu-libs is required by
 # Microsoft.Data.SqlClient (the MSSQL backend), which does not support Globalization
 # Invariant Mode; the Alpine base image otherwise ships without ICU.
-RUN apk add --no-cache openssl=~3.5 bash=~5 postgresql16-client=~16 jq=~1.8 icu-libs=~76
+RUN apk add --no-cache openssl=~3.5 bash=~5 postgresql18-client=~18 jq=~1.8 icu-libs=~76
 
 FROM runtimebase AS setup
 
