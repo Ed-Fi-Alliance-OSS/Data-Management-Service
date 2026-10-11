@@ -265,7 +265,6 @@ if (invalidConfigurationException is null)
         app.MapFallback(context =>
         {
             context.Response.StatusCode = 404;
-            context.Response.ContentType = "application/problem+json";
 
             // Routed through the same ingestion point as every other path so the correlation ID
             // is normalized identically. This also drops a hardcoded "correlationid" fallback
@@ -277,7 +276,15 @@ if (invalidConfigurationException is null)
             );
 
             var response = FailureResponse.ForNotFound("The specified data could not be found.", traceId);
-            return context.Response.WriteAsJsonAsync(response);
+
+            // WriteAsJsonAsync sets the content type itself, and without one it writes
+            // application/json over any set before it. The charset matches every other problem
+            // response the frontend writes.
+            return context.Response.WriteAsJsonAsync(
+                response,
+                options: null,
+                contentType: "application/problem+json; charset=utf-8"
+            );
         });
     }
     catch (Exception ex)

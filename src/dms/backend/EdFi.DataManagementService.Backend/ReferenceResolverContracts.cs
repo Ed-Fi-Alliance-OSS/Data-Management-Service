@@ -125,8 +125,8 @@ public sealed record ReferenceLookupRequestEntry(
 /// The resource key id from the matched <c>dms.ReferentialIdentity</c> row.
 /// This may differ from <paramref name="ResourceKeyId" /> for alias rows.
 /// </param>
-/// <param name="IsDescriptor">
-/// Whether the matched document is present in <c>dms.Descriptor</c>.
+/// <param name="DescriptorId">
+/// The independently allocated compact descriptor id, or <c>null</c> for a non-descriptor document.
 /// </param>
 /// <param name="VerificationIdentityKey">
 /// The authoritative natural-key witness projected from the matched document or descriptor.
@@ -136,9 +136,12 @@ public sealed record ReferenceLookupResult(
     long DocumentId,
     short ResourceKeyId,
     short ReferentialIdentityResourceKeyId,
-    bool IsDescriptor,
+    int? DescriptorId,
     string? VerificationIdentityKey = null
-);
+)
+{
+    public bool IsDescriptor => DescriptorId is not null;
+}
 
 /// <summary>
 /// Request-local lookup snapshot keyed by referential id, including memoized misses.
@@ -228,10 +231,12 @@ public sealed record ResolvedDocumentReference(
 /// Successful descriptor resolution keyed by its concrete extracted JSON path.
 /// </summary>
 /// <param name="Reference">The extracted descriptor-reference occurrence.</param>
+/// <param name="DescriptorId">The resolved compact descriptor id for stored references.</param>
 /// <param name="DocumentId">The resolved descriptor document id for this concrete occurrence.</param>
 /// <param name="ResourceKeyId">The resolved resource key id for this concrete occurrence.</param>
 public sealed record ResolvedDescriptorReference(
     DescriptorReference Reference,
+    int DescriptorId,
     long DocumentId,
     short ResourceKeyId
 );

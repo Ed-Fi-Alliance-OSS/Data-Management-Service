@@ -44,7 +44,7 @@ rm -f .bootstrap/reset-pending .bootstrap/keycloak-image
 # bootstrap + schema, exactly like a first stand-up. --no-deps stops the gateway (which depends_on
 # the DMS services) from pulling them up early; it resolves upstreams at request time.
 docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-deps \
-  postgres keycloak st-config mt-config pgadmin gateway
+  postgres keycloak st-config mt-config pgadmin swagger-ui gateway
 ./record-keycloak-image.sh
 
 echo

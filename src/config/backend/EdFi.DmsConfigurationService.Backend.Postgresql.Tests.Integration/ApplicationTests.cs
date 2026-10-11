@@ -1532,24 +1532,6 @@ public class ApplicationTests : DatabaseTest
         }
 
         [Test]
-        public async Task It_should_not_update_an_application_with_another_tenants_data_store()
-        {
-            var result = await _tenantBRepository.UpdateApplication(
-                new ApplicationUpdateCommand
-                {
-                    Id = _tenantBApplicationId,
-                    ApplicationName = "Tenant B Application",
-                    VendorId = _tenantBVendorId,
-                    ClaimSetName = "Test Claim set",
-                    EducationOrganizationIds = [],
-                    DataStoreIds = [_tenantADataStoreId],
-                },
-                new ApiClientCommand { ClientId = _tenantBClientId, ClientUuid = Guid.NewGuid() }
-            );
-            result.Should().BeOfType<ApplicationUpdateResult.FailureDataStoreNotFound>();
-        }
-
-        [Test]
         public async Task It_should_not_expose_tenant_scoped_applications_in_single_tenant_context()
         {
             var singleTenantRepository = CreateApplicationRepository(new TenantContextProvider());
@@ -1823,11 +1805,10 @@ public class ApplicationTests : DatabaseTest
                     VendorId = _vendorId,
                     ClaimSetName = "Test Claim set",
                     EducationOrganizationIds = [LargeEducationOrganizationId],
-                    DataStoreIds = [_dataStoreId],
                 },
-                // Reuse the ClientId the insert created: UpdateApplication resolves the ApiClient by
-                // ClientId before rebuilding the data store links, so a fresh one would strand them
-                // and remove this application from QueryApplicationByDataStore.
+                // Reuse the ClientId the insert created. The update leaves the client's data store
+                // links intact, so QueryApplicationByDataStore still finding this application
+                // afterwards proves it.
                 new ApiClientCommand { ClientId = _clientId, ClientUuid = Guid.NewGuid() }
             );
             updateResult.Should().BeOfType<ApplicationUpdateResult.Success>();

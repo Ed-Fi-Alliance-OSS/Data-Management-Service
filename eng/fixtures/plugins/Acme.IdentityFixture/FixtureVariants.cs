@@ -61,7 +61,7 @@ public static class FixtureVariants
                         ["Status"] = "Complete",
                         ["SearchResponses"] = new JsonArray(),
                     },
-                    Errors = [new IdentityError { Message = "The job failed.", Path = "$.firstName" }],
+                    Errors = [new IdentityError { Message = "The job failed.", Path = "$.FirstName" }],
                 }
             : Is(variant, SuccessWithoutPayload) || Is(variant, SuccessWithNeither)
                 ? new IdentityResult { Status = IdentityResultStatus.Success }
@@ -101,7 +101,7 @@ public static class FixtureVariants
                         ["Status"] = "Complete",
                         ["SearchResponses"] = new JsonArray(),
                     },
-                    Errors = [new IdentityError { Message = "The job failed.", Path = "$.firstName" }],
+                    Errors = [new IdentityError { Message = "The job failed.", Path = "$.FirstName" }],
                     RequestToken = Guid.NewGuid().ToString("N"),
                 }
             : Is(variant, SuccessWithoutPayload) || Is(variant, SuccessWithNeither)
@@ -139,11 +139,11 @@ public static class FixtureVariants
         {
             _ when Is(shape, CreateFieldError) =>
             [
-                new IdentityError { Path = "$.firstName", Message = "First name is required." },
+                new IdentityError { Path = "$.FirstName", Message = "First name is required." },
             ],
             _ when Is(shape, SearchItemError) =>
             [
-                new IdentityError { Path = "$[2].firstName", Message = "First name is required for item 2." },
+                new IdentityError { Path = "$[2].FirstName", Message = "First name is required for item 2." },
             ],
             _ when Is(shape, PathlessError) =>
             [
@@ -155,10 +155,10 @@ public static class FixtureVariants
             ],
             _ when Is(shape, TwoMessagesOneKey) =>
             [
-                new IdentityError { Path = "$.firstName", Message = "First name is required." },
+                new IdentityError { Path = "$.FirstName", Message = "First name is required." },
                 new IdentityError
                 {
-                    Path = "$.firstName",
+                    Path = "$.FirstName",
                     Message = "First name must not exceed 75 characters.",
                 },
             ],

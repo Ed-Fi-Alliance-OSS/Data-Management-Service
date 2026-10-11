@@ -110,16 +110,23 @@ public class Given_TrackedChangeQueryRowReader
         Object(Item(result.Items, 0), "keyValues")["schoolId"]!.GetValue<int>().Should().Be(255901);
     }
 
-    [Test]
-    public async Task It_composes_descriptor_namespace_and_code_value()
+    [TestCase("uri://ed-fi.org/TermDescriptor", "Fall", "uri://ed-fi.org/TermDescriptor#Fall")]
+    [TestCase("uri://Example.org/Kind ", "MiXeD#Extra", "uri://Example.org/Kind #MiXeD#Extra")]
+    [TestCase("uri://Example.org/Kind", "MiXeD#Extra", "uri://Example.org/Kind#MiXeD#Extra")]
+    [TestCase("uri://Example.org/Kind#MiXeD", "Extra", "uri://Example.org/Kind#MiXeD#Extra")]
+    public async Task It_composes_descriptor_namespace_and_code_value(
+        string descriptorNamespace,
+        string codeValue,
+        string expectedUri
+    )
     {
         var reader = Reader(
             InMemoryRelationalResultSet.Create(
                 RelationalAccessTestData.CreateRow(
                     ("__Id", "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                     ("__ChangeVersion", 42L),
-                    ("termDescriptor__old", "uri://ed-fi.org/TermDescriptor"),
-                    ("termDescriptor__oldCodeValue", "Fall")
+                    ("termDescriptor__old", descriptorNamespace),
+                    ("termDescriptor__oldCodeValue", codeValue)
                 )
             )
         );
@@ -133,7 +140,7 @@ public class Given_TrackedChangeQueryRowReader
         );
 
         JsonObject keyValues = Object(Item(result.Items, 0), "keyValues");
-        keyValues["termDescriptor"]!.GetValue<string>().Should().Be("uri://ed-fi.org/TermDescriptor#Fall");
+        keyValues["termDescriptor"]!.GetValue<string>().Should().Be(expectedUri);
     }
 
     [Test]

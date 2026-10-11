@@ -118,12 +118,9 @@ internal sealed class MssqlReferenceLookupSmallListStrategy(IRelationalCommandEx
                 referentialIdentity.[DocumentId] AS [DocumentId],
                 document.[ResourceKeyId] AS [ResourceKeyId],
                 referentialIdentity.[ResourceKeyId] AS [ReferentialIdentityResourceKeyId],
+                descriptor.[DescriptorId] AS [DescriptorId],
                 CASE
-                    WHEN descriptor.[DocumentId] IS NULL THEN CAST(0 AS bit)
-                    ELSE CAST(1 AS bit)
-                END AS [IsDescriptor],
-                CASE
-                    WHEN descriptor.[DocumentId] IS NOT NULL THEN N'{{descriptorVerificationPrefix}}' + LOWER(descriptor.[Uri])
+                    WHEN descriptor.[DescriptorId] IS NOT NULL THEN N'{{descriptorVerificationPrefix}}' + LOWER(descriptor.[Namespace] + N'#' + descriptor.[CodeValue])
                     ELSE verificationIdentity.[VerificationIdentityKey]
                 END AS [VerificationIdentityKey]
             FROM [LookupInput] lookupInput
@@ -204,9 +201,9 @@ internal sealed class MssqlReferenceLookupSmallListStrategy(IRelationalCommandEx
         {
             return $"""
                 LOWER((
-                    SELECT descriptor.[Uri]
+                    SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue]
                     FROM [dms].[Descriptor] descriptor
-                    WHERE descriptor.[DocumentId] = {columnExpression}
+                    WHERE descriptor.[DescriptorId] = {columnExpression}
                 ))
                 """;
         }

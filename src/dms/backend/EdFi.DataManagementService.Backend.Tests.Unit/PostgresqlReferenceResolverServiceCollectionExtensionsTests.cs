@@ -355,6 +355,8 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         command!.Parameters.Should().ContainSingle();
         command.Parameters[0].Name.Should().Be("@referentialIds");
         command.CommandText.Should().Contain("unnest(@referentialIds::uuid[])");
+        command.CommandText.Should().Contain("referentialIdentity.\"DocumentId\" AS \"DocumentId\"");
+        command.CommandText.Should().Contain("descriptor.\"DescriptorId\" AS \"DescriptorId\"");
     }
 
     [Test]

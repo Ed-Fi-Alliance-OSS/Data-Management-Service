@@ -58,7 +58,7 @@ internal static class PerfFixtureSmokeScenario
         """;
 
     private const string DescriptorRowSql = """
-        SELECT "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription", "Discriminator", "Uri", "ContentVersion"
+        SELECT "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription", "DescriptorId", "ContentVersion"
         FROM "dms"."Descriptor"
         WHERE "DocumentId" = @documentId;
         """;
@@ -122,7 +122,7 @@ internal static class PerfFixtureSmokeScenario
         object BirthDate,
         bool BirthCityIsNull,
         long ContentVersion,
-        long? BirthSexDescriptorId
+        int? BirthSexDescriptorId
     );
 
     private sealed record DescriptorRow(
@@ -130,12 +130,18 @@ internal static class PerfFixtureSmokeScenario
         string Namespace,
         string CodeValue,
         string ShortDescription,
-        string Discriminator,
-        string Uri,
+        int DescriptorId,
         long ContentVersion
-    );
+    )
+    {
+        public string Uri => $"{Namespace}#{CodeValue}";
+    }
 
-    public static async Task RunAsync(ApiIntegrationHarness harness, PerfProvider provider)
+    public static async Task RunAsync(
+        ApiIntegrationHarness harness,
+        PerfProvider provider,
+        string connectionString
+    )
     {
         PerfFixtureDefinition definition = new(PerfFixtureKind.Smoke10k);
         DbConnection connection = harness.DbConnection;
@@ -145,7 +151,21 @@ internal static class PerfFixtureSmokeScenario
         long trackedDescriptorsBeforeLoad = await CountAsync(connection, TrackedDescriptorChangesCountSql);
         trackedDescriptorsBeforeLoad.Should().Be(0, "the leased database must start clean");
 
-        await PerfFixtureLoader.LoadAndVerifyAsync(connection, provider, definition);
+        await using (
+            DbConnection loaderConnection = await PerfFixtureSmokeDatabase.OpenLoaderConnectionAsync(
+                connectionString,
+                provider
+            )
+        )
+        {
+            await PerfFixtureSmokeDatabase.OffsetDescriptorAllocatorAsync(loaderConnection, provider);
+            await PerfFixtureLoader.LoadAndVerifyAsync(
+                loaderConnection,
+                provider,
+                definition,
+                chunkSize: 3_000
+            );
+        }
 
         long trackedAfterLoad = await CountAsync(connection, TrackedChangesCountSql);
         long trackedDescriptorsAfterLoad = await CountAsync(connection, TrackedDescriptorChangesCountSql);
@@ -193,9 +213,17 @@ internal static class PerfFixtureSmokeScenario
                 controlStudent.BirthSexDescriptorId,
                 "loader and control students must bind the same birth-sex descriptor"
             );
-        loaderStudent
-            .BirthSexDescriptorId.Should()
-            .Be(definition.DescriptorDocumentIdFor(PerfFixtureDefinition.SexDescriptorResource));
+        DescriptorRow birthSexDescriptor = await ReadDescriptorRowAsync(
+            connection,
+            definition.DescriptorDocumentIdFor(PerfFixtureDefinition.SexDescriptorResource)
+        );
+        ((long)birthSexDescriptor.DescriptorId)
+            .Should()
+            .NotBe(definition.DescriptorDocumentIdFor(PerfFixtureDefinition.SexDescriptorResource));
+        loaderStudent.BirthSexDescriptorId.Should().Be(birthSexDescriptor.DescriptorId);
+        birthSexDescriptor
+            .Uri.Should()
+            .Be(PerfFixtureDefinition.DescriptorUriFor(PerfFixtureDefinition.SexDescriptorResource));
         loaderStudent
             .ContentVersion.Should()
             .Be(loaderFirst.ContentVersion, "the stamp trigger must have mirrored the document version");
@@ -337,6 +365,10 @@ internal static class PerfFixtureSmokeScenario
         long trackedDescriptorsAfterLoad
     )
     {
+        long maxDescriptorIdBeforePost = await CountAsync(
+            connection,
+            """SELECT MAX("DescriptorId") FROM "dms"."Descriptor";"""
+        );
         JsonObject payload = new()
         {
             ["codeValue"] = "Control",
@@ -381,17 +413,32 @@ internal static class PerfFixtureSmokeScenario
         loaderDocument.HasOwnershipToken.Should().Be(controlDocument.HasOwnershipToken);
 
         DescriptorRow loaderDescriptor = await ReadDescriptorRowAsync(connection, loaderDescriptorDocumentId);
+        ((long)controlDescriptor.DescriptorId)
+            .Should()
+            .Be(
+                maxDescriptorIdBeforePost + 1,
+                "loading must leave the independent descriptor allocator ready for API writes"
+            );
         loaderDescriptor.ResourceKeyId.Should().Be(controlDescriptor.ResourceKeyId);
         loaderDescriptor.Namespace.Should().Be(controlDescriptor.Namespace);
-        loaderDescriptor.Discriminator.Should().Be(controlDescriptor.Discriminator);
+        ((long)loaderDescriptor.DescriptorId).Should().NotBe(loaderDocument.DocumentId);
+        ((long)controlDescriptor.DescriptorId).Should().NotBe(controlDocument.DocumentId);
         loaderDescriptor.ShortDescription.Should().Be(loaderDescriptor.CodeValue);
         loaderDescriptor
             .Uri.Should()
+            .Be(PerfFixtureDefinition.DescriptorUriFor(PerfFixtureDefinition.VisaDescriptorResource));
+        controlDescriptor
+            .Uri.Should()
             .Be(
-                $"{loaderDescriptor.Namespace}#{loaderDescriptor.CodeValue}",
-                "the loader must derive Uri exactly as the production write path does"
+                $"{PerfFixtureDefinition.DescriptorNamespaceFor(PerfFixtureDefinition.VisaDescriptorResource)}#Control"
             );
-        controlDescriptor.Uri.Should().Be($"{controlDescriptor.Namespace}#{controlDescriptor.CodeValue}");
+        long visaResourceKeyId = await CountAsync(
+            connection,
+            PgsqlPerfFixtureLoaderSql.DescriptorResourceKeyLookupSql(
+                PerfFixtureDefinition.VisaDescriptorResource
+            )
+        );
+        loaderDescriptor.ResourceKeyId.Should().Be(visaResourceKeyId);
         loaderDescriptor
             .ContentVersion.Should()
             .Be(
@@ -641,7 +688,7 @@ internal static class PerfFixtureSmokeScenario
             reader.GetValue(3),
             await reader.IsDBNullAsync(4),
             reader.GetInt64(5),
-            await reader.IsDBNullAsync(6) ? null : reader.GetInt64(6)
+            await reader.IsDBNullAsync(6) ? null : reader.GetInt32(6)
         );
     }
 
@@ -658,9 +705,8 @@ internal static class PerfFixtureSmokeScenario
             reader.GetString(1),
             reader.GetString(2),
             reader.GetString(3),
-            reader.GetString(4),
-            reader.GetString(5),
-            reader.GetInt64(6)
+            reader.GetInt32(4),
+            reader.GetInt64(5)
         );
     }
 

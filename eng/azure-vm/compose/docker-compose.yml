@@ -129,6 +129,10 @@ x-cms-common-env: &cms-common-env
   # POST/import /v3/claimSets.
   ClaimsOptions__ClaimsSource: "${DMS_CONFIG_CLAIMS_SOURCE:-Embedded}"
   ClaimsOptions__ClaimsDirectory: "/app/additional-claims"
+  # Embedded claims for the Data Standard the staged ApiSchema targets (5.2 or 6.1). The CMS loads
+  # claims only into an empty config DB, so switching a running deployment also needs a one-time
+  # POST /management/reload-claims (see provision/UPDATE.md).
+  ClaimsOptions__DataStandardVersion: "${DMS_CONFIG_DATA_STANDARD_VERSION:-5.2}"
   # Enables POST /management/reload-claims (re-seeds the claim-set catalog from the
   # configured source into an already-populated config DB). Keep "false" for the review;
   # flip to "true" only to refresh claims (e.g. after pulling a newer image), then back.
@@ -295,6 +299,28 @@ services:
       SCRIPT_NAME: "/pgadmin"
     depends_on:
       postgres: { condition: service_healthy }
+
+  # =========================================================================
+  # Swagger UI at /swagger/: every DMS and Configuration Service spec, with "Try it out".
+  # Static files only. The specs load through the gateway on the same origin, so no CORS is
+  # needed; the Ed-Fi plugins are shared with the local stack (eng/docker-compose/custom-swagger-ui).
+  # =========================================================================
+  swagger-ui:
+    <<: *app-defaults
+    image: nginx:1.30-alpine
+    hostname: swagger-ui
+    container_name: dms-sec-swagger-ui
+    environment:
+      MT_TENANT_1: "${MT_TENANT_1:-tenant1}"
+      MT_TENANT_2: "${MT_TENANT_2:-tenant2}"
+      MT_SCHOOL_YEAR: "${MT_SCHOOL_YEAR:-2025}"
+    volumes:
+      - ../../docker-compose/custom-swagger-ui:/opt/swagger-ui/shared:ro
+      - ./swagger-ui:/opt/swagger-ui/review:ro
+    command: >
+      sh -c "envsubst '$$MT_TENANT_1 $$MT_TENANT_2 $$MT_SCHOOL_YEAR' < /opt/swagger-ui/review/index.html > /usr/share/nginx/html/index.html &&
+             cp /opt/swagger-ui/shared/edfi-common-helper.js /opt/swagger-ui/shared/edfi-custom-fields.js /opt/swagger-ui/shared/edfi-custom-domains.js /opt/swagger-ui/shared/edfi-single-operation-group.js /opt/swagger-ui/shared/favicon.ico /opt/swagger-ui/review/swagger-initializer.js /usr/share/nginx/html/ &&
+             exec nginx -g 'daemon off;'"
 
   # =========================================================================
   # NGINX gateway — TLS termination + path routing (single public hostname).

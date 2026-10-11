@@ -41,8 +41,9 @@ namespace EdFi.DataManagementService.Identity;
 /// </para>
 /// <para>
 /// <b>Keying.</b> Register the implementation unkeyed. DMS resolves this contract unkeyed from the
-/// request scope, so a keyed registration is accepted at startup but never reached by a request, and
-/// the host default keeps serving.
+/// request scope, so a registration under a concrete key is accepted at startup but never reached by a
+/// request, and the host default keeps serving. A registration under the wildcard key,
+/// <c>KeyedService.AnyKey</c>, is refused at startup.
 /// </para>
 /// <para>
 /// <b>Namespace authorization.</b> Every operation - create, get, find, search, and results - requires
@@ -85,11 +86,12 @@ namespace EdFi.DataManagementService.Identity;
 /// <c>CreateAsync</c> documents what this rule costs when an issuance response is lost.
 /// </para>
 /// <para>
-/// <b>Request and response payloads.</b> DMS treats these payloads as opaque JSON and validates
-/// nothing about their contents at runtime, but their shape is defined rather than provider-chosen:
-/// the deployment's OpenAPI document pins it, so a provider returning a different shape serves a
-/// response that does not conform to the API it is backing. DMS does reject duplicate property names
-/// and structurally malformed arrays before invoking a provider.
+/// <b>Request and response payloads.</b> DMS treats these payloads as opaque JSON and, beyond the
+/// presence and create checks <see cref="IdentityResult.Payload"/> names, validates nothing about
+/// their contents at runtime, but their shape is defined rather than provider-chosen: the
+/// deployment's OpenAPI document pins it, so a provider returning a different shape serves a
+/// response that does not conform to the API it is backing. DMS does reject duplicate property
+/// names and structurally malformed arrays before invoking a provider.
 /// </para>
 /// <para>
 /// Create and search request objects, and every returned identity, share one set of standard
@@ -130,12 +132,12 @@ public interface IIdentityService
     /// the getter's own inexpensive, no-I/O, stable-per-deployment contract.
     /// DMS reads this getter once per request, immediately after provider activation and before any
     /// operation is invoked, and gates the requested route's operation against the captured value: an
-    /// unsupported operation returns operation-unsupported <c>404</c> before body parsing, and no
-    /// method below is called. The same captured value also gates whether a token returned by
-    /// <c>FindAsync</c> or <c>SearchAsync</c> may later be redeemed through <c>ResultsAsync</c>, via
-    /// <see cref="IdentityCapabilities.Results"/>; a provider returning a
-    /// <see cref="IdentityAsyncResult.RequestToken"/> while that capability is absent is provider
-    /// contract misuse.
+    /// unsupported operation returns operation-unsupported <c>404</c> before content-type, body and
+    /// duplicate-property validation, and no method below is called. The same captured value also
+    /// gates whether a token returned by <c>FindAsync</c> or <c>SearchAsync</c> may later be redeemed
+    /// through <c>ResultsAsync</c>, via <see cref="IdentityCapabilities.Results"/>; a provider
+    /// returning a <see cref="IdentityAsyncResult.RequestToken"/> while that capability is absent is
+    /// provider contract misuse.
     /// A getter failure is a request-time activation failure: it returns the sanitized <c>500</c>
     /// identity-provider-configuration problem and invokes no operation, exactly as a throwing
     /// constructor or registration factory does.

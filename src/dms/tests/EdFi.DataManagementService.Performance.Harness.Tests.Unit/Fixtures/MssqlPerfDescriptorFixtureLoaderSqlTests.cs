@@ -24,6 +24,14 @@ public class Given_The_Mssql_Descriptor_Loader_Sql
     }
 
     [Test]
+    public void It_leaves_descriptor_identity_to_the_native_allocator()
+    {
+        MssqlPerfDescriptorFixtureLoaderSql.DescriptorInsertSql.Should().NotContain("DescriptorId");
+        MssqlPerfDescriptorFixtureLoaderSql.DescriptorInsertSql.Should().NotContain("Discriminator");
+        MssqlPerfDescriptorFixtureLoaderSql.DescriptorInsertSql.Should().NotContain("Uri");
+    }
+
+    [Test]
     public void It_interleaves_the_namespaces_on_ordinal_parity()
     {
         MssqlPerfDescriptorFixtureLoaderSql

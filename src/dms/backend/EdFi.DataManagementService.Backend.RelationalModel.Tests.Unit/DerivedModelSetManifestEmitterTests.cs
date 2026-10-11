@@ -309,7 +309,7 @@ public class Given_A_Contact_Model_Set_With_Extension_When_Emitting_Manifest
                 new DbColumnModel(
                     new DbColumnName("TransportationTypeDescriptor_DescriptorId"),
                     ColumnKind.DescriptorFk,
-                    new RelationalScalarType(ScalarKind.Int64),
+                    new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: false,
                     SourceJsonPath: JsonPathExpressionCompiler.Compile("$.transportationTypeDescriptor"),
                     TargetResource: new QualifiedResourceName("Ed-Fi", "TransportationTypeDescriptor")

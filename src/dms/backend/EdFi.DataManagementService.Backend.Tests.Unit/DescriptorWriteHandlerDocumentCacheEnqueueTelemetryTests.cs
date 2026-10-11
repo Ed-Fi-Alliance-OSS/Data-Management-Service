@@ -944,7 +944,6 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             {
                 ["Namespace"] = "uri://ed-fi.org/SchoolTypeDescriptor",
                 ["CodeValue"] = "Charter",
-                ["Uri"] = "uri://ed-fi.org/SchoolTypeDescriptor#Charter",
                 ["ShortDescription"] = "Charter",
                 ["Description"] = description,
                 ["EffectiveBeginDate"] = new DateOnly(2024, 1, 1),

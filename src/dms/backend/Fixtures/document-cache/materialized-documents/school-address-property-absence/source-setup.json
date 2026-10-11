@@ -22,9 +22,10 @@
       "namespace": "uri://ed-fi.org/AddressTypeDescriptor",
       "codeValue": "Physical",
       "shortDescription": "Physical",
-      "values": {
-        "Discriminator": "AddressTypeDescriptor"
-      }
+      "values": {},
+      "descriptorId": 101,
+      "projectName": "Ed-Fi",
+      "resourceName": "AddressTypeDescriptor"
     }
   ],
   "concreteRootRows": [
@@ -48,7 +49,7 @@
         "School_DocumentId": 973101,
         "Ordinal": 0,
         "City": "Austin",
-        "AddressTypeDescriptor_DescriptorId": 973201
+        "AddressTypeDescriptor_DescriptorId": 101
       }
     },
     {

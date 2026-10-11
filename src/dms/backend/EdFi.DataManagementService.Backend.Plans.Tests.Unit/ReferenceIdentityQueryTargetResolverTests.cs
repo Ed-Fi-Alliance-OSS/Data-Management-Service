@@ -1002,7 +1002,7 @@ public class Given_ReferenceIdentityQueryTargetResolverTests
         return new DbColumnModel(
             ColumnName: new DbColumnName(columnName),
             Kind: ColumnKind.DescriptorFk,
-            ScalarType: new RelationalScalarType(ScalarKind.Int64),
+            ScalarType: new RelationalScalarType(ScalarKind.Int32),
             IsNullable: true,
             SourceJsonPath: Path(sourcePath),
             TargetResource: descriptorResource,
@@ -1018,7 +1018,7 @@ public class Given_ReferenceIdentityQueryTargetResolverTests
         return new DbColumnModel(
             ColumnName: new DbColumnName(columnName),
             Kind: ColumnKind.DescriptorFk,
-            ScalarType: new RelationalScalarType(ScalarKind.Int64),
+            ScalarType: new RelationalScalarType(ScalarKind.Int32),
             IsNullable: true,
             SourceJsonPath: null,
             TargetResource: descriptorResource,

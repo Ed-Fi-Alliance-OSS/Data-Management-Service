@@ -361,8 +361,6 @@ internal sealed class DescriptorReadHandler(
             return new DescriptorGetByIdReadResult<TRow>.Complete(ownershipDenial);
         }
 
-        LogDiscriminatorMismatchIfPresent(request, descriptorRow);
-
         return new DescriptorGetByIdReadResult<TRow>.AuthorizedRow(descriptorRow);
     }
 
@@ -906,7 +904,6 @@ internal sealed class DescriptorReadHandler(
                 || hydratedRow.ContentLastModifiedAt != selectedRow.ContentLastModifiedAt
                 || hydratedRow.Namespace != selectedRow.Namespace
                 || hydratedRow.CodeValue != selectedRow.CodeValue
-                || hydratedRow.Discriminator != selectedRow.Discriminator
             )
             {
                 return false;
@@ -1808,35 +1805,6 @@ internal sealed class DescriptorReadHandler(
         );
     }
 
-    private void LogDiscriminatorMismatchIfPresent(
-        DescriptorGetByIdRequest request,
-        IDescriptorReadCandidateMetadata descriptorRow
-    )
-    {
-        if (
-            string.IsNullOrWhiteSpace(descriptorRow.Discriminator)
-            || string.Equals(
-                descriptorRow.Discriminator,
-                request.Resource.ResourceName,
-                StringComparison.Ordinal
-            )
-        )
-        {
-            return;
-        }
-
-        _logger.LogWarning(
-            "Descriptor GET-by-id read discriminator mismatch for {Resource}: document {DocumentUuid} "
-                + "stored discriminator '{StoredDiscriminator}' did not match requested descriptor type "
-                + "'{ExpectedDiscriminator}'. ResourceKeyId remained authoritative. - {TraceId}",
-            RelationalWriteSupport.FormatResource(request.Resource),
-            descriptorRow.DocumentUuid,
-            descriptorRow.Discriminator,
-            request.Resource.ResourceName,
-            request.TraceId.Value
-        );
-    }
-
     private GetResult.GetSuccess MaterializeDescriptorGetSuccess(
         DescriptorGetByIdRequest request,
         DescriptorReadRow descriptorRow
@@ -2258,8 +2226,6 @@ internal sealed class DescriptorReadHandler(
             }
         );
 
-        columns.Add(("descriptor", "Discriminator"));
-
         IEnumerable<string> projectedColumns = columns.Select(column =>
             $"    {column.SourceAlias}.{QuoteIdentifier(dialect, column.ColumnName)} AS {QuoteIdentifier(dialect, column.ColumnName)}"
         );
@@ -2344,8 +2310,7 @@ internal sealed class DescriptorReadHandler(
                 descriptor."ShortDescription" AS "ShortDescription",
                 descriptor."Description" AS "Description",
                 descriptor."EffectiveBeginDate" AS "EffectiveBeginDate",
-                descriptor."EffectiveEndDate" AS "EffectiveEndDate",
-                descriptor."Discriminator" AS "Discriminator"
+                descriptor."EffectiveEndDate" AS "EffectiveEndDate"
             FROM (
                 VALUES
                 {{selectedDocumentIdsSql}}
@@ -2377,8 +2342,7 @@ internal sealed class DescriptorReadHandler(
                 descriptor.[ShortDescription] AS [ShortDescription],
                 descriptor.[Description] AS [Description],
                 descriptor.[EffectiveBeginDate] AS [EffectiveBeginDate],
-                descriptor.[EffectiveEndDate] AS [EffectiveEndDate],
-                descriptor.[Discriminator] AS [Discriminator]
+                descriptor.[EffectiveEndDate] AS [EffectiveEndDate]
             FROM OPENJSON(@selectedDocumentIdsJson)
             WITH (
                 [DocumentId] bigint '$.DocumentId',

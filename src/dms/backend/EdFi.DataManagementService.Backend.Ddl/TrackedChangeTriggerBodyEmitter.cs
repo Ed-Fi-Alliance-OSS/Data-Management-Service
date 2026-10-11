@@ -566,7 +566,7 @@ internal static class TrackedChangeTriggerBodyEmitter
             var alias = $"{image.AliasPrefix}Dj{i}";
             var qualifiedDescriptor = dialect.QualifyTable(DmsTableNames.Descriptor);
             var joinKeyword = JoinKeyword(DescriptorJoinIsNullable(plan, i));
-            yield return $"{joinKeyword} {qualifiedDescriptor} {alias} ON {alias}.{dialect.QuoteIdentifier("DocumentId")} = {image.RowRef}.{dialect.QuoteIdentifier(join.SourceColumn.Value)}";
+            yield return $"{joinKeyword} {qualifiedDescriptor} {alias} ON {alias}.{dialect.QuoteIdentifier("DescriptorId")} = {image.RowRef}.{dialect.QuoteIdentifier(join.SourceColumn.Value)}";
         }
 
         // Person joins: one natural-key seek on the person root per join. The row image itself carries
@@ -848,7 +848,7 @@ internal static class TrackedChangeTriggerBodyEmitter
     /// Thrown when the <see cref="TrackedChangeSystemColumnRole.Id"/>,
     /// <see cref="TrackedChangeSystemColumnRole.ChangeVersion"/>,
     /// <see cref="TrackedChangeSystemColumnRole.DocumentId"/>, or
-    /// <see cref="TrackedChangeSystemColumnRole.Discriminator"/> system column is absent, or when a
+    /// <see cref="TrackedChangeSystemColumnRole.ResourceKeyId"/> system column is absent, or when a
     /// value column has a role other than <see cref="TrackedChangeColumnRole.Scalar"/> or a
     /// <see cref="TrackedChangeColumnInfo.SourceJsonPath"/> not present in
     /// <see cref="DescriptorSourceColumnsByJsonPath"/>.
@@ -861,7 +861,7 @@ internal static class TrackedChangeTriggerBodyEmitter
         bool fromDeletedSet
     )
     {
-        var discriminatorColumn = RequireSystemColumn(tableInfo, TrackedChangeSystemColumnRole.Discriminator);
+        var resourceKeyIdColumn = RequireSystemColumn(tableInfo, TrackedChangeSystemColumnRole.ResourceKeyId);
         var idColumn = RequireSystemColumn(tableInfo, TrackedChangeSystemColumnRole.Id);
         var changeVersionColumn = RequireSystemColumn(tableInfo, TrackedChangeSystemColumnRole.ChangeVersion);
         var documentIdColumn = RequireSystemColumn(tableInfo, TrackedChangeSystemColumnRole.DocumentId);
@@ -870,8 +870,8 @@ internal static class TrackedChangeTriggerBodyEmitter
         writer.AppendLine($"INSERT INTO {dialect.QualifyTable(tableInfo.Table)} (");
         using (writer.Indent())
         {
-            // Discriminator first
-            writer.AppendLine($"{dialect.QuoteIdentifier(discriminatorColumn.Value)},");
+            // The qualified descriptor type key survives deletion of the live row.
+            writer.AppendLine($"{dialect.QuoteIdentifier(resourceKeyIdColumn.Value)},");
 
             // Old value columns in table order; new values are omitted for tombstones.
             foreach (var column in tableInfo.ValueColumnsInTableOrder)
@@ -894,8 +894,8 @@ internal static class TrackedChangeTriggerBodyEmitter
 
         using (writer.Indent())
         {
-            // Discriminator value from image ref
-            writer.AppendLine($"{imageRef}.{dialect.QuoteIdentifier(discriminatorColumn.Value)},");
+            // Copy the type key from the deleted image; no live resource-key lookup is needed.
+            writer.AppendLine($"{imageRef}.{dialect.QuoteIdentifier("ResourceKeyId")},");
 
             // Old value column expressions — each resolved via DescriptorSourceColumnsByJsonPath
             foreach (var column in tableInfo.ValueColumnsInTableOrder)

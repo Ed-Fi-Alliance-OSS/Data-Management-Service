@@ -72,13 +72,16 @@ bootstrap, so it only starts the DMS services.
 - **Update (in WSL / on the VM):**
   `cd ~/dms-src/eng/azure-vm/compose && ./update.sh`. The wrapper requires a fast-forward pull and
   routes container recreation through the ApiSchema-guarded `up.sh`; set `SKIP_GIT=1` only for an
-  intentional image-only refresh against the current checkout.
+  intentional image-only refresh against the current checkout. An update keeps the API keys; the
+  full procedure (backup, migration pre-check, Data Standard switch, variant keys) is
+  [`UPDATE.md`](UPDATE.md).
 - **Keycloak image-pin change or lost Keycloak volume:** its H2 data cannot be migrated or rebuilt
   independently after bootstrap. The review applications are Keycloak clients whose generated
   secrets and UUIDs are referenced by CMS, so recreating only the three service clients would leave
   every review API credential broken. Use the [clean redeploy runbook](REDEPLOY.md).
 - **Cert renewal:** `pwsh provision/renew-cert.ps1 -PublicHost <FQDN>`.
-- **Wipe + redeploy** (existing VM, fresh secrets/schema/data): [`REDEPLOY.md`](REDEPLOY.md).
+- **Wipe + redeploy** (existing VM, fresh secrets/schema/data, **new API keys**): [`REDEPLOY.md`](REDEPLOY.md).
+- **In-place refresh** (newer build or Data Standard 6.1, **same API keys**): [`UPDATE.md`](UPDATE.md).
 - **Teardown:** `provision/teardown-vm.ps1` (or delete the resource group in the Portal).
 
 ## What `setup-env.ps1` does NOT do (provisioning notes)

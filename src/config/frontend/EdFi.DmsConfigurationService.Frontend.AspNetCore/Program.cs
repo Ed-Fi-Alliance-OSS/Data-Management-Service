@@ -7,6 +7,7 @@ using EdFi.Api.Plugins.Hosting;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Deploy;
+using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
@@ -29,7 +30,24 @@ loadedPlugins.ContributeConfiguration(builder.Configuration);
 builder.AddServices(loadedPlugins);
 builder.Services.AddHttpClient();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+    // An application's enabled flag is computed across its API clients; no application-level
+    // write sets it.
+    options.AddSchemaTransformer(
+        (schema, context, _) =>
+        {
+            if (
+                context.JsonPropertyInfo is { Name: "enabled" } property
+                && property.DeclaringType == typeof(ApplicationResponse)
+            )
+            {
+                schema.ReadOnly = true;
+            }
+
+            return Task.CompletedTask;
+        }
+    )
+);
 
 // Add CORS policy to allow Swagger UI to access the Configuration Service
 string swaggerUiOrigin =

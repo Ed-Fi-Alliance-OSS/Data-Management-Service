@@ -7,9 +7,8 @@
 
 Describe "Get-EducationOrganizationIdsFromSampleData" {
     BeforeAll {
-        # The module imports sibling modules with paths relative to its own directory, so import
-        # it with that directory as the working directory (matching how the template workflow
-        # invokes it). The parser under test is not exported, so it is reached via InModuleScope.
+        # Import with the module's own directory as the working directory, matching how the
+        # template workflow invokes it. The tests reach the parser through InModuleScope.
         $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
         Push-Location $script:templatesDir
         try {

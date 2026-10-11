@@ -125,7 +125,7 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
             new DbColumnModel(
                 RelationalNameConventions.DescriptorIdColumnName("SchoolTypeDescriptor"),
                 ColumnKind.DescriptorFk,
-                new RelationalScalarType(ScalarKind.Int64),
+                new RelationalScalarType(ScalarKind.Int32),
                 IsNullable: false,
                 SourceJsonPath: JsonPathExpressionCompiler.Compile("$.schoolTypeDescriptor"),
                 TargetResource: new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor")

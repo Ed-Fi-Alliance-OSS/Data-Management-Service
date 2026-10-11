@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.ExtractInputs;
+using EdFi.DataManagementService.Backend.RelationalModel.Constraints;
 using EdFi.DataManagementService.Core.External.Model;
 using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
 using static EdFi.DataManagementService.Backend.RelationalModel.SetPasses.IdentityProjectionResolver;
@@ -48,7 +49,7 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
     private static readonly DbColumnName _changeVersionColumn = new("ChangeVersion");
     private static readonly DbColumnName _documentIdColumn = new("DocumentId");
     private static readonly DbColumnName _createdAtColumn = new("CreatedAt");
-    private static readonly DbColumnName _discriminatorColumn = new("Discriminator");
+    private static readonly DbColumnName _resourceKeyIdColumn = new("ResourceKeyId");
 
     public void Execute(RelationalModelSetBuilderContext context)
     {
@@ -109,6 +110,18 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
         if (sharedDescriptorTable is not null)
         {
             context.TrackedChangeInventory.Add(sharedDescriptorTable);
+            IReadOnlyList<DbColumnName> routingColumns = [_resourceKeyIdColumn, _changeVersionColumn];
+            context.IndexInventory.Add(
+                new DbIndexInfo(
+                    new DbIndexName(
+                        ConstraintNaming.BuildExplicitIndexName(sharedDescriptorTable.Table, routingColumns)
+                    ),
+                    sharedDescriptorTable.Table,
+                    routingColumns,
+                    IsUnique: false,
+                    DbIndexKind.Explicit
+                )
+            );
             AttachChangeTracking(context, DescriptorTableName, sharedDescriptorTable.Table);
         }
     }
@@ -208,7 +221,7 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
             kind,
             root.Table,
             valueColumns,
-            BuildSystemColumns(includeDiscriminator: false),
+            BuildSystemColumns(includeResourceKeyId: false),
             [_changeVersionColumn],
             descriptorJoins.Values.OrderBy(join => join.DescriptorJoinName, StringComparer.Ordinal).ToArray(),
             personJoins.Values.OrderBy(join => join.PersonJoinName, StringComparer.Ordinal).ToArray()
@@ -263,7 +276,7 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
             TrackedChangeTableKind.SharedDescriptor,
             DescriptorTableName,
             valueColumns,
-            BuildSystemColumns(includeDiscriminator: true),
+            BuildSystemColumns(includeResourceKeyId: true),
             [_changeVersionColumn],
             [],
             []
@@ -885,17 +898,18 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
         );
     }
 
-    private static IReadOnlyList<TrackedChangeSystemColumnInfo> BuildSystemColumns(bool includeDiscriminator)
+    private static IReadOnlyList<TrackedChangeSystemColumnInfo> BuildSystemColumns(bool includeResourceKeyId)
     {
         var columns = new List<TrackedChangeSystemColumnInfo>();
 
-        if (includeDiscriminator)
+        if (includeResourceKeyId)
         {
             columns.Add(
                 new TrackedChangeSystemColumnInfo(
-                    TrackedChangeSystemColumnRole.Discriminator,
-                    _discriminatorColumn,
-                    new RelationalScalarType(ScalarKind.String, MaxLength: 128),
+                    TrackedChangeSystemColumnRole.ResourceKeyId,
+                    _resourceKeyIdColumn,
+                    // smallint has no ScalarKind; the dialect emitter renders it by role.
+                    ScalarType: null,
                     IsNullable: false,
                     IsPrimaryKey: false
                 )

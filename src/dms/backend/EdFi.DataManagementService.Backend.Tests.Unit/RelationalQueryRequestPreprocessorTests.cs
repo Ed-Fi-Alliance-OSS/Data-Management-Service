@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 [TestFixture]
 [Parallelizable]
-public class Given_RelationalQueryRequestPreprocessor
+public partial class Given_RelationalQueryRequestPreprocessor
 {
     [Test]
     public async Task It_short_circuits_invalid_id_values_to_an_empty_page()
@@ -181,7 +181,12 @@ public class Given_RelationalQueryRequestPreprocessor
                             request
                                 .DescriptorReferences.Select(
                                     (reference, index) =>
-                                        new ResolvedDescriptorReference(reference, 800L + index, 31)
+                                        new ResolvedDescriptorReference(
+                                            reference,
+                                            17 + index,
+                                            5000000800L + index,
+                                            31
+                                        )
                                 )
                                 .ToArray()
                         )
@@ -234,12 +239,12 @@ public class Given_RelationalQueryRequestPreprocessor
         result
             .QueryElementsInOrder[0]
             .Value.Should()
-            .Be(new PreprocessedRelationalQueryValue.DescriptorDocumentId(800L));
+            .Be(new PreprocessedRelationalQueryValue.DescriptorId(17));
         result.QueryElementsInOrder[0].SupportedField.QueryFieldName.Should().Be("schoolCategoryDescriptor");
         result
             .QueryElementsInOrder[1]
             .Value.Should()
-            .Be(new PreprocessedRelationalQueryValue.DescriptorDocumentId(801L));
+            .Be(new PreprocessedRelationalQueryValue.DescriptorId(18));
         result
             .QueryElementsInOrder[1]
             .SupportedField.QueryFieldName.Should()
@@ -253,8 +258,11 @@ public class Given_RelationalQueryRequestPreprocessor
             .Equal("uri://one", "uri://two");
     }
 
-    [Test]
-    public async Task It_short_circuits_unresolved_descriptor_queries_to_an_empty_page()
+    [TestCase(DescriptorReferenceFailureReason.Missing)]
+    [TestCase(DescriptorReferenceFailureReason.DescriptorTypeMismatch)]
+    public async Task It_short_circuits_unresolved_descriptor_queries_to_an_empty_page(
+        DescriptorReferenceFailureReason failureReason
+    )
     {
         var referenceResolver = A.Fake<IReferenceResolver>();
         A.CallTo(() => referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
@@ -265,10 +273,7 @@ public class Given_RelationalQueryRequestPreprocessor
                             invalidDescriptorReferences:
                             [
                                 .. request.DescriptorReferences.Select(reference =>
-                                    DescriptorReferenceFailure.From(
-                                        reference,
-                                        DescriptorReferenceFailureReason.Missing
-                                    )
+                                    DescriptorReferenceFailure.From(reference, failureReason)
                                 ),
                             ]
                         )
@@ -363,10 +368,10 @@ public class Given_RelationalQueryRequestPreprocessor
         );
     }
 
-    private static MappingSet CreateMappingSet()
+    private static MappingSet CreateMappingSet(SqlDialect dialect = SqlDialect.Pgsql)
     {
         return new MappingSet(
-            Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
+            Key: new MappingSetKey("schema-hash", dialect, "v1"),
             Model: new DerivedRelationalModelSet(
                 new EffectiveSchemaInfo(
                     ApiSchemaFormatVersion: "5.2",
@@ -377,7 +382,7 @@ public class Given_RelationalQueryRequestPreprocessor
                     SchemaComponentsInEndpointOrder: [],
                     ResourceKeysInIdOrder: []
                 ),
-                SqlDialect.Pgsql,
+                dialect,
                 ProjectSchemasInEndpointOrder: [],
                 ConcreteResourcesInNameOrder: [],
                 AbstractIdentityTablesInNameOrder: [],

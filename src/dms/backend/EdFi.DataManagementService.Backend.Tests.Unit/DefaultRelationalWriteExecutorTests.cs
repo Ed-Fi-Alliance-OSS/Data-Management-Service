@@ -151,13 +151,13 @@ public class Given_Default_Relational_Write_Executor
         );
         _referenceResolverAdapterFactory.Adapter.LookupResults =
         [
-            new ReferenceLookupResult(documentReferentialId, 101L, 1, 1, false, "$.schoolId=255901"),
+            new ReferenceLookupResult(documentReferentialId, 101L, 1, 1, null, "$.schoolId=255901"),
             new ReferenceLookupResult(
                 descriptorReferentialId,
                 202L,
                 13,
                 13,
-                true,
+                17,
                 "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
             ),
         ];
@@ -786,7 +786,7 @@ public class Given_Default_Relational_Write_Executor
         );
         _referenceResolverAdapterFactory.Adapter.LookupResults =
         [
-            new ReferenceLookupResult(referentialId, 202L, 12, 12, false, "$.schoolId=255901"),
+            new ReferenceLookupResult(referentialId, 202L, 12, 12, null, "$.schoolId=255901"),
         ];
 
         var result = await _sut.ExecuteAsync(request);

@@ -11,6 +11,7 @@
         <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
         <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
         <PackageReference Include="Microsoft.Extensions.Options" />
+        <PackageReference Include="Microsoft.Extensions.Resilience" />
         <PackageReference Include="Microsoft.CodeAnalysis" />
     </ItemGroup>
     <ItemGroup>

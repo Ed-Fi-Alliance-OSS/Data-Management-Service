@@ -209,7 +209,7 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
                     var descriptorColumn = new DbColumnModel(
                         descriptorColumnName,
                         ColumnKind.DescriptorFk,
-                        new RelationalScalarType(ScalarKind.Int64),
+                        new RelationalScalarType(ScalarKind.Int32),
                         isNullable,
                         identityBinding.ReferenceJsonPath,
                         descriptorPath.DescriptorResource

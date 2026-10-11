@@ -22,6 +22,7 @@ public static class PerfFixtureLoaderParameters
     public const string IdentificationDocumentUseDescriptorId = "identificationDocumentUseDescriptorId";
     public const string PersonalInformationVerificationDescriptorId =
         "personalInformationVerificationDescriptorId";
+    public const string EntryGradeLevelDescriptorId = "entryGradeLevelDescriptorId";
     public const string VisaDescriptorId = "visaDescriptorId";
 }
 

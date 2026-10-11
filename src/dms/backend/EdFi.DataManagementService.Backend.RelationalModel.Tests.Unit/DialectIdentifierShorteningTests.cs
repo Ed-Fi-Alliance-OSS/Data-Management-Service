@@ -1048,7 +1048,7 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
             new DbColumnModel(
                 new DbColumnName(_identifiers.DescriptorColumnName),
                 ColumnKind.DescriptorFk,
-                new RelationalScalarType(ScalarKind.Int64),
+                new RelationalScalarType(ScalarKind.Int32),
                 IsNullable: false,
                 SourceJsonPath: JsonPathExpressionCompiler.Compile("$.descriptor"),
                 TargetResource: ShorteningScenario.AbstractResource

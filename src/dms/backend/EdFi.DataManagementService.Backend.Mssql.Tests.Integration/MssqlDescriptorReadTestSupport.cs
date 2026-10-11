@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.External.Model;
+using FluentAssertions;
 using Microsoft.Data.SqlClient;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
@@ -19,6 +20,7 @@ internal static class MssqlDescriptorReadTestSupport
         short resourceKeyId
     )
     {
+        await database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         return await database.ExecuteScalarAsync<long>(
             """
             DECLARE @Inserted TABLE ([DocumentId] bigint);
@@ -45,12 +47,19 @@ internal static class MssqlDescriptorReadTestSupport
         );
         var documentId = await InsertDocumentAsync(database, seed.DocumentUuid, resourceKeyId);
 
-        await InsertDescriptorRowAsync(database, resource, documentId, resourceKeyId, seed);
+        var descriptorId = await InsertDescriptorRowAsync(
+            database,
+            resource,
+            documentId,
+            resourceKeyId,
+            seed
+        );
+        ((long)descriptorId).Should().NotBe(documentId);
 
         return documentId;
     }
 
-    public static async Task InsertDescriptorRowAsync(
+    public static async Task<int> InsertDescriptorRowAsync(
         MssqlGeneratedDdlTestDatabase database,
         QualifiedResourceName resource,
         long documentId,
@@ -58,10 +67,9 @@ internal static class MssqlDescriptorReadTestSupport
         DescriptorReadSeed seed
     )
     {
-        var discriminator = seed.Discriminator ?? resource.ResourceName;
-
-        await database.ExecuteNonQueryAsync(
+        return await database.ExecuteScalarAsync<int>(
             """
+            DECLARE @descriptor TABLE ([DescriptorId] int);
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
                 [ResourceKeyId],
@@ -70,10 +78,9 @@ internal static class MssqlDescriptorReadTestSupport
                 [ShortDescription],
                 [Description],
                 [EffectiveBeginDate],
-                [EffectiveEndDate],
-                [Discriminator],
-                [Uri]
+                [EffectiveEndDate]
             )
+            OUTPUT inserted.[DescriptorId] INTO @descriptor
             VALUES (
                 @documentId,
                 @resourceKeyId,
@@ -82,10 +89,9 @@ internal static class MssqlDescriptorReadTestSupport
                 @shortDescription,
                 @description,
                 @effectiveBeginDate,
-                @effectiveEndDate,
-                @discriminator,
-                @uri
+                @effectiveEndDate
             );
+            SELECT [DescriptorId] FROM @descriptor;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId),
@@ -104,9 +110,7 @@ internal static class MssqlDescriptorReadTestSupport
                 seed.EffectiveEndDate is not null
                     ? seed.EffectiveEndDate.Value.ToDateTime(TimeOnly.MinValue)
                     : DBNull.Value
-            ),
-            new SqlParameter("@discriminator", discriminator),
-            new SqlParameter("@uri", seed.Uri)
+            )
         );
     }
 
@@ -141,14 +145,15 @@ internal static class MssqlDescriptorReadTestSupport
         var rows = await database.QueryRowsAsync(
             """
             SELECT
+                [DescriptorId],
                 [DocumentId],
+                [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
                 [Description],
                 [EffectiveBeginDate],
                 [EffectiveEndDate],
-                [Discriminator],
                 [Uri]
             FROM [dms].[Descriptor]
             WHERE [DocumentId] = @documentId;

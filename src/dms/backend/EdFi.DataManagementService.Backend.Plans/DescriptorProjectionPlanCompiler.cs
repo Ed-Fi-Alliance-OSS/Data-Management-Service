@@ -16,9 +16,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
 {
     private static readonly DbTableName _descriptorTable = new(new DbSchemaName("dms"), "Descriptor");
-    private static readonly DbColumnName _descriptorDocumentIdColumn = new("DocumentId");
     private static readonly DbColumnName _descriptorIdProjectionColumn = new("DescriptorId");
-    private static readonly DbColumnName _uriColumn = new("Uri");
 
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
     private readonly IPlanSqlDialect _planSqlDialect = PlanSqlDialectFactory.Create(dialect);
@@ -162,7 +160,20 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
                 .Append($"{projectionAlias}.")
                 .AppendQuoted(_descriptorIdProjectionColumn.Value)
                 .AppendLine(",");
-            writer.Append($"{descriptorAlias}.").AppendQuoted(_uriColumn.Value).AppendLine();
+            var namespaceColumn = $"{descriptorAlias}.{_sqlDialect.QuoteIdentifier("Namespace")}";
+            var codeValueColumn = $"{descriptorAlias}.{_sqlDialect.QuoteIdentifier("CodeValue")}";
+            writer
+                .Append(
+                    dialect switch
+                    {
+                        SqlDialect.Pgsql => $"{namespaceColumn} || '#' || {codeValueColumn}",
+                        SqlDialect.Mssql => $"{namespaceColumn} + N'#' + {codeValueColumn}",
+                        _ => throw new NotSupportedException($"Unsupported SQL dialect '{dialect}'."),
+                    }
+                )
+                .Append(" AS ")
+                .AppendQuoted("Uri")
+                .AppendLine();
         }
 
         writer.AppendLine("FROM");
@@ -197,7 +208,7 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
         }
 
         writer.Append("INNER JOIN ").AppendTable(_descriptorTable).Append($" {descriptorAlias} ON ");
-        AppendQualifiedColumn(writer, descriptorAlias, _descriptorDocumentIdColumn);
+        AppendQualifiedColumn(writer, descriptorAlias, _descriptorIdProjectionColumn);
         writer.Append(" = ");
         writer.Append($"{projectionAlias}.").AppendQuoted(_descriptorIdProjectionColumn.Value).AppendLine();
         writer.AppendLine("ORDER BY");
@@ -295,6 +306,13 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
     {
         if (columnModel.Kind is ColumnKind.DescriptorFk)
         {
+            if (columnModel.ScalarType is not { Kind: ScalarKind.Int32 })
+            {
+                throw new InvalidOperationException(
+                    $"{contextDescription} '{resolvedColumnName.Value}' must declare Int32 descriptor storage."
+                );
+            }
+
             return;
         }
 

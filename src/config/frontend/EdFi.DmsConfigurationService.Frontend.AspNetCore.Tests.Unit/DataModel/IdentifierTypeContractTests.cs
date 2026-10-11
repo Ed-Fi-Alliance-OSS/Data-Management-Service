@@ -61,7 +61,6 @@ public class Given_the_CMS_resource_identifier_type_contract
         (typeof(ApplicationInsertCommand), "ProfileIds", typeof(int[])),
         (typeof(ApplicationUpdateCommand), "Id", typeof(int)),
         (typeof(ApplicationUpdateCommand), "VendorId", typeof(int)),
-        (typeof(ApplicationUpdateCommand), "DataStoreIds", typeof(int[])),
         (typeof(ApplicationUpdateCommand), "ProfileIds", typeof(int[])),
         (typeof(ApplicationCredentialsResponse), "Id", typeof(int)),
         (typeof(ApiClientCommand), "DataStoreIds", typeof(int[])),

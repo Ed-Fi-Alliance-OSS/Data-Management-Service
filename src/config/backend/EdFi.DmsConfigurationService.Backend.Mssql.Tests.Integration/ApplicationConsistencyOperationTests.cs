@@ -229,6 +229,79 @@ public class Given_an_application_update_state_read_during_an_uncommitted_update
 }
 
 [TestFixture]
+public class Given_an_application_update_of_a_multi_client_application : ConsistencyOperationTestBase
+{
+    private Guid _newClientUuid;
+    private ApplicationUpdateResult _result = null!;
+
+    [SetUp]
+    public async Task Act()
+    {
+        _newClientUuid = Guid.NewGuid();
+        _result = await _applicationRepository.UpdateApplication(
+            new ApplicationUpdateCommand
+            {
+                Id = _applicationId,
+                ApplicationName = "Updated Consistency Application",
+                VendorId = _vendorId,
+                ClaimSetName = "UpdatedClaimSet",
+                EducationOrganizationIds = [300],
+                ProfileIds = [_profileId],
+            },
+            new() { ClientId = _clientId, ClientUuid = _newClientUuid }
+        );
+    }
+
+    [Test]
+    public void It_succeeds() => _result.Should().BeOfType<ApplicationUpdateResult.Success>();
+
+    [Test]
+    public async Task It_keeps_each_clients_data_store_assignment()
+    {
+        var firstState = await _applicationRepository.GetApplicationUpdateState(_applicationId, _clientId);
+        var secondState = await _applicationRepository.GetApplicationUpdateState(
+            _applicationId,
+            _secondClientId
+        );
+
+        ((ApplicationUpdateStateResult.Success)firstState)
+            .State.ClientDataStoreIds.Should()
+            .Equal(_dataStoreId1);
+        ((ApplicationUpdateStateResult.Success)secondState)
+            .State.ClientDataStoreIds.Should()
+            .Equal(_dataStoreId2);
+    }
+
+    [Test]
+    public async Task It_reports_the_aggregate_data_stores()
+    {
+        var getResult = await _applicationRepository.GetApplication(_applicationId);
+
+        ((ApplicationGetResult.Success)getResult)
+            .ApplicationResponse.DataStoreIds.Should()
+            .BeEquivalentTo([_dataStoreId1, _dataStoreId2]);
+    }
+
+    [Test]
+    public async Task It_applies_the_application_scoped_fields()
+    {
+        var getResult = await _applicationRepository.GetApplication(_applicationId);
+
+        var application = ((ApplicationGetResult.Success)getResult).ApplicationResponse;
+        application.ApplicationName.Should().Be("Updated Consistency Application");
+        application.ClaimSetName.Should().Be("UpdatedClaimSet");
+        application.EducationOrganizationIds.Should().Equal(300L);
+    }
+
+    [Test]
+    public async Task It_updates_only_the_selected_clients_uuid()
+    {
+        (await ReadStoredClientUuidAsync(_clientId)).Should().Be(_newClientUuid);
+        (await ReadStoredClientUuidAsync(_secondClientId)).Should().Be(_secondClientUuid);
+    }
+}
+
+[TestFixture]
 public class Given_a_client_uuid_sync_with_the_expected_stored_value : ConsistencyOperationTestBase
 {
     private Guid _newUuid;

@@ -439,7 +439,7 @@ internal static class MssqlProfileSeparateTableMergeSupport
         );
     }
 
-    public static async Task<long> SeedSchoolTypeDescriptorAsync(
+    public static async Task<int> SeedSchoolTypeDescriptorAsync(
         MssqlGeneratedDdlTestDatabase database,
         Guid documentUuid,
         string @namespace,
@@ -448,39 +448,36 @@ internal static class MssqlProfileSeparateTableMergeSupport
     )
     {
         var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "SchoolTypeDescriptor");
+        await database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentRowAsync(database, documentUuid, resourceKeyId);
         var uri = $"{@namespace}#{codeValue}";
-        const string discriminator = "Ed-Fi:SchoolTypeDescriptor";
-        await database.ExecuteNonQueryAsync(
+        var descriptorId = await database.ExecuteScalarAsync<int>(
             """
+            DECLARE @descriptor TABLE ([DescriptorId] int);
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
                 [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
-                [Description],
-                [Discriminator],
-                [Uri]
+                [Description]
             )
+            OUTPUT INSERTED.[DescriptorId] INTO @descriptor ([DescriptorId])
             VALUES (
                 @documentId,
                 @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @shortDescription,
-                @discriminator,
-                @uri
+                @shortDescription
             );
+            SELECT [DescriptorId] FROM @descriptor;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
-            new SqlParameter("@shortDescription", shortDescription),
-            new SqlParameter("@discriminator", discriminator),
-            new SqlParameter("@uri", uri)
+            new SqlParameter("@shortDescription", shortDescription)
         );
 
         var descriptorResourceInfo = new BaseResourceInfo(
@@ -497,7 +494,7 @@ internal static class MssqlProfileSeparateTableMergeSupport
         );
         await InsertReferentialIdentityRowAsync(database, referentialId.Value, documentId, resourceKeyId);
 
-        return documentId;
+        return descriptorId;
     }
 
     /// <summary>

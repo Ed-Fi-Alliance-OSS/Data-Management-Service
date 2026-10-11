@@ -41,7 +41,7 @@ public class Given_DocumentReconstituter_With_A_Runtime_Compiled_Page_For_Canoni
             1L,
             readPlan,
             hydratedPage.TableRowsInDependencyOrder,
-            new Dictionary<long, string>()
+            new Dictionary<int, string>()
         );
     }
 

@@ -635,7 +635,7 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
     {
         // Grade -> GradingPeriod: the basis stores GradingPeriodDescriptor as a *_DescriptorId FK while the
         // Grade tombstone stores its old Namespace/CodeValue, so the seek resolves the descriptor row under
-        // the same two-value discriminator shape TrackedChangeQueryPlanner.BuildDescriptorIdentityJoin binds.
+        // the same qualified resource-key routing as recreated-row suppression.
         var plan = CustomViewOnlyPlan(
             CustomView(
                 "GradingPeriodWithX",
@@ -654,7 +654,8 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
                             Col("GradingPeriodDescriptor_DescriptorId"),
                             Col("OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace"),
                             Col("OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue"),
-                            _gradingPeriodDescriptor
+                            _gradingPeriodDescriptor,
+                            17
                         ),
                     ],
                     []
@@ -668,22 +669,19 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
             .Predicates.Should()
             .Equal(
                 "EXISTS (SELECT 1 FROM \"edfi\".\"GradingPeriod\" b"
-                    + " LEFT JOIN \"dms\".\"Descriptor\" d0 ON d0.\"Discriminator\" IN (@CustomViewDescriptorDiscriminator0, @CustomViewDescriptorDiscriminatorQualified0)"
+                    + " LEFT JOIN \"dms\".\"Descriptor\" d0 ON d0.\"ResourceKeyId\" = @CustomViewDescriptorResourceKeyId0"
                     + " AND d0.\"Namespace\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace\""
                     + " AND d0.\"CodeValue\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue\""
                     + " WHERE b.\"GradingPeriodName\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodName\""
                     + " AND b.\"SchoolId\" = c.\"OldSchoolId_Unified\""
                     + " AND b.\"SchoolYear\" = c.\"OldSchoolYear_Unified\""
-                    + " AND b.\"GradingPeriodDescriptor_DescriptorId\" = d0.\"DocumentId\""
+                    + " AND b.\"GradingPeriodDescriptor_DescriptorId\" = d0.\"DescriptorId\""
                     + " AND b.\"DocumentId\" IN (SELECT \"DocumentId\" FROM \"auth\".\"GradingPeriodWithX\"))"
             );
         result
             .Parameters.Select(parameter => (parameter.Name, parameter.Value))
             .Should()
-            .Equal(
-                ("@CustomViewDescriptorDiscriminator0", "GradingPeriodDescriptor"),
-                ("@CustomViewDescriptorDiscriminatorQualified0", "Ed-Fi:GradingPeriodDescriptor")
-            );
+            .Equal(("@CustomViewDescriptorResourceKeyId0", (short)17));
     }
 
     [Test]
@@ -705,7 +703,8 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
                             Col("GradingPeriodDescriptor_DescriptorId"),
                             Col("OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace"),
                             Col("OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue"),
-                            _gradingPeriodDescriptor
+                            _gradingPeriodDescriptor,
+                            17
                         ),
                     ],
                     [
@@ -739,18 +738,18 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
             .Equal(
                 "EXISTS (SELECT 1 FROM ("
                     + "SELECT b.\"DocumentId\" AS \"DocumentId\" FROM \"edfi\".\"GradingPeriod\" b"
-                    + " LEFT JOIN \"dms\".\"Descriptor\" d0 ON d0.\"Discriminator\" IN (@CustomViewDescriptorDiscriminator0, @CustomViewDescriptorDiscriminatorQualified0)"
+                    + " LEFT JOIN \"dms\".\"Descriptor\" d0 ON d0.\"ResourceKeyId\" = @CustomViewDescriptorResourceKeyId0"
                     + " AND d0.\"Namespace\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace\""
                     + " AND d0.\"CodeValue\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue\""
                     + " WHERE b.\"GradingPeriodName\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodName\""
-                    + " AND b.\"GradingPeriodDescriptor_DescriptorId\" = d0.\"DocumentId\""
+                    + " AND b.\"GradingPeriodDescriptor_DescriptorId\" = d0.\"DescriptorId\""
                     + " UNION SELECT t.\"DocumentId\" FROM \"tracked_changes_edfi\".\"GradingPeriod\" t"
                     + " WHERE t.\"OldGradingPeriodName\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodName\""
                     + " AND t.\"OldGradingPeriodDescriptor_Namespace\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace\""
                     + " AND t.\"OldGradingPeriodDescriptor_CodeValue\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue\""
                     + ") basis WHERE basis.\"DocumentId\" IN (SELECT \"DocumentId\" FROM \"auth\".\"GradingPeriodWithXIncludingDeletes\"))"
             );
-        result.Parameters.Should().HaveCount(2);
+        result.Parameters.Should().HaveCount(1);
     }
 
     [Test]
@@ -801,7 +800,7 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
     [TestCase(
         SqlDialect.Pgsql,
         "EXISTS (SELECT 1 FROM \"dms\".\"Descriptor\" d"
-            + " WHERE d.\"Discriminator\" IN (@CustomViewDescriptorDiscriminator0, @CustomViewDescriptorDiscriminatorQualified0)"
+            + " WHERE d.\"ResourceKeyId\" = @CustomViewDescriptorResourceKeyId0"
             + " AND d.\"Namespace\" = c.\"OldGradeTypeDescriptor_Namespace\""
             + " AND d.\"CodeValue\" = c.\"OldGradeTypeDescriptor_CodeValue\""
             + " AND d.\"DocumentId\" IN (SELECT \"DocumentId\" FROM \"auth\".\"GradeTypeDescriptorWithX\"))"
@@ -809,12 +808,12 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
     [TestCase(
         SqlDialect.Mssql,
         "EXISTS (SELECT 1 FROM [dms].[Descriptor] d"
-            + " WHERE d.[Discriminator] IN (@CustomViewDescriptorDiscriminator0, @CustomViewDescriptorDiscriminatorQualified0)"
+            + " WHERE d.[ResourceKeyId] = @CustomViewDescriptorResourceKeyId0"
             + " AND d.[Namespace] = c.[OldGradeTypeDescriptor_Namespace]"
             + " AND d.[CodeValue] = c.[OldGradeTypeDescriptor_CodeValue]"
             + " AND d.[DocumentId] IN (SELECT [DocumentId] FROM [auth].[GradeTypeDescriptorWithX]))"
     )]
-    public void It_seeks_a_descriptor_basis_in_dms_descriptor_under_its_discriminator(
+    public void It_seeks_a_descriptor_basis_in_dms_descriptor_under_its_resource_key(
         SqlDialect dialect,
         string expectedPredicate
     )
@@ -826,6 +825,7 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
                 _gradeTypeDescriptor,
                 new ReadChangesCustomViewBasis.DescriptorSeek(
                     _gradeTypeDescriptor,
+                    23,
                     Col("OldGradeTypeDescriptor_Namespace"),
                     Col("OldGradeTypeDescriptor_CodeValue"),
                     ProbeArm: null
@@ -839,10 +839,7 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
         result
             .Parameters.Select(parameter => (parameter.Name, parameter.Value))
             .Should()
-            .Equal(
-                ("@CustomViewDescriptorDiscriminator0", "GradeTypeDescriptor"),
-                ("@CustomViewDescriptorDiscriminatorQualified0", "Ed-Fi:GradeTypeDescriptor")
-            );
+            .Equal(("@CustomViewDescriptorResourceKeyId0", (short)23));
     }
 
     [Test]
@@ -855,12 +852,13 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
                 _gradingPeriodDescriptor,
                 new ReadChangesCustomViewBasis.DescriptorSeek(
                     _gradingPeriodDescriptor,
+                    17,
                     Col("OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace"),
                     Col("OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue"),
                     new ReadChangesCustomViewDescriptorProbeArm(
                         new DbTableName(_tracked, "Descriptor"),
                         _documentId,
-                        Col("Discriminator"),
+                        Col("ResourceKeyId"),
                         Col("OldNamespace"),
                         Col("OldCodeValue")
                     )
@@ -875,11 +873,11 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
             .Equal(
                 "EXISTS (SELECT 1 FROM ("
                     + "SELECT d.\"DocumentId\" AS \"DocumentId\" FROM \"dms\".\"Descriptor\" d"
-                    + " WHERE d.\"Discriminator\" IN (@CustomViewDescriptorDiscriminator0, @CustomViewDescriptorDiscriminatorQualified0)"
+                    + " WHERE d.\"ResourceKeyId\" = @CustomViewDescriptorResourceKeyId0"
                     + " AND d.\"Namespace\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace\""
                     + " AND d.\"CodeValue\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue\""
                     + " UNION SELECT t.\"DocumentId\" FROM \"tracked_changes_edfi\".\"Descriptor\" t"
-                    + " WHERE t.\"Discriminator\" IN (@CustomViewDescriptorDiscriminator0, @CustomViewDescriptorDiscriminatorQualified0)"
+                    + " WHERE t.\"ResourceKeyId\" = @CustomViewDescriptorResourceKeyId0"
                     + " AND t.\"OldNamespace\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace\""
                     + " AND t.\"OldCodeValue\" = c.\"OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue\""
                     + ") basis WHERE basis.\"DocumentId\" IN (SELECT \"DocumentId\" FROM \"auth\".\"GradingPeriodDescriptorWithXIncludingDeletes\"))"
@@ -887,14 +885,11 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
         result
             .Parameters.Select(parameter => (parameter.Name, parameter.Value))
             .Should()
-            .Equal(
-                ("@CustomViewDescriptorDiscriminator0", "GradingPeriodDescriptor"),
-                ("@CustomViewDescriptorDiscriminatorQualified0", "Ed-Fi:GradingPeriodDescriptor")
-            );
+            .Equal(("@CustomViewDescriptorResourceKeyId0", (short)17));
     }
 
     [Test]
-    public void It_numbers_descriptor_discriminator_parameters_across_the_custom_views_of_one_plan()
+    public void It_numbers_descriptor_resource_key_parameters_across_the_custom_views_of_one_plan()
     {
         var plan = CustomViewOnlyPlan(
             CustomView(
@@ -903,6 +898,7 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
                 _gradeTypeDescriptor,
                 new ReadChangesCustomViewBasis.DescriptorSeek(
                     _gradeTypeDescriptor,
+                    23,
                     Col("OldGradeTypeDescriptor_Namespace"),
                     Col("OldGradeTypeDescriptor_CodeValue"),
                     ProbeArm: null
@@ -921,7 +917,8 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
                             Col("GradingPeriodDescriptor_DescriptorId"),
                             Col("OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace"),
                             Col("OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue"),
-                            _gradingPeriodDescriptor
+                            _gradingPeriodDescriptor,
+                            17
                         ),
                     ],
                     []
@@ -932,23 +929,12 @@ public class Given_TrackedChangeAuthorizationSqlEmitter_CustomViews
         var result = Emit(plan, SqlDialect.Pgsql);
 
         result.Predicates.Should().HaveCount(2);
-        result
-            .Predicates[0]
-            .Should()
-            .Contain("@CustomViewDescriptorDiscriminator0, @CustomViewDescriptorDiscriminatorQualified0");
-        result
-            .Predicates[1]
-            .Should()
-            .Contain("@CustomViewDescriptorDiscriminator1, @CustomViewDescriptorDiscriminatorQualified1");
+        result.Predicates[0].Should().Contain("@CustomViewDescriptorResourceKeyId0");
+        result.Predicates[1].Should().Contain("@CustomViewDescriptorResourceKeyId1");
         result
             .Parameters.Select(parameter => parameter.Name)
             .Should()
-            .Equal(
-                "@CustomViewDescriptorDiscriminator0",
-                "@CustomViewDescriptorDiscriminatorQualified0",
-                "@CustomViewDescriptorDiscriminator1",
-                "@CustomViewDescriptorDiscriminatorQualified1"
-            );
+            .Equal("@CustomViewDescriptorResourceKeyId0", "@CustomViewDescriptorResourceKeyId1");
     }
 
     [Test]

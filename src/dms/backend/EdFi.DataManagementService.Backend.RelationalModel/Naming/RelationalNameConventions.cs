@@ -26,6 +26,11 @@ public static class RelationalNameConventions
     public static DbColumnName DocumentIdColumnName { get; } = new("DocumentId");
 
     /// <summary>
+    /// The independently allocated Int32 primary key of <c>dms.Descriptor</c>.
+    /// </summary>
+    public static DbColumnName DescriptorKeyColumnName { get; } = new("DescriptorId");
+
+    /// <summary>
     /// Returns <c>true</c> when the column name represents a document ID — either the root
     /// <c>DocumentId</c> or a prefixed variant such as <c>School_DocumentId</c>.
     /// </summary>

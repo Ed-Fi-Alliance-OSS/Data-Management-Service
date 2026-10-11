@@ -69,7 +69,7 @@ public enum ColumnKind
     DocumentFk,
 
     /// <summary>
-    /// A foreign key to <c>dms.Descriptor</c> (stored as <c>DescriptorId</c> / <c>DocumentId</c>).
+    /// An Int32 foreign key to the independently allocated <c>dms.Descriptor.DescriptorId</c>.
     /// </summary>
     DescriptorFk,
 
@@ -782,8 +782,8 @@ public enum TrackedChangeTableKind
 
     /// <summary>
     /// The single shared descriptor tracked-change table (<c>tracked_changes_*.Descriptor</c>) covering
-    /// every <see cref="ResourceStorageKind.SharedDescriptorTable"/> resource, discriminated by
-    /// <see cref="TrackedChangeSystemColumnRole.Discriminator"/>.
+    /// every <see cref="ResourceStorageKind.SharedDescriptorTable"/> resource, routed by
+    /// <see cref="TrackedChangeSystemColumnRole.ResourceKeyId"/>.
     /// </summary>
     SharedDescriptor,
 }
@@ -871,8 +871,8 @@ public enum TrackedChangeSystemColumnRole
     CreatedAt,
 
     /// <summary>
-    /// <c>Discriminator</c> — present only on the shared descriptor tracked-change table; identifies the
-    /// concrete descriptor type.
+    /// <c>ResourceKeyId</c> — the owning document's qualified descriptor type key, copied from the
+    /// deleted descriptor row. Present only on the shared descriptor tracked-change table.
     /// </summary>
-    Discriminator,
+    ResourceKeyId,
 }

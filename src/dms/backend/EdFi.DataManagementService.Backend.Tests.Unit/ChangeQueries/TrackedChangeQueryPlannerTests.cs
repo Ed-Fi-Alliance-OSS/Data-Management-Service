@@ -6,6 +6,7 @@
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.ChangeQueries;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Model;
 using FakeItEasy;
 using FluentAssertions;
@@ -681,14 +682,13 @@ public class Given_TrackedChangeQueryPlanner
         string sql = NormalizeSql(plan.Command!.CommandText);
         sql.Should()
             .Contain(
-                "LEFT JOIN \"dms\".\"Descriptor\" descriptor_0 ON descriptor_0.\"Discriminator\" IN (@DescriptorDiscriminator0, @DescriptorDiscriminatorQualified0) AND descriptor_0.\"Namespace\" = c.\"OldProgramTypeDescriptor_Namespace\" AND descriptor_0.\"CodeValue\" = c.\"OldProgramTypeDescriptor_CodeValue\""
+                "LEFT JOIN \"dms\".\"Descriptor\" descriptor_0 ON descriptor_0.\"ResourceKeyId\" = @DescriptorResourceKeyId0 AND descriptor_0.\"Namespace\" = c.\"OldProgramTypeDescriptor_Namespace\" AND descriptor_0.\"CodeValue\" = c.\"OldProgramTypeDescriptor_CodeValue\""
             );
         sql.Should()
             .Contain(
-                "LEFT JOIN \"edfi\".\"School\" live ON live.\"ProgramTypeDescriptorId\" = descriptor_0.\"DocumentId\""
+                "LEFT JOIN \"edfi\".\"School\" live ON live.\"ProgramTypeDescriptorId\" = descriptor_0.\"DescriptorId\""
             );
-        AssertParameter(plan.Command, "@DescriptorDiscriminator0", "ProgramTypeDescriptor");
-        AssertParameter(plan.Command, "@DescriptorDiscriminatorQualified0", "Ed-Fi:ProgramTypeDescriptor");
+        AssertParameter(plan.Command, "@DescriptorResourceKeyId0", (short)17);
         sql.Should().Contain("live.\"DocumentId\" IS NULL");
         sql.Should()
             .NotContain("live.\"ProgramTypeDescriptorId\" = c.\"OldProgramTypeDescriptor_Namespace\"");
@@ -747,10 +747,9 @@ public class Given_TrackedChangeQueryPlanner
         string sql = NormalizeSql(plan.Command!.CommandText);
         sql.Should()
             .Contain(
-                "LEFT JOIN \"edfi\".\"School\" live ON live.\"ProgramTypeDescriptorId\" = descriptor_0.\"DocumentId\""
+                "LEFT JOIN \"edfi\".\"School\" live ON live.\"ProgramTypeDescriptorId\" = descriptor_0.\"DescriptorId\""
             );
-        AssertParameter(plan.Command, "@DescriptorDiscriminator0", "ProgramTypeDescriptor");
-        AssertParameter(plan.Command, "@DescriptorDiscriminatorQualified0", "Ed-Fi:ProgramTypeDescriptor");
+        AssertParameter(plan.Command, "@DescriptorResourceKeyId0", (short)17);
     }
 
     [Test]
@@ -818,7 +817,7 @@ public class Given_TrackedChangeQueryPlanner
     }
 
     [Test]
-    public void It_filters_shared_descriptor_deletes_by_resource_discriminator()
+    public void It_filters_shared_descriptor_deletes_by_qualified_resource_key()
     {
         TrackedChangeColumnInfo namespaceColumn = ValueColumn(
             "Namespace",
@@ -857,13 +856,12 @@ public class Given_TrackedChangeQueryPlanner
         plan.Command.Should().NotBeNull();
         RelationalCommand command = plan.Command!;
         string sql = NormalizeSql(command.CommandText);
-        sql.Should().Contain("c.\"Discriminator\" IN (@Discriminator, @QualifiedDiscriminator)");
-        AssertParameter(command, "@Discriminator", "ProgramTypeDescriptor");
-        AssertParameter(command, "@QualifiedDiscriminator", "Ed-Fi:ProgramTypeDescriptor");
+        sql.Should().Contain("c.\"ResourceKeyId\" = @ResourceKeyId");
+        AssertParameter(command, "@ResourceKeyId", (short)17);
     }
 
     [Test]
-    public void It_suppresses_recreated_descriptors_by_discriminator_namespace_and_code_value()
+    public void It_suppresses_recreated_descriptors_by_resource_key_namespace_and_code_value()
     {
         TrackedChangeColumnInfo namespaceColumn = ValueColumn(
             "Namespace",
@@ -903,7 +901,7 @@ public class Given_TrackedChangeQueryPlanner
         string sql = NormalizeSql(plan.Command!.CommandText);
         sql.Should()
             .Contain(
-                "LEFT JOIN \"dms\".\"Descriptor\" live ON live.\"Discriminator\" IN (@Discriminator, @QualifiedDiscriminator) AND live.\"Namespace\" = c.\"OldNamespace\" AND live.\"CodeValue\" = c.\"OldCodeValue\""
+                "LEFT JOIN \"dms\".\"Descriptor\" live ON live.\"ResourceKeyId\" = @ResourceKeyId AND live.\"Namespace\" = c.\"OldNamespace\" AND live.\"CodeValue\" = c.\"OldCodeValue\""
             );
         sql.Should().Contain("live.\"DocumentId\" IS NULL");
     }
@@ -1013,7 +1011,7 @@ public class Given_TrackedChangeQueryPlanner
 
     // DMS-1193 Task 47: a custom-view predicate is one more authorization AND term. It must land inside the
     // /deletes filtered subquery WHERE after the tombstone and change-version conditions, correlated on c,
-    // and its descriptor discriminator parameters ride along with the command's parameters.
+    // and its descriptor resource-key parameters ride along with the command's parameters.
     [Test]
     public void It_places_a_custom_view_predicate_after_the_tombstone_and_version_conditions_in_deletes_sql()
     {
@@ -1038,16 +1036,10 @@ public class Given_TrackedChangeQueryPlanner
         );
 
         const string customViewPredicate =
-            "EXISTS (SELECT 1 FROM \"dms\".\"Descriptor\" d WHERE d.\"Discriminator\" IN (@CustomViewDescriptorDiscriminator0, @CustomViewDescriptorDiscriminatorQualified0) AND d.\"DocumentId\" IN (SELECT \"DocumentId\" FROM \"auth\".\"SchoolTypeDescriptorWithX\"))";
+            "EXISTS (SELECT 1 FROM \"dms\".\"Descriptor\" d WHERE d.\"ResourceKeyId\" = @CustomViewDescriptorResourceKeyId0 AND d.\"DocumentId\" IN (SELECT \"DocumentId\" FROM \"auth\".\"SchoolTypeDescriptorWithX\"))";
         var authSql = new TrackedChangeAuthorizationSql(
             [customViewPredicate],
-            [
-                new RelationalParameter("@CustomViewDescriptorDiscriminator0", "SchoolTypeDescriptor"),
-                new RelationalParameter(
-                    "@CustomViewDescriptorDiscriminatorQualified0",
-                    "Ed-Fi:SchoolTypeDescriptor"
-                ),
-            ]
+            [new RelationalParameter("@CustomViewDescriptorResourceKeyId0", (short)23)]
         );
 
         var sut = new TrackedChangeQueryPlanner(SqlDialect.Pgsql);
@@ -1069,7 +1061,7 @@ public class Given_TrackedChangeQueryPlanner
         liveJoinIndex.Should().BeGreaterThan(customViewIndex);
         plan.Command!.Parameters.Select(p => p.Name)
             .Should()
-            .EndWith(["@CustomViewDescriptorDiscriminator0", "@CustomViewDescriptorDiscriminatorQualified0"]);
+            .EndWith(["@CustomViewDescriptorResourceKeyId0"]);
     }
 
     [Test]
@@ -1177,6 +1169,7 @@ public class Given_TrackedChangeQueryPlanner
         A.CallTo(() => request.ChangeVersionRange).Returns(changeVersionRange ?? ChangeVersionRange.None);
         A.CallTo(() => request.ResourceModel).Returns(resourceModel ?? CreateRegularResourceModel());
         A.CallTo(() => request.TrackedChangeTable).Returns(trackedChangeTable);
+        A.CallTo(() => request.MappingSet).Returns(CreateMappingSet());
 
         return request;
     }
@@ -1211,7 +1204,9 @@ public class Given_TrackedChangeQueryPlanner
         return new TrackedChangeSystemColumnInfo(
             role,
             new DbColumnName(columnName),
-            new RelationalScalarType(ScalarKind.Int64),
+            role is TrackedChangeSystemColumnRole.ResourceKeyId
+                ? null
+                : new RelationalScalarType(ScalarKind.Int64),
             IsNullable: false,
             IsPrimaryKey: false
         );
@@ -1261,7 +1256,7 @@ public class Given_TrackedChangeQueryPlanner
 
         if (kind is TrackedChangeTableKind.SharedDescriptor)
         {
-            columns.Add(SystemColumn(TrackedChangeSystemColumnRole.Discriminator, "Discriminator"));
+            columns.Add(SystemColumn(TrackedChangeSystemColumnRole.ResourceKeyId, "ResourceKeyId"));
         }
 
         return columns;
@@ -1317,7 +1312,7 @@ public class Given_TrackedChangeQueryPlanner
             [
                 RootColumn("Namespace", "$.namespace"),
                 RootColumn("CodeValue", "$.codeValue"),
-                RootColumn("Discriminator", sourceJsonPath: null),
+                RootColumn("ResourceKeyId", sourceJsonPath: null),
             ],
             descriptorEdgeSources: []
         );
@@ -1363,11 +1358,50 @@ public class Given_TrackedChangeQueryPlanner
         new(
             new DbColumnName(columnName),
             kind,
-            new RelationalScalarType(ScalarKind.String),
+            new RelationalScalarType(kind is ColumnKind.DescriptorFk ? ScalarKind.Int32 : ScalarKind.String),
             IsNullable: false,
             SourceJsonPath: sourceJsonPath is null ? null : Path(sourceJsonPath),
             TargetResource: null
         );
+
+    private static MappingSet CreateMappingSet(SqlDialect dialect = SqlDialect.Pgsql)
+    {
+        ResourceKeyEntry[] resourceKeys =
+        [
+            new(17, _programTypeDescriptorResource, "1.0", false),
+            new(29, new("Sample", "ProgramTypeDescriptor"), "1.0", false),
+        ];
+
+        return new MappingSet(
+            Key: new MappingSetKey("schema-hash", dialect, "v1"),
+            Model: new DerivedRelationalModelSet(
+                new EffectiveSchemaInfo(
+                    ApiSchemaFormatVersion: "5.2",
+                    RelationalMappingVersion: "v1",
+                    EffectiveSchemaHash: "schema-hash",
+                    ResourceKeyCount: 2,
+                    ResourceKeySeedHash: new byte[32],
+                    SchemaComponentsInEndpointOrder: [],
+                    ResourceKeysInIdOrder: resourceKeys
+                ),
+                dialect,
+                ProjectSchemasInEndpointOrder: [],
+                ConcreteResourcesInNameOrder: [],
+                AbstractIdentityTablesInNameOrder: [],
+                AbstractUnionViewsInNameOrder: [],
+                IndexesInCreateOrder: [],
+                TriggersInCreateOrder: []
+            ),
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: resourceKeys.ToDictionary(key => key.Resource, key => key.ResourceKeyId),
+            ResourceKeyById: resourceKeys.ToDictionary(key => key.ResourceKeyId),
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<ResolvedSecurableElementPath>
+            >()
+        );
+    }
 
     private static JsonPathExpression Path(string canonical) => new(canonical, []);
 

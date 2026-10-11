@@ -227,6 +227,8 @@ internal abstract class CdcStateProviderOperations(
 
     public abstract string UpsertSourceIdentitySql { get; }
 
+    public abstract string PrepareDescriptorSeedSql { get; }
+
     public abstract string SeedCanonicalDescriptorSql { get; }
 
     public abstract string ReadCanonicalContentVersionSql { get; }
@@ -306,6 +308,9 @@ internal sealed class PostgresqlCdcStateProviderOperations()
             SET "SourceIdentity" = EXCLUDED."SourceIdentity";
             """;
 
+    public override string PrepareDescriptorSeedSql =>
+        CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql;
+
     public override string SeedCanonicalDescriptorSql =>
         """
             WITH resource_key AS (
@@ -324,14 +329,14 @@ internal sealed class PostgresqlCdcStateProviderOperations()
             )
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription",
-                "Discriminator", "Uri", "ContentVersion", "ContentLastModifiedAt"
+                "ContentVersion", "ContentLastModifiedAt"
             )
             SELECT
                 inserted_document."DocumentId", inserted_document."ResourceKeyId", @namespace,
-                @codeValue, @shortDescription, 'SchoolTypeDescriptor', @uri,
+                @codeValue, @shortDescription,
                 inserted_document."ContentVersion", @observedAt
             FROM inserted_document
-            RETURNING "DocumentId";
+            RETURNING "DocumentId", "DescriptorId";
             """;
 
     public override string ReadCanonicalContentVersionSql =>
@@ -470,6 +475,9 @@ internal sealed class SqlServerCdcStateProviderOperations()
             WHERE [DataStoreIdentitySingletonId] = 1;
             """;
 
+    public override string PrepareDescriptorSeedSql =>
+        CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql;
+
     public override string SeedCanonicalDescriptorSql =>
         """
             DECLARE @inserted_document TABLE
@@ -495,15 +503,16 @@ internal sealed class SqlServerCdcStateProviderOperations()
 
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription],
-                [Discriminator], [Uri], [ContentVersion], [ContentLastModifiedAt]
+                [ContentVersion], [ContentLastModifiedAt]
             )
             SELECT
                 [DocumentId], [ResourceKeyId], @namespace, @codeValue, @shortDescription,
-                N'SchoolTypeDescriptor', @uri, [ContentVersion], @observedAt
+                [ContentVersion], @observedAt
             FROM @inserted_document;
 
-            SELECT [DocumentId]
-            FROM @inserted_document;
+            SELECT descriptor.[DocumentId], descriptor.[DescriptorId]
+            FROM [dms].[Descriptor] descriptor
+            JOIN @inserted_document document ON document.[DocumentId] = descriptor.[DocumentId];
             """;
 
     public override string ReadCanonicalContentVersionSql =>
@@ -593,7 +602,14 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
     )
     {
         SeededDocument source = await SeedCanonicalDescriptorAsync(cancellationToken);
+        (await ReadRequiredContentVersionAsync(source.DocumentId, cancellationToken))
+            .Should()
+            .Be(source.ContentVersion);
+        (await ReadProjectionWorkCountAsync(source.DocumentId, cancellationToken)).Should().Be(1);
+        (await ReadProjectionWorkCountAsync(source.DescriptorId, cancellationToken)).Should().Be(0);
+        await AssertDescriptorStampsAsync(source, source.ContentVersion, cancellationToken);
         await DrainOrdinaryProjectorAsync(cancellationToken);
+        await AssertCacheOwnershipAsync(source, cancellationToken);
         CdcStateRecord original = (await ConsumeRecordsAsync(1, cancellationToken))[0];
         original.Value.GetProperty("contentVersion").GetInt64().Should().Be(source.ContentVersion);
 
@@ -603,8 +619,12 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
         (await ReadRequiredContentVersionAsync(source.DocumentId, cancellationToken))
             .Should()
             .Be(canonicalVersion);
+        (await ReadProjectionWorkCountAsync(source.DocumentId, cancellationToken)).Should().Be(1);
+        (await ReadProjectionWorkCountAsync(source.DescriptorId, cancellationToken)).Should().Be(0);
+        await AssertDescriptorStampsAsync(source, canonicalVersion, cancellationToken);
 
         await DrainOrdinaryProjectorAsync(cancellationToken);
+        await AssertCacheOwnershipAsync(source, cancellationToken);
         (await ReadProjectionWorkCountAsync(source.DocumentId, cancellationToken)).Should().Be(0);
         (await ReadCacheContentVersionAsync(source.DocumentId, cancellationToken))
             .Should()
@@ -685,6 +705,8 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
         );
         await connection.OpenAsync(cancellationToken);
         await using DbCommand command = connection.CreateCommand();
+        command.CommandText = _providerOperations.PrepareDescriptorSeedSql;
+        await command.ExecuteNonQueryAsync(cancellationToken);
         command.CommandText = _providerOperations.SeedCanonicalDescriptorSql;
         DateTimeOffset observedAt = DateTimeOffset.UtcNow;
         command.Parameters.Add(_providerOperations.Parameter("documentUuid", Guid.Parse(DocumentUuid)));
@@ -696,13 +718,17 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
         );
         command.Parameters.Add(_providerOperations.Parameter("codeValue", "RestampCdc"));
         command.Parameters.Add(_providerOperations.Parameter("shortDescription", "Restamp CDC"));
-        command.Parameters.Add(
-            _providerOperations.Parameter("uri", "uri://ed-fi.org/SchoolTypeDescriptor#RestampCdc")
-        );
-
-        long documentId = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken));
+        long documentId;
+        int descriptorId;
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+        {
+            (await reader.ReadAsync(cancellationToken)).Should().BeTrue();
+            documentId = reader.GetInt64(0);
+            descriptorId = reader.GetInt32(1);
+        }
+        ((long)descriptorId).Should().NotBe(documentId);
         long contentVersion = await ReadCanonicalContentVersionAsync(documentId, cancellationToken);
-        return new SeededDocument(documentId, Guid.Parse(DocumentUuid), contentVersion);
+        return new SeededDocument(documentId, Guid.Parse(DocumentUuid), contentVersion, descriptorId);
     }
 
     private async Task ExecuteTrackingRestampAsync(Guid documentUuid, CancellationToken cancellationToken)
@@ -890,6 +916,49 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private string Quote(string name) =>
+        _providerOperations.Provider == CdcProvider.Postgresql ? $"\"{name}\"" : $"[{name}]";
+
+    private async Task AssertCacheOwnershipAsync(SeededDocument source, CancellationToken cancellationToken)
+    {
+        string sql =
+            $"SELECT COUNT(*) FROM {Quote("dms")}.{Quote("DocumentCache")} WHERE {Quote("DocumentId")} = @documentId;";
+        (await ReadScalarAsync(sql, source.DocumentId, cancellationToken)).Should().Be(1);
+        (await ReadScalarAsync(sql, source.DescriptorId, cancellationToken)).Should().Be(0);
+    }
+
+    private async Task AssertDescriptorStampsAsync(
+        SeededDocument source,
+        long expectedVersion,
+        CancellationToken cancellationToken
+    )
+    {
+        await using DbConnection connection = _providerOperations.OpenConnection(
+            await ConnectionStringAsync(cancellationToken)
+        );
+        await connection.OpenAsync(cancellationToken);
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText = $"""
+            SELECT descriptor.{Quote("DescriptorId")}, descriptor.{Quote("DocumentId")},
+                   document.{Quote("ContentVersion")}, descriptor.{Quote("ContentVersion")},
+                   document.{Quote("ContentLastModifiedAt")}, descriptor.{Quote("ContentLastModifiedAt")}
+            FROM {Quote("dms")}.{Quote("Descriptor")} descriptor
+            JOIN {Quote("dms")}.{Quote("Document")} document ON document.{Quote(
+                "DocumentId"
+            )} = descriptor.{Quote("DocumentId")}
+            WHERE document.{Quote("DocumentId")} = @documentId;
+            """;
+        command.Parameters.Add(_providerOperations.Parameter("documentId", source.DocumentId));
+        await using DbDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        (await reader.ReadAsync(cancellationToken)).Should().BeTrue();
+        reader.GetInt32(0).Should().Be(source.DescriptorId);
+        reader.GetInt64(1).Should().Be(source.DocumentId);
+        reader.GetInt64(2).Should().Be(expectedVersion);
+        reader.GetInt64(3).Should().Be(expectedVersion);
+        reader.GetDateTime(4).Should().Be(reader.GetDateTime(5));
+        (await reader.ReadAsync(cancellationToken)).Should().BeFalse();
+    }
+
     private async Task<long> ReadCanonicalContentVersionAsync(
         long documentId,
         CancellationToken cancellationToken
@@ -940,7 +1009,7 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
             );
     }
 
-    private sealed record SeededDocument(long DocumentId, Guid Uuid, long ContentVersion);
+    private sealed record SeededDocument(long DocumentId, Guid Uuid, long ContentVersion, int DescriptorId);
 
     private sealed class FixedEffectiveSchemaSetProvider(EffectiveSchemaSet effectiveSchemaSet)
         : IEffectiveSchemaSetProvider

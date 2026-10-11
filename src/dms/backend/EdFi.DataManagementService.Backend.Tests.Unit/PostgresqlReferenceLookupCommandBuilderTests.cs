@@ -40,6 +40,8 @@ public class Given_PostgresqlReferenceLookupCommandBuilder
         command.CommandText.Should().Contain("\"VerificationIdentityKey\"");
         command.CommandText.Should().Contain("INNER JOIN dms.\"ReferentialIdentity\"");
         command.CommandText.Should().Contain("LEFT JOIN dms.\"Descriptor\"");
+        command.CommandText.Should().Contain("referentialIdentity.\"DocumentId\" AS \"DocumentId\"");
+        command.CommandText.Should().Contain("descriptor.\"DescriptorId\" AS \"DescriptorId\"");
         command.CommandText.Should().Contain("ORDER BY lookupInput.\"Ordinal\"");
     }
 
@@ -107,16 +109,25 @@ public class Given_PostgresqlReferenceLookupCommandBuilder
         command.CommandText.Should().Contain("FROM \"edfi\".\"SchoolClassification_View\" source");
         command.CommandText.Should().Contain("'$.schoolId='");
         command.CommandText.Should().Contain("'$.educationOrganizationId='");
-        command.CommandText.Should().Contain("'$.descriptor=' || lower(descriptor.\"Uri\")");
+        command
+            .CommandText.Should()
+            .Contain("'$.descriptor=' || lower(descriptor.\"Namespace\" || '#' || descriptor.\"CodeValue\")");
         command.CommandText.Should().Contain("'$.termDescriptor='");
         command.CommandText.Should().Contain("'$.schoolTypeDescriptor='");
         command.CommandText.Should().Contain("FROM dms.\"Descriptor\" descriptor");
+        command.CommandText.Should().Contain("referentialIdentity.\"DocumentId\" AS \"DocumentId\"");
+        command.CommandText.Should().Contain("descriptor.\"DescriptorId\" AS \"DescriptorId\"");
+        command.CommandText.Should().Contain("descriptor.\"DocumentId\" = document.\"DocumentId\"");
         command
             .CommandText.Should()
-            .Contain("descriptor.\"DocumentId\" = source.\"TermDescriptor_DescriptorId\"");
+            .Contain("SELECT descriptor.\"Namespace\" || '#' || descriptor.\"CodeValue\"");
+        command.CommandText.Should().NotContain("descriptor.\"Uri\"");
         command
             .CommandText.Should()
-            .Contain("descriptor.\"DocumentId\" = source.\"SchoolTypeDescriptor_DescriptorId\"");
+            .Contain("descriptor.\"DescriptorId\" = source.\"TermDescriptor_DescriptorId\"");
+        command
+            .CommandText.Should()
+            .Contain("descriptor.\"DescriptorId\" = source.\"SchoolTypeDescriptor_DescriptorId\"");
     }
 
     [Test]

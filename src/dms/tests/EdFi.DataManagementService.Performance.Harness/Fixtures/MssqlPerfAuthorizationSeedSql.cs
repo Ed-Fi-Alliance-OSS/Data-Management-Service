@@ -65,7 +65,7 @@ public static class MssqlPerfAuthorizationSeedSql
                 {seed.SchoolDocumentId},
                 ((s.value * 2 - 1) / 9) * 10 + ((s.value * 2 - 1) % 9) + 2,
                 'perf-' + RIGHT(REPLICATE('0', 9) + CAST(s.value * 2 AS varchar(19)), 9),
-                {seed.GradeLevelDescriptorDocumentId},
+                @{PerfFixtureLoaderParameters.EntryGradeLevelDescriptorId},
                 '{PerfAuthorizationSeedDefinition.EntryDateIso}'
             FROM GENERATE_SERIES(@{PerfFixtureLoaderParameters.FromOrdinal}, @{PerfFixtureLoaderParameters.ToOrdinal}) AS s;
             """;
@@ -169,9 +169,25 @@ public static class MssqlPerfAuthorizationSeedSql
                 "grade-level-descriptor-count",
                 $"""
                 SELECT COUNT(*) FROM [dms].[Descriptor]
-                WHERE [Discriminator] = '{PerfAuthorizationSeedDefinition.GradeLevelDescriptorResource}';
+                WHERE [ResourceKeyId] = (
+                    SELECT [ResourceKeyId] FROM [dms].[ResourceKey]
+                    WHERE [ProjectName] = '{PerfFixtureDefinition.ProjectName}'
+                        AND [ResourceName] = '{PerfAuthorizationSeedDefinition.GradeLevelDescriptorResource}');
                 """,
                 1
+            ),
+            new(
+                "ssa-compact-grade-level-binding",
+                $"""
+                SELECT COUNT(*) FROM [edfi].[StudentSchoolAssociation] ssa
+                INNER JOIN [dms].[Descriptor] descriptor
+                    ON descriptor.[DescriptorId] = ssa.[EntryGradeLevelDescriptor_DescriptorId]
+                INNER JOIN [dms].[ResourceKey] rk ON rk.[ResourceKeyId] = descriptor.[ResourceKeyId]
+                WHERE descriptor.[DocumentId] = {seed.GradeLevelDescriptorDocumentId}
+                    AND rk.[ProjectName] = '{PerfFixtureDefinition.ProjectName}'
+                    AND rk.[ResourceName] = '{PerfAuthorizationSeedDefinition.GradeLevelDescriptorResource}';
+                """,
+                seed.EnrolledStudentCount
             ),
             new(
                 "max-document-id",

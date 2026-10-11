@@ -386,7 +386,8 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
         var insert = DescriptorDocumentInsert(sessionFactory, "[CreatedByOwnershipTokenId]");
         insert
             .CommandText.Should()
-            .Contain("OUTPUT INSERTED.[ContentVersion] INTO @insertedContentVersion ([ContentVersion])");
+            .Contain("OUTPUT INSERTED.[DocumentId], INSERTED.[ContentVersion]")
+            .And.Contain("INTO @insertedDocument ([DocumentId], [ContentVersion])");
     }
 
     private static async Task<RecordingNamespaceWriteSessionFactory> InsertDescriptorWithOwnershipContextAsync(
@@ -2620,7 +2621,6 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             {
                 ["Namespace"] = "uri://other.org/SchoolTypeDescriptor",
                 ["CodeValue"] = "Charter",
-                ["Uri"] = "uri://other.org/SchoolTypeDescriptor#Charter",
                 ["ShortDescription"] = "Charter",
                 ["Description"] = "Charter",
                 ["EffectiveBeginDate"] = new DateOnly(2024, 1, 1),
@@ -2634,7 +2634,6 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
             {
                 ["Namespace"] = "uri://ed-fi.org/SchoolTypeDescriptor",
                 ["CodeValue"] = "Charter",
-                ["Uri"] = "uri://ed-fi.org/SchoolTypeDescriptor#Charter",
                 ["ShortDescription"] = "Charter",
                 ["Description"] = "Original Description",
                 ["EffectiveBeginDate"] = new DateOnly(2024, 1, 1),
@@ -2766,10 +2765,8 @@ public partial class Given_Descriptor_Write_Handler_Namespace_Authorization
                 ShortDescription: new DbColumnName("ShortDescription"),
                 Description: new DbColumnName("Description"),
                 EffectiveBeginDate: new DbColumnName("EffectiveBeginDate"),
-                EffectiveEndDate: new DbColumnName("EffectiveEndDate"),
-                Discriminator: null
-            ),
-            DiscriminatorStrategy.ResourceKeyId
+                EffectiveEndDate: new DbColumnName("EffectiveEndDate")
+            )
         );
 
         return new MappingSet(

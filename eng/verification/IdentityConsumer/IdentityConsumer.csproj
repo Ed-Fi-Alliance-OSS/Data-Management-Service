@@ -1,0 +1,69 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <!--
+        An executable rather than a library, so the lane can run the assertions in Program.cs
+        instead of only compiling the sample. Compiling proves the packed contract carries what the
+        sample's signatures need; it proves nothing about the payloads the sample returns.
+        -->
+        <OutputType>Exe</OutputType>
+        <RootNamespace>Acme.Dms.Identity</RootNamespace>
+    </PropertyGroup>
+
+    <!--
+    Declared as properties so CI can point this at the two versions it just packed without
+    editing a tracked file. Neither default is produced by anything, which is the point: a
+    developer who builds this without packing first gets a restore failure naming a version
+    that does not exist, rather than a quiet success against whatever was lying around.
+
+      ./build-dms.ps1 Package -PackageTarget Identity -Configuration Release
+      ./build-dms.ps1 Package -PackageTarget Plugins -Configuration Release
+
+      Import-Module ./package-helpers.psm1
+      ./eng/verification/Invoke-IdentityConsumerCheck.ps1 `
+        -PackageVersion (Get-IdentityContractVersion) `
+        -PluginsPackageVersion (Get-PluginsContractVersion) `
+        -NuGetPackagesDirectory (Join-Path ([System.IO.Path]::GetTempPath()) "nuget-verify-$([guid]::NewGuid().ToString('N'))")
+
+    Each contract's version is its own surface version and not the DMS release version; the
+    two readers above read the files that declare them. They are passed separately because
+    they move independently of each other.
+
+    Both are pinned exactly, in [brackets]. A bare version is a floor, not a pin, so with more
+    than one nupkg in the local folder feed NuGet resolves a different one and warns via NU1603
+    instead of failing, which would let this check validate an artifact other than the one just
+    packed.
+  -->
+    <PropertyGroup>
+        <IdentityPackageVersion Condition="'$(IdentityPackageVersion)' == ''"
+            >0.0.0-local</IdentityPackageVersion
+        >
+        <PluginsPackageVersion Condition="'$(PluginsPackageVersion)' == ''"
+            >0.0.0-local</PluginsPackageVersion
+        >
+    </PropertyGroup>
+
+    <!--
+    Deliberately outside central package management, and carrying no ProjectReference into
+    src/ - a project reference would defeat the entire point of the check. It is in no .sln and
+    nothing in the repository builds it except the runner beside it.
+
+    It restores both contracts because the samples the identity guide publishes are a provider
+    and the plugin that registers it, and the plugin half needs EdFi.Api.Plugins.
+
+    The two Microsoft.Extensions packages are declared here rather than leaned on transitively,
+    because the plugin sample names IConfiguration and IServiceCollection and an implementer
+    writing it compiles against both assemblies directly. Their versions are deliberately
+    independent of src/Directory.Packages.props and of Dependabot, but they cannot sit below the
+    floor EdFi.Api.Plugins declares: a lower version here is a downgrade that fails this restore.
+  -->
+    <ItemGroup>
+        <PackageReference Include="EdFi.Api.Identity" Version="[$(IdentityPackageVersion)]" />
+        <PackageReference Include="EdFi.Api.Plugins" Version="[$(PluginsPackageVersion)]" />
+        <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.1" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
+    </ItemGroup>
+</Project>

@@ -973,3 +973,141 @@ Feature: Applications endpoints
                     "dataStoreIds": []
                   }
                   """
+
+        # Scenarios 30 and 31 cover applications with more than one API client. They are appended
+        # rather than inserted because test data is only cleaned between features, not between
+        # scenarios.
+        @DMS-1344
+        Scenario: 30 Application PUT leaves every API client's data store assignment unchanged
+            # Captured before the second data store is posted, because each POST to /v3/dataStores
+            # replaces the automatically captured {dataStoreId}.
+             When a GET request is made to "/v3/dataStores/{dataStoreId}"
+             Then it should respond with 200
+              And the response body id is captured as "firstDataStoreId"
+             When a POST request is made to "/v3/dataStores" with
+                  """
+                    {
+                        "dataStoreType": "Test",
+                        "name": "Second Data Store {scenarioRunId}",
+                        "connectionString": "Server=test;Database=SecondTestDb;"
+                    }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "secondDataStoreId"
+             When a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Multi Client Application 30",
+                   "claimSetName": "ClaimScenario30",
+                   "dataStoreIds": [{firstDataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response body has key and secret
+              And the response body credentials are captured as "initial"
+             When a POST request is made to "/v3/apiClients" with
+                  """
+                  {
+                   "applicationId": {applicationId},
+                   "name": "Additional Client 30",
+                   "isApproved": true,
+                   "dataStoreIds": [{secondDataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response body has key and secret
+              And the response body credentials are captured as "additional"
+             When a PUT request is made to "/v3/applications/{applicationId}" with
+                  """
+                  {
+                   "id": {applicationId},
+                   "vendorId": {vendorId},
+                   "applicationName": "Multi Client Application 30 Updated",
+                   "claimSetName": "ClaimScenario30",
+                   "dataStoreIds": [{secondDataStoreId}]
+                  }
+                  """
+             Then it should respond with 204
+             When a GET request is made to "/v3/apiClients/{initialKey}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "id": {id},
+                    "applicationId": {applicationId},
+                    "clientId": "{initialKey}",
+                    "clientUuid": "{clientUuid}",
+                    "name": "Multi Client Application 30",
+                    "isApproved": true,
+                    "creatorOwnershipTokenId": null,
+                    "ownershipTokenIds": [],
+                    "dataStoreIds": [{firstDataStoreId}]
+                  }
+                  """
+             When a GET request is made to "/v3/apiClients/{additionalKey}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "id": {apiClientId},
+                    "applicationId": {applicationId},
+                    "clientId": "{additionalKey}",
+                    "clientUuid": "{clientUuid}",
+                    "name": "Additional Client 30",
+                    "isApproved": true,
+                    "creatorOwnershipTokenId": null,
+                    "ownershipTokenIds": [],
+                    "dataStoreIds": [{secondDataStoreId}]
+                  }
+                  """
+
+        @DMS-1344
+        Scenario: 31 Application credential reset is rejected for a multi-client application
+             When a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Multi Client Application 31",
+                   "claimSetName": "ClaimScenario31",
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response body has key and secret
+              And the response body credentials are captured as "initial"
+             When a POST request is made to "/v3/apiClients" with
+                  """
+                  {
+                   "applicationId": {applicationId},
+                   "name": "Additional Client 31",
+                   "isApproved": true,
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response body has key and secret
+              And the response body credentials are captured as "additional"
+             When a PUT request is made to "/v3/applications/{applicationId}/reset-credential" with
+                  """
+                  {}
+                  """
+             Then it should respond with 409
+              And the response body is
+                  """
+                  {
+                    "detail": "The application has more than one API client. Reset a specific client's credentials with PUT /v3/apiClients/{id}/reset-credential.",
+                    "type": "urn:ed-fi:api:conflict",
+                    "title": "Conflict",
+                    "status": 409,
+                    "validationErrors": {},
+                    "errors": []
+                  }
+                  """
+            # Both original secrets still work, which proves the reset rotated nothing.
+             When a token is requested with the credentials captured as "initial" and scope "ClaimScenario31"
+             Then it should respond with 200
+              And the response body has a non-empty access_token
+             When a token is requested with the credentials captured as "additional" and scope "ClaimScenario31"
+             Then it should respond with 200
+              And the response body has a non-empty access_token

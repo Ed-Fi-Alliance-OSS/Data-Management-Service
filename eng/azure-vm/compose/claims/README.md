@@ -26,8 +26,12 @@ Use `EdFiSandbox` and bind the Application to specific
 `educationOrganizationIds` (e.g. district `255901` = Grand Bend ISD, or a school like
 `255901001`). The client then only sees relationship-based data (students, sections,
 enrollments, ...) for those EdOrgs and their descendants.
-Create such a client via the Configuration Service when you need to demonstrate it. The
-default `bootstrap.ps1` provisions only the single-tenant + two-tenant apps (the review scope).
+`bootstrap.ps1` provisions these per deployment through
+[`bootstrap/review-variants.psm1`](../bootstrap/review-variants.psm1): `SISVendor` at district
+`255901`, `SISVendor` at school `255901107`, `AssessmentVendor` at `255901` with namespace
+`uri://one.example.com` (outside the sample data, so it sees none of the `uri://ed-fi.org`
+assessments), and `EdFiSandbox` at `255901`. Add them to an older environment with
+`bootstrap/add-review-variants.ps1`.
 
 ## Creating custom claim sets
 
@@ -49,6 +53,11 @@ Two ways:
    grants to existing claim sets and creates no claim set. This is **not** the API
    `export`/`import` shape (which uses `claimSetName`), so start from that example rather than an
    API export. Restart the `*-config` services (or use the management reload).
+
+> A claims reload or upload (`/management/reload-claims`, `/management/upload-claims`) deletes
+> every claim set created through the API, in every tenant, while file-based claim sets are read
+> again. `provision/UPDATE.md` Part C runs a reload to switch the Data Standard, so its Part A
+> step 3 exports the API-created ones first and Part C imports them back.
 
 > Keep this directory free of partial/invalid fragments while in Hybrid mode — a malformed
 > claim set can fail CMS startup. Files not named `*-claimset.json` (like this README) are ignored.

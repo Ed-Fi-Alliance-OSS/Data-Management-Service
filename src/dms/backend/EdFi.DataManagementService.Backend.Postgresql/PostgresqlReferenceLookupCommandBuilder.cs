@@ -108,9 +108,9 @@ internal static class PostgresqlReferenceLookupCommandBuilder
                 referentialIdentity."DocumentId" AS "DocumentId",
                 document."ResourceKeyId" AS "ResourceKeyId",
                 referentialIdentity."ResourceKeyId" AS "ReferentialIdentityResourceKeyId",
-                descriptor."DocumentId" IS NOT NULL AS "IsDescriptor",
+                descriptor."DescriptorId" AS "DescriptorId",
                 CASE
-                    WHEN descriptor."DocumentId" IS NOT NULL THEN '{{descriptorVerificationPrefix}}' || lower(descriptor."Uri")
+                    WHEN descriptor."DescriptorId" IS NOT NULL THEN '{{descriptorVerificationPrefix}}' || lower(descriptor."Namespace" || '#' || descriptor."CodeValue")
                     ELSE verificationIdentity."VerificationIdentityKey"
                 END AS "VerificationIdentityKey"
             FROM "LookupInput" lookupInput
@@ -191,9 +191,9 @@ internal static class PostgresqlReferenceLookupCommandBuilder
         {
             return $"""
                 lower((
-                    SELECT descriptor."Uri"
+                    SELECT descriptor."Namespace" || '#' || descriptor."CodeValue"
                     FROM dms."Descriptor" descriptor
-                    WHERE descriptor."DocumentId" = {columnExpression}
+                    WHERE descriptor."DescriptorId" = {columnExpression}
                 ))
                 """;
         }

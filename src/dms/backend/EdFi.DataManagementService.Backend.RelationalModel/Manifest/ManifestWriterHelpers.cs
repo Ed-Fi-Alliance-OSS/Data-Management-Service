@@ -441,7 +441,7 @@ internal static class ManifestWriterHelpers
                 constraint.TargetTable.Equals(descriptorTableName)
                 && constraint.TargetColumns.Count == 1
                 && constraint.TargetColumns.Any(column =>
-                    column.Equals(RelationalNameConventions.DocumentIdColumnName)
+                    column.Equals(RelationalNameConventions.DescriptorKeyColumnName)
                 )
                 && constraint.Columns.Count == 1
                 && constraint.Columns.Any(column => column.Equals(storageColumn))

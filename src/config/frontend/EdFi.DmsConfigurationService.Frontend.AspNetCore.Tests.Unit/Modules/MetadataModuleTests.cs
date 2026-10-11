@@ -126,7 +126,6 @@ public class MetadataModuleTests
         "ApplicationUpdateCommand.id int32",
         "ApplicationUpdateCommand.vendorId int32",
         "ApplicationUpdateCommand.educationOrganizationIds int64",
-        "ApplicationUpdateCommand.dataStoreIds int32",
         "ApplicationUpdateCommand.profileIds int32",
         "AuthorizationStrategy.id int32",
         "ClaimSetCopyCommand.originalId int32",
@@ -476,6 +475,30 @@ public class MetadataModuleTests
             .BeTrue();
     }
 
+    [Test]
+    public async Task It_marks_the_application_response_enabled_property_read_only()
+    {
+        // Arrange
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        // Act
+        using var doc = await FetchOpenApiDocumentAsync(client);
+
+        // Assert
+        // enabled is an aggregate computed across the application's API clients; no
+        // application-level write sets it.
+        doc.RootElement.GetProperty("components")
+            .GetProperty("schemas")
+            .GetProperty("ApplicationResponse")
+            .GetProperty("properties")
+            .GetProperty("enabled")
+            .GetProperty("readOnly")
+            .GetBoolean()
+            .Should()
+            .BeTrue();
+    }
+
     private static async Task<System.Text.Json.JsonDocument> FetchMetadataSpecificationsAsync(
         HttpClient client
     )
@@ -626,10 +649,6 @@ public class MetadataModuleTests
                 configuration.AddInMemoryCollection(
                     new Dictionary<string, string?>
                     {
-                        // The application reset-credential route is registered only when this flag is
-                        // set, and it is false in both appsettings.json and appsettings.Test.json, so
-                        // without this the route is absent from the document under test.
-                        ["AppSettings:EnableApplicationResetEndpoint"] = "true",
                         ["AppSettings:MultiTenancy"] = multiTenancy.ToString(),
                         // Left null by default so the existing cases keep exercising the no-path-base
                         // shape; Program only calls UsePathBase when this carries a value.

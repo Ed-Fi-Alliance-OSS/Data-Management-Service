@@ -417,13 +417,14 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
     public static ImmutableArray<string> HiddenAddressTypeDescriptorPath() =>
         ImmutableArray.Create("addressTypeDescriptor");
 
-    public static async Task<long> SeedAddressTypeDescriptorAsync(
+    public static async Task<int> SeedAddressTypeDescriptorAsync(
         PostgresqlGeneratedDdlTestDatabase database,
         Guid documentUuid,
         string codeValue
     )
     {
         var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "AddressTypeDescriptor");
+        await database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         var documentId = await database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
@@ -435,7 +436,7 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
         );
 
         var uri = $"uri://ed-fi.org/AddressTypeDescriptor#{codeValue}";
-        await database.ExecuteNonQueryAsync(
+        var descriptorId = await database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
@@ -443,9 +444,7 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
+                "Description"
             )
             VALUES (
                 @documentId,
@@ -453,17 +452,13 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
                 @namespace,
                 @codeValue,
                 @codeValue,
-                @codeValue,
-                @discriminator,
-                @uri
-            );
+                @codeValue
+            ) RETURNING "DescriptorId";
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", "uri://ed-fi.org/AddressTypeDescriptor"),
-            new NpgsqlParameter("codeValue", codeValue),
-            new NpgsqlParameter("discriminator", "Ed-Fi:AddressTypeDescriptor"),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("codeValue", codeValue)
         );
 
         var descriptorReference = CreateAddressTypeDescriptorReference(
@@ -481,7 +476,7 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
             new NpgsqlParameter("resourceKeyId", resourceKeyId)
         );
 
-        return documentId;
+        return descriptorId;
     }
 
     private static CollectionRowAddress CreateCollectionRowAddress(string identityPath, string city) =>

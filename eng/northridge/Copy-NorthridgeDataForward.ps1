@@ -13,21 +13,21 @@
 .DESCRIPTION
     Provisioning is create-only and there is no migration path for the DMS document store, so moving a
     published dataset onto a newer schema means provisioning a fresh database and copying the data in.
-    Three things about that copy are easy to get wrong and are handled explicitly here.
+    The copy validates the current compact catalog and source column shapes before loading.
 
     Triggers. The current schema carries more than a thousand triggers. A plain data-only restore fires
     the per-row projection stamping triggers, which rewrite ContentVersion and ContentLastModifiedAt on
     every copied row and burn the change-version sequence millions of times; fires the
     referential-identity triggers, which rewrite dms.ReferentialIdentity; and fires the statement-level
     document enqueue trigger, which floods dms.DocumentProjectionWork. The copy therefore runs with
-    --disable-triggers, and because that also suppresses foreign-key enforcement, integrity is
-    re-established afterwards by explicit assertions rather than by the loader.
+    --disable-triggers for unchanged tables and replica-mode inserts for staged tables. Both suppress
+    foreign-key enforcement, so integrity is re-established afterwards by explicit assertions.
 
-    dms.Descriptor. The published dump predates dms.Descriptor.ResourceKeyId, which is NOT NULL with no
-    default, so a plain restore of that table cannot succeed. Its rows are loaded into a staging schema
-    and inserted with the value derived from dms.Document. The target schema is never altered to
-    accommodate the load: a temporary nullability change that was not reverted perfectly would defeat
-    the schema compare that follows.
+    dms.Descriptor. Legacy rows are staged with their stored Uri and Discriminator, then inserted
+    without those columns or a supplied DescriptorId. The target allocates native int identities;
+    a document-key-to-descriptor-key map converts every stored descriptor column selected by the
+    reviewed relational-model manifest. Generated aliases are derived by PostgreSQL. Descriptor
+    history resolves qualified type keys through the provisioned catalog, including deleted owners.
 
     dms.Document. The archive's COPY header carries the SOURCE column list, and pg_restore straight into
     the target replays it, so a stamp column the target has since dropped fails the load under
@@ -109,6 +109,12 @@
 .PARAMETER ExpectedResourceKeySeedHash
     Expected dms.EffectiveSchema.ResourceKeySeedHash, lowercase hex.
 
+.PARAMETER ExpectedModelManifestPath
+    Required in both modes: the reviewed implementation-generated PostgreSQL relational-model manifest
+    including all resource_details for the exact target core/extension set. Physical catalog assertions
+    and stored descriptor remapping share Read-CompactDescriptorInventory. A matching schema hash alone
+    does not establish compatibility. WhatIf prints the plan without reading this file or any database.
+
 .PARAMETER OutputDirectory
     Directory for assertion and checkpoint records. Use a location outside the repository.
 
@@ -121,7 +127,7 @@
 .EXAMPLE
     ./Copy-NorthridgeDataForward.ps1 -Mode Copy -DumpPath /w/nr.dump -SourceDatabase northridge_source `
         -TargetDatabase northridge_target -OutputDirectory /tmp/nr -ExpectedDocumentCount 10576794 `
-        -ReferenceDatabase northridge_reference -WhatIf
+        -ReferenceDatabase northridge_reference -ExpectedModelManifestPath /w/relational-model.pgsql.manifest.json -WhatIf
 
     Prints the allow-list and the plan without contacting a database. The count is the pre-gap one,
     because copy mode records and asserts C1 as soon as the copy finishes, and the seven gap
@@ -130,7 +136,7 @@
 .EXAMPLE
     ./Copy-NorthridgeDataForward.ps1 -Mode Checkpoint -TargetDatabase northridge_target `
         -CheckpointName C2 -OutputDirectory /tmp/nr -ReferenceDatabase northridge_reference `
-        -ExpectedDocumentCount 10576794
+        -ExpectedDocumentCount 10576794 -ExpectedModelManifestPath /w/relational-model.pgsql.manifest.json
 
     Takes the expected fingerprint and cache state from the freshly provisioned reference database.
     C2 follows the smoke test and still precedes the gap documents, so it carries the same pre-gap
@@ -139,7 +145,8 @@
 .EXAMPLE
     ./Copy-NorthridgeDataForward.ps1 -Mode Checkpoint -TargetDatabase northridge_restoretest `
         -CheckpointName C5 -OutputDirectory /tmp/nr -ExpectedDocumentCount 10576801 `
-        -ExpectedEffectiveSchemaHash <hash> -ExpectedResourceKeyCount 351 -ExpectedResourceKeySeedHash <hash>
+        -ExpectedEffectiveSchemaHash <hash> -ExpectedResourceKeyCount 351 -ExpectedResourceKeySeedHash <hash> `
+        -ExpectedModelManifestPath /w/relational-model.pgsql.manifest.json
 
     For a checkpoint taken after the reference database has been dropped. One of these two forms is
     required: a checkpoint with no expected values is refused rather than run unasserted.
@@ -205,12 +212,18 @@ param(
     [string]
     $OutputDirectory,
 
+    [Parameter(Mandatory)]
+    [string]
+    $ExpectedModelManifestPath,
+
     [string]
     $Container = "dms-postgresql",
 
     [string]
     $PostgresUser = "postgres"
 )
+
+Import-Module (Join-Path $PSScriptRoot "../DatabaseTemplates/Compact-Descriptor.psm1")
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
@@ -241,11 +254,12 @@ $script:ProvisioningOwnedTable = @(
     "DataStoreIdentity",
     "DocumentCacheState",
     "DocumentProjectionWork",
-    "DocumentCache"
+    "DocumentCache",
+    "RepresentationRestampOperation"
 )
 
 # dms tables that carry dataset rows. Document and Descriptor are loaded through the staging schema
-# rather than by pg_restore straight into the target: Descriptor because of its derived column, and
+# rather than by pg_restore straight into the target: Descriptor because of its independent key, and
 # Document because the archive's COPY header names the source's columns, which a target that has since
 # dropped one of them cannot accept.
 $script:DmsDataTable = @("ReferentialIdentity")
@@ -343,7 +357,7 @@ function Get-DataTableList {
         [string[]] $Schema = $script:BulkSchema
     )
 
-    $schemaLiteral = ($Schema | ForEach-Object { "'$_'" }) -join ", "
+    $schemaLiteral = ($Schema | ForEach-Object { "'$($_.Replace("'", "''"))'" }) -join ", "
 
     $sql = @"
 SELECT table_schema || '.' || table_name
@@ -729,6 +743,15 @@ function Test-SequencePosition {
             })
     }
 
+    $descriptorSequence = Get-ScalarValue -DatabaseName $DatabaseName -Sql `
+        'SELECT pg_get_serial_sequence(''dms."Descriptor"'', ''DescriptorId'');'
+    if ([string]::IsNullOrWhiteSpace($descriptorSequence) -or $descriptorSequence -ceq $documentSequence) {
+        $failure.Add('dms.Descriptor.DescriptorId owns no independent sequence, so its position could not be checked')
+    } else {
+        $target.Add(@{ Label = 'DescriptorIdentitySequence'; Sequence = $descriptorSequence
+            Maximum = 'COALESCE((SELECT MAX("DescriptorId") FROM dms."Descriptor"), 0)' })
+    }
+
     # CollectionItemId is spread over every projection collection table, so the maximum has to be taken
     # across all of them rather than from one place.
     $collectionSql = @'
@@ -738,6 +761,7 @@ SELECT string_agg(
 FROM information_schema.columns
 WHERE column_name = 'CollectionItemId' AND table_schema IN ('edfi', 'tracked_changes_edfi');
 '@
+    $collectionSql = $collectionSql.Replace("'edfi', 'tracked_changes_edfi'", (($script:BulkSchema | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }) -join ", "))
     $collectionUnion = Get-ScalarValue -DatabaseName $DatabaseName -Sql $collectionSql
 
     if (-not [string]::IsNullOrWhiteSpace($collectionUnion)) {
@@ -807,6 +831,9 @@ WHERE column_name = 'CollectionItemId' AND table_schema IN ('edfi', 'tracked_cha
             continue
         }
 
+        if ($name -ceq 'DescriptorIdentitySequence' -and $nextValue -gt [int]::MaxValue) {
+            $failure.Add("$name next value $nextValue exceeds the compact Int32 allocator range")
+        }
         if ($nextValue -le $maximum) {
             $failure.Add("$name is at $position with is_called=$($part[2]) and increment $increment, so the next value would be $nextValue while the copied data already reaches $maximum; the first write after restore would collide")
         }
@@ -865,7 +892,7 @@ function Test-ReferentialIntegrity {
     # every count and every anti-join above and then accepts a violating row on the first write, so
     # valid data is only half of what has to hold here. 'O' and 'A' are enabled and anything else is
     # not, which is the reading DMS's own catalog validator uses.
-    $schemaLiteral = ($script:DmsOwnedSchema | ForEach-Object { "'$_'" }) -join ", "
+    $schemaLiteral = ($script:DmsOwnedSchema | ForEach-Object { "'$($_.Replace("'", "''"))'" }) -join ", "
     $disabledTrigger = [long](Get-ScalarValue -DatabaseName $DatabaseName -Sql @"
 SELECT COUNT(*)
 FROM pg_trigger tg
@@ -903,7 +930,7 @@ function Test-ForeignKeyValidity {
     )
 
     $failure = [System.Collections.Generic.List[string]]::new()
-    $schemaLiteral = ($script:DmsOwnedSchema | ForEach-Object { "'$_'" }) -join ", "
+    $schemaLiteral = ($script:DmsOwnedSchema | ForEach-Object { "'$($_.Replace("'", "''"))'" }) -join ", "
 
     # Counted straight from the catalog, independently of the generator below, so the generator can be
     # held to it. A constraint the generator silently failed to produce a statement for would otherwise
@@ -1465,7 +1492,7 @@ function Format-CheckpointRecord {
         [Parameter(Mandatory)] [System.Collections.Specialized.OrderedDictionary] $Expected,
         [Parameter(Mandatory)] [long] $ExpectedDocumentRow,
         [string] $ExpectedIdentity,
-        [Parameter(Mandatory)] [System.Collections.Generic.List[string]] $Failure
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [System.Collections.Generic.List[string]] $Failure
     )
 
     $line = [System.Collections.Generic.List[string]]::new()
@@ -1491,6 +1518,202 @@ function Format-CheckpointRecord {
     return (($line) -join "`n") + "`n"
 }
 
+# Carry-forward uses the catalog only to observe source shapes; expected descriptor storage comes
+# from Read-CompactDescriptorInventory, shared with template/catalog verification.
+function Get-CopyColumnShape {
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param([Parameter(Mandatory)][string]$DatabaseName, [Parameter(Mandatory)][string]$QualifiedTable)
+    $schema, $table = $QualifiedTable.Split('.', 2)
+    $sql = @"
+SELECT COALESCE(json_agg(json_build_object('Name', a.attname, 'Type', format_type(a.atttypid, a.atttypmod),
+    'Generated', a.attgenerated <> '') ORDER BY a.attnum), '[]')::text
+FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = '$($schema.Replace("'", "''"))' AND c.relname = '$($table.Replace("'", "''"))'
+    AND a.attnum > 0 AND NOT a.attisdropped;
+"@
+    $shape = @(Get-ScalarValue -DatabaseName $DatabaseName -Sql $sql | ConvertFrom-Json)
+    if ($shape.Count -eq 0) { throw "Missing source/target column shape: $QualifiedTable." }
+    return ,$shape
+}
+
+function Assert-CopyColumnShape {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$QualifiedTable, [Parameter(Mandatory)][object[]]$Source,
+        [Parameter(Mandatory)][object[]]$Target, [Parameter(Mandatory)][System.Collections.IDictionary]$Inventory)
+    # Document staging omits source-only columns and lets the target supply missing columns.
+    # Resolve-StagedInsertColumn validates the actual COPY header against the target catalog.
+    if ($QualifiedTable -ceq 'dms.Document') { return }
+
+    $descriptorNames = @($Inventory.columns | Where-Object { "$($_.schema).$($_.table)" -ceq $QualifiedTable } | ForEach-Object { $_.name })
+    $descriptorAliasNames = @($Inventory.aliases | Where-Object { "$($_.schema).$($_.table)" -ceq $QualifiedTable } | ForEach-Object { $_.name })
+    $removed = switch -CaseSensitive ($QualifiedTable) {
+        'dms.Descriptor' { @('Discriminator', 'Uri') }
+        'tracked_changes_edfi.Descriptor' { @('Discriminator') }
+        default { @() }
+    }
+    foreach ($column in $Target) {
+        $match = @($Source | Where-Object { $_.Name -ceq $column.Name })
+        if ($QualifiedTable -ceq 'dms.Descriptor' -and $column.Name -cin @('DescriptorId', 'ResourceKeyId')) {
+            if ($column.Name -ceq 'ResourceKeyId' -and $match.Count -gt 0 -and ($match[0].Type -cne 'smallint' -or $match[0].Generated)) {
+                throw 'Mismatched legacy source type: dms.Descriptor/ResourceKeyId, expected smallint.'
+            }
+            continue
+        }
+        if ($QualifiedTable -ceq 'tracked_changes_edfi.Descriptor' -and $column.Name -ceq 'ResourceKeyId') { continue }
+        if ($match.Count -ne 1 -or $match[0].Generated -ne $column.Generated) { throw "Missing/mismatched source-shape coverage: $QualifiedTable/$($column.Name)." }
+        if ($column.Name -cin $descriptorAliasNames -and (-not $column.Generated -or $column.Type -cne 'integer')) {
+            throw "Missing/noncompact generated descriptor alias in target: $QualifiedTable/$($column.Name)."
+        }
+        $expectedType = if ($column.Name -cin $descriptorNames -or $column.Name -cin $descriptorAliasNames) { 'bigint' } else { $column.Type }
+        if ($match[0].Type -cne $expectedType) { throw "Mismatched legacy source type: $QualifiedTable/$($column.Name), expected $expectedType." }
+    }
+    foreach ($column in $Source) {
+        if ($column.Name -cnotin @($Target.Name) -and $column.Name -cnotin $removed) { throw "Unexpected source column outside conversion coverage: $QualifiedTable/$($column.Name)." }
+    }
+    if ($QualifiedTable -cin @('dms.Descriptor', 'tracked_changes_edfi.Descriptor')) {
+        foreach ($name in $removed) {
+            if ($name -cnotin @($Source.Name)) { throw "Expected legacy $QualifiedTable/$name in source." }
+        }
+        if ($QualifiedTable -ceq 'tracked_changes_edfi.Descriptor' -and 'ResourceKeyId' -cin @($Source.Name)) { throw 'Source history already has ResourceKeyId; expected legacy Discriminator history.' }
+        if ($QualifiedTable -ceq 'dms.Descriptor' -and 'DescriptorId' -cin @($Source.Name)) { throw 'Source already has compact DescriptorId; this conversion requires legacy document-key descriptors.' }
+    }
+}
+
+function Assert-DescriptorInventoryCoverage {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$DatabaseName, [Parameter(Mandatory)][System.Collections.IDictionary]$Inventory)
+    # Detect omitted direct descriptor columns even if a malformed baseline omits their constraints
+    # too. Abstract projections and copied identity bindings still come from the shared reader.
+    $json = (ConvertTo-Json -InputObject $Inventory.columns -Depth 20 -Compress).Replace("'", "''")
+    $sql = @"
+DO `$coverage`$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint f JOIN pg_class c ON c.oid = f.conrelid
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        CROSS JOIN LATERAL unnest(f.conkey) k(attnum)
+        JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = k.attnum
+        WHERE f.contype = 'f' AND f.confrelid = 'dms."Descriptor"'::regclass AND a.attgenerated = ''
+        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements('$json'::jsonb) e
+            WHERE e->>'schema' = n.nspname AND e->>'table' = c.relname AND e->>'name' = a.attname)
+    ) THEN RAISE EXCEPTION 'Missing descriptor inventory coverage for stored FK'; END IF;
+END `$coverage`$;
+"@
+    Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $DatabaseName -Sql $sql | Out-Null
+}
+
+function Get-DescriptorRemapSql {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][string]$StagedTable, [Parameter(Mandatory)][object[]]$Column)
+    $sql = [System.Text.StringBuilder]::new()
+    foreach ($item in $Column) {
+        $name = '"' + $item.name.Replace('"', '""') + '"'
+        [void]$sql.AppendLine(@"
+DO `$remap`$
+BEGIN
+    IF EXISTS (SELECT 1 FROM $StagedTable s WHERE s.$name IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM "$script:StagingSchema"."DescriptorKeyMap" m WHERE m."DocumentId" = s.$name))
+    THEN RAISE EXCEPTION 'Unmapped descriptor reference in $($item.schema.Replace("'", "''")).$($item.table.Replace("'", "''"))/$($item.name.Replace("'", "''"))'; END IF;
+END `$remap`$;
+UPDATE $StagedTable s SET $name = m."DescriptorId"
+FROM "$script:StagingSchema"."DescriptorKeyMap" m WHERE s.$name = m."DocumentId";
+"@)
+    }
+    return $sql.ToString()
+}
+
+function Get-DescriptorHistoryConversionSql {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][string]$StagedTable, [Parameter(Mandatory)][System.Collections.IDictionary]$Inventory)
+    $types = (ConvertTo-Json -InputObject @($Inventory.resources | Where-Object { $_.ContainsKey('storage_kind') -and $_.storage_kind -ceq 'SharedDescriptorTable' }) -Depth 20 -Compress).Replace("'", "''")
+    # Legacy writers used colon- and dot-qualified types, plus unqualified names. Accept a name
+    # only when the provisioned descriptor catalog identifies exactly one type. No live owner join:
+    # deletes can outlive both, and equal resource names in different projects are distinct types.
+    return @"
+ALTER TABLE $StagedTable ADD COLUMN "ResourceKeyId" smallint;
+DO `$history`$
+BEGIN
+    IF EXISTS (SELECT 1 FROM $StagedTable s WHERE
+        (SELECT COUNT(*) FROM dms."ResourceKey" k WHERE (k."ProjectName" || ':' || k."ResourceName" = s."Discriminator" OR k."ProjectName" || '.' || k."ResourceName" = s."Discriminator" OR k."ResourceName" = s."Discriminator")
+            AND EXISTS (SELECT 1 FROM jsonb_array_elements('$types'::jsonb) t
+                WHERE t->>'project_name' = k."ProjectName" AND t->>'resource_name' = k."ResourceName")) <> 1)
+    THEN RAISE EXCEPTION 'Unknown or ambiguous descriptor history type identity'; END IF;
+END `$history`$;
+UPDATE $StagedTable s SET "ResourceKeyId" = k."ResourceKeyId"
+FROM dms."ResourceKey" k WHERE (k."ProjectName" || ':' || k."ResourceName" = s."Discriminator" OR k."ProjectName" || '.' || k."ResourceName" = s."Discriminator" OR k."ResourceName" = s."Discriminator")
+    AND EXISTS (SELECT 1 FROM jsonb_array_elements('$types'::jsonb) t
+        WHERE t->>'project_name' = k."ProjectName" AND t->>'resource_name' = k."ResourceName");
+"@
+}
+
+function Copy-StagedDescriptorTable {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$QualifiedTable, [Parameter(Mandatory)][object[]]$SourceShape,
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Inventory, [Parameter(Mandatory)][string]$ArchivePath)
+    $schema, $table = $QualifiedTable.Split('.', 2)
+    # Separate schema/table stage name prevents extension tables of the same name colliding.
+    $stageName = "t_$([guid]::NewGuid().ToString('N'))"
+    $stage = '"' + $script:StagingSchema + '"."' + $stageName + '"'
+    $target = '"' + $schema.Replace('"', '""') + '"."' + $table.Replace('"', '""') + '"'
+    $columns = @($SourceShape | Where-Object { -not $_.Generated })
+    $definition = ($columns | ForEach-Object { '"' + $_.Name.Replace('"', '""') + '" ' + $_.Type }) -join ', '
+    Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase -Sql "CREATE TABLE $stage ($definition);" | Out-Null
+    $path = "/tmp/northridge-$stageName"
+    try {
+        $selection = Select-ArchiveEntry -ContainerName $Container -ArchivePath $ArchivePath -QualifiedTable @($QualifiedTable)
+        ($selection.Line -join "`n") | docker exec -i $Container sh -c "cat > $path.list"
+        if ($LASTEXITCODE -ne 0) { throw 'Cannot write staged archive list.' }
+        $output = docker exec $Container pg_restore --data-only --no-owner --no-privileges --exit-on-error `
+            -L "$path.list" -f "$path.sql" $ArchivePath 2>&1
+        Assert-RestoreOutputClean -Output $output -ExitCode $LASTEXITCODE -Description "Staged pg_restore $QualifiedTable"
+        # Pass the exact prefix as data to awk: no identifier is interpreted as a regex or shell code.
+        $redirect = @'
+set -eu
+awk -v prefix="$3" -v target="$4" '
+index($0, prefix) == 1 { count++; print $0 > "/dev/stderr"; print target substr($0, length(prefix)+1); next }
+{ print }
+END { if (count != 1) exit 2 }
+' "$1" > "$2"
+'@
+        $prefix = "COPY $schema.`"$table`" ("
+        $output = $redirect | docker exec -i $Container sh -s "$path.sql" "$path.load.sql" $prefix "COPY $stage (" 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "Expected exactly one COPY header for ${QualifiedTable}: $output" }
+        $header = @($output | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_.StartsWith('COPY ', [System.StringComparison]::Ordinal) })
+        if ($header.Count -ne 1) { throw "Expected one reported archive header for $QualifiedTable." }
+        $archiveColumns = Get-CopyHeaderColumn -HeaderLine $header[0] -QualifiedTable $QualifiedTable
+        if (($archiveColumns -join '|') -cne ($columns.Name -join '|')) { throw "Archive/source column shape mismatch: $QualifiedTable." }
+        $output = docker exec $Container psql -U $PostgresUser -d $TargetDatabase -v ON_ERROR_STOP=1 --quiet -f "$path.load.sql" 2>&1
+        Assert-RestoreOutputClean -Output $output -ExitCode $LASTEXITCODE -Description "Stage load $QualifiedTable"
+        $remap = @($Inventory.columns | Where-Object { "$($_.schema).$($_.table)" -ceq $QualifiedTable })
+        if ($remap.Count -gt 0) {
+            Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase `
+                -Sql (Get-DescriptorRemapSql -StagedTable $stage -Column $remap) | Out-Null
+        }
+        if ($QualifiedTable -ceq 'tracked_changes_edfi.Descriptor') {
+            Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase `
+                -Sql (Get-DescriptorHistoryConversionSql -StagedTable $stage -Inventory $Inventory) | Out-Null
+        }
+        $sourceColumns = @($columns.Name)
+        if ($QualifiedTable -ceq 'tracked_changes_edfi.Descriptor') { $sourceColumns += 'ResourceKeyId' }
+        $plan = Resolve-StagedInsertColumn -SourceColumn $sourceColumns `
+            -TargetColumn (Get-TargetColumnList -DatabaseName $TargetDatabase -QualifiedTable $QualifiedTable) -QualifiedTable $QualifiedTable
+        $names = ($plan.Insert | ForEach-Object { '"' + $_.Replace('"', '""') + '"' }) -join ', '
+        $overriding = if ($plan.OverridingSystemValue) { 'OVERRIDING SYSTEM VALUE ' } else { '' }
+        Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase -Sql @"
+BEGIN;
+SET LOCAL session_replication_role = replica;
+INSERT INTO $target ($names) ${overriding}SELECT $names FROM $stage;
+DROP TABLE $stage;
+COMMIT;
+"@ | Out-Null
+    }
+    finally { docker exec -u 0 $Container rm -f "$path.list" "$path.sql" "$path.load.sql" | Out-Null }
+}
+
+
 # ---------------- Checkpoint mode ----------------
 
 if ($Mode -eq "Checkpoint") {
@@ -1501,6 +1724,13 @@ if ($Mode -eq "Checkpoint") {
         Write-Output "WhatIf: no database was contacted."
         return
     }
+
+    $script:DescriptorInventory = Read-CompactDescriptorInventory -Dialect pgsql -ExpectedModelManifestPath $ExpectedModelManifestPath
+    $script:BulkSchema = @($script:DescriptorInventory.data_schemas) + @('auth')
+    $script:DmsOwnedSchema = @('dms') + $script:BulkSchema
+    Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase `
+        -Sql (Get-CompactDescriptorAssertionSql -Dialect pgsql -ExpectedModelManifestPath $ExpectedModelManifestPath) | Out-Null
+    Assert-DescriptorInventoryCoverage -DatabaseName $TargetDatabase -Inventory $script:DescriptorInventory
 
     $expected = Resolve-ExpectedInvariant -ReferenceDatabaseName $ReferenceDatabase `
         -EffectiveSchemaHash $ExpectedEffectiveSchemaHash `
@@ -1548,13 +1778,14 @@ Write-Output "Copy plan"
 Write-Output "  dump              : $DumpPath"
 Write-Output "  source database   : $SourceDatabase"
 Write-Output "  target database   : $TargetDatabase"
-Write-Output "  bulk schemas      : $($script:BulkSchema -join ', ')"
+Write-Output "  model baseline    : $ExpectedModelManifestPath"
+Write-Output "  bulk schemas      : resource/history table schemas from baseline and auth"
 Write-Output "  dms tables copied : $($script:DmsDataTable -join ', '), $script:DmsStagedTable (staged) and $script:DmsDerivedTable (derived)"
 Write-Output "  never copied      : $($script:ProvisioningOwnedTable -join ', ')"
 Write-Output "  dms table check   : every dms base table in source and target on exactly one of the lists above, before the load"
 Write-Output "  trigger handling  : pg_restore --data-only --disable-triggers (requires superuser); session_replication_role = replica for the staged inserts"
 Write-Output "  staged columns    : dms.$script:DmsStagedTable inserted by the columns the archive header and the target catalog share, via $script:StagingSchema"
-Write-Output "  derived column    : dms.Descriptor.ResourceKeyId from dms.Document via $script:StagingSchema"
+Write-Output "  descriptor keys   : native DescriptorId, mapped legacy DocumentId; ResourceKeyId from dms.Document via $script:StagingSchema"
 Write-Output "  expected documents: $ExpectedDocumentCount"
 Write-Output "  post-copy checks  : row counts both directions, sequence positions, every foreign key in $($script:DmsOwnedSchema -join '/'), no trigger left disabled, stamp distributions, checkpoint C1"
 
@@ -1567,6 +1798,14 @@ if (-not $PSCmdlet.ShouldProcess($TargetDatabase, "Copy Northridge dataset from 
 if (-not (Test-Path -LiteralPath $DumpPath)) {
     throw "Dump not found: $DumpPath"
 }
+
+$script:DescriptorInventory = Read-CompactDescriptorInventory -Dialect pgsql -ExpectedModelManifestPath $ExpectedModelManifestPath
+$script:BulkSchema = @($script:DescriptorInventory.data_schemas) + @('auth')
+$script:DmsOwnedSchema = @('dms') + $script:BulkSchema
+Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase `
+    -Sql (Get-CompactDescriptorAssertionSql -Dialect pgsql -ExpectedModelManifestPath $ExpectedModelManifestPath) | Out-Null
+Assert-DescriptorInventoryCoverage -DatabaseName $TargetDatabase -Inventory $script:DescriptorInventory
+
 
 # Resolved here, before the restore, not next to the checkpoint that consumes it. Resolve-ExpectedInvariant
 # is where a missing -ReferenceDatabase and missing expected values are refused, and discovering that
@@ -1587,6 +1826,9 @@ $targetDocumentRow = [long](Get-ScalarValue -DatabaseName $TargetDatabase -Sql '
 if ($targetDocumentRow -ne 0) {
     throw "Target '$TargetDatabase' already holds $targetDocumentRow document(s). Provision a fresh database."
 }
+
+$existingStaging = [long](Get-ScalarValue -DatabaseName $TargetDatabase -Sql "SELECT COUNT(*) FROM pg_namespace WHERE nspname = '$script:StagingSchema';")
+if ($existingStaging -ne 0) { throw "Target has an existing $script:StagingSchema schema. Reprovision the failed target before retrying." }
 
 # Guard: the resource-key seed must be identical, or every copied ResourceKeyId means something
 # different in the target than it did in the source.
@@ -1647,10 +1889,30 @@ if ($classificationFailure.Count -gt 0) {
 }
 Write-Output "  dms base tables classified exactly once: $($targetDmsTable.Count) in target, $($sourceDmsTable.Count) in source"
 
-$requestedTable = @($script:DmsDataTable | ForEach-Object { "dms.$_" }) + $bulkTable
+$stagedDescriptorTable = @($script:DescriptorInventory.columns | ForEach-Object { "$($_.schema).$($_.table)" } | Sort-Object -Unique -CaseSensitive) + @('tracked_changes_edfi.Descriptor')
+$copyShape = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
+foreach ($table in @('dms.Document', 'dms.Descriptor', 'dms.ReferentialIdentity') + $bulkTable) {
+    $sourceShape = Get-CopyColumnShape -DatabaseName $SourceDatabase -QualifiedTable $table
+    $targetShape = Get-CopyColumnShape -DatabaseName $TargetDatabase -QualifiedTable $table
+    Assert-CopyColumnShape -QualifiedTable $table -Source $sourceShape -Target $targetShape -Inventory $script:DescriptorInventory
+    $copyShape[$table] = $sourceShape
+}
+Assert-DescriptorInventoryCoverage -DatabaseName $SourceDatabase -Inventory $script:DescriptorInventory
+foreach ($table in $stagedDescriptorTable) {
+    if (-not $copyShape.ContainsKey($table)) { throw "Missing source-shape/inventory coverage: $table." }
+}
+$documentShape = Get-CopyColumnShape -DatabaseName $TargetDatabase -QualifiedTable 'dms.Document'
+foreach ($name in @('ContentVersion', 'ContentLastModifiedAt')) {
+    if ($name -cnotin @($documentShape.Name)) { throw "DMS-1404 requires retained document stamp $name." }
+}
+$requestedTable = @($script:DmsDataTable | ForEach-Object { "dms.$_" }) + @($bulkTable | Where-Object { $_ -cnotin $stagedDescriptorTable })
 
 $containerDumpPath = "/tmp/northridge-dataforward.dump"
 $containerListPath = "/tmp/northridge-dataforward.list"
+$ownsStaging = $false
+
+# Staging cleanup covers every restore phase; a failed, partially loaded target still needs reprovisioning.
+try {
 
 try {
     # Inside the try, so a copy that fails part-way is removed by the finally like everything else.
@@ -1757,6 +2019,7 @@ try {
     # CREATE TABLE AS ... WITH NO DATA carries the types and nothing else -- no NOT NULL, no default, no
     # identity -- so a target-only column simply stays NULL in staging, and every source-only column is
     # added as text, which COPY's text format accepts for any value.
+    $ownsStaging = $true
     $stagedSetup = [System.Text.StringBuilder]::new()
     [void]$stagedSetup.AppendLine("DROP SCHEMA IF EXISTS ""$script:StagingSchema"" CASCADE;")
     [void]$stagedSetup.AppendLine("CREATE SCHEMA ""$script:StagingSchema"";")
@@ -1809,10 +2072,18 @@ DROP SCHEMA IF EXISTS "$script:StagingSchema" CASCADE;
 CREATE SCHEMA "$script:StagingSchema";
 CREATE TABLE "$script:StagingSchema"."Descriptor" AS
 SELECT * FROM dms."Descriptor" WITH NO DATA;
+ALTER TABLE "$script:StagingSchema"."Descriptor" DROP COLUMN "DescriptorId";
 ALTER TABLE "$script:StagingSchema"."Descriptor" DROP COLUMN "ResourceKeyId";
+ALTER TABLE "$script:StagingSchema"."Descriptor" ADD COLUMN "Discriminator" text;
+ALTER TABLE "$script:StagingSchema"."Descriptor" ADD COLUMN "Uri" text;
 SELECT 'staging ready';
 "@
 Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase -Sql $stagingSetup | Out-Null
+
+if ('ResourceKeyId' -cin @($copyShape['dms.Descriptor'].Name)) {
+    Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase `
+        -Sql 'ALTER TABLE "northridge_staging"."Descriptor" ADD COLUMN "ResourceKeyId" smallint;' | Out-Null
+}
 
 $containerDescriptorSqlPath = "/tmp/northridge-descriptor.sql"
 $containerStagingSqlPath = "/tmp/northridge-descriptor.staging.sql"
@@ -1860,20 +2131,57 @@ finally {
         $containerDescriptorSqlPath $containerStagingSqlPath | Out-Null
 }
 
+if ('ResourceKeyId' -cin @($copyShape['dms.Descriptor'].Name)) {
+    $sourceTypeMismatch = [long](Get-ScalarValue -DatabaseName $TargetDatabase -Sql @'
+SELECT COUNT(*) FROM "northridge_staging"."Descriptor" s JOIN dms."Document" d ON d."DocumentId" = s."DocumentId"
+WHERE s."ResourceKeyId" IS DISTINCT FROM d."ResourceKeyId";
+'@)
+    if ($sourceTypeMismatch -ne 0) { throw 'Legacy descriptor ResourceKeyId disagrees with owning document.' }
+}
+
 $deriveSql = @"
-SET session_replication_role = replica;
+BEGIN;
+SET LOCAL session_replication_role = replica;
+DO `$descriptor`$
+BEGIN
+    IF EXISTS (SELECT 1 FROM "$script:StagingSchema"."Descriptor" s LEFT JOIN dms."Document" d ON d."DocumentId" = s."DocumentId"
+        LEFT JOIN dms."ResourceKey" k ON k."ResourceKeyId" = d."ResourceKeyId"
+        WHERE d."DocumentId" IS NULL OR (s."Discriminator" IS DISTINCT FROM k."ProjectName" || ':' || k."ResourceName" AND s."Discriminator" IS DISTINCT FROM k."ProjectName" || '.' || k."ResourceName" AND s."Discriminator" IS DISTINCT FROM k."ResourceName")
+            OR s."Uri" IS DISTINCT FROM s."Namespace" || '#' || s."CodeValue")
+    THEN RAISE EXCEPTION 'Legacy descriptor owner/type/whole URI mismatch'; END IF;
+END `$descriptor`$;
 INSERT INTO dms."Descriptor" ("DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription",
-    "Description", "EffectiveBeginDate", "EffectiveEndDate", "Discriminator", "Uri", "ContentVersion",
-    "ContentLastModifiedAt")
+    "Description", "EffectiveBeginDate", "EffectiveEndDate", "ContentVersion", "ContentLastModifiedAt")
 SELECT s."DocumentId", d."ResourceKeyId", s."Namespace", s."CodeValue", s."ShortDescription",
-    s."Description", s."EffectiveBeginDate", s."EffectiveEndDate", s."Discriminator", s."Uri",
-    s."ContentVersion", s."ContentLastModifiedAt"
-FROM "$script:StagingSchema"."Descriptor" s
-JOIN dms."Document" d ON d."DocumentId" = s."DocumentId";
-SET session_replication_role = DEFAULT;
-SELECT 'descriptor derived';
+    s."Description", s."EffectiveBeginDate", s."EffectiveEndDate", s."ContentVersion", s."ContentLastModifiedAt"
+FROM "$script:StagingSchema"."Descriptor" s JOIN dms."Document" d ON d."DocumentId" = s."DocumentId"
+ORDER BY s."DocumentId";
+CREATE TABLE "$script:StagingSchema"."DescriptorKeyMap" AS SELECT "DocumentId", "DescriptorId" FROM dms."Descriptor";
+ALTER TABLE "$script:StagingSchema"."DescriptorKeyMap" ADD PRIMARY KEY ("DocumentId");
+SELECT setval(pg_get_serial_sequence('dms."Descriptor"', 'DescriptorId'),
+    COALESCE(MAX("DescriptorId"), 1), COUNT(*) > 0) FROM dms."Descriptor";
+COMMIT;
 "@
 Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase -Sql $deriveSql | Out-Null
+
+# Keep the exact mapping as copy evidence before staging cleanup; never narrow a DocumentId.
+$mapPath = '/tmp/northridge-descriptor-key-map.tsv'
+try {
+    Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase `
+        -Sql "\copy (SELECT * FROM `"$script:StagingSchema`".`"DescriptorKeyMap`" ORDER BY `"DocumentId`") TO '$mapPath' WITH (FORMAT csv, DELIMITER E'\t', HEADER true)" | Out-Null
+    New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+    docker cp "${Container}:$mapPath" (Join-Path $OutputDirectory "descriptor-key-map.$TargetDatabase.tsv")
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot retain descriptor key mapping evidence.' }
+} finally { docker exec -u 0 $Container rm -f $mapPath | Out-Null }
+
+try {
+    docker cp $DumpPath "${Container}:${containerDumpPath}"
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot stage dump for descriptor reference conversion.' }
+    foreach ($table in $stagedDescriptorTable) {
+        Copy-StagedDescriptorTable -QualifiedTable $table -SourceShape $copyShape[$table] `
+            -Inventory $script:DescriptorInventory -ArchivePath $containerDumpPath
+    }
+} finally { docker exec -u 0 $Container rm -f $containerDumpPath | Out-Null }
 
 $stagingCount = [long](Get-ScalarValue -DatabaseName $TargetDatabase -Sql `
         "SELECT COUNT(*) FROM ""$script:StagingSchema"".""Descriptor"";")
@@ -1893,6 +2201,9 @@ if ($stagingCount -ne $derivedCount -or $mismatchCount -ne 0) {
 Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase `
     -Sql "DROP SCHEMA ""$script:StagingSchema"" CASCADE; SELECT 'staging dropped';" | Out-Null
 Write-Output "  staging schema dropped"
+$ownsStaging = $false
+Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase `
+    -Sql (Get-CompactDescriptorAssertionSql -Dialect pgsql -ExpectedModelManifestPath $ExpectedModelManifestPath) | Out-Null
 
 Write-Output ""
 Write-Output "Reconciling row counts, both directions..."
@@ -1937,15 +2248,16 @@ Write-Output "Comparing stamp distributions..."
 # ContentVersion rather than its own, so a child table has nothing to compare and querying it for
 # ContentVersion is an error, not a finding.
 $stampBearing = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
-foreach ($row in (Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase -Sql @'
-SELECT 'edfi.' || c.table_name
+$stampSchemaLiteral = ($script:BulkSchema | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }) -join ', '
+foreach ($row in (Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase -Sql @"
+SELECT c.table_schema || '.' || c.table_name
 FROM information_schema.columns c
-WHERE c.table_schema = 'edfi' AND c.column_name = 'ContentVersion'
+WHERE c.table_schema IN ($stampSchemaLiteral) AND c.column_name = 'ContentVersion'
   AND EXISTS (SELECT 1 FROM information_schema.columns c2
-              WHERE c2.table_schema = 'edfi' AND c2.table_name = c.table_name
+              WHERE c2.table_schema = c.table_schema AND c2.table_name = c.table_name
                 AND c2.column_name = 'ContentLastModifiedAt')
 ORDER BY 1;
-'@)) {
+"@)) {
     $text = ([string]$row).Trim()
     if ($text) { [void]$stampBearing.Add($text) }
 }
@@ -1953,7 +2265,6 @@ ORDER BY 1;
 $sampleTable = @(
     $targetCount.GetEnumerator() |
     Where-Object {
-        $_.Key.StartsWith("edfi.", [System.StringComparison]::Ordinal) -and
         $_.Value -gt 0 -and
         $stampBearing.Contains($_.Key)
     } |
@@ -1965,8 +2276,8 @@ if ($sampleTable.Count -eq 0) {
     throw "No stamp-bearing projection table carried rows, so the stamp comparison would prove nothing."
 }
 
-$sourceStamp = Get-StampDistribution -DatabaseName $SourceDatabase -SampleTable $sampleTable
-$targetStamp = Get-StampDistribution -DatabaseName $TargetDatabase -SampleTable $sampleTable
+$sourceStamp = Get-StampDistribution -DatabaseName $SourceDatabase -SampleTable (@("dms.Descriptor") + $sampleTable)
+$targetStamp = Get-StampDistribution -DatabaseName $TargetDatabase -SampleTable (@("dms.Descriptor") + $sampleTable)
 
 $stampFailure = [System.Collections.Generic.List[string]]::new()
 foreach ($name in (Get-OrdinalSortedUnique -Value (@($sourceStamp.Keys) + @($targetStamp.Keys)))) {
@@ -2025,3 +2336,11 @@ if ($allFailure.Count -gt 0) {
 
 Write-Output "PASS: copy complete. Row counts reconcile both directions, sequences are beyond the copied maxima, no orphaned references, stamp distributions unchanged, checkpoint C1 clean."
 Write-Output "Record the source identity '$($measurement.SourceIdentity)' and pass it as -ExpectedSourceIdentity to later checkpoints."
+
+}
+finally {
+    if ($ownsStaging) {
+        Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase `
+            -Sql "DROP SCHEMA IF EXISTS `"$script:StagingSchema`" CASCADE;" | Out-Null
+    }
+}

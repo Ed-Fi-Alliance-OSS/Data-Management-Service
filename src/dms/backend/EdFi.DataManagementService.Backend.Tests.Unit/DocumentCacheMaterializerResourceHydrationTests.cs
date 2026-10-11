@@ -432,7 +432,7 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
             DescriptorRowsInPlanOrder:
             [
                 new HydratedDescriptorRows([
-                    new DescriptorUriRow(601L, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"),
+                    new DescriptorUriRow(601, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"),
                 ]),
             ]
         )

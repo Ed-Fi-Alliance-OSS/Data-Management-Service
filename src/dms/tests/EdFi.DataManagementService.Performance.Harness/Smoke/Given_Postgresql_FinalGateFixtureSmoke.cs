@@ -19,12 +19,20 @@ public class Given_Postgresql_FinalGateFixtureSmoke : PostgresqlApiIntegrationTe
     [Test]
     public async Task It_seeds_authorization_and_applies_the_filtered_overlay_on_the_primary_fixture()
     {
-        await PerfFinalGateFixtureSmokeScenario.RunPrimaryVariantsAsync(Harness, PerfProvider.Postgresql);
+        await PerfFinalGateFixtureSmokeScenario.RunPrimaryVariantsAsync(
+            Harness,
+            PerfProvider.Postgresql,
+            PrimaryConnectionString
+        );
     }
 
     [Test]
     public async Task It_loads_verifies_and_serves_the_descriptor_fixture()
     {
-        await PerfFinalGateFixtureSmokeScenario.RunDescriptorFixtureAsync(Harness, PerfProvider.Postgresql);
+        await PerfFinalGateFixtureSmokeScenario.RunDescriptorFixtureAsync(
+            Harness,
+            PerfProvider.Postgresql,
+            PrimaryConnectionString
+        );
     }
 }

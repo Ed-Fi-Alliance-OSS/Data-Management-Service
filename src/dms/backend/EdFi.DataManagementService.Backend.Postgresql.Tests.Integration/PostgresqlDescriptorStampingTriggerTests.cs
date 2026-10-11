@@ -88,23 +88,20 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             """SELECT MIN("ResourceKeyId") FROM dms."ResourceKey";"""
         );
 
-        var uriOrDiscriminator = $"uri://ed-fi.org/SexDescriptor#{codeValue}";
         await _database.ExecuteNonQueryAsync(
             """
             INSERT INTO dms."Descriptor"
                 ("DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription", "Description",
-                 "EffectiveBeginDate", "EffectiveEndDate", "Discriminator", "Uri")
+                 "EffectiveBeginDate", "EffectiveEndDate")
             VALUES (@documentId, @resourceKeyId, @namespace, @codeValue, @shortDescription, @description,
-                    NULL, NULL, @discriminator, @uri);
+                    NULL, NULL);
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", "uri://ed-fi.org/SexDescriptor"),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", codeValue),
-            new NpgsqlParameter("description", codeValue),
-            new NpgsqlParameter("discriminator", uriOrDiscriminator),
-            new NpgsqlParameter("uri", uriOrDiscriminator)
+            new NpgsqlParameter("description", codeValue)
         );
     }
 
@@ -324,9 +321,9 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
                 """
                 INSERT INTO dms."Descriptor"
                     ("DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription", "Description",
-                     "EffectiveBeginDate", "EffectiveEndDate", "Discriminator", "Uri")
+                     "EffectiveBeginDate", "EffectiveEndDate")
                 VALUES (@documentId, 32000, 'uri://ed-fi.org/SexDescriptor', 'Female', 'Female', 'Female',
-                        NULL, NULL, 'uri://ed-fi.org/SexDescriptor#Female', 'uri://ed-fi.org/SexDescriptor#Female');
+                        NULL, NULL);
                 """,
                 new NpgsqlParameter("documentId", documentId)
             );

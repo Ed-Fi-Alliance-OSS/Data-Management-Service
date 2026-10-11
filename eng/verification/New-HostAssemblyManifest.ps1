@@ -694,14 +694,17 @@ try {
     # Emit.
     # -----------------------------------------------------------------------------------------
 
-    # The published contracts only. EdFi.DataManagementService.Identity (EdFi.Api.Identity) is a
-    # third contract assembly at the top level of /app as of DMS-1514 and is deliberately not
-    # published yet, so it is left to the application table below rather than listed here as
-    # something an implementer can take a PackageReference on. Adding it to this filter is part of
-    # publishing it.
+    # The published contracts only: the packages an implementer can take a PackageReference on.
+    # EdFi.DataManagementService.Identity (EdFi.Api.Identity) is the third, published like the other
+    # two at the version its own project declares. An assembly in the application table that is not
+    # published as a package does not belong in this filter.
     $contractRows = @(
         $applicationRows |
-            Where-Object { $_.Assembly -eq "EdFi.Api.Plugins" -or $_.Assembly -eq "EdFi.DataManagementService.CustomValidation" }
+            Where-Object {
+                $_.Assembly -eq "EdFi.Api.Plugins" -or
+                $_.Assembly -eq "EdFi.DataManagementService.CustomValidation" -or
+                $_.Assembly -eq "EdFi.DataManagementService.Identity"
+            }
     )
 
     $lines = @(

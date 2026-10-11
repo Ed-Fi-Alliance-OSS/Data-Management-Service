@@ -1144,7 +1144,6 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         await SeedDescriptorAsync(
             Guid.Parse("10111111-1111-1111-1111-111111111111"),
             "AddressTypeDescriptor",
-            "Ed-Fi:AddressTypeDescriptor",
             "uri://ed-fi.org/AddressTypeDescriptor#Physical",
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Physical",
@@ -1153,7 +1152,6 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         await SeedDescriptorAsync(
             Guid.Parse("20222222-2222-2222-2222-222222222222"),
             "AddressTypeDescriptor",
-            "Ed-Fi:AddressTypeDescriptor",
             "uri://ed-fi.org/AddressTypeDescriptor#Mailing",
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Mailing",
@@ -1162,7 +1160,6 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         await SeedDescriptorAsync(
             Guid.Parse("30333333-3333-3333-3333-333333333333"),
             "StateAbbreviationDescriptor",
-            "Ed-Fi:StateAbbreviationDescriptor",
             "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
             "uri://ed-fi.org/StateAbbreviationDescriptor",
             "TX",
@@ -1171,7 +1168,6 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         await SeedDescriptorAsync(
             Guid.Parse("40444444-4444-4444-4444-444444444444"),
             "EducationOrganizationCategoryDescriptor",
-            "Ed-Fi:EducationOrganizationCategoryDescriptor",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
             "School",
@@ -1180,7 +1176,6 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         await SeedDescriptorAsync(
             Guid.Parse("50555555-5555-5555-5555-555555555555"),
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
             "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade",
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Ninth grade",
@@ -1189,7 +1184,6 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         await SeedDescriptorAsync(
             Guid.Parse("60666666-6666-6666-6666-666666666666"),
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
             "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade",
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Tenth grade",
@@ -1200,7 +1194,6 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
     private async Task SeedDescriptorAsync(
         Guid documentUuid,
         string resourceName,
-        string discriminator,
         string uri,
         string @namespace,
         string codeValue,
@@ -1211,8 +1204,6 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         var documentId = await InsertDescriptorAsync(
             documentUuid,
             resourceKeyId,
-            discriminator,
-            uri,
             @namespace,
             codeValue,
             shortDescription
@@ -1510,13 +1501,12 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
     private async Task<long> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
         await _database.ExecuteNonQueryAsync(
@@ -1527,9 +1517,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
+                "Description"
             )
             VALUES (
                 @documentId,
@@ -1537,9 +1525,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
+                @description
             );
             """,
             new NpgsqlParameter("documentId", documentId),
@@ -1547,9 +1533,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),
-            new NpgsqlParameter("description", shortDescription),
-            new NpgsqlParameter("discriminator", discriminator),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("description", shortDescription)
         );
 
         return documentId;

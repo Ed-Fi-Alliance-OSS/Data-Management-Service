@@ -15,17 +15,15 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
     private const string MaxChangeVersionParameterName = "@MaxChangeVersion";
     private const string LimitParameterName = "@Limit";
     private const string OffsetParameterName = "@Offset";
-    private const string DiscriminatorParameterName = "@Discriminator";
-    private const string QualifiedDiscriminatorParameterName = "@QualifiedDiscriminator";
-    private const string DescriptorDiscriminatorParameterPrefix = "@DescriptorDiscriminator";
-    private const string DescriptorDiscriminatorQualifiedParameterPrefix =
-        "@DescriptorDiscriminatorQualified";
+    private const string ResourceKeyIdParameterName = "@ResourceKeyId";
+    private const string DescriptorResourceKeyIdParameterPrefix = "@DescriptorResourceKeyId";
 
     private static readonly DbTableName _descriptorTable = new(new DbSchemaName("dms"), "Descriptor");
     private static readonly DbColumnName _documentIdColumn = new("DocumentId");
     private static readonly DbColumnName _descriptorNamespaceColumn = new("Namespace");
     private static readonly DbColumnName _descriptorCodeValueColumn = new("CodeValue");
-    private static readonly DbColumnName _descriptorDiscriminatorColumn = new("Discriminator");
+    private static readonly DbColumnName _descriptorResourceKeyIdColumn = new("ResourceKeyId");
+    private static readonly DbColumnName _descriptorIdColumn = new("DescriptorId");
 
     private readonly SqlDialect _dialect = dialect;
 
@@ -253,12 +251,20 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
             .. BuildChangeVersionConditions(request, changeVersionColumn),
             .. authorizationSql.Predicates,
         ];
-        List<DescriptorDiscriminatorParameter> descriptorDiscriminatorParameters = [];
+        List<RelationalParameter> descriptorParameters = [];
 
-        bool usesDiscriminator = IsSharedDescriptorRequest(request);
-        if (usesDiscriminator)
+        if (IsSharedDescriptorRequest(request))
         {
             AppendSharedDescriptorDeleteFilters(request, fields, joins, predicates);
+            descriptorParameters.Add(
+                new RelationalParameter(
+                    ResourceKeyIdParameterName,
+                    RelationalWriteSupport.GetResourceKeyIdOrThrow(
+                        request.MappingSet,
+                        RelationalWriteSupport.ToQualifiedResourceName(request.ResourceInfo)
+                    )
+                )
+            );
         }
         else
         {
@@ -267,7 +273,7 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
                 fields,
                 joins,
                 predicates,
-                descriptorDiscriminatorParameters
+                descriptorParameters
             );
         }
 
@@ -286,11 +292,7 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
         sqlBuilder.Append("\nWHERE ");
         sqlBuilder.Append(string.Join("\n  AND ", predicates));
 
-        return new FilteredDeletesSql(
-            sqlBuilder.ToString(),
-            usesDiscriminator,
-            descriptorDiscriminatorParameters
-        );
+        return new FilteredDeletesSql(sqlBuilder.ToString(), descriptorParameters);
     }
 
     private string BuildDeletesCountSql(FilteredDeletesSql filteredDeletesSql)
@@ -336,22 +338,7 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
     {
         List<RelationalParameter> parameters = BuildPagingParameters(request);
 
-        if (filteredDeletesSql.UsesDiscriminator)
-        {
-            parameters.Add(new RelationalParameter(DiscriminatorParameterName, BuildDiscriminator(request)));
-            parameters.Add(
-                new RelationalParameter(
-                    QualifiedDiscriminatorParameterName,
-                    BuildQualifiedDiscriminator(request)
-                )
-            );
-        }
-        parameters.AddRange(
-            filteredDeletesSql.DescriptorDiscriminatorParameters.Select(parameter => new RelationalParameter(
-                parameter.Name,
-                parameter.Value
-            ))
-        );
+        parameters.AddRange(filteredDeletesSql.DescriptorParameters);
 
         return parameters;
     }
@@ -404,7 +391,7 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
         IReadOnlyList<ChangeQueryResponseField> fields,
         List<string> joins,
         List<string> predicates,
-        List<DescriptorDiscriminatorParameter> descriptorDiscriminatorParameters
+        List<RelationalParameter> descriptorParameters
     )
     {
         if (fields.Count == 0)
@@ -431,30 +418,24 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
                     break;
 
                 case ChangeQueryResponseFieldKind.Descriptor:
-                    string discriminatorParameterName =
-                        $"{DescriptorDiscriminatorParameterPrefix}{descriptorJoinIndex}";
-                    string qualifiedDiscriminatorParameterName =
-                        $"{DescriptorDiscriminatorQualifiedParameterPrefix}{descriptorJoinIndex}";
+                    string resourceKeyIdParameterName =
+                        $"{DescriptorResourceKeyIdParameterPrefix}{descriptorJoinIndex}";
                     DescriptorIdentityJoin descriptorJoin = BuildDescriptorIdentityJoin(
                         request,
                         field,
                         descriptorJoinIndex,
-                        discriminatorParameterName,
-                        qualifiedDiscriminatorParameterName
+                        resourceKeyIdParameterName
                     );
                     descriptorJoinIndex++;
                     joins.Add(descriptorJoin.DescriptorJoinSql);
                     liveJoinConditions.Add(descriptorJoin.LiveJoinCondition);
-                    descriptorDiscriminatorParameters.Add(
-                        new DescriptorDiscriminatorParameter(
-                            discriminatorParameterName,
-                            descriptorJoin.DescriptorResource.ResourceName
-                        )
-                    );
-                    descriptorDiscriminatorParameters.Add(
-                        new DescriptorDiscriminatorParameter(
-                            qualifiedDiscriminatorParameterName,
-                            BuildQualifiedDiscriminator(descriptorJoin.DescriptorResource)
+                    descriptorParameters.Add(
+                        new RelationalParameter(
+                            resourceKeyIdParameterName,
+                            RelationalWriteSupport.GetResourceKeyIdOrThrow(
+                                request.MappingSet,
+                                descriptorJoin.DescriptorResource
+                            )
                         )
                     );
                     break;
@@ -476,8 +457,7 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
         IRelationalTrackedChangeQueryRequest request,
         ChangeQueryResponseField field,
         int descriptorJoinIndex,
-        string discriminatorParameterName,
-        string qualifiedDiscriminatorParameterName
+        string resourceKeyIdParameterName
     )
     {
         TrackedChangeColumnInfo codeValueColumn =
@@ -490,15 +470,16 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
             request,
             field.OldColumn
         );
+        // Retain this history consumer's component comparisons under the provider's existing collation.
         string descriptorJoinSql =
             $"LEFT JOIN {Quote(_descriptorTable)} {descriptorAlias} ON "
-            + $"{descriptorAlias}.{Quote(_descriptorDiscriminatorColumn)} IN ({discriminatorParameterName}, {qualifiedDiscriminatorParameterName}) "
+            + $"{descriptorAlias}.{Quote(_descriptorResourceKeyIdColumn)} = {resourceKeyIdParameterName} "
             + $"AND {descriptorAlias}.{Quote(_descriptorNamespaceColumn)} = c.{Quote(field.OldColumn.OldColumnName)} "
             + $"AND {descriptorAlias}.{Quote(_descriptorCodeValueColumn)} = c.{Quote(codeValueColumn.OldColumnName)}";
 
         return new DescriptorIdentityJoin(
             descriptorJoinSql,
-            $"live.{Quote(descriptorIdentityMetadata.LiveDescriptorFkColumn)} = {descriptorAlias}.{Quote(_documentIdColumn)}",
+            $"live.{Quote(descriptorIdentityMetadata.LiveDescriptorFkColumn)} = {descriptorAlias}.{Quote(_descriptorIdColumn)}",
             descriptorIdentityMetadata.DescriptorResource
         );
     }
@@ -510,9 +491,9 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
         List<string> predicates
     )
     {
-        TrackedChangeSystemColumnInfo discriminatorColumn = RequireSystemColumn(
+        TrackedChangeSystemColumnInfo resourceKeyIdColumn = RequireSystemColumn(
             request.TrackedChangeTable,
-            TrackedChangeSystemColumnRole.Discriminator
+            TrackedChangeSystemColumnRole.ResourceKeyId
         );
         TrackedChangeColumnInfo namespaceColumn = ResolveSharedDescriptorTrackedColumn(
             request,
@@ -525,12 +506,10 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
             SharedDescriptorTrackedColumnKind.CodeValue
         );
 
-        predicates.Add(
-            $"c.{Quote(discriminatorColumn.ColumnName)} IN ({DiscriminatorParameterName}, {QualifiedDiscriminatorParameterName})"
-        );
+        predicates.Add($"c.{Quote(resourceKeyIdColumn.ColumnName)} = {ResourceKeyIdParameterName}");
         joins.Add(
             $"LEFT JOIN {Quote(_descriptorTable)} live ON "
-                + $"live.{Quote(_descriptorDiscriminatorColumn)} IN ({DiscriminatorParameterName}, {QualifiedDiscriminatorParameterName}) "
+                + $"live.{Quote(_descriptorResourceKeyIdColumn)} = {ResourceKeyIdParameterName} "
                 + $"AND live.{Quote(_descriptorNamespaceColumn)} = c.{Quote(namespaceColumn.OldColumnName)} "
                 + $"AND live.{Quote(_descriptorCodeValueColumn)} = c.{Quote(codeValueColumn.OldColumnName)}"
         );
@@ -828,20 +807,6 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
         request.TrackedChangeTable.Kind is TrackedChangeTableKind.SharedDescriptor
         || request.ResourceModel.StorageKind is ResourceStorageKind.SharedDescriptorTable;
 
-    private static string BuildDiscriminator(IRelationalTrackedChangeQueryRequest request) =>
-        request.ResourceInfo.ResourceName.Value;
-
-    private static string BuildQualifiedDiscriminator(IRelationalTrackedChangeQueryRequest request) =>
-        $"{request.ResourceInfo.ProjectName.Value}:{request.ResourceInfo.ResourceName.Value}";
-
-    /// <summary>
-    /// The qualified <c>dms.Descriptor.Discriminator</c> value a descriptor resource may be stored under.
-    /// Shared with <see cref="TrackedChangeAuthorizationSqlEmitter"/> so custom-view descriptor seeks bind
-    /// the same two-value discriminator shape the change-query descriptor join does.
-    /// </summary>
-    internal static string BuildQualifiedDiscriminator(QualifiedResourceName descriptorResource) =>
-        $"{descriptorResource.ProjectName}:{descriptorResource.ResourceName}";
-
     private static string FormatResource(QualifiedResourceName resource) =>
         $"{resource.ProjectName}:{resource.ResourceName}";
 
@@ -870,8 +835,7 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
 
     private sealed record FilteredDeletesSql(
         string Sql,
-        bool UsesDiscriminator,
-        IReadOnlyList<DescriptorDiscriminatorParameter> DescriptorDiscriminatorParameters
+        IReadOnlyList<RelationalParameter> DescriptorParameters
     );
 
     private sealed record DescriptorIdentityJoin(
@@ -884,8 +848,6 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
         DbColumnName LiveDescriptorFkColumn,
         QualifiedResourceName DescriptorResource
     );
-
-    private sealed record DescriptorDiscriminatorParameter(string Name, string Value);
 
     private enum SharedDescriptorTrackedColumnKind
     {

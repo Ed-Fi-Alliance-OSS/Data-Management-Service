@@ -156,6 +156,7 @@ What the resulting token can *do* is governed by the DMS identity surface under 
 With the surface enabled, the token reaches the identity operations its claim set grants, and it grants no resource access.
 Those operations run only when an identity provider plugin is registered; without one, an otherwise authorized request answers `404` with `urn:ed-fi:api:identities:operation-not-supported`.
 This section documents only how to provision such a client in the Configuration Service and confirm its credentials work.
+How quickly a deletion, a credential reset or a claim set change reaches the identity operations is in [How long a change takes to apply](./IDENTITY-MANAGEMENT.md#how-long-a-change-takes-to-apply), and the rest of the operator's side is in [Identity Management](./IDENTITY-MANAGEMENT.md).
 
 ### Context-Based Routing
 

@@ -424,6 +424,9 @@ public sealed class CoreDdlEmitter
         using (writer.Indent())
         {
             writer.AppendLine(
+                $"{_dialect.RenderColumnDefinition(Col("DescriptorId"), _dialect.IdentityIntColumnType, false)},"
+            );
+            writer.AppendLine(
                 $"{_dialect.RenderColumnDefinition(Col("DocumentId"), _dialect.DocumentIdColumnType, false)},"
             );
             // Denormalized from dms.Document at insert time and immutable thereafter, so descriptor
@@ -447,27 +450,25 @@ public sealed class CoreDdlEmitter
                 $"{_dialect.RenderColumnDefinition(Col("EffectiveBeginDate"), DateType, true)},"
             );
             writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("EffectiveEndDate"), DateType, true)},");
-            writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("Discriminator"), StringType(128), false)},"
-            );
-            writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("Uri"), StringType(306), false)},");
+            if (_dialect.Rules.Dialect == SqlDialect.Mssql)
+            {
+                // The index stores the reconstructed URI; the base row does not. Both components
+                // inherit the database collation, just as the former stored Uri column did.
+                writer.AppendLine($"{Quote("Uri")} AS ({Quote("Namespace")} + N'#' + {Quote("CodeValue")}),");
+            }
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentVersion"), "bigint", false, "DF_Descriptor_ContentVersion", "0")},"
             );
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentLastModifiedAt"), DateTimeType, false, "DF_Descriptor_ContentLastModifiedAt", _dialect.CurrentTimestampDefaultExpression)},"
             );
-            writer.AppendLine(_dialect.RenderNamedPrimaryKeyClause("PK_Descriptor", [Col("DocumentId")]));
+            writer.AppendLine(_dialect.RenderNamedPrimaryKeyClause("PK_Descriptor", [Col("DescriptorId")]));
         }
         writer.AppendLine(");");
         writer.AppendLine();
 
         writer.AppendLine(
-            _dialect.AddUniqueConstraint(
-                _descriptorTable,
-                "UX_Descriptor_Uri_Discriminator",
-                [Col("Uri"), Col("Discriminator")]
-            )
+            _dialect.AddUniqueConstraint(_descriptorTable, "UX_Descriptor_DocumentId", [Col("DocumentId")])
         );
         writer.AppendLine();
     }
@@ -1016,8 +1017,6 @@ public sealed class CoreDdlEmitter
         // Ordered by (table name, index name).
         //
         // Deliberately not emitted:
-        // - dms.Descriptor (Uri, Discriminator): already indexed by the
-        //   UX_Descriptor_Uri_Discriminator unique constraint.
         // - dms.Document (ResourceKeyId, DocumentId): descriptor paging roots on
         //   dms.Descriptor via IX_Descriptor_ResourceKeyId_DocumentId, and no other
         //   query path filters dms.Document by ResourceKeyId. FK_Document_ResourceKey
@@ -1036,6 +1035,20 @@ public sealed class CoreDdlEmitter
                 "IX_Descriptor_ResourceKeyId_DocumentId",
                 [Col("ResourceKeyId"), Col("DocumentId")]
             )
+        );
+        writer.AppendLine();
+
+        // Whole-URI equality preserves the former Uri column's database collation. Component-wise
+        // uniqueness would incorrectly distinguish different pairs that reconstruct the same URI.
+        writer.AppendLine(
+            _dialect.Rules.Dialect == SqlDialect.Pgsql
+                ? $"CREATE UNIQUE INDEX IF NOT EXISTS {Quote("UX_Descriptor_ResourceKeyId_Uri")} ON {_dialect.QualifyTable(_descriptorTable)} ({Quote("ResourceKeyId")}, ({Quote("Namespace")} || '#' || {Quote("CodeValue")}));"
+                : _dialect.CreateIndexIfNotExists(
+                    _descriptorTable,
+                    "UX_Descriptor_ResourceKeyId_Uri",
+                    [Col("ResourceKeyId"), Col("Uri")],
+                    isUnique: true
+                )
         );
         writer.AppendLine();
 
@@ -1590,8 +1603,6 @@ public sealed class CoreDdlEmitter
             (new("Description"), ScalarKind.String),
             (new("EffectiveBeginDate"), ScalarKind.Date),
             (new("EffectiveEndDate"), ScalarKind.Date),
-            (new("Discriminator"), ScalarKind.String),
-            (new("Uri"), ScalarKind.String),
         };
 
     /// <summary>
@@ -1730,8 +1741,8 @@ public sealed class CoreDdlEmitter
             writer.AppendLine("ELSIF TG_OP = 'DELETE' THEN");
             using (writer.Indent())
             {
-                // DocumentId is the Descriptor PK and the row is already gone in the AFTER
-                // DELETE branch, so a mirror update can never match; stamp dms.Document only.
+                // The descriptor row is already gone in the AFTER DELETE branch, so a mirror
+                // update can never match; stamp only the owning document, identified by DocumentId.
                 writer.Append("UPDATE ");
                 writer.AppendLine(documentTable);
                 writer.Append("SET ");
@@ -1791,6 +1802,7 @@ public sealed class CoreDdlEmitter
         writer.Append(Quote("ContentLastModifiedAt"));
         writer.AppendLine();
         writer.AppendLine("FROM stamped");
+        // Captured stamps are keyed by the owning document, not the compact descriptor identity.
         writer.Append("WHERE r.");
         writer.Append(Quote("DocumentId"));
         writer.Append(" = stamped.");
@@ -1816,7 +1828,8 @@ public sealed class CoreDdlEmitter
         var sequenceName =
             $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote(DmsTableNames.ChangeVersionSequence)}";
         var triggerName = $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote(DescriptorStampingTriggerName)}";
-        var quotedKeyColumn = Quote("DocumentId");
+        var quotedDocumentKeyColumn = Quote("DocumentId");
+        var quotedDescriptorKeyColumn = Quote("DescriptorId");
 
         // CREATE OR ALTER TRIGGER must be the first statement in a T-SQL batch.
         writer.AppendLine("GO");
@@ -1840,9 +1853,9 @@ public sealed class CoreDdlEmitter
                 writer.Append("INNER JOIN ");
                 writer.Append(documentTable);
                 writer.Append(" d ON d.");
-                writer.Append(quotedKeyColumn);
+                writer.Append(quotedDocumentKeyColumn);
                 writer.Append(" = i.");
-                writer.AppendLine(quotedKeyColumn);
+                writer.AppendLine(quotedDocumentKeyColumn);
                 writer.Append("WHERE i.");
                 writer.Append(Quote("ResourceKeyId"));
                 writer.Append(" <> d.");
@@ -1873,15 +1886,15 @@ public sealed class CoreDdlEmitter
             writer.Append(documentTable);
             writer.AppendLine(" d");
             writer.Append("INNER JOIN inserted i ON d.");
-            writer.Append(quotedKeyColumn);
+            writer.Append(quotedDocumentKeyColumn);
             writer.Append(" = i.");
-            writer.AppendLine(quotedKeyColumn);
+            writer.AppendLine(quotedDocumentKeyColumn);
             writer.Append("LEFT JOIN deleted del ON del.");
-            writer.Append(quotedKeyColumn);
+            writer.Append(quotedDescriptorKeyColumn);
             writer.Append(" = i.");
-            writer.AppendLine(quotedKeyColumn);
+            writer.AppendLine(quotedDescriptorKeyColumn);
             writer.Append("WHERE del.");
-            writer.Append(quotedKeyColumn);
+            writer.Append(quotedDescriptorKeyColumn);
             writer.AppendLine(" IS NULL;");
             void EmitContentVersionStamp()
             {
@@ -1889,14 +1902,14 @@ public sealed class CoreDdlEmitter
                 using (writer.Indent())
                 {
                     writer.Append("SELECT i.");
-                    writer.AppendLine(quotedKeyColumn);
+                    writer.AppendLine(quotedDocumentKeyColumn);
                     writer.AppendLine("FROM inserted i");
                     writer.Append("LEFT JOIN deleted del ON del.");
-                    writer.Append(quotedKeyColumn);
+                    writer.Append(quotedDescriptorKeyColumn);
                     writer.Append(" = i.");
-                    writer.AppendLine(quotedKeyColumn);
+                    writer.AppendLine(quotedDescriptorKeyColumn);
                     writer.Append("WHERE del.");
-                    writer.Append(quotedKeyColumn);
+                    writer.Append(quotedDescriptorKeyColumn);
                     writer.Append(" IS NOT NULL AND (");
                     EmitMssqlDescriptorColumnDiffDisjunction(writer, "i", "del");
                     writer.Append(")");
@@ -1905,14 +1918,14 @@ public sealed class CoreDdlEmitter
                     // skips the dedup sort.
                     writer.AppendLine("UNION ALL");
                     writer.Append("SELECT del.");
-                    writer.AppendLine(quotedKeyColumn);
+                    writer.AppendLine(quotedDocumentKeyColumn);
                     writer.AppendLine("FROM deleted del");
                     writer.Append("LEFT JOIN inserted i ON i.");
-                    writer.Append(quotedKeyColumn);
+                    writer.Append(quotedDescriptorKeyColumn);
                     writer.Append(" = del.");
-                    writer.AppendLine(quotedKeyColumn);
+                    writer.AppendLine(quotedDescriptorKeyColumn);
                     writer.Append("WHERE i.");
-                    writer.Append(quotedKeyColumn);
+                    writer.Append(quotedDescriptorKeyColumn);
                     writer.AppendLine(" IS NULL");
                 }
                 writer.AppendLine(")");
@@ -1932,9 +1945,9 @@ public sealed class CoreDdlEmitter
                 writer.Append(documentTable);
                 writer.AppendLine(" d");
                 writer.Append("INNER JOIN affectedDocs a ON d.");
-                writer.Append(quotedKeyColumn);
+                writer.Append(quotedDocumentKeyColumn);
                 writer.Append(" = a.");
-                writer.Append(quotedKeyColumn);
+                writer.Append(quotedDocumentKeyColumn);
                 writer.AppendLine(";");
             }
 
@@ -1983,13 +1996,13 @@ public sealed class CoreDdlEmitter
                 // Same reason as the resource mirror stamp: @stamped is a table variable, so the
                 // cached plan reflects the cardinality of whichever firing compiled it, and a plan
                 // that scans dms.Descriptor takes update locks across rows the transaction never
-                // touched. FORCESEEK forbids that scan; the join predicate is an equality on this
-                // table's primary key, so a seek is always available.
+                // touched. FORCESEEK forbids that scan; UX_Descriptor_DocumentId supports a seek
+                // on the unique document association even though DescriptorId is the primary key.
                 writer.AppendLine(" r WITH (FORCESEEK)");
                 writer.Append("INNER JOIN @stamped s ON s.");
-                writer.Append(quotedKeyColumn);
+                writer.Append(quotedDocumentKeyColumn);
                 writer.Append(" = r.");
-                writer.Append(quotedKeyColumn);
+                writer.Append(quotedDocumentKeyColumn);
                 writer.AppendLine(";");
             }
             writer.AppendLine("END");

@@ -13,11 +13,6 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 /// </summary>
 public sealed class RootIdentityConstraintPass : IRelationalModelSetPass
 {
-    private const string UriColumnLabel = "Uri";
-    private const string DiscriminatorColumnLabel = "Discriminator";
-    private const int UriMaxLength = 306;
-    private const int DiscriminatorMaxLength = 128;
-
     /// <summary>
     /// Applies root-table uniqueness constraints for each concrete resource model in the set.
     /// </summary>
@@ -73,44 +68,15 @@ public sealed class RootIdentityConstraintPass : IRelationalModelSetPass
         QualifiedResourceName resource
     )
     {
+        // Core DDL owns provider-specific reconstructed-URI uniqueness for the shared descriptor table.
+        if (resourceModel.StorageKind is ResourceStorageKind.SharedDescriptorTable)
+        {
+            return resourceModel;
+        }
+
         var rootTable = resourceModel.Root;
         var tableAccumulator = new TableColumnAccumulator(rootTable);
         var mutated = false;
-
-        if (resourceModel.StorageKind == ResourceStorageKind.SharedDescriptorTable)
-        {
-            mutated |= EnsureDescriptorColumn(tableAccumulator, rootTable, BuildUriColumn(), UriColumnLabel);
-            mutated |= EnsureDescriptorColumn(
-                tableAccumulator,
-                rootTable,
-                BuildDiscriminatorColumn(),
-                DiscriminatorColumnLabel
-            );
-
-            var descriptorUniqueColumns = new DbColumnName[]
-            {
-                new(UriColumnLabel),
-                new(DiscriminatorColumnLabel),
-            };
-
-            if (!ContainsUniqueConstraint(rootTable.Constraints, rootTable.Table, descriptorUniqueColumns))
-            {
-                var descriptorUniqueName = ConstraintNaming.BuildNaturalKeyUniqueName(rootTable.Table);
-                tableAccumulator.AddConstraint(
-                    new TableConstraint.Unique(descriptorUniqueName, descriptorUniqueColumns)
-                );
-                mutated = true;
-            }
-
-            if (!mutated)
-            {
-                return resourceModel;
-            }
-
-            var updatedRoot = RelationalModelOrdering.CanonicalizeTable(tableAccumulator.Build());
-
-            return UpdateResourceModel(resourceModel, updatedRoot);
-        }
 
         var identityColumns = BuildRootIdentityColumns(resourceModel, builderContext, resource);
 
@@ -217,60 +183,5 @@ public sealed class RootIdentityConstraintPass : IRelationalModelSetPass
         }
 
         return uniqueColumns.ToArray();
-    }
-
-    /// <summary>
-    /// Ensures that a required descriptor-root column exists on the root table, adding it when missing.
-    /// </summary>
-    private static bool EnsureDescriptorColumn(
-        TableColumnAccumulator tableAccumulator,
-        DbTableModel rootTable,
-        DbColumnModel column,
-        string columnName
-    )
-    {
-        if (
-            rootTable.Columns.Any(existing =>
-                string.Equals(existing.ColumnName.Value, columnName, StringComparison.Ordinal)
-            )
-        )
-        {
-            return false;
-        }
-
-        tableAccumulator.AddColumn(column);
-
-        return true;
-    }
-
-    /// <summary>
-    /// Builds the descriptor URI column definition used by descriptor resources stored in the shared table.
-    /// </summary>
-    private static DbColumnModel BuildUriColumn()
-    {
-        return new DbColumnModel(
-            new DbColumnName(UriColumnLabel),
-            ColumnKind.Scalar,
-            new RelationalScalarType(ScalarKind.String, UriMaxLength),
-            IsNullable: false,
-            SourceJsonPath: null,
-            TargetResource: null
-        );
-    }
-
-    /// <summary>
-    /// Builds the descriptor discriminator column definition used by descriptor resources stored in the shared
-    /// table.
-    /// </summary>
-    private static DbColumnModel BuildDiscriminatorColumn()
-    {
-        return new DbColumnModel(
-            new DbColumnName(DiscriminatorColumnLabel),
-            ColumnKind.Scalar,
-            new RelationalScalarType(ScalarKind.String, DiscriminatorMaxLength),
-            IsNullable: false,
-            SourceJsonPath: null,
-            TargetResource: null
-        );
     }
 }

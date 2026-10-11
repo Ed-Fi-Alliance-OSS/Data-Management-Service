@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
@@ -68,6 +69,12 @@ internal static class PeopleRelationshipGetManyScenarioHelpers
         string codeValue
     )
     {
+        await ExecuteNonQueryAsync(
+            harness.DbConnection,
+            IsMssql(harness.DbConnection)
+                ? CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql
+                : CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql
+        );
         using HttpResponseMessage response = await PostJsonAsync(
             harness,
             endpoint,
