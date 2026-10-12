@@ -83,6 +83,32 @@ public class Given_DescriptorReadRowReader
         result.EffectiveEndDate.Should().BeNull();
     }
 
+    [Test]
+    public async Task It_rejects_a_missing_descriptor_timestamp_as_an_owner_invariant()
+    {
+        await using var reader = CreateReader(
+            RelationalAccessTestData.CreateRow(
+                ("DescriptorId", 42),
+                ("DocumentId", 5000000042L),
+                ("DocumentUuid", Guid.Parse("aaaaaaaa-1111-2222-3333-cccccccccccc")),
+                ("ContentVersion", 202L),
+                ("ContentLastModifiedAt", null),
+                ("ResourceKeyId", (short)13),
+                ("Namespace", null),
+                ("CodeValue", null),
+                ("ShortDescription", null)
+            )
+        );
+
+        var act = async () => await DescriptorReadRowReader.ReadSingleOrDefaultAsync(reader);
+
+        var exception = await act.Should().ThrowAsync<DescriptorReadInvariantException>();
+        exception
+            .Which.Message.Should()
+            .Contain("dms.Descriptor.ContentLastModifiedAt must not be null.")
+            .And.Contain("DocumentId 5000000042");
+    }
+
     [TestCase("CodeValue")]
     [TestCase("ShortDescription")]
     public async Task It_classifies_required_descriptor_nulls_as_invariant_failures(string columnName)

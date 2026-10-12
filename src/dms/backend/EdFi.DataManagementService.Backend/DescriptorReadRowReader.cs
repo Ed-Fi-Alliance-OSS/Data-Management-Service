@@ -299,7 +299,7 @@ internal static class DescriptorReadRowReader
         {
             throw new DescriptorReadInvariantException(
                 $"Descriptor read corruption detected for DocumentId {documentId} (ResourceKeyId={resourceKeyId}): "
-                    + $"dms.Document.{columnName} must not be null."
+                    + $"dms.Descriptor.{columnName} must not be null."
             );
         }
 
@@ -315,7 +315,7 @@ internal static class DescriptorReadRowReader
             ),
             string text => DateTimeOffset.Parse(text, CultureInfo.InvariantCulture),
             _ => throw new InvalidOperationException(
-                $"Descriptor read expected a DateTimeOffset-compatible value for dms.Document.{columnName}, "
+                $"Descriptor read expected a DateTimeOffset-compatible value for dms.Descriptor.{columnName}, "
                     + $"but received '{value.GetType().Name}'."
             ),
         };

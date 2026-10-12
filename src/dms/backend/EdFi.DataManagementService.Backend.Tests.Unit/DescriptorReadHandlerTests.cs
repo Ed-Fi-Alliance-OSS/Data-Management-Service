@@ -39,9 +39,16 @@ public partial class Given_DescriptorReadHandler
     )
     {
         var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var descriptorLastModifiedAt = new DateTimeOffset(2026, 5, 6, 9, 30, 45, TimeSpan.FromHours(-5));
         var commandExecutor = new InMemoryRelationalCommandExecutor([
             new InMemoryRelationalCommandExecution([
-                InMemoryRelationalResultSet.Create(CreateDescriptorRow(documentUuid.Value)),
+                InMemoryRelationalResultSet.Create(
+                    CreateDescriptorRow(
+                        documentUuid.Value,
+                        documentId: 5000000042L,
+                        contentLastModifiedAt: descriptorLastModifiedAt
+                    )
+                ),
             ]),
         ]);
         var sut = CreateHandler(commandExecutor);
@@ -50,18 +57,19 @@ public partial class Given_DescriptorReadHandler
 
         var success = result.Should().BeOfType<GetResult.GetSuccess>().Subject;
         success.DocumentUuid.Should().Be(documentUuid);
-        success.LastModifiedDate.Should().Be(new DateTime(2026, 5, 5, 14, 30, 45, DateTimeKind.Utc));
+        success.LastModifiedDate.Should().Be(descriptorLastModifiedAt.UtcDateTime);
         success.EdfiDoc["namespace"]!.GetValue<string>().Should().Be("uri://ed-fi.org/SchoolTypeDescriptor");
         success.EdfiDoc["codeValue"]!.GetValue<string>().Should().Be("Alternative");
         success.EdfiDoc["shortDescription"]!.GetValue<string>().Should().Be("Alternative");
         success.EdfiDoc["id"]!.GetValue<string>().Should().Be(documentUuid.Value.ToString());
         success.EdfiDoc["_etag"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
-        success.EdfiDoc["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-05-05T14:30:45Z");
+        success.EdfiDoc["_lastModifiedDate"]!.GetValue<string>().Should().Be("2026-05-06T14:30:45Z");
         success.EdfiDoc["Discriminator"].Should().BeNull();
         commandExecutor.Commands.Should().ContainSingle();
         commandExecutor.Commands[0].CommandText.Should().Contain(expectedDocumentTableFragment);
         commandExecutor.Commands[0].CommandText.Should().Contain(expectedDescriptorTableFragment);
         commandExecutor.Commands[0].CommandText.Should().Contain("LEFT JOIN");
+        AssertDescriptorStampSources(commandExecutor.Commands[0]);
         commandExecutor
             .Commands[0]
             .Parameters.Select(parameter => parameter.Value)
@@ -385,6 +393,7 @@ public partial class Given_DescriptorReadHandler
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(
                         documentUuid.Value,
+                        descriptorMissing: true,
                         ns: null,
                         codeValue: null,
                         shortDescription: null,
@@ -400,11 +409,7 @@ public partial class Given_DescriptorReadHandler
         var result = await sut.HandleGetByIdAsync(CreateRequest(SqlDialect.Pgsql, documentUuid));
 
         var failure = result.Should().BeOfType<GetResult.UnknownFailure>().Subject;
-        // The row reader treats Namespace as nullable so a stored null can flow into the
-        // namespace-authorization stored-namespace-uninitialized 403; CodeValue is the next
-        // required column, so the reader's invariant message names it when the LEFT JOIN finds
-        // no descriptor row.
-        failure.FailureMessage.Should().Contain("dms.Descriptor.CodeValue must not be null.");
+        failure.FailureMessage.Should().Contain("dms.Descriptor.ContentLastModifiedAt must not be null.");
         failure.FailureMessage.Should().Contain("DocumentId 101");
         failure.FailureMessage.Should().Contain("ResourceKeyId=13");
     }
@@ -1820,7 +1825,12 @@ public partial class Given_DescriptorReadHandler
                 InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 7))),
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(firstDocumentUuid, documentId: 101L, codeValue: "Alternative"),
-                    CreateDescriptorRow(secondDocumentUuid, documentId: 205L, codeValue: "Charter")
+                    CreateDescriptorRow(
+                        secondDocumentUuid,
+                        documentId: 205L,
+                        codeValue: "Charter",
+                        contentLastModifiedAt: new DateTimeOffset(2026, 5, 7, 14, 30, 45, TimeSpan.Zero)
+                    )
                 ),
             ]),
         ]);
@@ -1844,6 +1854,13 @@ public partial class Given_DescriptorReadHandler
         result.TotalCount.Should().Be(7);
         result.Rows.Select(row => row.DocumentId).Should().Equal(101L, 205L);
         result.Rows.Select(row => row.DocumentUuid).Should().Equal(firstDocumentUuid, secondDocumentUuid);
+        result
+            .Rows.Select(row => row.ContentLastModifiedAt)
+            .Should()
+            .Equal(
+                new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero),
+                new DateTimeOffset(2026, 5, 7, 14, 30, 45, TimeSpan.Zero)
+            );
         commandExecutor.Commands.Should().ContainSingle();
         commandExecutor.Commands[0].CommandText.Should().Contain("COUNT(1)");
         commandExecutor.Commands[0].CommandText.Should().Contain(expectedDocumentTableFragment);
@@ -1959,6 +1976,7 @@ public partial class Given_DescriptorReadHandler
                 InMemoryRelationalResultSet.Create(
                     CreateDescriptorRow(
                         Guid.Parse("aaaaaaaa-1111-2222-3333-444444444444"),
+                        descriptorMissing: true,
                         ns: null,
                         codeValue: null,
                         shortDescription: null,
@@ -1974,9 +1992,7 @@ public partial class Given_DescriptorReadHandler
         var result = await sut.HandleQueryAsync(CreateQueryRequest(SqlDialect.Pgsql));
 
         var failure = result.Should().BeOfType<QueryResult.UnknownFailure>().Subject;
-        // See sibling GET-by-id test: Namespace is read nullably so CodeValue is now the first
-        // required column whose null value the reader trips on when the LEFT JOIN finds no row.
-        failure.FailureMessage.Should().Contain("dms.Descriptor.CodeValue must not be null.");
+        failure.FailureMessage.Should().Contain("dms.Descriptor.ContentLastModifiedAt must not be null.");
         failure.FailureMessage.Should().Contain("DocumentId 101");
         failure.FailureMessage.Should().Contain("ResourceKeyId=13");
     }
@@ -3159,7 +3175,8 @@ public partial class Given_DescriptorReadHandler
         string? description = "Alternative school type",
         DateOnly? effectiveBeginDate = null,
         DateOnly? effectiveEndDate = null,
-        long? selectedAnchor = null
+        long? selectedAnchor = null,
+        bool descriptorMissing = false
     )
     {
         List<(string, object?)> columns =
@@ -3169,7 +3186,9 @@ public partial class Given_DescriptorReadHandler
             ("ContentVersion", contentVersion),
             (
                 "ContentLastModifiedAt",
-                contentLastModifiedAt ?? new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero)
+                descriptorMissing
+                    ? null
+                    : contentLastModifiedAt ?? new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero)
             ),
             ("ResourceKeyId", (short)13),
             ("Namespace", ns),
@@ -3245,6 +3264,8 @@ public partial class Given_DescriptorReadHandler
         IReadOnlyList<string> columnNames
     )
     {
+        AssertDescriptorStampSources(command);
+
         foreach (string columnName in columnNames)
         {
             bool selectsColumn =
@@ -3252,6 +3273,27 @@ public partial class Given_DescriptorReadHandler
                 || command.CommandText.Contains($"AS [{columnName}]", StringComparison.Ordinal);
 
             selectsColumn.Should().BeTrue($"the descriptor projection should select {columnName}");
+        }
+    }
+
+    private static void AssertDescriptorStampSources(RelationalCommand command)
+    {
+        var sql = command.CommandText;
+        if (sql.Contains("dms.\"Document\"", StringComparison.Ordinal))
+        {
+            sql.Should().Contain("document.\"ContentVersion\" AS \"ContentVersion\"");
+            sql.Should().Contain("descriptor.\"ContentLastModifiedAt\" AS \"ContentLastModifiedAt\"");
+            sql.Should().Contain("descriptor.\"DocumentId\" = ");
+            sql.Should().NotContain("document.\"ContentLastModifiedAt\"");
+            sql.Should().NotContain("descriptor.\"DescriptorId\" = document.\"DocumentId\"");
+        }
+        else
+        {
+            sql.Should().Contain("document.[ContentVersion] AS [ContentVersion]");
+            sql.Should().Contain("descriptor.[ContentLastModifiedAt] AS [ContentLastModifiedAt]");
+            sql.Should().Contain("descriptor.[DocumentId] = ");
+            sql.Should().NotContain("document.[ContentLastModifiedAt]");
+            sql.Should().NotContain("descriptor.[DescriptorId] = document.[DocumentId]");
         }
     }
 
