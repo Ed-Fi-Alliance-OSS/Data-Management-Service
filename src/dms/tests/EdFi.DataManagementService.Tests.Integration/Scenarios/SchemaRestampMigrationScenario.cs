@@ -293,7 +293,9 @@ internal static class SchemaRestampMigrationScenario
         string testAssemblyDirectory = Path.GetDirectoryName(
             typeof(SchemaRestampMigrationScenario).Assembly.Location
         )!;
-        string assemblyPath = ResolveSchemaToolsAssemblyPath(testAssemblyDirectory);
+        string configuredAssemblyPath =
+            Environment.GetEnvironmentVariable("SCHEMATOOLS_ASSEMBLY_PATH") ?? string.Empty;
+        string assemblyPath = ResolveSchemaToolsAssemblyPath(testAssemblyDirectory, configuredAssemblyPath);
         var startInfo = new ProcessStartInfo("dotnet")
         {
             RedirectStandardOutput = true,
@@ -346,26 +348,38 @@ internal static class SchemaRestampMigrationScenario
         }
     }
 
-    internal static string ResolveSchemaToolsAssemblyPath(string testAssemblyDirectory)
+    internal static string ResolveSchemaToolsAssemblyPath(
+        string testAssemblyDirectory,
+        string configuredAssemblyPath = ""
+    )
     {
-        // Like the CLI suite, use the configuration/framework of the actual test assembly.
-        var frameworkDirectory = new DirectoryInfo(testAssemblyDirectory);
-        var configurationDirectory =
-            frameworkDirectory.Parent
-            ?? throw new DirectoryNotFoundException("The test assembly has no configuration directory.");
-        string assemblyPath = FixturePathResolver.ResolveRepositoryRelativePath(
-            testAssemblyDirectory,
-            Path.Combine(
-                "src",
-                "dms",
-                "clis",
-                "EdFi.DataManagementService.SchemaTools",
-                "bin",
-                configurationDirectory.Name,
-                frameworkDirectory.Name,
-                "api-schema-tools.dll"
-            )
-        );
+        string assemblyPath;
+        if (configuredAssemblyPath.Length > 0)
+        {
+            // CI runs tests from a flattened artifact directory and supplies the staged CLI path.
+            assemblyPath = Path.GetFullPath(configuredAssemblyPath);
+        }
+        else
+        {
+            // Like the CLI suite, use the configuration/framework of the actual test assembly.
+            var frameworkDirectory = new DirectoryInfo(testAssemblyDirectory);
+            var configurationDirectory =
+                frameworkDirectory.Parent
+                ?? throw new DirectoryNotFoundException("The test assembly has no configuration directory.");
+            assemblyPath = FixturePathResolver.ResolveRepositoryRelativePath(
+                testAssemblyDirectory,
+                Path.Combine(
+                    "src",
+                    "dms",
+                    "clis",
+                    "EdFi.DataManagementService.SchemaTools",
+                    "bin",
+                    configurationDirectory.Name,
+                    frameworkDirectory.Name,
+                    "api-schema-tools.dll"
+                )
+            );
+        }
         if (!File.Exists(assemblyPath))
         {
             throw new FileNotFoundException(

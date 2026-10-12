@@ -90,6 +90,88 @@ public class Given_schema_restamp_tool_build_outputs(string configuration, strin
 [Category("ApiIntegration")]
 [Category("PostgresqlIntegration")]
 [Category("MssqlIntegration")]
+public class Given_an_explicit_schema_restamp_tool_path
+{
+    private string _repositoryDirectory = null!;
+    private string _testAssemblyDirectory = null!;
+    private string _expectedAssemblyPath = null!;
+    private string _resolvedAssemblyPath = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _repositoryDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"schema-restamp-explicit-{Guid.NewGuid():N}"
+        );
+        string dmsDirectory = Path.Combine(_repositoryDirectory, "src", "dms");
+        Directory.CreateDirectory(dmsDirectory);
+        File.WriteAllText(Path.Combine(dmsDirectory, "EdFi.DataManagementService.sln"), string.Empty);
+
+        string artifactDirectory = Path.Combine(
+            _repositoryDirectory,
+            "TestArtifacts",
+            "integration-test-assemblies"
+        );
+        _testAssemblyDirectory = Path.Combine(artifactDirectory, "dms-api");
+        Directory.CreateDirectory(_testAssemblyDirectory);
+        string stagedToolDirectory = Path.Combine(
+            artifactDirectory,
+            "src",
+            "dms",
+            "clis",
+            "EdFi.DataManagementService.SchemaTools",
+            "bin",
+            "Release",
+            "net10.0"
+        );
+        Directory.CreateDirectory(stagedToolDirectory);
+        _expectedAssemblyPath = Path.Combine(stagedToolDirectory, "api-schema-tools.dll");
+        File.WriteAllText(_expectedAssemblyPath, string.Empty);
+
+        // A directory-derived lookup would select this unrelated build instead of the staged tool.
+        string unrelatedToolDirectory = Path.Combine(
+            dmsDirectory,
+            "clis",
+            "EdFi.DataManagementService.SchemaTools",
+            "bin",
+            "integration-test-assemblies",
+            "dms-api"
+        );
+        Directory.CreateDirectory(unrelatedToolDirectory);
+        File.WriteAllText(Path.Combine(unrelatedToolDirectory, "api-schema-tools.dll"), string.Empty);
+
+        _resolvedAssemblyPath = SchemaRestampMigrationScenario.ResolveSchemaToolsAssemblyPath(
+            _testAssemblyDirectory,
+            _expectedAssemblyPath
+        );
+    }
+
+    [Test]
+    public void It_uses_the_explicit_tool_path_with_a_flattened_test_artifact() =>
+        _resolvedAssemblyPath.Should().Be(_expectedAssemblyPath);
+
+    [Test]
+    public void It_rejects_a_missing_explicit_tool_instead_of_selecting_an_unrelated_build()
+    {
+        File.Delete(_expectedAssemblyPath);
+        Func<string> action = () =>
+            SchemaRestampMigrationScenario.ResolveSchemaToolsAssemblyPath(
+                _testAssemblyDirectory,
+                _expectedAssemblyPath
+            );
+
+        action.Should().Throw<FileNotFoundException>().Which.FileName.Should().Be(_expectedAssemblyPath);
+    }
+
+    [TearDown]
+    public void Cleanup() => Directory.Delete(_repositoryDirectory, recursive: true);
+}
+
+[TestFixture]
+[Category("ApiIntegration")]
+[Category("PostgresqlIntegration")]
+[Category("MssqlIntegration")]
 public class Given_a_cancelled_schema_restamp_tool_process
 {
     private Process _process = null!;

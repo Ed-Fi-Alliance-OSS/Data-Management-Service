@@ -1299,6 +1299,7 @@ jobs:
       contents: read
     env:
       TEST_ASSEMBLY: ./TestArtifacts/integration-test-assemblies/dms-api/EdFi.DataManagementService.Tests.Integration.dll
+      SCHEMATOOLS_ASSEMBLY_PATH: ${{ github.workspace }}/TestArtifacts/integration-test-assemblies/src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/Release/net10.0/api-schema-tools.dll
       MSSQL_FIXTURE_TIMINGS_PATH: ${{ github.workspace }}/TestResults/test-timings/mssql-api/mssql-fixture-setup-timings.csv
       MSSQL_TEST_SHARD: api
     defaults:
@@ -1464,6 +1465,7 @@ jobs:
     env:
       ConnectionStrings__DatabaseConnection: "Host=localhost;Port=5432;Username=postgres;Database=edfi_dms_backend_integration;Pooling=true;Minimum Pool Size=10;Maximum Pool Size=50;Application Name=EdFi.DataManagementService;NoResetOnClose=true;"
       TEST_ASSEMBLY: ./TestArtifacts/integration-test-assemblies/dms-api/EdFi.DataManagementService.Tests.Integration.dll
+      SCHEMATOOLS_ASSEMBLY_PATH: ${{ github.workspace }}/TestArtifacts/integration-test-assemblies/src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/Release/net10.0/api-schema-tools.dll
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
