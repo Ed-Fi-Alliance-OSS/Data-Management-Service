@@ -143,6 +143,7 @@ try {
     & ./Assert-TemplateSchema.ps1 -ExpectedModelManifestPath $ExpectedModelManifestPath `
         -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName `
         -DatabaseName $SourceDatabaseName -MssqlPassword $MssqlPassword
+    Write-Host "Source timestamp and compact-descriptor catalog assertions passed: $SourceDatabaseName" -ForegroundColor Green
 
     # --- Restore the package into a fresh verification database ---
     $expectedSchemas = @(Get-UserSchemaNames -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -DatabaseName $SourceDatabaseName -MssqlPassword $MssqlPassword)
@@ -154,6 +155,7 @@ try {
     & ./Assert-TemplateSchema.ps1 -ExpectedModelManifestPath $ExpectedModelManifestPath `
         -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName `
         -DatabaseName $VerificationDatabaseName -MssqlPassword $MssqlPassword
+    Write-Host "Restored timestamp and compact-descriptor catalog assertions passed: $VerificationDatabaseName" -ForegroundColor Green
 
     # --- Structural and data assertions ---
     $restoredSchemas = @(Get-UserSchemaNames -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -DatabaseName $VerificationDatabaseName -MssqlPassword $MssqlPassword)
