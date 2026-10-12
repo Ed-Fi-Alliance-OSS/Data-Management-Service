@@ -19,8 +19,10 @@ public abstract class JobScheduleSchemaTestBase : DatabaseTest
     protected const string CheckViolation = "23514";
     protected const string UniqueViolation = "23505";
 
-    // PostgreSQL 18 reports ON DELETE RESTRICT violations as restrict_violation, not 23503.
+    // ON DELETE RESTRICT violations: PostgreSQL 18 reports restrict_violation (23001), while the
+    // still-supported PostgreSQL 15-17 report foreign_key_violation (23503).
     protected const string RestrictViolation = "23001";
+    protected const string ForeignKeyViolation = "23503";
     protected const string InvalidTextRepresentation = "22P02";
 
     private readonly List<long> _tenantIds = [];
@@ -440,6 +442,6 @@ public class Given_a_tenant_with_a_schedule : JobScheduleSchemaTestBase
     public void It_restricts_deleting_the_tenant()
     {
         _scheduleInsert.Should().BeNull();
-        _tenantDelete.Should().Be(RestrictViolation);
+        _tenantDelete.Should().BeOneOf(RestrictViolation, ForeignKeyViolation);
     }
 }

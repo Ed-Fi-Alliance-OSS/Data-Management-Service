@@ -4,8 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
+using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NUnit.Framework;
 
@@ -59,6 +64,51 @@ public class Given_PostgresqlRelationalWriteExceptionClassifier
             .As<RelationalWriteExceptionClassification.ForeignKeyConstraintViolation>()
             .ConstraintName.Should()
             .Be("fk_edfi_student_schoolreference_documentid_schoolid");
+    }
+
+    [Test]
+    public void It_classifies_postgresql_18_restrict_violations_as_foreign_key_violations()
+    {
+        var exception = CreatePostgresException(
+            PostgresErrorCodes.RestrictViolation,
+            constraintName: "fk_edfi_student_schoolreference_documentid_schoolid"
+        );
+
+        var classified = _sut.TryClassify(exception, out var classification);
+
+        classified.Should().BeTrue();
+        classification
+            .Should()
+            .BeOfType<RelationalWriteExceptionClassification.ForeignKeyConstraintViolation>();
+        classification
+            .As<RelationalWriteExceptionClassification.ForeignKeyConstraintViolation>()
+            .ConstraintName.Should()
+            .Be("fk_edfi_student_schoolreference_documentid_schoolid");
+    }
+
+    [Test]
+    public void It_maps_a_postgresql_18_restrict_violation_on_delete_to_a_reference_conflict()
+    {
+        const string ConstraintName = "fk_edfi_student_schoolreference_documentid_schoolid";
+        var referencingResource = new QualifiedResourceName("Ed-Fi", "Student");
+        var resolver = A.Fake<IRelationalDeleteConstraintResolver>();
+        A.CallTo(() => resolver.TryResolveReferencingResource(A<DerivedRelationalModelSet>._, ConstraintName))
+            .Returns(referencingResource);
+
+        var result = RelationalDeleteExecution.MapFailure(
+            CreatePostgresException(PostgresErrorCodes.RestrictViolation, ConstraintName),
+            _sut,
+            resolver,
+            CreateModelSet(),
+            NullLogger.Instance,
+            new DocumentUuid(Guid.NewGuid()),
+            new TraceId("restrict-violation-delete"),
+            DeleteTargetKind.Document
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(new DeleteResult.DeleteFailureReference([referencingResource.ResourceName]));
     }
 
     [Test]
@@ -161,6 +211,17 @@ public class Given_PostgresqlRelationalWriteExceptionClassifier
         _sut.IsForeignKeyViolation(exception).Should().BeTrue();
     }
 
+    [Test]
+    public void It_reports_foreign_key_violation_for_sql_state_23001_without_constraint_name()
+    {
+        var exception = CreatePostgresException(
+            PostgresErrorCodes.RestrictViolation,
+            constraintName: string.Empty
+        );
+
+        _sut.IsForeignKeyViolation(exception).Should().BeTrue();
+    }
+
     [TestCase(PostgresErrorCodes.UniqueViolation)]
     [TestCase(PostgresErrorCodes.CheckViolation)]
     [TestCase(PostgresErrorCodes.DeadlockDetected)]
@@ -239,6 +300,35 @@ public class Given_PostgresqlRelationalWriteExceptionClassifier
             file: "test.sql",
             line: "1",
             routine: "Execute"
+        );
+    }
+
+    private static DerivedRelationalModelSet CreateModelSet()
+    {
+        var resourceKey = new ResourceKeyEntry(
+            1,
+            new QualifiedResourceName("Ed-Fi", "School"),
+            "1.0.0",
+            false
+        );
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0",
+                "v1",
+                "schema-hash",
+                1,
+                [1, 2, 3],
+                [new SchemaComponentInfo("ed-fi", "Ed-Fi", "1.0.0", false, "component-hash")],
+                [resourceKey]
+            ),
+            SqlDialect.Pgsql,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, new DbSchemaName("edfi"))],
+            [],
+            [],
+            [],
+            [],
+            []
         );
     }
 
