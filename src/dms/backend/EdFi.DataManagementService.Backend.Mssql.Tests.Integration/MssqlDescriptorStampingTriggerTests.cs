@@ -195,6 +195,38 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     private sealed record StampValues(long ContentVersion, DateTime ContentLastModifiedAt);
 
     [Test]
+    public async Task It_stamps_distinct_unequal_id_descriptors_concurrently_while_both_hold_owner_and_work_locks()
+    {
+        var first = await SeedAsync(codeValue: "First");
+        var second = await SeedAsync(codeValue: "Second");
+        var neighbor = await SeedAsync(codeValue: "Neighbor");
+        const string write = """
+            UPDATE [dms].[Descriptor] SET [ShortDescription] = [CodeValue] + '-changed'
+            WHERE [DocumentId] = @documentId;
+            """;
+        await MssqlStampingConcurrencyScenario.RunAsync(
+            _database,
+            "[dms].[Descriptor]",
+            first.DocumentId,
+            second.DocumentId,
+            neighbor.DocumentId,
+            write,
+            write
+        );
+
+        var descriptors = await _database.QueryRowsAsync(
+            "SELECT [ShortDescription] FROM [dms].[Descriptor] ORDER BY [DocumentId];"
+        );
+        descriptors
+            .Select(row => row["ShortDescription"])
+            .Should()
+            .Equal("First-changed", "Second-changed", "Female");
+        (await _database.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM [tracked_changes_edfi].[Descriptor];"))
+            .Should()
+            .Be(0);
+    }
+
+    [Test]
     public async Task It_initializes_owner_timestamp_and_copies_document_version_on_descriptor_insert()
     {
         var documentId = await InsertDocumentAsync();

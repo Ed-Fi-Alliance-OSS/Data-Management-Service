@@ -104,6 +104,56 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
             );
     }
 
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_stamps_distinct_owners_concurrently_while_both_hold_root_and_work_locks(
+        bool firstWriterChangesRoot
+    )
+    {
+        var first = await SeedSchoolWithAddressesAsync(100, 2);
+        var second = await SeedSchoolWithAddressesAsync(200, 2);
+        var neighbor = await SeedSchoolWithAddressesAsync(300, 2);
+        await RewindContentLastModifiedAtAsync(first);
+        await RewindContentLastModifiedAtAsync(second);
+        const string childWrite = """
+            UPDATE [edfi].[SchoolAddress] SET [City] = [City] + '-changed'
+            WHERE [School_DocumentId] = @documentId;
+            """;
+        await MssqlStampingConcurrencyScenario.RunAsync(
+            _database,
+            "[edfi].[School]",
+            first,
+            second,
+            neighbor,
+            firstWriterChangesRoot
+                ? "UPDATE [edfi].[School] SET [SchoolId] = [SchoolId] + 1 WHERE [DocumentId] = @documentId;"
+                : childWrite,
+            childWrite
+        );
+
+        var roots = await _database.QueryRowsAsync(
+            "SELECT [SchoolId] FROM [edfi].[School] ORDER BY [DocumentId];"
+        );
+        roots
+            .Select(row => Convert.ToInt32(row["SchoolId"]))
+            .Should()
+            .Equal(firstWriterChangesRoot ? 101 : 100, 200, 300);
+        var children = await _database.QueryRowsAsync(
+            "SELECT [City] FROM [edfi].[SchoolAddress] ORDER BY [School_DocumentId], [Ordinal];"
+        );
+        children
+            .Select(row => row["City"])
+            .Should()
+            .Equal(
+                firstWriterChangesRoot ? "City-100-1" : "City-100-1-changed",
+                firstWriterChangesRoot ? "City-100-2" : "City-100-2-changed",
+                "City-200-1-changed",
+                "City-200-2-changed",
+                "City-300-1",
+                "City-300-2"
+            );
+    }
+
     [Test]
     public async Task It_initializes_the_root_timestamp_without_allocating_an_extra_document_version()
     {
