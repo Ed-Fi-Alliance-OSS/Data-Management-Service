@@ -1401,7 +1401,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
     }
 
     [Test]
-    public void It_should_capture_content_stamps_with_output_and_mirror_to_target_table()
+    public void It_should_capture_document_versions_and_stamp_the_authoritative_root()
     {
         var triggerBody = GetSchoolStampTriggerBody();
 
@@ -1414,12 +1414,8 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
             "[ContentVersion] bigint NOT NULL",
             StringComparison.Ordinal
         );
-        var contentLastModifiedColumnStart = triggerBody.IndexOf(
-            "[ContentLastModifiedAt] datetime2(7) NOT NULL",
-            StringComparison.Ordinal
-        );
         var outputStart = triggerBody.IndexOf(
-            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped",
+            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped",
             StringComparison.Ordinal
         );
         var mirrorUpdateStart = triggerBody.IndexOf("UPDATE r", StringComparison.Ordinal);
@@ -1428,7 +1424,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
             StringComparison.Ordinal
         );
         var mirrorSetLastModifiedStart = triggerBody.IndexOf(
-            "r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]",
+            "r.[ContentLastModifiedAt] = sysutcdatetime()",
             StringComparison.Ordinal
         );
         var mirrorFromStart = triggerBody.IndexOf("FROM [edfi].[School] r", StringComparison.Ordinal);
@@ -1446,8 +1442,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
             );
         documentIdColumnStart.Should().BeGreaterThan(declareStart);
         contentVersionColumnStart.Should().BeGreaterThan(documentIdColumnStart);
-        contentLastModifiedColumnStart.Should().BeGreaterThan(contentVersionColumnStart);
-        outputStart.Should().BeGreaterThan(contentLastModifiedColumnStart);
+        outputStart.Should().BeGreaterThan(contentVersionColumnStart);
         mirrorUpdateStart.Should().BeGreaterThan(outputStart);
         mirrorSetVersionStart.Should().BeGreaterThan(mirrorUpdateStart);
         mirrorSetLastModifiedStart.Should().BeGreaterThan(mirrorSetVersionStart);
@@ -1460,17 +1455,19 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
         // to prevent the contention at all.
         triggerBody.Should().Contain("FROM [edfi].[School] r WITH (FORCESEEK)");
         triggerBody.Should().NotContain("OPTION (");
+        triggerBody.Should().NotContain("d.[ContentLastModifiedAt]");
+        triggerBody.Should().NotContain("inserted.[ContentLastModifiedAt]");
+        triggerBody.Should().NotContain("s.[ContentLastModifiedAt]");
+        triggerBody.Should().NotContain("[ContentLastModifiedAt] datetime2(7) NOT NULL");
     }
 
     [Test]
-    public void It_should_copy_existing_document_stamps_for_root_inserts()
+    public void It_should_copy_existing_document_version_for_root_inserts()
     {
         var triggerBody = GetSchoolStampTriggerBody();
 
-        triggerBody
-            .Should()
-            .Contain("INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])");
-        triggerBody.Should().Contain("SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]");
+        triggerBody.Should().Contain("INSERT INTO @stamped ([DocumentId], [ContentVersion])");
+        triggerBody.Should().Contain("SELECT d.[DocumentId], d.[ContentVersion]");
         triggerBody.Should().Contain("FROM [dms].[Document] d");
         triggerBody.Should().Contain("INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]");
         triggerBody.Should().Contain("LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]");
@@ -1559,6 +1556,9 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
     {
         _ddl.Should().Contain("SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]");
         _ddl.Should().NotContain("DECLARE @contentVersion");
+        GetStampTriggerBody("SchoolAddress")
+            .Should()
+            .Contain("OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped");
     }
 
     [Test]
@@ -1625,7 +1625,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
         var triggerBody = GetSchoolStampTriggerBody();
 
         var stampedPrepopulationStart = triggerBody.IndexOf(
-            "INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])",
+            "INSERT INTO @stamped ([DocumentId], [ContentVersion])",
             StringComparison.Ordinal
         );
         var guardStart = triggerBody.IndexOf(
@@ -3978,7 +3978,7 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resourc
         const string identityGuard = "IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)";
 
         var contentStampCapture = triggerBody.IndexOf(
-            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped",
+            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped",
             StringComparison.Ordinal
         );
         var identityGuardStart = triggerBody.IndexOf(identityGuard, StringComparison.Ordinal);

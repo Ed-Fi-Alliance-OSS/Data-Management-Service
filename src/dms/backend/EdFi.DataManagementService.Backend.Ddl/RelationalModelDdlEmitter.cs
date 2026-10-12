@@ -1767,22 +1767,18 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         using (writer.Indent())
         {
             writer.AppendLine("[DocumentId] bigint NOT NULL PRIMARY KEY,");
-            writer.AppendLine("[ContentVersion] bigint NOT NULL,");
-            writer.AppendLine("[ContentLastModifiedAt] datetime2(7) NOT NULL");
+            writer.AppendLine("[ContentVersion] bigint NOT NULL");
         }
         writer.AppendLine(");");
 
         if (isRootDocumentStampingTrigger)
         {
-            writer.AppendLine(
-                "INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])"
-            );
+            writer.AppendLine("INSERT INTO @stamped ([DocumentId], [ContentVersion])");
             writer.Append("SELECT d.");
             writer.Append(Quote(DocumentIdColumn));
             writer.Append(", d.");
             writer.Append(Quote(ContentVersionColumn));
-            writer.Append(", d.");
-            writer.AppendLine(Quote(ContentLastModifiedAtColumn));
+            writer.AppendLine();
             writer.Append("FROM ");
             writer.Append(documentTable);
             writer.AppendLine(" d");
@@ -1856,12 +1852,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append(Quote(ContentVersionColumn));
             writer.Append(" = NEXT VALUE FOR ");
             writer.Append(sequenceName);
-            writer.Append(", d.");
-            writer.Append(Quote(ContentLastModifiedAtColumn));
-            writer.AppendLine(" = sysutcdatetime()");
-            writer.AppendLine(
-                "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped"
-            );
+            writer.AppendLine();
+            writer.AppendLine("OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped");
             writer.Append("FROM ");
             writer.Append(documentTable);
             writer.AppendLine(" d");
@@ -1891,7 +1883,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             // Both affectedDocs branches require a matching deleted row, so on a pure INSERT the
             // workset is provably empty - yet the statement still scans and locks dms.Document to
             // resolve the join, which is one half of the concurrent-write deadlocking. The other
-            // half is the mirror stamp below re-firing this trigger as an UPDATE that touches only
+            // half is the owner stamp below re-firing this trigger as an UPDATE that touches only
             // ContentVersion/ContentLastModifiedAt: deleted is non-empty there, so EXISTS alone
             // cannot exclude it, but no stored column appears in that SET clause.
             //
@@ -1925,7 +1917,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             EmitContentVersionStamp();
         }
 
-        // The guard bounds direct recursion: without it the mirror self-UPDATE re-fires
+        // The guard bounds direct recursion: without it the owner self-UPDATE re-fires
         // this trigger even with an empty workset (statement triggers fire on 0 rows),
         // which recurses to the nesting limit on databases with RECURSIVE_TRIGGERS ON.
         writer.AppendLine("IF EXISTS (SELECT 1 FROM @stamped)");
@@ -1940,9 +1932,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.AppendLine(",");
             writer.Append("    r.");
             writer.Append(Quote(ContentLastModifiedAtColumn));
-            writer.Append(" = s.");
-            writer.Append(Quote(ContentLastModifiedAtColumn));
-            writer.AppendLine();
+            writer.AppendLine(" = sysutcdatetime()");
             writer.Append("FROM ");
             writer.Append(mirrorStampTarget);
             // @stamped is a table variable, so the cached plan reflects the cardinality of whichever
