@@ -30,7 +30,7 @@ internal sealed class NuGetLoggerAdapter(Microsoft.Extensions.Logging.ILogger lo
         level switch
         {
             NuGetLogLevel.Debug => MsLogLevel.Debug,
-            NuGetLogLevel.Verbose => MsLogLevel.Trace,
+            NuGetLogLevel.Verbose => MsLogLevel.Debug,
             NuGetLogLevel.Information => MsLogLevel.Information,
             NuGetLogLevel.Minimal => MsLogLevel.Information,
             NuGetLogLevel.Warning => MsLogLevel.Warning,
