@@ -83,6 +83,7 @@ internal static partial class DescriptorRuntimeScenario
     {
         DescriptorValues initial = CreateDescriptorValues("changed-put");
         (string locationPath, string initialPostEtag) = await CreateDescriptorAsync(harness, initial);
+        await BackdateDescriptorAsync(harness, locationPath);
 
         JsonObject created = await GetJsonObjectAsync(harness, locationPath);
         string resourceId = created["id"]!.GetValue<string>();
@@ -99,9 +100,6 @@ internal static partial class DescriptorRuntimeScenario
             EffectiveBeginDate = "2025-02-03",
             EffectiveEndDate = "2025-12-30",
         };
-
-        // _lastModifiedDate is stamped at second precision, so wait for the UTC second to tick before the PUT.
-        await WaitForNextWireSecondAsync();
 
         using HttpResponseMessage putResponse = await PutDescriptorAsync(
             harness,
@@ -753,9 +751,10 @@ internal static partial class DescriptorRuntimeScenario
     {
         await using DbCommand command = harness.DbConnection.CreateCommand();
         command.CommandText = """
-            SELECT "ContentVersion", "ContentLastModifiedAt"
-            FROM "dms"."Document"
-            WHERE "DocumentUuid" = @documentUuid
+            SELECT document."ContentVersion", descriptor."ContentLastModifiedAt"
+            FROM "dms"."Document" document
+            JOIN "dms"."Descriptor" descriptor ON descriptor."DocumentId" = document."DocumentId"
+            WHERE document."DocumentUuid" = @documentUuid
             """;
         DbParameter parameter = command.CreateParameter();
         parameter.ParameterName = "@documentUuid";
@@ -771,11 +770,16 @@ internal static partial class DescriptorRuntimeScenario
         );
     }
 
-    private static Task WaitForNextWireSecondAsync() =>
-        // _lastModifiedDate is stamped by the database clock at second precision. Sleep an unconditional
-        // fixed delay (no test-host clock comparison) so any subsequent DB-side stamp lands in a later
-        // wire second, regardless of any skew between the test host and database container clocks.
-        Task.Delay(TimeSpan.FromMilliseconds(1500));
+    private static Task BackdateDescriptorAsync(ApiIntegrationHarness harness, string path) =>
+        ExecuteSqlAsync(
+            harness,
+            """
+            UPDATE "dms"."Descriptor" SET "ContentLastModifiedAt" = @modified
+            WHERE "DocumentId" = (SELECT "DocumentId" FROM "dms"."Document" WHERE "DocumentUuid" = @uuid)
+            """,
+            ("@modified", new DateTime(2001, 2, 3, 4, 5, 6, DateTimeKind.Utc)),
+            ("@uuid", Guid.Parse(path.Split('/')[^1]))
+        );
 
     private static JsonObject CreateDescriptorPayload(DescriptorValues descriptor) =>
         new()
