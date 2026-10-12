@@ -133,16 +133,16 @@ public class Given_SchemaRestamper_CommandCleanup
     [Test]
     public async Task It_finishes_commit_when_cancelled_after_the_commit_phase_starts()
     {
+        using var cancellation = new CancellationTokenSource();
         var connection = new TimeoutCommandConnection(
             failNonQuery: false,
             failRead: false,
             failDispose: false,
-            cancelDuringCommit: true,
+            duringCommit: cancellation.Cancel,
             provideValidSnapshot: true
         );
         var target = new EffectiveSchemaInfo("1.0.0", "v3", new string('a', 64), 0, new byte[32], [], []);
         var service = new SchemaRestamper(NullLogger.Instance, (_, _) => connection);
-        using var cancellation = new CancellationTokenSource();
 
         var result = await service.RestampAsync(
             SqlDialect.Pgsql,
@@ -285,7 +285,6 @@ public class Given_SchemaRestamper_CommandCleanup
         private readonly bool _provideValidSnapshot;
         private readonly string _storedHash;
         private readonly List<TimeoutCommand> _commands = [];
-        private readonly CancellationTokenSource _cancelDuringCommitSource = new();
         private int _readerCount;
         private readonly TaskCompletionSource _commandStarted = new(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -297,7 +296,7 @@ public class Given_SchemaRestamper_CommandCleanup
             bool failDispose = true,
             bool waitForCancellation = false,
             bool failCommit = false,
-            bool cancelDuringCommit = false,
+            Action? duringCommit = null,
             bool provideValidSnapshot = false,
             string? storedHash = null,
             bool disposeFailureRequiresReader = false
@@ -310,11 +309,7 @@ public class Given_SchemaRestamper_CommandCleanup
             _provideValidSnapshot = provideValidSnapshot;
             _storedHash = storedHash ?? new string('b', 64);
             DisposeFailureRequiresReader = disposeFailureRequiresReader;
-            _transaction = new TimeoutCommandTransaction(
-                this,
-                failCommit,
-                cancelDuringCommit ? CancelDuringCommit : null
-            );
+            _transaction = new TimeoutCommandTransaction(this, failCommit, duringCommit);
         }
 
         public int OpenCount { get; private set; }
@@ -336,8 +331,6 @@ public class Given_SchemaRestamper_CommandCleanup
         public bool DisposeFailureRequiresReader { get; }
 
         public int ReaderCount => _readerCount;
-
-        private void CancelDuringCommit() => _cancelDuringCommitSource.Cancel();
 
         public DbDataReader CreateReader()
         {
