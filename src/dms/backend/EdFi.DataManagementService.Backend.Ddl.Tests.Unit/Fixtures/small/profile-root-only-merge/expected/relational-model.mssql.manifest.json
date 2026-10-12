@@ -184,7 +184,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "dms",
         "name": "Descriptor"
       },
@@ -231,7 +231,7 @@
       "identity_projection_columns": [
         "ProfileRootOnlyMergeItemId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ProfileRootOnlyMergeItem"
       },
@@ -278,7 +278,7 @@
       "identity_projection_columns": [
         "StudentUniqueId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Student"
       },
@@ -549,7 +549,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -1066,7 +1066,7 @@
             },
             {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
