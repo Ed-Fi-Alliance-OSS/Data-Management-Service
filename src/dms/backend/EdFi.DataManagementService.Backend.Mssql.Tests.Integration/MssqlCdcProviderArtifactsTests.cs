@@ -268,6 +268,7 @@ public class Given_MssqlCdcProviderArtifacts
         observed
             .Outcome.Should()
             .Be(CdcProviderSetupOutcome.ExactMatch, DescribeDiagnostics(observed.Diagnostics));
+        await AssertCaptureInstancesAsync(connection);
         var original = CaptureIdentities(created);
         original.Should().HaveCount(3);
         original.Values.Should().OnlyContain(hash => hash.Length == 64 && hash.All(Uri.IsHexDigit));
@@ -792,7 +793,7 @@ public class Given_MssqlCdcProviderArtifacts
         return snapshot;
     }
 
-    private static async Task AssertCaptureInstancesAsync(SqlConnection connection)
+    private async Task AssertCaptureInstancesAsync(SqlConnection connection)
     {
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -848,59 +849,33 @@ public class Given_MssqlCdcProviderArtifacts
             );
         rows.Select(row => row.SourceName).Should().NotContain("DocumentProjectionWork");
 
-        AssertCapture(
-            captures[DocumentCacheCaptureInstanceName],
-            sourceName: "DocumentCache",
-            expectedColumns:
-            [
-                "DocumentId",
-                "DocumentUuid",
-                "ProjectName",
-                "ResourceName",
-                "ResourceVersion",
-                "ContentVersion",
-                "StreamEtag",
-                "LastModifiedAt",
-                "DocumentJson",
-                "ComputedAt",
-            ]
-        );
-        AssertCapture(
-            captures[DocumentCaptureInstanceName],
-            sourceName: "Document",
-            expectedColumns:
-            [
-                "DocumentId",
-                "DocumentUuid",
-                "ResourceKeyId",
-                "CreatedByOwnershipTokenId",
-                "ContentVersion",
-                "ContentLastModifiedAt",
-                "CreatedAt",
-            ]
-        );
-        AssertCapture(
-            captures[HeartbeatCaptureInstanceName],
-            sourceName: "CdcHeartbeat",
-            expectedColumns: ["HeartbeatId", "HeartbeatSequence", "HeartbeatAt"]
-        );
-    }
+        var inventory = _fixture.CdcSourceInventory;
+        foreach (var table in inventory)
+        {
+            var captureName = table.TableKind switch
+            {
+                CdcSourceTableKind.Document => DocumentCaptureInstanceName,
+                CdcSourceTableKind.DocumentCache => DocumentCacheCaptureInstanceName,
+                CdcSourceTableKind.CdcHeartbeat => HeartbeatCaptureInstanceName,
+                _ => throw new InvalidOperationException($"Unexpected CDC source table {table.TableKind}."),
+            };
+            var capturedColumns = captures[captureName].OrderBy(row => row.ColumnOrdinal).ToArray();
 
-    private static void AssertCapture(
-        IEnumerable<CaptureColumn> captureRows,
-        string sourceName,
-        IReadOnlyList<string> expectedColumns
-    )
-    {
-        var rows = captureRows.OrderBy(row => row.ColumnOrdinal).ToArray();
-        var first = rows[0];
-
-        first.SourceSchema.Should().Be("dms");
-        first.SourceName.Should().Be(sourceName);
-        first.RoleName.Should().Be(GatingRoleName);
-        first.SupportsNetChanges.Should().BeFalse();
-        first.FilegroupName.Should().BeEmpty();
-        rows.Select(row => row.ColumnName).Should().Equal(expectedColumns);
+            capturedColumns.Should().HaveCount(table.Columns.Count);
+            capturedColumns
+                .Should()
+                .OnlyContain(row =>
+                    row.RoleName == GatingRoleName
+                    && row.SourceSchema == table.TableName.Schema.Value
+                    && row.SourceName == table.TableName.Name
+                    && !row.SupportsNetChanges
+                    && row.FilegroupName == string.Empty
+                );
+            capturedColumns
+                .Select(row => (row.ColumnName, row.ColumnOrdinal))
+                .Should()
+                .Equal(table.Columns.Select(column => (column.ColumnName.Value, column.Ordinal)));
+        }
     }
 
     private static async Task ExecuteNonQueryAsync(SqlConnection connection, string sql)
