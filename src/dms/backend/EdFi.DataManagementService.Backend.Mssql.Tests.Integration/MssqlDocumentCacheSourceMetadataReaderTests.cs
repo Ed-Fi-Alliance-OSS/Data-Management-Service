@@ -238,6 +238,14 @@ public class Given_Mssql_DocumentCacheSourceMetadataReader
                     null,
                     null
                 ),
+                new DbColumnModel(
+                    new DbColumnName("ContentLastModifiedAt"),
+                    ColumnKind.AuthoritativeContentLastModifiedAt,
+                    new RelationalScalarType(ScalarKind.DateTime),
+                    false,
+                    null,
+                    null
+                ),
             ],
             []
         )
@@ -262,7 +270,7 @@ public class Given_Mssql_DocumentCacheSourceMetadataReader
                 []
             ),
             KeysetTableConventions.GetKeysetTableContract(dialect),
-            [new TableReadPlan(rootTable, "select DocumentId")],
+            [new TableReadPlan(rootTable with { Columns = [rootTable.Columns[0]] }, "select DocumentId")],
             [],
             []
         );

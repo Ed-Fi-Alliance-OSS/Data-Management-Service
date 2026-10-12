@@ -50,7 +50,6 @@ public class Given_Postgresql_DocumentCacheMaterializer_Coherence
                 "ResourceKeyId" smallint NOT NULL,
                 "CreatedByOwnershipTokenId" smallint NULL,
                 "ContentVersion" bigint NOT NULL,
-                "ContentLastModifiedAt" timestamptz NOT NULL,
                 "CreatedAt" timestamptz NOT NULL
             );
 
@@ -60,7 +59,6 @@ public class Given_Postgresql_DocumentCacheMaterializer_Coherence
                 "ResourceKeyId",
                 "CreatedByOwnershipTokenId",
                 "ContentVersion",
-                "ContentLastModifiedAt",
                 "CreatedAt"
             )
             VALUES (
@@ -69,9 +67,16 @@ public class Given_Postgresql_DocumentCacheMaterializer_Coherence
                 11,
                 NULL,
                 222,
-                '2026-07-30T14:15:16Z',
                 '2026-07-30T14:15:16Z'
             );
+
+            CREATE SCHEMA edfi;
+            CREATE TABLE edfi."School" (
+                "DocumentId" bigint PRIMARY KEY,
+                "ContentLastModifiedAt" timestamptz NOT NULL
+            );
+            INSERT INTO edfi."School" ("DocumentId", "ContentLastModifiedAt")
+            VALUES (980101, '2026-07-30T14:15:16Z');
             """
         );
     }
@@ -129,6 +134,39 @@ public class Given_Postgresql_DocumentCacheMaterializer_Coherence
         var result = await sut.MaterializeAsync(CreateRequest(_mappingSet));
 
         result.Should().BeSameAs(DocumentCacheMaterializationResult.MissingSource.Instance);
+    }
+
+    [TestCase(false, false, "Stable")]
+    [TestCase(false, false, "Deleted")]
+    [TestCase(false, false, "Changed")]
+    [TestCase(false, true, "Stable")]
+    [TestCase(false, true, "Deleted")]
+    [TestCase(false, true, "Changed")]
+    [TestCase(true, false, "Stable")]
+    [TestCase(true, false, "Deleted")]
+    [TestCase(true, false, "Changed")]
+    [TestCase(true, true, "Stable")]
+    [TestCase(true, true, "Deleted")]
+    [TestCase(true, true, "Changed")]
+    public async Task It_classifies_owner_absence_across_a_synchronized_reread(
+        bool descriptor,
+        bool initiallyMissing,
+        string finalState
+    )
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        var executor = new PostgresqlRelationalCommandExecutor(
+            async cancellationToken => (DbConnection)await _dataSource.OpenConnectionAsync(cancellationToken),
+            NullLogger<PostgresqlRelationalCommandExecutor>.Instance
+        );
+        await DocumentCacheOwnerCoherenceScenario.ExecuteAsync(
+            connection,
+            executor,
+            SqlDialect.Pgsql,
+            descriptor,
+            initiallyMissing,
+            finalState
+        );
     }
 
     private DocumentCacheMaterializer CreateMaterializer(Func<Task> mutateDuringHydration)
