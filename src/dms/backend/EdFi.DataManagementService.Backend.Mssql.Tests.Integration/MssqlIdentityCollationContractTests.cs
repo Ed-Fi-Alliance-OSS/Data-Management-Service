@@ -51,6 +51,10 @@ public class Given_A_Mssql_Case_Sensitive_Default_Database_With_Identity_Collati
     private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
     private static readonly QualifiedResourceName AcademicWeekResource = new("Ed-Fi", "AcademicWeek");
     private static readonly QualifiedResourceName StudentResource = new("Ed-Fi", "Student");
+    private static readonly QualifiedResourceName AcademicSubjectDescriptorResource = new(
+        "Ed-Fi",
+        "AcademicSubjectDescriptor"
+    );
 
     private static readonly ResourceInfo AcademicWeekResourceInfo = new(
         new ProjectName("Ed-Fi"),
@@ -189,6 +193,31 @@ public class Given_A_Mssql_Case_Sensitive_Default_Database_With_Identity_Collati
         Func<Task> verify = () => _database.ExecuteNonQueryAsync(assertionSql);
 
         await verify.Should().NotThrowAsync();
+    }
+
+    /// <summary>
+    /// Descriptor namespaces are pinned to the identity collation, so the stored-row and proposed-value
+    /// namespace checks of one update must agree on a case-variant prefix under the case-sensitive default.
+    /// </summary>
+    [Test]
+    public async Task It_gives_stored_and_proposed_namespace_checks_the_same_verdict_for_a_case_variant_prefix()
+    {
+        Func<Task> authorize = () =>
+            AuthorizeDescriptorUpdateAsync("URI://ED-FI.ORG/AcademicSubjectDescriptor", "uri://ed-fi.org/");
+
+        await authorize.Should().NotThrowAsync();
+    }
+
+    [Test]
+    public async Task It_still_denies_a_descriptor_update_outside_every_namespace_prefix()
+    {
+        Func<Task> authorize = () =>
+            AuthorizeDescriptorUpdateAsync(
+                "URI://ED-FI.ORG/AcademicSubjectDescriptor",
+                "uri://other.example.org/"
+            );
+
+        await authorize.Should().ThrowAsync<SqlException>().WithMessage("*AUTH1*");
     }
 
     [Test]
@@ -393,6 +422,55 @@ public class Given_A_Mssql_Case_Sensitive_Default_Database_With_Identity_Collati
         return rows.Select(row => ((string)row["QualifiedColumn"]!, (string)row["Collation"]!))
             .Where(entry => qualifiedColumns.Contains(entry.Item1))
             .ToDictionary(entry => entry.Item1, entry => entry.Item2, StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Seeds a descriptor under <paramref name="storedNamespace"/> and executes the planned update namespace
+    /// authorization (stored check, then a proposed check of the same unchanged namespace).
+    /// </summary>
+    private async Task AuthorizeDescriptorUpdateAsync(string storedNamespace, string clientPrefix)
+    {
+        ConcreteResourceModel descriptor = _fixture.MappingSet.Model.ConcreteResourcesInNameOrder.Single(
+            resource => resource.RelationalModel.Resource == AcademicSubjectDescriptorResource
+        );
+        long documentId = await InsertDocumentAsync(AcademicSubjectDescriptorResource);
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [dms].[Descriptor] ([DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription])
+            VALUES (@documentId, @resourceKeyId, @namespace, @codeValue, N'Identity collation');
+            """,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter(
+                "@resourceKeyId",
+                _fixture.MappingSet.ResourceKeyIdByResource[AcademicSubjectDescriptorResource]
+            ),
+            new SqlParameter("@namespace", storedNamespace),
+            new SqlParameter("@codeValue", Guid.NewGuid().ToString("N"))
+        );
+
+        var checks = (
+            (NamespaceAuthorizationPlanOutcome.Plan)
+                NamespaceAuthorizationPlanner.Plan(
+                    descriptor,
+                    NamespaceAuthorizationOperation.Update,
+                    new RelationalAuthorizationContext([], [clientPrefix])
+                )
+        ).Checks;
+        NamespacePrefixParameterization prefixes = NamespacePrefixParameterizationFactory.Create(
+            SqlDialect.Mssql,
+            [clientPrefix],
+            "namespacePrefixes"
+        );
+        string sql = new NamespaceAuthorizationSqlCompiler(SqlDialect.Mssql)
+            .Compile(new NamespaceAuthorizationSqlSpec(checks, prefixes, "documentId", "proposedNamespace"))
+            .AuthorizationSql;
+
+        await _database.ExecuteNonQueryAsync(
+            sql,
+            new SqlParameter("@documentId", documentId),
+            new SqlParameter("@proposedNamespace", storedNamespace),
+            new SqlParameter($"@{prefixes.ParameterNamesInOrder[0]}", prefixes.LikePatternsInOrder[0])
+        );
     }
 
     private async Task<long> NextChangeVersionAsync() =>

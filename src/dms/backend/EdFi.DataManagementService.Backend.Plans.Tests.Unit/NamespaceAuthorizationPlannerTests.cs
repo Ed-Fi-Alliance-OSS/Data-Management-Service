@@ -339,6 +339,48 @@ public class Given_NamespaceAuthorizationPlanner
     }
 
     [Test]
+    public void It_marks_every_check_when_the_root_namespace_column_carries_the_identity_collation()
+    {
+        var resource = RootNamespaceResource();
+        var root = resource.RelationalModel.Root with
+        {
+            Columns =
+            [
+                resource.RelationalModel.Root.Columns.Single() with
+                {
+                    UsesSqlServerIdentityCollation = true,
+                },
+            ],
+        };
+        var flaggedResource = resource with
+        {
+            RelationalModel = resource.RelationalModel with { Root = root, TablesInDependencyOrder = [root] },
+        };
+
+        var outcome = NamespaceAuthorizationPlanner.Plan(
+            flaggedResource,
+            NamespaceAuthorizationOperation.Update,
+            TwoPrefixContext()
+        );
+
+        var plan = outcome.Should().BeOfType<NamespaceAuthorizationPlanOutcome.Plan>().Subject;
+        plan.Checks.Should().HaveCount(2).And.OnlyContain(c => c.NamespaceColumnUsesIdentityCollation);
+    }
+
+    [Test]
+    public void It_leaves_checks_unmarked_when_the_root_namespace_column_has_no_identity_collation()
+    {
+        var outcome = NamespaceAuthorizationPlanner.Plan(
+            RootNamespaceResource(),
+            NamespaceAuthorizationOperation.Update,
+            TwoPrefixContext()
+        );
+
+        var plan = outcome.Should().BeOfType<NamespaceAuthorizationPlanOutcome.Plan>().Subject;
+        plan.Checks.Should().HaveCount(2).And.OnlyContain(c => !c.NamespaceColumnUsesIdentityCollation);
+    }
+
+    [Test]
     public void It_emits_a_plan_when_unrelated_securable_metadata_is_unresolvable_alongside_a_valid_root_namespace()
     {
         // The resource declares a valid root Namespace path plus unrelated Student / Contact /
