@@ -19,7 +19,9 @@ public abstract class JobSchemaTestBase : DatabaseTest
 {
     protected const string CheckViolation = "23514";
     protected const string UniqueViolation = "23505";
-    protected const string ForeignKeyViolation = "23503";
+
+    // PostgreSQL 18 reports ON DELETE RESTRICT violations as restrict_violation, not 23503.
+    protected const string RestrictViolation = "23001";
     protected const string InvalidTextRepresentation = "22P02";
 
     private readonly List<long> _tenantIds = [];
@@ -164,6 +166,7 @@ public class Given_the_Job_table : JobSchemaTestBase
                        constraint_info.confdeltype::text AS DeleteRule
                 FROM pg_constraint constraint_info
                 WHERE constraint_info.conrelid = '"dmscs"."Job"'::regclass
+                  AND constraint_info.contype <> 'n'
                 ORDER BY constraint_info.conname;
                 """
             )
@@ -668,13 +671,13 @@ public class Given_a_tenant_and_a_schedule_referenced_by_jobs : JobSchemaTestBas
     public void It_restricts_deleting_a_schedule_that_has_jobs()
     {
         _scheduledJobInsert.Should().BeNull();
-        _scheduleDelete.Should().Be($"{ForeignKeyViolation}:FK_Job_JobSchedule");
+        _scheduleDelete.Should().Be($"{RestrictViolation}:FK_Job_JobSchedule");
     }
 
     [Test]
     public void It_restricts_deleting_a_tenant_that_has_jobs()
     {
         _manualJobInsert.Should().BeNull();
-        _tenantDelete.Should().Be($"{ForeignKeyViolation}:FK_Job_Tenant");
+        _tenantDelete.Should().Be($"{RestrictViolation}:FK_Job_Tenant");
     }
 }

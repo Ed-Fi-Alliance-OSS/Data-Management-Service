@@ -103,7 +103,7 @@ internal sealed class JobUpgradeTestDatabase
             await connection.QueryAsync<string>(
                 """
                 SELECT conname FROM pg_constraint
-                WHERE conrelid = format('"dmscs".%I', @TableName)::regclass
+                WHERE conrelid = format('"dmscs".%I', @TableName)::regclass AND contype <> 'n'
                 UNION
                 SELECT indexname FROM pg_indexes
                 WHERE schemaname = 'dmscs' AND tablename = @TableName
