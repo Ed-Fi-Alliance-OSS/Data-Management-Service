@@ -232,6 +232,7 @@ try {
         $restoredPartition = Assert-DmsOnlyInventory `
             -DatabaseEngine $DatabaseEngine `
             -Inventory $restoredFacts.FullInventory `
+            -DatabaseLevelObject $restoredFacts.DatabaseLevelObjects `
             -SourceDescription "Restored verification database '$VerificationDatabaseName'"
 
         Assert-RestoreManifestMatchesDatabase `

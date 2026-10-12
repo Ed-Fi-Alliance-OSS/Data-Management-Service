@@ -72,13 +72,16 @@ Describe "Invoke-BootstrapRestoreSmoke static contract" {
             $script:smokeContent.Contains("Tampered-package refusal happened AFTER Docker activity") | Should -BeTrue
         }
 
-        It "the contaminated-package leg is PostgreSQL-only and asserts target absence, no generated databases, and no committed workspace" {
-            $script:smokeContent.Contains("contaminated-package leg is PostgreSQL-only") | Should -BeTrue
+        It "the contaminated-package leg runs on both engines and asserts a scratch-validation refusal, target absence, no generated databases, no committed workspace, and only the db service" {
+            $script:smokeContent.Contains("contaminated-package leg is PostgreSQL-only") | Should -BeFalse
+            # SQL Server gets an engine-built .bak fixture instead of a text edit.
+            $script:smokeContent.Contains("Write-SmokeMssqlContaminatedBackup -ArtifactPath") | Should -BeTrue
             $script:smokeContent.Contains("exists after a failed scratch validation on a fresh volume") | Should -BeTrue
             $script:smokeContent.Contains("Generated restore databases remain after the failure") | Should -BeTrue
             $script:smokeContent.Contains("An active .bootstrap workspace exists after a pre-commit failure") | Should -BeTrue
-            # The refusal must come from the DMS-only gate naming the injected schema.
-            $script:smokeContent.Contains("smoke_intruder") | Should -BeTrue
+            $script:smokeContent.Contains("Services other than the database started for the refused restore") | Should -BeTrue
+            # The refusal must come from scratch validation naming the injected object.
+            $script:smokeContent.Contains("*Restore scratch database 'edfi_dms_restore_scratch_*smoke_intruder*") | Should -BeTrue
         }
 
         It "the running-stack leg requires the stop proof's own refusal" {

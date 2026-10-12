@@ -263,9 +263,11 @@ function Get-RestoreDocumentJsonBaselineType {
     <#
     .SYNOPSIS
     The current authoritative physical storage type of the DocumentJson columns per engine:
-    PostgreSQL "jsonb", SQL Server "nvarchar" (native json deferred, so nvarchar(max) is the
-    MSSQL baseline). Restore manifests and scratch databases are both validated against this
-    single definition; a future storage migration changes only this function.
+    PostgreSQL "jsonb", SQL Server "nvarchar(max)" (native json deferred). The SQL Server value
+    carries the declared length, as Get-DocumentJsonColumnTypeQuerySql renders it, so a
+    narrowed nvarchar column is not the baseline. Restore manifests and scratch databases are
+    both validated against this single definition; a future storage migration changes only
+    this function.
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -274,7 +276,7 @@ function Get-RestoreDocumentJsonBaselineType {
     )
 
     if ($DatabaseEngine -eq "mssql") {
-        return "nvarchar"
+        return "nvarchar(max)"
     }
 
     return "jsonb"
@@ -1104,10 +1106,16 @@ function Get-InventoryObjectQuerySql {
     <#
     .SYNOPSIS
     Engine SQL listing every inventoried object as pipe-separated "schema|name|type" rows
-    over the InventoryEnumeration schema scope. PostgreSQL function names carry their
-    identity-argument signature (overloads must stay distinct), triggers are qualified by
-    their table, and objects owned by the allow-listed bootstrap extensions are filtered so
-    everything else an artifact creates stays visible to the DMS-only gate.
+    over the InventoryEnumeration schema scope. Every category a database can hold inside a
+    schema is listed, so an object the authoritative DDL does not create is visible even
+    inside an allowed schema: SQL Server lists every schema-scoped sys.objects entry (plus
+    triggers), user-defined types, and XML schema collections; PostgreSQL lists relations,
+    routines, types and domains, collations, conversions, operators, operator classes and
+    families, statistics objects, text search objects, and table triggers, rules, and
+    policies. PostgreSQL function names carry their identity-argument signature (overloads
+    must stay distinct), table-attached objects are qualified by their table, and objects
+    owned by the allow-listed bootstrap extensions are filtered so everything else an
+    artifact creates stays visible to the DMS-only gate.
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -1118,17 +1126,29 @@ function Get-InventoryObjectQuerySql {
     if ($DatabaseEngine -eq "mssql") {
         # Only sys and INFORMATION_SCHEMA are skipped: no user object can live there. A user
         # object inside the built-in guest or fixed-role schemas is listed like any other, and
-        # the schema query reports its schema for exactly that case.
+        # the schema query reports its schema for exactly that case. Child objects other than
+        # triggers (constraints) belong to their table. A table type is listed once, by its
+        # sys.types name: its sys.objects row (TT) carries a generated per-database name.
         return @(
             "SET NOCOUNT ON;",
             "SELECT s.name + '|' + o.name + '|' +",
             "  CASE o.type WHEN 'U' THEN 'table' WHEN 'V' THEN 'view' WHEN 'P' THEN 'procedure'",
             "    WHEN 'FN' THEN 'function' WHEN 'IF' THEN 'function' WHEN 'TF' THEN 'function' WHEN 'AF' THEN 'aggregate'",
-            "    WHEN 'TR' THEN 'trigger' WHEN 'SO' THEN 'sequence' ELSE LOWER(RTRIM(o.type)) END COLLATE DATABASE_DEFAULT",
+            "    WHEN 'TR' THEN 'trigger' WHEN 'SO' THEN 'sequence' WHEN 'SN' THEN 'synonym' ELSE LOWER(RTRIM(o.type)) END COLLATE DATABASE_DEFAULT",
             "FROM sys.objects o JOIN sys.schemas s ON s.schema_id = o.schema_id",
             "WHERE o.is_ms_shipped = 0",
-            "  AND o.type IN ('U','V','P','FN','IF','TF','AF','TR','SO')",
+            "  AND (o.parent_object_id = 0 OR o.type IN ('TR','TA'))",
+            "  AND o.type <> 'TT'",
             "  AND s.name NOT IN ('sys','INFORMATION_SCHEMA')",
+            "UNION ALL",
+            "SELECT s.name + '|' + t.name + '|' + CASE WHEN t.is_table_type = 1 THEN 'tabletype' ELSE 'type' END",
+            "FROM sys.types t JOIN sys.schemas s ON s.schema_id = t.schema_id",
+            "WHERE t.is_user_defined = 1",
+            "  AND s.name NOT IN ('sys','INFORMATION_SCHEMA')",
+            "UNION ALL",
+            "SELECT s.name + '|' + x.name + '|' + 'xmlschemacollection'",
+            "FROM sys.xml_schema_collections x JOIN sys.schemas s ON s.schema_id = x.schema_id",
+            "WHERE s.name NOT IN ('sys','INFORMATION_SCHEMA')",
             "ORDER BY 1;"
         ) -join "`n"
     }
@@ -1137,10 +1157,10 @@ function Get-InventoryObjectQuerySql {
 
     return @(
         "SELECT n.nspname || '|' || c.relname || '|' ||",
-        "  CASE c.relkind WHEN 'r' THEN 'table' WHEN 'p' THEN 'table' WHEN 'v' THEN 'view' WHEN 'm' THEN 'materializedview' WHEN 'S' THEN 'sequence' END",
+        "  CASE c.relkind WHEN 'r' THEN 'table' WHEN 'p' THEN 'table' WHEN 'v' THEN 'view' WHEN 'm' THEN 'materializedview' WHEN 'S' THEN 'sequence' WHEN 'f' THEN 'foreigntable' END",
         "FROM pg_catalog.pg_class c",
         "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace",
-        "WHERE c.relkind IN ('r','p','v','m','S')",
+        "WHERE c.relkind IN ('r','p','v','m','S','f')",
         "  AND n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'",
         "  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d JOIN pg_catalog.pg_extension e ON e.oid = d.refobjid",
         "                  WHERE d.classid = 'pg_catalog.pg_class'::regclass AND d.objid = c.oid AND d.deptype = 'e' AND e.extname IN ($allowedExtensionList))",
@@ -1155,6 +1175,118 @@ function Get-InventoryObjectQuerySql {
         "SELECT n.nspname || '|' || c.relname || '.' || t.tgname || '|' || 'trigger'",
         "FROM pg_catalog.pg_trigger t JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace",
         "WHERE NOT t.tgisinternal AND n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'",
+        "UNION ALL",
+        "SELECT n.nspname || '|' || c.relname || '.' || r.rulename || '|' || 'rule'",
+        "FROM pg_catalog.pg_rewrite r JOIN pg_catalog.pg_class c ON c.oid = r.ev_class JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace",
+        "WHERE r.rulename <> '_RETURN' AND n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'",
+        "UNION ALL",
+        "SELECT n.nspname || '|' || c.relname || '.' || pol.polname || '|' || 'policy'",
+        "FROM pg_catalog.pg_policy pol JOIN pg_catalog.pg_class c ON c.oid = pol.polrelid JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace",
+        "WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'",
+        "UNION ALL",
+        # Standalone types only: a table's row type (composite over a non-'c' relation) and
+        # array types (typtype 'b') come with the object they belong to.
+        "SELECT n.nspname || '|' || t.typname || '|' ||",
+        "  CASE t.typtype WHEN 'c' THEN 'compositetype' WHEN 'd' THEN 'domain' WHEN 'e' THEN 'enum' WHEN 'r' THEN 'rangetype' WHEN 'm' THEN 'multirangetype' END",
+        "FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace",
+        "WHERE t.typtype IN ('c','d','e','r','m')",
+        "  AND (t.typtype <> 'c' OR EXISTS (SELECT 1 FROM pg_catalog.pg_class c WHERE c.oid = t.typrelid AND c.relkind = 'c'))",
+        "  AND n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'",
+        "  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d JOIN pg_catalog.pg_extension e ON e.oid = d.refobjid",
+        "                  WHERE d.classid = 'pg_catalog.pg_type'::regclass AND d.objid = t.oid AND d.deptype = 'e' AND e.extname IN ($allowedExtensionList))",
+        "UNION ALL",
+        "SELECT n.nspname || '|' || x.objname || '|' || x.kind",
+        "FROM (SELECT collnamespace AS ns, collname::text AS objname, 'collation'::text AS kind, oid, 'pg_catalog.pg_collation'::regclass AS catalog FROM pg_catalog.pg_collation",
+        "      UNION ALL SELECT connamespace, conname::text, 'conversion', oid, 'pg_catalog.pg_conversion'::regclass FROM pg_catalog.pg_conversion",
+        "      UNION ALL SELECT oprnamespace, oprname::text, 'operator', oid, 'pg_catalog.pg_operator'::regclass FROM pg_catalog.pg_operator",
+        "      UNION ALL SELECT opcnamespace, opcname::text, 'operatorclass', oid, 'pg_catalog.pg_opclass'::regclass FROM pg_catalog.pg_opclass",
+        "      UNION ALL SELECT opfnamespace, opfname::text, 'operatorfamily', oid, 'pg_catalog.pg_opfamily'::regclass FROM pg_catalog.pg_opfamily",
+        "      UNION ALL SELECT stxnamespace, stxname::text, 'statistics', oid, 'pg_catalog.pg_statistic_ext'::regclass FROM pg_catalog.pg_statistic_ext",
+        "      UNION ALL SELECT cfgnamespace, cfgname::text, 'textsearchconfiguration', oid, 'pg_catalog.pg_ts_config'::regclass FROM pg_catalog.pg_ts_config",
+        "      UNION ALL SELECT dictnamespace, dictname::text, 'textsearchdictionary', oid, 'pg_catalog.pg_ts_dict'::regclass FROM pg_catalog.pg_ts_dict",
+        "      UNION ALL SELECT prsnamespace, prsname::text, 'textsearchparser', oid, 'pg_catalog.pg_ts_parser'::regclass FROM pg_catalog.pg_ts_parser",
+        "      UNION ALL SELECT tmplnamespace, tmplname::text, 'textsearchtemplate', oid, 'pg_catalog.pg_ts_template'::regclass FROM pg_catalog.pg_ts_template) x",
+        "JOIN pg_catalog.pg_namespace n ON n.oid = x.ns",
+        "WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'",
+        "  AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d JOIN pg_catalog.pg_extension e ON e.oid = d.refobjid",
+        "                  WHERE d.classid = x.catalog AND d.objid = x.oid AND d.deptype = 'e' AND e.extname IN ($allowedExtensionList))",
+        "ORDER BY 1;"
+    ) -join "`n"
+}
+
+function Get-InventoryDatabaseObjectQuerySql {
+    <#
+    .SYNOPSIS
+    Engine SQL listing user-created database-level objects as "kind|name" rows: state that
+    lives in the database but in no schema, so the schema/object inventory cannot see it. A
+    SQL Server backup carries all of it (keys, certificates, credentials, assemblies, DDL
+    triggers, Service Broker and full-text objects, partitioning, plan guides, audit
+    specifications); a PostgreSQL artifact can create extensions, event triggers,
+    publications, foreign-data wrappers and servers, user mappings, casts, languages,
+    transforms, access methods, large objects, and default privileges. The authoritative DDL
+    creates none of these, so every row is a violation; only provider support objects are
+    excluded: what SQL Server ships in every database (its Service Broker objects, ids at or
+    below 65535, and the AutoCreatedLocal route) and, on PostgreSQL, the plpgsql and
+    allow-listed bootstrap extensions with their objects, plus initdb's own catalog rows
+    (oids below FirstNormalObjectId, 16384).
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine
+    )
+
+    if ($DatabaseEngine -eq "mssql") {
+        # Catalog views carry different name collations; each arm is coerced so the UNION resolves.
+        $arms = @(
+            "SELECT ('ddltrigger|' + name) COLLATE DATABASE_DEFAULT FROM sys.triggers WHERE parent_class = 0 AND is_ms_shipped = 0",
+            "SELECT ('eventnotification|' + name) COLLATE DATABASE_DEFAULT FROM sys.event_notifications WHERE parent_class = 0",
+            "SELECT ('assembly|' + name) COLLATE DATABASE_DEFAULT FROM sys.assemblies WHERE is_user_defined = 1",
+            "SELECT ('certificate|' + name) COLLATE DATABASE_DEFAULT FROM sys.certificates",
+            "SELECT ('asymmetrickey|' + name) COLLATE DATABASE_DEFAULT FROM sys.asymmetric_keys",
+            "SELECT ('symmetrickey|' + name) COLLATE DATABASE_DEFAULT FROM sys.symmetric_keys",
+            "SELECT ('columnmasterkey|' + name) COLLATE DATABASE_DEFAULT FROM sys.column_master_keys",
+            "SELECT ('columnencryptionkey|' + name) COLLATE DATABASE_DEFAULT FROM sys.column_encryption_keys",
+            "SELECT ('databasescopedcredential|' + name) COLLATE DATABASE_DEFAULT FROM sys.database_scoped_credentials",
+            "SELECT ('externaldatasource|' + name) COLLATE DATABASE_DEFAULT FROM sys.external_data_sources",
+            "SELECT ('externalfileformat|' + name) COLLATE DATABASE_DEFAULT FROM sys.external_file_formats",
+            "SELECT ('externallibrary|' + name) COLLATE DATABASE_DEFAULT FROM sys.external_libraries",
+            "SELECT ('partitionfunction|' + name) COLLATE DATABASE_DEFAULT FROM sys.partition_functions",
+            "SELECT ('partitionscheme|' + name) COLLATE DATABASE_DEFAULT FROM sys.partition_schemes",
+            "SELECT ('fulltextcatalog|' + name) COLLATE DATABASE_DEFAULT FROM sys.fulltext_catalogs",
+            "SELECT ('fulltextstoplist|' + name) COLLATE DATABASE_DEFAULT FROM sys.fulltext_stoplists",
+            "SELECT ('searchpropertylist|' + name) COLLATE DATABASE_DEFAULT FROM sys.registered_search_property_lists",
+            "SELECT ('planguide|' + name) COLLATE DATABASE_DEFAULT FROM sys.plan_guides",
+            "SELECT ('databaseauditspecification|' + name) COLLATE DATABASE_DEFAULT FROM sys.database_audit_specifications",
+            "SELECT ('messagetype|' + name) COLLATE DATABASE_DEFAULT FROM sys.service_message_types WHERE message_type_id > 65535",
+            "SELECT ('contract|' + name) COLLATE DATABASE_DEFAULT FROM sys.service_contracts WHERE service_contract_id > 65535",
+            "SELECT ('service|' + name) COLLATE DATABASE_DEFAULT FROM sys.services WHERE service_id > 65535",
+            "SELECT ('route|' + name) COLLATE DATABASE_DEFAULT FROM sys.routes WHERE name <> N'AutoCreatedLocal'",
+            "SELECT ('remoteservicebinding|' + name) COLLATE DATABASE_DEFAULT FROM sys.remote_service_bindings"
+        )
+        return "SET NOCOUNT ON;`n" + ($arms -join "`nUNION ALL`n") + "`nORDER BY 1;"
+    }
+
+    $allowedExtensionList = (@("plpgsql") + @(Get-PostgresqlAllowedExtensionName) | ForEach-Object { "'" + $_ + "'" }) -join ", "
+    $notAllowedExtensionObject = {
+        param([string]$Catalog, [string]$ObjectId)
+        "NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d JOIN pg_catalog.pg_extension e ON e.oid = d.refobjid WHERE d.classid = '$Catalog'::regclass AND d.objid = $ObjectId AND d.deptype = 'e' AND e.extname IN ($allowedExtensionList))"
+    }
+
+    return @(
+        "SELECT 'extension|' || extname FROM pg_catalog.pg_extension WHERE extname NOT IN ($allowedExtensionList)",
+        "UNION ALL SELECT 'eventtrigger|' || evtname FROM pg_catalog.pg_event_trigger",
+        "UNION ALL SELECT 'publication|' || pubname FROM pg_catalog.pg_publication",
+        "UNION ALL SELECT 'subscription|' || subname FROM pg_catalog.pg_subscription WHERE subdbid = (SELECT oid FROM pg_catalog.pg_database WHERE datname = pg_catalog.current_database())",
+        "UNION ALL SELECT 'foreigndatawrapper|' || fdwname FROM pg_catalog.pg_foreign_data_wrapper",
+        "UNION ALL SELECT 'foreignserver|' || srvname FROM pg_catalog.pg_foreign_server",
+        "UNION ALL SELECT 'usermapping|' || usename || '@' || srvname FROM pg_catalog.pg_user_mappings",
+        "UNION ALL SELECT 'language|' || l.lanname FROM pg_catalog.pg_language l WHERE l.oid >= 16384 AND $(& $notAllowedExtensionObject 'pg_catalog.pg_language' 'l.oid')",
+        "UNION ALL SELECT 'cast|' || pg_catalog.format_type(c.castsource, NULL) || '->' || pg_catalog.format_type(c.casttarget, NULL) FROM pg_catalog.pg_cast c WHERE c.oid >= 16384 AND $(& $notAllowedExtensionObject 'pg_catalog.pg_cast' 'c.oid')",
+        "UNION ALL SELECT 'transform|' || pg_catalog.format_type(t.trftype, NULL) || '/' || l.lanname FROM pg_catalog.pg_transform t JOIN pg_catalog.pg_language l ON l.oid = t.trflang WHERE t.oid >= 16384 AND $(& $notAllowedExtensionObject 'pg_catalog.pg_transform' 't.oid')",
+        "UNION ALL SELECT 'accessmethod|' || a.amname FROM pg_catalog.pg_am a WHERE a.oid >= 16384 AND $(& $notAllowedExtensionObject 'pg_catalog.pg_am' 'a.oid')",
+        "UNION ALL SELECT 'largeobject|' || oid::text FROM pg_catalog.pg_largeobject_metadata",
+        "UNION ALL SELECT 'defaultprivilege|' || pg_catalog.pg_get_userbyid(defaclrole) || '/' || defaclobjtype::text FROM pg_catalog.pg_default_acl",
         "ORDER BY 1;"
     ) -join "`n"
 }
@@ -1244,7 +1376,9 @@ function Get-DocumentJsonColumnTypeQuerySql {
     assumed from configuration). In the redesigned schema dms.DocumentCache is the sole
     carrier; enumerating the whole schema rather than a fixed table list means a future
     additional carrier is captured automatically and a divergent type anywhere fails
-    validation instead of hiding.
+    validation instead of hiding. SQL Server types carry their declared length
+    (max_length = -1 renders as "(max)"; nchar/nvarchar lengths are in characters), so
+    nvarchar(4000) never reads as the nvarchar(max) baseline.
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -1253,7 +1387,7 @@ function Get-DocumentJsonColumnTypeQuerySql {
     )
 
     if ($DatabaseEngine -eq "mssql") {
-        return "SET NOCOUNT ON; SELECT o.name + '|' + t.name FROM sys.columns c JOIN sys.types t ON t.user_type_id = c.user_type_id JOIN sys.objects o ON o.object_id = c.object_id JOIN sys.schemas s ON s.schema_id = o.schema_id WHERE s.name = N'dms' AND c.name = N'DocumentJson' ORDER BY o.name;"
+        return "SET NOCOUNT ON; SELECT o.name + '|' + t.name + CASE WHEN c.max_length = -1 THEN '(max)' WHEN t.name IN (N'nvarchar', N'nchar') THEN '(' + CONVERT(nvarchar(11), c.max_length / 2) + ')' WHEN t.name IN (N'varchar', N'char', N'varbinary', N'binary') THEN '(' + CONVERT(nvarchar(11), c.max_length) + ')' ELSE '' END FROM sys.columns c JOIN sys.types t ON t.user_type_id = c.user_type_id JOIN sys.objects o ON o.object_id = c.object_id JOIN sys.schemas s ON s.schema_id = o.schema_id WHERE s.name = N'dms' AND c.name = N'DocumentJson' ORDER BY o.name;"
     }
 
     return "SELECT table_name || '|' || data_type FROM information_schema.columns WHERE table_schema = 'dms' AND column_name = 'DocumentJson' ORDER BY table_name;"
@@ -1577,8 +1711,9 @@ function Assert-DmsOnlyInventory {
     schema (non-empty), the optional auth companion, resource-project schemas each paired
     with their tracked_changes_<project> companion (and vice versa), an empty
     always-present public/dbo schema (beyond allow-listed extension bootstrap, which the
-    inventory queries already filter), no dmscs schema, no OpenIddict objects anywhere, and
-    (SQL Server) no non-built-in database principals.
+    inventory queries already filter), no dmscs schema, no OpenIddict objects anywhere,
+    (SQL Server) no non-built-in database principals, and no user-created database-level
+    object (Get-InventoryDatabaseObjectQuerySql rows; the authoritative DDL creates none).
 
     .OUTPUTS
     The schema partition (Get-TemplateProjectSchemaPartition) on success, so callers derive
@@ -1591,6 +1726,11 @@ function Assert-DmsOnlyInventory {
 
         [Parameter(Mandatory = $true)]
         $Inventory,
+
+        # Mandatory so no gate call can omit it; an empty list is the only passing value.
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [string[]]$DatabaseLevelObject,
 
         [string]$SourceDescription = "The database"
     )
@@ -1649,6 +1789,11 @@ function Assert-DmsOnlyInventory {
 
     if (@($canonical.Principals).Count -gt 0) {
         $violations.Add("it carries unexpected database principals: $($canonical.Principals -join ', ')")
+    }
+
+    $databaseLevelObjects = @($DatabaseLevelObject | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })
+    if ($databaseLevelObjects.Count -gt 0) {
+        $violations.Add("it carries database-level objects the DMS schema does not create: $($databaseLevelObjects -join ', ')")
     }
 
     if ($violations.Count -gt 0) {
@@ -2043,6 +2188,7 @@ Export-ModuleMember -Function `
     Get-PostgresqlAllowedExtensionName, `
     Get-InventorySchemaQuerySql, `
     Get-InventoryObjectQuerySql, `
+    Get-InventoryDatabaseObjectQuerySql, `
     Get-InventoryPrincipalQuerySql, `
     Get-EffectiveSchemaRowQuerySql, `
     Get-EngineVersionQuerySql, `

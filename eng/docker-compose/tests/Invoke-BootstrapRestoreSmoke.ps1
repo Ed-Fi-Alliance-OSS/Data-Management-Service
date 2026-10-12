@@ -36,12 +36,16 @@
                           covered by mocked unit tests.)
       tampered-package    A byte-flipped copy of the .nupkg; asserts the restore fails closed
                           BEFORE any Docker activity (no compose containers exist afterwards).
-      contaminated-package (PostgreSQL only) A re-signed package whose artifact carries an
-                          injected extra schema that its manifest inventory also declares, so
-                          staging and the candidate cross-check pass and the failure lands in
-                          scratch validation's DMS-only gate; asserts the target database is
-                          absent afterwards (fresh volume), no generated restore databases
-                          remain, and no active .bootstrap workspace was created.
+      contaminated-package A re-signed package whose artifact carries an injected object that
+                          its manifest inventory also declares, so staging and the candidate
+                          cross-check pass and the failure lands in scratch validation:
+                          PostgreSQL appends an extra schema to the dump; on SQL Server the
+                          engine restores the .bak into a run-owned database, adds a synonym
+                          inside the dms schema, and backs it up again (the database-only slice
+                          it uses is torn down first). Asserts the refusal names the scratch
+                          database, the target database is absent afterwards (fresh volume), no
+                          generated restore databases remain, no active .bootstrap workspace was
+                          created, and only the db service started.
       running-stack       Attempts a restore while the stack is RUNNING; asserts the stop
                           proof refuses, naming the running containers.
       extension-selection Opt-in, -Wrapper published only, without -DataStandardVersion: derives a
@@ -126,8 +130,7 @@
     Env file forwarded to every phase. Defaults to eng/docker-compose/.env.example.
 
 .PARAMETER DatabaseEngine
-    postgresql (default) or mssql. The contaminated-package leg is PostgreSQL-only and is
-    skipped with a warning on mssql.
+    postgresql (default) or mssql.
 
 .PARAMETER Leg
     Which legs to run, in order. Defaults to the core matrix:
@@ -962,6 +965,68 @@ function Build-SmokeSourceAndPackage {
     }
 }
 
+function Write-SmokeMssqlContaminatedBackup {
+    <#
+    .SYNOPSIS
+    Rewrites a SQL Server template .bak in place so it carries one object the authoritative DDL
+    does not create, inside the allowed dms schema: a synonym dms.smoke_intruder.
+
+    .DESCRIPTION
+    A .bak cannot be edited as text, so the engine builds the fixture. The backup is restored
+    into a run-owned database on this run's own SQL Server, started as the run's database-only
+    slice; the synonym is created, and the database is backed up over the artifact. The slice is
+    then torn down with its volumes, on failure too, so the leg's restore starts from a fresh
+    volume.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$ArtifactPath
+    )
+
+    $suffix = [Guid]::NewGuid().ToString("N").Substring(0, 12)
+    $databaseName = "restore_smoke_contaminate_$suffix"
+    $sourceInContainer = "/var/opt/mssql/data/restore-smoke-contaminate-$suffix-source.bak"
+    $backupInContainer = "/var/opt/mssql/data/restore-smoke-contaminate-$suffix.bak"
+    $backupFileName = [System.IO.Path]::GetFileName($ArtifactPath)
+    $saPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
+    $invokeDocker = {
+        param([string]$Description, [string[]]$ArgumentList)
+        $global:LASTEXITCODE = 0
+        $output = @(docker @ArgumentList 2>&1 | ForEach-Object { [string]$_ })
+        if ($LASTEXITCODE -ne 0) {
+            throw "$Description failed with exit code ${LASTEXITCODE}: $(($output | Select-Object -Last 5) -join ' ')"
+        }
+        return $output
+    }
+    $sqlcmd = @("exec", "-e", "SQLCMDPASSWORD=$saPassword", "dms-mssql", "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-d", "master", "-C", "-b")
+
+    Push-Location $script:DockerComposeRoot
+    try {
+        $global:LASTEXITCODE = 0
+        & "$script:DockerComposeRoot/$($script:WrapperProfile.TeardownScriptName)" -DbOnly -EnvironmentFile $script:ResolvedEnvironmentFile -DatabaseEngine mssql
+        if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+            throw "$($script:WrapperProfile.TeardownScriptName) -DbOnly failed with exit code $LASTEXITCODE."
+        }
+
+        $null = & $invokeDocker "docker cp of the template backup" @("cp", $ArtifactPath, "dms-mssql:$sourceInContainer")
+        $fileList = & $invokeDocker "RESTORE FILELISTONLY" ($sqlcmd + @("-h", "-1", "-W", "-s", "|", "-Q", "SET NOCOUNT ON; RESTORE FILELISTONLY FROM DISK = N'$sourceInContainer';"))
+        $backupFiles = ConvertFrom-MssqlBackupFileList -FileListOutput ([string[]]$fileList) -BackupFileName $backupFileName
+        $moveClauses = New-MssqlRestoreMoveClause -DatabaseName $databaseName -DataLogicalNames $backupFiles.DataLogicalNames -LogLogicalNames $backupFiles.LogLogicalNames -BackupFileName $backupFileName
+        $null = & $invokeDocker "RESTORE DATABASE $databaseName" ($sqlcmd + @("-Q", "RESTORE DATABASE [$databaseName] FROM DISK = N'$sourceInContainer' WITH $($moveClauses -join ', ');"))
+
+        $null = Invoke-SmokeSql -DatabaseName $databaseName -Query "CREATE SYNONYM [dms].[smoke_intruder] FOR [dms].[DocumentCache];"
+
+        $null = & $invokeDocker "BACKUP DATABASE $databaseName" ($sqlcmd + @("-Q", "BACKUP DATABASE [$databaseName] TO DISK = N'$backupInContainer' WITH INIT;"))
+        $null = & $invokeDocker "docker cp of the contaminated backup" @("cp", "dms-mssql:$backupInContainer", $ArtifactPath)
+        Write-Host "[restore-smoke] contaminated backup built: $databaseName + dms.smoke_intruder (synonym)"
+    }
+    finally {
+        Pop-Location
+        # The run-owned database and both in-container files go with the slice's volumes.
+        Invoke-SmokeTeardown
+    }
+}
+
 # =============================================================================
 # Run
 # =============================================================================
@@ -1261,91 +1326,115 @@ try {
     }
 
     if ($legSet.Contains("contaminated-package")) {
-        if ($DatabaseEngine -ne "postgresql") {
-            Write-Warning "The contaminated-package leg is PostgreSQL-only (a .bak artifact cannot be text-edited); skipping on $DatabaseEngine."
-        }
-        else {
-            Invoke-SmokeStep -Name "leg-contaminated-package" -Body {
-                # Post-process a legit package so staging AND the candidate cross-check pass
-                # while the ARTIFACT smuggles an extra schema: append the schema to the dump,
-                # declare it in the manifest inventory (recomputed hashes), rezip, and re-sign
-                # with the dev key. The failure must land in scratch validation's DMS-only
-                # gate, before anything touches the (absent) target.
-                Import-Module (Join-Path $script:TemplatesRoot "Template-RestoreCore.psm1") -Force
-                Push-Location $script:TemplatesRoot
-                try {
-                    Import-Module (Join-Path $script:TemplatesRoot "Template-Management.psm1") -Force
-                }
-                finally {
-                    Pop-Location
-                }
-
-                $contaminatedDirectory = Join-Path $script:WorkDirectory "contaminated"
-                $expandDirectory = Join-Path $script:WorkDirectory "contaminated-expand"
-                New-Item -ItemType Directory -Path $contaminatedDirectory, $expandDirectory -Force | Out-Null
-                $sourcePackage = @(Get-ChildItem -Path $packageDirectoryPath -Filter "*.nupkg" | Where-Object { $_.Name -notlike "*.Attestation.*" })[0]
-                $zipCopy = Join-Path $script:WorkDirectory "contaminated.zip"
-                Copy-Item -LiteralPath $sourcePackage.FullName -Destination $zipCopy
-                Expand-Archive -Path $zipCopy -DestinationPath $expandDirectory
-
-                $manifestFile = @(Get-ChildItem -Path $expandDirectory -Filter (Get-RestoreManifestFileName) -Recurse -File)[0]
-                $manifest = Get-Content -LiteralPath $manifestFile.FullName -Raw | ConvertFrom-Json -AsHashtable
-                $artifactFile = @(Get-ChildItem -Path $expandDirectory -Filter ([string]$manifest.artifactFileName) -Recurse -File)[0]
-
-                Add-Content -LiteralPath $artifactFile.FullName -Value "`nCREATE SCHEMA smoke_intruder;`nCREATE TABLE smoke_intruder.intruder_table (i int);`n"
-
-                $manifest.inventory.schemas += @{ schemaName = "smoke_intruder"; objects = @(@{ name = "intruder_table"; type = "table" }) }
-                $manifest.inventorySha256 = Get-CanonicalInventoryHash -Inventory $manifest.inventory
-                $manifest.artifactSha256 = (Get-FileHash -LiteralPath $artifactFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-                $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $manifestFile.FullName -Encoding utf8
-
-                $contaminatedPackagePath = Join-Path $contaminatedDirectory $sourcePackage.Name
-                Compress-Archive -Path (Join-Path $expandDirectory "*") -DestinationPath ($contaminatedPackagePath + ".zip")
-                Move-Item -LiteralPath ($contaminatedPackagePath + ".zip") -Destination $contaminatedPackagePath
-
-                Invoke-TemplatePackageAttestation `
-                    -Config @{ Id = [string]$manifest.packageId } `
-                    -PackageVersion ([string]$manifest.packageVersion) `
-                    -BackupDirectory $contaminatedDirectory `
-                    -AttestationSignerKeyPath $script:SmokeSignerKeyPath `
-                    -AttestationProducer $script:SmokeProducerName
-
-                $failed = $false
-                try {
-                    Invoke-RestoreWrapper -Arguments @{
-                        EnvironmentFile  = $script:ResolvedEnvironmentFile
-                        DatabaseEngine   = $DatabaseEngine
-                        RestoreTemplate  = "Minimal"
-                        PackageDirectory = $contaminatedDirectory
-                    }
-                }
-                catch {
-                    $failed = $true
-                    Write-Host "[restore-smoke] contaminated package refused: $($_.Exception.Message)"
-                    if ($_.Exception.Message -notlike "*smoke_intruder*") {
-                        throw "The contaminated package was refused, but not by the DMS-only gate naming smoke_intruder: $($_.Exception.Message)"
-                    }
-                }
-                if (-not $failed) {
-                    throw "A contaminated package was NOT refused; the scratch DMS-only gate failed."
-                }
-
-                # Fresh volume: the target must still be ABSENT, no generated restore databases
-                # may remain, and no active workspace may have been committed.
-                if (Test-SmokeDatabasePresent -DatabaseName $script:TargetDatabaseName) {
-                    throw "The target database '$script:TargetDatabaseName' exists after a failed scratch validation on a fresh volume."
-                }
-                $generatedDatabases = @(Invoke-SmokeSql -DatabaseName "postgres" -Query "SELECT datname FROM pg_database WHERE datname LIKE 'edfi_dms_restore_%';")
-                if (@($generatedDatabases).Count -gt 0) {
-                    throw "Generated restore databases remain after the failure: $($generatedDatabases -join ', ')."
-                }
-                if (Test-Path -LiteralPath $script:BootstrapRoot) {
-                    throw "An active .bootstrap workspace exists after a pre-commit failure; the candidate must never be committed on a scratch-validation failure."
-                }
-                Write-Host "[restore-smoke] target absent, no generated databases, no workspace committed"
+        Invoke-SmokeStep -Name "leg-contaminated-package" -Body {
+            # Post-process a legit package so staging AND the candidate cross-check pass
+            # while the ARTIFACT smuggles an object the authoritative DDL does not create:
+            # PostgreSQL appends an extra schema to the dump; SQL Server, whose .bak cannot
+            # be edited as text, gets a synonym inside the allowed dms schema from the
+            # engine itself. The object is declared in the manifest inventory (recomputed
+            # hashes), the package is rezipped and re-signed with the dev key, and the
+            # failure must land in scratch validation, before anything touches the
+            # (absent) target.
+            Import-Module (Join-Path $script:TemplatesRoot "Template-RestoreCore.psm1") -Force
+            Push-Location $script:TemplatesRoot
+            try {
+                Import-Module (Join-Path $script:TemplatesRoot "Template-Management.psm1") -Force
             }
-            Invoke-SmokeStep -Name "leg-contaminated-package-teardown" -Body { Invoke-SmokeTeardown }
+            finally {
+                Pop-Location
+            }
+
+            $contaminatedDirectory = Join-Path $script:WorkDirectory "contaminated"
+            $expandDirectory = Join-Path $script:WorkDirectory "contaminated-expand"
+            New-Item -ItemType Directory -Path $contaminatedDirectory, $expandDirectory -Force | Out-Null
+            $sourcePackage = @(Get-ChildItem -Path $packageDirectoryPath -Filter "*.nupkg" | Where-Object { $_.Name -notlike "*.Attestation.*" })[0]
+            $zipCopy = Join-Path $script:WorkDirectory "contaminated.zip"
+            Copy-Item -LiteralPath $sourcePackage.FullName -Destination $zipCopy
+            Expand-Archive -Path $zipCopy -DestinationPath $expandDirectory
+
+            $manifestFile = @(Get-ChildItem -Path $expandDirectory -Filter (Get-RestoreManifestFileName) -Recurse -File)[0]
+            $manifest = Get-Content -LiteralPath $manifestFile.FullName -Raw | ConvertFrom-Json -AsHashtable
+            $artifactFile = @(Get-ChildItem -Path $expandDirectory -Filter ([string]$manifest.artifactFileName) -Recurse -File)[0]
+
+            if ($DatabaseEngine -eq "mssql") {
+                Write-SmokeMssqlContaminatedBackup -ArtifactPath $artifactFile.FullName
+                $dmsInventorySchema = @($manifest.inventory.schemas | Where-Object { $_.schemaName -ceq "dms" })[0]
+                $dmsInventorySchema.objects += @{ name = "smoke_intruder"; type = "synonym" }
+            }
+            else {
+                Add-Content -LiteralPath $artifactFile.FullName -Value "`nCREATE SCHEMA smoke_intruder;`nCREATE TABLE smoke_intruder.intruder_table (i int);`n"
+                $manifest.inventory.schemas += @{ schemaName = "smoke_intruder"; objects = @(@{ name = "intruder_table"; type = "table" }) }
+            }
+            $manifest.inventorySha256 = Get-CanonicalInventoryHash -Inventory $manifest.inventory
+            $manifest.artifactSha256 = (Get-FileHash -LiteralPath $artifactFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $manifestFile.FullName -Encoding utf8
+
+            $contaminatedPackagePath = Join-Path $contaminatedDirectory $sourcePackage.Name
+            Compress-Archive -Path (Join-Path $expandDirectory "*") -DestinationPath ($contaminatedPackagePath + ".zip")
+            Move-Item -LiteralPath ($contaminatedPackagePath + ".zip") -Destination $contaminatedPackagePath
+
+            Invoke-TemplatePackageAttestation `
+                -Config @{ Id = [string]$manifest.packageId } `
+                -PackageVersion ([string]$manifest.packageVersion) `
+                -BackupDirectory $contaminatedDirectory `
+                -AttestationSignerKeyPath $script:SmokeSignerKeyPath `
+                -AttestationProducer $script:SmokeProducerName
+
+            $failed = $false
+            try {
+                Invoke-RestoreWrapper -Arguments @{
+                    EnvironmentFile  = $script:ResolvedEnvironmentFile
+                    DatabaseEngine   = $DatabaseEngine
+                    RestoreTemplate  = "Minimal"
+                    PackageDirectory = $contaminatedDirectory
+                }
+            }
+            catch {
+                $failed = $true
+                Write-Host "[restore-smoke] contaminated package refused: $($_.Exception.Message)"
+                # Only scratch validation names the scratch database: a refusal by package
+                # authentication, staging, or the candidate cross-check is not this proof.
+                if ($_.Exception.Message -notlike "*Restore scratch database 'edfi_dms_restore_scratch_*smoke_intruder*") {
+                    throw "The contaminated package was refused, but not by scratch validation naming smoke_intruder: $($_.Exception.Message)"
+                }
+            }
+            if (-not $failed) {
+                throw "A contaminated package was NOT refused; scratch validation failed."
+            }
+
+            # Fresh volume: the target must still be ABSENT, no generated restore databases
+            # may remain, no active workspace may have been committed, and nothing but the
+            # database service may have started.
+            if (Test-SmokeDatabasePresent -DatabaseName $script:TargetDatabaseName) {
+                throw "The target database '$script:TargetDatabaseName' exists after a failed scratch validation on a fresh volume."
+            }
+            $generatedDatabaseQuery = if ($DatabaseEngine -eq "mssql") {
+                "SET NOCOUNT ON; SELECT name FROM sys.databases WHERE name LIKE 'edfi[_]dms[_]restore[_]%';"
+            }
+            else {
+                "SELECT datname FROM pg_database WHERE datname LIKE 'edfi_dms_restore_%';"
+            }
+            $adminDatabaseName = if ($DatabaseEngine -eq "mssql") { "master" } else { "postgres" }
+            $generatedDatabases = @(Invoke-SmokeSql -DatabaseName $adminDatabaseName -Query $generatedDatabaseQuery)
+            if (@($generatedDatabases).Count -gt 0) {
+                throw "Generated restore databases remain after the failure: $($generatedDatabases -join ', ')."
+            }
+            if (Test-Path -LiteralPath $script:BootstrapRoot) {
+                throw "An active .bootstrap workspace exists after a pre-commit failure; the candidate must never be committed on a scratch-validation failure."
+            }
+            $global:LASTEXITCODE = 0
+            $services = @(docker ps -a --filter "label=com.docker.compose.project=$($script:WrapperProfile.ComposeProject)" --format '{{.Label "com.docker.compose.service"}}' 2>&1 |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+            if ($LASTEXITCODE -ne 0) {
+                throw "docker ps failed while proving that only the database service started."
+            }
+            $otherServices = @($services | Where-Object { [string]$_ -cne "db" })
+            if ($otherServices.Count -gt 0) {
+                throw "Services other than the database started for the refused restore: $($otherServices -join ', ')."
+            }
+            Write-Host "[restore-smoke] target absent, no generated databases, no workspace committed, only the db service started"
         }
+        Invoke-SmokeStep -Name "leg-contaminated-package-teardown" -Body { Invoke-SmokeTeardown }
     }
 
     if ($legSet.Contains("running-stack")) {

@@ -474,7 +474,9 @@ Restore works on both database engines (`-DatabaseEngine`) and on both wrappers
 `-NoDataStore`, and `-SchoolYearRange`: one restore invocation replaces exactly one
 route-unqualified physical target. That target is the effective env's `POSTGRES_DB_NAME` or
 `MSSQL_DB_NAME`; an explicit `-DataStoreDatabaseName` must repeat it, and a different name is
-refused before the package is resolved or anything is restored, in either CMS topology.
+refused before the package is resolved or anything is restored, in either CMS topology. A
+PostgreSQL restore is also refused while `POSTGRES_USE_TMPFS=true`: the database would live in
+container memory and be lost when the stack restarts the database container after the restore.
 
 The package identity comes from the effective env's `DATABASE_TEMPLATE_PACKAGE`, with the
 `Minimal|Populated` and engine segments swapped to match the request; see `.env.example` for

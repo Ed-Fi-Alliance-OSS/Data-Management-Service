@@ -696,6 +696,14 @@ function Invoke-BootstrapWrapper {
         if ($IncludeE2EClaimSets) {
             throw "-RestoreTemplate is not valid with -IncludeE2EClaimSets. The restore candidate stages claims without the test-only E2E claim sets, so they would be silently dropped; stage them on a bootstrap that provisions its own schema."
         }
+        # The start scripts read POSTGRES_USE_TMPFS from the process environment only. With it,
+        # the database lives in container memory, and the -InfraOnly start after the restore
+        # recreates the db container (its POSTGRES_DB_NAME returns from the generated preflight
+        # name to the target), so the restored target would be lost while provisioning is skipped.
+        if ($DatabaseEngine -eq "postgresql" -and
+            [string]::Equals($env:POSTGRES_USE_TMPFS, "true", [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "-RestoreTemplate is not valid with POSTGRES_USE_TMPFS=true. The PostgreSQL data directory would be in container memory, and the restored database would be lost when the stack restarts the database container after the restore. Clear POSTGRES_USE_TMPFS for restore runs."
+        }
         if ($LoadSeedData -and -not ($seedTemplateSupplied -or $seedDataPathSupplied)) {
             throw "-LoadSeedData with -RestoreTemplate is the explicit supplemental seed and requires its own seed source (-SeedTemplate or -SeedDataPath). A bare -LoadSeedData is ambiguous in restore mode: the restored template already carries its data."
         }

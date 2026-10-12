@@ -132,7 +132,7 @@ BeforeAll {
                 ResourceKeySeedHashB64   = [System.Convert]::ToBase64String([byte[]](1..32))
                 RelationalMappingVersion = "v2"
                 EngineVersion            = $(if ($DatabaseEngine -eq "mssql") { "17.0.900.7" } else { "16.8" })
-                DocumentJsonColumnType   = $(if ($DatabaseEngine -eq "mssql") { "nvarchar" } else { "jsonb" })
+                DocumentJsonColumnType   = $(if ($DatabaseEngine -eq "mssql") { "nvarchar(max)" } else { "jsonb" })
                 Inventory                = $inventory
                 ArtifactFileName         = $artifactFileName
                 ArtifactSha256           = $artifactSha256

@@ -2068,6 +2068,10 @@ function Get-RestoreDatabaseCatalogFact {
             -Query (Get-InventoryPrincipalQuerySql -DatabaseEngine $DatabaseEngine) `
             -FailureMessage "Failed to enumerate the database principals of '$DatabaseName'."
     }
+    $databaseLevelObjects = @(Invoke-RestoreCatalogQuery @queryParameters `
+            -Query (Get-InventoryDatabaseObjectQuerySql -DatabaseEngine $DatabaseEngine) `
+            -FailureMessage "Failed to enumerate the database-level objects of '$DatabaseName'." |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { ([string]$_).Trim() })
 
     $fullInventory = ConvertFrom-InventoryQueryRow -SchemaRow $schemaRows -ObjectRow $objectRows -PrincipalRow $principalRows
 
@@ -2092,6 +2096,7 @@ function Get-RestoreDatabaseCatalogFact {
         DocumentJsonColumnType     = $documentJsonColumnType
         FullInventory              = $fullInventory
         ArtifactInventory          = $artifactInventory
+        DatabaseLevelObjects       = [string[]]$databaseLevelObjects
     }
 }
 
@@ -2471,6 +2476,7 @@ function Invoke-RestoreScratchValidation {
         $scratchPartition = Assert-DmsOnlyInventory `
             -DatabaseEngine $DatabaseEngine `
             -Inventory $scratchFacts.FullInventory `
+            -DatabaseLevelObject $scratchFacts.DatabaseLevelObjects `
             -SourceDescription "Restore scratch database '$scratchDatabaseName'"
 
         Assert-RestoreManifestMatchesDatabase `
@@ -2689,11 +2695,11 @@ function Invoke-RestoreTargetReplacement {
     then reseeds and verifies the datastore identity.
 
     .DESCRIPTION
-    Re-runs the full non-destructive target-safety gate (Assert-RestoreTargetSafety)
-    immediately before the first destructive statement, streams the artifact into the
-    container from the SAME retained authenticated bytes scratch validation replayed (never
-    from a host path), hashes the copy inside the container before any destructive statement
-    (the transfer-integrity check), then
+    Re-runs the full non-destructive target-safety gate (Assert-RestoreTargetSafety), streams
+    the artifact into the container from the SAME retained authenticated bytes scratch
+    validation replayed (never from a host path), hashes the copy inside the container (the
+    transfer-integrity check), runs the target-safety gate once more immediately before the
+    first destructive statement (a service may have started during the transfer), then
     dispatches per engine: PostgreSQL ensures the shared restore-global role, terminates
     connections, drops and recreates the target, and replays via psql ON_ERROR_STOP;
     SQL Server copies the backup in, single-user-drops an existing target, reads the file
@@ -2735,16 +2741,20 @@ function Invoke-RestoreTargetReplacement {
     $manifest = $Stage.Manifest
     $adminDatabaseName = if ($DatabaseEngine -eq "mssql") { "master" } else { "postgres" }
 
-    # The full non-destructive gate re-runs IMMEDIATELY before the first destructive statement:
-    # name safety, live reserved catalog, running services, live engine major, CDC bindings.
-    Assert-RestoreTargetSafety `
-        -DatabaseEngine $DatabaseEngine `
-        -TargetDatabaseName $TargetDatabaseName `
-        -Manifest $manifest `
-        -ContainerName $ContainerName `
-        -SeparateConfigDatabase:$SeparateConfigDatabase `
-        -EffectiveConfigDatabaseName $EffectiveConfigDatabaseName `
-        -MssqlPassword $MssqlPassword
+    # The full non-destructive gate: name safety, live reserved catalog, running services, live
+    # engine major, CDC bindings. It runs here, so a target that is already unsafe never receives
+    # the transfer, and again after the transfer is verified, immediately before the first
+    # statement that touches the target: CMS or DMS can start while the artifact is copied.
+    $targetSafetyArguments = @{
+        DatabaseEngine              = $DatabaseEngine
+        TargetDatabaseName          = $TargetDatabaseName
+        Manifest                    = $manifest
+        ContainerName               = $ContainerName
+        SeparateConfigDatabase      = $SeparateConfigDatabase
+        EffectiveConfigDatabaseName = $EffectiveConfigDatabaseName
+        MssqlPassword               = $MssqlPassword
+    }
+    Assert-RestoreTargetSafety @targetSafetyArguments
 
     # The target consumes the same retained authenticated bytes scratch validation replayed,
     # never a host path; check that they are present and intact before the copy.
@@ -2765,22 +2775,29 @@ function Invoke-RestoreTargetReplacement {
     $containerArtifactPath = $null
 
     try {
-        if ($DatabaseEngine -eq "postgresql") {
-            # The copy happens FIRST, mirroring the SQL Server branch: a copy failure must
-            # leave the target completely untouched, and the in-container hash must pass
-            # before the target is emptied - no window between emptying the target and copying.
-            $containerArtifactPath = "/tmp/restore-target-$([Guid]::NewGuid().ToString('N')).sql"
-            Copy-RestoreStagedArtifactToContainer `
-                -Stage $Stage `
-                -ContainerName $ContainerName `
-                -ContainerArtifactPath $containerArtifactPath `
-                -FailureMessage "Failed to copy the staged artifact into container '$ContainerName'."
-            Assert-RestoreContainerArtifactSha256 `
-                -ContainerName $ContainerName `
-                -ContainerArtifactPath $containerArtifactPath `
-                -ExpectedSha256 ([string]$manifest.artifactSha256) `
-                -ConsumerDescription "any change to target database '$TargetDatabaseName'"
+        # The copy happens FIRST on both engines: a copy failure must leave the target
+        # completely untouched, and the in-container hash must pass before the target is
+        # emptied - no window between emptying the target and copying.
+        $containerArtifactPath = if ($DatabaseEngine -eq "postgresql") {
+            "/tmp/restore-target-$([Guid]::NewGuid().ToString('N')).sql"
+        }
+        else {
+            "/var/opt/mssql/data/restore-target-$([Guid]::NewGuid().ToString('N')).bak"
+        }
+        Copy-RestoreStagedArtifactToContainer `
+            -Stage $Stage `
+            -ContainerName $ContainerName `
+            -ContainerArtifactPath $containerArtifactPath `
+            -FailureMessage "Failed to copy the staged artifact into container '$ContainerName'."
+        Assert-RestoreContainerArtifactSha256 `
+            -ContainerName $ContainerName `
+            -ContainerArtifactPath $containerArtifactPath `
+            -ExpectedSha256 ([string]$manifest.artifactSha256) `
+            -ConsumerDescription "any change to target database '$TargetDatabaseName'"
 
+        Assert-RestoreTargetSafety @targetSafetyArguments
+
+        if ($DatabaseEngine -eq "postgresql") {
             # Idempotent role init keeps the target replay self-sufficient even when invoked
             # standalone (scratch validation normally ensured the role moments earlier).
             $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
@@ -2804,18 +2821,6 @@ function Invoke-RestoreTargetReplacement {
                 -FailureMessage "Replay of the artifact into target database '$TargetDatabaseName' failed."
         }
         else {
-            $containerArtifactPath = "/var/opt/mssql/data/restore-target-$([Guid]::NewGuid().ToString('N')).bak"
-            Copy-RestoreStagedArtifactToContainer `
-                -Stage $Stage `
-                -ContainerName $ContainerName `
-                -ContainerArtifactPath $containerArtifactPath `
-                -FailureMessage "Failed to copy the staged artifact into container '$ContainerName'."
-            Assert-RestoreContainerArtifactSha256 `
-                -ContainerName $ContainerName `
-                -ContainerArtifactPath $containerArtifactPath `
-                -ExpectedSha256 ([string]$manifest.artifactSha256) `
-                -ConsumerDescription "any change to target database '$TargetDatabaseName'"
-
             $existsRows = @(Invoke-RestoreCatalogQuery @adminQueryArguments `
                     -Query "SET NOCOUNT ON; SELECT CASE WHEN DB_ID(N'$TargetDatabaseName') IS NOT NULL THEN 1 ELSE 0 END;" `
                     -FailureMessage "Failed to check whether target database '$TargetDatabaseName' exists.")

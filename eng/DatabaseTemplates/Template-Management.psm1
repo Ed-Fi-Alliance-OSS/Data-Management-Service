@@ -1517,6 +1517,10 @@ function Get-TemplateSourceCatalogFacts {
             -Query (Get-InventoryPrincipalQuerySql -DatabaseEngine $DatabaseEngine) `
             -FailureMessage "Failed to enumerate the database principals of '$DatabaseName'."
     }
+    $databaseLevelObjects = @(Invoke-TemplateCatalogQuery @queryParameters `
+            -Query (Get-InventoryDatabaseObjectQuerySql -DatabaseEngine $DatabaseEngine) `
+            -FailureMessage "Failed to enumerate the database-level objects of '$DatabaseName'." |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { ([string]$_).Trim() })
 
     $fullInventory = ConvertFrom-InventoryQueryRow -SchemaRow $schemaRows -ObjectRow $objectRows -PrincipalRow $principalRows
 
@@ -1546,6 +1550,7 @@ function Get-TemplateSourceCatalogFacts {
         DocumentJsonColumnType     = $documentJsonColumnType
         FullInventory              = $fullInventory
         ArtifactInventory          = $artifactInventory
+        DatabaseLevelObjects       = [string[]]$databaseLevelObjects
     }
 }
 
@@ -1575,6 +1580,7 @@ function Assert-DmsOnlyTemplateSource {
     return Assert-DmsOnlyInventory `
         -DatabaseEngine $DatabaseEngine `
         -Inventory $Facts.FullInventory `
+        -DatabaseLevelObject $Facts.DatabaseLevelObjects `
         -SourceDescription "Template source database '$DatabaseName'"
 }
 

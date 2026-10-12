@@ -686,7 +686,7 @@ Describe "package-to-candidate cross-check" {
         $tool = New-StubSchemaTool -Directory $script:crossCheckRoot
 
         Invoke-RestoreCandidateCrossCheck `
-            -Manifest (New-CrossCheckManifest -Override @{ databaseEngine = "mssql"; documentJsonColumnType = "nvarchar" }) `
+            -Manifest (New-CrossCheckManifest -Override @{ databaseEngine = "mssql"; documentJsonColumnType = "nvarchar(max)" }) `
             -CandidateDirectory $candidateDirectory `
             -DatabaseEngine mssql `
             -StageDirectory $script:stageDirectory `
@@ -701,8 +701,9 @@ Describe "package-to-candidate cross-check" {
         @{ Name = "effectiveSchemaHash"; Override = @{ effectiveSchemaHash = ("cd" * 32) }; Engine = "postgresql"; Expected = "*Effective schema hash mismatch*" }
         @{ Name = "relationalMappingVersion"; Override = @{ relationalMappingVersion = "v1" }; Engine = "postgresql"; Expected = "*Relational mapping version mismatch*'v1'*'v2'*" }
         @{ Name = "projects"; Override = @{ projects = @("edfi", "tpdm") }; Engine = "postgresql"; Expected = "*Project set mismatch*[[]edfi, tpdm*[[]edfi, sample*" }
-        @{ Name = "databaseEngine"; Override = @{ databaseEngine = "mssql"; documentJsonColumnType = "nvarchar" }; Engine = "postgresql"; Expected = "*declares databaseEngine 'mssql'*selected 'postgresql'*" }
+        @{ Name = "databaseEngine"; Override = @{ databaseEngine = "mssql"; documentJsonColumnType = "nvarchar(max)" }; Engine = "postgresql"; Expected = "*declares databaseEngine 'mssql'*selected 'postgresql'*" }
         @{ Name = "documentJsonColumnType"; Override = @{ documentJsonColumnType = "json" }; Engine = "postgresql"; Expected = "*DocumentJson physical baseline mismatch*'json'*'jsonb'*" }
+        @{ Name = "a narrowed SQL Server documentJsonColumnType"; Override = @{ databaseEngine = "mssql"; documentJsonColumnType = "nvarchar(4000)" }; Engine = "mssql"; Expected = "*DocumentJson physical baseline mismatch*'nvarchar(4000)'*'nvarchar(max)'*" }
     ) {
         $candidateDirectory = New-CandidateFixture -Directory $script:crossCheckRoot
         $tool = New-StubSchemaTool -Directory $script:crossCheckRoot
@@ -1361,9 +1362,10 @@ Describe "Invoke-RestoreScratchValidation" {
                 ResourceKeySeedHashB64     = [System.Convert]::ToBase64String([byte[]](1..32))
                 EngineVersion              = $(if ($DatabaseEngine -eq "mssql") { "17.0.900.7" } else { "16.8" })
                 DatabaseCompatibilityLevel = $(if ($DatabaseEngine -eq "mssql") { 170 } else { $null })
-                DocumentJsonColumnType     = $(if ($DatabaseEngine -eq "mssql") { "nvarchar" } else { "jsonb" })
+                DocumentJsonColumnType     = $(if ($DatabaseEngine -eq "mssql") { "nvarchar(max)" } else { "jsonb" })
                 FullInventory              = (New-ScratchInventory -DatabaseEngine $DatabaseEngine)
                 ArtifactInventory          = (New-ScratchInventory -DatabaseEngine $DatabaseEngine)
+                DatabaseLevelObjects       = [string[]]@()
             }
         }
 
@@ -1606,6 +1608,7 @@ Describe "Invoke-RestoreScratchValidation" {
         @{ Name = "a lookalike companion schema"; FactMutation = { param($fact) $fact.FullInventory.schemas += @{ schemaName = "tracked_changesx"; objects = @(@{ name = "X"; type = "table" }) } }; Expected = "*tracked_changesx*" }
         @{ Name = "a wrong ApiSchema format version"; FactMutation = { param($fact) $fact.ApiSchemaFormatVersion = "9.9.9" }; Expected = "*apiSchemaFormatVersion*" }
         @{ Name = "a mismatched DocumentJson storage type"; FactMutation = { param($fact) $fact.DocumentJsonColumnType = "json" }; Expected = "*documentJsonColumnType*" }
+        @{ Name = "an event trigger in the scratch"; FactMutation = { param($fact) $fact.DatabaseLevelObjects = [string[]]@("eventtrigger|intruder_event_trigger") }; Expected = "*Restore scratch database*database-level objects the DMS schema does not create: eventtrigger|intruder_event_trigger*" }
     ) {
         $stage = New-ScratchStage -Directory $script:scratchRoot
         & $FactMutation $global:ScratchFactToReturn
@@ -1620,6 +1623,7 @@ Describe "Invoke-RestoreScratchValidation" {
     It "on <Name> (SQL Server): fails naming the defect, drops the scratch, and removes the in-container backup copy" -ForEach @(
         @{ Name = "a mismatched compatibility level"; FactMutation = { param($fact) $fact.DatabaseCompatibilityLevel = 160 }; Expected = "*databaseCompatibilityLevel*" }
         @{ Name = "a mismatched DocumentJson storage type"; FactMutation = { param($fact) $fact.DocumentJsonColumnType = "varchar" }; Expected = "*documentJsonColumnType*" }
+        @{ Name = "a copied database master key"; FactMutation = { param($fact) $fact.DatabaseLevelObjects = [string[]]@("symmetrickey|##MS_DatabaseMasterKey##") }; Expected = "*Restore scratch database*database-level objects the DMS schema does not create: symmetrickey|##MS_DatabaseMasterKey##*" }
     ) {
         $stage = New-ScratchStage -Directory $script:scratchRoot -DatabaseEngine mssql
         $global:ScratchFactToReturn = New-ScratchCatalogFact -DatabaseEngine mssql
@@ -2120,6 +2124,112 @@ Describe "Invoke-RestoreTargetReplacement" {
             Should -Throw "*failed the SourceIdentity verification*$($Expected.Trim('*'))*"
 
         Remove-Variable -Name TargetIdentityRows -Scope Global -ErrorAction SilentlyContinue
+    }
+}
+
+Describe "Get-RestoreDatabaseCatalogFact" {
+    It "reads the database-level objects with the catalog facts, so the scratch gate can refuse them" {
+        Mock Invoke-RestoreCatalogQuery {
+            if ($Query -like "*pg_event_trigger*") { return @("eventtrigger|intruder_event_trigger") }
+            if ($Query -like "*EffectiveSchema*") { return "1.0.0|$('ab' * 32)|42|$('cd' * 32)" }
+            if ($Query -like "*server_version*") { return "16.8" }
+            if ($Query -like "*DocumentJson*") { return "DocumentCache|jsonb" }
+            if ($Query -like "*relkind*") { return @("dms|Document|table") }
+            if ($Query -like "*pg_namespace*") { return @("dms", "public") }
+            return @()
+        } -ModuleName bootstrap-restore
+
+        $facts = Get-RestoreDatabaseCatalogFact -DatabaseEngine postgresql -ContainerName dms-postgresql -DatabaseName "edfi_dms_restore_scratch_0123456789ab"
+
+        $facts.DatabaseLevelObjects | Should -Be @("eventtrigger|intruder_event_trigger")
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            $Query -ceq (Get-InventoryDatabaseObjectQuerySql -DatabaseEngine postgresql) -and $DatabaseName -ceq "edfi_dms_restore_scratch_0123456789ab"
+        }
+    }
+}
+
+Describe "Invoke-RestoreTargetReplacement target-safety recheck after the transfer" {
+    # The real Assert-RestoreTargetSafety runs here, reading the same docker ps answers the restore
+    # would. A DMS container that starts while the artifact is copied in must stop the restore
+    # before any statement touches the target.
+    BeforeAll {
+        $script:createdDockerFallback = $false
+        if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+            Set-Item -Path function:global:docker -Value { throw "the docker fallback must always be mocked" }
+            $script:createdDockerFallback = $true
+        }
+    }
+
+    AfterAll {
+        if ($script:createdDockerFallback) {
+            Remove-Item function:global:docker -ErrorAction SilentlyContinue
+        }
+    }
+
+    BeforeEach {
+        $script:recheckRoot = Join-Path $TestDrive "recheck-$([Guid]::NewGuid().ToString('n'))"
+        New-Item -ItemType Directory -Path $script:recheckRoot -Force | Out-Null
+        $global:TestContainerFiles = @{}
+        $global:TestContainerInputs = [System.Collections.Generic.List[byte[]]]::new()
+        $global:ReplaceStagedArtifactBeforeCopy = $false
+        $global:HostStagingPathsToReplace = @()
+        $global:CorruptContainerCopy = $false
+        $global:DmsStartedDuringTransfer = $false
+        $global:RecheckQueries = [System.Collections.Generic.List[string]]::new()
+        Mock docker {
+            $global:LASTEXITCODE = 0
+            if ($args[0] -eq "ps") {
+                "dms-local-db-1|db"
+                if ($global:DmsStartedDuringTransfer -and ($args -join " ") -like "*project=dms-local *") {
+                    "dms-local-dms-1|dms"
+                }
+                return
+            }
+            Invoke-TestContainerFileDocker -DockerArgs $args
+        } -ModuleName bootstrap-restore
+        Mock Invoke-RestoreDockerInputCommand {
+            $writerResult = Invoke-TestContainerInputDocker -ArgumentList $ArgumentList -InputWriter $InputWriter
+            $global:DmsStartedDuringTransfer = $true
+            return $writerResult
+        } -ModuleName bootstrap-restore
+        Mock Invoke-RestoreCatalogQuery {
+            $global:RecheckQueries.Add($Query)
+            if ($Query -like "*server_version*") { return "16.8" }
+            if ($Query -like "*ProductVersion*") { return "17.0.900.7" }
+            return @()
+        } -ModuleName bootstrap-restore
+    }
+
+    AfterEach {
+        Remove-Variable -Name TestContainerFiles -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name TestContainerInputs -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name ReplaceStagedArtifactBeforeCopy -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name HostStagingPathsToReplace -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name CorruptContainerCopy -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name DmsStartedDuringTransfer -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name RecheckQueries -Scope Global -ErrorAction SilentlyContinue
+    }
+
+    It "<Engine>: a service that starts during the transfer stops the restore before any statement touches the target" -ForEach @(
+        @{ Engine = "postgresql"; Container = "dms-postgresql" }
+        @{ Engine = "mssql"; Container = "dms-mssql" }
+    ) {
+        $stage = New-ScratchStage -Directory $script:recheckRoot -DatabaseEngine $Engine
+
+        { Invoke-RestoreTargetReplacement -Stage $stage -TargetDatabaseName "edfi_datamanagementservice" -PackageSourceIdentity "11111111-1111-1111-1111-111111111111" -DatabaseEngine $Engine } |
+            Should -Throw "*Compose project 'dms-local' has running non-database containers*dms-local-dms-1|dms*"
+
+        # The transfer completed and its in-container hash passed, so only the gate that runs
+        # after it can have refused.
+        Should -Invoke Invoke-RestoreDockerInputCommand -ModuleName bootstrap-restore -Times 1 -Exactly
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $args[0] -eq "exec" -and $args[2] -eq "sha256sum" }
+        # Every catalog query was a read-only safety-gate query; nothing reached the target.
+        @($global:RecheckQueries | Where-Object {
+                $_ -notmatch 'datistemplate|database_id <= 4|server_version|ProductVersion|pg_replication_slots|is_cdc_enabled|^SELECT 1 FROM pg_database '
+            }) | Should -BeNullOrEmpty
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $args[0] -eq "exec" -and $args[2] -notin @("sha256sum", "rm") }
+        # The transient in-container copy is still removed.
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec $Container rm -f *" }
     }
 }
 

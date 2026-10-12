@@ -1265,6 +1265,7 @@ Describe "Get-TemplateSourceCatalogFacts" {
                 $calls.Add(@($args))
                 $query = [string]$args[-1]
                 $global:LASTEXITCODE = 0
+                if ($query -match 'pg_event_trigger') { return @('eventtrigger|intruder_event_trigger') }
                 if ($query -match 'EffectiveSchema') { return "1.0.0|$('ab' * 32)|42|$('cd' * 32)" }
                 if ($query -match 'server_version') { return '16.8' }
                 if ($query -match 'data_type') { return 'DocumentCache|jsonb' }
@@ -1288,6 +1289,8 @@ Describe "Get-TemplateSourceCatalogFacts" {
             $facts.EngineVersion | Should -Be "16.8"
             $facts.DatabaseCompatibilityLevel | Should -BeNullOrEmpty
             $facts.DocumentJsonColumnType | Should -Be "jsonb"
+            # Database-level objects are read too; the source gate refuses any of them.
+            $facts.DatabaseLevelObjects | Should -Be @('eventtrigger|intruder_event_trigger')
 
             @($facts.FullInventory.schemas).Count | Should -Be 4
 
@@ -1309,10 +1312,11 @@ Describe "Get-TemplateSourceCatalogFacts" {
                 $calls.Add(@($args))
                 $query = [string]$args[-1]
                 $global:LASTEXITCODE = 0
+                if ($query -match 'sys\.symmetric_keys') { return @('symmetrickey|##MS_DatabaseMasterKey##') }
                 if ($query -match 'EffectiveSchema') { return "1.0.0|$('ab' * 32)|42|$('cd' * 32)" }
                 if ($query -match 'ProductVersion') { return '17.0.900.7' }
                 if ($query -match 'compatibility_level') { return '170' }
-                if ($query -match 'sys\.columns') { return 'DocumentCache|nvarchar' }
+                if ($query -match 'sys\.columns') { return 'DocumentCache|nvarchar(max)' }
                 # The schema query also names sys.objects (built-in schemas show only when
                 # non-empty), so it is told apart by what it selects.
                 if ($query -match 'SELECT s\.name FROM sys\.schemas') { return @('dbo', 'dms', 'edfi', 'tracked_changes_edfi') }
@@ -1326,7 +1330,9 @@ Describe "Get-TemplateSourceCatalogFacts" {
 
             $facts.EngineVersion | Should -Be "17.0.900.7"
             $facts.DatabaseCompatibilityLevel | Should -Be 170
-            $facts.DocumentJsonColumnType | Should -Be "nvarchar"
+            $facts.DocumentJsonColumnType | Should -Be "nvarchar(max)"
+            # A copied database master key travels in the .bak; the source gate refuses it.
+            $facts.DatabaseLevelObjects | Should -Be @('symmetrickey|##MS_DatabaseMasterKey##')
 
             # A .bak carries the whole database: artifact scope equals the full inventory,
             # including the always-present dbo entry and the (empty) principals list.
@@ -1377,6 +1383,7 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
             $configPath | Should -Exist
 
             $contaminatedFacts = [pscustomobject]@{
+                DatabaseLevelObjects = @()
                 FullInventory = @{
                     schemas    = @(
                         @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
@@ -1405,6 +1412,39 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
         }
     }
 
+    It "refuses to dump or package a source whose only contamination is a database-level copied key" {
+        InModuleScope Template-Management -Parameters @{ configPath = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1") } {
+            param($configPath)
+
+            $configPath | Should -Exist
+
+            $keyedFacts = [pscustomobject]@{
+                DatabaseLevelObjects = @("symmetrickey|##MS_DatabaseMasterKey##")
+                FullInventory = @{
+                    schemas    = @(
+                        @{ schemaName = "dbo"; objects = @() },
+                        @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
+                        @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                        @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) }
+                    )
+                    principals = @()
+                }
+            }
+
+            Mock Get-TemplateSourceCatalogFacts { $keyedFacts }
+            Mock Invoke-DatabaseDump {}
+            Mock Write-TemplateRestoreManifest {}
+            Mock Build-NuGetPackage {}
+
+            { Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" -DatabaseEngine mssql } |
+                Should -Throw "*not a dedicated DMS datastore: it carries database-level objects the DMS schema does not create: symmetrickey|##MS_DatabaseMasterKey##*"
+
+            Should -Invoke Invoke-DatabaseDump -Times 0 -Exactly
+            Should -Invoke Write-TemplateRestoreManifest -Times 0 -Exactly
+            Should -Invoke Build-NuGetPackage -Times 0 -Exactly
+        }
+    }
+
     It "does not write a manifest, pack, or attest after a failed dump" {
         InModuleScope Template-Management -Parameters @{ configPath = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1") } {
             param($configPath)
@@ -1414,6 +1454,7 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
             # A clean, gate-passing source; -DumpAllUserSchemas keeps the artifact scope valid, so
             # the dump failure below is the only thing that can stop the build.
             $cleanFacts = [pscustomobject]@{
+                DatabaseLevelObjects = @()
                 FullInventory = @{
                     schemas    = @(
                         @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
@@ -1457,6 +1498,7 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
             # A clean, gate-passing full source whose artifact scope (default dms-only dump,
             # no -DumpAllUserSchemas) would not contain the declared projects.
             $cleanFullSourceFacts = [pscustomobject]@{
+                DatabaseLevelObjects = @()
                 FullInventory = @{
                     schemas    = @(
                         @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
@@ -1510,6 +1552,7 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
                         )
                         principals = @()
                     }
+                    DatabaseLevelObjects       = @()
                     ArtifactInventory          = @{
                         schemas    = @(
                             @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }, @{ name = "EffectiveSchema"; type = "table" }) },
@@ -1608,7 +1651,7 @@ Describe "Build-TemplateNuGetPackage authoritative source comparison" {
                     if ($_.schemaName -ceq $schema) { $objects += @{ name = $extra; type = "table" } }
                     @{ schemaName = $_.schemaName; objects = $objects }
                 })
-            $contaminatedFacts = [pscustomobject]@{ FullInventory = @{ schemas = $contaminatedSchemas; principals = @() } }
+            $contaminatedFacts = [pscustomobject]@{ DatabaseLevelObjects = @(); FullInventory = @{ schemas = $contaminatedSchemas; principals = @() } }
 
             Mock Assert-TemplateAttestationSignerKey {}
             Mock Get-TemplateSourceCatalogFacts { $contaminatedFacts }
@@ -1651,7 +1694,7 @@ Describe "Build-TemplateNuGetPackage authoritative source comparison" {
             $configPath | Should -Exist
             $authoritative.schemas | Should -Not -BeNullOrEmpty
 
-            Mock Get-TemplateSourceCatalogFacts { [pscustomobject]@{ FullInventory = $authoritative } }
+            Mock Get-TemplateSourceCatalogFacts { [pscustomobject]@{ DatabaseLevelObjects = @(); FullInventory = $authoritative } }
             Mock Get-UserSchemaNames { @("auth", "dms", "edfi", "tracked_changes_edfi") }
             Mock Get-TemplateAuthoritativeObjectInventory { $authoritative }
             Mock Invoke-DatabaseDump {}
@@ -1681,7 +1724,7 @@ Describe "Build-TemplateNuGetPackage authoritative source comparison" {
             $configPath | Should -Exist
             $authoritative.schemas | Should -Not -BeNullOrEmpty
 
-            Mock Get-TemplateSourceCatalogFacts { [pscustomobject]@{ FullInventory = $authoritative } }
+            Mock Get-TemplateSourceCatalogFacts { [pscustomobject]@{ DatabaseLevelObjects = @(); FullInventory = $authoritative } }
             Mock Get-UserSchemaNames { @("auth", "dms", "edfi", "tracked_changes_edfi") }
             Mock Get-TemplateAuthoritativeObjectInventory { $authoritative }
             Mock Invoke-DatabaseDump {}
@@ -1776,6 +1819,7 @@ Describe "Build-TemplateNuGetPackage attestation" {
                         )
                         principals = @()
                     }
+                    DatabaseLevelObjects       = @()
                     ArtifactInventory          = @{
                         schemas    = @(
                             @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
@@ -1885,6 +1929,7 @@ Describe "Build-TemplateNuGetPackage attestation" {
                         schemas    = @(@{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) }, @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) }, @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) }, @{ schemaName = "public"; objects = @() })
                         principals = @()
                     }
+                    DatabaseLevelObjects       = @()
                     ArtifactInventory          = @{
                         schemas    = @(@{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) }, @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) }, @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) }, @{ schemaName = "public"; objects = @() })
                         principals = @()

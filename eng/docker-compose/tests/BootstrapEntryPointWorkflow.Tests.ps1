@@ -1941,6 +1941,38 @@ $resultStatement
             Join-Path $script:repo.DockerComposeRoot ".bootstrap-restore" | Should -Not -Exist -Because "no restore candidate workspace may be created"
         }
 
+        It "rejects a PostgreSQL restore under POSTGRES_USE_TMPFS on <_> before any phase, and does not reject SQL Server" -ForEach @("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1") {
+            # The start scripts mount PostgreSQL's data directory as tmpfs when POSTGRES_USE_TMPFS is
+            # true in the process environment, and the -InfraOnly start after the restore recreates
+            # the db container, so the restored target would be lost. SQL Server never uses it.
+            Copy-DockerComposeFile -FileName $_ -Destination $script:repo.DockerComposeRoot
+            $entryScript = Join-Path $script:repo.DockerComposeRoot $_
+            New-RestoreStartScriptStub -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreSurfaceLog -StartScriptName ($_ -replace "^bootstrap-", "start-")
+            Install-RestoreSequencingStub -LogPath $script:restoreSurfaceLog -FixtureRoot $script:repo.RepoRoot
+            $callerTmpfs = [System.Environment]::GetEnvironmentVariable("POSTGRES_USE_TMPFS")
+            try {
+                $env:POSTGRES_USE_TMPFS = "True"
+
+                { & $entryScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal -PackageDirectory $script:repo.RepoRoot } |
+                    Should -Throw "*-RestoreTemplate is not valid with POSTGRES_USE_TMPFS=true*"
+                $script:restoreSurfaceLog | Should -Not -Exist -Because "the exclusion must reject before any phase or restore step runs"
+                Join-Path $script:repo.DockerComposeRoot ".bootstrap-restore" | Should -Not -Exist -Because "no restore candidate workspace may be created"
+
+                & $entryScript -EnvironmentFile $script:repo.EnvFile -DatabaseEngine mssql -RestoreTemplate Minimal -PackageDirectory $script:repo.RepoRoot
+                @(Get-Content -LiteralPath $script:restoreSurfaceLog | Where-Object { $_ -like "restore:find template=Minimal*" }) |
+                    Should -Not -BeNullOrEmpty -Because "a SQL Server restore does not depend on POSTGRES_USE_TMPFS"
+            }
+            finally {
+                if ($null -eq $callerTmpfs) {
+                    Remove-Item -LiteralPath Env:\POSTGRES_USE_TMPFS -ErrorAction SilentlyContinue
+                }
+                else {
+                    $env:POSTGRES_USE_TMPFS = $callerTmpfs
+                }
+                Remove-RestoreSequencingStub
+            }
+        }
+
         It "forwards -RestoreTemplate and -PackageDirectory to Invoke-BootstrapWrapper on <_>" -ForEach @("bootstrap-local-dms.ps1", "bootstrap-published-dms.ps1") {
             # A valid restore request passes every exclusion and runs the restore pipeline with
             # the forwarded values - proof they arrived at Invoke-BootstrapWrapper.

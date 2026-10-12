@@ -89,7 +89,7 @@ BeforeAll {
             $manifest.packageId = "EdFi.Api.Minimal.Template.MsSql.5.2.0"
             $manifest.engineVersion = "17.0.900.7"
             $manifest.databaseCompatibilityLevel = 170
-            $manifest.documentJsonColumnType = "nvarchar"
+            $manifest.documentJsonColumnType = "nvarchar(max)"
             $manifest.artifactFileName = "EdFi.Api.Minimal.Template.MsSql.5.2.0.bak"
         }
 
@@ -232,7 +232,7 @@ Describe "Get-RestoreSchemaNameExclusion" {
 Describe "Get-RestoreDocumentJsonBaselineType" {
     It "pins the current physical DocumentJson baseline per engine" {
         Get-RestoreDocumentJsonBaselineType -DatabaseEngine postgresql | Should -Be "jsonb"
-        Get-RestoreDocumentJsonBaselineType -DatabaseEngine mssql | Should -Be "nvarchar"
+        Get-RestoreDocumentJsonBaselineType -DatabaseEngine mssql | Should -Be "nvarchar(max)"
     }
 }
 
@@ -848,7 +848,7 @@ Describe "inventory catalog query SQL builders" {
         $sql = & $Sql
         $hidden = @(Get-SqlNotInName -Sql $sql)
 
-        @($hidden | Sort-Object) | Should -Be @($BuiltIns | Sort-Object)
+        @($hidden | Sort-Object -Unique) | Should -Be @($BuiltIns | Sort-Object)
         foreach ($visibleName in $Visible) {
             $hidden | Should -Not -Contain $visibleName
         }
@@ -920,7 +920,7 @@ Describe "inventory catalog query SQL builders" {
 Describe "ConvertFrom-DocumentJsonColumnTypeRow" {
     It "returns the single physical type when dms.DocumentCache is the carrier" {
         ConvertFrom-DocumentJsonColumnTypeRow -Row @("DocumentCache|jsonb") | Should -Be "jsonb"
-        ConvertFrom-DocumentJsonColumnTypeRow -Row @("", "DocumentCache|NVARCHAR") | Should -Be "nvarchar"
+        ConvertFrom-DocumentJsonColumnTypeRow -Row @("", "DocumentCache|NVARCHAR(MAX)") | Should -Be "nvarchar(max)"
     }
 
     It "accepts additional carriers only when every carrier reports the same type" {
@@ -1107,7 +1107,7 @@ Describe "Assert-DmsOnlyInventory" {
                 $Inventory
             )
             try {
-                $null = Assert-DmsOnlyInventory -DatabaseEngine $DatabaseEngine -Inventory $Inventory
+                $null = Assert-DmsOnlyInventory -DatabaseEngine $DatabaseEngine -DatabaseLevelObject @() -Inventory $Inventory
                 return $null
             }
             catch {
@@ -1120,8 +1120,16 @@ Describe "Assert-DmsOnlyInventory" {
         @{ Engine = "postgresql"; AlwaysPresent = "public" }
         @{ Engine = "mssql"; AlwaysPresent = "dbo" }
     ) {
-        $partition = Assert-DmsOnlyInventory -DatabaseEngine $Engine -Inventory (New-GateInventory -Schema (New-CleanGateSchema -AlwaysPresent $AlwaysPresent))
+        $partition = Assert-DmsOnlyInventory -DatabaseEngine $Engine -DatabaseLevelObject @() -Inventory (New-GateInventory -Schema (New-CleanGateSchema -AlwaysPresent $AlwaysPresent))
         $partition.ProjectSchemaNames | Should -Be @("edfi")
+    }
+
+    It "rejects copied keys and other database-level objects in an otherwise clean database (<Engine>)" -ForEach @(
+        @{ Engine = "postgresql"; AlwaysPresent = "public"; Objects = @("eventtrigger|intruder_event_trigger", "extension|postgres_fdw") }
+        @{ Engine = "mssql"; AlwaysPresent = "dbo"; Objects = @("certificate|CopiedCertificate", "symmetrickey|##MS_DatabaseMasterKey##") }
+    ) {
+        { Assert-DmsOnlyInventory -DatabaseEngine $Engine -DatabaseLevelObject $Objects -Inventory (New-GateInventory -Schema (New-CleanGateSchema -AlwaysPresent $AlwaysPresent)) -SourceDescription "Scratch database 'x'" } |
+            Should -Throw "Scratch database 'x' is not a dedicated DMS datastore: it carries database-level objects the DMS schema does not create: $($Objects -join ', ')."
     }
 
     It "rejects a db_-named user schema with its objects and a db_-named principal, as the SQL Server catalog reports them" {
@@ -1171,7 +1179,7 @@ Describe "Assert-DmsOnlyInventory" {
             @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
             @{ schemaName = "public"; objects = @() }
         )
-        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $schemas) } | Should -Not -Throw
+        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -DatabaseLevelObject @() -Inventory (New-GateInventory -Schema $schemas) } | Should -Not -Throw
     }
 
     It "rejects the Configuration Service schema dmscs (<Engine>)" -ForEach @(
@@ -1217,14 +1225,14 @@ Describe "Assert-DmsOnlyInventory" {
             @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
             @{ schemaName = "public"; objects = @(@{ name = "evil"; type = "table" }) }
         )
-        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $publicContaminated) } |
+        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -DatabaseLevelObject @() -Inventory (New-GateInventory -Schema $publicContaminated) } |
             Should -Throw "*always-present 'public' schema contains unexpected objects*evil*"
 
         $dboContaminated = @(
             @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }) },
             @{ schemaName = "dbo"; objects = @(@{ name = "evil"; type = "table" }) }
         )
-        { Assert-DmsOnlyInventory -DatabaseEngine mssql -Inventory (New-GateInventory -Schema $dboContaminated) } |
+        { Assert-DmsOnlyInventory -DatabaseEngine mssql -DatabaseLevelObject @() -Inventory (New-GateInventory -Schema $dboContaminated) } |
             Should -Throw "*always-present 'dbo' schema contains unexpected objects*evil*"
     }
 
@@ -1238,9 +1246,9 @@ Describe "Assert-DmsOnlyInventory" {
     }
 
     It "rejects a missing or empty dms schema" {
-        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema @(@{ schemaName = "public"; objects = @() })) } |
+        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -DatabaseLevelObject @() -Inventory (New-GateInventory -Schema @(@{ schemaName = "public"; objects = @() })) } |
             Should -Throw "*the 'dms' schema is missing*"
-        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema @(@{ schemaName = "dms"; objects = @() })) } |
+        { Assert-DmsOnlyInventory -DatabaseEngine postgresql -DatabaseLevelObject @() -Inventory (New-GateInventory -Schema @(@{ schemaName = "dms"; objects = @() })) } |
             Should -Throw "*the 'dms' schema contains no objects*"
     }
 
@@ -1263,7 +1271,7 @@ Describe "Assert-DmsOnlyInventory" {
             @{ schemaName = "dmscs"; objects = @() },
             @{ schemaName = "public"; objects = @(@{ name = "evil"; type = "table" }) }
         )
-        $failure = { Assert-DmsOnlyInventory -DatabaseEngine postgresql -Inventory (New-GateInventory -Schema $schemas) -SourceDescription "Scratch database 'x'" }
+        $failure = { Assert-DmsOnlyInventory -DatabaseEngine postgresql -DatabaseLevelObject @() -Inventory (New-GateInventory -Schema $schemas) -SourceDescription "Scratch database 'x'" }
         $failure | Should -Throw "*Scratch database 'x' is not a dedicated DMS datastore*"
         $failure | Should -Throw "*dmscs*"
         $failure | Should -Throw "*'dms' schema is missing*"
@@ -1327,7 +1335,7 @@ Describe "New-TemplateRestoreManifest" {
                 $arguments.PackageId = "EdFi.Api.Minimal.Template.MsSql.5.2.0"
                 $arguments.EngineVersion = "17.0.900.7"
                 $arguments.DatabaseCompatibilityLevel = 170
-                $arguments.DocumentJsonColumnType = "nvarchar"
+                $arguments.DocumentJsonColumnType = "nvarchar(max)"
                 $arguments.ArtifactFileName = "EdFi.Api.Minimal.Template.MsSql.5.2.0.bak"
             }
             return $arguments
@@ -1463,6 +1471,18 @@ Describe "Assert-RestoreManifestMatchesDatabase" {
         $pair.Facts.DatabaseCompatibilityLevel = 160
         { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $pair.Facts -DatabaseEngine mssql } |
             Should -Throw "*databaseCompatibilityLevel: manifest '170' vs database '160'*"
+    }
+
+    It "rejects a narrowed SQL Server DocumentJson column even when the manifest declares the same narrowed type, and accepts nvarchar(max)" {
+        $pair = New-MatchingFactsAndManifest -DatabaseEngine mssql
+        $pair.Facts.DocumentJsonColumnType | Should -BeExactly "nvarchar(max)"
+        { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $pair.Facts -DatabaseEngine mssql } |
+            Should -Not -Throw
+
+        $pair.Facts.DocumentJsonColumnType = "nvarchar(4000)"
+        $pair.Manifest.documentJsonColumnType = "nvarchar(4000)"
+        { Assert-RestoreManifestMatchesDatabase -Manifest $pair.Manifest -Facts $pair.Facts -DatabaseEngine mssql } |
+            Should -Throw "*documentJsonColumnType: database 'nvarchar(4000)' vs the mssql baseline 'nvarchar(max)'*"
     }
 
     It "reports an inventory divergence through the independently recomputed canonical hash" {
