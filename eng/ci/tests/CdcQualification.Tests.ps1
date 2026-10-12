@@ -1939,6 +1939,57 @@ function docker { `$global:LASTEXITCODE = 0 }
         $failure.HResult | Should -BeOfType ([long])
         $json | Should -Not -Match 'ScriptStackTrace|/home/|/tmp/|requires -d|StandardError'
     }
+    It 'records the current failure when the prior diagnostic file is <ContentKind>' -ForEach @(
+        @{ ContentKind = 'empty'; Content = '' },
+        @{ ContentKind = 'truncated'; Content = '[{"Phase":' },
+        @{ ContentKind = 'malformed'; Content = 'private-malformed-json' }
+    ) {
+        . (Join-Path $PSScriptRoot '../cdc-runbook-diagnostics.ps1')
+        $savedPath = $env:CDC_RUNBOOK_CHILD_FAILURE_PATH
+        try {
+            $env:CDC_RUNBOOK_CHILD_FAILURE_PATH = Join-Path $script:private 'damaged-errors.json'
+            Set-Content -LiteralPath $env:CDC_RUNBOOK_CHILD_FAILURE_PATH -Value $Content
+            try { throw 'Unverified cleanup' } catch {
+                Write-CdcRunbookChildFailure -Records @($_) -Phase Teardown
+            }
+            $errors = Get-Content $env:CDC_RUNBOOK_CHILD_FAILURE_PATH -Raw | ConvertFrom-Json -NoEnumerate
+            $errors.Count | Should -Be 1
+            $errors[0].Category | Should -Be 'ChildProcessFailure'
+            $errors[0].Phase | Should -Be 'Teardown'
+            $errors[0].Reason | Should -Be 'UnverifiedCleanup'
+            ($errors | ConvertTo-Json -Depth 5) | Should -Not -Match 'private|Unverified cleanup'
+        } finally {
+            $env:CDC_RUNBOOK_CHILD_FAILURE_PATH = $savedPath
+        }
+    }
+    It 'exports the reason for the <Guard> inventory guard' -ForEach @(
+        @{ Guard = 'Contradictory scope'; Reason = 'ContradictoryScope' },
+        @{ Guard = 'Contradictory Compose inputs'; Reason = 'ContradictoryComposeInputs' },
+        @{ Guard = 'Changed selected Compose file'; Reason = 'ChangedSelectedComposeFile' }
+    ) {
+        . (Join-Path $PSScriptRoot '../cdc-runbook-diagnostics.ps1')
+        $savedPath = $env:CDC_RUNBOOK_CHILD_FAILURE_PATH
+        $path = Join-Path $script:private 'guard-errors.json'
+        try {
+            $env:CDC_RUNBOOK_CHILD_FAILURE_PATH = $path
+            try { throw $Guard } catch {
+                Write-CdcRunbookChildFailure -Records @($_) -Phase Teardown
+            }
+        } finally {
+            $env:CDC_RUNBOOK_CHILD_FAILURE_PATH = $savedPath
+        }
+        Set-CdcRunbookOperation -Operation cdc-stack-teardown -Phase Teardown
+        $result = [pscustomobject]@{ ExitCode = 1; FailureKind = 'None' }
+        Complete-CdcRunbookOperation $result
+        Read-CdcRunbookChildFailure -Path $path -Result $result -Required
+        $report = Get-CdcRunbookPesterReport -Tests @([pscustomobject]@{ ExpandedName = 'CDC-DOC cdc-managed-start'; Result = 'Failed' }) -QualificationProfile MssqlLifecycle -ProgressPath (Join-Path $script:private 'runbook-progress.json')
+        Export-CdcRunbookReport -Report $report -RawDirectory $script:private -Destination $script:published -FileName 'cdc-runbook-live-lifecycle.json'
+        $json = Get-Content (Join-Path $script:published 'cdc-runbook-live-lifecycle.json') -Raw
+        $failure = ($json | ConvertFrom-Json -NoEnumerate)[0].Operations[0].ChildFailures[0]
+        $failure.Reason | Should -Be $Reason
+        $failure.Phase | Should -Be 'Teardown'
+        $json | Should -Not -Match ([regex]::Escape($Guard))
+    }
     It 'retains an inner cleanup classification when its caller reports a broader error' {
         . (Join-Path $PSScriptRoot '../cdc-runbook-diagnostics.ps1')
         $lifecycle = Import-Module (Join-Path $PSScriptRoot '../../docker-compose/cdc-lifecycle.psm1') -Force -PassThru

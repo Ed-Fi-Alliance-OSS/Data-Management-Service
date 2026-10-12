@@ -202,7 +202,12 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
                         ? Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(logs)))
                         : "",
                     Markers = markers
-                        .Where(marker => logs.Contains(marker, StringComparison.Ordinal))
+                        .Where(marker =>
+                            logs.Contains(
+                                marker is "OutOfMemoryError" ? "java.lang.OutOfMemoryError" : marker,
+                                StringComparison.Ordinal
+                            )
+                        )
                         .ToArray(),
                     JvmMemoryFailureKinds = GetJvmMemoryFailureKinds(logs),
                 },
@@ -217,7 +222,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         HashSet<string> kinds = [];
         foreach (string line in logs.Split('\n'))
         {
-            if (line.Contains("OutOfMemoryError", StringComparison.Ordinal))
+            if (line.Contains("java.lang.OutOfMemoryError", StringComparison.Ordinal))
             {
                 string kind = line switch
                 {

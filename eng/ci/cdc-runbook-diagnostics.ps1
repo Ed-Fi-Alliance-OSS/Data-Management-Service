@@ -47,7 +47,8 @@ function ConvertTo-CdcRunbookDiagnostic {
         $safe.ExceptionType = $Value.ExceptionType
     }
     if ($Value['HResult'] -is [int] -or $Value['HResult'] -is [long]) { $safe.HResult = $Value.HResult }
-    $reasons = @('InventoryInvalid', 'ScopeMismatch', 'ChangedConfiguration', 'ChangedEnvironment',
+    $reasons = @('InventoryInvalid', 'ScopeMismatch', 'ContradictoryScope', 'ContradictoryComposeInputs',
+        'ChangedSelectedComposeFile', 'ChangedConfiguration', 'ChangedEnvironment',
         'CleanupInventoryInvalid', 'ProtectedState', 'PeerConfiguration', 'ChangedGeneratedConfiguration',
         'CleanupFlushFailed', 'ControllerRejected', 'UnverifiedStop', 'WorkerNotReady', 'UnverifiedCleanup')
     if ($Value['Reason'] -is [string] -and $Value['Reason'] -cin $reasons) { $safe.Reason = $Value.Reason }
@@ -81,6 +82,9 @@ function Get-CdcRunbookErrorDiagnostic {
         $value.Reason = switch -CaseSensitive ($Record.Exception.Message) {
             'Inventory' { 'InventoryInvalid' }
             'Scope' { 'ScopeMismatch' }
+            'Contradictory scope' { 'ContradictoryScope' }
+            'Contradictory Compose inputs' { 'ContradictoryComposeInputs' }
+            'Changed selected Compose file' { 'ChangedSelectedComposeFile' }
             'Changed configuration' { 'ChangedConfiguration' }
             'Changed environment' { 'ChangedEnvironment' }
             'Cleanup inventory' { 'CleanupInventoryInvalid' }
@@ -138,9 +142,15 @@ function Write-CdcRunbookChildFailure {
         # Preserve an inner failure recorded before a lifecycle catch replaces its message.
         $failures = @()
         if (Test-Path -LiteralPath $path) {
-            $existing = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -AsHashtable -NoEnumerate
-            $failures = @($existing | Where-Object { $_ -is [Collections.IDictionary] } |
-                ForEach-Object { ConvertTo-CdcRunbookDiagnostic $_ -Child })
+            try {
+                $existing = Get-Content -LiteralPath $path -Raw -ErrorAction Stop |
+                    ConvertFrom-Json -AsHashtable -NoEnumerate -ErrorAction Stop
+                $failures = @($existing | Where-Object { $_ -is [Collections.IDictionary] } |
+                    ForEach-Object { ConvertTo-CdcRunbookDiagnostic $_ -Child })
+            } catch {
+                # A damaged prior file must not prevent the current failure from being recorded.
+                $failures = @()
+            }
         }
         $failures += @($Records | Select-Object -First 8 | ForEach-Object {
             $diagnostic = Get-CdcRunbookErrorDiagnostic $_ -Category ChildProcessFailure -Phase $Phase
