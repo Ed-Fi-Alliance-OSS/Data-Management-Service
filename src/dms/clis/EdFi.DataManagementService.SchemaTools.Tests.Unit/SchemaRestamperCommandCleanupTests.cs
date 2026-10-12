@@ -157,8 +157,12 @@ public class Given_SchemaRestamper_CommandCleanup
         connection.Transaction.CommitCount.Should().Be(1);
     }
 
-    [Test]
-    public async Task It_retries_the_target_stamp_as_a_fully_validated_no_op()
+    [TestCase(SqlDialect.Pgsql, "Host=localhost;Database=sample")]
+    [TestCase(SqlDialect.Mssql, "Server=localhost;Database=sample")]
+    public async Task It_retries_the_target_stamp_as_a_fully_validated_no_op(
+        SqlDialect dialect,
+        string connectionString
+    )
     {
         var targetHash = new string('a', 64);
         var connection = new TimeoutCommandConnection(
@@ -172,8 +176,8 @@ public class Given_SchemaRestamper_CommandCleanup
         var service = new SchemaRestamper(NullLogger.Instance, (_, _) => connection);
 
         var result = await service.RestampAsync(
-            SqlDialect.Pgsql,
-            "Host=localhost;Database=sample",
+            dialect,
+            connectionString,
             30,
             target,
             false,
@@ -181,6 +185,7 @@ public class Given_SchemaRestamper_CommandCleanup
         );
 
         result.Changed.Should().BeFalse();
+        connection.ReaderCount.Should().Be(3, "only the three validation snapshots need readers");
         connection
             .Commands.Where(command => command.CommandText.StartsWith("DELETE", StringComparison.Ordinal))
             .Should()
@@ -217,7 +222,11 @@ public class Given_SchemaRestamper_CommandCleanup
     [Test]
     public async Task It_preserves_the_reader_timeout_when_reader_and_command_disposal_fail()
     {
-        var connection = new TimeoutCommandConnection(failNonQuery: false, failRead: true);
+        var connection = new TimeoutCommandConnection(
+            failNonQuery: false,
+            failRead: true,
+            disposeFailureRequiresReader: true
+        );
         var target = new EffectiveSchemaInfo("1.0.0", "v3", new string('a', 64), 0, new byte[32], [], []);
         var service = new SchemaRestamper(NullLogger.Instance, (_, _) => connection);
 
@@ -258,7 +267,8 @@ public class Given_SchemaRestamper_CommandCleanup
             bool waitForCancellation = false,
             bool failCommit = false,
             bool provideValidSnapshot = false,
-            string? storedHash = null
+            string? storedHash = null,
+            bool disposeFailureRequiresReader = false
         )
         {
             _failNonQuery = failNonQuery;
@@ -267,6 +277,7 @@ public class Given_SchemaRestamper_CommandCleanup
             _waitForCancellation = waitForCancellation;
             _provideValidSnapshot = provideValidSnapshot;
             _storedHash = storedHash ?? new string('b', 64);
+            DisposeFailureRequiresReader = disposeFailureRequiresReader;
             _transaction = new TimeoutCommandTransaction(this, failCommit);
         }
 
@@ -285,6 +296,10 @@ public class Given_SchemaRestamper_CommandCleanup
         public bool WaitForCancellation => _waitForCancellation;
 
         public bool ProvideValidSnapshot => _provideValidSnapshot;
+
+        public bool DisposeFailureRequiresReader { get; }
+
+        public int ReaderCount => _readerCount;
 
         public DbDataReader CreateReader()
         {
@@ -405,6 +420,7 @@ public class Given_SchemaRestamper_CommandCleanup
         private readonly bool _failRead;
         private readonly bool _failDispose;
         private readonly DbParameterCollection _parameters = A.Fake<DbParameterCollection>();
+        private bool _readerCreated;
 
         public TimeoutCommand(DbConnection connection, bool failNonQuery, bool failRead, bool failDispose)
         {
@@ -462,6 +478,7 @@ public class Given_SchemaRestamper_CommandCleanup
 
         protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
         {
+            _readerCreated = true;
             if (((TimeoutCommandConnection)DbConnection).ProvideValidSnapshot)
             {
                 return ((TimeoutCommandConnection)DbConnection).CreateReader();
@@ -488,7 +505,7 @@ public class Given_SchemaRestamper_CommandCleanup
         protected override void Dispose(bool disposing)
         {
             base.Dispose(disposing);
-            if (disposing && _failDispose)
+            if (disposing && _failDispose && (!_connection.DisposeFailureRequiresReader || _readerCreated))
             {
                 throw new IOException("secondary command cleanup failure");
             }

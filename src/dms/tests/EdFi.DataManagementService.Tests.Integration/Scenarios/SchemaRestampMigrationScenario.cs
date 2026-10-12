@@ -11,6 +11,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using FluentAssertions;
@@ -88,6 +89,19 @@ internal static class SchemaRestampMigrationScenario
 
         string targetSchema = Path.Combine(target.ApiSchemaDirectory, "inputs", "api-schema.json");
         string dialectName = dialect == SqlDialect.Pgsql ? "pgsql" : "mssql";
+        ProcessResult beforeStampProvision = await RunToolAsync(
+            "ddl",
+            "provision",
+            "--schema",
+            targetSchema,
+            "--connection-string",
+            connectionString,
+            "--dialect",
+            dialectName
+        );
+        beforeStampProvision.ExitCode.Should().Be(1, beforeStampProvision.Error);
+        beforeStampProvision.Error.Should().Contain("EffectiveSchemaHash");
+
         ProcessResult restamp = await RunToolAsync(
             "ddl",
             "re-stamp",
@@ -276,7 +290,10 @@ internal static class SchemaRestampMigrationScenario
 
     private static async Task<ProcessResult> RunToolAsync(params string[] arguments)
     {
-        string assemblyPath = ResolveSchemaToolsAssemblyPath();
+        string testAssemblyDirectory = Path.GetDirectoryName(
+            typeof(SchemaRestampMigrationScenario).Assembly.Location
+        )!;
+        string assemblyPath = ResolveSchemaToolsAssemblyPath(testAssemblyDirectory);
         var startInfo = new ProcessStartInfo("dotnet")
         {
             RedirectStandardOutput = true,
@@ -329,35 +346,34 @@ internal static class SchemaRestampMigrationScenario
         }
     }
 
-    private static string ResolveSchemaToolsAssemblyPath()
+    internal static string ResolveSchemaToolsAssemblyPath(string testAssemblyDirectory)
     {
-        const string schemaToolsOutputPath = "src/dms/clis/EdFi.DataManagementService.SchemaTools/bin";
-        const string schemaToolsAssemblyName = "api-schema-tools.dll";
-
-        for (
-            DirectoryInfo? directory = new(AppContext.BaseDirectory);
-            directory is not null;
-            directory = directory.Parent
-        )
-        {
-            string outputDirectory = Path.Combine(directory.FullName, schemaToolsOutputPath);
-            if (!Directory.Exists(outputDirectory))
-            {
-                continue;
-            }
-
-            string? assemblyPath = Directory
-                .EnumerateFiles(outputDirectory, schemaToolsAssemblyName, SearchOption.AllDirectories)
-                .FirstOrDefault();
-            if (assemblyPath is not null)
-            {
-                return assemblyPath;
-            }
-        }
-
-        throw new FileNotFoundException(
-            $"Could not locate {schemaToolsAssemblyName} in a SchemaTools build output directory above '{AppContext.BaseDirectory}'."
+        // Like the CLI suite, use the configuration/framework of the actual test assembly.
+        var frameworkDirectory = new DirectoryInfo(testAssemblyDirectory);
+        var configurationDirectory =
+            frameworkDirectory.Parent
+            ?? throw new DirectoryNotFoundException("The test assembly has no configuration directory.");
+        string assemblyPath = FixturePathResolver.ResolveRepositoryRelativePath(
+            testAssemblyDirectory,
+            Path.Combine(
+                "src",
+                "dms",
+                "clis",
+                "EdFi.DataManagementService.SchemaTools",
+                "bin",
+                configurationDirectory.Name,
+                frameworkDirectory.Name,
+                "api-schema-tools.dll"
+            )
         );
+        if (!File.Exists(assemblyPath))
+        {
+            throw new FileNotFoundException(
+                "The SchemaTools artifact matching the test build is missing. Build SchemaTools with the same configuration and framework.",
+                assemblyPath
+            );
+        }
+        return assemblyPath;
     }
 
     internal static async Task WaitForToolExitAsync(Process process, CancellationToken cancellationToken)

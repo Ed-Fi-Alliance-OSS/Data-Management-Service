@@ -472,9 +472,21 @@ public class Given_SchemaRestamp_Mssql_Compatible_Transition
         SchemaRestampTestHelper.Capture(verify, "mssql").Hash.Should().Be(_oldHash);
     }
 
-    [Test]
-    public async Task It_holds_metadata_writer_until_restamp_validation_and_commit_complete()
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_holds_metadata_writer_until_restamp_validation_and_transaction_complete(
+        bool missingSingleton
+    )
     {
+        if (missingSingleton)
+        {
+            using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "DELETE FROM [dms].[SchemaComponent]; DELETE FROM [dms].[EffectiveSchema];";
+            await command.ExecuteNonQueryAsync();
+        }
+
         using var blocker = new SqlConnection(_connectionString);
         await blocker.OpenAsync();
         await using var blockerTransaction = (SqlTransaction)await blocker.BeginTransactionAsync();
@@ -512,7 +524,8 @@ public class Given_SchemaRestamp_Mssql_Compatible_Transition
         await using var writerTransaction = (SqlTransaction)await writer.BeginTransactionAsync();
         await using var writerCommand = writer.CreateCommand();
         writerCommand.Transaction = writerTransaction;
-        writerCommand.CommandText = "UPDATE [dms].[EffectiveSchema] SET [AppliedAt] = [AppliedAt];";
+        writerCommand.CommandText =
+            "UPDATE [dms].[EffectiveSchema] WITH (TABLOCKX) SET [AppliedAt] = [AppliedAt];";
         Task<int>? writerUpdate = null;
         var blockerReleased = false;
         var writerTransactionCompleted = false;
@@ -525,9 +538,19 @@ public class Given_SchemaRestamp_Mssql_Compatible_Transition
 
             await blockerTransaction.RollbackAsync();
             blockerReleased = true;
-            var result = await restampTask;
-            result.Changed.Should().BeTrue();
-            result.PreviousHash.Should().Be(_oldHash);
+            if (missingSingleton)
+            {
+                Func<Task> action = () => restampTask;
+                (await action.Should().ThrowAsync<SchemaRestampException>())
+                    .Which.Failure.Should()
+                    .Be(SchemaRestampFailure.Validation);
+            }
+            else
+            {
+                var result = await restampTask;
+                result.Changed.Should().BeTrue();
+                result.PreviousHash.Should().Be(_oldHash);
+            }
             await writerUpdate.WaitAsync(TimeSpan.FromSeconds(20));
             await writerTransaction.RollbackAsync();
             writerTransactionCompleted = true;
@@ -575,7 +598,15 @@ public class Given_SchemaRestamp_Mssql_Compatible_Transition
 
         using var verify = new SqlConnection(_connectionString);
         await verify.OpenAsync();
-        SchemaRestampTestHelper.Capture(verify, "mssql").Hash.Should().Be(_target.EffectiveSchemaHash);
+        if (missingSingleton)
+        {
+            ProvisionTestHelper.GetDmsTableCount(verify, "mssql", "EffectiveSchema").Should().Be(0);
+            ProvisionTestHelper.GetDmsTableCount(verify, "mssql", "SchemaComponent").Should().Be(0);
+        }
+        else
+        {
+            SchemaRestampTestHelper.Capture(verify, "mssql").Hash.Should().Be(_target.EffectiveSchemaHash);
+        }
     }
 
     [Test]

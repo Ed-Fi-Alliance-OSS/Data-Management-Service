@@ -49,10 +49,9 @@ public sealed class SchemaRestamper : ISchemaRestamper
 
             foreach (var lockSql in SchemaRestampSql.LockCommands(dialect))
             {
-                await LockAsync(
+                await ExecuteAsync(
                     connection,
                     transaction,
-                    dialect,
                     lockSql,
                     commandTimeoutSeconds,
                     cancellationToken
@@ -226,30 +225,6 @@ public sealed class SchemaRestamper : ISchemaRestamper
             ? new NpgsqlConnection(connectionString)
             : new SqlConnection(connectionString);
 
-    private static async Task LockAsync(
-        DbConnection connection,
-        DbTransaction transaction,
-        SqlDialect dialect,
-        string sql,
-        int timeout,
-        CancellationToken cancellationToken
-    )
-    {
-        var command = CreateCommand(connection, transaction, sql, timeout);
-        await WithReaderAsync(
-            command,
-            cancellationToken,
-            async reader =>
-            {
-                while (await reader.ReadAsync(cancellationToken))
-                {
-                    _ = reader.GetValue(0);
-                }
-            },
-            executeWithoutReader: dialect == SqlDialect.Pgsql
-        );
-    }
-
     private static async Task<SchemaRestampSnapshot> ReadSnapshotAsync(
         DbConnection connection,
         DbTransaction transaction,
@@ -359,20 +334,13 @@ public sealed class SchemaRestamper : ISchemaRestamper
     private static async Task WithReaderAsync(
         DbCommand command,
         CancellationToken cancellationToken,
-        Func<DbDataReader, Task> read,
-        bool executeWithoutReader = false
+        Func<DbDataReader, Task> read
     )
     {
         await WithAsyncResource(
             command,
             async currentCommand =>
             {
-                if (executeWithoutReader)
-                {
-                    await currentCommand.ExecuteNonQueryAsync(cancellationToken);
-                    return true;
-                }
-
                 var reader = await currentCommand.ExecuteReaderAsync(cancellationToken);
                 await WithAsyncResource(
                     reader,

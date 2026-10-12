@@ -24,7 +24,7 @@ internal static class SchemaRestampSql
         return dialect switch
         {
             SqlDialect.Pgsql => $"LOCK TABLE {name} IN SHARE ROW EXCLUSIVE MODE",
-            SqlDialect.Mssql => $"SELECT * FROM {name} WITH (TABLOCKX, HOLDLOCK)",
+            SqlDialect.Mssql => $"SELECT COUNT_BIG(*) FROM {name} WITH (TABLOCKX, HOLDLOCK)",
             _ => throw new ArgumentOutOfRangeException(nameof(dialect)),
         };
     }
