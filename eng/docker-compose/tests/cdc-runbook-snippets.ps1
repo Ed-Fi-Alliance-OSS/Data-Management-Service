@@ -101,16 +101,32 @@ function Invoke-CdcRunbookLiveWrapper {
     Set-CdcRunbookOperation -Operation $Id -Phase $phase -TimeoutSeconds $TimeoutSeconds
     $childFailurePath = Join-Path $FixtureRoot ('wrapper-errors-' + [guid]::NewGuid().ToString('N') + '.json')
     $savedChildFailurePath = $env:CDC_RUNBOOK_CHILD_FAILURE_PATH
+    $savedChildFailurePhase = $env:CDC_RUNBOOK_CHILD_FAILURE_PHASE
     try {
         $env:CDC_RUNBOOK_CHILD_FAILURE_PATH = $childFailurePath
+        $env:CDC_RUNBOOK_CHILD_FAILURE_PHASE = $phase
         $result = Invoke-NativeCommandWithInput -FilePath 'pwsh' -ArgumentList $arguments.ToArray() -InputText '' -TimeoutSeconds $TimeoutSeconds
-    } finally { $env:CDC_RUNBOOK_CHILD_FAILURE_PATH = $savedChildFailurePath }
+    } finally {
+        $env:CDC_RUNBOOK_CHILD_FAILURE_PATH = $savedChildFailurePath
+        $env:CDC_RUNBOOK_CHILD_FAILURE_PHASE = $savedChildFailurePhase
+    }
     Complete-CdcRunbookOperation $result
-    if (Test-Path -LiteralPath $childFailurePath) {
+    Read-CdcRunbookChildFailure -Path $childFailurePath -Result $result -Required:($Id -in @('cdc-pg-e2e-setup', 'cdc-sqlserver-e2e-setup'))
+    $prefix = Join-Path $FixtureRoot ($Id + '-' + [guid]::NewGuid().ToString('N'))
+    $result.StandardOutput | Set-Content -LiteralPath "$prefix.stdout"
+    $result.StandardError | Set-Content -LiteralPath "$prefix.stderr"
+    if (-not $IsWindows) { & chmod 600 "$prefix.stdout" "$prefix.stderr" }
+    return [pscustomobject]@{ SnippetId = $Id; ExitCode = $result.ExitCode; FailureKind = $result.FailureKind; LogPrefix = $prefix }
+}
+
+function Read-CdcRunbookChildFailure {
+    param([string] $Path, $Result, [switch] $Required)
+    $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+    if (Test-Path -LiteralPath $Path) {
         try {
             if (Get-Variable runbookOperation -Scope Script -ErrorAction SilentlyContinue) {
                 . (Join-Path $repo 'eng/ci/cdc-runbook-diagnostics.ps1')
-                $childFailures = Get-Content -LiteralPath $childFailurePath -Raw | ConvertFrom-Json -AsHashtable -NoEnumerate
+                $childFailures = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -AsHashtable -NoEnumerate
                 $script:runbookOperation.ChildFailures = @($childFailures |
                     Select-Object -First 8 | ForEach-Object { ConvertTo-CdcRunbookDiagnostic $_ -Child })
                 Save-CdcRunbookProgress
@@ -122,18 +138,13 @@ function Invoke-CdcRunbookLiveWrapper {
             }
         }
     }
-    elseif ($Id -in @('cdc-pg-e2e-setup', 'cdc-sqlserver-e2e-setup') -and
-        $result.ExitCode -ne 0 -and $result.FailureKind -eq 'None' -and
-        -not ($result.PSObject.Properties['TimedOut'] -and $result.TimedOut) -and
+    elseif ($Required -and
+        $Result.ExitCode -ne 0 -and $Result.FailureKind -eq 'None' -and
+        -not ($Result.PSObject.Properties['TimedOut'] -and $Result.TimedOut) -and
         (Get-Variable runbookProgress -Scope Script -ErrorAction SilentlyContinue)) {
         $script:runbookProgress.CollectionFailed = $true
         Save-CdcRunbookProgress
     }
-    $prefix = Join-Path $FixtureRoot ($Id + '-' + [guid]::NewGuid().ToString('N'))
-    $result.StandardOutput | Set-Content -LiteralPath "$prefix.stdout"
-    $result.StandardError | Set-Content -LiteralPath "$prefix.stderr"
-    if (-not $IsWindows) { & chmod 600 "$prefix.stdout" "$prefix.stderr" }
-    return [pscustomobject]@{ SnippetId = $Id; ExitCode = $result.ExitCode; FailureKind = $result.FailureKind; LogPrefix = $prefix }
 }
 
 function Invoke-CdcRunbookScript {
@@ -144,8 +155,19 @@ function Invoke-CdcRunbookScript {
     if (-not $IsWindows) { & chmod 600 $path }
     $phase = if ($Id -eq 'cdc-stack-teardown') { 'Teardown' } elseif ($Id -match 'infrastructure|settings') { 'Setup' } else { 'Test' }
     Set-CdcRunbookOperation -Operation $Id -Phase $phase -TimeoutSeconds $TimeoutSeconds
-    $result = Invoke-NativeCommandWithInput -FilePath 'pwsh' -ArgumentList @('-NoProfile', '-NonInteractive', '-File', $path) -InputText '' -TimeoutSeconds $TimeoutSeconds
+    $childFailurePath = Join-Path $FixtureRoot ('wrapper-errors-' + [guid]::NewGuid().ToString('N') + '.json')
+    $savedChildFailurePath = $env:CDC_RUNBOOK_CHILD_FAILURE_PATH
+    $savedChildFailurePhase = $env:CDC_RUNBOOK_CHILD_FAILURE_PHASE
+    try {
+        $env:CDC_RUNBOOK_CHILD_FAILURE_PATH = $childFailurePath
+        $env:CDC_RUNBOOK_CHILD_FAILURE_PHASE = $phase
+        $result = Invoke-NativeCommandWithInput -FilePath 'pwsh' -ArgumentList @('-NoProfile', '-NonInteractive', '-File', $path) -InputText '' -TimeoutSeconds $TimeoutSeconds
+    } finally {
+        $env:CDC_RUNBOOK_CHILD_FAILURE_PATH = $savedChildFailurePath
+        $env:CDC_RUNBOOK_CHILD_FAILURE_PHASE = $savedChildFailurePhase
+    }
     Complete-CdcRunbookOperation $result
+    Read-CdcRunbookChildFailure -Path $childFailurePath -Result $result -Required:($Id -eq 'cdc-stack-teardown')
     $result.StandardOutput | Set-Content (Join-Path $FixtureRoot "$Id.stdout")
     $result.StandardError | Set-Content (Join-Path $FixtureRoot "$Id.stderr")
     if (-not $IsWindows) { & chmod 600 (Join-Path $FixtureRoot "$Id.stdout") (Join-Path $FixtureRoot "$Id.stderr") }
