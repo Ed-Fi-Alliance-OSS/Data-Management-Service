@@ -269,6 +269,24 @@ public class Given_AbstractIdentityMaintenance_Trigger_Resource_Key_Values
         GetParameters("LocalEducationAgency").DiscriminatorValue.Should().Be("Ed-Fi:LocalEducationAgency");
     }
 
+    [Test]
+    public void It_keeps_payload_columns_out_of_the_target_column_mappings()
+    {
+        _result
+            .AbstractIdentityTablesInNameOrder.Single()
+            .TableModel.Columns.Select(column => column.ColumnName.Value)
+            .Should()
+            .Contain(["ResourceKeyId", "Discriminator"]);
+
+        foreach (var memberName in new[] { "School", "LocalEducationAgency" })
+        {
+            GetParameters(memberName)
+                .TargetColumnMappings.Select(mapping => mapping.TargetColumn.Value)
+                .Should()
+                .Equal("EducationOrganizationId", "OrganizationName");
+        }
+    }
+
     private TriggerKindParameters.AbstractIdentityMaintenance GetParameters(string memberTableName) =>
         _result
             .TriggersInCreateOrder.Where(trigger => trigger.Table.Name == memberTableName)

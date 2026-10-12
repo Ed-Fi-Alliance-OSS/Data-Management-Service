@@ -15,6 +15,18 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 /// </summary>
 public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
 {
+    private static readonly DbTableName _documentTableName = new(new DbSchemaName("dms"), "Document");
+    private static readonly DbColumnName[] _documentIdKeyColumns =
+    [
+        RelationalNameConventions.DocumentIdColumnName,
+    ];
+
+    private static readonly DbColumnName[] _documentResourceKeyColumns =
+    [
+        RelationalNameConventions.DocumentIdColumnName,
+        RelationalNameConventions.ResourceKeyIdColumnName,
+    ];
+
     /// <summary>
     /// Populates <see cref="RelationalModelSetBuilderContext.IndexInventory"/> with PK-implied,
     /// UK-implied, and FK-support indexes for each derived table.
@@ -136,9 +148,14 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
             .OrderByDescending(fk => fk.Columns.Count)
             .ThenBy(fk => fk.Name, StringComparer.Ordinal);
 
-        foreach (var columns in orderedFks.Select(fk => fk.Columns))
+        foreach (var foreignKey in orderedFks)
         {
-            if (IsLeftmostPrefixCovered(columns, tableIndexes))
+            var columns = foreignKey.Columns;
+
+            if (
+                IsLeftmostPrefixCovered(columns, tableIndexes)
+                || IsDocumentResourceKeyForeignKeyOnDocumentIdKeyedTable(foreignKey, table)
+            )
             {
                 continue;
             }
@@ -178,6 +195,21 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
         }
 
         inventory.AddRange(tableIndexes);
+    }
+
+    /// <summary>
+    /// Returns true for the <c>(DocumentId, ResourceKeyId)</c> foreign key to <c>dms.Document</c> on a table whose
+    /// primary key is exactly <c>(DocumentId)</c>. The PK already makes <c>DocumentId</c> unique, so a helper index
+    /// would only duplicate it. Deliberately narrow: other FKs that merely start with the PK still get one.
+    /// </summary>
+    private static bool IsDocumentResourceKeyForeignKeyOnDocumentIdKeyedTable(
+        TableConstraint.ForeignKey foreignKey,
+        DbTableModel table
+    )
+    {
+        return foreignKey.TargetTable.Equals(_documentTableName)
+            && foreignKey.Columns.SequenceEqual(_documentResourceKeyColumns)
+            && table.Key.Columns.Select(column => column.ColumnName).SequenceEqual(_documentIdKeyColumns);
     }
 
     /// <summary>
