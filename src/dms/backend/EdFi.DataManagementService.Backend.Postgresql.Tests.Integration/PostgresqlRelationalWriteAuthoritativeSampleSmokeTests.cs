@@ -1851,6 +1851,15 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_C
         }
 
         _createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."StudentEducationOrganizationAssociation" owner
+            SET "ContentLastModifiedAt" = '2000-01-01T00:00:00Z'
+            FROM "dms"."Document" doc
+            WHERE owner."DocumentId" = doc."DocumentId" AND doc."DocumentUuid" = @uuid;
+            """,
+            new NpgsqlParameter("uuid", AssociationDocumentUuid.Value)
+        );
         _stateAfterCreate = await ReadPersistedStateAsync(AssociationDocumentUuid.Value);
         _shapeAfterCreate = await ReadReferenceShapeAsync(_stateAfterCreate.Document.DocumentId);
         _lastModifiedAtAfterCreate = await ReadContentLastModifiedAtAsync(AssociationDocumentUuid.Value);
@@ -2204,13 +2213,16 @@ public class Given_A_Postgresql_Relational_Write_Propagated_Reference_Identity_C
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "ContentLastModifiedAt"
-            FROM "dms"."Document"
-            WHERE "DocumentUuid" = @documentUuid;
+            SELECT owner."ContentLastModifiedAt", owner."ContentVersion" AS "OwnerVersion", doc."ContentVersion"
+            FROM "dms"."Document" doc
+            JOIN "edfi"."StudentEducationOrganizationAssociation" owner ON owner."DocumentId" = doc."DocumentId"
+            WHERE doc."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
         );
 
+        rows.Should().ContainSingle();
+        rows[0]["OwnerVersion"].Should().Be(rows[0]["ContentVersion"]);
         return rows.Count == 1
             ? rows[0]["ContentLastModifiedAt"] switch
             {
