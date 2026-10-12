@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.SchemaTools.Restamping;
 using FluentAssertions;
@@ -68,8 +69,14 @@ public class Given_SchemaRestamp_Mssql_Compatible_Transition
         }
     }
 
-    [Test]
-    public async Task It_commits_only_the_parent_and_child_hash_changes()
+    [TestCase(false, false)]
+    [TestCase(true, false)]
+    [TestCase(false, true)]
+    [TestCase(true, true)]
+    public async Task It_commits_only_the_parent_and_child_hash_changes(
+        bool noCountEnabled,
+        bool auditingTriggersEnabled
+    )
     {
         using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
@@ -79,7 +86,54 @@ public class Given_SchemaRestamp_Mssql_Compatible_Transition
             connection,
             "mssql"
         );
-        var result = await new SchemaRestamper(NullLogger.Instance).RestampAsync(
+        if (auditingTriggersEnabled)
+        {
+            string[] statements =
+            [
+                "CREATE TABLE [dms].[RestampRowCountAudit] ([Mutation] varchar(16) NOT NULL);",
+                """
+                    CREATE TRIGGER [dms].[audit_restamp_parent] ON [dms].[EffectiveSchema] AFTER UPDATE AS
+                    BEGIN
+                        SET NOCOUNT OFF;
+                        INSERT INTO [dms].[RestampRowCountAudit] ([Mutation]) VALUES ('parent'), ('parent');
+                    END;
+                    """,
+                """
+                    CREATE TRIGGER [dms].[audit_restamp_components] ON [dms].[SchemaComponent] AFTER INSERT, DELETE AS
+                    BEGIN
+                        SET NOCOUNT OFF;
+                        INSERT INTO [dms].[RestampRowCountAudit] ([Mutation]) VALUES ('component'), ('component');
+                    END;
+                    """,
+            ];
+            foreach (var statement in statements)
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText = statement;
+                await command.ExecuteNonQueryAsync();
+            }
+        }
+
+        var restamper = new SchemaRestamper(
+            NullLogger.Instance,
+            (_, connectionString) =>
+            {
+                var restampConnection = new SqlConnection(connectionString);
+                restampConnection.StateChange += (_, state) =>
+                {
+                    if (state.CurrentState == ConnectionState.Open)
+                    {
+                        using var command = restampConnection.CreateCommand();
+                        command.CommandText = noCountEnabled
+                            ? "SET NOCOUNT ON; SELECT @@OPTIONS & 512;"
+                            : "SET NOCOUNT OFF; SELECT @@OPTIONS & 512;";
+                        command.ExecuteScalar().Should().Be(noCountEnabled ? 512 : 0);
+                    }
+                };
+                return restampConnection;
+            }
+        );
+        var result = await restamper.RestampAsync(
             SqlDialect.Mssql,
             _connectionString,
             30,
@@ -110,6 +164,24 @@ public class Given_SchemaRestamp_Mssql_Compatible_Transition
                     row.Replace(_oldHash, _target.EffectiveSchemaHash, StringComparison.Ordinal)
                 )
             );
+
+        if (auditingTriggersEnabled)
+        {
+            ProvisionTestHelper.GetDmsTableCount(connection, "mssql", "RestampRowCountAudit").Should().Be(8);
+        }
+        SchemaRestampTestHelper.InstallDmlRejectingTriggers(connection, "mssql");
+        var retry = await restamper.RestampAsync(
+            SqlDialect.Mssql,
+            _connectionString,
+            30,
+            _target,
+            false,
+            CancellationToken.None
+        );
+        retry
+            .Should()
+            .Be(new SchemaRestampResult(false, _target.EffectiveSchemaHash, _target.EffectiveSchemaHash, 2));
+        SchemaRestampTestHelper.Capture(connection, "mssql").Should().BeEquivalentTo(after);
     }
 
     [Test]

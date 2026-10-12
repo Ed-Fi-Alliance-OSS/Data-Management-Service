@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.SchemaTools.Provisioning;
@@ -84,6 +85,7 @@ public sealed class SchemaRestamper : ISchemaRestamper
                     SchemaRestampSql.DeleteComponents(dialect),
                     commandTimeoutSeconds,
                     cancellationToken,
+                    captureAffectedRows: dialect == SqlDialect.Mssql,
                     ("oldHash", oldHash)
                 );
                 if (deleted != snapshot.SchemaComponents.Count)
@@ -97,6 +99,7 @@ public sealed class SchemaRestamper : ISchemaRestamper
                     SchemaRestampSql.UpdateFingerprint(dialect),
                     commandTimeoutSeconds,
                     cancellationToken,
+                    captureAffectedRows: dialect == SqlDialect.Mssql,
                     ("singletonId", (short)1),
                     ("oldHash", oldHash),
                     ("targetHash", target.EffectiveSchemaHash)
@@ -114,6 +117,7 @@ public sealed class SchemaRestamper : ISchemaRestamper
                         SchemaRestampSql.InsertComponent(dialect),
                         commandTimeoutSeconds,
                         cancellationToken,
+                        captureAffectedRows: dialect == SqlDialect.Mssql,
                         ("targetHash", target.EffectiveSchemaHash),
                         ("endpoint", payload.ProjectEndpointName),
                         ("projectName", payload.ProjectName),
@@ -314,6 +318,7 @@ public sealed class SchemaRestamper : ISchemaRestamper
         string sql,
         int timeout,
         CancellationToken cancellationToken,
+        bool captureAffectedRows = false,
         params (string Name, object Value)[] parameters
     )
     {
@@ -325,9 +330,31 @@ public sealed class SchemaRestamper : ISchemaRestamper
             parameter.Value = value;
             command.Parameters.Add(parameter);
         }
+        if (!captureAffectedRows)
+        {
+            return await WithAsyncResource(
+                command,
+                currentCommand => currentCommand.ExecuteNonQueryAsync(cancellationToken)
+            );
+        }
+
+        // SQL Server's client count can be suppressed by NOCOUNT or include trigger DML.
+        // Capture the mutation's own count immediately, without changing session settings.
+        command.CommandText = $"{sql}; SET @affectedRows = @@ROWCOUNT;";
+        var affectedRows = command.CreateParameter();
+        affectedRows.ParameterName = "affectedRows";
+        affectedRows.DbType = DbType.Int32;
+        affectedRows.Direction = ParameterDirection.Output;
+        command.Parameters.Add(affectedRows);
         return await WithAsyncResource(
             command,
-            currentCommand => currentCommand.ExecuteNonQueryAsync(cancellationToken)
+            async currentCommand =>
+            {
+                await currentCommand.ExecuteNonQueryAsync(cancellationToken);
+                return affectedRows.Value is int count
+                    ? count
+                    : throw InvalidState("The re-stamp mutation did not return an affected-row count.");
+            }
         );
     }
 
