@@ -46,4 +46,13 @@ public static class DatabaseConfiguration
     public static string? MssqlAdminConnectionString =>
         Environment.GetEnvironmentVariable("ConnectionStrings__MssqlAdmin")
         ?? Config().GetConnectionString("MssqlAdmin");
+
+    /// <summary>
+    /// Returns the admin connection string for a PostgreSQL 18 cluster initialized with a non-UTF-8
+    /// encoding (template1 not UTF-8), or null if not configured. CI starts this cluster beside the
+    /// main one; the platform-compatibility fixtures that need it are ignored without it.
+    /// </summary>
+    public static string? PostgresNonUtf8AdminConnectionString =>
+        Environment.GetEnvironmentVariable("ConnectionStrings__PostgresNonUtf8Admin")
+        ?? Config().GetConnectionString("PostgresNonUtf8Admin");
 }

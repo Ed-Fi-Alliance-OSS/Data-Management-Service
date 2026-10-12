@@ -84,9 +84,9 @@ Describe 'CDC qualification image pulls' {
     It 'appends attempts across images without overwriting evidence or private logs' {
         foreach ($code in @(0, 1, 0)) { $script:exitCodes.Enqueue($code) }
         Invoke-CdcQualificationImagePull $script:image $script:raw $script:destination
-        Invoke-CdcQualificationImagePull 'postgres:16' $script:raw $script:destination
+        Invoke-CdcQualificationImagePull 'postgres:18' $script:raw $script:destination
         $records = @(Get-Content (Join-Path $script:destination 'image-pulls.jsonl') | ConvertFrom-Json)
-        $records.Image | Should -Be @($script:image, 'postgres:16', 'postgres:16')
+        $records.Image | Should -Be @($script:image, 'postgres:18', 'postgres:18')
         $records.Attempt | Should -Be @(1, 1, 2)
         @($records.PrivateLog | Select-Object -Unique).Count | Should -Be 3
         @(Get-ChildItem $script:raw).Count | Should -Be 3

@@ -14,7 +14,7 @@ inputs:
     description: Docker memory and memory-swap limit.
     required: true
   tmpfs-size:
-    description: tmpfs size for /var/lib/postgresql/data.
+    description: tmpfs size for the PostgreSQL 18 data directory, /var/lib/postgresql/18/docker.
     required: true
   image:
     description: PostgreSQL container image.
@@ -23,6 +23,10 @@ inputs:
     description: Host port to publish to PostgreSQL port 5432.
     required: false
     default: "5432"
+  initdb-args:
+    description: Optional POSTGRES_INITDB_ARGS, for example to initialize a non-UTF-8 cluster.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -34,13 +38,16 @@ runs:
         CONTAINER_MEMORY: ${{ inputs.container-memory }}
         HOST_PORT: ${{ inputs.host-port }}
         POSTGRES_IMAGE: ${{ inputs.image }}
+        POSTGRES_INITDB_ARGS: ${{ inputs.initdb-args }}
         POSTGRES_TMPFS_SIZE: ${{ inputs.tmpfs-size }}
       run: |
+        $initdbArgs = if ($env:POSTGRES_INITDB_ARGS) { @("--env", "POSTGRES_INITDB_ARGS=$($env:POSTGRES_INITDB_ARGS)") } else { @() }
         $containerId = docker run --detach --name $env:CONTAINER_NAME `
           --memory $env:CONTAINER_MEMORY `
           --memory-swap $env:CONTAINER_MEMORY `
-          --tmpfs "/var/lib/postgresql/data:rw,size=$($env:POSTGRES_TMPFS_SIZE),mode=0700" `
+          --tmpfs "/var/lib/postgresql/18/docker:rw,size=$($env:POSTGRES_TMPFS_SIZE),mode=0700" `
           --env POSTGRES_HOST_AUTH_METHOD=trust `
+          @initdbArgs `
           --publish "$($env:HOST_PORT):5432" `
           $env:POSTGRES_IMAGE `
           postgres `

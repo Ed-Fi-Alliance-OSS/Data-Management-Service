@@ -9,7 +9,7 @@ LABEL maintainer="Ed-Fi Alliance, LLC and Contributors <techsupport@ed-fi.org>"
 
 # icu-libs is required by Microsoft.Data.SqlClient (the MSSQL backend), which does not
 # support Globalization Invariant Mode; the Alpine base image otherwise ships without ICU.
-RUN apk --no-cache add postgresql16-client=~16 jq=~1.8 icu-libs=~76
+RUN apk --no-cache add postgresql18-client=~18 jq=~1.8 icu-libs=~76
 
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 

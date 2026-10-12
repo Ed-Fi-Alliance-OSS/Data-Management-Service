@@ -119,10 +119,26 @@ public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisi
         // PostgreSQL has no SQL Server projection prerequisites.
     }
 
+    public virtual void CheckPlatformPreconditions(string connectionString)
+    {
+        // SQL Server has no platform floor checked before CREATE.
+    }
+
+    /// <summary>
+    /// Checks the open target connection's platform compatibility before any other preflight query.
+    /// This also covers targets created concurrently after <see cref="CheckPlatformPreconditions"/>.
+    /// </summary>
+    protected virtual void ValidatePlatformCompatibility(DbConnection connection)
+    {
+        // SQL Server has no target platform floor.
+    }
+
     public void PreflightSeedValidation(string connectionString, EffectiveSchemaInfo expectedSchema)
     {
         using var connection = CreateConnection(connectionString);
         connection.Open();
+
+        ValidatePlatformCompatibility(connection);
 
         // Check if the dms.EffectiveSchema table exists — if not, this is a fresh database
         using var existsCommand = connection.CreateCommand();
