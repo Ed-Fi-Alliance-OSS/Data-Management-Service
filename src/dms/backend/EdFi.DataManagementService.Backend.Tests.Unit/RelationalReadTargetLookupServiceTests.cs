@@ -16,11 +16,12 @@ public class Given_RelationalReadTargetLookupService
 {
     private static readonly QualifiedResourceName _requestResource = new("Ed-Fi", "Student");
 
-    [TestCase(SqlDialect.Pgsql, "dms.\"Document\"")]
-    [TestCase(SqlDialect.Mssql, "[dms].[Document]")]
+    [TestCase(SqlDialect.Pgsql, "\"dms\".\"Document\"", "\"edfi\".\"Student\"")]
+    [TestCase(SqlDialect.Mssql, "[dms].[Document]", "[edfi].[Student]")]
     public async Task It_returns_not_found_when_document_uuid_does_not_match_a_persisted_document(
         SqlDialect dialect,
-        string expectedTableFragment
+        string expectedTableFragment,
+        string expectedRootTableFragment
     )
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
@@ -40,13 +41,19 @@ public class Given_RelationalReadTargetLookupService
         commandExecutor.Commands[0].CommandText.Should().Contain(expectedTableFragment);
         commandExecutor
             .Commands[0]
+            .CommandText.Should()
+            .Contain($"LEFT JOIN {expectedRootTableFragment} owner");
+        commandExecutor.Commands[0].CommandText.Should().NotContain("document.\"ContentLastModifiedAt\"");
+        commandExecutor.Commands[0].CommandText.Should().NotContain("document.[ContentLastModifiedAt]");
+        commandExecutor
+            .Commands[0]
             .Parameters.Select(parameter => parameter.Value)
             .Should()
-            .Equal(documentUuid.Value);
+            .Equal(documentUuid.Value, (short)1);
     }
 
-    [TestCase(SqlDialect.Pgsql, "dms.\"Document\"")]
-    [TestCase(SqlDialect.Mssql, "[dms].[Document]")]
+    [TestCase(SqlDialect.Pgsql, "\"edfi\".\"Student\"")]
+    [TestCase(SqlDialect.Mssql, "[edfi].[Student]")]
     public async Task It_returns_existing_document_when_document_uuid_matches_the_requested_resource(
         SqlDialect dialect,
         string expectedTableFragment
@@ -86,12 +93,16 @@ public class Given_RelationalReadTargetLookupService
                 )
             );
         commandExecutor.Commands.Should().ContainSingle();
-        commandExecutor.Commands[0].CommandText.Should().Contain(expectedTableFragment);
+        commandExecutor.Commands[0].CommandText.Should().Contain($"LEFT JOIN {expectedTableFragment} owner");
+        commandExecutor.Commands[0].CommandText.Should().Contain("owner.");
+        commandExecutor.Commands[0].CommandText.Should().Contain("ContentLastModifiedAt");
+        commandExecutor.Commands[0].CommandText.Should().NotContain("document.\"ContentLastModifiedAt\"");
+        commandExecutor.Commands[0].CommandText.Should().NotContain("document.[ContentLastModifiedAt]");
         commandExecutor
             .Commands[0]
             .Parameters.Select(parameter => parameter.Value)
             .Should()
-            .Equal(documentUuid.Value);
+            .Equal(documentUuid.Value, (short)1);
     }
 
     [Test]
@@ -113,7 +124,7 @@ public class Given_RelationalReadTargetLookupService
         cloneAction.Should().Throw<ArgumentException>().WithMessage("*ContentLastModifiedAt*");
     }
 
-    [TestCase(SqlDialect.Pgsql, "dms.\"Document\"")]
+    [TestCase(SqlDialect.Pgsql, "\"dms\".\"Document\"")]
     [TestCase(SqlDialect.Mssql, "[dms].[Document]")]
     public async Task It_distinguishes_a_uuid_that_exists_for_the_wrong_resource(
         SqlDialect dialect,
@@ -129,7 +140,7 @@ public class Given_RelationalReadTargetLookupService
                         ("DocumentUuid", documentUuid.Value),
                         ("ResourceKeyId", (short)11),
                         ("ContentVersion", 1234L),
-                        ("ContentLastModifiedAt", new DateTimeOffset(2026, 4, 11, 12, 30, 45, TimeSpan.Zero))
+                        ("ContentLastModifiedAt", null)
                     )
                 ),
             ]),
@@ -152,11 +163,69 @@ public class Given_RelationalReadTargetLookupService
             );
         commandExecutor.Commands.Should().ContainSingle();
         commandExecutor.Commands[0].CommandText.Should().Contain(expectedTableFragment);
+        commandExecutor.Commands[0].CommandText.Should().Contain("LEFT JOIN");
         commandExecutor
             .Commands[0]
             .Parameters.Select(parameter => parameter.Value)
             .Should()
-            .Equal(documentUuid.Value);
+            .Equal(documentUuid.Value, (short)1);
+    }
+
+    [TestCase(SqlDialect.Pgsql, "\"dms\".\"Descriptor\"")]
+    [TestCase(SqlDialect.Mssql, "[dms].[Descriptor]")]
+    public async Task It_uses_the_descriptor_document_id_for_descriptor_reads(
+        SqlDialect dialect,
+        string expectedDescriptorTable
+    )
+    {
+        var descriptorResource = new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor");
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var timestamp = new DateTimeOffset(2026, 4, 11, 12, 30, 45, TimeSpan.Zero);
+        var commandExecutor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(
+                    RelationalAccessTestData.CreateRow(
+                        ("DocumentId", 4_000_000_345L),
+                        ("DocumentUuid", documentUuid.Value),
+                        ("ResourceKeyId", (short)13),
+                        ("ContentVersion", 907L),
+                        ("ContentLastModifiedAt", timestamp)
+                    )
+                ),
+            ]),
+        ]);
+
+        var result = await new RelationalReadTargetLookupService(commandExecutor).ResolveForGetByIdAsync(
+            CreateMappingSet(dialect),
+            descriptorResource,
+            documentUuid
+        );
+
+        result
+            .Should()
+            .BeEquivalentTo(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    4_000_000_345L,
+                    documentUuid,
+                    907L,
+                    timestamp
+                )
+            );
+        commandExecutor.Commands.Should().ContainSingle();
+        var sql = commandExecutor.Commands[0].CommandText;
+        sql.Should().Contain($"LEFT JOIN {expectedDescriptorTable} owner");
+        sql.Should()
+            .Contain(
+                dialect == SqlDialect.Pgsql
+                    ? "owner.\"DocumentId\" = document.\"DocumentId\""
+                    : "owner.[DocumentId] = document.[DocumentId]"
+            );
+        sql.Should().NotContain("owner.\"DescriptorId\"").And.NotContain("owner.[DescriptorId]");
+        commandExecutor
+            .Commands[0]
+            .Parameters.Select(parameter => parameter.Value)
+            .Should()
+            .Equal(documentUuid.Value, (short)13);
     }
 
     private static MappingSet CreateMappingSet(SqlDialect dialect)

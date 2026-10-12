@@ -75,7 +75,13 @@ internal sealed class RelationalReadTargetLookupService(IRelationalCommandExecut
         var expectedResourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
 
         var resolvedDocument = await RelationalDocumentUuidLookupSupport
-            .TryResolveByDocumentUuidAsync(_commandExecutor, mappingSet, documentUuid, cancellationToken)
+            .TryResolveReadByDocumentUuidAsync(
+                _commandExecutor,
+                mappingSet,
+                resource,
+                documentUuid,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         if (resolvedDocument is null)
