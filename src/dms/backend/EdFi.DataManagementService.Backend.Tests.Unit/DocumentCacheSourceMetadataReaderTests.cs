@@ -52,6 +52,7 @@ public class Given_DocumentCacheSourceMetadataReader
         var readPlan = mappingSet.ReadPlansByResource[SchoolResource];
         var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
             new InMemoryRelationalCommandExecution([CreateSourceRow(resourceKeyId: 11)]),
+            new InMemoryRelationalCommandExecution([CreateOwnerRow()]),
         ]);
         var sut = new DocumentCacheSourceMetadataReader(dataStore);
 
@@ -74,6 +75,10 @@ public class Given_DocumentCacheSourceMetadataReader
         metadata.ContentVersion.Should().Be(987);
         metadata.ContentLastModifiedAt.Should().Be(LastModifiedAt);
         metadata.ReadPlan.Should().BeSameAs(readPlan);
+        dataStore.Commands.Should().HaveCount(2);
+        dataStore.Commands[0].CommandText.Should().NotContain("ContentLastModifiedAt");
+        dataStore.Commands[1].CommandText.Should().Contain("""FROM "edfi"."School" owner""");
+        dataStore.Commands[1].CommandText.Should().Contain("""owner."DocumentId" = @documentId""");
     }
 
     [Test]
@@ -138,6 +143,7 @@ public class Given_DocumentCacheSourceMetadataReader
         };
         var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
             new InMemoryRelationalCommandExecution([CreateSourceRow(resourceKeyId: 11)]),
+            new InMemoryRelationalCommandExecution([CreateOwnerRow()]),
         ]);
         var sut = new DocumentCacheSourceMetadataReader(dataStore);
 
@@ -166,7 +172,8 @@ public class Given_DocumentCacheSourceMetadataReader
         found.Metadata.DocumentUuid.Should().Be(new DocumentUuid(DocumentGuid));
         found.Metadata.ResourceKeyId.Should().Be(99);
         found.Metadata.ContentVersion.Should().Be(987);
-        found.Metadata.ContentLastModifiedAt.Should().Be(LastModifiedAt);
+        found.Metadata.ContentLastModifiedAt.Should().BeNull();
+        dataStore.Commands.Should().ContainSingle();
     }
 
     [Test]
@@ -174,6 +181,7 @@ public class Given_DocumentCacheSourceMetadataReader
     {
         var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
             new InMemoryRelationalCommandExecution([CreateSourceRow(resourceKeyId: 13)]),
+            new InMemoryRelationalCommandExecution([CreateOwnerRow(descriptorId: 7)]),
         ]);
         var sut = new DocumentCacheSourceMetadataReader(dataStore);
 
@@ -186,6 +194,10 @@ public class Given_DocumentCacheSourceMetadataReader
             .Subject;
         metadata.ResourceKey.Resource.Should().Be(DescriptorResource);
         metadata.ConcreteResourceModel.StorageKind.Should().Be(ResourceStorageKind.SharedDescriptorTable);
+        metadata.ContentLastModifiedAt.Should().Be(LastModifiedAt);
+        dataStore.Commands[1].CommandText.Should().Contain("""FROM "dms"."Descriptor" owner""");
+        dataStore.Commands[1].CommandText.Should().Contain("""owner."DocumentId" = @documentId""");
+        dataStore.Commands[1].CommandText.Should().NotContain("DescriptorId");
     }
 
     [Test]
@@ -207,6 +219,66 @@ public class Given_DocumentCacheSourceMetadataReader
         dataStore.Commands[0].CommandText.Should().Contain("FROM [dms].[Document] document");
         dataStore.Commands[0].CommandText.Should().Contain("WHERE document.[DocumentId] = @documentId");
         dataStore.Commands[0].CommandText.Should().NotContain("[dms].[ResourceKey]");
+    }
+
+    [TestCase(SqlDialect.Pgsql, false)]
+    [TestCase(SqlDialect.Pgsql, true)]
+    [TestCase(SqlDialect.Mssql, false)]
+    [TestCase(SqlDialect.Mssql, true)]
+    public async Task It_preserves_document_metadata_when_the_authoritative_owner_is_absent(
+        SqlDialect dialect,
+        bool isDescriptor
+    )
+    {
+        var mappingSet = isDescriptor ? CreateMappingSet(dialect) : CreateMappingSetWithReadPlan(dialect);
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore(
+            [
+                new InMemoryRelationalCommandExecution([
+                    CreateSourceRow(isDescriptor ? (short)13 : (short)11),
+                ]),
+                new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+                new InMemoryRelationalCommandExecution([
+                    CreateSourceRow(isDescriptor ? (short)13 : (short)11),
+                ]),
+                new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
+            ],
+            dialect
+        );
+        var sut = new DocumentCacheSourceMetadataReader(dataStore);
+        var request = CreateRequest(mappingSet);
+
+        var initial = await sut.ReadAsync(request);
+        var current = await sut.ReadCurrentAsync(request);
+
+        var missingOwner = initial
+            .Should()
+            .BeOfType<DocumentCacheSourceMetadataReadResult.OwnerMissing>()
+            .Subject;
+        missingOwner.Metadata.DocumentId.Should().Be(123);
+        missingOwner.Metadata.ContentVersion.Should().Be(987);
+        missingOwner.Metadata.ContentLastModifiedAt.Should().BeNull();
+        var found = current.Should().BeOfType<DocumentCacheCurrentSourceMetadataReadResult.Found>().Subject;
+        found.Metadata.Should().Be(missingOwner.Metadata);
+        dataStore.Commands.Should().HaveCount(4);
+        dataStore.Commands[0].CommandText.Should().NotContain("ContentLastModifiedAt");
+        dataStore.Commands[2].CommandText.Should().NotContain("ContentLastModifiedAt");
+        var expectedTable = (dialect, isDescriptor) switch
+        {
+            (SqlDialect.Pgsql, true) => "\"dms\".\"Descriptor\"",
+            (SqlDialect.Pgsql, false) => "\"edfi\".\"School\"",
+            (SqlDialect.Mssql, true) => "[dms].[Descriptor]",
+            _ => "[edfi].[School]",
+        };
+        dataStore.Commands[1].CommandText.Should().Contain($"FROM {expectedTable} owner");
+        dataStore.Commands[3].CommandText.Should().Contain($"FROM {expectedTable} owner");
+        dataStore
+            .Commands[1]
+            .CommandText.Should()
+            .Contain(
+                dialect == SqlDialect.Pgsql
+                    ? """owner."DocumentId" = @documentId"""
+                    : "owner.[DocumentId] = @documentId"
+            );
     }
 
     [Test]
@@ -417,12 +489,12 @@ public class Given_DocumentCacheSourceMetadataReader
             CancellationToken.None
         );
 
-    private static MappingSet CreateMappingSetWithReadPlan()
+    private static MappingSet CreateMappingSetWithReadPlan(SqlDialect dialect = SqlDialect.Pgsql)
     {
-        var mappingSet = CreateMappingSet();
+        var mappingSet = CreateMappingSet(dialect);
         var readPlan = CreateReadPlan(
             mappingSet.GetConcreteResourceModelOrThrow(SchoolResource).RelationalModel,
-            SqlDialect.Pgsql
+            dialect
         );
 
         return mappingSet with
@@ -525,7 +597,15 @@ public class Given_DocumentCacheSourceMetadataReader
                 ["DocumentUuid"] = DocumentGuid,
                 ["ResourceKeyId"] = resourceKeyId,
                 ["ContentVersion"] = 987L,
+            }
+        );
+
+    private static InMemoryRelationalResultSet CreateOwnerRow(int? descriptorId = null) =>
+        InMemoryRelationalResultSet.Create(
+            new Dictionary<string, object?>
+            {
                 ["ContentLastModifiedAt"] = LastModifiedAt,
+                ["DescriptorId"] = descriptorId,
             }
         );
 }

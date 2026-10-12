@@ -23,6 +23,7 @@ public class Given_Mssql_DocumentCacheSourceMetadataReader
 {
     private const long ExistingDocumentId = 970001;
     private const long MissingDocumentId = 970002;
+    private const long MissingOwnerDocumentId = 970003;
     private static readonly Guid DocumentGuid = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
     private static readonly DateTimeOffset LastModifiedAt = new(2026, 7, 30, 14, 15, 16, TimeSpan.Zero);
     private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
@@ -31,6 +32,7 @@ public class Given_Mssql_DocumentCacheSourceMetadataReader
     private string _connectionString = null!;
     private DocumentCacheSourceMetadataReadResult _foundResult = null!;
     private DocumentCacheSourceMetadataReadResult _missingResult = null!;
+    private DocumentCacheSourceMetadataReadResult _missingOwnerResult = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -50,6 +52,7 @@ public class Given_Mssql_DocumentCacheSourceMetadataReader
                 connection,
                 """
                 IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'dms') EXEC('CREATE SCHEMA [dms]');
+                IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'edfi') EXEC('CREATE SCHEMA [edfi]');
 
                 CREATE TABLE dms.Document (
                     DocumentId bigint NOT NULL CONSTRAINT PK_Document PRIMARY KEY,
@@ -57,8 +60,12 @@ public class Given_Mssql_DocumentCacheSourceMetadataReader
                     ResourceKeyId smallint NOT NULL,
                     CreatedByOwnershipTokenId smallint NULL,
                     ContentVersion bigint NOT NULL,
-                    ContentLastModifiedAt datetimeoffset NOT NULL,
                     CreatedAt datetimeoffset NOT NULL
+                );
+
+                CREATE TABLE edfi.School (
+                    DocumentId bigint NOT NULL CONSTRAINT PK_School PRIMARY KEY,
+                    ContentLastModifiedAt datetimeoffset NOT NULL
                 );
 
                 INSERT INTO dms.Document (
@@ -67,7 +74,6 @@ public class Given_Mssql_DocumentCacheSourceMetadataReader
                     ResourceKeyId,
                     CreatedByOwnershipTokenId,
                     ContentVersion,
-                    ContentLastModifiedAt,
                     CreatedAt
                 )
                 VALUES (
@@ -76,9 +82,18 @@ public class Given_Mssql_DocumentCacheSourceMetadataReader
                     11,
                     NULL,
                     222,
-                    '2026-07-30T14:15:16+00:00',
+                    '2026-07-30T14:15:16+00:00'
+                ), (
+                    970003,
+                    'bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee',
+                    11,
+                    NULL,
+                    223,
                     '2026-07-30T14:15:16+00:00'
                 );
+
+                INSERT INTO edfi.School (DocumentId, ContentLastModifiedAt)
+                VALUES (970001, '2026-07-30T14:15:16+00:00');
                 """
             );
         }
@@ -98,6 +113,7 @@ public class Given_Mssql_DocumentCacheSourceMetadataReader
 
         _foundResult = await sut.ReadAsync(CreateRequest(ExistingDocumentId));
         _missingResult = await sut.ReadAsync(CreateRequest(MissingDocumentId));
+        _missingOwnerResult = await sut.ReadAsync(CreateRequest(MissingOwnerDocumentId));
     }
 
     [OneTimeTearDown]
@@ -110,7 +126,7 @@ public class Given_Mssql_DocumentCacheSourceMetadataReader
     }
 
     [Test]
-    public void It_reads_source_metadata_from_the_canonical_document_row()
+    public void It_reads_document_version_and_authoritative_root_timestamp()
     {
         var found = _foundResult.Should().BeOfType<DocumentCacheSourceMetadataReadResult.Found>().Subject;
         var metadata = found
@@ -132,6 +148,18 @@ public class Given_Mssql_DocumentCacheSourceMetadataReader
     public void It_returns_missing_source_when_the_document_row_is_absent()
     {
         _missingResult.Should().BeSameAs(DocumentCacheSourceMetadataReadResult.MissingSource.Instance);
+    }
+
+    [Test]
+    public void It_preserves_the_document_observation_when_the_root_is_absent()
+    {
+        var missing = _missingOwnerResult
+            .Should()
+            .BeOfType<DocumentCacheSourceMetadataReadResult.OwnerMissing>()
+            .Subject;
+        missing.Metadata.DocumentId.Should().Be(MissingOwnerDocumentId);
+        missing.Metadata.ContentVersion.Should().Be(223);
+        missing.Metadata.ContentLastModifiedAt.Should().BeNull();
     }
 
     private static DocumentCacheMaterializationRequest CreateRequest(long documentId) =>
