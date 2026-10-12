@@ -200,7 +200,7 @@ public static partial class ParityScenarioCatalog
         ),
         Api(
             "Api/CompactDescriptorHistory/ProviderRecreationComparisons",
-            "Descriptor recreation retains provider component collation verdicts for casing, namespace delimiter spaces, equal whole URIs with different components and extra delimiters.",
+            "Descriptor recreation follows provider component collation verdicts (the identity collation on SQL Server) for casing, namespace delimiter spaces, equal whole URIs with different components and extra delimiters.",
             "CompactDescriptorHistoryScenario.It_preserves_provider_component_comparisons_for_descriptor_recreation",
             "It_preserves_provider_component_comparisons_for_descriptor_recreation",
             fixtureSuffix: "DerivativeTrackedChanges_CompactDescriptors"

@@ -57,8 +57,10 @@ the unlowered whole `Namespace + '#' + CodeValue` within a type:
 - SQL Server defines non-persisted `Uri AS ([Namespace] + N'#' + [CodeValue])` and indexes
   `(ResourceKeyId, Uri)`.
 
-Both expressions retain the former stored URI's database-default provider collation.
-They introduce no component-wise uniqueness, lowered URI column, or new identity collation.
+On SQL Server, `Namespace` and `CodeValue` carry the DMS identity collation
+(`SQL_Latin1_General_CP1_CI_AS`) independent of the database default, and the computed `Uri`
+and its index inherit it. PostgreSQL uses the database-default collation. Neither expression
+introduces component-wise uniqueness or a lowered URI column.
 The current runtime still calculates and maintains RI: its existing descriptor join returns
 both IDs in one lookup, and URI witnesses and original-case responses reconstruct the whole
 string. Lowered-URI natural-key probes, RI removal, new validation/equality rules, platform
@@ -551,8 +553,10 @@ E2E runs against the Docker stack. The full setup is documented in
 A typical shard run from the repo root:
 
 ```powershell
-./build-dms.ps1 E2ETest -EnvironmentFile ./.env.e2e -TestFilter "Category=@e2e-ci-shard-3"
+./build-dms.ps1 E2ETest -EnvironmentFile ./.env.e2e -TestFilter "(Category=@e2e-ci-shard-3)&(Category!=@MssqlOnly)"
 ```
+
+The `@MssqlOnly` exclusion keeps SQL Server-only scenario variants out of a PostgreSQL run.
 
 The environment file lives at [`eng/docker-compose/.env.e2e`](../eng/docker-compose/.env.e2e);
 `build-dms.ps1` resolves the `./.env.e2e` argument to that location automatically.

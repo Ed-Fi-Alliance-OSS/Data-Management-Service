@@ -263,7 +263,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         foreach (var column in trackedTable.ValueColumnsInTableOrder)
         {
-            var type = _dialect.RenderColumnType(column.ScalarType);
+            var type = ApplyIdentityCollation(
+                _dialect.RenderColumnType(column.ScalarType),
+                column.UsesSqlServerIdentityCollation
+            );
             definitions.Add(
                 _dialect.RenderColumnDefinition(column.OldColumnName, type, column.IsOldColumnNullable)
             );
@@ -428,6 +431,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         if (column.Storage is ColumnStorage.UnifiedAlias alias)
         {
+            // Aliases render no COLLATE text: the computed column inherits the canonical column's collation.
             return _dialect.RenderComputedColumnDefinition(
                 column.ColumnName,
                 type,
@@ -435,6 +439,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 alias.PresenceColumn
             );
         }
+
+        type = ApplyIdentityCollation(type, column.UsesSqlServerIdentityCollation);
 
         if (TryResolveMirrorNamedDefault(table, column, out var mirrorConstraintName, out var mirrorDefault))
         {
@@ -2852,6 +2858,17 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             EmitMssqlColumnValueDiffPredicate(writer, tableModel, "i", "d", identityProjectionColumns[i]);
         }
         writer.AppendLine(";");
+    }
+
+    /// <summary>
+    /// Appends the dialect's identity text collation to a stored column type when the column carries the
+    /// identity-text role. Dialects without an identity collation never set the role.
+    /// </summary>
+    private string ApplyIdentityCollation(string type, bool usesIdentityCollation)
+    {
+        return usesIdentityCollation && _dialect.Rules.IdentityEquality.IdentityTextCollation is { } collation
+            ? $"{type} COLLATE {collation}"
+            : type;
     }
 
     /// <summary>

@@ -25,7 +25,8 @@ internal static class ManifestWriterHelpers
     }
 
     /// <summary>
-    /// Writes a table column entry, including kind, scalar type, nullability, and source JSON path.
+    /// Writes a table column entry, including kind, scalar type, nullability, source JSON path, storage, and
+    /// the SQL Server identity-collation role when set.
     /// </summary>
     internal static void WriteColumn(Utf8JsonWriter writer, DbColumnModel column)
     {
@@ -46,6 +47,11 @@ internal static class ManifestWriterHelpers
         }
         writer.WritePropertyName("storage");
         WriteColumnStorage(writer, column.Storage);
+        // Written only when true so manifests of dialects without an identity collation stay unchanged.
+        if (column.UsesSqlServerIdentityCollation)
+        {
+            writer.WriteBoolean("uses_sql_server_identity_collation", true);
+        }
         writer.WriteEndObject();
     }
 

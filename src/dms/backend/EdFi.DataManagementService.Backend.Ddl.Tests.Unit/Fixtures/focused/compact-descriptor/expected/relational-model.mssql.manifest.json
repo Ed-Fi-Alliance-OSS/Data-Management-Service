@@ -780,7 +780,8 @@
             "max_length": 255
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity",
+          "uses_sql_server_identity_collation": true
         },
         {
           "old_column": "OldCodeValue",
@@ -793,7 +794,8 @@
             "max_length": 50
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity",
+          "uses_sql_server_identity_collation": true
         }
       ],
       "system_columns": [
@@ -933,7 +935,8 @@
             "max_length": 32
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity",
+          "uses_sql_server_identity_collation": true
         },
         {
           "old_column": "OldSchoolTypeDescriptor_Namespace",
@@ -947,7 +950,8 @@
           },
           "role": "DescriptorNamespace",
           "origin": "Identity",
-          "descriptor_join_name": "SchoolTypeDescriptor"
+          "descriptor_join_name": "SchoolTypeDescriptor",
+          "uses_sql_server_identity_collation": true
         },
         {
           "old_column": "OldSchoolTypeDescriptor_CodeValue",
@@ -961,7 +965,8 @@
           },
           "role": "DescriptorCodeValue",
           "origin": "Identity",
-          "descriptor_join_name": "SchoolTypeDescriptor"
+          "descriptor_join_name": "SchoolTypeDescriptor",
+          "uses_sql_server_identity_collation": true
         }
       ],
       "system_columns": [
@@ -1126,7 +1131,8 @@
               "source_path": "$.studentReference.studentUniqueId",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             },
             {
               "name": "StudentReference_SchoolTypeDescriptor_DescriptorId",
@@ -1887,7 +1893,8 @@
             "source_path": "$.codeValue",
             "storage": {
               "kind": "Stored"
-            }
+            },
+            "uses_sql_server_identity_collation": true
           },
           {
             "name": "Namespace",
@@ -1900,7 +1907,8 @@
             "source_path": "$.namespace",
             "storage": {
               "kind": "Stored"
-            }
+            },
+            "uses_sql_server_identity_collation": true
           },
           {
             "name": "ShortDescription",
@@ -2057,7 +2065,8 @@
               "source_path": "$.studentUniqueId",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             }
           ],
           "key_unification_classes": [],
@@ -2206,7 +2215,8 @@
             "source_path": "$.codeValue",
             "storage": {
               "kind": "Stored"
-            }
+            },
+            "uses_sql_server_identity_collation": true
           },
           {
             "name": "Namespace",
@@ -2219,7 +2229,8 @@
             "source_path": "$.namespace",
             "storage": {
               "kind": "Stored"
-            }
+            },
+            "uses_sql_server_identity_collation": true
           },
           {
             "name": "ShortDescription",

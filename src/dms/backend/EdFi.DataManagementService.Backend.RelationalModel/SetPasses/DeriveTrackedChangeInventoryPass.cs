@@ -101,7 +101,7 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
                 descriptorValueTypes
             );
 
-            context.TrackedChangeInventory.Add(trackedTable);
+            context.TrackedChangeInventory.Add(ApplyIdentityCollation(trackedTable, context));
             AttachChangeTracking(context, concreteModel.RelationalModel.Root.Table, trackedTable.Table);
         }
 
@@ -109,7 +109,7 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
         var sharedDescriptorTable = BuildSharedDescriptorTrackedChangeTable(context, descriptorValueTypes);
         if (sharedDescriptorTable is not null)
         {
-            context.TrackedChangeInventory.Add(sharedDescriptorTable);
+            context.TrackedChangeInventory.Add(ApplyIdentityCollation(sharedDescriptorTable, context));
             IReadOnlyList<DbColumnName> routingColumns = [_resourceKeyIdColumn, _changeVersionColumn];
             context.IndexInventory.Add(
                 new DbIndexInfo(
@@ -872,6 +872,36 @@ public sealed class DeriveTrackedChangeInventoryPass : IRelationalModelSetPass
 
         valueColumnsByOldName[entry.OldColumnName.Value] = valueColumns.Count;
         valueColumns.Add(entry);
+    }
+
+    /// <summary>
+    /// Flags string value columns whose origin includes identity when the dialect declares an identity
+    /// text collation. Applied after merging, because merged entries combine origins.
+    /// </summary>
+    private static TrackedChangeTableInfo ApplyIdentityCollation(
+        TrackedChangeTableInfo trackedTable,
+        RelationalModelSetBuilderContext context
+    )
+    {
+        if (context.DialectRules.IdentityEquality.IdentityTextCollation is null)
+        {
+            return trackedTable;
+        }
+
+        return trackedTable with
+        {
+            ValueColumnsInTableOrder = trackedTable
+                .ValueColumnsInTableOrder.Select(column =>
+                    column.Origin.HasFlag(TrackedChangeColumnOrigin.Identity)
+                    && column.ScalarType.Kind == ScalarKind.String
+                        ? column with
+                        {
+                            UsesSqlServerIdentityCollation = true,
+                        }
+                        : column
+                )
+                .ToArray(),
+        };
     }
 
     private static TrackedChangeColumnInfo BuildValueColumn(

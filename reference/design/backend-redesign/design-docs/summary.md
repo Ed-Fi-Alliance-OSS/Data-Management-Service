@@ -37,8 +37,9 @@ Source documents:
 - Current references and POST upserts retain RI calculation, lookup and maintenance. Generated
   natural-key/lowered-URI probes and their equality, validation and platform changes are future
   work in [natural-key-resolution.md](natural-key-resolution.md).
-- SQL Server + PostgreSQL API parity preserves existing provider collation verdicts; compact
-  descriptor storage introduces no new identity collation or normalization.
+- SQL Server identity string columns carry the explicit DMS collation
+  `SQL_Latin1_General_CP1_CI_AS`, independent of the database default; PostgreSQL keeps its
+  existing collation verdicts. Compact descriptor storage introduces no normalization.
 - `DocumentCache`, `DocumentProjectionWork`, and the constrained lifecycle singleton are
   always provisioned. Canonical transactions record coalesced work in every
   enqueue-enabled lifecycle state; optional projection/read behavior and relational CDC
@@ -83,10 +84,11 @@ Source documents:
     with its own sequence, SQL Server `IDENTITY(1,1)`. A unique non-null `bigint DocumentId` FK
     associates each row with its owner; resource descriptor FKs target `DescriptorId`.
   - `ResourceKeyId` identifies the qualified type. No live descriptor discriminator or physically
-    stored URI remains. `UX_Descriptor_ResourceKeyId_Uri` enforces unlowered whole-URI uniqueness
-    under the former database-default provider collation: PostgreSQL expression
-    `(ResourceKeyId, (Namespace || '#' || CodeValue))`; SQL Server non-persisted computed
-    `Uri AS ([Namespace] + N'#' + [CodeValue])`, indexed with `ResourceKeyId`.
+    stored URI remains. `UX_Descriptor_ResourceKeyId_Uri` enforces unlowered whole-URI uniqueness:
+    PostgreSQL expression `(ResourceKeyId, (Namespace || '#' || CodeValue))` under the database-default
+    collation; SQL Server non-persisted computed `Uri AS ([Namespace] + N'#' + [CodeValue])`, indexed
+    with `ResourceKeyId`, which inherits the `SQL_Latin1_General_CP1_CI_AS` identity collation of its
+    `Namespace` and `CodeValue` components.
   - Current RI lookup returns both IDs through the existing join. URI witnesses and original-case
     responses reconstruct the whole string; stored reference joins use the compact key.
   - The descriptor stamping trigger rejects `ResourceKeyId` drift from the owning document;

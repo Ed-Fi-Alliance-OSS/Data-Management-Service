@@ -149,11 +149,11 @@ throw 'safe failure'
         }
 
         It 'handles child exit <ExitCode> for <Engine>/<Identity> without exposing output and removes stale TRX before execution' -ForEach @(
-            @{ Engine = 'mssql'; Filter = 'Category=@MssqlRepresentative'; Identity = 'keycloak'; ExitCode = 7 }
-            @{ Engine = 'postgresql'; Filter = '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)'; Identity = 'self-contained'; ExitCode = 7 }
-            @{ Engine = 'postgresql'; Filter = '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)'; Identity = 'keycloak'; ExitCode = 7 }
-            @{ Engine = 'postgresql'; Filter = '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)'; Identity = 'self-contained'; ExitCode = 0 }
-            @{ Engine = 'postgresql'; Filter = '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)'; Identity = 'keycloak'; ExitCode = 0 }
+            @{ Engine = 'mssql'; Filter = '(Category=@MssqlRepresentative|Category=@MssqlOnly)&(Category!=@PostgresqlOnly)'; Identity = 'keycloak'; ExitCode = 7 }
+            @{ Engine = 'postgresql'; Filter = '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)&(Category!=@MssqlOnly)'; Identity = 'self-contained'; ExitCode = 7 }
+            @{ Engine = 'postgresql'; Filter = '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)&(Category!=@MssqlOnly)'; Identity = 'keycloak'; ExitCode = 7 }
+            @{ Engine = 'postgresql'; Filter = '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)&(Category!=@MssqlOnly)'; Identity = 'self-contained'; ExitCode = 0 }
+            @{ Engine = 'postgresql'; Filter = '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)&(Category!=@MssqlOnly)'; Identity = 'keycloak'; ExitCode = 0 }
         ) {
             $workingDirectory = Join-Path $TestDrive "e2e-child-$Engine-$Identity-$ExitCode"
             $diagnosticDirectory = Join-Path $workingDirectory 'diagnostics'

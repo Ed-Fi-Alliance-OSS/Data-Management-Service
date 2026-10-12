@@ -446,7 +446,8 @@
             "max_length": 30
           },
           "role": "Scalar",
-          "origin": "Identity"
+          "origin": "Identity",
+          "uses_sql_server_identity_collation": true
         }
       ],
       "system_columns": [
@@ -655,7 +656,8 @@
               "source_path": "$.parents[*].parentCode",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             },
             {
               "name": "ParentName",
@@ -792,7 +794,8 @@
               "source_path": "$.parents[*]._ext.aligned.sponsorReference.sponsorName",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             }
           ],
           "key_unification_classes": [],
@@ -958,7 +961,8 @@
               "source_path": "$.sponsorName",
               "storage": {
                 "kind": "Stored"
-              }
+              },
+              "uses_sql_server_identity_collation": true
             }
           ],
           "key_unification_classes": [],

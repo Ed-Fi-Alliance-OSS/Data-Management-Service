@@ -83,7 +83,13 @@ public static class NamespaceAuthorizationPlanner
         }
 
         var rootTable = resource.RelationalModel.Root.Table;
-        return new NamespaceAuthorizationPlanOutcome.Plan(BuildChecks(operation, rootTable, namespaceColumn));
+        var usesIdentityCollation = resource.RelationalModel.Root.Columns.Any(column =>
+            column.ColumnName == namespaceColumn && column.UsesSqlServerIdentityCollation
+        );
+
+        return new NamespaceAuthorizationPlanOutcome.Plan(
+            BuildChecks(operation, rootTable, namespaceColumn, usesIdentityCollation)
+        );
     }
 
     /// <summary>
@@ -132,7 +138,8 @@ public static class NamespaceAuthorizationPlanner
     private static IReadOnlyList<NamespaceAuthorizationCheckSpec> BuildChecks(
         NamespaceAuthorizationOperation operation,
         DbTableName rootTable,
-        DbColumnName namespaceColumn
+        DbColumnName namespaceColumn,
+        bool usesIdentityCollation
     ) =>
         operation switch
         {
@@ -144,7 +151,8 @@ public static class NamespaceAuthorizationPlanner
                     0,
                     NamespaceAuthorizationCheckValueSource.Stored,
                     rootTable,
-                    namespaceColumn
+                    namespaceColumn,
+                    NamespaceColumnUsesIdentityCollation: usesIdentityCollation
                 ),
             ],
             NamespaceAuthorizationOperation.Update =>
@@ -153,13 +161,15 @@ public static class NamespaceAuthorizationPlanner
                     0,
                     NamespaceAuthorizationCheckValueSource.Stored,
                     rootTable,
-                    namespaceColumn
+                    namespaceColumn,
+                    NamespaceColumnUsesIdentityCollation: usesIdentityCollation
                 ),
                 new NamespaceAuthorizationCheckSpec(
                     1,
                     NamespaceAuthorizationCheckValueSource.Proposed,
                     rootTable,
-                    namespaceColumn
+                    namespaceColumn,
+                    NamespaceColumnUsesIdentityCollation: usesIdentityCollation
                 ),
             ],
             _ => throw new ArgumentOutOfRangeException(
