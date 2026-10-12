@@ -132,7 +132,10 @@ public sealed class SchemaRestamper : ISchemaRestamper
             }
 
             commitAttempted = true;
-            await transaction.CommitAsync(cancellationToken);
+            // Once commit begins, cancellation cannot establish whether the database committed.
+            // Let the provider finish the commit so a cancellation request cannot turn a known
+            // success into an avoidable unknown outcome.
+            await transaction.CommitAsync(CancellationToken.None);
             return new SchemaRestampResult(
                 changed,
                 oldHash,

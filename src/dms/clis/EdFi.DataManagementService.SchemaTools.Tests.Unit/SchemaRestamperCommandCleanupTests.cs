@@ -131,6 +131,36 @@ public class Given_SchemaRestamper_CommandCleanup
     }
 
     [Test]
+    public async Task It_finishes_commit_when_cancelled_after_the_commit_phase_starts()
+    {
+        var connection = new TimeoutCommandConnection(
+            failNonQuery: false,
+            failRead: false,
+            failDispose: false,
+            cancelDuringCommit: true,
+            provideValidSnapshot: true
+        );
+        var target = new EffectiveSchemaInfo("1.0.0", "v3", new string('a', 64), 0, new byte[32], [], []);
+        var service = new SchemaRestamper(NullLogger.Instance, (_, _) => connection);
+        using var cancellation = new CancellationTokenSource();
+
+        var result = await service.RestampAsync(
+            SqlDialect.Pgsql,
+            "Host=localhost;Database=sample",
+            30,
+            target,
+            true,
+            cancellation.Token
+        );
+
+        result.Changed.Should().BeTrue();
+        connection.Transaction.CommitCount.Should().Be(1);
+        connection.Transaction.CommitCancellationToken.Should().Be(CancellationToken.None);
+        connection.Transaction.RollbackCount.Should().Be(0);
+        cancellation.IsCancellationRequested.Should().BeTrue();
+    }
+
+    [Test]
     public async Task It_can_retry_the_old_stamp_after_an_uncertain_commit()
     {
         var connection = new TimeoutCommandConnection(
@@ -255,6 +285,7 @@ public class Given_SchemaRestamper_CommandCleanup
         private readonly bool _provideValidSnapshot;
         private readonly string _storedHash;
         private readonly List<TimeoutCommand> _commands = [];
+        private readonly CancellationTokenSource _cancelDuringCommitSource = new();
         private int _readerCount;
         private readonly TaskCompletionSource _commandStarted = new(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -266,6 +297,7 @@ public class Given_SchemaRestamper_CommandCleanup
             bool failDispose = true,
             bool waitForCancellation = false,
             bool failCommit = false,
+            bool cancelDuringCommit = false,
             bool provideValidSnapshot = false,
             string? storedHash = null,
             bool disposeFailureRequiresReader = false
@@ -278,7 +310,11 @@ public class Given_SchemaRestamper_CommandCleanup
             _provideValidSnapshot = provideValidSnapshot;
             _storedHash = storedHash ?? new string('b', 64);
             DisposeFailureRequiresReader = disposeFailureRequiresReader;
-            _transaction = new TimeoutCommandTransaction(this, failCommit);
+            _transaction = new TimeoutCommandTransaction(
+                this,
+                failCommit,
+                cancelDuringCommit ? CancelDuringCommit : null
+            );
         }
 
         public int OpenCount { get; private set; }
@@ -300,6 +336,8 @@ public class Given_SchemaRestamper_CommandCleanup
         public bool DisposeFailureRequiresReader { get; }
 
         public int ReaderCount => _readerCount;
+
+        private void CancelDuringCommit() => _cancelDuringCommitSource.Cancel();
 
         public DbDataReader CreateReader()
         {
@@ -376,10 +414,13 @@ public class Given_SchemaRestamper_CommandCleanup
         private readonly DbConnection _connection;
         private readonly bool _failCommit;
 
-        public TimeoutCommandTransaction(DbConnection connection, bool failCommit)
+        private readonly Action? _duringCommit;
+
+        public TimeoutCommandTransaction(DbConnection connection, bool failCommit, Action? duringCommit)
         {
             _connection = connection;
             _failCommit = failCommit;
+            _duringCommit = duringCommit;
         }
 
         public override IsolationLevel IsolationLevel => IsolationLevel.ReadCommitted;
@@ -392,6 +433,8 @@ public class Given_SchemaRestamper_CommandCleanup
 
         public int CommitCount { get; private set; }
 
+        public CancellationToken CommitCancellationToken { get; private set; }
+
         public override void Commit()
         {
             CommitCount++;
@@ -399,6 +442,20 @@ public class Given_SchemaRestamper_CommandCleanup
             {
                 throw new IOException("commit transport failed");
             }
+        }
+
+        public override Task CommitAsync(CancellationToken cancellationToken = default)
+        {
+            CommitCount++;
+            CommitCancellationToken = cancellationToken;
+            _duringCommit?.Invoke();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_failCommit)
+            {
+                throw new IOException("commit transport failed");
+            }
+
+            return Task.CompletedTask;
         }
 
         public override void Rollback() => RollbackCount++;
