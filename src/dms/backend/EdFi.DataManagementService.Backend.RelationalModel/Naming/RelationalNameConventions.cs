@@ -62,7 +62,7 @@ public static class RelationalNameConventions
     public static DbColumnName ContentVersionColumnName { get; } = new("ContentVersion");
 
     /// <summary>
-    /// The synthesized root-table column that mirrors <c>dms.Document.ContentLastModifiedAt</c> for the row.
+    /// The authoritative last-modified timestamp column on a resource root.
     /// </summary>
     public static DbColumnName ContentLastModifiedAtColumnName { get; } = new("ContentLastModifiedAt");
 

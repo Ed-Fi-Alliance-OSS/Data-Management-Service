@@ -39,7 +39,7 @@ public class Given_WritePlanCompiler_ContentVersionMirrorColumns : WritePlanComp
                 },
                 new DbColumnModel(
                     ColumnName: new DbColumnName("ContentLastModifiedAt"),
-                    Kind: ColumnKind.MirroredContentLastModifiedAt,
+                    Kind: ColumnKind.AuthoritativeContentLastModifiedAt,
                     ScalarType: new RelationalScalarType(ScalarKind.DateTime),
                     IsNullable: false,
                     SourceJsonPath: null,

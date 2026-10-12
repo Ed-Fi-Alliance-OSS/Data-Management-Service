@@ -442,7 +442,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         type = ApplyIdentityCollation(type, column.UsesSqlServerIdentityCollation);
 
-        if (TryResolveMirrorNamedDefault(table, column, out var mirrorConstraintName, out var mirrorDefault))
+        if (TryResolveStampNamedDefault(table, column, out var mirrorConstraintName, out var mirrorDefault))
         {
             return _dialect.RenderColumnDefinitionWithNamedDefault(
                 column.ColumnName,
@@ -469,13 +469,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
-    /// Resolves the named default constraint for a synthesized change-version mirror column:
+    /// Resolves the named default constraint for a backend-owned root stamp column:
     /// <c>ContentVersion</c> defaults to a non-null sentinel and
     /// <c>ContentLastModifiedAt</c> defaults to the current UTC timestamp. Both use a
     /// <c>DF_&lt;Table&gt;_&lt;Column&gt;</c> constraint name (rendered by SQL Server; ignored by PostgreSQL),
-    /// matching the <c>dms.Document</c> convention. The trigger overwrites these defaults at write time.
+    /// The trigger overwrites these defaults at write time.
     /// </summary>
-    private bool TryResolveMirrorNamedDefault(
+    private bool TryResolveStampNamedDefault(
         DbTableModel table,
         DbColumnModel column,
         out string constraintName,
@@ -485,11 +485,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         switch (column.Kind)
         {
             case ColumnKind.MirroredContentVersion:
-                constraintName = BuildMirrorDefaultConstraintName(table, column);
+                constraintName = BuildStampDefaultConstraintName(table, column);
                 defaultExpression = "0";
                 return true;
-            case ColumnKind.MirroredContentLastModifiedAt:
-                constraintName = BuildMirrorDefaultConstraintName(table, column);
+            case ColumnKind.AuthoritativeContentLastModifiedAt:
+                constraintName = BuildStampDefaultConstraintName(table, column);
                 defaultExpression = _dialect.CurrentTimestampDefaultExpression;
                 return true;
             default:
@@ -500,12 +500,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
-    /// Builds the <c>DF_&lt;Table&gt;_&lt;Column&gt;</c> default constraint name for a mirror column, applying
+    /// Builds the <c>DF_&lt;Table&gt;_&lt;Column&gt;</c> default constraint name for a backend-owned stamp column, applying
     /// the dialect identifier length limit. Resource-root table names can already sit at the dialect limit
     /// after identifier shortening, so the generated default-constraint name must be shortened too (SQL
     /// Server enforces a 128-character identifier limit on the named <c>CONSTRAINT</c>).
     /// </summary>
-    private string BuildMirrorDefaultConstraintName(DbTableModel table, DbColumnModel column)
+    private string BuildStampDefaultConstraintName(DbTableModel table, DbColumnModel column)
     {
         return SqlIdentifierShortening.ApplyDialectLimit(
             $"DF_{table.Table.Name}_{column.ColumnName.Value}",
@@ -689,7 +689,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         if (trigger.Parameters is TriggerKindParameters.DocumentStamping)
         {
             var stampingTableModel = RequireDocumentStampingTableModel(trigger, tableModelsByTableName);
-            var stampingMirrorTarget = RequireMirrorStampTargetTable(trigger);
+            var stampingMirrorTarget = RequireStampTargetTable(trigger);
             if (!IsRootDocumentStampingTrigger(trigger, stampingTableModel, stampingMirrorTarget))
             {
                 EmitPgsqlNonRootStatementLevelStamping(
@@ -717,7 +717,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             && IsRootDocumentStampingTrigger(
                 trigger,
                 RequireDocumentStampingTableModel(trigger, tableModelsByTableName),
-                RequireMirrorStampTargetTable(trigger)
+                RequireStampTargetTable(trigger)
             )
         )
         {
@@ -746,7 +746,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
                 var deleteKeyColumn = trigger.KeyColumns[0];
                 var tableModel = RequireDocumentStampingTableModel(trigger, tableModelsByTableName);
-                var mirrorStampTargetTable = RequireMirrorStampTargetTable(trigger);
+                var mirrorStampTargetTable = RequireStampTargetTable(trigger);
                 var isRootDocumentStampingTrigger = IsRootDocumentStampingTrigger(
                     trigger,
                     tableModel,
@@ -1369,7 +1369,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         var documentTable = Quote(DmsTableNames.Document);
         var sequenceName = FormatSequenceName();
         var keyColumn = trigger.KeyColumns[0];
-        var mirrorStampTargetTable = RequireMirrorStampTargetTable(trigger);
+        var mirrorStampTargetTable = RequireStampTargetTable(trigger);
 
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
@@ -1448,7 +1448,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             );
         }
 
-        var mirrorTarget = RequireMirrorStampTargetTable(trigger);
+        var mirrorTarget = RequireStampTargetTable(trigger);
         if (!IsRootDocumentStampingTrigger(trigger, tableModel, mirrorTarget))
         {
             throw new InvalidOperationException(
@@ -1462,12 +1462,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         return TrackedChangeTriggerBodyEmitter.BuildPlan(tableInfo, tableModel);
     }
 
-    private static DbTableName RequireMirrorStampTargetTable(DbTriggerInfo trigger)
+    private static DbTableName RequireStampTargetTable(DbTriggerInfo trigger)
     {
-        if (trigger.MirrorStampTargetTable is not { } mirrorStampTargetTable)
+        if (trigger.StampTargetTable is not { } mirrorStampTargetTable)
         {
             throw new InvalidOperationException(
-                $"DocumentStamping trigger '{trigger.Name.Value}' requires a non-null MirrorStampTargetTable."
+                $"DocumentStamping trigger '{trigger.Name.Value}' requires a non-null StampTargetTable."
             );
         }
 
@@ -1507,7 +1507,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         {
             throw new InvalidOperationException(
                 $"DocumentStamping trigger '{trigger.Name.Value}' has inconsistent root classification: "
-                    + $"table kind is '{tableModel.IdentityMetadata.TableKind}', but MirrorStampTargetTable is "
+                    + $"table kind is '{tableModel.IdentityMetadata.TableKind}', but StampTargetTable is "
                     + $"'{mirrorStampTargetTable.Schema.Value}.{mirrorStampTargetTable.Name}'."
             );
         }
@@ -3338,7 +3338,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         string triggerName
     )
     {
-        // Exclude the synthesized change-version mirror columns: they are stamp targets, not client
+        // Exclude the backend-owned version mirror and authoritative timestamp: they are stamp targets, not client
         // content, so a stamp-only mirror update must not be treated as a representation change. This
         // matches change-queries.md invariant #5 (affectedDocs excludes rows differing only in stamp
         // columns) and keeps mirror columns out of the no-op diff predicate.
@@ -3346,7 +3346,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             .Columns.Where(column =>
                 column.Storage is ColumnStorage.Stored
                 && column.Kind
-                    is not (ColumnKind.MirroredContentVersion or ColumnKind.MirroredContentLastModifiedAt)
+                    is not (
+                        ColumnKind.MirroredContentVersion
+                        or ColumnKind.AuthoritativeContentLastModifiedAt
+                    )
             )
             .Select(column => column.ColumnName)
             .ToArray();

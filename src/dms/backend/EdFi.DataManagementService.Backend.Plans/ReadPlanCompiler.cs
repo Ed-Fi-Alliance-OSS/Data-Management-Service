@@ -75,10 +75,10 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
     /// </summary>
     private ResourceReadPlan CompileCore(RelationalResourceModel resourceModel)
     {
-        // Hydration reads exclude the synthesized change-version mirror columns: they are not read for
-        // reconstitution (read metadata stays sourced from dms.Document). Building all hydration artifacts
-        // from this filtered model keeps the read SELECT and every read-plan ordinal unaffected by the
-        // mirror columns. The full model is retained on ResourceReadPlan.Model below for query planning.
+        // Hydration reads exclude the backend-owned version mirror and authoritative timestamp: neither
+        // belongs in JSON reconstitution. Building all hydration artifacts from this filtered model keeps
+        // the read SELECT and ordinals unaffected by stamp columns. The full model remains available for
+        // metadata and query planning.
         var hydrationModel = ToHydrationProjectionModel(resourceModel);
 
         var rootScopeTableModel = RelationalResourceModelCompileValidator.ResolveRootScopeTableModelOrThrow(
@@ -159,7 +159,7 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
 
     /// <summary>
     /// Projects the resource model down to its hydration (read) column set by excluding the synthesized
-    /// change-version mirror columns from every table. Tables without mirror columns are returned by
+    /// backend-owned stamp columns from every table. Tables without stamp columns are returned by
     /// reference, so only the resource root is rebuilt.
     /// </summary>
     private static RelationalResourceModel ToHydrationProjectionModel(RelationalResourceModel resourceModel)

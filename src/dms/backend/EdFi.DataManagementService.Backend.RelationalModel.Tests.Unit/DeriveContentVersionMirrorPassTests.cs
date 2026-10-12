@@ -95,7 +95,9 @@ internal static class MirrorDerivationTestHelpers
     {
         table
             .Columns.Where(column =>
-                column.Kind is ColumnKind.MirroredContentVersion or ColumnKind.MirroredContentLastModifiedAt
+                column.Kind
+                    is ColumnKind.MirroredContentVersion
+                        or ColumnKind.AuthoritativeContentLastModifiedAt
             )
             .Should()
             .BeEmpty();
@@ -155,15 +157,15 @@ public class Given_A_Core_Resource_With_Collections_For_Mirror_Derivation
     }
 
     /// <summary>
-    /// It should add a ContentLastModifiedAt mirror column to the resource root table.
+    /// It should add an authoritative ContentLastModifiedAt column to the resource root table.
     /// </summary>
     [Test]
-    public void It_should_add_ContentLastModifiedAt_mirror_column_to_root()
+    public void It_should_add_authoritative_ContentLastModifiedAt_column_to_root()
     {
         var root = MirrorDerivationTestHelpers.RootByTableName(_set, "BusRoute");
         var column = root.Columns.Single(c => c.ColumnName.Value == "ContentLastModifiedAt");
 
-        column.Kind.Should().Be(ColumnKind.MirroredContentLastModifiedAt);
+        column.Kind.Should().Be(ColumnKind.AuthoritativeContentLastModifiedAt);
         column.ScalarType!.Kind.Should().Be(ScalarKind.DateTime);
         column.IsNullable.Should().BeFalse();
         column.SourceJsonPath.Should().BeNull();
@@ -246,7 +248,7 @@ public class Given_Resource_Extension_Tables_For_Mirror_Derivation
         var root = MirrorDerivationTestHelpers.RootByTableName(_set, "Contact");
 
         root.Columns.Should().ContainSingle(c => c.Kind == ColumnKind.MirroredContentVersion);
-        root.Columns.Should().ContainSingle(c => c.Kind == ColumnKind.MirroredContentLastModifiedAt);
+        root.Columns.Should().ContainSingle(c => c.Kind == ColumnKind.AuthoritativeContentLastModifiedAt);
     }
 
     /// <summary>
@@ -304,7 +306,7 @@ public class Given_An_Extension_Project_Resource_For_Mirror_Derivation
 
         root.Table.Schema.Value.Should().Be("sample");
         root.Columns.Should().ContainSingle(c => c.Kind == ColumnKind.MirroredContentVersion);
-        root.Columns.Should().ContainSingle(c => c.Kind == ColumnKind.MirroredContentLastModifiedAt);
+        root.Columns.Should().ContainSingle(c => c.Kind == ColumnKind.AuthoritativeContentLastModifiedAt);
     }
 }
 

@@ -349,9 +349,10 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_default_descriptor_content_version_to_zero()
+    public void It_should_retain_descriptor_version_and_authoritative_timestamp()
     {
         _ddl.Should().Contain("\"ContentVersion\" bigint NOT NULL DEFAULT 0");
+        _ddl.Should().Contain("\"ContentLastModifiedAt\" timestamp with time zone NOT NULL DEFAULT now()");
     }
 
     [Test]
@@ -368,7 +369,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_create_document_without_identity_stamps()
+    public void It_should_create_document_with_version_but_without_timestamp()
     {
         _ddl.Should().NotContain("IdentityVersion");
         _ddl.Should().NotContain("IdentityLastModifiedAt");
@@ -378,9 +379,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         var document = _ddl[start..end];
 
         document.Should().Contain("\"ContentVersion\" bigint NOT NULL DEFAULT nextval");
-        document
-            .Should()
-            .Contain("\"ContentLastModifiedAt\" timestamp with time zone NOT NULL DEFAULT now()");
+        document.Should().NotContain("ContentLastModifiedAt");
         document.Split("ChangeVersionSequence", StringSplitOptions.None).Length.Should().Be(2);
     }
 
@@ -1680,11 +1679,11 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
             .Contain(
                 "CONSTRAINT [DF_Document_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence])"
             );
-        _ddl.Should().Contain("CONSTRAINT [DF_Document_ContentLastModifiedAt] DEFAULT (sysutcdatetime())");
+        _ddl.Should().NotContain("DF_Document_ContentLastModifiedAt");
     }
 
     [Test]
-    public void It_should_create_document_without_identity_stamps()
+    public void It_should_create_document_with_version_but_without_timestamp()
     {
         _ddl.Should().NotContain("IdentityVersion");
         _ddl.Should().NotContain("IdentityLastModifiedAt");
@@ -1693,13 +1692,19 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         var end = _ddl.IndexOf(";", start, StringComparison.Ordinal);
         var document = _ddl[start..end];
 
+        document.Should().Contain("[ContentVersion] bigint NOT NULL");
+        document.Should().NotContain("ContentLastModifiedAt");
         document.Split("ChangeVersionSequence", StringSplitOptions.None).Length.Should().Be(2);
     }
 
     [Test]
-    public void It_should_default_descriptor_content_version_to_zero()
+    public void It_should_retain_descriptor_version_and_authoritative_timestamp()
     {
         _ddl.Should().Contain("CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT 0");
+        _ddl.Should()
+            .Contain(
+                "[ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime())"
+            );
     }
 
     // ── MSSQL named default constraints ─────────────────────────────
@@ -1711,9 +1716,9 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_have_named_default_for_document_content_last_modified_at()
+    public void It_should_not_have_document_content_last_modified_at_default()
     {
-        _ddl.Should().Contain("CONSTRAINT [DF_Document_ContentLastModifiedAt] DEFAULT");
+        _ddl.Should().NotContain("CONSTRAINT [DF_Document_ContentLastModifiedAt]");
     }
 
     [Test]
@@ -1791,7 +1796,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_retain_the_document_owned_content_stamps()
+    public void It_should_retain_the_document_owned_content_version()
     {
         var start = _ddl.IndexOf("CREATE TABLE [dms].[Document]", StringComparison.Ordinal);
         var end = _ddl.IndexOf(";", start, StringComparison.Ordinal);
@@ -1803,11 +1808,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
             .Contain(
                 "[ContentVersion] bigint NOT NULL CONSTRAINT [DF_Document_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence])"
             );
-        document
-            .Should()
-            .Contain(
-                "[ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Document_ContentLastModifiedAt] DEFAULT (sysutcdatetime())"
-            );
+        document.Should().NotContain("ContentLastModifiedAt");
     }
 
     [Test]

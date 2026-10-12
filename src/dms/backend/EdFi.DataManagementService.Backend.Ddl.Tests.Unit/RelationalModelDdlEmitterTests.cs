@@ -2902,7 +2902,7 @@ internal static class TriggerFixture
             [documentIdColumn],
             [],
             new TriggerKindParameters.DocumentStamping(),
-            MirrorStampTargetTable: tableName
+            StampTargetTable: tableName
         );
 
         return new DerivedRelationalModelSet(
@@ -2993,7 +2993,7 @@ internal static class PgsqlDocumentStampingFixture
                 },
                 new DbColumnModel(
                     contentLastModifiedAtColumn,
-                    ColumnKind.MirroredContentLastModifiedAt,
+                    ColumnKind.AuthoritativeContentLastModifiedAt,
                     new RelationalScalarType(ScalarKind.DateTime),
                     IsNullable: false,
                     SourceJsonPath: null,
@@ -3215,7 +3215,7 @@ internal static class PgsqlDocumentStampingFixture
                 [documentIdColumn],
                 [schoolIdColumn],
                 new TriggerKindParameters.DocumentStamping(),
-                MirrorStampTargetTable: tableName
+                StampTargetTable: tableName
             ),
             new(
                 new DbTriggerName("TR_SchoolAddress_Stamp"),
@@ -3223,7 +3223,7 @@ internal static class PgsqlDocumentStampingFixture
                 [childDocumentIdColumn],
                 [],
                 new TriggerKindParameters.DocumentStamping(),
-                MirrorStampTargetTable: tableName
+                StampTargetTable: tableName
             ),
             new(
                 new DbTriggerName("TR_SchoolExtension_Stamp"),
@@ -3231,7 +3231,7 @@ internal static class PgsqlDocumentStampingFixture
                 [documentIdColumn],
                 [],
                 new TriggerKindParameters.DocumentStamping(),
-                MirrorStampTargetTable: tableName
+                StampTargetTable: tableName
             ),
             new(
                 new DbTriggerName("TR_SchoolAddressPeriod_Stamp"),
@@ -3239,7 +3239,7 @@ internal static class PgsqlDocumentStampingFixture
                 [childDocumentIdColumn],
                 [],
                 new TriggerKindParameters.DocumentStamping(),
-                MirrorStampTargetTable: tableName
+                StampTargetTable: tableName
             ),
             new(
                 new DbTriggerName("TR_SchoolExtensionAddress_Stamp"),
@@ -3247,7 +3247,7 @@ internal static class PgsqlDocumentStampingFixture
                 [childDocumentIdColumn],
                 [],
                 new TriggerKindParameters.DocumentStamping(),
-                MirrorStampTargetTable: tableName
+                StampTargetTable: tableName
             ),
             new(
                 new DbTriggerName("TR_School_ReferentialIdentity"),
@@ -3350,7 +3350,7 @@ internal static class MssqlDocumentStampingFixture
                 },
                 new DbColumnModel(
                     contentLastModifiedAtColumn,
-                    ColumnKind.MirroredContentLastModifiedAt,
+                    ColumnKind.AuthoritativeContentLastModifiedAt,
                     new RelationalScalarType(ScalarKind.DateTime),
                     IsNullable: false,
                     SourceJsonPath: null,
@@ -3417,7 +3417,7 @@ internal static class MssqlDocumentStampingFixture
                 [documentIdColumn],
                 [schoolIdColumn],
                 new TriggerKindParameters.DocumentStamping(),
-                MirrorStampTargetTable: tableName
+                StampTargetTable: tableName
             ),
             new(
                 new DbTriggerName("TR_SchoolAddress_Stamp"),
@@ -3425,7 +3425,7 @@ internal static class MssqlDocumentStampingFixture
                 [childDocumentIdColumn],
                 [],
                 new TriggerKindParameters.DocumentStamping(),
-                MirrorStampTargetTable: tableName
+                StampTargetTable: tableName
             ),
             new(
                 new DbTriggerName("TR_School_ReferentialIdentity"),
@@ -4171,7 +4171,7 @@ internal static class TrackedChangeTriggerFixture
 
     /// <summary>
     /// Builds a model set whose stamping trigger has a <see cref="TrackedChangeAttachment"/> but
-    /// whose <see cref="DbTriggerInfo.MirrorStampTargetTable"/> points to a parent table rather than
+    /// whose <see cref="DbTriggerInfo.StampTargetTable"/> points to a parent table rather than
     /// the trigger's own table, making it non-root per
     /// <see cref="RelationalModelDdlEmitter"/>.<c>IsRootDocumentStampingTrigger</c>.
     /// Used to verify that <c>TryBuildTrackedChangePlan</c> rejects non-root attached triggers.
@@ -4215,7 +4215,7 @@ internal static class TrackedChangeTriggerFixture
             [new DbColumnName("DocumentId")],
             identityProjectionColumns,
             new TriggerKindParameters.DocumentStamping(new TrackedChangeAttachment(trackedTable.Table)),
-            MirrorStampTargetTable: mirrorStampTargetTable ?? sourceTable.Table
+            StampTargetTable: mirrorStampTargetTable ?? sourceTable.Table
         );
 
         return new DerivedRelationalModelSet(

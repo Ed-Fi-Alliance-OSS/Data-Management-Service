@@ -86,7 +86,7 @@ internal static class RepresentationRestampStoreHelpers
             trigger.Table.Equals(model.RelationalModel.Root.Table)
             && trigger.Parameters is TriggerKindParameters.DocumentStamping
         );
-        if (trigger?.MirrorStampTargetTable is not { } mirrorTarget)
+        if (trigger?.StampTargetTable is not { } mirrorTarget)
         {
             throw ValidationFailure(
                 DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampMirror,

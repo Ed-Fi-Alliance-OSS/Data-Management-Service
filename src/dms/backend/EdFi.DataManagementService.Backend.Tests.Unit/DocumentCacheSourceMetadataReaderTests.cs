@@ -90,7 +90,7 @@ public class Given_DocumentCacheSourceMetadataReader
             [
                 .. fullModel.Root.Columns,
                 CreateMirrorColumn("ContentVersion", ColumnKind.MirroredContentVersion),
-                CreateMirrorColumn("ContentLastModifiedAt", ColumnKind.MirroredContentLastModifiedAt),
+                CreateMirrorColumn("ContentLastModifiedAt", ColumnKind.AuthoritativeContentLastModifiedAt),
             ],
         };
         fullModel = fullModel with { Root = fullRoot, TablesInDependencyOrder = [fullRoot] };
@@ -100,7 +100,10 @@ public class Given_DocumentCacheSourceMetadataReader
             [
                 .. fullRoot.Columns.Where(column =>
                     column.Kind
-                        is not (ColumnKind.MirroredContentVersion or ColumnKind.MirroredContentLastModifiedAt)
+                        is not (
+                            ColumnKind.MirroredContentVersion
+                            or ColumnKind.AuthoritativeContentLastModifiedAt
+                        )
                 ),
             ],
         };

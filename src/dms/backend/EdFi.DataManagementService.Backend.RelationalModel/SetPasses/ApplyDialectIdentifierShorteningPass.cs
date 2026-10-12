@@ -1276,11 +1276,11 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             dialectRules,
             out var parametersChanged
         );
-        // The mirror-stamp target is another table reference (the resource root the trigger stamps)
+        // The stamp target is another table reference (the resource root the trigger stamps)
         // and must be shortened alongside the trigger's own table; for child / extension triggers it
         // points at a different table than Table, so its change must be tracked independently.
-        var updatedMirrorStampTargetTable = trigger.MirrorStampTargetTable is { } mirrorStampTargetTable
-            ? ShortenTable(mirrorStampTargetTable, dialectRules)
+        var updatedStampTargetTable = trigger.StampTargetTable is { } stampTargetTable
+            ? ShortenTable(stampTargetTable, dialectRules)
             : (DbTableName?)null;
 
         changed =
@@ -1289,7 +1289,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             || parametersChanged
             || !updatedTable.Equals(trigger.Table)
             || !updatedName.Equals(trigger.Name)
-            || !Equals(updatedMirrorStampTargetTable, trigger.MirrorStampTargetTable);
+            || !Equals(updatedStampTargetTable, trigger.StampTargetTable);
 
         if (!changed)
         {
@@ -1303,7 +1303,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             KeyColumns = updatedColumns,
             IdentityProjectionColumns = updatedIdentityColumns,
             Parameters = updatedParameters,
-            MirrorStampTargetTable = updatedMirrorStampTargetTable,
+            StampTargetTable = updatedStampTargetTable,
         };
     }
 
@@ -1544,7 +1544,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             case TriggerKindParameters.DocumentStamping stamping:
             {
                 // Shorten the change-tracking table reference consistently with the tracked-change table
-                // it points at, mirroring the MirrorStampTargetTable handling.
+                // it points at, mirroring the StampTargetTable handling.
                 if (stamping.ChangeTracking is null)
                 {
                     changed = false;

@@ -97,11 +97,10 @@ public enum ColumnKind
     MirroredContentVersion,
 
     /// <summary>
-    /// A synthesized root-table column that mirrors <c>dms.Document.ContentLastModifiedAt</c> for the
-    /// row. Has no source JSONPath and no target resource; maintained only by document-stamping
-    /// triggers and excluded from client-writable projections.
+    /// The authoritative last-modified timestamp for the resource row. Has no source JSONPath or
+    /// target resource; maintained by stamping triggers and excluded from client-writable projections.
     /// </summary>
-    MirroredContentLastModifiedAt,
+    AuthoritativeContentLastModifiedAt,
 }
 
 /// <summary>

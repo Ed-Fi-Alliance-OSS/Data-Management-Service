@@ -480,7 +480,8 @@ internal sealed class DocumentCacheSourceMetadataReader(
     }
 
     private static bool IsHydrationProjectionColumn(DbColumnModel column) =>
-        column.Kind is not (ColumnKind.MirroredContentVersion or ColumnKind.MirroredContentLastModifiedAt);
+        column.Kind
+            is not (ColumnKind.MirroredContentVersion or ColumnKind.AuthoritativeContentLastModifiedAt);
 
     private static bool TableShapeMatches(DbTableModel readPlanTable, DbTableModel concreteModelTable) =>
         readPlanTable.Table == concreteModelTable.Table
