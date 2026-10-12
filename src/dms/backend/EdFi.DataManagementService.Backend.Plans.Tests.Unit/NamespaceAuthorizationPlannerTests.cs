@@ -646,3 +646,57 @@ public class Given_NamespaceAuthorizationPlanner
         outcome.Should().BeOfType<NamespaceAuthorizationPlanOutcome.NoUsableRootColumn>();
     }
 }
+
+/// <summary>
+/// On the authoritative DS 5.2 SQL Server model, the namespace column the securable-element resolver picks
+/// for a relational resource must be the column the identity-collation pass flagged, or the proposed-value
+/// check loses its identity collation and disagrees with the stored-row check.
+/// </summary>
+[TestFixture]
+public class Given_NamespaceAuthorizationPlanner_On_The_Authoritative_Ds52_Mssql_Model
+{
+    private DerivedRelationalModelSet _modelSet = null!;
+
+    [OneTimeSetUp]
+    public void Setup()
+    {
+        (_modelSet, _) = Ds52FixtureHelper.BuildAndCompile(SqlDialect.Mssql);
+    }
+
+    [TestCase("Assessment")]
+    [TestCase("StudentAssessment")]
+    [TestCase("ObjectiveAssessment")]
+    public void It_marks_identity_namespace_checks(string resourceName)
+    {
+        PlanUpdate(resourceName)
+            .Checks.Should()
+            .HaveCount(2)
+            .And.OnlyContain(check => check.NamespaceColumnUsesIdentityCollation);
+    }
+
+    [Test]
+    public void It_leaves_payload_namespace_checks_unmarked()
+    {
+        PlanUpdate("Credential")
+            .Checks.Should()
+            .HaveCount(2)
+            .And.OnlyContain(check => !check.NamespaceColumnUsesIdentityCollation);
+    }
+
+    private NamespaceAuthorizationPlanOutcome.Plan PlanUpdate(string resourceName)
+    {
+        var resource = _modelSet.ConcreteResourcesInNameOrder.Single(model =>
+            model.RelationalModel.Resource == new QualifiedResourceName("Ed-Fi", resourceName)
+        );
+
+        return NamespaceAuthorizationPlanner
+            .Plan(
+                resource,
+                NamespaceAuthorizationOperation.Update,
+                new RelationalAuthorizationContext([], ["uri://ed-fi.org/"])
+            )
+            .Should()
+            .BeOfType<NamespaceAuthorizationPlanOutcome.Plan>()
+            .Subject;
+    }
+}
