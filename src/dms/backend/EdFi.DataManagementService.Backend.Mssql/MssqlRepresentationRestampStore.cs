@@ -303,9 +303,9 @@ public sealed class MssqlRepresentationRestampStore(
         );
         foreach (
             IGrouping<
-                RepresentationRestampMirrorRoute,
+                RepresentationRestampStampRoute,
                 RepresentationRestampDocument
-            > group in page.Documents.GroupBy(document => document.MirrorRoute)
+            > group in page.Documents.GroupBy(document => document.StampRoute)
         )
         {
             ImmutableArray<RepresentationRestampStamp> groupStamps =
@@ -317,7 +317,7 @@ public sealed class MssqlRepresentationRestampStore(
             if (affected != groupStamps.Length)
             {
                 throw new InvalidOperationException(
-                    $"Representation restamp mirror '{group.Key.MirrorStampTargetSchema}.{group.Key.MirrorStampTargetTable}' did not stamp the selected page exactly once."
+                    $"Representation restamp mirror '{group.Key.StampTargetSchema}.{group.Key.StampTargetTable}' did not stamp the selected page exactly once."
                 );
             }
         }
@@ -661,7 +661,7 @@ public sealed class MssqlRepresentationRestampStore(
 
     private static async Task<int> UpdateMirrorAsync(
         IRelationalWriteSession session,
-        RepresentationRestampMirrorRoute route,
+        RepresentationRestampStampRoute route,
         ImmutableArray<RepresentationRestampStamp> stamps,
         CancellationToken cancellationToken
     )
@@ -684,9 +684,9 @@ public sealed class MssqlRepresentationRestampStore(
         }
 
         string table =
-            SqlIdentifierQuoter.QuoteIdentifier(SqlDialect.Mssql, route.MirrorStampTargetSchema)
+            SqlIdentifierQuoter.QuoteIdentifier(SqlDialect.Mssql, route.StampTargetSchema)
             + "."
-            + SqlIdentifierQuoter.QuoteIdentifier(SqlDialect.Mssql, route.MirrorStampTargetTable);
+            + SqlIdentifierQuoter.QuoteIdentifier(SqlDialect.Mssql, route.StampTargetTable);
         string sql = $$"""
             UPDATE mirror
             SET mirror.[ContentVersion] = stamped.[ContentVersion],
@@ -738,10 +738,8 @@ public sealed class MssqlRepresentationRestampStore(
         DocumentCacheRepresentationRestampResourceScope scope
     ) => RepresentationRestampStoreHelpers.ResolveResourceKeyId(mappingSet, scope);
 
-    private static RepresentationRestampMirrorRoute ResolveRoute(
-        MappingSet mappingSet,
-        short resourceKeyId
-    ) => RepresentationRestampStoreHelpers.ResolveRoute(mappingSet, resourceKeyId);
+    private static RepresentationRestampStampRoute ResolveRoute(MappingSet mappingSet, short resourceKeyId) =>
+        RepresentationRestampStoreHelpers.ResolveRoute(mappingSet, resourceKeyId);
 
     private static DataTable CreateDocumentIdTable(IEnumerable<long> documentIds)
     {

@@ -203,7 +203,7 @@ public class Given_A_Mssql_RepresentationRestampStore
             new RepresentationRestampDocument(
                 source.DocumentId,
                 source.Uuid,
-                new RepresentationRestampMirrorRoute(DescriptorResourceKeyId, "dms", "Descriptor")
+                new RepresentationRestampStampRoute(DescriptorResourceKeyId, "dms", "Descriptor")
             ),
         ]);
         await using IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync();
@@ -249,12 +249,12 @@ public class Given_A_Mssql_RepresentationRestampStore
         page.Documents.Select(document => document.DocumentId)
             .Should()
             .Equal(first.DocumentId, second.DocumentId);
-        page.Documents.Select(document => document.MirrorRoute)
+        page.Documents.Select(document => document.StampRoute)
             .Should()
             .OnlyContain(route =>
                 route.ResourceKeyId == DescriptorResourceKeyId
-                && route.MirrorStampTargetSchema == "dms"
-                && route.MirrorStampTargetTable == "Descriptor"
+                && route.StampTargetSchema == "dms"
+                && route.StampTargetTable == "Descriptor"
             );
         RepresentationRestampPageCommit commit = await _store.StampPageAsync(
             session,
@@ -298,7 +298,7 @@ public class Given_A_Mssql_RepresentationRestampStore
         );
 
         page.Documents.Single().DocumentId.Should().Be(source.DocumentId);
-        page.Documents.Single().MirrorRoute.MirrorStampTargetTable.Should().Be("Descriptor");
+        page.Documents.Single().StampRoute.StampTargetTable.Should().Be("Descriptor");
         RepresentationRestampPageCommit commit = await _store.StampPageAsync(
             session,
             page,

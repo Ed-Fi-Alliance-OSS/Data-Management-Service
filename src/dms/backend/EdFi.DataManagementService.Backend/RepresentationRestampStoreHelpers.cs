@@ -37,7 +37,7 @@ internal static class RepresentationRestampStoreHelpers
         return resourceKeyId;
     }
 
-    public static RepresentationRestampMirrorRoute ResolveRoute(MappingSet mappingSet, short resourceKeyId)
+    public static RepresentationRestampStampRoute ResolveRoute(MappingSet mappingSet, short resourceKeyId)
     {
         if (!mappingSet.ResourceKeyById.TryGetValue(resourceKeyId, out ResourceKeyEntry? resourceKey))
         {
@@ -75,7 +75,7 @@ internal static class RepresentationRestampStoreHelpers
         if (model.StorageKind is ResourceStorageKind.SharedDescriptorTable)
         {
             DbTableName descriptorTable = model.RelationalModel.Root.Table;
-            return new RepresentationRestampMirrorRoute(
+            return new RepresentationRestampStampRoute(
                 resourceKeyId,
                 descriptorTable.Schema.Value,
                 descriptorTable.Name
@@ -86,20 +86,16 @@ internal static class RepresentationRestampStoreHelpers
             trigger.Table.Equals(model.RelationalModel.Root.Table)
             && trigger.Parameters is TriggerKindParameters.DocumentStamping
         );
-        if (trigger?.StampTargetTable is not { } mirrorTarget)
+        if (trigger?.StampTargetTable is not { } stampTarget)
         {
             throw ValidationFailure(
                 DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampMirror,
                 DocumentCacheAdministrativeDiagnosticCategory.InvalidRepresentationRestampMirror,
-                "Representation restamp document resource has no unique compiled document-stamping mirror route."
+                "Representation restamp document resource has no unique compiled document-stamping route."
             );
         }
 
-        return new RepresentationRestampMirrorRoute(
-            resourceKeyId,
-            mirrorTarget.Schema.Value,
-            mirrorTarget.Name
-        );
+        return new RepresentationRestampStampRoute(resourceKeyId, stampTarget.Schema.Value, stampTarget.Name);
     }
 
     public static TEnum ParseEnum<TEnum>(string value, string fieldName)
