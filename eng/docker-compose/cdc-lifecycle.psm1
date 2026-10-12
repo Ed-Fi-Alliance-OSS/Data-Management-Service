@@ -5,6 +5,36 @@
 
 Set-StrictMode -Version Latest
 
+function Write-CdcLifecycleQualificationFailure {
+    param($Record, [string] $ControllerOperation = '', [int] $ControllerExitCode = 0,
+        [string[]] $ControllerOutput = @())
+    if (-not $env:CDC_RUNBOOK_CHILD_FAILURE_PATH) { return }
+    try {
+        . (Join-Path $PSScriptRoot '../ci/cdc-runbook-diagnostics.ps1')
+        $phase = if ($env:CDC_RUNBOOK_CHILD_FAILURE_PHASE -in @('Setup', 'Test', 'Teardown')) {
+            $env:CDC_RUNBOOK_CHILD_FAILURE_PHASE
+        } else { 'Setup' }
+        $details = @{}
+        if ($ControllerOperation) {
+            $details.ControllerOperation = $ControllerOperation
+            $details.ControllerExitCode = $ControllerExitCode
+            try {
+                $envelope = ($ControllerOutput -join "`n") | ConvertFrom-Json -AsHashtable
+                $details.ControllerFailureCodes = @($envelope.diagnostics | ForEach-Object {
+                    if ($_ -is [Collections.IDictionary] -and $_.Contains('component') -and $_.Contains('failure')) {
+                        [string]$_.component + '/' + [string]$_.failure
+                    }
+                })
+            } catch { # Invalid or absent JSON still retains the controller exit code.
+                $details.ControllerFailureCodes = @()
+            }
+        }
+        Write-CdcRunbookChildFailure -Records @($Record) -Phase $phase -Details $details
+    } catch { # Best-effort metadata must not change the lifecycle result.
+        return
+    }
+}
+
 function Get-CdcDeploymentPath {
     param([string]$Project)
     if ($Project -notin @('dms-local', 'dms-published')) { throw 'Unsupported CDC Compose project.' }
@@ -263,7 +293,10 @@ function Read-CdcDeployment {
             if (@(Get-ChildItem Env:DMS_CDC__*).Count -gt 0) { throw 'Overrides' }
         }
     }
-    catch { throw 'CDC deployment inventory or original configuration is missing, changed, or unreadable. Retain infrastructure and reconcile the original deployment; configuration removal is not cleanup authority.' }
+    catch {
+        Write-CdcLifecycleQualificationFailure $_
+        throw 'CDC deployment inventory or original configuration is missing, changed, or unreadable. Retain infrastructure and reconcile the original deployment; configuration removal is not cleanup authority.'
+    }
     if ($value['IdentityProvider'] -cnotin @('keycloak', 'self-contained') -or
         @($value.Entries | Where-Object { $_['IdentityProvider'] -cne $value.IdentityProvider }).Count -gt 0) {
         throw 'CDC deployment IdentityProvider is missing, unsupported, or contradictory. Restore the original complete deployment inventory with its retained identity-provider selection; an environment default or new override cannot recover it.'
@@ -313,7 +346,10 @@ function Test-CdcBootstrapWorkspaceProtected {
             if ($deployment.Version -ne 1 -or $deployment.Project -cne $project -or @($deployment.Entries).Count -eq 0) { throw 'Inventory' }
             $nested = Test-CdcNestedStateRoot $deployment $BootstrapRoot
         }
-        catch { throw 'CDC workspace protection inventory is unreadable; retain the workspace and original deployment state.' }
+        catch {
+            Write-CdcLifecycleQualificationFailure $_
+            throw 'CDC workspace protection inventory is unreadable; retain the workspace and original deployment state.'
+        }
         if ($nested) { throw 'CDC bootstrap workspace removal is blocked by a surviving protected source-state root. Retain its journals and source history; governed retirement does not authorize their deletion.' }
     }
     return $retained -or (Test-Path -LiteralPath (Join-Path $BootstrapRoot 'cdc-runtime'))
@@ -350,6 +386,7 @@ function Complete-CdcRuntimeCleanup {
         if ($LASTEXITCODE -ne 0) { throw 'Cleanup flush' }
     }
     catch {
+        Write-CdcLifecycleQualificationFailure $_
         if ($_.Exception.Message -ceq 'Protected state') { throw 'CDC bootstrap workspace removal is blocked by a surviving protected source-state root. Retain its journals and source history; governed retirement does not authorize their deletion.' }
         throw 'CDC generated runtime cleanup is incomplete; retain the deployment inventory and retry destructive teardown. Protected state, peer configuration, and changed files cannot be removed.'
     }
@@ -491,7 +528,10 @@ function Invoke-CdcLifecycleCommand {
         if ($Operation -eq 'retire' -and ($result.data.succeeded -isnot [bool] -or $result.data.succeeded -ne $true -or [guid]$result.data.operationId -eq [guid]::Empty)) { throw 'Unverified cleanup' }
         $Entry.ConnectorName = $result.binding.connectorName
     }
-    catch { throw "CDC $Operation failed or returned unverified evidence (exit $code). Infrastructure and original state must remain available for reconciliation." }
+    catch {
+        Write-CdcLifecycleQualificationFailure $_ -ControllerOperation $Operation -ControllerExitCode $code -ControllerOutput $output
+        throw "CDC $Operation failed or returned unverified evidence (exit $code). Infrastructure and original state must remain available for reconciliation."
+    }
 }
 
 function Invoke-CdcLifecycleRest {

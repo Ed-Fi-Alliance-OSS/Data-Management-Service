@@ -39,6 +39,28 @@ function ConvertTo-CdcRunbookDiagnostic {
     if ($Value['ErrorCategory'] -is [string] -and $Value['ErrorCategory'] -cin [Enum]::GetNames([Management.Automation.ErrorCategory])) {
         $safe.ErrorCategory = $Value.ErrorCategory
     }
+    $exceptionTypes = @('System.Management.Automation.RuntimeException', 'System.Management.Automation.ActionPreferenceStopException',
+        'System.IO.IOException', 'System.IO.FileNotFoundException', 'System.IO.DirectoryNotFoundException',
+        'System.UnauthorizedAccessException', 'System.TimeoutException', 'System.Net.Http.HttpRequestException',
+        'System.InvalidOperationException', 'System.ArgumentException', 'System.Text.Json.JsonException')
+    if ($Value['ExceptionType'] -is [string] -and $Value['ExceptionType'] -cin $exceptionTypes) {
+        $safe.ExceptionType = $Value.ExceptionType
+    }
+    if ($Value['HResult'] -is [int] -or $Value['HResult'] -is [long]) { $safe.HResult = $Value.HResult }
+    $reasons = @('InventoryInvalid', 'ScopeMismatch', 'ChangedConfiguration', 'ChangedEnvironment',
+        'CleanupInventoryInvalid', 'ProtectedState', 'PeerConfiguration', 'ChangedGeneratedConfiguration',
+        'CleanupFlushFailed', 'ControllerRejected', 'UnverifiedStop', 'WorkerNotReady', 'UnverifiedCleanup')
+    if ($Value['Reason'] -is [string] -and $Value['Reason'] -cin $reasons) { $safe.Reason = $Value.Reason }
+    if ($Value['ControllerOperation'] -is [string] -and $Value['ControllerOperation'] -cin @('stop', 'start', 'start-worker', 'retire')) {
+        $safe.ControllerOperation = $Value.ControllerOperation
+    }
+    if ($Value['ControllerExitCode'] -is [int] -or $Value['ControllerExitCode'] -is [long]) { $safe.ControllerExitCode = $Value.ControllerExitCode }
+    if ($Value['ControllerFailureCodes'] -is [array]) {
+        $codes = @($Value.ControllerFailureCodes | Where-Object {
+            $_ -is [string] -and $_ -cmatch '^(Request|WorkflowState|Projection|ProviderSetup|Kafka|Connect|Worker|Metrics|WriterPublication)/(InvalidInput|Unavailable|Timeout|AuthenticationFailed|Conflict|ValidationFailed)\z'
+        } | Select-Object -Unique -First 16)
+        if ($codes.Count -gt 0) { $safe.ControllerFailureCodes = $codes }
+    }
     if (-not $Child -and $Value.Contains('ChildFailures')) {
         $safe.ChildFailures = @($Value.ChildFailures | Select-Object -First 8 | Where-Object {
             $_ -is [Collections.IDictionary]
@@ -52,6 +74,26 @@ function Get-CdcRunbookErrorDiagnostic {
     $value = [ordered]@{ Phase = $Phase; Category = $Category }
     if ($Record.FullyQualifiedErrorId -eq 'PesterAssertionFailed') { $value.Category = 'AssertionFailed' }
     if ($null -ne $Record.CategoryInfo) { $value.ErrorCategory = [string]$Record.CategoryInfo.Category }
+    if ($null -ne $Record.Exception) {
+        $value.ExceptionType = $Record.Exception.GetType().FullName
+        $value.HResult = $Record.Exception.HResult
+        # Exact repository-owned guard text maps to fixed codes; never export arbitrary messages.
+        $value.Reason = switch -CaseSensitive ($Record.Exception.Message) {
+            'Inventory' { 'InventoryInvalid' }
+            'Scope' { 'ScopeMismatch' }
+            'Changed configuration' { 'ChangedConfiguration' }
+            'Changed environment' { 'ChangedEnvironment' }
+            'Cleanup inventory' { 'CleanupInventoryInvalid' }
+            'Protected state' { 'ProtectedState' }
+            'Peer configuration' { 'PeerConfiguration' }
+            'Changed generated configuration' { 'ChangedGeneratedConfiguration' }
+            'Cleanup flush' { 'CleanupFlushFailed' }
+            'Controller rejected' { 'ControllerRejected' }
+            'Unverified stop' { 'UnverifiedStop' }
+            'Not ready' { 'WorkerNotReady' }
+            'Unverified cleanup' { 'UnverifiedCleanup' }
+        }
+    }
     # Stack frames locate Should failures at the call site, not inside Pester.
     $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..')).Replace('\', '/')
     $trace = [string]$Record.ScriptStackTrace
@@ -86,15 +128,28 @@ function Get-CdcRunbookBlockFailure {
 # Opt-in child-side collection. The caller rethrows its original error unchanged.
 # Only metadata is written; diagnostic errors never replace the setup failure.
 function Write-CdcRunbookChildFailure {
-    param([object[]] $Records)
+    param([object[]] $Records, [ValidateSet('Setup', 'Test', 'Teardown')][string] $Phase = 'Setup',
+        [Collections.IDictionary] $Details = @{})
     if (-not $env:CDC_RUNBOOK_CHILD_FAILURE_PATH) { return }
     try {
         $path = [IO.Path]::GetFullPath($env:CDC_RUNBOOK_CHILD_FAILURE_PATH)
         $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
         if ($path.StartsWith($repo + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { return }
-        $failures = @($Records | Select-Object -First 8 | ForEach-Object {
-            Get-CdcRunbookErrorDiagnostic $_ -Category ChildProcessFailure -Phase Setup
+        # Preserve an inner failure recorded before a lifecycle catch replaces its message.
+        $failures = @()
+        if (Test-Path -LiteralPath $path) {
+            $existing = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -AsHashtable -NoEnumerate
+            $failures = @($existing | Where-Object { $_ -is [Collections.IDictionary] } |
+                ForEach-Object { ConvertTo-CdcRunbookDiagnostic $_ -Child })
+        }
+        $failures += @($Records | Select-Object -First 8 | ForEach-Object {
+            $diagnostic = Get-CdcRunbookErrorDiagnostic $_ -Category ChildProcessFailure -Phase $Phase
+            foreach ($field in @('ControllerOperation', 'ControllerExitCode', 'ControllerFailureCodes')) {
+                if ($Details.Contains($field)) { $diagnostic[$field] = $Details[$field] }
+            }
+            ConvertTo-CdcRunbookDiagnostic $diagnostic -Child
         })
+        $failures = @($failures | Select-Object -First 8)
         ConvertTo-Json -InputObject $failures -Depth 5 | Set-Content -LiteralPath $path -ErrorAction Stop
     } catch {
         # The existing parent process outcome remains authoritative.

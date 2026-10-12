@@ -2258,6 +2258,11 @@ internal sealed class DocumentCacheAdminCliFixture
     private DocumentCacheAdminCliFixture(string apiSchemaDirectory, string postgresqlDdl, string mssqlDdl)
     {
         ApiSchemaDirectory = apiSchemaDirectory;
+        ApiSchemaPaths = ReadFixtureManifest(apiSchemaDirectory)
+            .ApiSchemaFiles.Select(file =>
+                FixturePathResolver.ResolveFixtureInputPath(apiSchemaDirectory, file)
+            )
+            .ToArray();
         PostgresqlDdl = postgresqlDdl;
         MssqlDdl = mssqlDdl;
     }
@@ -2265,6 +2270,9 @@ internal sealed class DocumentCacheAdminCliFixture
     public static DocumentCacheAdminCliFixture Shared => _shared.Value;
 
     public string ApiSchemaDirectory { get; }
+
+    // Preserve the manifest's complete, ordered schema set for packaged CLI invocations.
+    public IReadOnlyList<string> ApiSchemaPaths { get; }
 
     public string PostgresqlDdl { get; }
 

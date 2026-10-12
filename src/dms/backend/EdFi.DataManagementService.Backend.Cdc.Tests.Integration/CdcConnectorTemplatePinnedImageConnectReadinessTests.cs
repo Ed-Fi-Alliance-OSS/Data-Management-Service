@@ -203,7 +203,14 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario, bo
                     .EnumerateArray()
                     .Select(x => x.GetString())
                     .Should()
-                    .Equal("TimeoutException", "ERROR");
+                    .Equal("OutOfMemoryError", "TimeoutException", "ERROR");
+                evidence
+                    .GetProperty("Logs")
+                    .GetProperty("JvmMemoryFailureKinds")
+                    .EnumerateArray()
+                    .Select(x => x.GetString())
+                    .Should()
+                    .Equal("JavaHeapSpace");
             }
         }
     }
@@ -327,7 +334,7 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario, bo
                         0,
                         arguments[0] == "inspect"
                             ? "{\"Status\":\"running\",\"ExitCode\":0,\"OOMKilled\":false,\"Error\":\"private-details\"}"
-                            : "ERROR TimeoutException private-details "
+                            : "java.lang.OutOfMemoryError: Java heap space private-details\nERROR TimeoutException private-details "
                                 + CdcConnectorTemplatePinnedImageFixture.ConnectorDatabasePassword,
                         ""
                     )
@@ -335,5 +342,53 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario, bo
             }
             return Task.FromResult(new DockerCommandResult(0, "", ""));
         }
+    }
+}
+
+[TestFixture]
+public sealed class Given_ConnectJvmMemoryFailureSignals
+{
+    [TestCase("java.lang.OutOfMemoryError: Java heap space", "JavaHeapSpace")]
+    [TestCase("java.lang.OutOfMemoryError: GC overhead limit exceeded", "GcOverheadLimit")]
+    [TestCase("java.lang.OutOfMemoryError: Metaspace", "Metaspace")]
+    [TestCase("java.lang.OutOfMemoryError: Compressed class space", "CompressedClassSpace")]
+    [TestCase("java.lang.OutOfMemoryError: Direct buffer memory", "DirectBufferMemory")]
+    [TestCase(
+        "java.lang.OutOfMemoryError: Cannot reserve 128 bytes of direct buffer memory",
+        "DirectBufferMemory"
+    )]
+    [TestCase("java.lang.OutOfMemoryError: unable to create native thread", "NativeThreadCreation")]
+    [TestCase("java.lang.OutOfMemoryError: unable to create new native thread", "NativeThreadCreation")]
+    [TestCase("java.lang.OutOfMemoryError: Requested array size exceeds VM limit", "ArraySizeLimit")]
+    [TestCase("java.lang.OutOfMemoryError: private unknown reason", "UnclassifiedOutOfMemory")]
+    [TestCase("Native memory allocation (malloc) failed to allocate 32 bytes", "NativeAllocationFailure")]
+    [TestCase(
+        "There is insufficient memory for the Java Runtime Environment to continue.",
+        "NativeAllocationFailure"
+    )]
+    public void It_classifies_memory_failures_without_retaining_private_log_text(
+        string signal,
+        string expected
+    )
+    {
+        CdcConnectorTemplatePinnedImageFixture
+            .GetJvmMemoryFailureKinds(signal + " password=private-secret")
+            .Should()
+            .Equal(expected);
+    }
+
+    [Test]
+    public void It_deduplicates_signals_and_does_not_classify_an_unrelated_heap_message()
+    {
+        CdcConnectorTemplatePinnedImageFixture
+            .GetJvmMemoryFailureKinds(
+                "Java heap space configuration\njava.lang.OutOfMemoryError: Metaspace\njava.lang.OutOfMemoryError: Metaspace\njava.lang.OutOfMemoryError: Java heap space"
+            )
+            .Should()
+            .Equal("JavaHeapSpace", "Metaspace");
+        CdcConnectorTemplatePinnedImageFixture
+            .GetJvmMemoryFailureKinds("Java heap space configuration")
+            .Should()
+            .BeEmpty();
     }
 }

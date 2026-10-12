@@ -35,6 +35,29 @@ public sealed class Given_DocumentCacheAdminApiSchemaAssets
     }
 
     [Test]
+    public void It_uses_the_complete_runtime_schema_manifest_for_history_commands()
+    {
+        var fixture = DocumentCacheAdminCliFixture.Shared;
+        JsonObject manifest = ReadJsonObject(
+            Path.Combine(fixture.ApiSchemaDirectory, "bootstrap-api-schema-manifest.json")
+        );
+        string[] runtimePaths = manifest["projects"]!
+            .AsArray()
+            .Select(project =>
+                Path.GetFullPath(
+                    Path.Combine(fixture.ApiSchemaDirectory, project!["schemaPath"]!.GetValue<string>())
+                )
+            )
+            .ToArray();
+
+        fixture
+            .ApiSchemaPaths.Select(Path.GetFileName)
+            .Should()
+            .Equal("ApiSchema.json", "ApiSchema-Sample.json");
+        fixture.ApiSchemaPaths.Should().Equal(runtimePaths);
+    }
+
+    [Test]
     public void It_builds_the_default_bundled_api_schema_assets()
     {
         string manifestPath = Path.Combine(
