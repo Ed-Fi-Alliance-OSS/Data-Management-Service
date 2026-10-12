@@ -276,23 +276,7 @@ internal static class SchemaRestampMigrationScenario
 
     private static async Task<ProcessResult> RunToolAsync(params string[] arguments)
     {
-        string configuration = new DirectoryInfo(AppContext.BaseDirectory).Parent?.Name ?? "Debug";
-        string assemblyPath = Path.GetFullPath(
-            Path.Combine(
-                AppContext.BaseDirectory,
-                "..",
-                "..",
-                "..",
-                "..",
-                "..",
-                "clis",
-                "EdFi.DataManagementService.SchemaTools",
-                "bin",
-                configuration,
-                "net10.0",
-                "api-schema-tools.dll"
-            )
-        );
+        string assemblyPath = ResolveSchemaToolsAssemblyPath();
         var startInfo = new ProcessStartInfo("dotnet")
         {
             RedirectStandardOutput = true,
@@ -343,6 +327,37 @@ internal static class SchemaRestampMigrationScenario
                 $"api-schema-tools exceeded its five-minute process deadline.\nstdout: {output}\nstderr: {error}"
             );
         }
+    }
+
+    private static string ResolveSchemaToolsAssemblyPath()
+    {
+        const string schemaToolsOutputPath = "src/dms/clis/EdFi.DataManagementService.SchemaTools/bin";
+        const string schemaToolsAssemblyName = "api-schema-tools.dll";
+
+        for (
+            DirectoryInfo? directory = new(AppContext.BaseDirectory);
+            directory is not null;
+            directory = directory.Parent
+        )
+        {
+            string outputDirectory = Path.Combine(directory.FullName, schemaToolsOutputPath);
+            if (!Directory.Exists(outputDirectory))
+            {
+                continue;
+            }
+
+            string? assemblyPath = Directory
+                .EnumerateFiles(outputDirectory, schemaToolsAssemblyName, SearchOption.AllDirectories)
+                .FirstOrDefault();
+            if (assemblyPath is not null)
+            {
+                return assemblyPath;
+            }
+        }
+
+        throw new FileNotFoundException(
+            $"Could not locate {schemaToolsAssemblyName} in a SchemaTools build output directory above '{AppContext.BaseDirectory}'."
+        );
     }
 
     internal static async Task WaitForToolExitAsync(Process process, CancellationToken cancellationToken)
