@@ -42,7 +42,13 @@
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Tests.Common\EdFi.DataManagementService.Backend.Tests.Common.csproj" />
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Ddl\EdFi.DataManagementService.Backend.Ddl.csproj" />
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Tests.Integration.Common\EdFi.DataManagementService.Backend.Tests.Integration.Common.csproj" />
-        <ProjectReference Include="..\..\clis\EdFi.DataManagementService.SchemaTools\EdFi.DataManagementService.SchemaTools.csproj" />
+        <!-- The migration fixture launches the independently built CLI as a separate process. -->
+        <ProjectReference
+            Include="..\..\clis\EdFi.DataManagementService.SchemaTools\EdFi.DataManagementService.SchemaTools.csproj"
+            ReferenceOutputAssembly="false"
+            PrivateAssets="all"
+            ExcludeAssets="all"
+        />
     </ItemGroup>
     <ItemGroup>
         <Using Include="NUnit.Framework" />
@@ -52,7 +58,10 @@
             Linked rather than referenced: the identity cases judge the served OpenAPI document with the
             same rewrite the Core conformance tests use, and that class lives in a test assembly.
         -->
-        <Compile Include="..\..\core\EdFi.DataManagementService.Core.Tests.Unit\OpenApi\OpenApiSchemaNormalizer.cs" Link="Shared\OpenApiSchemaNormalizer.cs" />
+        <Compile
+            Include="..\..\core\EdFi.DataManagementService.Core.Tests.Unit\OpenApi\OpenApiSchemaNormalizer.cs"
+            Link="Shared\OpenApiSchemaNormalizer.cs"
+        />
     </ItemGroup>
     <!--
         Publishes the fixture plugin directories the host-integration plugin cases load. See the targets

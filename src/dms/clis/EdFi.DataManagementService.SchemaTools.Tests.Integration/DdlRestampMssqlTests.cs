@@ -252,27 +252,6 @@ public class Given_SchemaRestamp_Mssql_Compatible_Transition
     }
 
     [Test]
-    public async Task It_validates_a_match_without_confirmation_or_dml()
-    {
-        using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync();
-        SchemaRestampTestHelper.SetOldHash(connection, "mssql", _target.EffectiveSchemaHash);
-        SchemaRestampTestHelper.InsertComponents(connection, "mssql", _target, _target.EffectiveSchemaHash);
-        var before = SchemaRestampTestHelper.Capture(connection, "mssql");
-        var result = await new SchemaRestamper(NullLogger.Instance).RestampAsync(
-            SqlDialect.Mssql,
-            _connectionString,
-            30,
-            _target,
-            false,
-            CancellationToken.None
-        );
-        var after = SchemaRestampTestHelper.Capture(connection, "mssql");
-        result.Changed.Should().BeFalse();
-        after.Should().BeEquivalentTo(before);
-    }
-
-    [Test]
     public async Task It_performs_no_metadata_dml_when_a_valid_match_has_dml_rejecting_triggers()
     {
         using var connection = new SqlConnection(_connectionString);

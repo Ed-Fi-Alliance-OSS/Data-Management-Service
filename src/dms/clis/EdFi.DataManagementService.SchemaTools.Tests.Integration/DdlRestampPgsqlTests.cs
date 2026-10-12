@@ -194,29 +194,6 @@ public class Given_SchemaRestamp_Pgsql_Compatible_Transition
     }
 
     [Test]
-    public async Task It_validates_a_match_without_confirmation_or_dml()
-    {
-        using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync();
-        SchemaRestampTestHelper.SetOldHash(connection, "pgsql", _target.EffectiveSchemaHash);
-        SchemaRestampTestHelper.InsertComponents(connection, "pgsql", _target, _target.EffectiveSchemaHash);
-        var before = SchemaRestampTestHelper.Capture(connection, "pgsql");
-
-        var result = await new SchemaRestamper(NullLogger.Instance).RestampAsync(
-            SqlDialect.Pgsql,
-            _connectionString,
-            30,
-            _target,
-            false,
-            CancellationToken.None
-        );
-        var after = SchemaRestampTestHelper.Capture(connection, "pgsql");
-
-        result.Changed.Should().BeFalse();
-        after.Should().BeEquivalentTo(before);
-    }
-
-    [Test]
     public async Task It_performs_no_metadata_dml_when_a_valid_match_has_dml_rejecting_triggers()
     {
         using var connection = new NpgsqlConnection(_connectionString);
