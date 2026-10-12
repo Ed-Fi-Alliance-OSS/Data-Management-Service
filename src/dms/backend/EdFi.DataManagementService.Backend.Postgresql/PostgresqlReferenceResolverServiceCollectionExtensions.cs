@@ -192,12 +192,11 @@ internal sealed class PostgresqlDocumentHydrator(
             ct
         );
 
-        return await HydrationExecutor.ExecuteAsync(
+        return await ConsistentHydrationExecutor.ExecuteAsync(
             connection,
             plan,
             keyset,
             SqlDialect.Pgsql,
-            transaction: null,
             executionOptions,
             ct
         );

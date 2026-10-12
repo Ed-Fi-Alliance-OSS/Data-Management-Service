@@ -276,10 +276,16 @@ internal static class AuthoritativeResponseMetadataScenario
                 .Be(otherCommands, "no per-document metadata queries");
             string sql = Normalize(commands.Sql.Should().ContainSingle().Subject);
             string metadata = sql.Split(';')
-                .Single(statement => statement.Contains("FROM dms.Document d", StringComparison.Ordinal));
+                .Single(statement => statement.Contains("r.ContentLastModifiedAt", StringComparison.Ordinal));
             metadata.Should().Contain("r.ContentLastModifiedAt");
             metadata.Should().Contain("JOIN edfi.CompactDescriptorItem r ON r.DocumentId = d.DocumentId");
             metadata.Should().NotContain("d.ContentLastModifiedAt");
+            string fence = sql.Split(';')
+                .Single(statement =>
+                    statement.Contains("FROM dms.Document d", StringComparison.Ordinal)
+                    && !statement.Contains("ContentLastModifiedAt", StringComparison.Ordinal)
+                );
+            fence.Should().Contain("d.ContentVersion").And.NotContain("edfi.");
             for (int i = 0; i < size; i++)
             {
                 Stamp stamp = await ReadStampAsync(harness, resources[i]);
@@ -338,7 +344,7 @@ internal static class AuthoritativeResponseMetadataScenario
                 .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
         );
 
-    private static async Task<Resource> CreateAsync(ApiIntegrationHarness harness, bool descriptor)
+    internal static async Task<Resource> CreateAsync(ApiIntegrationHarness harness, bool descriptor)
     {
         await using (DbCommand separate = harness.DbConnection.CreateCommand())
         {
@@ -397,7 +403,7 @@ internal static class AuthoritativeResponseMetadataScenario
         return new(path, endpoint, Guid.Parse(path.Split('/')[^1]), body, schema, table);
     }
 
-    private static async Task<HttpResponseMessage> PutAsync(
+    internal static async Task<HttpResponseMessage> PutAsync(
         ApiIntegrationHarness harness,
         Resource resource,
         string etag
@@ -471,7 +477,7 @@ internal static class AuthoritativeResponseMetadataScenario
             .Be(LastModifiedDateFormatter.Format(stamp.ModifiedAt));
     }
 
-    private static async Task<Stamp> ReadStampAsync(ApiIntegrationHarness harness, Resource resource)
+    internal static async Task<Stamp> ReadStampAsync(ApiIntegrationHarness harness, Resource resource)
     {
         await using DbCommand command = harness.DbConnection.CreateCommand();
         command.CommandText = $"""
@@ -495,7 +501,7 @@ internal static class AuthoritativeResponseMetadataScenario
         return new(reader.GetInt64(0), reader.GetInt16(1), reader.GetInt64(2), modified);
     }
 
-    private static async Task BackdateAsync(ApiIntegrationHarness harness, Resource resource, int offset = 0)
+    internal static async Task BackdateAsync(ApiIntegrationHarness harness, Resource resource, int offset = 0)
     {
         await using DbCommand command = harness.DbConnection.CreateCommand();
         command.CommandText = $"""
@@ -507,7 +513,7 @@ internal static class AuthoritativeResponseMetadataScenario
         (await command.ExecuteNonQueryAsync()).Should().BeGreaterThanOrEqualTo(1);
     }
 
-    private static async Task RestampAsync(ApiIntegrationHarness harness, Resource resource, Stamp stamp)
+    internal static async Task RestampAsync(ApiIntegrationHarness harness, Resource resource, Stamp stamp)
     {
         await using DbConnection connection = OpenConnection(
             harness.Services.GetRequiredService<HydrationCommands>().ConnectionString,
@@ -591,7 +597,7 @@ internal static class AuthoritativeResponseMetadataScenario
         {
             await using DbConnection connection = OpenConnection(connectionString, postgresql);
             await connection.OpenAsync(ct);
-            return await HydrationExecutor.ExecuteAsync(
+            return await ConsistentHydrationExecutor.ExecuteAsync(
                 sql =>
                 {
                     commands.Sql.Add(sql);
@@ -608,7 +614,7 @@ internal static class AuthoritativeResponseMetadataScenario
         }
     }
 
-    private sealed record Resource(
+    internal sealed record Resource(
         string Path,
         string Endpoint,
         Guid Uuid,
@@ -617,7 +623,7 @@ internal static class AuthoritativeResponseMetadataScenario
         string Table
     );
 
-    private sealed record Stamp(
+    internal sealed record Stamp(
         long DocumentId,
         short ResourceKeyId,
         long Version,
