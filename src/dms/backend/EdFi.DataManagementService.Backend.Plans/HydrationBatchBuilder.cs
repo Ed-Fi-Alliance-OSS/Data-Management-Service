@@ -28,7 +28,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// selection size.
 /// </item>
 /// <item>Optional <c>TotalCount</c> (single row, single column)</item>
-/// <item><c>dms.Document</c> metadata joined to the page keyset</item>
+/// <item><c>dms.Document</c> metadata and root timestamp joined to the page keyset</item>
 /// <item>Root table rows (from <c>TablePlansInDependencyOrder[0]</c>)</item>
 /// <item>Child table rows (from <c>TablePlansInDependencyOrder[1..n]</c>)</item>
 /// <item>Descriptor URI rows (from <c>DescriptorProjectionPlansInOrder[0..n]</c>)</item>
@@ -108,8 +108,8 @@ public static class HydrationBatchBuilder
 
     /// <summary>
     /// Builds a metadata-only batch for an already-planned query page. The batch materializes the
-    /// query keyset and returns only optional total count plus <c>dms.Document</c> metadata for the
-    /// selected candidates.
+    /// query keyset and returns only optional total count plus document metadata and the owning
+    /// root timestamp for the selected candidates.
     /// </summary>
     public static string BuildCandidateMetadataBatch(
         ResourceReadPlan plan,
@@ -139,7 +139,7 @@ public static class HydrationBatchBuilder
             writer.AppendLine();
         }
 
-        planDialect.AppendDocumentMetadataSelect(writer, plan.KeysetTable);
+        planDialect.AppendDocumentMetadataSelect(writer, plan.KeysetTable, plan.Model.Root.Table);
 
         return writer.ToString();
     }
@@ -275,7 +275,7 @@ public static class HydrationBatchBuilder
         }
 
         // 4. Document metadata select
-        planDialect.AppendDocumentMetadataSelect(writer, plan.KeysetTable);
+        planDialect.AppendDocumentMetadataSelect(writer, plan.KeysetTable, plan.Model.Root.Table);
         writer.AppendLine();
 
         // 5. Table hydration selects in dependency order
@@ -323,7 +323,8 @@ public static class HydrationBatchBuilder
         // 1. Document metadata select
         planDialect.AppendSingleDocumentMetadataSelect(
             writer,
-            HydrationSqlConventions.SingleDocumentIdParameterName
+            HydrationSqlConventions.SingleDocumentIdParameterName,
+            plan.Model.Root.Table
         );
         writer.AppendLine();
 
