@@ -294,6 +294,19 @@ BEGIN
     END IF;
 END $$;
 
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'UX_Document_DocumentId_ResourceKeyId'
+        AND conrelid = to_regclass('"dms"."Document"')
+    )
+    THEN
+        ALTER TABLE "dms"."Document"
+        ADD CONSTRAINT "UX_Document_DocumentId_ResourceKeyId" UNIQUE ("DocumentId", "ResourceKeyId");
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS "dms"."DocumentCache"
 (
     "DocumentId" bigint NOT NULL,
@@ -1170,6 +1183,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DescriptorSubjectIdentity"
 (
     "DocumentId" bigint NOT NULL,
     "SchoolTypeDescriptor_DescriptorId" integer NOT NULL,
+    "ResourceKeyId" smallint NOT NULL,
     "Discriminator" varchar(256) NOT NULL,
     CONSTRAINT "PK_DescriptorSubjectIdentity" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_DescriptorSubjectIdentity_NK" UNIQUE ("SchoolTypeDescriptor_DescriptorId"),
@@ -1384,14 +1398,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_DescriptorSubjectIdentity_Document'
+        WHERE conname = 'FK_DescriptorSubjectIdentity_DocumentResourceKey'
         AND conrelid = to_regclass('"edfi"."DescriptorSubjectIdentity"')
     )
     THEN
         ALTER TABLE "edfi"."DescriptorSubjectIdentity"
-        ADD CONSTRAINT "FK_DescriptorSubjectIdentity_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
+        ADD CONSTRAINT "FK_DescriptorSubjectIdentity_DocumentResourceKey"
+        FOREIGN KEY ("DocumentId", "ResourceKeyId")
+        REFERENCES "dms"."Document" ("DocumentId", "ResourceKeyId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -1422,7 +1436,7 @@ CREATE INDEX IF NOT EXISTS "IX_ProfileRootOnlyMergeItemExtension_SchoolTypeDescr
 CREATE INDEX IF NOT EXISTS "IX_Descriptor_ResourceKeyId_ChangeVersion" ON "tracked_changes_edfi"."Descriptor" ("ResourceKeyId", "ChangeVersion");
 
 CREATE OR REPLACE VIEW "edfi"."DescriptorSubject_View" AS
-SELECT "DocumentId" AS "DocumentId", "SchoolTypeDescriptor_DescriptorId" AS "SchoolTypeDescriptor_DescriptorId", 'Ed-Fi:Student'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "SchoolTypeDescriptor_DescriptorId" AS "SchoolTypeDescriptor_DescriptorId", 4::smallint AS "ResourceKeyId", 'Ed-Fi:Student'::varchar(256) AS "Discriminator"
 FROM "edfi"."Student"
 ;
 
@@ -1715,8 +1729,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Student_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId" OR OLD."SchoolTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."SchoolTypeDescriptor_DescriptorId") THEN
-        INSERT INTO "edfi"."DescriptorSubjectIdentity" ("DocumentId", "SchoolTypeDescriptor_DescriptorId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."SchoolTypeDescriptor_DescriptorId", 'Ed-Fi:Student')
+        INSERT INTO "edfi"."DescriptorSubjectIdentity" ("DocumentId", "SchoolTypeDescriptor_DescriptorId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."SchoolTypeDescriptor_DescriptorId", 4, 'Ed-Fi:Student')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "SchoolTypeDescriptor_DescriptorId" = EXCLUDED."SchoolTypeDescriptor_DescriptorId";
     END IF;
