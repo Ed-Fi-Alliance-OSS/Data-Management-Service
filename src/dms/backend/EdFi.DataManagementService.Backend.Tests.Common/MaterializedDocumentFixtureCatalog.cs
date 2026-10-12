@@ -566,6 +566,10 @@ public sealed record MaterializedDocumentSourceSetup(
     MaterializedDocumentSourceReferentialIdentityRow[] ReferentialIdentityRows
 );
 
+/// <summary>
+/// Fixture identity/version metadata. ContentLastModifiedAt is seeded on the owning root or descriptor,
+/// never on dms.Document.
+/// </summary>
 public sealed record MaterializedDocumentSourceDocument(
     long DocumentId,
     string DocumentUuid,

@@ -164,18 +164,16 @@ public abstract class CompactDescriptorSchemaTests
     private async Task<object[]> SnapshotAsync(long id) =>
         (
             await RowsAsync(
-                $"SELECT d.{Q("DocumentId")}, s.{Q("DescriptorId")}, d.{Q("ContentVersion")}, d.{Q("ContentLastModifiedAt")}, s.{Q("ContentVersion")}, s.{Q("ContentLastModifiedAt")}, s.{Q("Namespace")}, s.{Q("CodeValue")} FROM {Document} d JOIN {Descriptor} s ON d.{Q("DocumentId")} = s.{Q("DocumentId")} WHERE d.{Q("DocumentId")} = @id;",
+                $"SELECT d.{Q("DocumentId")}, s.{Q("DescriptorId")}, d.{Q("ContentVersion")}, s.{Q("ContentVersion")}, s.{Q("ContentLastModifiedAt")}, s.{Q("Namespace")}, s.{Q("CodeValue")} FROM {Document} d JOIN {Descriptor} s ON d.{Q("DocumentId")} = s.{Q("DocumentId")} WHERE d.{Q("DocumentId")} = @id;",
                 ("id", id)
             )
         ).Single();
 
     [Test]
-    public async Task It_passes_reusable_catalog_assertions_with_both_document_stamp_columns_present()
+    public async Task It_passes_reusable_catalog_assertions_with_document_version_and_owner_timestamp()
     {
         await ExecuteAsync(_assertionSql);
-        (await RowsAsync($"SELECT {Q("ContentVersion")}, {Q("ContentLastModifiedAt")} FROM {Document};"))
-            .Should()
-            .BeEmpty();
+        (await RowsAsync($"SELECT {Q("ContentVersion")} FROM {Document};")).Should().BeEmpty();
     }
 
     [Test]
@@ -191,7 +189,7 @@ public abstract class CompactDescriptorSchemaTests
         compactId.Should().BePositive().And.BeLessThan(int.MaxValue);
         ((long)compactId).Should().NotBe(id);
         await ExecuteAsync(
-            $"UPDATE {Document} SET {Q("ContentLastModifiedAt")} = @past WHERE {Q("DocumentId")} = @id; UPDATE {Descriptor} SET {Q("ContentLastModifiedAt")} = @past WHERE {Q("DocumentId")} = @id;",
+            $"UPDATE {Descriptor} SET {Q("ContentLastModifiedAt")} = @past WHERE {Q("DocumentId")} = @id;",
             ("past", new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc)),
             ("id", id)
         );
@@ -211,11 +209,10 @@ public abstract class CompactDescriptorSchemaTests
         changed[0].Should().Be(id);
         changed[1].Should().Be(compactId);
         Convert.ToInt64(changed[2]).Should().Be(Convert.ToInt64(before[2]) + 1);
-        Convert.ToDateTime(changed[3]).Should().BeAfter(Convert.ToDateTime(before[3]));
-        changed[4].Should().Be(changed[2]);
-        changed[5].Should().Be(changed[3]);
-        changed[6].Should().Be("uri://Case#A");
-        changed[7].Should().Be("B");
+        changed[3].Should().Be(changed[2]);
+        Convert.ToDateTime(changed[4]).Should().BeAfter(Convert.ToDateTime(before[4]));
+        changed[5].Should().Be("uri://Case#A");
+        changed[6].Should().Be("B");
 
         await ExecuteAsync(
             $"UPDATE {Descriptor} SET {Q("Namespace")} = 'uri://case#A' WHERE {Q("DescriptorId")} = @id;",
@@ -225,8 +222,7 @@ public abstract class CompactDescriptorSchemaTests
         casing[0].Should().Be(id);
         casing[1].Should().Be(compactId);
         Convert.ToInt64(casing[2]).Should().Be(Convert.ToInt64(changed[2]) + 1);
-        casing[4].Should().Be(casing[2]);
-        casing[5].Should().Be(casing[3]);
+        casing[3].Should().Be(casing[2]);
         await ExecuteAsync(
             $"UPDATE {Descriptor} SET {Q("ShortDescription")} = {Q("ShortDescription")} WHERE {Q("DescriptorId")} = @id;",
             ("id", compactId)
@@ -294,7 +290,7 @@ public abstract class CompactDescriptorSchemaTests
         else
         {
             await InsertDescriptorAsync(id, _resourceKeyId, ns, code);
-            (await SnapshotAsync(id))[6].Should().Be(ns);
+            (await SnapshotAsync(id))[5].Should().Be(ns);
         }
     }
 

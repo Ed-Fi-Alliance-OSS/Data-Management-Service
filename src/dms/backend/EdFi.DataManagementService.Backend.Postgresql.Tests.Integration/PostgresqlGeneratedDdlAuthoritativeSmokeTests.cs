@@ -27,6 +27,7 @@ internal sealed record AuthoritativeSampleSmokeSeedData(
     long StudentEducationOrganizationAssociationExtensionAddressTermCollectionItemId
 );
 
+/// <summary>Document version paired with the owning resource timestamp.</summary>
 internal sealed record DocumentStampState(long ContentVersion, DateTimeOffset ContentLastModifiedAt);
 
 internal sealed record TrackedChangeKeyChangeAssociationSeedData(
@@ -675,7 +676,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             _studentEducationOrganizationAssociationTable,
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
-        AssertMirrorContentMatchesDocument(beforeMirror, before);
+        AssertRootVersionMatchesDocument(beforeMirror, before);
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -702,7 +703,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         after.Should().Be(before);
         afterMirror.Should().Be(beforeMirror);
-        AssertMirrorContentMatchesDocument(afterMirror, after);
+        AssertRootVersionMatchesDocument(afterMirror, after);
     }
 
     [Test]
@@ -746,7 +747,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             _studentEducationOrganizationAssociationTable,
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
-        AssertMirrorContentMatchesDocument(beforeMirror, before);
+        AssertRootVersionMatchesDocument(beforeMirror, before);
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -773,7 +774,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         after.Should().Be(before);
         afterMirror.Should().Be(beforeMirror);
-        AssertMirrorContentMatchesDocument(afterMirror, after);
+        AssertRootVersionMatchesDocument(afterMirror, after);
     }
 
     [Test]
@@ -809,10 +810,10 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
 
         var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        var documentStamps = await GetDocumentStampStateAsync(documentId);
+        var documentVersion = await GetDocumentVersionAsync(documentId);
 
         afterMaxChangeVersion.Should().Be(beforeMaxChangeVersion + 1);
-        documentStamps.ContentVersion.Should().Be(afterMaxChangeVersion);
+        documentVersion.Should().Be(afterMaxChangeVersion);
     }
 
     [Test]
@@ -924,7 +925,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     {
         var before = await GetDocumentStampStateAsync(_seedData.StudentDocumentId);
         var beforeMirror = await GetRootMirrorStampStateAsync(_studentTable, _seedData.StudentDocumentId);
-        AssertMirrorContentMatchesDocument(beforeMirror, before);
+        AssertRootVersionMatchesDocument(beforeMirror, before);
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -941,7 +942,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         after.Should().Be(before);
         afterMirror.Should().Be(beforeMirror);
-        AssertMirrorContentMatchesDocument(afterMirror, after);
+        AssertRootVersionMatchesDocument(afterMirror, after);
     }
 
     [Test]
@@ -1118,8 +1119,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
         after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
-        await AssertRootMirrorMatchesDocumentAsync(_schoolTable, _seedData.SchoolDocumentId);
-        await AssertRootMirrorMatchesDocumentAsync(
+        await AssertRootVersionMatchesDocumentAsync(_schoolTable, _seedData.SchoolDocumentId);
+        await AssertRootVersionMatchesDocumentAsync(
             _studentEducationOrganizationAssociationTable,
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
@@ -1354,8 +1355,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     [Test]
     public async Task It_should_keep_resource_mirrors_in_lock_step_for_representative_write_paths()
     {
-        await AssertRootMirrorMatchesDocumentAsync(_studentTable, _seedData.StudentDocumentId);
-        await AssertRootMirrorMatchesDocumentAsync(
+        await AssertRootVersionMatchesDocumentAsync(_studentTable, _seedData.StudentDocumentId);
+        await AssertRootVersionMatchesDocumentAsync(
             _studentEducationOrganizationAssociationTable,
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
@@ -1377,7 +1378,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         var studentAfter = await GetDocumentStampStateAsync(_seedData.StudentDocumentId);
         studentAfter.ContentVersion.Should().BeGreaterThan(studentBefore.ContentVersion);
         studentAfter.ContentLastModifiedAt.Should().BeAfter(studentBefore.ContentLastModifiedAt);
-        await AssertRootMirrorMatchesDocumentAsync(_studentTable, _seedData.StudentDocumentId);
+        await AssertRootVersionMatchesDocumentAsync(_studentTable, _seedData.StudentDocumentId);
 
         var associationBefore = await GetDocumentStampStateAsync(
             _seedData.StudentEducationOrganizationAssociationDocumentId
@@ -1405,7 +1406,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
         associationAfter.ContentVersion.Should().BeGreaterThan(associationBefore.ContentVersion);
         associationAfter.ContentLastModifiedAt.Should().BeAfter(associationBefore.ContentLastModifiedAt);
-        await AssertRootMirrorMatchesDocumentAsync(
+        await AssertRootVersionMatchesDocumentAsync(
             _studentEducationOrganizationAssociationTable,
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
@@ -1436,7 +1437,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
         associationAfter.ContentVersion.Should().BeGreaterThan(associationBefore.ContentVersion);
         associationAfter.ContentLastModifiedAt.Should().BeAfter(associationBefore.ContentLastModifiedAt);
-        await AssertRootMirrorMatchesDocumentAsync(
+        await AssertRootVersionMatchesDocumentAsync(
             _studentEducationOrganizationAssociationTable,
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
@@ -1463,8 +1464,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         otherStudentAfter.ContentVersion.Should().BeGreaterThan(otherStudentBefore.ContentVersion);
         otherStudentAfter.ContentLastModifiedAt.Should().BeAfter(otherStudentBefore.ContentLastModifiedAt);
         studentAfter.ContentVersion.Should().NotBe(otherStudentAfter.ContentVersion);
-        await AssertRootMirrorMatchesDocumentAsync(_studentTable, _seedData.StudentDocumentId);
-        await AssertRootMirrorMatchesDocumentAsync(_studentTable, _seedData.OtherStudentDocumentId);
+        await AssertRootVersionMatchesDocumentAsync(_studentTable, _seedData.StudentDocumentId);
+        await AssertRootVersionMatchesDocumentAsync(_studentTable, _seedData.OtherStudentDocumentId);
     }
 
     [Test]
@@ -1475,7 +1476,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             Guid.Parse("abababab-abab-abab-abab-abababababab"),
             busResourceKeyId
         );
-        var beforeInsert = await GetDocumentStampStateAsync(busDocumentId);
+        var beforeInsertVersion = await GetDocumentVersionAsync(busDocumentId);
         var beforeInsertMaxChangeVersion = await ReadMaxChangeVersionAsync();
         var initialBusId = $"BUS-{busDocumentId}-001";
         var updatedBusId = $"BUS-{busDocumentId}-002";
@@ -1485,9 +1486,9 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         var afterInsert = await GetDocumentStampStateAsync(busDocumentId);
         var afterInsertMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        afterInsert.Should().Be(beforeInsert);
+        afterInsert.ContentVersion.Should().Be(beforeInsertVersion);
         afterInsertMaxChangeVersion.Should().Be(beforeInsertMaxChangeVersion);
-        await AssertRootMirrorMatchesDocumentAsync(_busTable, busDocumentId);
+        await AssertRootVersionMatchesDocumentAsync(_busTable, busDocumentId);
 
         await DelayForDistinctTimestampsAsync();
         var updateRowsAffected = await _database.ExecuteNonQueryAsync(
@@ -1504,7 +1505,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         var afterUpdate = await GetDocumentStampStateAsync(busDocumentId);
         afterUpdate.ContentVersion.Should().BeGreaterThan(afterInsert.ContentVersion);
         afterUpdate.ContentLastModifiedAt.Should().BeAfter(afterInsert.ContentLastModifiedAt);
-        await AssertRootMirrorMatchesDocumentAsync(_busTable, busDocumentId);
+        await AssertRootVersionMatchesDocumentAsync(_busTable, busDocumentId);
 
         var beforeNoOpMirror = await GetRootMirrorStampStateAsync(_busTable, busDocumentId);
 
@@ -1523,7 +1524,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         var afterNoOpMirror = await GetRootMirrorStampStateAsync(_busTable, busDocumentId);
         afterNoOp.Should().Be(afterUpdate);
         afterNoOpMirror.Should().Be(beforeNoOpMirror);
-        AssertMirrorContentMatchesDocument(afterNoOpMirror, afterNoOp);
+        AssertRootVersionMatchesDocument(afterNoOpMirror, afterNoOp);
     }
 
     [Test]
@@ -1543,7 +1544,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         var trackedChangeRowsBefore = await CountRowsAsync(
             """SELECT COUNT(*) FROM "tracked_changes_sample"."Bus";"""
         );
-        AssertMirrorContentMatchesDocument(beforeMirror, beforeDocument);
+        AssertRootVersionMatchesDocument(beforeMirror, beforeDocument);
 
         await DelayForDistinctTimestampsAsync();
         var rowsAffected = await _database.ExecuteNonQueryAsync(
@@ -2320,9 +2321,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         resourceRowsAffected.Should().Be(1);
 
         (await CountDocumentRowsAsync(seed.AssociationDocumentId)).Should().Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(seed.AssociationDocumentId);
-        afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
-        afterResourceDelete.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        var afterResourceDeleteVersion = await GetDocumentVersionAsync(seed.AssociationDocumentId);
+        afterResourceDeleteVersion.Should().BeGreaterThan(before.ContentVersion);
 
         (
             await CountTrackedChangeRowsAsync(
@@ -2344,7 +2344,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             CultureInfo.InvariantCulture
         );
 
-        tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
+        tombstoneChangeVersion.Should().Be(afterResourceDeleteVersion);
         trackedRow["Id"].Should().Be(seed.AssociationDocumentUuid);
         Convert
             .ToInt64(
@@ -2416,9 +2416,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         resourceRowsAffected.Should().Be(1);
 
         (await CountDocumentRowsAsync(descriptorDocumentId)).Should().Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(descriptorDocumentId);
-        afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
-        afterResourceDelete.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        var afterResourceDeleteVersion = await GetDocumentVersionAsync(descriptorDocumentId);
+        afterResourceDeleteVersion.Should().BeGreaterThan(before.ContentVersion);
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "Descriptor", descriptorDocumentUuid))
             .Should()
@@ -2434,7 +2433,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             CultureInfo.InvariantCulture
         );
 
-        tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
+        tombstoneChangeVersion.Should().Be(afterResourceDeleteVersion);
         trackedRow["Id"].Should().Be(descriptorDocumentUuid);
         trackedRow["ResourceKeyId"].Should().Be(termDescriptorResourceKeyId);
         trackedRow["OldNamespace"].Should().Be(DescriptorNamespace);
@@ -2482,9 +2481,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         resourceRowsAffected.Should().Be(1);
 
         (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(schoolDocumentId);
-        afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
-        afterResourceDelete.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        var afterResourceDeleteVersion = await GetDocumentVersionAsync(schoolDocumentId);
+        afterResourceDeleteVersion.Should().BeGreaterThan(before.ContentVersion);
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
             .Should()
@@ -2500,7 +2498,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             CultureInfo.InvariantCulture
         );
 
-        tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
+        tombstoneChangeVersion.Should().Be(afterResourceDeleteVersion);
         trackedRow["Id"].Should().Be(schoolDocumentUuid);
         Convert.ToInt64(trackedRow["OldSchoolId"], CultureInfo.InvariantCulture).Should().Be(FreshSchoolId);
         AssertAllNewColumnsAreNull(trackedRow);
@@ -2649,8 +2647,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         (await CountDocumentRowsAsync(associationDocumentId))
             .Should()
             .Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(associationDocumentId);
-        afterResourceDelete.ContentVersion.Should().Be(tombstoneChangeVersion);
+        var afterResourceDeleteVersion = await GetDocumentVersionAsync(associationDocumentId);
+        afterResourceDeleteVersion.Should().Be(tombstoneChangeVersion);
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
             "StudentEducationOrganizationAssociation",
@@ -2795,8 +2793,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         (await CountDocumentRowsAsync(schoolDocumentId))
             .Should()
             .Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(schoolDocumentId);
-        afterResourceDelete.ContentVersion.Should().Be(tombstoneChangeVersion);
+        var afterResourceDeleteVersion = await GetDocumentVersionAsync(schoolDocumentId);
+        afterResourceDeleteVersion.Should().Be(tombstoneChangeVersion);
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
             "School",
@@ -3694,12 +3692,10 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
     private async Task<DocumentStampState> GetDocumentStampStateAsync(long documentId)
     {
-        var row = (
+        var document = (
             await _database.QueryRowsAsync(
                 """
-                SELECT
-                    "ContentVersion",
-                    "ContentLastModifiedAt"
+                SELECT "ContentVersion", "ResourceKeyId"
                 FROM "dms"."Document"
                 WHERE "DocumentId" = @documentId;
                 """,
@@ -3707,11 +3703,32 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             )
         ).Single();
 
+        var resourceKeyId = Convert.ToInt16(document["ResourceKeyId"], CultureInfo.InvariantCulture);
+        var rootTable = _fixture
+            .ModelSet.ConcreteResourcesInNameOrder.Single(resource =>
+                resource.ResourceKey.ResourceKeyId == resourceKeyId
+            )
+            .RelationalModel.Root.Table;
+        var ownerRows = await _database.QueryRowsAsync(
+            $"""
+            SELECT "ContentLastModifiedAt"
+            FROM "{rootTable.Schema.Value}"."{rootTable.Name}"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+
         return new(
-            Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
-            ReadDateTimeOffset(row["ContentLastModifiedAt"])
+            Convert.ToInt64(document["ContentVersion"], CultureInfo.InvariantCulture),
+            ReadDateTimeOffset(ownerRows.Single()["ContentLastModifiedAt"])
         );
     }
+
+    private async Task<long> GetDocumentVersionAsync(long documentId) =>
+        await _database.ExecuteScalarAsync<long>(
+            """SELECT "ContentVersion" FROM "dms"."Document" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", documentId)
+        );
 
     private async Task<DocumentStampState> GetRootMirrorStampStateAsync(
         DbTableModel rootTable,
@@ -3737,21 +3754,20 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
     }
 
-    private async Task AssertRootMirrorMatchesDocumentAsync(DbTableModel rootTable, long documentId)
+    private async Task AssertRootVersionMatchesDocumentAsync(DbTableModel rootTable, long documentId)
     {
         var document = await GetDocumentStampStateAsync(documentId);
         var mirror = await GetRootMirrorStampStateAsync(rootTable, documentId);
 
-        AssertMirrorContentMatchesDocument(mirror, document);
+        AssertRootVersionMatchesDocument(mirror, document);
     }
 
-    private static void AssertMirrorContentMatchesDocument(
+    private static void AssertRootVersionMatchesDocument(
         DocumentStampState mirror,
         DocumentStampState document
     )
     {
         mirror.ContentVersion.Should().Be(document.ContentVersion);
-        mirror.ContentLastModifiedAt.Should().Be(document.ContentLastModifiedAt);
     }
 
     private async Task<IReadOnlyList<ReferentialIdentityRow>> GetReferentialIdentityRowsForDocumentAsync(

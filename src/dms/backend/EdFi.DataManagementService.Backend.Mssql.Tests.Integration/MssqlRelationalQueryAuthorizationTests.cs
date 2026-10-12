@@ -2816,7 +2816,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 [DocumentUuid],
                 [ResourceKeyId],
                 [ContentVersion],
-                [ContentLastModifiedAt],
                 [CreatedAt]
             FROM [dms].[Document]
             WHERE [DocumentUuid] = @documentUuid
@@ -2832,7 +2831,6 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 GetRequiredGuid(rows[0], "DocumentUuid"),
                 GetRequiredInt16(rows[0], "ResourceKeyId"),
                 GetRequiredInt64(rows[0], "ContentVersion"),
-                GetRequiredDateTime(rows[0], "ContentLastModifiedAt"),
                 GetRequiredDateTime(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(
