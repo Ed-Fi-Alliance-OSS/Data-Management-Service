@@ -980,16 +980,16 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_copy_existing_document_stamps_for_descriptor_inserts()
+    public void It_should_copy_the_document_version_and_initialize_the_descriptor_timestamp_on_insert()
     {
         _ddl.Should().Contain("IF TG_OP = 'INSERT' THEN");
-        _ddl.Should().Contain("SELECT \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"");
+        _ddl.Should().Contain("SELECT \"DocumentId\", \"ContentVersion\"");
         _ddl.Should().Contain("FROM \"dms\".\"Document\"");
         _ddl.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
         _ddl.Should().Contain("UPDATE \"dms\".\"Descriptor\" r");
         _ddl.Should()
             .Contain(
-                "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = stamped.\"ContentLastModifiedAt\""
+                "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = now()"
             );
     }
 
@@ -1000,6 +1000,10 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         _ddl.Should().Contain("UPDATE \"dms\".\"Document\"");
         _ddl.Should().Contain("\"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')");
         _ddl.Should().Contain("\"ContentLastModifiedAt\" = now()");
+        _ddl.Should()
+            .NotContain(
+                "SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), \"ContentLastModifiedAt\" = now()"
+            );
     }
 
     [Test]
@@ -1031,16 +1035,37 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_capture_descriptor_document_stamps_with_returning_and_mirror_them()
+    public void It_should_capture_descriptor_document_versions_and_stamp_the_descriptor()
     {
         _ddl.Should().Contain("WITH stamped AS (");
-        _ddl.Should().Contain("RETURNING \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"");
+        _ddl.Should().Contain("RETURNING \"DocumentId\", \"ContentVersion\"");
         _ddl.Should().Contain("UPDATE \"dms\".\"Descriptor\" r");
         _ddl.Should()
             .Contain(
-                "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = stamped.\"ContentLastModifiedAt\""
+                "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = now()"
             );
         _ddl.Should().Contain("WHERE r.\"DocumentId\" = stamped.\"DocumentId\";");
+    }
+
+    [Test]
+    public void It_should_only_stamp_the_descriptor_timestamp_and_join_by_document_id()
+    {
+        var functionStart = _ddl.IndexOf(
+            "CREATE OR REPLACE FUNCTION \"dms\".\"TF_Descriptor_Stamp_Document\"()",
+            StringComparison.Ordinal
+        );
+        functionStart.Should().BeGreaterOrEqualTo(0);
+        var functionEnd = _ddl.IndexOf("$func$ LANGUAGE plpgsql;", functionStart, StringComparison.Ordinal);
+        functionEnd.Should().BeGreaterThan(functionStart);
+        var function = _ddl[functionStart..functionEnd];
+
+        function.Should().NotContain("stamped.\"ContentLastModifiedAt\"");
+        function
+            .Should()
+            .NotContain("RETURNING \"DocumentId\", \"ContentVersion\", \"ContentLastModifiedAt\"");
+        function.Should().Contain("\"ContentLastModifiedAt\" = now()");
+        function.Should().Contain("WHERE r.\"DocumentId\" = stamped.\"DocumentId\";");
+        function.Should().NotContain("WHERE r.\"DescriptorId\" = stamped.\"DocumentId\"");
     }
 
     [Test]

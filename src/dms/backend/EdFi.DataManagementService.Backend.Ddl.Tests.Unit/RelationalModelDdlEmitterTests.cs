@@ -890,7 +890,7 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
     }
 
     [Test]
-    public void It_should_copy_existing_document_stamps_for_root_inserts()
+    public void It_should_copy_the_document_version_and_initialize_the_root_timestamp_on_insert()
     {
         var insertBranch = ExtractPlpgsqlSegment(
             GetRootStampFunctionBody(),
@@ -898,28 +898,29 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
             "ELSIF TG_OP = 'UPDATE' THEN"
         );
 
-        insertBranch.Should().Contain("SELECT \"ContentVersion\", \"ContentLastModifiedAt\"");
+        insertBranch.Should().Contain("SELECT \"ContentVersion\"");
         insertBranch.Should().Contain("FROM \"dms\".\"Document\"");
         insertBranch.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
-        insertBranch.Should().Contain("INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt");
+        insertBranch.Should().Contain("INTO STRICT _stampedContentVersion");
         insertBranch.Should().Contain("NEW.\"ContentVersion\" := _stampedContentVersion;");
-        insertBranch.Should().Contain("NEW.\"ContentLastModifiedAt\" := _stampedContentLastModifiedAt;");
+        insertBranch.Should().Contain("NEW.\"ContentLastModifiedAt\" := now();");
+        insertBranch.Should().NotContain("SELECT \"ContentVersion\", \"ContentLastModifiedAt\"");
         insertBranch.Should().NotContain("nextval");
     }
 
     [Test]
-    public void It_should_mirror_child_write_stamps_from_returning_rows()
+    public void It_should_stamp_the_root_from_child_write_versions()
     {
         var functionBody = GetPerEventStampFunctionBody("SchoolAddress", "ins");
 
         var affectedStart = functionBody.IndexOf("WITH affected AS (", StringComparison.Ordinal);
         var stampedStart = functionBody.IndexOf("stamped AS (", StringComparison.Ordinal);
         var nextvalStart = functionBody.IndexOf(
-            "SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), \"ContentLastModifiedAt\" = now()",
+            "SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')",
             StringComparison.Ordinal
         );
         var returningStart = functionBody.IndexOf(
-            "RETURNING d.\"DocumentId\", d.\"ContentVersion\", d.\"ContentLastModifiedAt\"",
+            "RETURNING d.\"DocumentId\", d.\"ContentVersion\"",
             StringComparison.Ordinal
         );
         var mirrorUpdateStart = functionBody.IndexOf(
@@ -927,7 +928,7 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
             StringComparison.Ordinal
         );
         var mirrorSetStart = functionBody.IndexOf(
-            "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = stamped.\"ContentLastModifiedAt\"",
+            "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = now()",
             StringComparison.Ordinal
         );
         var mirrorFromStart = functionBody.IndexOf("FROM stamped", StringComparison.Ordinal);
@@ -975,17 +976,28 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
         updateBranch.Should().Contain("UPDATE \"dms\".\"Document\"");
         updateBranch
             .Should()
-            .Contain(
-                "SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), \"ContentLastModifiedAt\" = now()"
-            );
+            .Contain("SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')");
         updateBranch.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\"");
-        updateBranch
-            .Should()
-            .Contain(
-                "RETURNING \"ContentVersion\", \"ContentLastModifiedAt\" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;"
-            );
+        updateBranch.Should().Contain("RETURNING \"ContentVersion\" INTO STRICT _stampedContentVersion;");
         updateBranch.Should().Contain("NEW.\"ContentVersion\" := _stampedContentVersion;");
-        updateBranch.Should().Contain("NEW.\"ContentLastModifiedAt\" := _stampedContentLastModifiedAt;");
+        updateBranch.Should().Contain("NEW.\"ContentLastModifiedAt\" := now();");
+    }
+
+    [Test]
+    public void It_should_never_read_or_write_a_document_timestamp_in_postgresql_stamping()
+    {
+        var root = GetRootStampFunctionBody();
+        root.Should().NotContain("_stampedContentLastModifiedAt");
+        root.Should().NotContain("RETURNING \"ContentVersion\", \"ContentLastModifiedAt\"");
+        root.Should().Contain("NEW.\"ContentLastModifiedAt\" := now();");
+
+        foreach (var suffix in new[] { "ins", "upd", "del" })
+        {
+            var child = GetPerEventStampFunctionBody("SchoolAddress", suffix);
+            child.Should().NotContain("d.\"ContentLastModifiedAt\"");
+            child.Should().Contain("\"ContentLastModifiedAt\" = now()");
+            child.Should().Contain("RETURNING d.\"DocumentId\", d.\"ContentVersion\"");
+        }
     }
 
     [Test]
@@ -1071,9 +1083,7 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
         insertFunction.Should().Contain("SELECT DISTINCT newtab.\"DocumentId\" AS \"DocumentId\"");
         insertFunction
             .Should()
-            .Contain(
-                "SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), \"ContentLastModifiedAt\" = now()"
-            );
+            .Contain("SET \"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')");
         insertFunction.Should().Contain("UPDATE \"edfi\".\"School\" r");
         // Non-root stamping never reads/copies existing stamps into NEW mirror columns.
         insertFunction.Should().NotContain("INTO STRICT");
@@ -3869,7 +3879,7 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resourc
             "IF TG_OP = 'UPDATE' AND (OLD.\"BeginDate\" IS DISTINCT FROM NEW.\"BeginDate\" OR OLD.\"SchoolId_Unified\" IS DISTINCT FROM NEW.\"SchoolId_Unified\") THEN";
 
         var contentStampCapture = functionBody.IndexOf(
-            "RETURNING \"ContentVersion\", \"ContentLastModifiedAt\" INTO STRICT _stampedContentVersion",
+            "RETURNING \"ContentVersion\" INTO STRICT _stampedContentVersion",
             StringComparison.Ordinal
         );
         var identityGuardStart = functionBody.IndexOf(identityGuard, StringComparison.Ordinal);

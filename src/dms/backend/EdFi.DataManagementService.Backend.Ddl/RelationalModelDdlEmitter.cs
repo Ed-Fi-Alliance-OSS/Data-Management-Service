@@ -685,7 +685,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         // _ext tables) render as statement-level triggers with transition tables so a multi-row DML
         // that touches several rows owned by one root allocates exactly one ChangeVersionSequence
         // value per distinct affected DocumentId (DMS-1208). Root and descriptor stamping stay
-        // row-level below because they assign NEW mirror columns in place.
+        // row-level below because they assign NEW's version and timestamp in place.
         if (trigger.Parameters is TriggerKindParameters.DocumentStamping)
         {
             var stampingTableModel = RequireDocumentStampingTableModel(trigger, tableModelsByTableName);
@@ -710,8 +710,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(Quote(funcName));
         writer.AppendLine("()");
         writer.AppendLine("RETURNS TRIGGER AS $func$");
-        // Only root stamping paths read the captured stamp values (to assign NEW mirror
-        // columns); child paths mirror through a CTE and need no locals.
+        // Root stamping paths capture the document version to assign NEW's version mirror.
         if (
             trigger.Parameters is TriggerKindParameters.DocumentStamping
             && IsRootDocumentStampingTrigger(
@@ -725,7 +724,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             using (writer.Indent())
             {
                 writer.AppendLine("_stampedContentVersion bigint;");
-                writer.AppendLine("_stampedContentLastModifiedAt timestamp with time zone;");
             }
         }
         writer.AppendLine("BEGIN");
@@ -832,7 +830,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// single combined row-level trigger is replaced by three event-specific functions and triggers
     /// (INSERT / UPDATE / DELETE), each using <c>REFERENCING ... FOR EACH STATEMENT</c>. Every event
     /// builds a deduplicated affected-root workset and stamps <c>dms.Document</c> once per distinct
-    /// owning <c>DocumentId</c>, then mirrors the same stamp into the owning resource root — matching
+    /// owning <c>DocumentId</c>, then copies the version and stamps the owning root's timestamp — matching
     /// the SQL Server statement-level shape (DMS-1208).
     /// </summary>
     private void EmitPgsqlNonRootStatementLevelStamping(
@@ -936,7 +934,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// Emits one non-root statement-level stamping function. The <paramref name="emitAffectedRows"/>
     /// callback renders the event-specific <c>affected</c> workset (the distinct owning
     /// <c>DocumentId</c> set); the shared tail stamps <c>dms.Document</c> once per affected row under
-    /// a root-existence guard and mirrors the returned stamp into the owning resource root.
+    /// a root-existence guard, then copies its version and stamps the owning root's timestamp.
     /// </summary>
     private void EmitPgsqlNonRootStampFunction(
         SqlWriter writer,
@@ -973,9 +971,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.Append(Quote(ContentVersionColumn));
                 writer.Append(" = nextval('");
                 writer.Append(sequenceName);
-                writer.Append("'), ");
-                writer.Append(Quote(ContentLastModifiedAtColumn));
-                writer.AppendLine(" = now()");
+                writer.AppendLine("')");
                 writer.AppendLine("FROM affected a");
                 writer.Append("WHERE d.");
                 writer.Append(Quote(DocumentIdColumn));
@@ -995,8 +991,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.Append(Quote(DocumentIdColumn));
                 writer.Append(", d.");
                 writer.Append(Quote(ContentVersionColumn));
-                writer.Append(", d.");
-                writer.AppendLine(Quote(ContentLastModifiedAtColumn));
+                writer.AppendLine();
             }
             writer.AppendLine(")");
             writer.Append("UPDATE ");
@@ -1008,8 +1003,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append(Quote(ContentVersionColumn));
             writer.Append(", ");
             writer.Append(Quote(ContentLastModifiedAtColumn));
-            writer.Append(" = stamped.");
-            writer.AppendLine(Quote(ContentLastModifiedAtColumn));
+            writer.AppendLine(" = now()");
             writer.AppendLine("FROM stamped");
             writer.Append("WHERE r.");
             writer.Append(Quote(DocumentIdColumn));
@@ -1543,13 +1537,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
         writer.AppendLine("END IF;");
 
-        // Root-document INSERTs and changed UPDATEs capture the dms.Document stamp and mirror the same values into NEW.
+        // Root INSERTs copy the document version; changed UPDATEs allocate a new version.
+        // The root owns its timestamp, so neither path reads one from dms.Document.
         if (isRootDocumentStampingTrigger)
         {
             writer.AppendLine("IF TG_OP = 'INSERT' THEN");
             using (writer.Indent())
             {
-                EmitPgsqlExistingDocumentContentStampRead(
+                EmitPgsqlExistingDocumentContentVersionRead(
                     writer,
                     documentTable,
                     keyColumn,
@@ -1608,7 +1603,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
     }
 
-    private void EmitPgsqlExistingDocumentContentStampRead(
+    private void EmitPgsqlExistingDocumentContentVersionRead(
         SqlWriter writer,
         string documentTable,
         DbColumnName keyColumn,
@@ -1618,12 +1613,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     {
         writer.Append("SELECT ");
         writer.Append(Quote(ContentVersionColumn));
-        writer.Append(", ");
-        writer.Append(Quote(ContentLastModifiedAtColumn));
         writer.AppendLine();
         // STRICT: a missing dms.Document row must fail with a clear no-rows error here,
         // not as a misleading not-null violation when the NULL locals reach NEW.
-        writer.AppendLine("INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt");
+        writer.AppendLine("INTO STRICT _stampedContentVersion");
         writer.Append("FROM ");
         writer.AppendLine(documentTable);
         writer.Append("WHERE ");
@@ -1641,7 +1634,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.AppendLine(" := _stampedContentVersion;");
             writer.Append("NEW.");
             writer.Append(Quote(ContentLastModifiedAtColumn));
-            writer.AppendLine(" := _stampedContentLastModifiedAt;");
+            writer.AppendLine(" := now();");
         }
     }
 
@@ -1664,9 +1657,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append(Quote(ContentVersionColumn));
             writer.Append(" = nextval('");
             writer.Append(sequenceName);
-            writer.Append("'), ");
-            writer.Append(Quote(ContentLastModifiedAtColumn));
-            writer.AppendLine(" = now()");
+            writer.AppendLine("')");
             writer.Append("WHERE ");
             writer.Append(Quote(DocumentIdColumn));
             writer.Append(" = ");
@@ -1679,17 +1670,15 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.AppendLine();
                 writer.Append("RETURNING ");
                 writer.Append(Quote(ContentVersionColumn));
-                writer.Append(", ");
-                writer.Append(Quote(ContentLastModifiedAtColumn));
                 // STRICT: a missing dms.Document row must fail with a clear no-rows error
                 // here, not as a misleading not-null violation when the NULL locals reach NEW.
-                writer.AppendLine(" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;");
+                writer.AppendLine(" INTO STRICT _stampedContentVersion;");
                 writer.Append("NEW.");
                 writer.Append(Quote(ContentVersionColumn));
                 writer.AppendLine(" := _stampedContentVersion;");
                 writer.Append("NEW.");
                 writer.Append(Quote(ContentLastModifiedAtColumn));
-                writer.AppendLine(" := _stampedContentLastModifiedAt;");
+                writer.AppendLine(" := now();");
             }
             else
             {
@@ -1708,9 +1697,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append(Quote(ContentVersionColumn));
             writer.Append(" = nextval('");
             writer.Append(sequenceName);
-            writer.Append("'), ");
-            writer.Append(Quote(ContentLastModifiedAtColumn));
-            writer.AppendLine(" = now()");
+            writer.AppendLine("')");
             writer.Append("WHERE ");
             writer.Append(Quote(DocumentIdColumn));
             writer.Append(" = ");
@@ -1732,8 +1719,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append(Quote(DocumentIdColumn));
             writer.Append(", ");
             writer.Append(Quote(ContentVersionColumn));
-            writer.Append(", ");
-            writer.Append(Quote(ContentLastModifiedAtColumn));
             writer.AppendLine();
         }
         writer.AppendLine(")");
@@ -1746,8 +1731,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(Quote(ContentVersionColumn));
         writer.Append(", ");
         writer.Append(Quote(ContentLastModifiedAtColumn));
-        writer.Append(" = stamped.");
-        writer.Append(Quote(ContentLastModifiedAtColumn));
+        writer.Append(" = now()");
         writer.AppendLine();
         writer.AppendLine("FROM stamped");
         writer.Append("WHERE r.");
