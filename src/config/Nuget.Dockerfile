@@ -7,7 +7,11 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0.3-alpine3.23@sha256:258b939d6d684ff05a
 
 LABEL maintainer="Ed-Fi Alliance, LLC and Contributors <techsupport@ed-fi.org>"
 
-RUN apk --no-cache add postgresql16-client
+# ICU because Microsoft.Data.SqlClient (the MSSQL backend) does not support
+# globalization-invariant mode, which the Alpine base image enables by default.
+RUN apk --no-cache add postgresql16-client icu-libs=~76 icu-data-full=~76
+
+ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 
 FROM runtimebase AS setup
 
