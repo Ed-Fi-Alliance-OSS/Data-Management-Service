@@ -76,7 +76,8 @@ internal static class CompactDescriptorHistoryScenario
     )
     {
         string ns = CreateNamespace();
-        // This history consumer still compares stored components, under the provider collation.
+        // This history consumer still compares stored components: under the identity collation on SQL Server,
+        // under the database default on PostgreSQL.
         (
             string OldNamespace,
             string OldCode,

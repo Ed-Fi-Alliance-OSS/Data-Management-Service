@@ -314,6 +314,7 @@ public abstract class CompactDescriptorSchemaTests
     [TestCase("missing_uri_index")]
     [TestCase("wrong_uri_expression")]
     [TestCase("history_live_fk")]
+    [TestCase("unpinned_identity_collation")]
     public async Task It_rejects_missing_or_stale_physical_features_even_with_the_same_v3_fingerprint(
         string mutation
     )

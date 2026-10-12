@@ -84,10 +84,11 @@ Source documents:
     with its own sequence, SQL Server `IDENTITY(1,1)`. A unique non-null `bigint DocumentId` FK
     associates each row with its owner; resource descriptor FKs target `DescriptorId`.
   - `ResourceKeyId` identifies the qualified type. No live descriptor discriminator or physically
-    stored URI remains. `UX_Descriptor_ResourceKeyId_Uri` enforces unlowered whole-URI uniqueness
-    under the former database-default provider collation: PostgreSQL expression
-    `(ResourceKeyId, (Namespace || '#' || CodeValue))`; SQL Server non-persisted computed
-    `Uri AS ([Namespace] + N'#' + [CodeValue])`, indexed with `ResourceKeyId`.
+    stored URI remains. `UX_Descriptor_ResourceKeyId_Uri` enforces unlowered whole-URI uniqueness:
+    PostgreSQL expression `(ResourceKeyId, (Namespace || '#' || CodeValue))` under the database-default
+    collation; SQL Server non-persisted computed `Uri AS ([Namespace] + N'#' + [CodeValue])`, indexed
+    with `ResourceKeyId`, which inherits the `SQL_Latin1_General_CP1_CI_AS` identity collation of its
+    `Namespace` and `CodeValue` components.
   - Current RI lookup returns both IDs through the existing join. URI witnesses and original-case
     responses reconstruct the whole string; stored reference joins use the compact key.
   - The descriptor stamping trigger rejects `ResourceKeyId` drift from the owning document;

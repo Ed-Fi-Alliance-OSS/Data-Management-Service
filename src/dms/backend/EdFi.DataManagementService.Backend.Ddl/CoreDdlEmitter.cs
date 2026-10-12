@@ -1050,7 +1050,8 @@ public sealed class CoreDdlEmitter
         );
         writer.AppendLine();
 
-        // Whole-URI equality preserves the former Uri column's database collation. Component-wise
+        // Whole-URI equality follows the component collation: the identity text collation on SQL Server,
+        // the database default on PostgreSQL. Component-wise
         // uniqueness would incorrectly distinguish different pairs that reconstruct the same URI.
         writer.AppendLine(
             _dialect.Rules.Dialect == SqlDialect.Pgsql
