@@ -905,6 +905,12 @@ function Build-SmokeSourceAndPackage {
             try {
                 Import-Module (Join-Path $script:TemplatesRoot "Template-Management.psm1") -Force
                 $configFileName = if ($TemplateKind -eq "Populated") { "./PopulatedTemplateSettings.psd1" } else { "./MinimalTemplateSettings.psd1" }
+                # The producer judges the source against the DDL of the schema files it was
+                # provisioned from: the source stack's staged workspace.
+                $sourceSchemaFiles = & (Import-Module (Join-Path $script:DockerComposeRoot "bootstrap-restore.psm1") -PassThru) {
+                    param($bootstrapRoot)
+                    (Get-RestoreCandidateSchemaFact -CandidateDirectory $bootstrapRoot).SchemaFilePaths
+                } $script:BootstrapRoot
                 Build-TemplateNuGetPackage `
                     -ConfigFilePath $configFileName `
                     -StandardVersion $script:ResolvedStandardVersion `
@@ -913,6 +919,7 @@ function Build-SmokeSourceAndPackage {
                     -DatabaseName $script:TargetDatabaseName `
                     -DumpAllUserSchemas `
                     -DatabaseEngine $DatabaseEngine `
+                    -SchemaFilePath $sourceSchemaFiles `
                     -AttestationSignerKeyPath $script:SmokeSignerKeyPath `
                     -AttestationProducer $script:SmokeProducerName
 

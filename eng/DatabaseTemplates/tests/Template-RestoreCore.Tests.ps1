@@ -7,6 +7,22 @@ BeforeAll {
     $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
     Import-Module (Join-Path $script:templatesDir "Template-RestoreCore.psm1") -Force
 
+    # SQL Server's fixed database role schemas: the only db_-named schemas that are built in.
+    $script:MssqlFixedRoleSchemaNames = @(
+        "db_owner", "db_accessadmin", "db_securityadmin", "db_ddladmin", "db_backupoperator",
+        "db_datareader", "db_datawriter", "db_denydatareader", "db_denydatawriter"
+    )
+
+    function script:Get-SqlNotInName {
+        # The names inside each "NOT IN (...)" list of a generated catalog query: what that
+        # query hides from the inventory.
+        param ([Parameter(Mandatory = $true)] [string]$Sql)
+
+        return @([regex]::Matches($Sql, "NOT IN \(([^)]*)\)") | ForEach-Object {
+                [regex]::Matches($_.Groups[1].Value, "'([^']*)'") | ForEach-Object { $_.Groups[1].Value }
+            })
+    }
+
     function script:New-TestInventory {
         # A small but representative DMS-only inventory covering multiple schemas, object
         # types, and (optionally) principals, built deliberately out of order so canonical
@@ -197,13 +213,18 @@ Describe "Get-RestoreSchemaNameExclusion" {
         $inventoryExclusion.ExcludedSchemaName | Should -Not -Contain "dbo"
     }
 
-    It "always excludes the SQL Server built-in schemas and fixed-role schema prefix" {
+    It "always excludes sys and INFORMATION_SCHEMA, but guest and exactly the fixed-role schemas only while empty, never a db_ prefix" {
         foreach ($purpose in @("DumpDiscovery", "InventoryEnumeration")) {
             $exclusion = Get-RestoreSchemaNameExclusion -DatabaseEngine mssql -Purpose $purpose
-            foreach ($builtIn in @("guest", "sys", "INFORMATION_SCHEMA")) {
+            foreach ($builtIn in @("sys", "INFORMATION_SCHEMA")) {
                 $exclusion.ExcludedSchemaName | Should -Contain $builtIn
             }
-            $exclusion.ExcludedSchemaNamePrefix | Should -Be @("db_")
+            foreach ($emptyBuiltIn in @("guest") + $script:MssqlFixedRoleSchemaNames) {
+                $exclusion.ExcludedSchemaName | Should -Not -Contain $emptyBuiltIn -Because "a user object inside a built-in schema must stay visible"
+                $exclusion.ExcludedWhenEmptySchemaName | Should -Contain $emptyBuiltIn
+            }
+            $exclusion.ExcludedWhenEmptySchemaName | Should -Not -Contain "db_custom"
+            @($exclusion.ExcludedSchemaNamePrefix) | Should -BeNullOrEmpty
         }
     }
 }
@@ -818,7 +839,39 @@ Describe "inventory catalog query SQL builders" {
 
         $mssqlInventory = Get-InventorySchemaQuerySql -DatabaseEngine mssql -Purpose InventoryEnumeration
         $mssqlInventory | Should -Not -BeLike "*'dbo'*"
-        $mssqlInventory.Contains("NOT LIKE 'db[_]%'") | Should -BeTrue
+    }
+
+    It "hides exactly the SQL Server built-ins from the <Name> query, so db_-named user schemas and principals stay visible" -ForEach @(
+        @{ Name = "object"; Sql = { Get-InventoryObjectQuerySql -DatabaseEngine mssql }; BuiltIns = @("sys", "INFORMATION_SCHEMA"); Visible = @("guest", "db_owner", "db_datareader", "db_custom", "db_ownerx", "db_") }
+        @{ Name = "principal"; Sql = { Get-InventoryPrincipalQuerySql -DatabaseEngine mssql }; BuiltIns = @("dbo", "guest", "sys", "INFORMATION_SCHEMA", "public"); Visible = @("db_application", "db_owner_copy") }
+    ) {
+        $sql = & $Sql
+        $hidden = @(Get-SqlNotInName -Sql $sql)
+
+        @($hidden | Sort-Object) | Should -Be @($BuiltIns | Sort-Object)
+        foreach ($visibleName in $Visible) {
+            $hidden | Should -Not -Contain $visibleName
+        }
+        # No pattern filter may hide a name the exact lists above leave visible.
+        $sql | Should -Not -Match "(?i)\bLIKE\b"
+    }
+
+    It "hides the SQL Server guest and fixed-role schemas from the schema query only while no user object, type, or XML schema collection lives in them" {
+        $sql = Get-InventorySchemaQuerySql -DatabaseEngine mssql -Purpose InventoryEnumeration
+        $notInLists = @([regex]::Matches($sql, "NOT IN \(([^)]*)\)") | ForEach-Object {
+                , @([regex]::Matches($_.Groups[1].Value, "'([^']*)'") | ForEach-Object { $_.Groups[1].Value })
+            })
+
+        $notInLists.Count | Should -Be 2
+        @($notInLists[0] | Sort-Object) | Should -Be @("INFORMATION_SCHEMA", "sys")
+        @($notInLists[1] | Sort-Object) | Should -Be @(@("guest") + $script:MssqlFixedRoleSchemaNames | Sort-Object)
+        # The empty-only list is one arm of an OR whose other arms reveal any user content.
+        $sql | Should -BeLike "*AND (s.name NOT IN (*) OR EXISTS (SELECT 1 FROM sys.objects o WHERE o.schema_id = s.schema_id AND o.is_ms_shipped = 0) OR EXISTS (SELECT 1 FROM sys.types t WHERE t.schema_id = s.schema_id AND t.is_user_defined = 1) OR EXISTS (SELECT 1 FROM sys.xml_schema_collections x WHERE x.schema_id = s.schema_id))*"
+        $sql | Should -Not -Match "(?i)\bLIKE\b"
+    }
+
+    It "still excludes the fixed database roles from the principal query by catalog flag" {
+        Get-InventoryPrincipalQuerySql -DatabaseEngine mssql | Should -BeLike "*is_fixed_role = 0*"
     }
 
     It "filters only allow-listed extension objects in the PostgreSQL object query and keeps overloads and triggers distinct" {
@@ -1069,6 +1122,48 @@ Describe "Assert-DmsOnlyInventory" {
     ) {
         $partition = Assert-DmsOnlyInventory -DatabaseEngine $Engine -Inventory (New-GateInventory -Schema (New-CleanGateSchema -AlwaysPresent $AlwaysPresent))
         $partition.ProjectSchemaNames | Should -Be @("edfi")
+    }
+
+    It "rejects a db_-named user schema with its objects and a db_-named principal, as the SQL Server catalog reports them" {
+        # Rows as the inventory queries return them for a database whose built-in fixed-role
+        # schemas are hidden, but which also carries a user-created db_custom schema and a
+        # db_application user. Both stay visible and both are contamination.
+        $inventory = ConvertFrom-InventoryQueryRow `
+            -SchemaRow @("db_custom", "dbo", "dms", "edfi", "tracked_changes_edfi") `
+            -ObjectRow @("db_custom|CopiedClients|table", "dms|Document|table", "edfi|School|table", "tracked_changes_edfi|School|table") `
+            -PrincipalRow @("db_application")
+
+        Get-GateFailureMessage -DatabaseEngine mssql -Inventory $inventory |
+            Should -BeExactly "The database is not a dedicated DMS datastore: schema 'db_custom' has no tracked_changes_db_custom companion, so it is not an authoritative DMS resource schema; it carries unexpected database principals: db_application."
+
+        # The authoritative object comparison names the lookalike schema and its object too.
+        $authoritative = ConvertFrom-InventoryQueryRow `
+            -SchemaRow @("dbo", "dms", "edfi", "tracked_changes_edfi") `
+            -ObjectRow @("dms|Document|table", "edfi|School|table", "tracked_changes_edfi|School|table")
+        $verdict = Compare-RestoreObjectInventory -ExpectedInventory $authoritative -ActualInventory $inventory
+        $verdict.ExtraSchemas | Should -Be @("db_custom")
+        $verdict.ExtraObjects | Should -Be @("db_custom.CopiedClients (table)")
+    }
+
+    It "rejects a user table inside the built-in db_owner schema, as the SQL Server catalog reports it" {
+        # Rows as the inventory queries return them when a user created a table inside the
+        # built-in db_owner schema: the schema query reports db_owner because it is no longer
+        # empty, and the object query lists the table. A full backup carries it.
+        $inventory = ConvertFrom-InventoryQueryRow `
+            -SchemaRow @("db_owner", "dbo", "dms", "edfi", "tracked_changes_edfi") `
+            -ObjectRow @("db_owner|OpenIddictApplications|table", "dms|Document|table", "edfi|School|table", "tracked_changes_edfi|School|table")
+
+        Get-GateFailureMessage -DatabaseEngine mssql -Inventory $inventory |
+            Should -BeExactly "The database is not a dedicated DMS datastore: it contains identity-state object 'db_owner.OpenIddictApplications'; schema 'db_owner' has no tracked_changes_db_owner companion, so it is not an authoritative DMS resource schema."
+
+        # A clean authoritative database leaves db_owner empty, so it is not enumerated there.
+        $authoritative = ConvertFrom-InventoryQueryRow `
+            -SchemaRow @("dbo", "dms", "edfi", "tracked_changes_edfi") `
+            -ObjectRow @("dms|Document|table", "edfi|School|table", "tracked_changes_edfi|School|table")
+        $verdict = Compare-RestoreObjectInventory -ExpectedInventory $authoritative -ActualInventory $inventory
+        $verdict.IsMatch | Should -BeFalse
+        $verdict.ExtraSchemas | Should -Be @("db_owner")
+        $verdict.ExtraObjects | Should -Be @("db_owner.OpenIddictApplications (table)")
     }
 
     It "accepts a dms-plus-public artifact-scope inventory (no resource schemas)" {

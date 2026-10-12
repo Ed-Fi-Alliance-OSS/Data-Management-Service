@@ -601,6 +601,43 @@ Describe "Initialize-RestorePackageStage" {
         @(Get-ChildItem -LiteralPath $stageRoot -Directory).Count | Should -Be 0
     }
 
+    It "validates the manifest and artifact hash from the authenticated bytes, even when the extracted files are replaced right after extraction" {
+        $trustWorld = New-RestoreTrustWorld
+        $packageDirectory = New-TestWorkspace
+        New-RestoreTestPackage -Directory $packageDirectory -TrustWorld $trustWorld | Out-Null
+
+        # The moment the stage looks for the extracted manifest, a self-consistent forgery
+        # replaces both extracted files: a different artifact, and a manifest naming its hash
+        # and a different effective schema. Anything read back from disk would carry it.
+        $global:ForgedArtifactBytes = [System.Text.Encoding]::UTF8.GetBytes("forged artifact bytes")
+        Mock Get-ChildItem -ModuleName bootstrap-restore -ParameterFilter { $Filter -eq (Get-RestoreManifestFileName) } {
+            $found = @(Microsoft.PowerShell.Management\Get-ChildItem -LiteralPath $LiteralPath -Filter $Filter -Recurse -File)
+            foreach ($manifestFile in $found) {
+                $forgedManifest = Microsoft.PowerShell.Management\Get-Content -LiteralPath $manifestFile.FullName -Raw | ConvertFrom-Json
+                $artifactFile = Join-Path $manifestFile.DirectoryName ([string]$forgedManifest.artifactFileName)
+                [System.IO.File]::WriteAllBytes($artifactFile, $global:ForgedArtifactBytes)
+                $forgedManifest.artifactSha256 = [System.Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($global:ForgedArtifactBytes)).ToLowerInvariant()
+                $forgedManifest.effectiveSchemaHash = "cd" * 32
+                [System.IO.File]::WriteAllText($manifestFile.FullName, ($forgedManifest | ConvertTo-Json -Depth 20))
+            }
+            $found
+        }
+
+        try {
+            $stage = Invoke-TrustedFindAndStage -TrustWorld $trustWorld -PackageDirectory $packageDirectory -EnvironmentValues (New-TestEnvironmentValues)
+        }
+        finally {
+            Remove-Variable -Name ForgedArtifactBytes -Scope Global -ErrorAction SilentlyContinue
+        }
+
+        Should -Invoke Get-ChildItem -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Filter -eq (Get-RestoreManifestFileName) }
+        $stage.Manifest.effectiveSchemaHash | Should -Be ("ab" * 32) -Because "the manifest is parsed from the authenticated package bytes, not the replaced file"
+        $stage.ArtifactSha256 | Should -Be ([string]$stage.Manifest.artifactSha256)
+        $stage.ArtifactSha256 | Should -Not -Be ([System.Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes("forged artifact bytes"))).ToLowerInvariant())
+
+        Remove-RestorePackageStage -StageDirectory $stage.StageDirectory
+    }
+
     It "rejects engine/kind mismatches, identity-triangle breaks, undeclared artifacts, artifact-hash mismatches, and manifest-less packages - always removing the stage" {
         $trustWorld = New-RestoreTrustWorld
         $environmentValues = New-TestEnvironmentValues
@@ -675,6 +712,180 @@ Describe "Initialize-RestorePackageStage" {
             Should -Throw
 
         Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly
+    }
+}
+
+Describe "Retained artifact transfer" {
+    BeforeAll {
+        function script:Read-TestTarSingleFile {
+            # Reads back a docker cp tar input with .NET's own TarReader and returns the one
+            # regular file's name and bytes. TarReader does not verify the header checksum,
+            # which docker's reader (Go archive/tar) does, so it is recomputed here: the sum of
+            # the 512 header bytes with the checksum field read as eight spaces.
+            param([byte[]]$TarBytes)
+
+            [System.Text.Encoding]::ASCII.GetString($TarBytes, 257, 6) | Should -BeExactly "ustar`0"
+            $recordedChecksum = [System.Convert]::ToInt64([System.Text.Encoding]::ASCII.GetString($TarBytes, 148, 6), 8)
+            $computedChecksum = 0
+            for ($index = 0; $index -lt 512; $index++) {
+                $computedChecksum += $(if ($index -ge 148 -and $index -lt 156) { 32 } else { $TarBytes[$index] })
+            }
+            $recordedChecksum | Should -Be $computedChecksum
+
+            $tarReader = [System.Formats.Tar.TarReader]::new([System.IO.MemoryStream]::new($TarBytes, $false))
+            $tarEntry = $tarReader.GetNextEntry($true)
+            $tarEntry.EntryType | Should -Be ([System.Formats.Tar.TarEntryType]::RegularFile)
+            $tarReader.GetNextEntry() | Should -BeNullOrEmpty
+            $fileBytes = [System.IO.MemoryStream]::new()
+            if ($null -ne $tarEntry.DataStream) {
+                $tarEntry.DataStream.CopyTo($fileBytes)
+            }
+            return [pscustomobject]@{ Name = $tarEntry.Name; Bytes = $fileBytes.ToArray() }
+        }
+
+        function script:Get-TestSha256Hex {
+            param([byte[]]$Bytes)
+            return [System.Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($Bytes)).ToLowerInvariant()
+        }
+
+        $script:pwshPath = (Get-Process -Id $PID).Path
+    }
+
+    It "staging retains the authenticated package bytes and the artifact's entry name" {
+        $trustWorld = New-RestoreTrustWorld
+        $packageDirectory = New-TestWorkspace
+        $package = New-RestoreTestPackage -Directory $packageDirectory -TrustWorld $trustWorld
+
+        $stage = Invoke-TrustedFindAndStage -TrustWorld $trustWorld -PackageDirectory $packageDirectory -EnvironmentValues (New-TestEnvironmentValues)
+        try {
+            , $stage.PackageBytes | Should -BeOfType [byte[]]
+            Get-TestSha256Hex -Bytes $stage.PackageBytes | Should -BeExactly $stage.PackageSha256
+            Get-TestSha256Hex -Bytes $stage.PackageBytes | Should -BeExactly (Get-FileSha256Hex -Path $package.PackagePath)
+            $stage.ArtifactEntryName | Should -BeExactly ([string]$stage.Manifest.artifactFileName)
+        }
+        finally {
+            Remove-RestorePackageStage -StageDirectory $stage.StageDirectory
+        }
+    }
+
+    It "replacing the source package and every staged file after staging changes neither the scratch nor the target transfer" {
+        $trustWorld = New-RestoreTrustWorld
+        $packageDirectory = New-TestWorkspace
+        $package = New-RestoreTestPackage -Directory $packageDirectory -TrustWorld $trustWorld
+        $stage = Invoke-TrustedFindAndStage -TrustWorld $trustWorld -PackageDirectory $packageDirectory -EnvironmentValues (New-TestEnvironmentValues)
+        $authenticatedArtifactBytes = [System.IO.File]::ReadAllBytes($stage.ArtifactPath)
+
+        # Every host pathname that holds the package or the artifact gets other bytes: the
+        # source .nupkg, the staged .nupkg record, and every extracted file.
+        $hostPaths = @($package.PackagePath) + @(Get-ChildItem -LiteralPath $stage.StageDirectory -Recurse -File | ForEach-Object FullName)
+        @($hostPaths) | Should -Contain $stage.ArtifactPath
+        @($hostPaths) | Should -Contain $stage.PackagePath
+        foreach ($hostPath in $hostPaths) {
+            (Get-Item -LiteralPath $hostPath).IsReadOnly = $false
+            [System.IO.File]::WriteAllText($hostPath, "replaced host staging bytes")
+        }
+
+        $global:CapturedTransferInputs = [System.Collections.Generic.List[object]]::new()
+        Mock Invoke-RestoreDockerInputCommand -ModuleName bootstrap-restore {
+            $inputStream = [System.IO.MemoryStream]::new()
+            $writerResult = & $InputWriter $inputStream
+            $global:CapturedTransferInputs.Add([pscustomobject]@{ ArgumentList = $ArgumentList; Bytes = $inputStream.ToArray() })
+            return $writerResult
+        }
+        try {
+            & $script:restoreModule {
+                param($Stage)
+                Copy-RestoreStagedArtifactToContainer -Stage $Stage -ContainerName "dms-postgresql" -ContainerArtifactPath "/tmp/restore-scratch-1.sql" -FailureMessage "scratch copy failed."
+                Copy-RestoreStagedArtifactToContainer -Stage $Stage -ContainerName "dms-postgresql" -ContainerArtifactPath "/tmp/restore-target-1.sql" -FailureMessage "target copy failed."
+            } $stage
+
+            $global:CapturedTransferInputs | Should -HaveCount 2
+            ($global:CapturedTransferInputs[0].ArgumentList -join " ") | Should -BeExactly "cp - dms-postgresql:/tmp"
+            ($global:CapturedTransferInputs[1].ArgumentList -join " ") | Should -BeExactly "cp - dms-postgresql:/tmp"
+            $scratchFile = Read-TestTarSingleFile -TarBytes $global:CapturedTransferInputs[0].Bytes
+            $targetFile = Read-TestTarSingleFile -TarBytes $global:CapturedTransferInputs[1].Bytes
+            $scratchFile.Name | Should -BeExactly "restore-scratch-1.sql"
+            $targetFile.Name | Should -BeExactly "restore-target-1.sql"
+            Get-TestSha256Hex -Bytes $scratchFile.Bytes | Should -BeExactly ([string]$stage.Manifest.artifactSha256)
+            Get-TestSha256Hex -Bytes $targetFile.Bytes | Should -BeExactly ([string]$stage.Manifest.artifactSha256)
+            [System.Linq.Enumerable]::SequenceEqual([byte[]]$scratchFile.Bytes, [byte[]]$authenticatedArtifactBytes) | Should -BeTrue
+            [System.Linq.Enumerable]::SequenceEqual([byte[]]$targetFile.Bytes, [byte[]]$authenticatedArtifactBytes) | Should -BeTrue
+        }
+        finally {
+            Remove-Variable -Name CapturedTransferInputs -Scope Global -ErrorAction SilentlyContinue
+            Remove-RestorePackageStage -StageDirectory $stage.StageDirectory
+        }
+    }
+
+    It "writes a ustar archive .NET reads back for <Length> data bytes, returning their SHA-256" -ForEach @(
+        @{ Length = 0 }, @{ Length = 1 }, @{ Length = 512 }, @{ Length = 1300 }
+    ) {
+        $data = [byte[]]::new($Length)
+        for ($index = 0; $index -lt $Length; $index++) { $data[$index] = [byte]($index % 251) }
+        $archive = [System.IO.MemoryStream]::new()
+
+        $sha256 = & $script:restoreModule {
+            param($Destination, $Data)
+            Write-RestoreSingleFileTar -Destination $Destination -FileName "restore-target-x.bak" -Length $Data.Length -Source ([System.IO.MemoryStream]::new($Data, $false))
+        } $archive $data
+
+        $sha256 | Should -BeExactly (Get-TestSha256Hex -Bytes $data)
+        ($archive.Length % 512) | Should -Be 0
+        $file = Read-TestTarSingleFile -TarBytes $archive.ToArray()
+        $file.Name | Should -BeExactly "restore-target-x.bak"
+        [System.Linq.Enumerable]::SequenceEqual([byte[]]$file.Bytes, [byte[]]$data) | Should -BeTrue
+    }
+
+    It "refuses a source that yields a different length than declared" {
+        {
+            & $script:restoreModule {
+                Write-RestoreSingleFileTar -Destination ([System.IO.MemoryStream]::new()) -FileName "a.sql" -Length 10 -Source ([System.IO.MemoryStream]::new([byte[]](1, 2, 3), $false))
+            }
+        } | Should -Throw "*declared 10 bytes but its source yielded 3*"
+    }
+
+    It "a real child process receives exactly the bytes the writer streams to its standard input" {
+        # 3 MiB: larger than any pipe buffer, so the write only completes while the child reads.
+        $data = [byte[]]::new(3MB)
+        [System.Random]::new(1271).NextBytes($data)
+        $expected = Get-TestSha256Hex -Bytes $data
+        $childScript = "`$h = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Console]::OpenStandardInput())).ToLowerInvariant(); if (`$h -cne '$expected') { [Console]::Error.WriteLine('child got ' + `$h); exit 3 }; exit 0"
+
+        $writer = {
+            param($InputStream)
+            $InputStream.Write($data, 0, $data.Length)
+            "writer result"
+        }.GetNewClosure()
+
+        $result = & $script:restoreModule {
+            param($PwshPath, $ChildScript, $Writer)
+            Invoke-RestoreProcessWithInput -FilePath $PwshPath -ArgumentList @("-NoProfile", "-NonInteractive", "-Command", $ChildScript) -FailureMessage "child failed." -InputWriter $Writer
+        } $script:pwshPath $childScript $writer
+
+        $result | Should -BeExactly "writer result"
+    }
+
+    It "a nonzero exit throws the caller's failure message with the process output" {
+        {
+            & $script:restoreModule {
+                param($PwshPath)
+                Invoke-RestoreProcessWithInput -FilePath $PwshPath -ArgumentList @("-NoProfile", "-NonInteractive", "-Command", "[Console]::Error.WriteLine('disk full'); exit 4") -FailureMessage "copy failed." -InputWriter { param($InputStream) $null = $InputStream }
+            } $script:pwshPath
+        } | Should -Throw "copy failed. (*disk full*)"
+    }
+
+    It "a failing writer stops the process before its input completes and throws" {
+        # The child would exit 0 on end-of-input; the writer fails first.
+        {
+            & $script:restoreModule {
+                param($PwshPath)
+                Invoke-RestoreProcessWithInput -FilePath $PwshPath -ArgumentList @("-NoProfile", "-NonInteractive", "-Command", "[Console]::OpenStandardInput().CopyTo([IO.Stream]::Null); exit 0") -FailureMessage "copy failed." -InputWriter {
+                    param($InputStream)
+                    $InputStream.Write([byte[]](1, 2, 3), 0, 3)
+                    throw "source read failed"
+                }
+            } $script:pwshPath
+        } | Should -Throw "copy failed. Streaming its input failed: source read failed*"
     }
 }
 

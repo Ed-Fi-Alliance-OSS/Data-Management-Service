@@ -1082,6 +1082,11 @@ function Build-TemplateNuGetPackage {
 
         [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!",
 
+        # The ApiSchema files (core first, then extensions) the source database was provisioned
+        # from. The producer derives the source's authoritative object inventory from their DDL
+        # and refuses to package anything else; without them nothing is dumped or packaged.
+        [string[]]$SchemaFilePath = @(),
+
         # PKCS#8 ECDSA P-256 private key used to attest the exact packed .nupkg bytes.
         # Optional: without it the package is built unattested (and a restore consumer will
         # fail closed on it). Key material must live outside the repo or in a git-ignored
@@ -1149,6 +1154,15 @@ function Build-TemplateNuGetPackage {
     if ($DatabaseEngine -eq "postgresql") {
         Assert-CompleteRestoreArtifactScope -Partition $schemaPartition -ArtifactSchemaName ([string[]]$databaseSchemas)
     }
+
+    # The DMS-only gate judges schema names and forbidden objects; only the schema files' own DDL
+    # can expose an extra object inside an allowed schema (an auth.CopiedClients table, say).
+    Assert-TemplateSourceMatchesAuthoritativeInventory `
+        -Facts $sourceFacts `
+        -DatabaseEngine $DatabaseEngine `
+        -DatabaseName $DatabaseName `
+        -SchemaFilePath $SchemaFilePath `
+        -MssqlPassword $MssqlPassword
 
     Invoke-DatabaseDump -DatabaseEngine $DatabaseEngine -DatabaseName $DatabaseName -DatabaseSchemas $databaseSchemas -BackupDirectory './' -BackupFileName $config.DatabaseBackupName -MssqlPassword $MssqlPassword
 
@@ -1564,6 +1578,109 @@ function Assert-DmsOnlyTemplateSource {
         -SourceDescription "Template source database '$DatabaseName'"
 }
 
+function Get-TemplateAuthoritativeObjectInventory {
+    <#
+    .SYNOPSIS
+    The authoritative object inventory of a schema file set: the restore consumer's own
+    derivation (Get-RestoreAuthoritativeObjectInventory), which emits the schema files' DDL,
+    replays it into a generated throwaway database in the engine container, inventories that
+    database, and drops it. Imported on demand so ordinary template tooling does not load the
+    bootstrap restore modules.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to the sqlcmd transport, which carries the password via SQLCMDPASSWORD on docker exec; the account is always "sa" and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Forwarded to the sqlcmd transport; SecureString adds no protection across the docker exec boundary.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        [string[]]$SchemaFilePath,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OutputRoot,
+
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!",
+
+        [string]$SchemaToolPath = ""
+    )
+
+    Import-Module (Join-Path $PSScriptRoot "../docker-compose/bootstrap-restore.psm1")
+
+    return Get-RestoreAuthoritativeObjectInventory `
+        -SchemaFilePath $SchemaFilePath `
+        -DatabaseEngine $DatabaseEngine `
+        -ContainerName $(if ($DatabaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }) `
+        -OutputRoot $OutputRoot `
+        -SchemaToolPath $SchemaToolPath `
+        -MssqlPassword $MssqlPassword
+}
+
+function Assert-TemplateSourceMatchesAuthoritativeInventory {
+    <#
+    .SYNOPSIS
+    The producer's authoritative object comparison: fails, before any dump or packaging, unless
+    the full source inventory matches, object for object, the inventory derived from the schema
+    files the source was provisioned from. The source's own catalog and the manifest built from
+    it cannot vouch for themselves, so an extra object in an allowed schema is visible only here.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to the sqlcmd transport, which carries the password via SQLCMDPASSWORD on docker exec; the account is always "sa" and a PSCredential adds no protection across that boundary.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Forwarded to the sqlcmd transport; SecureString adds no protection across the docker exec boundary.')]
+    param (
+        [Parameter(Mandatory = $true)]
+        $Facts,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DatabaseName,
+
+        [string[]]$SchemaFilePath = @(),
+
+        [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!"
+    )
+
+    if (@($SchemaFilePath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -eq 0) {
+        throw "Template source database '$DatabaseName' cannot be packaged without -SchemaFilePath: the ApiSchema files it was provisioned from (core first) are the only authority for which objects it may contain."
+    }
+
+    $outputRoot = Join-Path ([System.IO.Path]::GetTempPath()) "dms-template-expected-$([Guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
+    try {
+        $authoritativeInventory = Get-TemplateAuthoritativeObjectInventory `
+            -SchemaFilePath $SchemaFilePath `
+            -DatabaseEngine $DatabaseEngine `
+            -OutputRoot $outputRoot `
+            -MssqlPassword $MssqlPassword
+    }
+    finally {
+        Remove-Item -LiteralPath $outputRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    $verdict = Compare-RestoreObjectInventory -ExpectedInventory $authoritativeInventory -ActualInventory $Facts.FullInventory
+    if ($verdict.IsMatch) {
+        return
+    }
+
+    $differences = [System.Collections.Generic.List[string]]::new()
+    if (@($verdict.ExtraSchemas).Count -gt 0) {
+        $differences.Add("schemas the schema files do not define: $(@($verdict.ExtraSchemas) -join ', ')")
+    }
+    if (@($verdict.MissingSchemas).Count -gt 0) {
+        $differences.Add("schemas the schema files define but the source lacks: $(@($verdict.MissingSchemas) -join ', ')")
+    }
+    if (@($verdict.ExtraObjects).Count -gt 0) {
+        $differences.Add("objects the schema files do not define: $(@($verdict.ExtraObjects) -join ', ')")
+    }
+    if (@($verdict.MissingObjects).Count -gt 0) {
+        $differences.Add("objects the schema files define but the source lacks: $(@($verdict.MissingObjects) -join ', ')")
+    }
+
+    throw "Template source database '$DatabaseName' does not match the authoritative inventory derived from its schema files - $($differences -join '; '). Nothing was dumped or packaged."
+}
+
 function Write-TemplateRestoreManifest {
     <#
     .SYNOPSIS
@@ -1895,7 +2012,11 @@ function Build-Template {
         # outside the repo or in a git-ignored location.
         [string]$AttestationSignerKeyPath = "",
 
-        [string]$AttestationProducer = ""
+        [string]$AttestationProducer = "",
+
+        # Forwarded to Build-TemplateNuGetPackage: the ApiSchema files the source database was
+        # provisioned from, the authority for the objects it may contain.
+        [string[]]$SchemaFilePath = @()
     )
 
     if ($PSBoundParameters.ContainsKey('DataStoreId') -and -not $PSBoundParameters.ContainsKey('DataStoreDatabaseName')) {
@@ -2012,7 +2133,7 @@ function Build-Template {
             @bulkLoadTuning
     }
 
-    Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -TemplateKind ([string]$TemplateType) -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas -DatabaseEngine $DatabaseEngine -MssqlPassword $MssqlPassword -AttestationSignerKeyPath $AttestationSignerKeyPath -AttestationProducer $AttestationProducer
+    Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion -TemplateKind ([string]$TemplateType) -DatabaseName $DataStoreDatabaseName -DumpAllUserSchemas:$DumpAllUserSchemas -DatabaseEngine $DatabaseEngine -MssqlPassword $MssqlPassword -AttestationSignerKeyPath $AttestationSignerKeyPath -AttestationProducer $AttestationProducer -SchemaFilePath $SchemaFilePath
 }
 
 Export-ModuleMember -Function Build-Template, Build-TemplateNuGetPackage, Invoke-TemplatePackageAttestation, Get-UserSchemaNames, Restore-TemplatePackage, Get-TemplateSourceCatalogFacts, Get-EducatorPreparationSampleFileName, Get-EducationOrganizationIdsFromSampleData, Get-TemplateBulkLoadTuning

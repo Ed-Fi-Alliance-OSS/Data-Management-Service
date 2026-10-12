@@ -289,6 +289,16 @@ jobs:
         run: |
           Import-Module ./Template-Management.psm1 -Force
 
+          # The producer compares the source database with the DDL of the schema files it was
+          # provisioned from, so resolve the same SCHEMA_PACKAGES set the provision step used.
+          Import-Module ../schema-package-utility.psm1 -Force
+          $schemaFiles = @(Resolve-SchemaFilesFromEnvironmentFile `
+                  -EnvironmentFilePath '../docker-compose/${{ inputs.environment_file }}' `
+                  -Configuration Release `
+                  -RepoRoot '${{ github.workspace }}' `
+                  -SchemaDirectory (Join-Path $env:RUNNER_TEMP 'template-source-schema') `
+                  -DownloaderDotnetRunArgs @('--no-launch-profile'))
+
           # Generate unique application name for this run
           $uniqueAppName = "Demo application ${{ github.run_id }}"
 
@@ -316,6 +326,7 @@ jobs:
                   -DataStoreId $env:TEMPLATE_DATA_STORE_ID `
                   -DumpAllUserSchemas `
                   -DatabaseEngine '${{ inputs.database_engine }}' `
+                  -SchemaFilePath $schemaFiles `
                   @attestationArguments
         working-directory: eng/DatabaseTemplates/
 

@@ -25,6 +25,15 @@ $script:ReservedDatabaseNames = @{
     mssql      = @("master", "model", "msdb", "tempdb")
 }
 
+# The schemas SQL Server creates for its fixed database roles. Inventory queries name exactly
+# these: a "db_" prefix filter would also hide user-created schemas such as db_custom. They are
+# hidden only while empty - a user can still create objects inside them, and a full backup
+# carries those objects.
+$script:MssqlFixedRoleSchemaName = @(
+    "db_accessadmin", "db_backupoperator", "db_datareader", "db_datawriter", "db_ddladmin",
+    "db_denydatareader", "db_denydatawriter", "db_owner", "db_securityadmin"
+)
+
 $script:RestoreScratchDatabaseNamePrefix = "edfi_dms_restore_scratch"
 $script:RestorePreflightDatabaseNamePrefix = "edfi_dms_restore_preflight"
 $script:RestoreExpectedDatabaseNamePrefix = "edfi_dms_restore_expected"
@@ -198,9 +207,16 @@ function Get-RestoreSchemaNameExclusion {
     objects there (e.g. pgcrypto installed by the template's own CREATE EXTENSION line);
     everything else in them is contamination.
 
+    SQL Server's built-in "guest" and fixed-role (db_owner, ...) schemas always exist but are
+    empty in a clean database. A user can still create objects inside them, so they are hidden
+    only while they hold none; a built-in schema holding a user object is enumerated like any
+    other schema, and the gates judge it and its objects.
+
     .OUTPUTS
-    PSCustomObject with ExcludedSchemaName (exact names) and ExcludedSchemaNamePrefix
-    (name prefixes, e.g. "pg_" / "db_") for the engine and purpose.
+    PSCustomObject with ExcludedSchemaName (exact names that can never hold user objects),
+    ExcludedWhenEmptySchemaName (exact SQL Server built-in names hidden only while they hold no
+    user object; none on PostgreSQL), and ExcludedSchemaNamePrefix (name prefixes: PostgreSQL
+    "pg_"; none on SQL Server) for the engine and purpose.
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -215,15 +231,16 @@ function Get-RestoreSchemaNameExclusion {
     if ($DatabaseEngine -eq "mssql") {
         $names =
             if ($Purpose -eq "DumpDiscovery") {
-                @("dbo", "guest", "sys", "INFORMATION_SCHEMA")
+                @("dbo", "sys", "INFORMATION_SCHEMA")
             }
             else {
-                @("guest", "sys", "INFORMATION_SCHEMA")
+                @("sys", "INFORMATION_SCHEMA")
             }
 
         return [pscustomobject]@{
-            ExcludedSchemaName       = [string[]]$names
-            ExcludedSchemaNamePrefix = [string[]]@("db_")
+            ExcludedSchemaName          = [string[]]$names
+            ExcludedWhenEmptySchemaName = [string[]](@("guest") + $script:MssqlFixedRoleSchemaName)
+            ExcludedSchemaNamePrefix    = [string[]]@()
         }
     }
 
@@ -236,8 +253,9 @@ function Get-RestoreSchemaNameExclusion {
         }
 
     return [pscustomobject]@{
-        ExcludedSchemaName       = [string[]]$names
-        ExcludedSchemaNamePrefix = [string[]]@("pg_")
+        ExcludedSchemaName          = [string[]]$names
+        ExcludedWhenEmptySchemaName = [string[]]@()
+        ExcludedSchemaNamePrefix    = [string[]]@("pg_")
     }
 }
 
@@ -760,18 +778,30 @@ function Read-RestoreManifest {
     <#
     .SYNOPSIS
     Reads and parses a restore-manifest.json file and validates it against the version-1
-    contract via Assert-RestoreManifestShape. Returns the parsed manifest object.
+    contract via Assert-RestoreManifestShape. Returns the parsed manifest object. -Content
+    parses manifest text the caller already holds (the restore stage reads it from the
+    authenticated package bytes), so no file is reopened; -Path names its source in messages.
     #>
+    [CmdletBinding(DefaultParameterSetName = "File")]
     param (
         [Parameter(Mandatory = $true)]
-        [string]$Path
+        [string]$Path,
+
+        [Parameter(Mandatory = $true, ParameterSetName = "Content")]
+        [AllowEmptyString()]
+        [string]$Content
     )
 
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        throw "Restore manifest was not found at '$Path'. Packages without a restore manifest are not eligible for restore."
+    if ($PSCmdlet.ParameterSetName -eq "Content") {
+        $rawContent = $Content
     }
+    else {
+        if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+            throw "Restore manifest was not found at '$Path'. Packages without a restore manifest are not eligible for restore."
+        }
 
-    $rawContent = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
+        $rawContent = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
+    }
     if ([string]::IsNullOrWhiteSpace($rawContent)) {
         throw "Restore manifest at '$Path' is empty."
     }
@@ -1045,7 +1075,9 @@ function Get-InventorySchemaQuerySql {
     .SYNOPSIS
     Engine SQL listing schema names for the given enumeration purpose (one name per row).
     Exclusions come from Get-RestoreSchemaNameExclusion, so dump discovery and the DMS-only
-    gate's inventory enumeration stay on their documented, deliberately different scopes.
+    gate's inventory enumeration stay on their documented, deliberately different scopes. On
+    SQL Server the built-in guest and fixed-role schemas are hidden only while no user object,
+    user type, or XML schema collection lives in them.
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -1061,7 +1093,8 @@ function Get-InventorySchemaQuerySql {
     $quotedNames = ($exclusion.ExcludedSchemaName | ForEach-Object { "'" + $_ + "'" }) -join ", "
 
     if ($DatabaseEngine -eq "mssql") {
-        return "SET NOCOUNT ON; SELECT name FROM sys.schemas WHERE name NOT IN ($quotedNames) AND name NOT LIKE 'db[_]%' ORDER BY name;"
+        $quotedWhenEmptyNames = ($exclusion.ExcludedWhenEmptySchemaName | ForEach-Object { "'" + $_ + "'" }) -join ", "
+        return "SET NOCOUNT ON; SELECT s.name FROM sys.schemas s WHERE s.name NOT IN ($quotedNames) AND (s.name NOT IN ($quotedWhenEmptyNames) OR EXISTS (SELECT 1 FROM sys.objects o WHERE o.schema_id = s.schema_id AND o.is_ms_shipped = 0) OR EXISTS (SELECT 1 FROM sys.types t WHERE t.schema_id = s.schema_id AND t.is_user_defined = 1) OR EXISTS (SELECT 1 FROM sys.xml_schema_collections x WHERE x.schema_id = s.schema_id)) ORDER BY s.name;"
     }
 
     return "SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname !~ '^pg_' AND nspname NOT IN ($quotedNames) ORDER BY nspname;"
@@ -1083,6 +1116,9 @@ function Get-InventoryObjectQuerySql {
     )
 
     if ($DatabaseEngine -eq "mssql") {
+        # Only sys and INFORMATION_SCHEMA are skipped: no user object can live there. A user
+        # object inside the built-in guest or fixed-role schemas is listed like any other, and
+        # the schema query reports its schema for exactly that case.
         return @(
             "SET NOCOUNT ON;",
             "SELECT s.name + '|' + o.name + '|' +",
@@ -1092,7 +1128,7 @@ function Get-InventoryObjectQuerySql {
             "FROM sys.objects o JOIN sys.schemas s ON s.schema_id = o.schema_id",
             "WHERE o.is_ms_shipped = 0",
             "  AND o.type IN ('U','V','P','FN','IF','TF','AF','TR','SO')",
-            "  AND s.name NOT IN ('guest','sys','INFORMATION_SCHEMA') AND s.name NOT LIKE 'db[_]%'",
+            "  AND s.name NOT IN ('sys','INFORMATION_SCHEMA')",
             "ORDER BY 1;"
         ) -join "`n"
     }
@@ -1127,9 +1163,9 @@ function Get-InventoryPrincipalQuerySql {
     <#
     .SYNOPSIS
     SQL Server SQL listing non-built-in database principals (one name per row). The built-in
-    dbo/guest/sys/INFORMATION_SCHEMA principals, fixed database roles, the db_* role
-    schemas' principals, and the built-in 'public' database role are excluded; anything else
-    a backup carries (copied users, roles) is contamination the gate must see. PostgreSQL
+    dbo/guest/sys/INFORMATION_SCHEMA principals, the fixed database roles (is_fixed_role), and
+    the built-in 'public' database role are excluded; anything else a backup carries (copied
+    users, roles, including db_-prefixed ones) is contamination the gate must see. PostgreSQL
     has no per-database principals in a schema-scoped SQL dump, so this query is
     MSSQL-only.
     #>
@@ -1140,7 +1176,7 @@ function Get-InventoryPrincipalQuerySql {
         [string]$DatabaseEngine
     )
 
-    return "SET NOCOUNT ON; SELECT name FROM sys.database_principals WHERE is_fixed_role = 0 AND name NOT IN ('dbo','guest','sys','INFORMATION_SCHEMA','public') AND name NOT LIKE 'db[_]%' ORDER BY name;"
+    return "SET NOCOUNT ON; SELECT name FROM sys.database_principals WHERE is_fixed_role = 0 AND name NOT IN ('dbo','guest','sys','INFORMATION_SCHEMA','public') ORDER BY name;"
 }
 
 function Get-EffectiveSchemaRowQuerySql {

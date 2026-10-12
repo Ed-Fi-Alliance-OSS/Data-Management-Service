@@ -961,10 +961,30 @@ function Invoke-BootstrapWrapper {
                     -SeparateConfigDatabase:$SeparateConfigDatabase `
                     -EffectiveConfigDatabaseName $effectiveConfigDatabaseName
 
+                # The data store this run registers must name the database it restores, and
+                # provisioning is skipped, so a -DataStoreDatabaseName other than the restore target
+                # can never succeed. Refused here, in both topologies, before any package, workspace,
+                # or Docker activity, instead of after the target has been replaced.
+                if (-not [string]::IsNullOrEmpty($DataStoreDatabaseName) -and
+                    -not [string]::Equals($DataStoreDatabaseName, $restoreTargetDatabaseName, [System.StringComparison]::Ordinal)) {
+                    throw "-DataStoreDatabaseName names a different database than the restore target, so the data store would be registered against a database the restore did not populate. Nothing was restored. Rerun without -DataStoreDatabaseName (the restore target comes from POSTGRES_DB_NAME or MSSQL_DB_NAME), or with the same name. Both values are withheld."
+                }
+
+                # The MSSQL_SA_PASSWORD the start scripts resolve from this same env file (ambient
+                # value first, then the file, then the default), so every restore helper,
+                # including scratch cleanup, authenticates to the server the -DbOnly slice started.
+                $restoreMssqlPassword = Get-ComposeResolvedEnvValue `
+                    -EnvironmentValues $restoreEnvironmentValues `
+                    -Name "MSSQL_SA_PASSWORD" `
+                    -DefaultValue "abcdefgh1!"
+
+                $restorePackage = $null
                 $restoreStage = $null
                 $restoreCandidateDirectory = $null
                 $restorePreflightDatabaseName = ""
                 $restorePreflightEnvironmentPath = ""
+                $restorePreflightAmbientOverride = $false
+                $restoreCallerPostgresDbName = $null
                 try {
                     # Acquisition -> exact-bytes authentication -> immutable private staging with
                     # manifest/artifact validation (D3/D4). No Docker activity yet.
@@ -1013,6 +1033,15 @@ function Invoke-BootstrapWrapper {
                         EnvironmentFile = $restorePreflight.EnvironmentFile
                         DatabaseEngine  = $DatabaseEngine
                     }
+                    # Compose gives an ambient POSTGRES_DB_NAME precedence over the env file, so the
+                    # derived file alone cannot stop a fresh volume's init from creating the target.
+                    # The generated name is the ambient value for both -DbOnly slices; the
+                    # caller's value, or its absence, comes back in finally, before -InfraOnly.
+                    if ($restorePreflight.IsDerived) {
+                        $restoreCallerPostgresDbName = [System.Environment]::GetEnvironmentVariable("POSTGRES_DB_NAME")
+                        $restorePreflightAmbientOverride = $true
+                        $env:POSTGRES_DB_NAME = $restorePreflight.PreflightDatabaseName
+                    }
                     $global:LASTEXITCODE = 0
                     & "$PSScriptRoot/$StartScriptName" @dbOnlyArgs
                     if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
@@ -1025,12 +1054,14 @@ function Invoke-BootstrapWrapper {
                         -TargetDatabaseName $restoreTargetDatabaseName `
                         -Manifest $restoreStage.Manifest `
                         -SeparateConfigDatabase:$SeparateConfigDatabase `
-                        -EffectiveConfigDatabaseName $effectiveConfigDatabaseName
+                        -EffectiveConfigDatabaseName $effectiveConfigDatabaseName `
+                        -MssqlPassword $restoreMssqlPassword
                     $restoreScratch = Invoke-RestoreScratchValidation `
                         -Stage $restoreStage `
                         -CandidateFact $restoreCandidateFact `
                         -RestoreTemplate $RestoreTemplate `
-                        -DatabaseEngine $DatabaseEngine
+                        -DatabaseEngine $DatabaseEngine `
+                        -MssqlPassword $restoreMssqlPassword
 
                     # Drop the preflight database, stop the db-only slice, and re-prove the stop
                     # before the whole-tree workspace commit (D10 precondition).
@@ -1064,7 +1095,8 @@ function Invoke-BootstrapWrapper {
                         -PackageSourceIdentity $restoreScratch.PackageSourceIdentity `
                         -DatabaseEngine $DatabaseEngine `
                         -SeparateConfigDatabase:$SeparateConfigDatabase `
-                        -EffectiveConfigDatabaseName $effectiveConfigDatabaseName
+                        -EffectiveConfigDatabaseName $effectiveConfigDatabaseName `
+                        -MssqlPassword $restoreMssqlPassword
 
                     # The generated preflight database is dropped BEFORE the real-env -InfraOnly below
                     # (argv-order asserted by tests); the finally repeats the drop best-effort only
@@ -1073,6 +1105,16 @@ function Invoke-BootstrapWrapper {
                     $restorePreflightDatabaseName = ""
                 }
                 finally {
+                    # An absent caller value is removed, not set to empty: PowerShell hands $null
+                    # to SetEnvironmentVariable as an empty string.
+                    if ($restorePreflightAmbientOverride) {
+                        if ($null -eq $restoreCallerPostgresDbName) {
+                            Remove-Item -LiteralPath Env:\POSTGRES_DB_NAME -ErrorAction SilentlyContinue
+                        }
+                        else {
+                            $env:POSTGRES_DB_NAME = $restoreCallerPostgresDbName
+                        }
+                    }
                     # Transient restore state never outlives the run: candidate remnants (only when
                     # the commit did not consume them), the staged package, and the preflight
                     # database (best-effort; the helper warns instead of throwing).
@@ -1081,6 +1123,15 @@ function Invoke-BootstrapWrapper {
                     }
                     if ($null -ne $restoreStage) {
                         Remove-RestorePackageStage -StageDirectory $restoreStage.StageDirectory
+                        # Releases the retained package bytes for the rest of the run.
+                        $restoreStage = $null
+                    }
+                    # Only an HTTP-feed resolution returns a DownloadDirectory, which this run
+                    # created; -PackageDirectory and directory-feed resolutions return none, so a
+                    # caller-owned package directory is never removed here.
+                    if ($null -ne $restorePackage -and -not [string]::IsNullOrWhiteSpace([string]$restorePackage.DownloadDirectory) -and
+                        (Test-Path -LiteralPath $restorePackage.DownloadDirectory)) {
+                        Remove-Item -LiteralPath $restorePackage.DownloadDirectory -Recurse -Force
                     }
                     if (-not [string]::IsNullOrWhiteSpace($restorePreflightDatabaseName)) {
                         Remove-RestorePreflightDatabase -DatabaseEngine $DatabaseEngine -PreflightDatabaseName $restorePreflightDatabaseName

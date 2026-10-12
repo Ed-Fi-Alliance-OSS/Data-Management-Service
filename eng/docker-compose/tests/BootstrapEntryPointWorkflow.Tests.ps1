@@ -5,6 +5,7 @@
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Pester stubs intentionally keep production-compatible signatures.')]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Pester stubs intentionally shadow production plural-noun helpers.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Pester stubs accept the production -MssqlPassword parameter and record fake test values.')]
 param()
 
 # Exact workspace ownership, recorded at creation. Fixtures below stage copies of repository
@@ -435,10 +436,17 @@ $failureStatement
 
                 [string]$DockerComposeRoot = "",
 
-                [string[]]$ThrowAt = @()
+                [string[]]$ThrowAt = @(),
+
+                # The DownloadDirectory the package stub reports, as an HTTP-feed resolution does.
+                [string]$DownloadDirectory = ""
             )
 
             $log = $LogPath
+            # The MSSQL password each database helper receives goes to a side log, so the ordered
+            # call log the sequencing tests match line by line stays unchanged.
+            $passwordLog = "$LogPath.passwords"
+            $packageDownloadDirectory = if ([string]::IsNullOrWhiteSpace($DownloadDirectory)) { $null } else { $DownloadDirectory }
             $root = $FixtureRoot
             $activeBootstrapRoot = if ([string]::IsNullOrWhiteSpace($DockerComposeRoot)) { "" } else { Join-Path $DockerComposeRoot ".bootstrap" }
             $throwSet = $ThrowAt
@@ -459,7 +467,7 @@ $failureStatement
                 param($EnvironmentValues, $RestoreTemplate, $DatabaseEngine, $PackageDirectory)
                 Add-Content -LiteralPath $log -Value "restore:find template=$RestoreTemplate packagedir=[$PackageDirectory]"
                 & $stubThrow "Find-RestoreTemplatePackage"
-                [pscustomobject]@{ PackageId = "Test.Pkg"; PackageVersion = "1.0"; DataStandardVersion = "5.2.0"; PackagePath = "p"; AttestationJson = "{}"; AttestationSource = "s"; DownloadDirectory = $null }
+                [pscustomobject]@{ PackageId = "Test.Pkg"; PackageVersion = "1.0"; DataStandardVersion = "5.2.0"; PackagePath = "p"; AttestationJson = "{}"; AttestationSource = "s"; DownloadDirectory = $packageDownloadDirectory }
             }.GetNewClosure()
             Set-Item function:global:Assert-TrustedRestorePackage {
                 param($Package)
@@ -501,13 +509,15 @@ $failureStatement
                 [pscustomobject]@{ EnvironmentFile = $preflightEnvironmentPath; PreflightDatabaseName = "edfi_dms_restore_preflight_0123456789ab"; IsDerived = $true }
             }.GetNewClosure()
             Set-Item function:global:Assert-RestoreTargetSafety {
-                param($DatabaseEngine, $TargetDatabaseName, $Manifest, $ContainerName, [switch]$SeparateConfigDatabase, $EffectiveConfigDatabaseName)
+                param($DatabaseEngine, $TargetDatabaseName, $Manifest, $ContainerName, [switch]$SeparateConfigDatabase, $EffectiveConfigDatabaseName, $MssqlPassword)
                 Add-Content -LiteralPath $log -Value "restore:target-safety"
+                Add-Content -LiteralPath $passwordLog -Value "target-safety password=[$MssqlPassword]"
                 & $stubThrow "Assert-RestoreTargetSafety"
             }.GetNewClosure()
             Set-Item function:global:Invoke-RestoreScratchValidation {
-                param($Stage, $CandidateFact, $RestoreTemplate, $DatabaseEngine)
+                param($Stage, $CandidateFact, $RestoreTemplate, $DatabaseEngine, $MssqlPassword)
                 Add-Content -LiteralPath $log -Value "restore:scratch template=$RestoreTemplate"
+                Add-Content -LiteralPath $passwordLog -Value "scratch password=[$MssqlPassword]"
                 & $stubThrow "Invoke-RestoreScratchValidation"
                 [pscustomobject]@{ PackageSourceIdentity = "11111111-1111-1111-1111-111111111111"; ScratchFacts = $null; ProjectSchemaNames = @("edfi") }
             }.GetNewClosure()
@@ -545,8 +555,9 @@ $failureStatement
                 [pscustomobject]@{ Replaced = $true; ActiveBootstrapRoot = $activeBootstrapRoot }
             }.GetNewClosure()
             Set-Item function:global:Invoke-RestoreTargetReplacement {
-                param($Stage, $TargetDatabaseName, $PackageSourceIdentity, $DatabaseEngine, $ContainerName, [switch]$SeparateConfigDatabase, $EffectiveConfigDatabaseName)
+                param($Stage, $TargetDatabaseName, $PackageSourceIdentity, $DatabaseEngine, $ContainerName, [switch]$SeparateConfigDatabase, $EffectiveConfigDatabaseName, $MssqlPassword)
                 Add-Content -LiteralPath $log -Value "restore:replacement package-identity=$PackageSourceIdentity"
+                Add-Content -LiteralPath $passwordLog -Value "replacement password=[$MssqlPassword]"
                 & $stubThrow "Invoke-RestoreTargetReplacement"
                 [pscustomobject]@{ TargetDatabaseName = $TargetDatabaseName; RestoredSourceIdentity = "33333333-3333-3333-3333-333333333333" }
             }.GetNewClosure()
@@ -615,6 +626,26 @@ if (-not [string]::IsNullOrWhiteSpace(`$EnvironmentFile) -and -not (Test-Path -L
 Add-Content -LiteralPath '$CallLogPath' -Value "`$label env=`$EnvironmentFile"
 "@ | Set-Content -LiteralPath $scriptPath -Encoding utf8
             return $scriptPath
+        }
+
+        function script:Set-TestAmbientVariable {
+            # Sets a process environment variable, or removes it for $null: PowerShell hands $null
+            # to SetEnvironmentVariable as an empty string, which would leave the key present.
+            param(
+                [Parameter(Mandatory)]
+                [string]$Name,
+
+                # Untyped: a [string] parameter would turn $null into "" as well.
+                [AllowNull()]
+                $Value
+            )
+
+            if ($null -eq $Value) {
+                Remove-Item -LiteralPath "Env:\$Name" -ErrorAction SilentlyContinue
+            }
+            else {
+                Set-Item -LiteralPath "Env:\$Name" -Value $Value
+            }
         }
 
         function script:Get-RestoreLogIndex {
@@ -2531,6 +2562,178 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "configure separate=`$(`$Se
             & $script:repo.WrapperScript @wrapperArguments
 
             @(Get-Content -LiteralPath $script:restoreLog) | Where-Object { $_ -like "configure *" } | Should -BeLike $Expected
+        }
+
+        It "PostgreSQL: an ambient POSTGRES_DB_NAME never reaches the database-only slice, and the caller's value comes back (<Case>)" -ForEach @(
+            @{ Case = "ambient target, success"; Ambient = "edfi_ambient_target"; ThrowAt = @(); DbOnlyStarts = 2 }
+            @{ Case = "ambient target, scratch failure"; Ambient = "edfi_ambient_target"; ThrowAt = @("Invoke-RestoreScratchValidation"); DbOnlyStarts = 1 }
+            @{ Case = "ambient target, replacement failure"; Ambient = "edfi_ambient_target"; ThrowAt = @("Invoke-RestoreTargetReplacement"); DbOnlyStarts = 2 }
+            @{ Case = "no ambient value, success"; Ambient = $null; ThrowAt = @(); DbOnlyStarts = 2 }
+        ) {
+            # Compose gives the process environment precedence over --env-file, so what the
+            # start script's compose run sees is the ambient value recorded here.
+            @"
+param(
+    [switch] `$InfraOnly,
+    [switch] `$DmsOnly,
+    [switch] `$DbOnly,
+    [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
+)
+`$label = if (`$DbOnly) { "start-db-only" } elseif (`$InfraOnly) { "start-infra" } elseif (`$DmsOnly) { "start-dms" } else { "start-legacy" }
+Add-Content -LiteralPath '$script:restoreLog' -Value "`$label ambient=[`$env:POSTGRES_DB_NAME]"
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "start-local-dms.ps1") -Encoding utf8
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot -ThrowAt $ThrowAt
+            $log = $script:restoreLog
+            Set-Item function:global:Stop-RestoreDatabaseOnlySlice {
+                param($ProjectName, $DatabaseEngine, $EnvironmentFile)
+                Add-Content -LiteralPath $log -Value "restore:stop-db ambient=[$env:POSTGRES_DB_NAME]"
+            }.GetNewClosure()
+
+            $callerValue = [System.Environment]::GetEnvironmentVariable("POSTGRES_DB_NAME")
+            Set-TestAmbientVariable -Name POSTGRES_DB_NAME -Value $Ambient
+            try {
+                $run = { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal }
+                if ($ThrowAt.Count -gt 0) {
+                    $run | Should -Throw "*injected $($ThrowAt[0]) failure*"
+                }
+                else {
+                    & $run
+                }
+
+                [System.Environment]::GetEnvironmentVariable("POSTGRES_DB_NAME") | Should -Be $Ambient -Because "the caller's process environment is restored on every exit path"
+
+                $lines = @(Get-Content -LiteralPath $script:restoreLog)
+                $dbOnlyLines = @($lines | Where-Object { $_ -like "start-db-only*" })
+                $dbOnlyLines.Count | Should -Be $DbOnlyStarts
+                foreach ($dbOnlyLine in $dbOnlyLines) {
+                    $dbOnlyLine | Should -Be "start-db-only ambient=[edfi_dms_restore_preflight_0123456789ab]" -Because "fresh-volume init must only ever see the generated preflight name"
+                }
+                foreach ($stopLine in @($lines | Where-Object { $_ -like "restore:stop-db*" })) {
+                    $stopLine | Should -Be "restore:stop-db ambient=[edfi_dms_restore_preflight_0123456789ab]"
+                }
+                if ($ThrowAt.Count -eq 0) {
+                    @($lines | Where-Object { $_ -like "start-infra*" }) | Should -Be @("start-infra ambient=[$Ambient]") -Because "the post-restore phases run on the caller's environment"
+                }
+            }
+            finally {
+                Set-TestAmbientVariable -Name POSTGRES_DB_NAME -Value $callerValue
+            }
+        }
+
+        It "<Topology> topology: <Case>" -ForEach @(
+            @{ Topology = "shared"; Case = "a different -DataStoreDatabaseName is refused before any package, workspace, or Docker activity"; Separate = $false; Name = "other_db"; Refused = $true; Expected = "" }
+            @{ Topology = "shared"; Case = "the same -DataStoreDatabaseName restores and registers that target"; Separate = $false; Name = "edfi_datamanagementservice"; Refused = $false; Expected = "configure dataStore=[[]edfi_datamanagementservice] restoreTarget=[[]]" }
+            @{ Topology = "shared"; Case = "no -DataStoreDatabaseName restores and registers the environment target"; Separate = $false; Name = ""; Refused = $false; Expected = "configure dataStore=[[]] restoreTarget=[[]]" }
+            @{ Topology = "separate"; Case = "a different -DataStoreDatabaseName is refused before any package, workspace, or Docker activity"; Separate = $true; Name = "other_db"; Refused = $true; Expected = "" }
+            @{ Topology = "separate"; Case = "the same -DataStoreDatabaseName restores and hands configure that target"; Separate = $true; Name = "edfi_datamanagementservice"; Refused = $false; Expected = "configure dataStore=[[]edfi_datamanagementservice] restoreTarget=[[]edfi_datamanagementservice]" }
+            @{ Topology = "separate"; Case = "no -DataStoreDatabaseName restores and hands configure the environment target"; Separate = $true; Name = ""; Refused = $false; Expected = "configure dataStore=[[]] restoreTarget=[[]edfi_datamanagementservice]" }
+        ) {
+            @"
+param(
+    [string] `$DataStoreDatabaseName,
+    [string] `$RestoreTargetDatabaseName,
+    [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
+)
+Add-Content -LiteralPath '$script:restoreLog' -Value "configure dataStore=[`$DataStoreDatabaseName] restoreTarget=[`$RestoreTargetDatabaseName]"
+[pscustomobject]@{ DataStoreIds = [long[]] @(42); SelectedDataStoreIds = [long[]] @(42); RouteContexts = @(); Tenant = ''; SchoolYears = [int[]] @(); HasRouteQualifiedDataStores = `$false }
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "configure-local-data-store.ps1") -Encoding utf8
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
+
+            $wrapperArguments = @{ EnvironmentFile = $script:repo.EnvFile; RestoreTemplate = "Minimal" }
+            if ($Separate) { $wrapperArguments.SeparateConfigDatabase = $true }
+            if (-not [string]::IsNullOrEmpty($Name)) { $wrapperArguments.DataStoreDatabaseName = $Name }
+
+            if ($Refused) {
+                $thrown = { & $script:repo.WrapperScript @wrapperArguments } | Should -Throw -PassThru
+                $thrown.Exception.Message | Should -BeLike "*-DataStoreDatabaseName names a different database than the restore target*Nothing was restored*"
+                $thrown.Exception.Message | Should -Not -BeLike "*$Name*" -Because "both database names are withheld"
+
+                $lines = @(Get-Content -LiteralPath $script:restoreLog)
+                $lines | Should -Be @("restore:resolve-target engine=postgresql", "restore:name-safety target=edfi_datamanagementservice") -Because "nothing after target resolution may run: no package, workspace, Docker, or replacement"
+            }
+            else {
+                & $script:repo.WrapperScript @wrapperArguments
+
+                $lines = @(Get-Content -LiteralPath $script:restoreLog)
+                @($lines | Where-Object { $_ -like "restore:replacement*" }).Count | Should -Be 1
+                @($lines | Where-Object { $_ -like "configure *" }) | Should -BeLike $Expected
+            }
+        }
+
+        It "mssql: the MSSQL password reaches every restore database helper (<Case>)" -ForEach @(
+            @{ Case = "set only in the environment file"; FileValue = "Env_File_Only1!"; Ambient = $null; Expected = "Env_File_Only1!" }
+            @{ Case = "ambient value wins over the environment file"; FileValue = "Env_File_Only1!"; Ambient = "Ambient_Wins2!"; Expected = "Ambient_Wins2!" }
+            @{ Case = "set nowhere, the documented default"; FileValue = $null; Ambient = $null; Expected = "abcdefgh1!" }
+        ) {
+            $passwordEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.restore-password"
+            # A custom SQL Server env file: the engine overlay keeps its authored MSSQL credentials
+            # only when the file itself declares the mssql datastore.
+            $envLines = @(Get-Content -LiteralPath $script:repo.EnvFile) + @("DMS_DATASTORE=mssql")
+            if ($null -ne $FileValue) { $envLines += "MSSQL_SA_PASSWORD=$FileValue" }
+            $envLines | Set-Content -LiteralPath $passwordEnvFile -Encoding utf8
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
+
+            $callerValue = [System.Environment]::GetEnvironmentVariable("MSSQL_SA_PASSWORD")
+            Set-TestAmbientVariable -Name MSSQL_SA_PASSWORD -Value $Ambient
+            try {
+                & $script:repo.WrapperScript -EnvironmentFile $passwordEnvFile -DatabaseEngine mssql -RestoreTemplate Minimal
+                [System.Environment]::GetEnvironmentVariable("MSSQL_SA_PASSWORD") | Should -Be $Ambient -Because "the wrapper must not mutate the process environment"
+            }
+            finally {
+                Set-TestAmbientVariable -Name MSSQL_SA_PASSWORD -Value $callerValue
+            }
+
+            @(Get-Content -LiteralPath "$script:restoreLog.passwords") | Should -Be @(
+                "target-safety password=[$Expected]"
+                "scratch password=[$Expected]"
+                "replacement password=[$Expected]"
+            )
+        }
+
+        It "removes the download directory an HTTP-feed resolution created (<Case>)" -ForEach @(
+            @{ Case = "successful restore"; ThrowAt = @() }
+            @{ Case = "authentication failure after resolution"; ThrowAt = @("Assert-TrustedRestorePackage") }
+            @{ Case = "scratch failure"; ThrowAt = @("Invoke-RestoreScratchValidation") }
+        ) {
+            $downloadDirectory = Join-Path $script:repo.DockerComposeRoot ".bootstrap-restore/download-0123456789abcdef0123456789abcdef"
+            New-Item -ItemType Directory -Path (Join-Path $downloadDirectory "companion-contents") -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $downloadDirectory "Test.Pkg.1.0.nupkg") -Value "package bytes"
+            Set-Content -LiteralPath (Join-Path $downloadDirectory "companion-contents/Test.Pkg.1.0.nupkg.attestation.json") -Value "{}"
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot -ThrowAt $ThrowAt -DownloadDirectory $downloadDirectory
+
+            $run = { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal }
+            if ($ThrowAt.Count -gt 0) {
+                $run | Should -Throw "*injected $($ThrowAt[0]) failure*"
+            }
+            else {
+                & $run
+            }
+
+            Test-Path -LiteralPath $downloadDirectory | Should -BeFalse
+        }
+
+        It "never removes a caller-owned -PackageDirectory, on success or failure, and a failed resolution cleans up safely (<Case>)" -ForEach @(
+            @{ Case = "successful restore"; ThrowAt = @(); Expected = "" }
+            @{ Case = "scratch failure"; ThrowAt = @("Invoke-RestoreScratchValidation"); Expected = "*injected Invoke-RestoreScratchValidation failure*" }
+            @{ Case = "resolution failure"; ThrowAt = @("Find-RestoreTemplatePackage"); Expected = "*injected Find-RestoreTemplatePackage failure*" }
+        ) {
+            $packageDirectory = Join-Path $script:repo.RepoRoot "caller-packages"
+            New-Item -ItemType Directory -Path $packageDirectory -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $packageDirectory "Test.Pkg.1.0.nupkg") -Value "package bytes"
+            Set-Content -LiteralPath (Join-Path $packageDirectory "Test.Pkg.1.0.nupkg.attestation.json") -Value "{}"
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot -ThrowAt $ThrowAt
+
+            $run = { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal -PackageDirectory $packageDirectory }
+            if ($ThrowAt.Count -gt 0) {
+                # The resolution failure must surface as itself, not as a cleanup error.
+                $run | Should -Throw $Expected
+            }
+            else {
+                & $run
+            }
+
+            @(Get-ChildItem -LiteralPath $packageDirectory -File | ForEach-Object { $_.Name } | Sort-Object) |
+                Should -Be @("Test.Pkg.1.0.nupkg", "Test.Pkg.1.0.nupkg.attestation.json")
         }
 
         Context "separate-topology restore through the REAL configure phase" {

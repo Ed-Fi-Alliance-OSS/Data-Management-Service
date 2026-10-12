@@ -415,17 +415,25 @@ function Assert-RestoreManifestMatchesRequest {
 function Initialize-RestorePackageStage {
     <#
     .SYNOPSIS
-    Stages the authenticated package into a private, immutable workspace: copies the .nupkg,
-    proves the copy still carries the authenticated bytes, extracts it, validates the restore
-    manifest (shape, requested engine/kind, package identity against the nuspec and the
-    request), requires exactly one database artifact matching the manifest's declared name
-    and SHA-256 with no undeclared artifacts beside it, and marks every staged file
-    read-only. Scratch and target restore later consume these exact bytes, re-hashed before
-    each use, so validation cannot be separated from execution by a file-replacement race.
+    Stages the authenticated package into a private workspace: reads the .nupkg ONCE into
+    memory, proves those bytes are the authenticated bytes, and takes everything else from
+    that same buffer - the extracted files, the restore manifest and nuspec it validates
+    (shape, requested engine/kind, package identity against the nuspec and the request), and
+    the SHA-256 of the one manifest-declared database artifact (no undeclared artifacts may sit
+    beside it). No file is reopened by path after its hash is proven, so a file replaced on
+    disk can never be read under the authenticated hash.
+
+    The authenticated buffer is RETAINED on the stage (PackageBytes, with the artifact's entry
+    name in ArtifactEntryName) and is the only source either transfer reads: scratch validation
+    and target restore each stream the artifact entry from it into the database container
+    (Copy-RestoreStagedArtifactToContainer). The files written under StageDirectory are records
+    and never feed a transfer, so replacing them - or the source package - after this read
+    cannot change what scratch or target restore consume. Staged files are marked read-only as
+    a guard against accidents only.
 
     .OUTPUTS
-    PSCustomObject: StageDirectory, PackagePath, PackageSha256, Manifest, ManifestPath,
-    ArtifactPath, ArtifactSha256, Producer.
+    PSCustomObject: StageDirectory, PackagePath, PackageSha256, PackageBytes,
+    ArtifactEntryName, Manifest, ManifestPath, ArtifactPath, ArtifactSha256, Producer.
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -454,26 +462,46 @@ function Initialize-RestorePackageStage {
 
     $stageDirectory = Join-Path $StageRoot "stage-$([Guid]::NewGuid().ToString('N'))"
     New-Item -ItemType Directory -Path $stageDirectory -Force | Out-Null
+    # Provider-resolved: the .NET file and zip APIs below resolve relative paths against the
+    # process working directory, which Push-Location does not update.
+    $stageDirectory = (Resolve-Path -LiteralPath $stageDirectory).ProviderPath
 
+    $packageArchive = $null
     try {
-        $stagedPackagePath = Join-Path $stageDirectory ([System.IO.Path]::GetFileName($Package.PackagePath))
-        Copy-Item -LiteralPath $Package.PackagePath -Destination $stagedPackagePath
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
 
-        # The staged copy must still carry the exact authenticated bytes; a mismatch means
-        # the source file changed between authentication and staging.
-        $stagedPackageSha256 = Get-FileSha256Hex -Path $stagedPackagePath
+        # The one read of the package. The hash, the extraction, and every validated file
+        # below come from this buffer, which no other process can replace.
+        $packageBytes = [System.IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $Package.PackagePath).ProviderPath)
+
+        # The read must carry the exact authenticated bytes; a mismatch means the source file
+        # changed between authentication and staging.
+        $stagedPackageSha256 = [System.Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($packageBytes)).ToLowerInvariant()
         if ($stagedPackageSha256 -cne $AuthenticatedPackageSha256) {
             throw "The staged package's SHA-256 '$stagedPackageSha256' no longer matches the authenticated bytes '$AuthenticatedPackageSha256'; the package changed between authentication and staging."
         }
 
+        # A record of the staged package; nothing reads it back.
+        $stagedPackagePath = Join-Path $stageDirectory ([System.IO.Path]::GetFileName($Package.PackagePath))
+        [System.IO.File]::WriteAllBytes($stagedPackagePath, $packageBytes)
+
         $contentsDirectory = Join-Path $stageDirectory "contents"
-        Expand-Nupkg -NupkgPath $stagedPackagePath -DestinationDirectory $contentsDirectory
+        $packageArchive = [System.IO.Compression.ZipArchive]::new(
+            [System.IO.MemoryStream]::new($packageBytes, $false),
+            [System.IO.Compression.ZipArchiveMode]::Read)
+        try {
+            [System.IO.Compression.ZipFileExtensions]::ExtractToDirectory($packageArchive, $contentsDirectory)
+        }
+        catch {
+            throw "Failed to extract package '$([System.IO.Path]::GetFileName($Package.PackagePath))' into the restore stage: $($_.Exception.Message)"
+        }
 
         $manifestFiles = @(Get-ChildItem -LiteralPath $contentsDirectory -Filter (Get-RestoreManifestFileName) -Recurse -File)
         if ($manifestFiles.Count -ne 1) {
             throw "Package '$([System.IO.Path]::GetFileName($Package.PackagePath))' must contain exactly one $(Get-RestoreManifestFileName), found $($manifestFiles.Count). Packages without a restore manifest are not eligible for restore."
         }
-        $manifest = Read-RestoreManifest -Path $manifestFiles[0].FullName
+        $manifestEntry = Get-RestorePackageArchiveEntry -Archive $packageArchive -ContentsDirectory $contentsDirectory -ExtractedPath $manifestFiles[0].FullName
+        $manifest = Read-RestoreManifest -Path $manifestFiles[0].FullName -Content (Read-RestorePackageArchiveEntryText -Entry $manifestEntry)
 
         Assert-RestoreManifestMatchesRequest -Manifest $manifest -DatabaseEngine $DatabaseEngine -RestoreTemplate $RestoreTemplate -DataStandardVersion $Package.DataStandardVersion
 
@@ -488,7 +516,8 @@ function Initialize-RestorePackageStage {
         if ($nuspecFiles.Count -ne 1) {
             throw "Package '$([System.IO.Path]::GetFileName($Package.PackagePath))' must contain exactly one .nuspec, found $($nuspecFiles.Count)."
         }
-        [xml]$nuspecXml = Get-Content -LiteralPath $nuspecFiles[0].FullName -Raw
+        $nuspecEntry = Get-RestorePackageArchiveEntry -Archive $packageArchive -ContentsDirectory $contentsDirectory -ExtractedPath $nuspecFiles[0].FullName
+        [xml]$nuspecXml = Read-RestorePackageArchiveEntryText -Entry $nuspecEntry
         $nuspecId = [string]$nuspecXml.package.metadata.id
         $nuspecVersion = [string]$nuspecXml.package.metadata.version
         if (-not $nuspecId.Equals($Package.PackageId, [System.StringComparison]::OrdinalIgnoreCase) -or
@@ -512,31 +541,93 @@ function Initialize-RestorePackageStage {
             throw "Package '$([System.IO.Path]::GetFileName($Package.PackagePath))' contains database artifacts beyond the manifest-declared '$($manifest.artifactFileName)': $listing."
         }
 
-        $artifactSha256 = Get-FileSha256Hex -Path $artifactPath
+        # Hashed from the archive entry, not the extracted file: the packaged artifact itself
+        # must match the manifest.
+        $artifactEntry = Get-RestorePackageArchiveEntry -Archive $packageArchive -ContentsDirectory $contentsDirectory -ExtractedPath $artifactPath
+        $artifactEntryStream = $artifactEntry.Open()
+        try {
+            $artifactSha256 = [System.Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($artifactEntryStream)).ToLowerInvariant()
+        }
+        finally {
+            $artifactEntryStream.Dispose()
+        }
         if ($artifactSha256 -cne [string]$manifest.artifactSha256) {
             throw "The packaged artifact's SHA-256 '$artifactSha256' does not match the manifest's artifactSha256 '$($manifest.artifactSha256)'."
         }
 
-        # Immutability: every staged file is marked read-only, and later consumers re-hash
-        # the artifact immediately before each use.
+        # Read-only guards against accidental edits only; a process that can write here can
+        # also clear the flag. Transfers never read these files - they stream PackageBytes.
         foreach ($stagedFile in @(Get-ChildItem -LiteralPath $stageDirectory -Recurse -File)) {
             $stagedFile.IsReadOnly = $true
         }
 
         return [pscustomobject]@{
-            StageDirectory = $stageDirectory
-            PackagePath    = $stagedPackagePath
-            PackageSha256  = $AuthenticatedPackageSha256
-            Manifest       = $manifest
-            ManifestPath   = $manifestFiles[0].FullName
-            ArtifactPath   = $artifactPath
-            ArtifactSha256 = $artifactSha256
-            Producer       = $Producer
+            StageDirectory    = $stageDirectory
+            PackagePath       = $stagedPackagePath
+            PackageSha256     = $AuthenticatedPackageSha256
+            PackageBytes      = $packageBytes
+            ArtifactEntryName = $artifactEntry.FullName
+            Manifest          = $manifest
+            ManifestPath      = $manifestFiles[0].FullName
+            ArtifactPath      = $artifactPath
+            ArtifactSha256    = $artifactSha256
+            Producer          = $Producer
         }
     }
     catch {
         Remove-RestorePackageStage -StageDirectory $stageDirectory
         throw
+    }
+    finally {
+        if ($null -ne $packageArchive) {
+            $packageArchive.Dispose()
+        }
+    }
+}
+
+function Get-RestorePackageArchiveEntry {
+    <#
+    .SYNOPSIS
+    The in-memory archive entry a file extracted from that archive came from, matched by its
+    path relative to the extraction directory. Staging validates the entry's bytes, never the
+    extracted file, which another process could have replaced since extraction.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [System.IO.Compression.ZipArchive]$Archive,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ContentsDirectory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ExtractedPath
+    )
+
+    $relativePath = [System.IO.Path]::GetRelativePath($ContentsDirectory, $ExtractedPath).Replace('\', '/')
+    $entries = @($Archive.Entries | Where-Object { $_.FullName.Replace('\', '/') -ceq $relativePath })
+    if ($entries.Count -ne 1) {
+        throw "The staged package holds $($entries.Count) archive entries for '$relativePath'; expected exactly one."
+    }
+
+    return $entries[0]
+}
+
+function Read-RestorePackageArchiveEntryText {
+    <#
+    .SYNOPSIS
+    The UTF-8 text of one in-memory archive entry (a byte-order mark is honored).
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [System.IO.Compression.ZipArchiveEntry]$Entry
+    )
+
+    $reader = [System.IO.StreamReader]::new($Entry.Open(), [System.Text.Encoding]::UTF8, $true)
+    try {
+        return $reader.ReadToEnd()
+    }
+    finally {
+        $reader.Dispose()
     }
 }
 
@@ -1556,6 +1647,348 @@ function Invoke-RestoreDockerCommand {
     return @($output)
 }
 
+function Assert-RestoreContainerArtifactSha256 {
+    <#
+    .SYNOPSIS
+    The transfer-integrity check at the point of consumption: hashes the artifact copy INSIDE
+    the database container, after the copy and before psql or RESTORE reads that same path, and
+    fails unless it equals the authenticated manifest's artifactSha256.
+
+    .DESCRIPTION
+    The copy is streamed from the stage's retained authenticated bytes
+    (Copy-RestoreStagedArtifactToContainer), so no host file can change what is sent; this
+    check additionally proves that what LANDED in the container is what was sent (a truncated
+    or corrupted transfer is refused before any consumer runs). The in-container copy is
+    written by this run into the container's own filesystem, which only a Docker API client or
+    a process inside the container can change - and either can already run SQL against the
+    server directly, so the restore does not defend against them.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$ContainerName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ContainerArtifactPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedSha256,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ConsumerDescription
+    )
+
+    $hashRows = Invoke-RestoreDockerCommand `
+        -ArgumentList @("exec", $ContainerName, "sha256sum", $ContainerArtifactPath) `
+        -FailureMessage "Failed to hash the artifact copied into container '$ContainerName'; refusing $ConsumerDescription."
+    $hashLine = [string]@($hashRows | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -First 1)
+    $actualSha256 = ($hashLine.Trim() -split '\s+')[0].ToLowerInvariant()
+    if ($actualSha256 -cnotmatch '^[0-9a-f]{64}\z') {
+        throw "sha256sum in container '$ContainerName' returned no SHA-256 for the copied artifact; refusing $ConsumerDescription."
+    }
+    if ($actualSha256 -cne $ExpectedSha256) {
+        throw "The artifact copied into container '$ContainerName' has SHA-256 '$actualSha256', not the authenticated manifest's artifactSha256 '$ExpectedSha256'; the transfer into the container did not deliver the authenticated bytes. Refusing $ConsumerDescription."
+    }
+}
+
+function Assert-RestoreRetainedPackage {
+    <#
+    .SYNOPSIS
+    Precondition of every transfer: the stage carries its retained package buffer, those bytes
+    are still the authenticated package (PackageSha256), and they hold exactly one entry named
+    ArtifactEntryName. Reads only memory; no host path is opened.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        $Stage,
+
+        [Parameter(Mandatory = $true)]
+        [string]$AbortDescription
+    )
+
+    # PSObject lookups: under strict mode a missing property would throw an unrelated message.
+    $packageBytesProperty = $Stage.PSObject.Properties["PackageBytes"]
+    $entryNameProperty = $Stage.PSObject.Properties["ArtifactEntryName"]
+    if ($null -eq $packageBytesProperty -or $packageBytesProperty.Value -isnot [byte[]] -or
+        $null -eq $entryNameProperty -or [string]::IsNullOrWhiteSpace([string]$entryNameProperty.Value)) {
+        throw "The restore stage does not carry its retained authenticated package bytes; $AbortDescription"
+    }
+    $retainedSha256 = [System.Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData([byte[]]$Stage.PackageBytes)).ToLowerInvariant()
+    if ($retainedSha256 -cne [string]$Stage.PackageSha256) {
+        throw "The retained package bytes hash to '$retainedSha256', not the authenticated '$($Stage.PackageSha256)'; $AbortDescription"
+    }
+}
+
+function Write-RestoreSingleFileTar {
+    <#
+    .SYNOPSIS
+    Writes a one-file POSIX ustar archive (mode 0644, uid/gid 0) whose data is read from
+    -Source, and returns the SHA-256 of exactly the data bytes written.
+
+    .DESCRIPTION
+    docker cp reads a tar archive from standard input. System.Formats.Tar cannot stream an
+    unseekable source (a compressed zip entry) into an unseekable destination (a process
+    pipe), so the 512-byte header is written here; the size comes from the caller, and a
+    source that yields a different number of bytes is refused.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [System.IO.Stream]$Destination,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FileName,
+
+        [Parameter(Mandatory = $true)]
+        [long]$Length,
+
+        [Parameter(Mandatory = $true)]
+        [System.IO.Stream]$Source
+    )
+
+    $nameBytes = [System.Text.Encoding]::ASCII.GetBytes($FileName)
+    if ($FileName -cnotmatch '^[A-Za-z0-9._-]{1,100}\z') {
+        throw "Tar entry name '$FileName' must be 1-100 characters of [A-Za-z0-9._-]."
+    }
+    # 11 octal digits is the ustar size field's limit.
+    if ($Length -lt 0 -or $Length -ge 8589934592) {
+        throw "Tar entry '$FileName' length $Length is outside the ustar size range."
+    }
+
+    $header = [byte[]]::new(512)
+    $writeField = {
+        param([int]$Offset, [string]$Text)
+        $fieldBytes = [System.Text.Encoding]::ASCII.GetBytes($Text)
+        [System.Array]::Copy($fieldBytes, 0, $header, $Offset, $fieldBytes.Length)
+    }
+    [System.Array]::Copy($nameBytes, 0, $header, 0, $nameBytes.Length)
+    & $writeField 100 "0000644"
+    & $writeField 108 "0000000"
+    & $writeField 116 "0000000"
+    & $writeField 124 ([System.Convert]::ToString($Length, 8).PadLeft(11, '0'))
+    & $writeField 136 ([System.Convert]::ToString([DateTimeOffset]::UtcNow.ToUnixTimeSeconds(), 8).PadLeft(11, '0'))
+    & $writeField 148 "        "
+    & $writeField 156 "0"
+    & $writeField 257 "ustar"
+    & $writeField 263 "00"
+    & $writeField 265 "root"
+    & $writeField 297 "root"
+    $checksum = 0
+    foreach ($headerByte in $header) { $checksum += $headerByte }
+    & $writeField 148 ([System.Convert]::ToString($checksum, 8).PadLeft(6, '0'))
+    $header[154] = 0
+    $header[155] = 32
+    $Destination.Write($header, 0, $header.Length)
+
+    $hasher = [System.Security.Cryptography.IncrementalHash]::CreateHash([System.Security.Cryptography.HashAlgorithmName]::SHA256)
+    try {
+        $buffer = [byte[]]::new(1048576)
+        [long]$written = 0
+        while (($read = $Source.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            $hasher.AppendData($buffer, 0, $read)
+            $Destination.Write($buffer, 0, $read)
+            $written += $read
+        }
+        if ($written -ne $Length) {
+            throw "Tar entry '$FileName' declared $Length bytes but its source yielded $written."
+        }
+        $padding = (512 - ($Length % 512)) % 512
+        # Data padding plus the two zero blocks that end the archive.
+        $trailer = [byte[]]::new($padding + 1024)
+        $Destination.Write($trailer, 0, $trailer.Length)
+        $Destination.Flush()
+
+        return [System.Convert]::ToHexString($hasher.GetHashAndReset()).ToLowerInvariant()
+    }
+    finally {
+        $hasher.Dispose()
+    }
+}
+
+function Invoke-RestoreProcessWithInput {
+    <#
+    .SYNOPSIS
+    Runs one process with the restore flow's fail-closed contract, feeding its standard input
+    from -InputWriter (a scriptblock that receives the raw input stream) and returning what the
+    writer returned. A writer failure kills the process before its input is completed; a
+    start failure, writer failure, or nonzero exit throws the caller's failure message. The
+    process and its streams are disposed on every path.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$ArgumentList,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FailureMessage,
+
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$InputWriter
+    )
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new($FilePath)
+    foreach ($argument in $ArgumentList) {
+        $startInfo.ArgumentList.Add($argument)
+    }
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardInput = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+
+    $process = $null
+    try {
+        try {
+            $process = [System.Diagnostics.Process]::Start($startInfo)
+        }
+        catch {
+            throw "$FailureMessage Starting '$FilePath' failed: $(($_.Exception.Message | Out-String).Trim())"
+        }
+        # Drained concurrently so a chatty process can never block on a full output pipe while
+        # this side is still writing its input.
+        $standardOutputTask = $process.StandardOutput.ReadToEndAsync()
+        $standardErrorTask = $process.StandardError.ReadToEndAsync()
+
+        $writerResult = $null
+        $writerError = $null
+        try {
+            $writerResult = & $InputWriter $process.StandardInput.BaseStream
+        }
+        catch {
+            $writerError = $_
+            # Never let a partial input complete: the process dies before it sees end-of-input.
+            if (-not $process.HasExited) {
+                $process.Kill($true)
+            }
+        }
+        finally {
+            try {
+                $process.StandardInput.Dispose()
+            }
+            catch {
+                # A process that already exited closed the pipe; its exit code reports why.
+                $null = $_
+            }
+        }
+
+        $process.WaitForExit()
+        $processOutput = (@($standardOutputTask.GetAwaiter().GetResult(), $standardErrorTask.GetAwaiter().GetResult()) -join "`n").Trim()
+        if ($null -ne $writerError) {
+            throw "$FailureMessage Streaming its input failed: $(($writerError.Exception.Message | Out-String).Trim()) ($processOutput)"
+        }
+        if ($process.ExitCode -ne 0) {
+            throw "$FailureMessage ($processOutput)"
+        }
+
+        return $writerResult
+    }
+    finally {
+        if ($null -ne $process) {
+            $process.Dispose()
+        }
+    }
+}
+
+function Invoke-RestoreDockerInputCommand {
+    <#
+    .SYNOPSIS
+    Invoke-RestoreProcessWithInput for the docker executable (resolved as an application, not
+    a function or alias), with Invoke-RestoreDockerCommand's unavailable-docker message.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        [string[]]$ArgumentList,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FailureMessage,
+
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$InputWriter
+    )
+
+    $dockerApplication = Get-Command docker -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -eq $dockerApplication) {
+        throw "$FailureMessage The 'docker' command is not available in this session."
+    }
+
+    return Invoke-RestoreProcessWithInput `
+        -FilePath $dockerApplication.Source `
+        -ArgumentList $ArgumentList `
+        -FailureMessage $FailureMessage `
+        -InputWriter $InputWriter
+}
+
+function Copy-RestoreStagedArtifactToContainer {
+    <#
+    .SYNOPSIS
+    Copies the staged database artifact to -ContainerArtifactPath inside the container FROM THE
+    STAGE'S RETAINED AUTHENTICATED BYTES: the artifact entry is read from a read-only view of
+    Stage.PackageBytes and piped as a one-file tar to `docker cp - <container>:<directory>`.
+
+    .DESCRIPTION
+    No host file is opened, so replacing Stage.ArtifactPath, the staged .nupkg, or the source
+    package on disk cannot change the bytes either transfer sends. The SHA-256 of exactly the
+    bytes streamed is compared with the manifest's artifactSha256 before returning; the caller
+    then hashes the in-container copy (Assert-RestoreContainerArtifactSha256) as the
+    transfer-integrity check. Every archive, stream, and process is disposed on all paths.
+    #>
+    param (
+        [Parameter(Mandatory = $true)]
+        $Stage,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ContainerName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ContainerArtifactPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FailureMessage
+    )
+
+    $separatorIndex = $ContainerArtifactPath.LastIndexOf('/')
+    if ($separatorIndex -lt 1) {
+        throw "$FailureMessage Container path '$ContainerArtifactPath' must be an absolute file path below a directory."
+    }
+    $containerDirectory = $ContainerArtifactPath.Substring(0, $separatorIndex)
+    $containerFileName = $ContainerArtifactPath.Substring($separatorIndex + 1)
+    $expectedSha256 = [string]$Stage.Manifest.artifactSha256
+
+    $packageArchive = [System.IO.Compression.ZipArchive]::new(
+        [System.IO.MemoryStream]::new([byte[]]$Stage.PackageBytes, $false),
+        [System.IO.Compression.ZipArchiveMode]::Read)
+    try {
+        $artifactEntries = @($packageArchive.Entries | Where-Object { $_.FullName -ceq [string]$Stage.ArtifactEntryName })
+        if ($artifactEntries.Count -ne 1) {
+            throw "$FailureMessage The retained package holds $($artifactEntries.Count) entries named '$($Stage.ArtifactEntryName)'; expected exactly one."
+        }
+        $artifactEntry = $artifactEntries[0]
+        # The closure below runs in its own dynamic module, which cannot see this module's
+        # private functions; it captures the tar writer itself.
+        $writeTar = ${function:Write-RestoreSingleFileTar}
+
+        $sentSha256 = Invoke-RestoreDockerInputCommand `
+            -ArgumentList @("cp", "-", "$($ContainerName):$containerDirectory") `
+            -FailureMessage $FailureMessage `
+            -InputWriter {
+                param([System.IO.Stream]$InputStream)
+                $entryStream = $artifactEntry.Open()
+                try {
+                    & $writeTar -Destination $InputStream -FileName $containerFileName -Length $artifactEntry.Length -Source $entryStream
+                }
+                finally {
+                    $entryStream.Dispose()
+                }
+            }.GetNewClosure()
+    }
+    finally {
+        $packageArchive.Dispose()
+    }
+
+    if ([string]$sentSha256 -cne $expectedSha256) {
+        throw "$FailureMessage The bytes streamed from the retained package hash to '$sentSha256', not the manifest's artifactSha256 '$expectedSha256'."
+    }
+}
+
 function Get-RestoreDatabaseCatalogFact {
     <#
     .SYNOPSIS
@@ -1814,7 +2247,9 @@ function Get-RestoreAuthoritativeObjectInventory {
                 -Query "IF DB_ID(N'$expectedDatabaseName') IS NULL CREATE DATABASE [$expectedDatabaseName];" `
                 -FailureMessage "Failed to create expected database '$expectedDatabaseName'."
 
-            $containerDdlPath = "/tmp/restore-expected-$([Guid]::NewGuid().ToString('N')).sql"
+            # Not /tmp: docker cp leaves the file root-owned, and sticky /tmp then refuses the
+            # mssql user's cleanup rm. The data directory is where the .bak artifacts go too.
+            $containerDdlPath = "/var/opt/mssql/data/restore-expected-$([Guid]::NewGuid().ToString('N')).sql"
             $null = Invoke-RestoreDockerCommand `
                 -ArgumentList @("cp", $ddlPath, "$($ContainerName):$containerDdlPath") `
                 -FailureMessage "Failed to copy the candidate DDL into container '$ContainerName'."
@@ -1832,12 +2267,18 @@ function Get-RestoreAuthoritativeObjectInventory {
         return $expectedFacts.FullInventory
     }
     finally {
-        try {
-            if ($null -ne $containerDdlPath) {
+        # Two independent cleanups: a failed file removal must never skip the database drop.
+        if ($null -ne $containerDdlPath) {
+            try {
                 $null = Invoke-RestoreDockerCommand `
                     -ArgumentList @("exec", $ContainerName, "rm", "-f", $containerDdlPath) `
                     -FailureMessage "Failed to remove the transient in-container DDL '$containerDdlPath'."
             }
+            catch {
+                Write-Warning "Expected-DDL cleanup did not complete: $(($_.Exception.Message | Out-String).Trim()) Remove '$containerDdlPath' in container '$ContainerName' manually if it remains."
+            }
+        }
+        try {
             Remove-RestoreExpectedDatabase `
                 -DatabaseEngine $DatabaseEngine `
                 -ExpectedDatabaseName $expectedDatabaseName `
@@ -1901,9 +2342,12 @@ function Invoke-RestoreScratchValidation {
     claims against reality before anything destructive happens near the target.
 
     .DESCRIPTION
-    The staged artifact bytes are re-hashed against the manifest BEFORE any docker activity
-    (the immutability contract), replayed into a freshly generated scratch database (never the
-    target), and then validated: the DMS-only gate over the full scratch inventory, the shared
+    The artifact is streamed into the container from the stage's retained authenticated
+    package bytes (never from a host path, so a replaced staging file cannot change it) and
+    hashed THERE against the manifest (the transfer-integrity check: the copy psql or RESTORE
+    reads is what was sent), replayed into
+    a freshly generated scratch database (never the target), and then validated: the DMS-only
+    gate over the full scratch inventory, the shared
     manifest-vs-database comparator (effective-schema fields, physical baseline including
     compatibility level and DocumentJson storage type, engine major, canonical inventory hash),
     the manifest<->candidate schema agreement, the project set against the validated partition,
@@ -1946,12 +2390,9 @@ function Invoke-RestoreScratchValidation {
     $scratchDatabaseName = New-RestoreScratchDatabaseName
     Assert-SafeRestoreDatabaseName -DatabaseEngine $DatabaseEngine -DatabaseName $scratchDatabaseName -Purpose "restore scratch database"
 
-    # Immutability re-proof BEFORE any docker activity: the bytes about to be replayed must be
-    # exactly the bytes that were authenticated and staged.
-    $artifactSha256 = Get-FileSha256Hex -Path $Stage.ArtifactPath
-    if ($artifactSha256 -cne [string]$manifest.artifactSha256) {
-        throw "The staged artifact's SHA-256 '$artifactSha256' no longer matches the manifest's artifactSha256 '$($manifest.artifactSha256)'; the artifact changed since staging. Aborting before any database activity."
-    }
+    # The replay source is the stage's retained authenticated bytes, never a host path; check
+    # that it is present and intact BEFORE any docker activity.
+    Assert-RestoreRetainedPackage -Stage $Stage -AbortDescription "aborting before any database activity."
 
     $adminQueryArguments = @{
         DatabaseEngine = $DatabaseEngine
@@ -1979,18 +2420,32 @@ function Invoke-RestoreScratchValidation {
                 -FailureMessage "Failed to create scratch database '$scratchDatabaseName'."
 
             $containerArtifactPath = "/tmp/restore-scratch-$([Guid]::NewGuid().ToString('N')).sql"
-            $null = Invoke-RestoreDockerCommand `
-                -ArgumentList @("cp", $Stage.ArtifactPath, "$($ContainerName):$containerArtifactPath") `
+            Copy-RestoreStagedArtifactToContainer `
+                -Stage $Stage `
+                -ContainerName $ContainerName `
+                -ContainerArtifactPath $containerArtifactPath `
                 -FailureMessage "Failed to copy the staged artifact into container '$ContainerName'."
+            Assert-RestoreContainerArtifactSha256 `
+                -ContainerName $ContainerName `
+                -ContainerArtifactPath $containerArtifactPath `
+                -ExpectedSha256 ([string]$manifest.artifactSha256) `
+                -ConsumerDescription "the scratch replay"
             $null = Invoke-RestoreDockerCommand `
                 -ArgumentList @("exec", $ContainerName, "psql", "-U", "postgres", "-d", $scratchDatabaseName, "-v", "ON_ERROR_STOP=1", "-f", $containerArtifactPath) `
                 -FailureMessage "Replay of the artifact into scratch database '$scratchDatabaseName' failed."
         }
         else {
             $containerArtifactPath = "/var/opt/mssql/data/restore-scratch-$([Guid]::NewGuid().ToString('N')).bak"
-            $null = Invoke-RestoreDockerCommand `
-                -ArgumentList @("cp", $Stage.ArtifactPath, "$($ContainerName):$containerArtifactPath") `
+            Copy-RestoreStagedArtifactToContainer `
+                -Stage $Stage `
+                -ContainerName $ContainerName `
+                -ContainerArtifactPath $containerArtifactPath `
                 -FailureMessage "Failed to copy the staged artifact into container '$ContainerName'."
+            Assert-RestoreContainerArtifactSha256 `
+                -ContainerName $ContainerName `
+                -ContainerArtifactPath $containerArtifactPath `
+                -ExpectedSha256 ([string]$manifest.artifactSha256) `
+                -ConsumerDescription "the scratch restore"
 
             $fileListRows = Invoke-RestoreDockerCommand `
                 -ArgumentList @("exec", "-e", "SQLCMDPASSWORD=$MssqlPassword", $ContainerName, "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-d", "master", "-C", "-b", "-h", "-1", "-W", "-s", "|", "-Q", "SET NOCOUNT ON; RESTORE FILELISTONLY FROM DISK = N'$containerArtifactPath';") `
@@ -2235,8 +2690,10 @@ function Invoke-RestoreTargetReplacement {
 
     .DESCRIPTION
     Re-runs the full non-destructive target-safety gate (Assert-RestoreTargetSafety)
-    immediately before the first destructive statement, re-hashes the staged artifact
-    immediately before the copy (the SAME immutable bytes scratch validation proved), then
+    immediately before the first destructive statement, streams the artifact into the
+    container from the SAME retained authenticated bytes scratch validation replayed (never
+    from a host path), hashes the copy inside the container before any destructive statement
+    (the transfer-integrity check), then
     dispatches per engine: PostgreSQL ensures the shared restore-global role, terminates
     connections, drops and recreates the target, and replays via psql ON_ERROR_STOP;
     SQL Server copies the backup in, single-user-drops an existing target, reads the file
@@ -2289,12 +2746,9 @@ function Invoke-RestoreTargetReplacement {
         -EffectiveConfigDatabaseName $EffectiveConfigDatabaseName `
         -MssqlPassword $MssqlPassword
 
-    # Immutability: the target consumes exactly the bytes scratch validation proved, re-hashed
-    # immediately before the copy.
-    $artifactSha256 = Get-FileSha256Hex -Path $Stage.ArtifactPath
-    if ($artifactSha256 -cne [string]$manifest.artifactSha256) {
-        throw "The staged artifact's SHA-256 '$artifactSha256' no longer matches the manifest's artifactSha256 '$($manifest.artifactSha256)'; the artifact changed after scratch validation. Aborting before any destructive statement."
-    }
+    # The target consumes the same retained authenticated bytes scratch validation replayed,
+    # never a host path; check that they are present and intact before the copy.
+    Assert-RestoreRetainedPackage -Stage $Stage -AbortDescription "aborting before any destructive statement."
 
     $adminQueryArguments = @{
         DatabaseEngine = $DatabaseEngine
@@ -2313,13 +2767,19 @@ function Invoke-RestoreTargetReplacement {
     try {
         if ($DatabaseEngine -eq "postgresql") {
             # The copy happens FIRST, mirroring the SQL Server branch: a copy failure must
-            # leave the target completely untouched, and the hash proven a moment ago must be
-            # the bytes that land in the container - no window between emptying the target and
-            # copying.
+            # leave the target completely untouched, and the in-container hash must pass
+            # before the target is emptied - no window between emptying the target and copying.
             $containerArtifactPath = "/tmp/restore-target-$([Guid]::NewGuid().ToString('N')).sql"
-            $null = Invoke-RestoreDockerCommand `
-                -ArgumentList @("cp", $Stage.ArtifactPath, "$($ContainerName):$containerArtifactPath") `
+            Copy-RestoreStagedArtifactToContainer `
+                -Stage $Stage `
+                -ContainerName $ContainerName `
+                -ContainerArtifactPath $containerArtifactPath `
                 -FailureMessage "Failed to copy the staged artifact into container '$ContainerName'."
+            Assert-RestoreContainerArtifactSha256 `
+                -ContainerName $ContainerName `
+                -ContainerArtifactPath $containerArtifactPath `
+                -ExpectedSha256 ([string]$manifest.artifactSha256) `
+                -ConsumerDescription "any change to target database '$TargetDatabaseName'"
 
             # Idempotent role init keeps the target replay self-sufficient even when invoked
             # standalone (scratch validation normally ensured the role moments earlier).
@@ -2345,9 +2805,16 @@ function Invoke-RestoreTargetReplacement {
         }
         else {
             $containerArtifactPath = "/var/opt/mssql/data/restore-target-$([Guid]::NewGuid().ToString('N')).bak"
-            $null = Invoke-RestoreDockerCommand `
-                -ArgumentList @("cp", $Stage.ArtifactPath, "$($ContainerName):$containerArtifactPath") `
+            Copy-RestoreStagedArtifactToContainer `
+                -Stage $Stage `
+                -ContainerName $ContainerName `
+                -ContainerArtifactPath $containerArtifactPath `
                 -FailureMessage "Failed to copy the staged artifact into container '$ContainerName'."
+            Assert-RestoreContainerArtifactSha256 `
+                -ContainerName $ContainerName `
+                -ContainerArtifactPath $containerArtifactPath `
+                -ExpectedSha256 ([string]$manifest.artifactSha256) `
+                -ConsumerDescription "any change to target database '$TargetDatabaseName'"
 
             $existsRows = @(Invoke-RestoreCatalogQuery @adminQueryArguments `
                     -Query "SET NOCOUNT ON; SELECT CASE WHEN DB_ID(N'$TargetDatabaseName') IS NOT NULL THEN 1 ELSE 0 END;" `

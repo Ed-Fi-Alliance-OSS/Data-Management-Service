@@ -1099,6 +1099,7 @@ Describe "Build-TemplateNuGetPackage package identity derivation" {
             Mock Build-NuGetPackage {}
             Mock Get-TemplateSourceCatalogFacts { [pscustomobject]@{} }
             Mock Assert-DmsOnlyTemplateSource { [pscustomobject]@{ HasAuth = $false; ResourceSchemaNames = [string[]]@(); TrackedChangesProjectNames = [string[]]@(); ProjectSchemaNames = [string[]]@("edfi") } }
+            Mock Assert-TemplateSourceMatchesAuthoritativeInventory {}
             Mock Write-TemplateRestoreManifest { "restore-manifest.json" }
             Mock Add-FileToCsProjForNuget {}
 
@@ -1127,6 +1128,7 @@ Describe "Build-TemplateNuGetPackage package identity derivation" {
             Mock Build-NuGetPackage {}
             Mock Get-TemplateSourceCatalogFacts { [pscustomobject]@{} }
             Mock Assert-DmsOnlyTemplateSource { [pscustomobject]@{ HasAuth = $false; ResourceSchemaNames = [string[]]@(); TrackedChangesProjectNames = [string[]]@(); ProjectSchemaNames = [string[]]@("edfi") } }
+            Mock Assert-TemplateSourceMatchesAuthoritativeInventory {}
             Mock Write-TemplateRestoreManifest { "restore-manifest.json" }
             Mock Add-FileToCsProjForNuget {}
 
@@ -1311,10 +1313,12 @@ Describe "Get-TemplateSourceCatalogFacts" {
                 if ($query -match 'ProductVersion') { return '17.0.900.7' }
                 if ($query -match 'compatibility_level') { return '170' }
                 if ($query -match 'sys\.columns') { return 'DocumentCache|nvarchar' }
+                # The schema query also names sys.objects (built-in schemas show only when
+                # non-empty), so it is told apart by what it selects.
+                if ($query -match 'SELECT s\.name FROM sys\.schemas') { return @('dbo', 'dms', 'edfi', 'tracked_changes_edfi') }
                 if ($query -match 'sys\.objects') {
                     return @('dms|Document|table', 'edfi|School|table', 'tracked_changes_edfi|School|table')
                 }
-                if ($query -match 'sys\.schemas') { return @('dbo', 'dms', 'edfi', 'tracked_changes_edfi') }
                 if ($query -match 'database_principals') { return @() }
             }
 
@@ -1425,6 +1429,7 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
             # -DumpAllUserSchemas discovers the dump scope from the live database; the mock keeps
             # this test off Docker while matching the facts above.
             Mock Get-UserSchemaNames { @("dms", "edfi", "tracked_changes_edfi") }
+            Mock Get-TemplateAuthoritativeObjectInventory { $cleanFacts.FullInventory }
             Mock Invoke-DatabaseDump { throw "pg_dump of 'edfi_datamanagementservice' failed in container 'dms-postgresql' with exit code 1." }
             Mock Write-TemplateRestoreManifest {}
             Mock New-DatabaseTemplateCsproj {}
@@ -1432,7 +1437,7 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
             Mock Build-NuGetPackage {}
             Mock Invoke-TemplatePackageAttestation {}
 
-            { Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" -DumpAllUserSchemas } |
+            { Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" -DumpAllUserSchemas -SchemaFilePath "ApiSchema.json" } |
                 Should -Throw "*pg_dump*failed*exit code 1*"
 
             # A failed or partial dump never reaches manifest, packaging, or attestation work.
@@ -1518,6 +1523,7 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
 
                 Mock Get-TemplateSourceCatalogFacts { $cleanFacts }
                 Mock Get-UserSchemaNames { @("dms", "edfi", "tracked_changes_edfi") }
+                Mock Get-TemplateAuthoritativeObjectInventory { $cleanFacts.FullInventory }
                 Mock Invoke-DatabaseDump {
                     Set-Content -LiteralPath (Join-Path $BackupDirectory $BackupFileName) -Value "fake artifact bytes"
                 }
@@ -1525,7 +1531,7 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
                 Mock Add-FileToCsProjForNuget {}
                 Mock Build-NuGetPackage {}
 
-                Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.123" -TemplateKind "Minimal" -DumpAllUserSchemas
+                Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.123" -TemplateKind "Minimal" -DumpAllUserSchemas -SchemaFilePath "ApiSchema.json"
 
                 # Read-RestoreManifest shape-validates the written manifest as a consumer would.
                 $manifest = Read-RestoreManifest -Path "./restore-manifest.json"
@@ -1553,6 +1559,177 @@ Describe "Build-TemplateNuGetPackage restore gate and manifest" {
         }
         finally {
             Pop-Location
+        }
+    }
+}
+
+Describe "Build-TemplateNuGetPackage authoritative source comparison" {
+    BeforeAll {
+        $script:templatesDir = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Push-Location $script:templatesDir
+        try {
+            Import-Module (Join-Path $script:templatesDir "Template-Management.psm1") -Force
+        }
+        finally {
+            Pop-Location
+        }
+
+        # What the schema files' DDL defines: the dms schema, the generated auth companion, one
+        # resource schema with its tracked_changes companion, and the empty always-present schema.
+        $script:authoritativeInventory = @{
+            schemas    = @(
+                @{ schemaName = "auth"; objects = @(@{ name = "EducationOrganizationIdToEducationOrganizationId"; type = "table" }) },
+                @{ schemaName = "dms"; objects = @(@{ name = "Document"; type = "table" }, @{ name = "EffectiveSchema"; type = "table" }) },
+                @{ schemaName = "edfi"; objects = @(@{ name = "School"; type = "table" }) },
+                @{ schemaName = "public"; objects = @() },
+                @{ schemaName = "tracked_changes_edfi"; objects = @(@{ name = "School"; type = "table" }) }
+            )
+            principals = @()
+        }
+    }
+
+    It "refuses a source with <Name> in an otherwise allowed schema before any dump, manifest, package, or attestation" -ForEach @(
+        @{ Name = "an extra auth.CopiedClients table"; Schema = "auth"; Extra = "CopiedClients"; Expected = "*objects the schema files do not define: auth.CopiedClients (table)*Nothing was dumped or packaged*" }
+        @{ Name = "an extra dms.PrivateKeys table"; Schema = "dms"; Extra = "PrivateKeys"; Expected = "*objects the schema files do not define: dms.PrivateKeys (table)*Nothing was dumped or packaged*" }
+    ) {
+        InModuleScope Template-Management -Parameters @{
+            configPath    = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1")
+            authoritative = $script:authoritativeInventory
+            schema        = $Schema
+            extra         = $Extra
+            expected      = $Expected
+        } {
+            param($configPath, $authoritative, $schema, $extra, $expected)
+
+            $configPath | Should -Exist
+
+            $contaminatedSchemas = @($authoritative.schemas | ForEach-Object {
+                    $objects = @($_.objects)
+                    if ($_.schemaName -ceq $schema) { $objects += @{ name = $extra; type = "table" } }
+                    @{ schemaName = $_.schemaName; objects = $objects }
+                })
+            $contaminatedFacts = [pscustomobject]@{ FullInventory = @{ schemas = $contaminatedSchemas; principals = @() } }
+
+            Mock Assert-TemplateAttestationSignerKey {}
+            Mock Get-TemplateSourceCatalogFacts { $contaminatedFacts }
+            Mock Get-UserSchemaNames { @("auth", "dms", "edfi", "tracked_changes_edfi") }
+            Mock Get-TemplateAuthoritativeObjectInventory { $authoritative }
+            Mock Invoke-DatabaseDump {}
+            Mock Write-TemplateRestoreManifest {}
+            Mock New-DatabaseTemplateCsproj {}
+            Mock Add-FileToCsProjForNuget {}
+            Mock Build-NuGetPackage {}
+            Mock Invoke-TemplatePackageAttestation {}
+
+            # The DMS-only gate alone accepts this source: the extra table sits in an allowed schema.
+            { Assert-DmsOnlyTemplateSource -Facts $contaminatedFacts -DatabaseEngine postgresql -DatabaseName "edfi_datamanagementservice" } | Should -Not -Throw
+
+            {
+                Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" `
+                    -DumpAllUserSchemas -SchemaFilePath @("ApiSchema.json") `
+                    -AttestationSignerKeyPath "signer.pem" -AttestationProducer "local-dev"
+            } | Should -Throw $expected
+
+            Should -Invoke Get-TemplateAuthoritativeObjectInventory -Times 1 -Exactly -ParameterFilter {
+                @($SchemaFilePath) -join "|" -eq "ApiSchema.json" -and $DatabaseEngine -eq "postgresql"
+            }
+            Should -Invoke Invoke-DatabaseDump -Times 0 -Exactly
+            Should -Invoke Write-TemplateRestoreManifest -Times 0 -Exactly
+            Should -Invoke New-DatabaseTemplateCsproj -Times 0 -Exactly
+            Should -Invoke Build-NuGetPackage -Times 0 -Exactly
+            Should -Invoke Invoke-TemplatePackageAttestation -Times 0 -Exactly
+        }
+    }
+
+    It "accepts a source holding exactly the authoritative objects, including the auth and tracked_changes companions" {
+        InModuleScope Template-Management -Parameters @{
+            configPath    = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1")
+            authoritative = $script:authoritativeInventory
+        } {
+            param($configPath, $authoritative)
+
+            $configPath | Should -Exist
+            $authoritative.schemas | Should -Not -BeNullOrEmpty
+
+            Mock Get-TemplateSourceCatalogFacts { [pscustomobject]@{ FullInventory = $authoritative } }
+            Mock Get-UserSchemaNames { @("auth", "dms", "edfi", "tracked_changes_edfi") }
+            Mock Get-TemplateAuthoritativeObjectInventory { $authoritative }
+            Mock Invoke-DatabaseDump {}
+            Mock Write-TemplateRestoreManifest { "restore-manifest.json" }
+            Mock New-DatabaseTemplateCsproj {}
+            Mock Add-FileToCsProjForNuget {}
+            Mock Build-NuGetPackage {}
+
+            Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" `
+                -DumpAllUserSchemas -SchemaFilePath @("ApiSchema.json", "ApiSchema.tpdm.json")
+
+            Should -Invoke Get-TemplateAuthoritativeObjectInventory -Times 1 -Exactly -ParameterFilter {
+                @($SchemaFilePath) -join "|" -eq "ApiSchema.json|ApiSchema.tpdm.json" -and $DatabaseEngine -eq "postgresql"
+            }
+            Should -Invoke Invoke-DatabaseDump -Times 1 -Exactly
+            Should -Invoke Build-NuGetPackage -Times 1 -Exactly
+        }
+    }
+
+    It "refuses to package without -SchemaFilePath, before deriving anything or dumping" {
+        InModuleScope Template-Management -Parameters @{
+            configPath    = (Join-Path (Split-Path $PSScriptRoot -Parent) "MinimalTemplateSettings.psd1")
+            authoritative = $script:authoritativeInventory
+        } {
+            param($configPath, $authoritative)
+
+            $configPath | Should -Exist
+            $authoritative.schemas | Should -Not -BeNullOrEmpty
+
+            Mock Get-TemplateSourceCatalogFacts { [pscustomobject]@{ FullInventory = $authoritative } }
+            Mock Get-UserSchemaNames { @("auth", "dms", "edfi", "tracked_changes_edfi") }
+            Mock Get-TemplateAuthoritativeObjectInventory { $authoritative }
+            Mock Invoke-DatabaseDump {}
+            Mock Build-NuGetPackage {}
+
+            { Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.0" -TemplateKind "Minimal" -DumpAllUserSchemas } |
+                Should -Throw "*cannot be packaged without -SchemaFilePath*"
+
+            Should -Invoke Get-TemplateAuthoritativeObjectInventory -Times 0 -Exactly
+            Should -Invoke Invoke-DatabaseDump -Times 0 -Exactly
+            Should -Invoke Build-NuGetPackage -Times 0 -Exactly
+        }
+    }
+
+    It "derives the authoritative inventory through the restore consumer's own derivation" {
+        # A missing schema tool fails inside Get-RestoreAuthoritativeObjectInventory's resolver,
+        # which proves the producer reaches the same derivation the consumer uses.
+        InModuleScope Template-Management -Parameters @{ outputRoot = $TestDrive } {
+            param($outputRoot)
+
+            $outputRoot | Should -Exist
+            { Get-TemplateAuthoritativeObjectInventory -SchemaFilePath @("ApiSchema.json") -DatabaseEngine postgresql -OutputRoot $outputRoot -SchemaToolPath (Join-Path $outputRoot "absent-tool") } |
+                Should -Throw "*api-schema-tools executable was not found*"
+        }
+    }
+
+    It "Build-Template forwards -SchemaFilePath to the package build" {
+        InModuleScope Template-Management {
+            Mock Add-CmsClient {}
+            Mock Get-CmsToken { return "cms-token" }
+            Mock Get-DataStore { return @() }
+            Mock Resolve-DataStoreIdForTemplate { return [long]5 }
+            Mock Find-CmsVendorByCompany { return [pscustomobject]@{ id = 23; company = 'Demo Vendor' } }
+            Mock Add-Application { return @{ Id = 1; Key = "key"; Secret = "secret" } }
+            Mock Get-DmsToken { return "dms-token" }
+            Mock Invoke-SchoolYearLoader {}
+            Mock Initialize-BulkLoad { return @{} }
+            Mock Get-TemplateBulkLoadTuning { return @{} }
+            Mock Invoke-BulkLoad {}
+            Mock Build-TemplateNuGetPackage {}
+
+            Build-Template -TemplateType Minimal -DmsUrl "http://dms" -CmsUrl "http://cms" -MinimalSampleDataDirectory "minimal-dir" `
+                -Extension "ed-fi" -ConfigFilePath "config.psd1" -StandardVersion "5.2.0" -PackageVersion "1.0.0" `
+                -SchemaFilePath @("ApiSchema.json", "ApiSchema.tpdm.json")
+
+            Should -Invoke Build-TemplateNuGetPackage -Times 1 -Exactly -ParameterFilter {
+                @($SchemaFilePath) -join "|" -eq "ApiSchema.json|ApiSchema.tpdm.json"
+            }
         }
     }
 }
@@ -1612,6 +1789,7 @@ Describe "Build-TemplateNuGetPackage attestation" {
 
                 Mock Get-TemplateSourceCatalogFacts { $cleanFacts }
                 Mock Get-UserSchemaNames { @("dms", "edfi", "tracked_changes_edfi") }
+                Mock Get-TemplateAuthoritativeObjectInventory { $cleanFacts.FullInventory }
                 Mock Invoke-DatabaseDump {
                     Set-Content -LiteralPath (Join-Path $BackupDirectory $BackupFileName) -Value "fake artifact bytes"
                 }
@@ -1628,6 +1806,7 @@ Describe "Build-TemplateNuGetPackage attestation" {
                     -PackageVersion "1.0.123" `
                     -TemplateKind "Minimal" `
                     -DumpAllUserSchemas `
+                    -SchemaFilePath "ApiSchema.json" `
                     -AttestationSignerKeyPath $signingKey.PrivateKeyPath `
                     -AttestationProducer "local-dev"
 
@@ -1714,6 +1893,7 @@ Describe "Build-TemplateNuGetPackage attestation" {
 
                 Mock Get-TemplateSourceCatalogFacts { $cleanFacts }
                 Mock Get-UserSchemaNames { @("dms", "edfi", "tracked_changes_edfi") }
+                Mock Get-TemplateAuthoritativeObjectInventory { $cleanFacts.FullInventory }
                 Mock Invoke-DatabaseDump {
                     Set-Content -LiteralPath (Join-Path $BackupDirectory $BackupFileName) -Value "fake artifact bytes"
                 }
@@ -1722,7 +1902,7 @@ Describe "Build-TemplateNuGetPackage attestation" {
                 Mock Build-NuGetPackage {}
                 Mock Build-TemplateAttestationCompanionPackage {}
 
-                Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.123" -TemplateKind "Minimal" -DumpAllUserSchemas
+                Build-TemplateNuGetPackage -ConfigFilePath $configPath -StandardVersion "5.2.0" -PackageVersion "1.0.123" -TemplateKind "Minimal" -DumpAllUserSchemas -SchemaFilePath "ApiSchema.json"
 
                 @(Get-ChildItem -Path "." -Filter "*.attestation.json").Count | Should -Be 0
                 Should -Invoke Build-TemplateAttestationCompanionPackage -Times 0 -Exactly

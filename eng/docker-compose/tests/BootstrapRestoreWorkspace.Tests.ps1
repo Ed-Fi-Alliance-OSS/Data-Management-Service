@@ -252,6 +252,88 @@ exit 0
         Remove-Item function:global:docker -ErrorAction SilentlyContinue
         Import-ManifestModule
     }
+
+    function global:Invoke-TestContainerFileDocker {
+        # A stand-in container filesystem for the docker mocks (global, because mock bodies run
+        # in the module's session state): "cp" stores the bytes it reads from the host path,
+        # and "exec <container> sha256sum <path>" answers with their hash the way sha256sum
+        # prints it.
+        param([object[]]$DockerArgs)
+
+        if ($DockerArgs[0] -eq "cp") {
+            $global:TestContainerFiles[([string]$DockerArgs[2] -split ":", 2)[1]] = [System.IO.File]::ReadAllBytes($DockerArgs[1])
+        }
+        elseif ($DockerArgs[0] -eq "exec" -and $DockerArgs[2] -eq "sha256sum") {
+            $containerBytes = $global:TestContainerFiles[[string]$DockerArgs[3]]
+            "$([System.Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData([byte[]]$containerBytes)).ToLowerInvariant())  $($DockerArgs[3])"
+        }
+    }
+
+    function global:Invoke-TestContainerInputDocker {
+        # The stand-in for Invoke-RestoreDockerInputCommand ("docker cp - <container>:<dir>"):
+        # runs the production input writer into memory, reads the result back with .NET's own
+        # TarReader (header checksum, one regular file), and stores the file in the stand-in
+        # container filesystem. With $global:ReplaceStagedArtifactBeforeCopy set, every path in
+        # $global:HostStagingPathsToReplace is overwritten with other bytes right BEFORE the
+        # writer runs; with $global:CorruptContainerCopy set, the stored copy differs from what
+        # was streamed (a damaged transfer).
+        param(
+            [string[]]$ArgumentList,
+            [scriptblock]$InputWriter
+        )
+
+        if ($global:ReplaceStagedArtifactBeforeCopy) {
+            foreach ($hostPath in @($global:HostStagingPathsToReplace)) {
+                (Get-Item -LiteralPath $hostPath).IsReadOnly = $false
+                [System.IO.File]::WriteAllText($hostPath, "replaced host staging bytes")
+            }
+        }
+
+        $inputStream = [System.IO.MemoryStream]::new()
+        $writerResult = & $InputWriter $inputStream
+        $global:TestContainerInputs.Add($inputStream.ToArray())
+        $inputStream.Position = 0
+        $tarReader = [System.Formats.Tar.TarReader]::new($inputStream)
+        $tarEntry = $tarReader.GetNextEntry($true)
+        if ($null -eq $tarEntry -or $tarEntry.EntryType -ne [System.Formats.Tar.TarEntryType]::RegularFile -or $null -ne $tarReader.GetNextEntry()) {
+            throw "docker cp - expects exactly one regular file in its tar input."
+        }
+        $fileBytes = [System.IO.MemoryStream]::new()
+        $tarEntry.DataStream.CopyTo($fileBytes)
+        $storedBytes = $fileBytes.ToArray()
+        if ($global:CorruptContainerCopy) {
+            $storedBytes = [System.Text.Encoding]::UTF8.GetBytes("damaged in transfer")
+        }
+        $containerDirectory = ([string]$ArgumentList[2] -split ":", 2)[1]
+        $global:TestContainerFiles["$containerDirectory/$($tarEntry.Name)"] = $storedBytes
+
+        return $writerResult
+    }
+
+    function global:New-TestRetainedPackage {
+        # A real in-memory .nupkg-shaped zip holding the artifact entry, as staging retains it.
+        param(
+            [Parameter(Mandatory)]
+            [string]$EntryName,
+
+            [Parameter(Mandatory)]
+            [byte[]]$ArtifactBytes
+        )
+
+        $packageStream = [System.IO.MemoryStream]::new()
+        $packageArchive = [System.IO.Compression.ZipArchive]::new($packageStream, [System.IO.Compression.ZipArchiveMode]::Create, $true)
+        $entryStream = $packageArchive.CreateEntry($EntryName).Open()
+        $entryStream.Write($ArtifactBytes, 0, $ArtifactBytes.Length)
+        $entryStream.Dispose()
+        $packageArchive.Dispose()
+        return , $packageStream.ToArray()
+    }
+}
+
+AfterAll {
+    Remove-Item function:global:Invoke-TestContainerFileDocker -ErrorAction SilentlyContinue
+    Remove-Item function:global:Invoke-TestContainerInputDocker -ErrorAction SilentlyContinue
+    Remove-Item function:global:New-TestRetainedPackage -ErrorAction SilentlyContinue
 }
 
 Describe "DMS_BOOTSTRAP_ROOT_OVERRIDE workspace redirection" {
@@ -1286,9 +1368,11 @@ Describe "Invoke-RestoreScratchValidation" {
         }
 
         function script:New-ScratchStage {
-            # A staged-package stand-in: a real artifact file whose hash the manifest records,
-            # plus the manifest fields scratch validation consumes. The inventorySha256 is
-            # computed from the default facts fixture so the comparator passes by construction.
+            # A staged-package stand-in: the retained authenticated package bytes (a real zip
+            # holding the artifact entry) the transfers stream from, a host-side record of the
+            # artifact at ArtifactPath like staging leaves, plus the manifest fields scratch
+            # validation consumes. The inventorySha256 is computed from the default facts
+            # fixture so the comparator passes by construction.
             param(
                 [Parameter(Mandatory)]
                 [string]$Directory,
@@ -1301,7 +1385,10 @@ Describe "Invoke-RestoreScratchValidation" {
 
             $artifactExtension = if ($DatabaseEngine -eq "mssql") { "bak" } else { "sql" }
             $artifactPath = Join-Path $Directory "artifact.$artifactExtension"
-            Set-Content -LiteralPath $artifactPath -Value "scratch artifact bytes" -Encoding utf8 -NoNewline
+            $artifactBytes = [System.Text.Encoding]::UTF8.GetBytes("scratch artifact bytes")
+            [System.IO.File]::WriteAllBytes($artifactPath, $artifactBytes)
+            $artifactEntryName = "content/artifact.$artifactExtension"
+            $packageBytes = New-TestRetainedPackage -EntryName $artifactEntryName -ArtifactBytes $artifactBytes
 
             $referenceFact = New-ScratchCatalogFact -DatabaseEngine $DatabaseEngine
             $manifest = @{
@@ -1323,9 +1410,12 @@ Describe "Invoke-RestoreScratchValidation" {
             }
 
             return [pscustomobject]@{
-                StageDirectory = $Directory
-                ArtifactPath   = $artifactPath
-                Manifest       = [pscustomobject]$manifest
+                StageDirectory    = $Directory
+                PackageBytes      = $packageBytes
+                PackageSha256     = [System.Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($packageBytes)).ToLowerInvariant()
+                ArtifactEntryName = $artifactEntryName
+                ArtifactPath      = $artifactPath
+                Manifest          = [pscustomobject]$manifest
             }
         }
     }
@@ -1358,14 +1448,24 @@ Describe "Invoke-RestoreScratchValidation" {
             return $global:ScratchFactToReturn.FullInventory
         } -ModuleName bootstrap-restore
 
-        # Defaults: every docker command succeeds (FILELISTONLY answers with a two-file list),
-        # the package's SourceIdentity is one valid row, and the populated count is nonzero.
+        # Defaults: every docker command succeeds (FILELISTONLY answers with a two-file list,
+        # cp and sha256sum act on a stand-in container filesystem), the package's
+        # SourceIdentity is one valid row, and the populated count is nonzero.
+        $global:TestContainerFiles = @{}
+        $global:TestContainerInputs = [System.Collections.Generic.List[byte[]]]::new()
+        $global:ReplaceStagedArtifactBeforeCopy = $false
+        $global:HostStagingPathsToReplace = @()
+        $global:CorruptContainerCopy = $false
         Mock docker {
             $global:LASTEXITCODE = 0
+            Invoke-TestContainerFileDocker -DockerArgs $args
             if (($args -join " ") -like "*FILELISTONLY*") {
                 "edfi_dms|/var/opt/mssql/data/edfi.mdf|D|extra"
                 "edfi_dms_log|/var/opt/mssql/data/edfi_log.ldf|L|extra"
             }
+        } -ModuleName bootstrap-restore
+        Mock Invoke-RestoreDockerInputCommand {
+            Invoke-TestContainerInputDocker -ArgumentList $ArgumentList -InputWriter $InputWriter
         } -ModuleName bootstrap-restore
         Mock Invoke-RestoreCatalogQuery {
             if ($Query -like "*SourceIdentity*") { return "11111111-1111-1111-1111-111111111111" }
@@ -1379,6 +1479,11 @@ Describe "Invoke-RestoreScratchValidation" {
     AfterEach {
         Remove-Variable -Name ScratchFactToReturn -Scope Global -ErrorAction SilentlyContinue
         Remove-Variable -Name AuthoritativeInventoryOverride -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name TestContainerFiles -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name TestContainerInputs -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name ReplaceStagedArtifactBeforeCopy -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name HostStagingPathsToReplace -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name CorruptContainerCopy -Scope Global -ErrorAction SilentlyContinue
     }
 
     It "PostgreSQL: replays into a generated scratch, validates, captures the package SourceIdentity, and drops the scratch" {
@@ -1392,8 +1497,11 @@ Describe "Invoke-RestoreScratchValidation" {
         # Replay sequence: role init, terminate, drop-if-exists, create - then cp and psql -f.
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "*edfi_dms_enqueue_owner*" }
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like 'CREATE DATABASE "edfi_dms_restore_scratch_*' }
-        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "cp * dms-postgresql:/tmp/restore-scratch-*.sql" }
-        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U postgres -d edfi_dms_restore_scratch_* -v ON_ERROR_STOP=1 -f /tmp/restore-scratch-*.sql" }
+        Should -Invoke Invoke-RestoreDockerInputCommand -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($ArgumentList -join " ") -ceq "cp - dms-postgresql:/tmp" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $args[0] -eq "cp" }
+        @($global:TestContainerFiles.Keys) | Should -HaveCount 1
+        @($global:TestContainerFiles.Keys)[0] | Should -BeLike "/tmp/restore-scratch-*.sql"
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U postgres -d edfi_dms_restore_scratch_* -v ON_ERROR_STOP=1 -f $(@($global:TestContainerFiles.Keys)[0])" }
 
         # The scratch is dropped in finally (the initial defensive drop plus the cleanup drop)
         # and the transient in-container file is removed.
@@ -1407,7 +1515,9 @@ Describe "Invoke-RestoreScratchValidation" {
 
         Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine mssql | Out-Null
 
-        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "cp * dms-mssql:/var/opt/mssql/data/restore-scratch-*.bak" }
+        Should -Invoke Invoke-RestoreDockerInputCommand -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($ArgumentList -join " ") -ceq "cp - dms-mssql:/var/opt/mssql/data" }
+        @($global:TestContainerFiles.Keys) | Should -HaveCount 1
+        @($global:TestContainerFiles.Keys)[0] | Should -BeLike "/var/opt/mssql/data/restore-scratch-*.bak"
         Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "*RESTORE FILELISTONLY FROM DISK*" }
         Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
             $joined = $args -join " "
@@ -1419,14 +1529,73 @@ Describe "Invoke-RestoreScratchValidation" {
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "IF DB_ID(N'edfi_dms_restore_scratch_*DROP DATABASE*" }
     }
 
-    It "a re-hash mismatch aborts before ANY docker activity" {
+    It "<Engine>: replacing the host staging file right before the copy cannot change the replayed bytes" -ForEach @(
+        @{ Engine = "postgresql"; Container = "dms-postgresql"; Consumer = "*psql*" }
+        @{ Engine = "mssql"; Container = "dms-mssql"; Consumer = "*RESTORE DATABASE*" }
+    ) {
+        $stage = New-ScratchStage -Directory $script:scratchRoot -DatabaseEngine $Engine
+        $global:ScratchFactToReturn = New-ScratchCatalogFact -DatabaseEngine $Engine
+        $global:ReplaceStagedArtifactBeforeCopy = $true
+        $global:HostStagingPathsToReplace = @($stage.ArtifactPath)
+
+        Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine $Engine | Out-Null
+
+        # The host file really was replaced before the transfer ran...
+        [System.IO.File]::ReadAllText($stage.ArtifactPath) | Should -BeExactly "replaced host staging bytes"
+        # ...yet the container received the authenticated bytes, the in-container hash passed,
+        # and the consumer ran against that copy.
+        @($global:TestContainerFiles.Values) | Should -HaveCount 1
+        [System.Text.Encoding]::UTF8.GetString(@($global:TestContainerFiles.Values)[0]) | Should -BeExactly "scratch artifact bytes"
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec $Container sha256sum *" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like $Consumer }
+    }
+
+    It "<Engine>: a copy that lands damaged in the container is refused before any replay" -ForEach @(
+        @{ Engine = "postgresql"; Container = "dms-postgresql"; Consumer = "*psql*" }
+        @{ Engine = "mssql"; Container = "dms-mssql"; Consumer = "*RESTORE *" }
+    ) {
+        $stage = New-ScratchStage -Directory $script:scratchRoot -DatabaseEngine $Engine
+        $global:ScratchFactToReturn = New-ScratchCatalogFact -DatabaseEngine $Engine
+        $global:CorruptContainerCopy = $true
+
+        { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine $Engine } |
+            Should -Throw "*artifact copied into container '$Container' has SHA-256*not the authenticated manifest's artifactSha256 '$($stage.Manifest.artifactSha256)'*did not deliver the authenticated bytes*Refusing the scratch*"
+
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec $Container sha256sum *" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { ($args -join " ") -like $Consumer }
+        Should -Invoke Get-RestoreDatabaseCatalogFact -ModuleName bootstrap-restore -Times 0 -Exactly
+        # The transient in-container copy is still removed.
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec $Container rm -f *" }
+    }
+
+    It "<Engine>: retained bytes whose artifact disagrees with the manifest are refused after the transfer, before the in-container hash and any replay" -ForEach @(
+        @{ Engine = "postgresql"; Container = "dms-postgresql"; Consumer = "*psql*" }
+        @{ Engine = "mssql"; Container = "dms-mssql"; Consumer = "*RESTORE *" }
+    ) {
+        $stage = New-ScratchStage -Directory $script:scratchRoot -DatabaseEngine $Engine -ManifestOverride @{ artifactSha256 = ("ee" * 32) }
+        $global:ScratchFactToReturn = New-ScratchCatalogFact -DatabaseEngine $Engine
+
+        { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine $Engine } |
+            Should -Throw "*Failed to copy the staged artifact into container '$Container'. The bytes streamed from the retained package hash to*not the manifest's artifactSha256 '$("ee" * 32)'*"
+
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { ($args -join " ") -like "exec $Container sha256sum *" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { ($args -join " ") -like $Consumer }
+        # The transient in-container copy is still removed.
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec $Container rm -f *" }
+    }
+
+    It "a stage whose retained bytes are <Name> aborts before ANY docker activity" -ForEach @(
+        @{ Name = "not the authenticated package"; Mutate = { param($stage) $stage.PackageSha256 = ("ff" * 32) }; Expected = "*retained package bytes hash to*not the authenticated*aborting before any database activity.*" }
+        @{ Name = "absent"; Mutate = { param($stage) $stage.PSObject.Properties.Remove("PackageBytes") }; Expected = "*does not carry its retained authenticated package bytes; aborting before any database activity.*" }
+    ) {
         $stage = New-ScratchStage -Directory $script:scratchRoot
-        Add-Content -LiteralPath $stage.ArtifactPath -Value "tampered"
+        & $Mutate $stage
 
         { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine postgresql } |
-            Should -Throw "*changed since staging*"
+            Should -Throw $Expected
 
         Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly
+        Should -Invoke Invoke-RestoreDockerInputCommand -ModuleName bootstrap-restore -Times 0 -Exactly
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly
     }
 
@@ -1463,6 +1632,25 @@ Describe "Invoke-RestoreScratchValidation" {
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*SourceIdentity*" }
         # The .bak copied into the SQL Server data directory is removed on the failure path too.
         Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-mssql rm -f /var/opt/mssql/data/restore-scratch-*.bak" }
+    }
+
+    It "SQL Server: every scratch step, including the failure-path cleanup, uses the caller's password" {
+        $stage = New-ScratchStage -Directory $script:scratchRoot -DatabaseEngine mssql
+        $global:ScratchFactToReturn = New-ScratchCatalogFact -DatabaseEngine mssql
+        $global:ScratchFactToReturn.DatabaseCompatibilityLevel = 160
+
+        { Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine mssql -MssqlPassword "Env_File_Only1!" } |
+            Should -Throw "*databaseCompatibilityLevel*"
+
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            $Query -like "IF DB_ID(N'edfi_dms_restore_scratch_*DROP DATABASE*" -and $MssqlPassword -ceq "Env_File_Only1!"
+        }
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $MssqlPassword -cne "Env_File_Only1!" }
+        Should -Invoke Get-RestoreDatabaseCatalogFact -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $MssqlPassword -cne "Env_File_Only1!" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 2 -Exactly -ParameterFilter { ($args -join " ") -like "*SQLCMDPASSWORD=Env_File_Only1!*" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter {
+            ($args -join " ") -like "*SQLCMDPASSWORD=*" -and ($args -join " ") -notlike "*SQLCMDPASSWORD=Env_File_Only1!*"
+        }
     }
 
     It "fails when the manifest and the candidate workspace disagree" {
@@ -1659,10 +1847,44 @@ exit 0
             -SchemaToolPath $script:derivationTool.ToolPath | Out-Null
 
         @(Get-Content -LiteralPath $script:derivationTool.LogPath)[0] | Should -BeLike "*--dialect mssql*"
-        @($global:DerivationDockerLog | Where-Object { $_ -like "*sqlcmd -S localhost -U sa -d edfi_dms_restore_expected_* -C -b -i /tmp/restore-expected-*.sql" }) |
-            Should -Not -BeNullOrEmpty
+        # The DDL goes to the mssql-owned data directory, never sticky /tmp, where the mssql
+        # user cannot remove the root-owned file docker cp leaves behind.
+        $dockerCalls = @($global:DerivationDockerLog)
+        @($dockerCalls | ForEach-Object { $_ -replace '^cp .+ (?=dms-mssql:)', 'cp ' } | Where-Object { $_ -like "*/tmp/*" }) | Should -BeNullOrEmpty
+        @($dockerCalls | Where-Object { $_ -match '^cp \S*mssql\.sql dms-mssql:/var/opt/mssql/data/restore-expected-[0-9a-f]{32}\.sql$' }) | Should -HaveCount 1
+        @($dockerCalls | Where-Object { $_ -match 'sqlcmd -S localhost -U sa -d edfi_dms_restore_expected_[0-9a-f]{12} -C -b -i /var/opt/mssql/data/restore-expected-[0-9a-f]{32}\.sql$' }) | Should -HaveCount 1
+        @($dockerCalls | Where-Object { $_ -match '^exec dms-mssql rm -f /var/opt/mssql/data/restore-expected-[0-9a-f]{32}\.sql$' }) | Should -HaveCount 1
         @($global:DerivationQueryLog | Where-Object { $_ -like "IF DB_ID(N'edfi_dms_restore_expected_*SINGLE_USER*DROP DATABASE*" }) |
             Should -Not -BeNullOrEmpty
+    }
+
+    It "drops the expected database even when the in-container DDL removal fails (<engine>)" -ForEach @(
+        @{ Engine = "postgresql"; Container = "dms-postgresql"; DropPattern = 'DROP DATABASE IF EXISTS "edfi_dms_restore_expected_*'; DropCount = 2 }
+        @{ Engine = "mssql"; Container = "dms-mssql"; DropPattern = "IF DB_ID(N'edfi_dms_restore_expected_*SINGLE_USER*DROP DATABASE*"; DropCount = 1 }
+    ) {
+        Mock Invoke-RestoreDockerCommand {
+            $global:DerivationDockerLog.Add(($ArgumentList -join " "))
+            if ($ArgumentList[0] -eq "exec" -and $ArgumentList -contains "rm") {
+                throw "$FailureMessage (rm: Operation not permitted)"
+            }
+            @()
+        } -ModuleName bootstrap-restore
+
+        $inventory = Get-RestoreAuthoritativeObjectInventory `
+            -SchemaFilePath ([string[]]@("C:\candidate\core.json")) `
+            -DatabaseEngine $Engine `
+            -ContainerName $Container `
+            -OutputRoot $script:derivationRoot `
+            -SchemaToolPath $script:derivationTool.ToolPath `
+            -WarningVariable cleanupWarnings `
+            -WarningAction SilentlyContinue
+
+        @($inventory.schemas).Count | Should -Be 1 -Because "a cleanup warning never turns a successful derivation into a failure"
+        @($global:DerivationDockerLog | Where-Object { $_ -like "exec $Container rm -f *restore-expected-*.sql" }) | Should -HaveCount 1
+        @($global:DerivationQueryLog | Where-Object { $_ -like $DropPattern }) |
+            Should -HaveCount $DropCount -Because "a failed file removal must not skip the expected-database drop (PostgreSQL also drops once before CREATE)"
+        @($cleanupWarnings | Where-Object { "$_" -like "Expected-DDL cleanup did not complete:*Operation not permitted*" }) | Should -HaveCount 1
+        @($cleanupWarnings | Where-Object { "$_" -like "Expected-database cleanup*" }) | Should -BeNullOrEmpty
     }
 
     It "drops the expected database even when the inventory read fails" {
@@ -1712,13 +1934,23 @@ Describe "Invoke-RestoreTargetReplacement" {
         # the first destructive statement.
         $global:TargetCallSequence = [System.Collections.Generic.List[string]]::new()
         Mock Assert-RestoreTargetSafety { $global:TargetCallSequence.Add("safety") } -ModuleName bootstrap-restore
+        $global:TestContainerFiles = @{}
+        $global:TestContainerInputs = [System.Collections.Generic.List[byte[]]]::new()
+        $global:ReplaceStagedArtifactBeforeCopy = $false
+        $global:HostStagingPathsToReplace = @()
+        $global:CorruptContainerCopy = $false
         Mock docker {
             $global:LASTEXITCODE = 0
             $global:TargetCallSequence.Add("docker " + ($args -join " "))
+            Invoke-TestContainerFileDocker -DockerArgs $args
             if (($args -join " ") -like "*FILELISTONLY*") {
                 "edfi_dms|/var/opt/mssql/data/edfi.mdf|D|extra"
                 "edfi_dms_log|/var/opt/mssql/data/edfi_log.ldf|L|extra"
             }
+        } -ModuleName bootstrap-restore
+        Mock Invoke-RestoreDockerInputCommand {
+            $global:TargetCallSequence.Add("docker " + ($ArgumentList -join " "))
+            Invoke-TestContainerInputDocker -ArgumentList $ArgumentList -InputWriter $InputWriter
         } -ModuleName bootstrap-restore
         Mock Invoke-RestoreCatalogQuery {
             $global:TargetCallSequence.Add("query " + $Query)
@@ -1731,6 +1963,11 @@ Describe "Invoke-RestoreTargetReplacement" {
 
     AfterEach {
         Remove-Variable -Name TargetCallSequence -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name TestContainerFiles -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name TestContainerInputs -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name ReplaceStagedArtifactBeforeCopy -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name HostStagingPathsToReplace -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name CorruptContainerCopy -Scope Global -ErrorAction SilentlyContinue
     }
 
     It "PostgreSQL: safety gate first, then drop/create/replay of the target, reseed, and verified identity" {
@@ -1746,8 +1983,10 @@ Describe "Invoke-RestoreTargetReplacement" {
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "*pg_terminate_backend*edfi_datamanagementservice*" }
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -eq 'DROP DATABASE IF EXISTS "edfi_datamanagementservice";' }
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -eq 'CREATE DATABASE "edfi_datamanagementservice";' }
-        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "cp * dms-postgresql:/tmp/restore-target-*.sql" }
-        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U postgres -d edfi_datamanagementservice -v ON_ERROR_STOP=1 -f /tmp/restore-target-*.sql" }
+        Should -Invoke Invoke-RestoreDockerInputCommand -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($ArgumentList -join " ") -ceq "cp - dms-postgresql:/tmp" }
+        @($global:TestContainerFiles.Keys) | Should -HaveCount 1
+        @($global:TestContainerFiles.Keys)[0] | Should -BeLike "/tmp/restore-target-*.sql"
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql psql -U postgres -d edfi_datamanagementservice -v ON_ERROR_STOP=1 -f $(@($global:TestContainerFiles.Keys)[0])" }
         # Reseed runs against the TARGET database, then the transient file is removed.
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "*UPDATE*DataStoreIdentity*" -and $DatabaseName -eq "edfi_datamanagementservice" }
         Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec dms-postgresql rm -f /tmp/restore-target-*.sql" }
@@ -1781,15 +2020,16 @@ Describe "Invoke-RestoreTargetReplacement" {
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*SINGLE_USER*" }
     }
 
-    It "a re-hash mismatch after the safety gate aborts before any destructive statement" {
+    It "retained bytes that are not the authenticated package abort after the safety gate, before any destructive statement" {
         $stage = New-ScratchStage -Directory $script:targetRoot
-        Add-Content -LiteralPath $stage.ArtifactPath -Value "tampered"
+        $stage.PackageSha256 = ("ff" * 32)
 
         { Invoke-RestoreTargetReplacement -Stage $stage -TargetDatabaseName "edfi_datamanagementservice" -PackageSourceIdentity $script:packageSourceIdentity -DatabaseEngine postgresql } |
-            Should -Throw "*changed after scratch validation*"
+            Should -Throw "*retained package bytes hash to*not the authenticated*aborting before any destructive statement.*"
 
         $global:TargetCallSequence | Should -Be @("safety")
         Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly
+        Should -Invoke Invoke-RestoreDockerInputCommand -ModuleName bootstrap-restore -Times 0 -Exactly
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly
     }
 
@@ -1806,15 +2046,11 @@ Describe "Invoke-RestoreTargetReplacement" {
     }
 
     It "PostgreSQL: a copy failure leaves the target completely untouched - no drop, no create" {
-        Mock docker {
-            $global:TargetCallSequence.Add("docker " + ($args -join " "))
-            if ($args[0] -eq "cp") {
-                $global:LASTEXITCODE = 1
-                "no space left on device"
-            }
-            else {
-                $global:LASTEXITCODE = 0
-            }
+        # Invoke-RestoreDockerInputCommand's own nonzero-exit contract: the caller's message
+        # plus the process output.
+        Mock Invoke-RestoreDockerInputCommand {
+            $global:TargetCallSequence.Add("docker " + ($ArgumentList -join " "))
+            throw "$FailureMessage (no space left on device)"
         } -ModuleName bootstrap-restore
         $stage = New-ScratchStage -Directory $script:targetRoot
 
@@ -1823,6 +2059,39 @@ Describe "Invoke-RestoreTargetReplacement" {
 
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "DROP DATABASE*" }
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "CREATE DATABASE*" }
+    }
+
+    It "<Engine>: replacing the host staging file after scratch validation cannot change the bytes the target restores" -ForEach @(
+        @{ Engine = "postgresql"; Container = "dms-postgresql"; Consumer = "*psql*" }
+        @{ Engine = "mssql"; Container = "dms-mssql"; Consumer = "*RESTORE DATABASE*" }
+    ) {
+        $stage = New-ScratchStage -Directory $script:targetRoot -DatabaseEngine $Engine
+        $global:ReplaceStagedArtifactBeforeCopy = $true
+        $global:HostStagingPathsToReplace = @($stage.ArtifactPath)
+
+        $result = Invoke-RestoreTargetReplacement -Stage $stage -TargetDatabaseName "edfi_datamanagementservice" -PackageSourceIdentity $script:packageSourceIdentity -DatabaseEngine $Engine
+
+        [System.IO.File]::ReadAllText($stage.ArtifactPath) | Should -BeExactly "replaced host staging bytes"
+        @($global:TestContainerFiles.Values) | Should -HaveCount 1
+        [System.Text.Encoding]::UTF8.GetString(@($global:TestContainerFiles.Values)[0]) | Should -BeExactly "scratch artifact bytes"
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like $Consumer }
+        $result.RestoredSourceIdentity | Should -Be "33333333-3333-3333-3333-333333333333"
+    }
+
+    It "<Engine>: a copy that lands damaged in the container never reaches the target" -ForEach @(
+        @{ Engine = "postgresql"; Container = "dms-postgresql"; Consumer = "*psql*" }
+        @{ Engine = "mssql"; Container = "dms-mssql"; Consumer = "*RESTORE *" }
+    ) {
+        $stage = New-ScratchStage -Directory $script:targetRoot -DatabaseEngine $Engine
+        $global:CorruptContainerCopy = $true
+
+        { Invoke-RestoreTargetReplacement -Stage $stage -TargetDatabaseName "edfi_datamanagementservice" -PackageSourceIdentity $script:packageSourceIdentity -DatabaseEngine $Engine } |
+            Should -Throw "*artifact copied into container '$Container' has SHA-256*not the authenticated manifest's artifactSha256 '$($stage.Manifest.artifactSha256)'*did not deliver the authenticated bytes*Refusing any change to target database 'edfi_datamanagementservice'*"
+
+        # Nothing that could change the target ran: no drop, no create, no replay, no restore.
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*DROP DATABASE*" -or $Query -like "*CREATE DATABASE*" -or $Query -like "*UPDATE*" }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { ($args -join " ") -like $Consumer }
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec $Container rm -f *" }
     }
 
     It "hard-fails on <Name> (<Engine>) after reseed, before any service can select the target" -ForEach @(

@@ -472,7 +472,9 @@ skipped in restore mode: the restored artifact already carries the schema and da
 Restore works on both database engines (`-DatabaseEngine`) and on both wrappers
 (`bootstrap-local-dms.ps1` and `bootstrap-published-dms.ps1`). It rejects `-InfraOnly`,
 `-NoDataStore`, and `-SchoolYearRange`: one restore invocation replaces exactly one
-route-unqualified physical target.
+route-unqualified physical target. That target is the effective env's `POSTGRES_DB_NAME` or
+`MSSQL_DB_NAME`; an explicit `-DataStoreDatabaseName` must repeat it, and a different name is
+refused before the package is resolved or anything is restored, in either CMS topology.
 
 The package identity comes from the effective env's `DATABASE_TEMPLATE_PACKAGE`, with the
 `Minimal|Populated` and engine segments swapped to match the request; see `.env.example` for
@@ -519,9 +521,14 @@ $packageDirectory = 'C:\path\to\packages'
    import and run both from `eng/DatabaseTemplates`. `-StandardVersion` is the Data Standard
    segment of the package id (`5.2.0` or `6.1.0`); `-PackageVersion` is the package's own NuGet
    version. Use `-DatabaseEngine mssql` for SQL Server, and `-DatabaseName` when the env file
-   changes `POSTGRES_DB_NAME` or `MSSQL_DB_NAME`.
+   changes `POSTGRES_DB_NAME` or `MSSQL_DB_NAME`. `-SchemaFilePath` names the ApiSchema files the
+   source stack was provisioned from; the build refuses a source holding any object their DDL
+   does not define. The source stack's staged workspace lists them.
 
    ```powershell
+   $schemaFiles = & (Import-Module ./bootstrap-restore.psm1 -PassThru) {
+       (Get-RestoreCandidateSchemaFact -CandidateDirectory (Resolve-Path ./.bootstrap).Path).SchemaFilePaths
+   }
    Push-Location ../DatabaseTemplates
    Import-Module ./Template-Management.psm1 -Force
    Build-TemplateNuGetPackage `
@@ -531,6 +538,7 @@ $packageDirectory = 'C:\path\to\packages'
        -PackageVersion 1.0.999 `
        -DumpAllUserSchemas `
        -DatabaseEngine postgresql `
+       -SchemaFilePath $schemaFiles `
        -AttestationSignerKeyPath ./.dev-trust/local-dev.pem `
        -AttestationProducer local-dev
    Pop-Location
@@ -567,9 +575,9 @@ With `-SeparateConfigDatabase` the restore replaces only the DMS datastore; the 
 the data store that earlier run registered. After the restore the wrapper's configure phase lists the
 CMS data stores and:
 
-* registers the data store when CMS holds none, naming the database the restore replaced (an
-  explicit `-DataStoreDatabaseName` must repeat that name; a different one is refused before any
-  CMS write, after the restore);
+* registers the data store when CMS holds none, naming the database the restore replaced (a
+  different `-DataStoreDatabaseName` never gets this far: it is refused before anything is
+  restored);
 * reuses the existing data store, with its id and without changing it, when it is the only one, is
   not route-qualified, and its stored connection string (decrypted with
   `DMS_CONFIG_DATABASE_ENCRYPTION_KEY`) names the composed database service (`dms-postgresql:5432` or
