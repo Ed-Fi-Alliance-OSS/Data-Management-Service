@@ -30,7 +30,6 @@ public class Given_A_Postgresql_DocumentCacheBaselineSeeding_Primitive
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly DateTimeOffset OldFirstEnqueuedAt = new(2000, 1, 1, 12, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset OldLastEnqueuedAt = OldFirstEnqueuedAt.AddMinutes(1);
-    private static readonly DateTimeOffset LastModifiedAt = new(2026, 8, 1, 12, 1, 0, TimeSpan.Zero);
 
     private PostgresqlGeneratedDdlFixture _fixture = null!;
     private PostgresqlGeneratedDdlBaselineDatabase _baseline = null!;
@@ -339,21 +338,18 @@ public class Given_A_Postgresql_DocumentCacheBaselineSeeding_Primitive
             INSERT INTO "dms"."Document" (
                 "DocumentUuid",
                 "ResourceKeyId",
-                "ContentVersion",
-                "ContentLastModifiedAt"
+                "ContentVersion"
             )
             VALUES (
                 @documentUuid,
                 @resourceKeyId,
-                @contentVersion,
-                @lastModifiedAt
+                @contentVersion
             )
             RETURNING "DocumentId";
             """,
             new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = documentUuid },
             new NpgsqlParameter("resourceKeyId", NpgsqlDbType.Smallint) { Value = resourceKeyId },
-            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
-            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = LastModifiedAt }
+            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
         );
 
         return new SourceDocument(Convert.ToInt64(rows.Single()["DocumentId"]), documentUuid, contentVersion);
