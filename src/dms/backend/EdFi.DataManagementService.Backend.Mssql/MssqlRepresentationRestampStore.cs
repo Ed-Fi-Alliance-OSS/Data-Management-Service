@@ -27,9 +27,9 @@ public sealed class MssqlRepresentationRestampStore(
     IRuntimeMappingSetCompiler runtimeMappingSetCompiler
 ) : IRepresentationRestampStore
 {
-    // UpdateMirrorAsync uses three scalar parameters for every selected document. Keep below
-    // SQL Server's 2,100-parameter limit with headroom for future command-level parameters.
-    private const int MaxMirrorStampsPerCommand = 699;
+    // UpdateOwnerAsync uses two scalar parameters for every selected document. Retain the
+    // existing page bound below SQL Server's 2,100-parameter limit with room for future parameters.
+    private const int MaxOwnerStampsPerCommand = 699;
 
     private const string BigIntTableType = "dms.BigIntTable";
     private const string UniqueIdentifierTableType = "dms.UniqueIdentifierTable";
@@ -234,7 +234,7 @@ public sealed class MssqlRepresentationRestampStore(
                 mappingSet,
                 operation.Scope,
                 operation.PreRestampBoundary,
-                Math.Min(pageSize, MaxMirrorStampsPerCommand),
+                Math.Min(pageSize, MaxOwnerStampsPerCommand),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -259,27 +259,23 @@ public sealed class MssqlRepresentationRestampStore(
         DataTable documentIdTable = CreateDocumentIdTable(
             page.Documents.Select(document => document.DocumentId)
         );
-        // dms.Document carries the document-stamping trigger, and SQL Server refuses a bare
-        // OUTPUT (no INTO) on any DML target that has enabled triggers. Route the stamped tuples
-        // through a table variable instead, then select them back in the same batch.
+        // Enabled triggers prohibit bare OUTPUT on Document and on the authoritative owner.
+        // Capture allocated versions here; owner updates generate and return the persisted timestamps.
         const string stampSql = """
-            DECLARE @stamped TABLE (
+            DECLARE @versions TABLE (
                 [DocumentId] bigint NOT NULL PRIMARY KEY,
-                [ContentVersion] bigint NOT NULL,
-                [ContentLastModifiedAt] datetime2(7) NOT NULL
+                [ContentVersion] bigint NOT NULL
             );
 
             UPDATE d
-            SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence],
-                d.[ContentLastModifiedAt] = SYSUTCDATETIME()
-            OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt]
-                INTO @stamped
+            SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]
+            OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @versions
             FROM [dms].[Document] AS d
             INNER JOIN @documentIds AS ids ON ids.[Id] = d.[DocumentId];
 
-            SELECT [DocumentId], [ContentVersion], [ContentLastModifiedAt] FROM @stamped;
+            SELECT [DocumentId], [ContentVersion] FROM @versions;
             """;
-        ImmutableArray<RepresentationRestampStamp> stamps = await ReadStampsAsync(
+        ImmutableArray<DocumentVersion> versions = await ReadVersionsAsync(
                 session,
                 new RelationalCommand(
                     stampSql,
@@ -289,8 +285,8 @@ public sealed class MssqlRepresentationRestampStore(
             )
             .ConfigureAwait(false);
         if (
-            stamps.Length != page.Count
-            || stamps.Select(stamp => stamp.DocumentId).Distinct().Count() != page.Count
+            versions.Length != page.Count
+            || versions.Select(version => version.DocumentId).Distinct().Count() != page.Count
         )
         {
             throw new InvalidOperationException(
@@ -298,9 +294,11 @@ public sealed class MssqlRepresentationRestampStore(
             );
         }
 
-        Dictionary<long, RepresentationRestampStamp> stampsByDocumentId = stamps.ToDictionary(stamp =>
-            stamp.DocumentId
+        Dictionary<long, DocumentVersion> versionsByDocumentId = versions.ToDictionary(version =>
+            version.DocumentId
         );
+        ImmutableArray<RepresentationRestampStamp>.Builder stamps =
+            ImmutableArray.CreateBuilder<RepresentationRestampStamp>();
         foreach (
             IGrouping<
                 RepresentationRestampStampRoute,
@@ -308,21 +306,28 @@ public sealed class MssqlRepresentationRestampStore(
             > group in page.Documents.GroupBy(document => document.StampRoute)
         )
         {
-            ImmutableArray<RepresentationRestampStamp> groupStamps =
+            ImmutableArray<DocumentVersion> groupVersions =
             [
-                .. group.Select(document => stampsByDocumentId[document.DocumentId]),
+                .. group.Select(document => versionsByDocumentId[document.DocumentId]),
             ];
-            int affected = await UpdateMirrorAsync(session, group.Key, groupStamps, cancellationToken)
+            ImmutableArray<RepresentationRestampStamp> groupStamps = await UpdateOwnerAsync(
+                    session,
+                    group.Key,
+                    groupVersions,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
-            if (affected != groupStamps.Length)
+            if (groupStamps.Length != groupVersions.Length)
             {
                 throw new InvalidOperationException(
-                    $"Representation restamp mirror '{group.Key.StampTargetSchema}.{group.Key.StampTargetTable}' did not stamp the selected page exactly once."
+                    $"Representation restamp owner '{group.Key.StampTargetSchema}.{group.Key.StampTargetTable}' did not stamp the selected page exactly once."
                 );
             }
+
+            stamps.AddRange(groupStamps);
         }
 
-        return new RepresentationRestampPageCommit(page, stamps);
+        return new RepresentationRestampPageCommit(page, stamps.ToImmutable());
     }
 
     public async Task UpdateProgressAsync(
@@ -633,6 +638,25 @@ public sealed class MssqlRepresentationRestampStore(
         return documents.ToImmutable();
     }
 
+    private static async Task<ImmutableArray<DocumentVersion>> ReadVersionsAsync(
+        IRelationalWriteSession session,
+        RelationalCommand relationalCommand,
+        CancellationToken cancellationToken
+    )
+    {
+        await using DbCommand command = session.CreateCommand(relationalCommand);
+        await using DbDataReader reader = await command
+            .ExecuteReaderAsync(cancellationToken)
+            .ConfigureAwait(false);
+        ImmutableArray<DocumentVersion>.Builder versions = ImmutableArray.CreateBuilder<DocumentVersion>();
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            versions.Add(new DocumentVersion(reader.GetFieldValue<long>(0), reader.GetFieldValue<long>(1)));
+        }
+
+        return versions.ToImmutable();
+    }
+
     private static async Task<ImmutableArray<RepresentationRestampStamp>> ReadStampsAsync(
         IRelationalWriteSession session,
         RelationalCommand relationalCommand,
@@ -659,28 +683,21 @@ public sealed class MssqlRepresentationRestampStore(
         return stamps.ToImmutable();
     }
 
-    private static async Task<int> UpdateMirrorAsync(
+    private static async Task<ImmutableArray<RepresentationRestampStamp>> UpdateOwnerAsync(
         IRelationalWriteSession session,
         RepresentationRestampStampRoute route,
-        ImmutableArray<RepresentationRestampStamp> stamps,
+        ImmutableArray<DocumentVersion> versions,
         CancellationToken cancellationToken
     )
     {
         List<RelationalParameter> parameters = [];
         List<string> values = [];
-        for (var index = 0; index < stamps.Length; index++)
+        for (var index = 0; index < versions.Length; index++)
         {
-            RepresentationRestampStamp stamp = stamps[index];
-            values.Add($"(@documentId{index}, @contentVersion{index}, @contentLastModifiedAt{index})");
-            parameters.Add(Parameter($"@documentId{index}", stamp.DocumentId, SqlDbType.BigInt));
-            parameters.Add(Parameter($"@contentVersion{index}", stamp.ContentVersion, SqlDbType.BigInt));
-            parameters.Add(
-                Parameter(
-                    $"@contentLastModifiedAt{index}",
-                    stamp.ContentLastModifiedAt.UtcDateTime,
-                    SqlDbType.DateTime2
-                )
-            );
+            DocumentVersion version = versions[index];
+            values.Add($"(@documentId{index}, @contentVersion{index})");
+            parameters.Add(Parameter($"@documentId{index}", version.DocumentId, SqlDbType.BigInt));
+            parameters.Add(Parameter($"@contentVersion{index}", version.ContentVersion, SqlDbType.BigInt));
         }
 
         string table =
@@ -688,15 +705,25 @@ public sealed class MssqlRepresentationRestampStore(
             + "."
             + SqlIdentifierQuoter.QuoteIdentifier(SqlDialect.Mssql, route.StampTargetTable);
         string sql = $$"""
-            UPDATE mirror
-            SET mirror.[ContentVersion] = stamped.[ContentVersion],
-                mirror.[ContentLastModifiedAt] = stamped.[ContentLastModifiedAt]
-            FROM {{table}} AS mirror WITH (FORCESEEK)
+            DECLARE @stamped TABLE (
+                [DocumentId] bigint NOT NULL PRIMARY KEY,
+                [ContentVersion] bigint NOT NULL,
+                [ContentLastModifiedAt] datetime2(7) NOT NULL
+            );
+
+            UPDATE owner
+            SET owner.[ContentVersion] = version.[ContentVersion],
+                owner.[ContentLastModifiedAt] = SYSUTCDATETIME()
+            OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt]
+                INTO @stamped
+            FROM {{table}} AS owner WITH (FORCESEEK)
             INNER JOIN (VALUES {{string.Join(", ", values)}})
-                AS stamped([DocumentId], [ContentVersion], [ContentLastModifiedAt])
-                ON mirror.[DocumentId] = stamped.[DocumentId];
+                AS version([DocumentId], [ContentVersion])
+                ON owner.[DocumentId] = version.[DocumentId];
+
+            SELECT [DocumentId], [ContentVersion], [ContentLastModifiedAt] FROM @stamped;
             """;
-        return await ExecuteNonQueryAsync(session, new RelationalCommand(sql, parameters), cancellationToken)
+        return await ReadStampsAsync(session, new RelationalCommand(sql, parameters), cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -820,6 +847,8 @@ public sealed class MssqlRepresentationRestampStore(
 
         return (T)Convert.ChangeType(result, typeof(T));
     }
+
+    private sealed record DocumentVersion(long DocumentId, long ContentVersion);
 
     private sealed record SelectedDocument(long DocumentId, Guid DocumentUuid, short ResourceKeyId);
 }
