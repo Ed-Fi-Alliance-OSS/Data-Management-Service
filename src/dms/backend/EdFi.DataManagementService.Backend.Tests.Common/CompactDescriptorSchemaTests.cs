@@ -26,6 +26,7 @@ public abstract class CompactDescriptorSchemaTests
     private string _repositoryRoot = "";
     private string _manifestPath = "";
     private string _assertionSql = "";
+    private string _templateAssertionSql = "";
     private short _resourceKeyId;
     private short _otherResourceKeyId;
     private bool IsPgsql => Dialect == "pgsql";
@@ -48,6 +49,11 @@ public abstract class CompactDescriptorSchemaTests
             $"relational-model.{Dialect}.manifest.json"
         );
         _assertionSql = await CompactDescriptorCatalogAssertions.RenderAsync(
+            _repositoryRoot,
+            Dialect,
+            _manifestPath
+        );
+        _templateAssertionSql = await CompactDescriptorCatalogAssertions.RenderTemplateSchemaAsync(
             _repositoryRoot,
             Dialect,
             _manifestPath
@@ -174,6 +180,47 @@ public abstract class CompactDescriptorSchemaTests
     {
         await ExecuteAsync(_assertionSql);
         (await RowsAsync($"SELECT {Q("ContentVersion")} FROM {Document};")).Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_passes_the_combined_template_schema_gate()
+    {
+        await ExecuteAsync(_templateAssertionSql);
+    }
+
+    [TestCase("document_timestamp", "*forbidden column dms.Document.ContentLastModifiedAt*")]
+    [TestCase("missing_document", "*missing table dms.Document*")]
+    [TestCase("missing_version", "*missing/invalid stored column dms.Document.ContentVersion*")]
+    [TestCase("missing_root", "*missing owner table edfi.Student*")]
+    [TestCase("missing_root_timestamp", "*edfi.Student.ContentLastModifiedAt*")]
+    [TestCase("missing_descriptor", "*missing owner table dms.Descriptor*")]
+    [TestCase("missing_descriptor_timestamp", "*dms.Descriptor.ContentLastModifiedAt*")]
+    [TestCase("nullable_root_timestamp", "*edfi.Student.ContentLastModifiedAt*")]
+    public async Task It_rejects_incompatible_timestamp_catalogs_even_with_the_same_v3_fingerprint(
+        string mutation,
+        string diagnostic
+    )
+    {
+        await AssertCatalogMutationRejectedAsync(
+            mutation,
+            "*Timestamp baseline:" + diagnostic,
+            _templateAssertionSql
+        );
+    }
+
+    [TestCase("missing_document_unique")]
+    [TestCase("missing_fk")]
+    [TestCase("missing_uri_index")]
+    [TestCase("wide_history")]
+    public async Task It_rejects_timestamp_correct_templates_missing_compact_descriptor_features(
+        string mutation
+    )
+    {
+        await AssertCatalogMutationRejectedAsync(
+            mutation,
+            "*Compact descriptor baseline:*",
+            _templateAssertionSql
+        );
     }
 
     [Test]
@@ -333,9 +380,16 @@ public abstract class CompactDescriptorSchemaTests
     protected Task AssertDescriptorAliasMutationAsync(string mutation) =>
         AssertCatalogMutationRejectedAsync(mutation, "*Compact descriptor baseline:*descriptor alias*");
 
-    private async Task AssertCatalogMutationRejectedAsync(string mutation, string expectedMessage)
+    private Task AssertCatalogMutationRejectedAsync(string mutation, string expectedMessage) =>
+        AssertCatalogMutationRejectedAsync(mutation, expectedMessage, _assertionSql);
+
+    private async Task AssertCatalogMutationRejectedAsync(
+        string mutation,
+        string expectedMessage,
+        string assertionSql
+    )
     {
-        await ExecuteAsync(_assertionSql);
+        await ExecuteAsync(assertionSql);
         var model = JsonNode.Parse(await File.ReadAllTextAsync(_manifestPath))!;
         model["relational_mapping_version"]!.GetValue<string>().Should().Be("v3");
         var fingerprint = (
@@ -351,7 +405,7 @@ public abstract class CompactDescriptorSchemaTests
             .Single()[0]
             .Should()
             .Be(fingerprint);
-        Func<Task> assert = () => ExecuteAsync(_assertionSql);
+        Func<Task> assert = () => ExecuteAsync(assertionSql);
         await assert.Should().ThrowAsync<DbException>().WithMessage(expectedMessage);
     }
 

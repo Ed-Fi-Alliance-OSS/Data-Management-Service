@@ -56,13 +56,34 @@ the DMS identity collation (`SQL_Latin1_General_CP1_CI_AS`) on `Namespace`, `Cod
 computed `Uri`, independent of the database default, and non-persistence. Its separate-session
 regression also exercises fresh and reused runtime pools without inheriting provisioner settings.
 
-For DMS-1401's combined template gate, pass `-ExpectedModelManifestPath $baseline` to
-`verify-template-restore.ps1`; it asserts the source before restoration and the restored catalog
-afterward. DMS-1401 supplies its reviewed combined baseline and timestamp gate. These compact
-assertions deliberately do not require presence or absence of document timestamps, so they remain
-reusable after that ownership change. DMS-1404 fresh-schema tests separately require both existing
-document stamp columns. Template build/restore matrices and package publication remain their
-assigned work; this task verifies fresh databases and the reusable catalog gate.
+For the combined template gate, `verify-template-restore.ps1` requires
+`-ExpectedModelManifestPath $baseline`. It calls `Assert-TemplateSchema.ps1` on the source before
+restoration and on the restored catalog before API registration or probes. The combined gate
+requires `dms.Document` with stored non-null bigint `ContentVersion` and no `ContentLastModifiedAt`.
+It selects every ordinary resource root from complete `resource_details` (`scope = "$"`), including
+extension resource roots, and requires its stored non-null authoritative timestamp. It also checks
+`dms.Descriptor`, whose timestamp is defined by core DDL rather than the shared descriptor model.
+Missing tables and columns fail explicitly. The same invocation then runs all existing compact
+assertions above through `Read-CompactDescriptorInventory`; package features never select the
+expectations. The standalone compact assertions remain independent of timestamp ownership.
+
+Render or execute the combined assertions with `Assert-TemplateSchema.ps1`, using the same
+parameters as `Assert-CompactDescriptor.ps1`. To run the real focused package restore regressions,
+set `DMS_TEMPLATE_TEST_PG_CONTAINER` and `DMS_TEMPLATE_TEST_MSSQL_CONTAINER` to exclusively owned
+disposable PostgreSQL 16 / SQL Server 2025 containers, and set
+`DMS_TEMPLATE_TEST_MSSQL_PASSWORD` if different from the test default `EdFi_Dms1!`. Then run:
+
+```powershell
+Invoke-Pester -Path ./eng/DatabaseTemplates/tests -CI -Output Detailed
+```
+
+These tests create unique source/restore databases, package actual SQL dumps/backups, and exercise
+the verifier's catalog and data checks. They intercept the first CMS call to verify ordering;
+full authenticated serveability remains in the eight-leg template build/restore matrix. Correct
+packages reach that API boundary; old sources and restored packages fail beforehand with the same
+fingerprint. Without the container variables only those six live package cases are skipped.
+Provider `CompactDescriptorSchemaTests` additionally roll back timestamp and compact-feature
+catalog mutations against the same reviewed focused manifest.
 
 The integration cases execute test-only mutations under `tests/fixtures`, including a legacy core
 descriptor table with bigint DocumentId primary key, physically stored URI and discriminator.
