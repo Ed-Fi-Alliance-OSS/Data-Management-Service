@@ -218,6 +218,66 @@ public class Given_Trigger_Set_Composition
 }
 
 /// <summary>
+/// Test fixture for the compile-time resource key carried by abstract identity maintenance triggers of two
+/// members of one abstract resource.
+/// </summary>
+[TestFixture]
+public class Given_AbstractIdentityMaintenance_Trigger_Resource_Key_Values
+{
+    private DerivedRelationalModelSet _result = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = AbstractIdentityTableTestSchemaBuilder.BuildProjectSchema(
+            mismatchMemberType: false
+        );
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
+        );
+
+        _result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    [Test]
+    public void It_carries_each_members_own_resource_key()
+    {
+        var resourceKeyIdsByMember = new Dictionary<string, short>();
+
+        foreach (var memberName in new[] { "School", "LocalEducationAgency" })
+        {
+            var memberKey = _result.EffectiveSchema.ResourceKeysInIdOrder.Single(entry =>
+                entry.Resource == new QualifiedResourceName("Ed-Fi", memberName)
+            );
+
+            GetParameters(memberName).ResourceKeyIdValue.Should().Be(memberKey.ResourceKeyId);
+            resourceKeyIdsByMember[memberName] = memberKey.ResourceKeyId;
+        }
+
+        resourceKeyIdsByMember["School"].Should().NotBe(resourceKeyIdsByMember["LocalEducationAgency"]);
+    }
+
+    [Test]
+    public void It_keeps_the_discriminator_value()
+    {
+        GetParameters("School").DiscriminatorValue.Should().Be("Ed-Fi:School");
+        GetParameters("LocalEducationAgency").DiscriminatorValue.Should().Be("Ed-Fi:LocalEducationAgency");
+    }
+
+    private TriggerKindParameters.AbstractIdentityMaintenance GetParameters(string memberTableName) =>
+        _result
+            .TriggersInCreateOrder.Where(trigger => trigger.Table.Name == memberTableName)
+            .Select(trigger => trigger.Parameters)
+            .OfType<TriggerKindParameters.AbstractIdentityMaintenance>()
+            .Single();
+}
+
+/// <summary>
 /// Test fixture for extension table trigger derivation.
 /// </summary>
 [TestFixture]

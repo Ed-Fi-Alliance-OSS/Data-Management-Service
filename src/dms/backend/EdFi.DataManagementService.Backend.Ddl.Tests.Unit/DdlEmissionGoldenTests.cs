@@ -1831,6 +1831,7 @@ internal static class PolymorphicAbstractFixture
                 new TriggerKindParameters.AbstractIdentityMaintenance(
                     identityTableName,
                     [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
+                    leaResourceKey.ResourceKeyId,
                     "Ed-Fi:LocalEducationAgency"
                 )
             ),
@@ -1872,6 +1873,7 @@ internal static class PolymorphicAbstractFixture
                 new TriggerKindParameters.AbstractIdentityMaintenance(
                     identityTableName,
                     [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
+                    schoolResourceKey.ResourceKeyId,
                     "Ed-Fi:School"
                 )
             ),
@@ -2990,6 +2992,7 @@ internal static class AuthEdOrgHierarchyFixture
                 new TriggerKindParameters.AbstractIdentityMaintenance(
                     identityTableName,
                     [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
+                    leaResourceKey.ResourceKeyId,
                     "Ed-Fi:LocalEducationAgency"
                 )
             ),
@@ -3062,6 +3065,7 @@ internal static class AuthEdOrgHierarchyFixture
                 new TriggerKindParameters.AbstractIdentityMaintenance(
                     identityTableName,
                     [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
+                    seaResourceKey.ResourceKeyId,
                     "Ed-Fi:StateEducationAgency"
                 )
             ),
