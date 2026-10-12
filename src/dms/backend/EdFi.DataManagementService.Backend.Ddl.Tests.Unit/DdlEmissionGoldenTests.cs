@@ -1603,6 +1603,7 @@ internal static class PolymorphicAbstractFixture
         var schema = new DbSchemaName("edfi");
         var documentIdColumn = new DbColumnName("DocumentId");
         var discriminatorColumn = new DbColumnName("Discriminator");
+        var resourceKeyIdColumn = new DbColumnName("ResourceKeyId");
         var organizationIdColumn = new DbColumnName("EducationOrganizationId");
 
         // Abstract resource
@@ -1643,6 +1644,14 @@ internal static class PolymorphicAbstractFixture
                     TargetResource: null
                 ),
                 new DbColumnModel(
+                    resourceKeyIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int16),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
                     discriminatorColumn,
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.String, MaxLength: 50),
@@ -1654,10 +1663,10 @@ internal static class PolymorphicAbstractFixture
             [
                 // FK from abstract identity table to dms.Document (as created by BuildIdentityTableConstraints)
                 new TableConstraint.ForeignKey(
-                    "FK_EducationOrganizationIdentity_Document",
-                    [documentIdColumn],
+                    "FK_EducationOrganizationIdentity_DocumentResourceKey",
+                    [documentIdColumn, resourceKeyIdColumn],
                     new DbTableName(new DbSchemaName("dms"), "Document"),
-                    [documentIdColumn],
+                    [documentIdColumn, resourceKeyIdColumn],
                     ReferentialAction.Cascade,
                     ReferentialAction.NoAction
                 ),
@@ -1745,6 +1754,7 @@ internal static class PolymorphicAbstractFixture
         [
             new(documentIdColumn, new RelationalScalarType(ScalarKind.Int64), null, null),
             new(organizationIdColumn, new RelationalScalarType(ScalarKind.Int32), null, null),
+            new(resourceKeyIdColumn, new RelationalScalarType(ScalarKind.Int16), null, null),
             new(discriminatorColumn, new RelationalScalarType(ScalarKind.String, MaxLength: 50), null, null),
         ];
 
@@ -1754,6 +1764,7 @@ internal static class PolymorphicAbstractFixture
             [
                 new AbstractUnionViewProjectionExpression.SourceColumn(documentIdColumn),
                 new AbstractUnionViewProjectionExpression.SourceColumn(organizationIdColumn),
+                new AbstractUnionViewProjectionExpression.Int16Literal(schoolResourceKey.ResourceKeyId),
                 new AbstractUnionViewProjectionExpression.StringLiteral("Ed-Fi:School"),
             ]
         );
@@ -1764,6 +1775,7 @@ internal static class PolymorphicAbstractFixture
             [
                 new AbstractUnionViewProjectionExpression.SourceColumn(documentIdColumn),
                 new AbstractUnionViewProjectionExpression.SourceColumn(organizationIdColumn),
+                new AbstractUnionViewProjectionExpression.Int16Literal(leaResourceKey.ResourceKeyId),
                 new AbstractUnionViewProjectionExpression.StringLiteral("Ed-Fi:LocalEducationAgency"),
             ]
         );
@@ -2741,6 +2753,7 @@ internal static class AuthEdOrgHierarchyFixture
         var schema = new DbSchemaName("edfi");
         var documentIdColumn = new DbColumnName("DocumentId");
         var discriminatorColumn = new DbColumnName("Discriminator");
+        var resourceKeyIdColumn = new DbColumnName("ResourceKeyId");
         var organizationIdColumn = new DbColumnName("EducationOrganizationId");
         var seaParentIdColumn = new DbColumnName("StateEducationAgency_EducationOrganizationId");
 
@@ -2782,6 +2795,14 @@ internal static class AuthEdOrgHierarchyFixture
                     TargetResource: null
                 ),
                 new DbColumnModel(
+                    resourceKeyIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int16),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
                     discriminatorColumn,
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.String, MaxLength: 50),
@@ -2792,10 +2813,10 @@ internal static class AuthEdOrgHierarchyFixture
             ],
             [
                 new TableConstraint.ForeignKey(
-                    "FK_EducationOrganizationIdentity_Document",
-                    [documentIdColumn],
+                    "FK_EducationOrganizationIdentity_DocumentResourceKey",
+                    [documentIdColumn, resourceKeyIdColumn],
                     new DbTableName(new DbSchemaName("dms"), "Document"),
-                    [documentIdColumn],
+                    [documentIdColumn, resourceKeyIdColumn],
                     ReferentialAction.Cascade,
                     ReferentialAction.NoAction
                 ),
@@ -2894,6 +2915,7 @@ internal static class AuthEdOrgHierarchyFixture
         [
             new(documentIdColumn, new RelationalScalarType(ScalarKind.Int64), null, null),
             new(organizationIdColumn, new RelationalScalarType(ScalarKind.Int32), null, null),
+            new(resourceKeyIdColumn, new RelationalScalarType(ScalarKind.Int16), null, null),
             new(discriminatorColumn, new RelationalScalarType(ScalarKind.String, MaxLength: 50), null, null),
         ];
 
@@ -2903,6 +2925,7 @@ internal static class AuthEdOrgHierarchyFixture
             [
                 new AbstractUnionViewProjectionExpression.SourceColumn(documentIdColumn),
                 new AbstractUnionViewProjectionExpression.SourceColumn(organizationIdColumn),
+                new AbstractUnionViewProjectionExpression.Int16Literal(leaResourceKey.ResourceKeyId),
                 new AbstractUnionViewProjectionExpression.StringLiteral("Ed-Fi:LocalEducationAgency"),
             ]
         );
@@ -2913,6 +2936,7 @@ internal static class AuthEdOrgHierarchyFixture
             [
                 new AbstractUnionViewProjectionExpression.SourceColumn(documentIdColumn),
                 new AbstractUnionViewProjectionExpression.SourceColumn(organizationIdColumn),
+                new AbstractUnionViewProjectionExpression.Int16Literal(seaResourceKey.ResourceKeyId),
                 new AbstractUnionViewProjectionExpression.StringLiteral("Ed-Fi:StateEducationAgency"),
             ]
         );

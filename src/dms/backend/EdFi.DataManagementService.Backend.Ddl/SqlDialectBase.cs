@@ -99,6 +99,7 @@ public abstract class SqlDialectBase : ISqlDialect
                 $"{defaults.StringType}({scalarType.MaxLength.Value})",
             ScalarKind.String => defaults.StringType,
 
+            ScalarKind.Int16 => SmallintColumnType,
             ScalarKind.Int32 => defaults.Int32Type,
             ScalarKind.Int64 => defaults.Int64Type,
             ScalarKind.Boolean => defaults.BooleanType,
