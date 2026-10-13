@@ -41,7 +41,7 @@ OTLP log export is also available, disabled by default, through the
 `OtlpLogging` configuration section. The compose files forward the core keys
 from `.env`: `OTLP_LOGGING_ENABLED`, `OTLP_LOGGING_ENDPOINT`,
 `OTLP_LOGGING_PROTOCOL`, and `OTLP_LOGGING_DEPLOYMENT_ENVIRONMENT` for DMS,
-with `DMS_CONFIG_`-prefixed equivalents for CMS. The remaining `OtlpLogging`
+with `CONFIGURATION_SERVICE_`-prefixed equivalents for CMS. The remaining `OtlpLogging`
 keys are not forwarded from `.env`: `ServiceName`, `ServiceVersion`, and
 `ServiceInstanceId` have sensible per-service defaults, and
 `OtlpLogging__Headers__*` names are arbitrary keys. To override any of them,
@@ -82,7 +82,7 @@ The Ed-Fi API supports two identity provider modes: **keycloak** and **self-cont
 # keycloak
 KEYCLOAK_OAUTH_TOKEN_ENDPOINT=http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token
 KEYCLOAK_DMS_JWT_AUTHORITY=http://localhost:8045/realms/edfi
-KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY=http://dms-keycloak:8080/realms/edfi
+KEYCLOAK_CONFIGURATION_SERVICE_IDENTITY_AUTHORITY=http://dms-keycloak:8080/realms/edfi
 KEYCLOAK_DMS_JWT_METADATA_ADDRESS=http://dms-keycloak:8080/realms/edfi/.well-known/openid-configuration
 
 # Self-contained (OpenIddict)
@@ -101,12 +101,12 @@ The selected identity provider will determine the values for the following param
 - `OAUTH_TOKEN_ENDPOINT`
 - `DMS_JWT_AUTHORITY`
 - `DMS_JWT_METADATA_ADDRESS`
-- `DMS_CONFIG_IDENTITY_AUTHORITY`
+- `CONFIGURATION_SERVICE_IDENTITY_AUTHORITY`
 
 These will be replaced with the corresponding keycloak or self-contained values based on your choice.
 
 In keycloak mode the two authorities differ. `DMS_JWT_AUTHORITY` is Keycloak's public issuer, which
-DMS requires to match the `issuer` in the metadata document exactly. `DMS_CONFIG_IDENTITY_AUTHORITY` is
+DMS requires to match the `issuer` in the metadata document exactly. `CONFIGURATION_SERVICE_IDENTITY_AUTHORITY` is
 the in-network URL the Configuration Service calls. Self-contained mode uses one value for both.
 
 > **Note:**
@@ -122,7 +122,7 @@ the in-network URL the Configuration Service calls. Self-contained mode uses one
 | `EncryptionKey`                    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
 | `TokenCleanupEnabled`              | Enables the expired-token cleanup sweep (self-contained only)    | _(not used)_                                         | `true`                                        |
 | `TokenCleanupIntervalMinutes`      | Minutes between expired-token cleanup sweeps (self-contained only) | _(not used)_                                       | `30`                                          |
-| `BearerTokenPerClientLimit`        | Maximum active access tokens one limited client may hold (self-contained only; default `15`); further grants are rejected with HTTP 429. Exemption requires no live `dmscs.ApiClient` row and nonempty registered scopes consisting only of recognized CMS admin scopes. Ed-Fi API clients remain limited. Below 1 disables enforcement globally. Compose variable: `DMS_CONFIG_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT` | _(not used)_ | `15` |
+| `BearerTokenPerClientLimit`        | Maximum active access tokens one limited client may hold (self-contained only; default `15`); further grants are rejected with HTTP 429. Exemption requires no live `dmscs.ApiClient` row and nonempty registered scopes consisting only of recognized CMS admin scopes. Ed-Fi API clients remain limited. Below 1 disables enforcement globally. Compose variable: `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT` | _(not used)_ | `15` |
 
 See [CONFIGURATION.md](./CONFIGURATION.md#identity-provider-configuration) for the
 enforcement boundary and the canonical `Too Many Tokens` 429 response.

@@ -13,6 +13,7 @@ Describe "Azure VM lifecycle safety" {
         $script:upSource = Join-Path $script:azureVmRoot "compose/up.sh"
         $script:updateSource = Join-Path $script:azureVmRoot "compose/update.sh"
         $script:recordKeycloakImageSource = Join-Path $script:azureVmRoot "compose/record-keycloak-image.sh"
+        $script:legacyEnvWarningSource = Join-Path $script:azureVmRoot "compose/legacy-env-warning.sh"
     }
 
     BeforeEach {
@@ -28,6 +29,7 @@ Describe "Azure VM lifecycle safety" {
         Copy-Item -LiteralPath $script:upSource -Destination (Join-Path $script:composeRoot "up.sh")
         Copy-Item -LiteralPath $script:updateSource -Destination (Join-Path $script:composeRoot "update.sh")
         Copy-Item -LiteralPath $script:recordKeycloakImageSource -Destination (Join-Path $script:composeRoot "record-keycloak-image.sh")
+        Copy-Item -LiteralPath $script:legacyEnvWarningSource -Destination (Join-Path $script:composeRoot "legacy-env-warning.sh")
         Set-Content -LiteralPath (Join-Path $script:composeRoot ".env") -Value "PUBLIC_HOST=test.example" -NoNewline
         Set-Content -LiteralPath (Join-Path $script:composeRoot ".bootstrap/ApiSchema/core.json") -Value "{}" -NoNewline
         Set-Content -LiteralPath (Join-Path $script:composeRoot "ssl/server.crt") -Value "test" -NoNewline
@@ -279,6 +281,32 @@ exit 17
         $LASTEXITCODE | Should -Be 1
         $output | Out-String | Should -Match "were not ready within 0s"
         Get-Content -LiteralPath $script:dockerLog -Raw | Should -Not -Match "up -d st-dms mt-dms"
+    }
+
+    It "warns about a retired variable name in .env and still starts the stack" {
+        Add-Content -LiteralPath (Join-Path $script:composeRoot ".env") -Value "`nDMS_CONFIG_CLAIMS_SOURCE=SENTINEL-DO-NOT-LEAK"
+
+        $output = & bash (Join-Path $script:composeRoot "up.sh") 2>&1
+
+        $LASTEXITCODE | Should -Be 0
+        $text = $output | Out-String
+        $text | Should -Match "WARNING: Environment variable 'DMS_CONFIG_CLAIMS_SOURCE' in '\.env' is no longer read\. Rename it to 'CONFIGURATION_SERVICE_CLAIMS_SOURCE'\."
+        $text | Should -Not -Match "SENTINEL-DO-NOT-LEAK"
+    }
+
+    It "warns about a retired variable name before update.sh calls Docker" {
+        Add-Content -LiteralPath (Join-Path $script:composeRoot ".env") -Value "`nDMS_CONFIG_DATABASE_ENCRYPTION_KEY=SENTINEL-DO-NOT-LEAK"
+        $env:SKIP_GIT = "1"
+        # The first Docker call fails, so a warning in the output can only come from before it.
+        $env:DOCKER_VOLUME_LS_FAIL = "1"
+
+        $output = & bash (Join-Path $script:composeRoot "update.sh") 2>&1
+
+        $LASTEXITCODE | Should -Be 1
+        $text = $output | Out-String
+        $text | Should -Match "WARNING: Environment variable 'DMS_CONFIG_DATABASE_ENCRYPTION_KEY' in '\.env' is no longer read\. Rename it to 'CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY'\."
+        $text | Should -Match "cannot list Docker volumes"
+        $text | Should -Not -Match "SENTINEL-DO-NOT-LEAK"
     }
 
     It "supports the first update after a plain down with the same Keycloak pin" {
@@ -591,11 +619,11 @@ Describe "Azure VM Data Standard selection" {
         $script:composeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../azure-vm/compose"))
     }
 
-    It "passes DMS_CONFIG_DATA_STANDARD_VERSION to both config services, defaulting to 5.2" {
+    It "passes CONFIGURATION_SERVICE_DATA_STANDARD_VERSION to both config services, defaulting to 5.2" {
         $compose = Get-Content -LiteralPath (Join-Path $script:composeRoot "docker-compose.yml") -Raw
 
         $sharedEnvironment = [regex]::Match($compose, '(?ms)^x-cms-common-env: &cms-common-env\s*\n(.*?)(?=^\S)').Groups[1].Value
-        $sharedEnvironment | Should -Match 'ClaimsOptions__DataStandardVersion:\s*"\$\{DMS_CONFIG_DATA_STANDARD_VERSION:-5\.2\}"'
+        $sharedEnvironment | Should -Match 'ClaimsOptions__DataStandardVersion:\s*"\$\{CONFIGURATION_SERVICE_DATA_STANDARD_VERSION:-5\.2\}"'
         foreach ($service in @("st-config", "mt-config")) {
             $serviceBlock = [regex]::Match($compose, "(?ms)^  ${service}:\s*\n(.*?)(?=^  \S)").Groups[1].Value
             $serviceBlock | Should -Match '<<: \*cms-common-env' -Because "$service must inherit the shared claims settings"
@@ -604,7 +632,7 @@ Describe "Azure VM Data Standard selection" {
 
     It "declares the Data Standard 5.2 default in .env.example" {
         Get-Content -LiteralPath (Join-Path $script:composeRoot ".env.example") -Raw |
-            Should -Match '(?m)^DMS_CONFIG_DATA_STANDARD_VERSION=5\.2\r?$'
+            Should -Match '(?m)^CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=5\.2\r?$'
     }
 }
 

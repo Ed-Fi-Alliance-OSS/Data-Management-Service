@@ -175,12 +175,12 @@ The DS 6.1 template must exist for the running build; builds before 8.0.1-alpha.
    cd ~/dms-src/eng/azure-vm/compose
    VERSION=$(docker inspect dms-sec-st-dms --format '{{index .Config.Labels "org.opencontainers.image.version"}}' | sed 's/^dms-pre-//; s/^dms-v//')
    sed -i \
-     -e 's/^DMS_CONFIG_DATA_STANDARD_VERSION=.*/DMS_CONFIG_DATA_STANDARD_VERSION=6.1/' \
-     -e 's/^DMS_CONFIG_ENABLE_CLAIMS_RELOAD=.*/DMS_CONFIG_ENABLE_CLAIMS_RELOAD=true/' \
+     -e 's/^CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=.*/CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=6.1/' \
+     -e 's/^CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=.*/CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true/' \
      -e 's/^DATABASE_TEMPLATE_PACKAGE_ID=.*/DATABASE_TEMPLATE_PACKAGE_ID=EdFi.Api.Populated.Template.PostgreSql.6.1.0/' \
      -e "s/^DATABASE_TEMPLATE_PACKAGE_VERSION=.*/DATABASE_TEMPLATE_PACKAGE_VERSION=$VERSION/" .env
-   grep -q '^DMS_CONFIG_DATA_STANDARD_VERSION=' .env || echo 'DMS_CONFIG_DATA_STANDARD_VERSION=6.1' >> .env
-   grep -E '^(DMS_CONFIG_DATA_STANDARD_VERSION|DMS_CONFIG_ENABLE_CLAIMS_RELOAD|DATABASE_TEMPLATE_PACKAGE_ID|DATABASE_TEMPLATE_PACKAGE_VERSION)=' .env
+   grep -q '^CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=' .env || echo 'CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=6.1' >> .env
+   grep -E '^(CONFIGURATION_SERVICE_DATA_STANDARD_VERSION|CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING|DATABASE_TEMPLATE_PACKAGE_ID|DATABASE_TEMPLATE_PACKAGE_VERSION)=' .env
    ```
 
 3. Recreate the data databases from the DS 6.1 template **[bash]**:
@@ -234,7 +234,7 @@ The DS 6.1 template must exist for the running build; builds before 8.0.1-alpha.
    Then close the reload endpoint again:
 
    ```bash
-   sed -i 's/^DMS_CONFIG_ENABLE_CLAIMS_RELOAD=.*/DMS_CONFIG_ENABLE_CLAIMS_RELOAD=false/' .env
+   sed -i 's/^CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=.*/CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=false/' .env
    docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-deps st-config mt-config
    ```
 
@@ -298,5 +298,5 @@ Copy the pairs into the private credentials doc, then delete `~/review-variants.
 - **Part B:** pin the previous images (the versions recorded in Part A) by setting `DMS_IMAGE_TAG`, or by re-tagging the recorded image ids as `pre`, then `./up.sh`.
   A Configuration Service migration does not roll back, so a downgrade across one needs the Part A config database backup.
 - **Part C:** the keys were never touched; repeat from the failed step.
-  Going back to DS 5.2 is the same procedure with `.env.template`, `DMS_CONFIG_DATA_STANDARD_VERSION=5.2` and the `5.2.0` template.
+  Going back to DS 5.2 is the same procedure with `.env.template`, `CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=5.2` and the `5.2.0` template.
 - **Lost keys:** stop the stack, restore `keycloak-volume.tgz` into the volume and `pg_restore` the config dumps, then start it again.

@@ -356,5 +356,5 @@ measure normal queue delay.
   failed poll delays the next claim. Under a backlog, throughput is roughly
   `instances × MaxConcurrentJobs ÷ mean job duration`. Both are estimates, validated by the
   operational assessment in `reference/design/jobs-DMS-1437/operational-assessment.md`.
-- **Docker Compose:** the provided compose files map `DMS_CONFIG_JOBS_*` variables onto
+- **Docker Compose:** the provided compose files map `CONFIGURATION_SERVICE_JOBS_*` variables onto
   `JobSettings__*`. Test hosts set all three switches to `false`.

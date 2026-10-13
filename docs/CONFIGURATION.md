@@ -151,7 +151,7 @@ The following parameters apply to the DMS Configuration Service (`appsettings.js
 
 ## JobSettings
 
-The Configuration Service runs durable background jobs: a worker that claims and runs jobs, a dispatcher that turns recurring schedules into jobs, and a retention sweep that deletes old finished jobs. These settings control them (`appsettings.json` section `JobSettings`; in the provided Docker Compose files, `JobSettings__<Parameter>` is set from `DMS_CONFIG_JOBS_<PARAMETER>`, for example `DMS_CONFIG_JOBS_POLL_INTERVAL`). Durations use the `[d.]hh:mm:ss` format. The service validates every value at startup and refuses to start, naming `JobSettings:<Parameter>` and the accepted range, when one is out of bounds.
+The Configuration Service runs durable background jobs: a worker that claims and runs jobs, a dispatcher that turns recurring schedules into jobs, and a retention sweep that deletes old finished jobs. These settings control them (`appsettings.json` section `JobSettings`; in the provided Docker Compose files, `JobSettings__<Parameter>` is set from `CONFIGURATION_SERVICE_JOBS_<PARAMETER>`, for example `CONFIGURATION_SERVICE_JOBS_POLL_INTERVAL`). Durations use the `[d.]hh:mm:ss` format. The service validates every value at startup and refuses to start, naming `JobSettings:<Parameter>` and the accepted range, when one is out of bounds.
 
 For how jobs run, recover, and are observed, see [Configuration Service Background Jobs](./CMS-BACKGROUND-JOBS.md).
 
@@ -176,7 +176,7 @@ The lease must also leave room for a late renewal. Startup also requires `Renewa
 
 ## SecretsSettings
 
-A stored data store or derivative connection string may name a secret instead of carrying it, as a `${secret:<name>}` token inside a value, for example `Password=${secret:prod/dms/ds-2026}`. When the Configuration Service reads the row, it asks the `ISecretResolver` a Configuration Service plugin registers for each token's value. These settings control how often it asks and how long it waits (`appsettings.json` section `SecretsSettings`; in the provided Docker Compose files, `SecretsSettings__<Parameter>` is set from `DMS_CONFIG_SECRETS_<PARAMETER>`, for example `DMS_CONFIG_SECRETS_CACHE_EXPIRATION_SECONDS`). The service validates both values at startup and refuses to start, naming `SecretsSettings:<Parameter>` and the accepted range, when one is out of bounds.
+A stored data store or derivative connection string may name a secret instead of carrying it, as a `${secret:<name>}` token inside a value, for example `Password=${secret:prod/dms/ds-2026}`. When the Configuration Service reads the row, it asks the `ISecretResolver` a Configuration Service plugin registers for each token's value. These settings control how often it asks and how long it waits (`appsettings.json` section `SecretsSettings`; in the provided Docker Compose files, `SecretsSettings__<Parameter>` is set from `CONFIGURATION_SERVICE_SECRETS_<PARAMETER>`, for example `CONFIGURATION_SERVICE_SECRETS_CACHE_EXPIRATION_SECONDS`). The service validates both values at startup and refuses to start, naming `SecretsSettings:<Parameter>` and the accepted range, when one is out of bounds.
 
 | Parameter              | Description                                                                                                                                                                                                                       | Default | Accepted range  |
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | --------------- |
@@ -240,9 +240,9 @@ REVERSE_PROXY_KNOWN_PROXIES=10.20.30.40,10.20.30.41
 REVERSE_PROXY_KNOWN_NETWORKS=10.20.30.0/24
 ```
 
-For the Configuration Service, use the `DMS_CONFIG_`-prefixed variables
-(`DMS_CONFIG_USE_REVERSE_PROXY_HEADERS`, `DMS_CONFIG_REVERSE_PROXY_KNOWN_PROXIES`,
-`DMS_CONFIG_REVERSE_PROXY_KNOWN_NETWORKS`).
+For the Configuration Service, use the `CONFIGURATION_SERVICE_`-prefixed variables
+(`CONFIGURATION_SERVICE_USE_REVERSE_PROXY_HEADERS`, `CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_PROXIES`,
+`CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_NETWORKS`).
 
 ## DatabaseOptions
 
@@ -258,13 +258,13 @@ These settings configure how the DMS API connects to the Configuration Service t
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | BaseUrl                | The base URL of the Configuration Service. Example: `http://ed-fi-api-config:8081`                                                                                     |
 | ClientId               | The client identifier (client ID) used to access the Configuration Service endpoints.                                                                                    |
-| ClientSecret           | The client secret associated with the client ID for accessing the Configuration Service endpoints. Set via the `CONFIG_SERVICE_CLIENT_SECRET` environment variable. Must satisfy the CMS client-secret rules described in [IdentitySettings.ClientSecretValidation](#identitysettingsclientsecretvalidation). |
-| EncryptionKey         | Key used to encrypt and decrypt Configuration Service connection strings. Set via the `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` environment variable and must match CMS `DatabaseSettings:EncryptionKey`. Used by `provision-dms-schema.ps1` to decrypt protected CMS datastore connection strings. DMS requires only a non-empty value; CMS rejects its `DatabaseSettings:EncryptionKey` at startup unless the value is at least 32 characters, ASCII, and does not derive the same key as the former shipped `appsettings.json` default. See the note below for valid-value semantics. |
+| ClientSecret           | The client secret associated with the client ID for accessing the Configuration Service endpoints. Set via the `DMS_CONFIGURATION_SERVICE_CLIENT_SECRET` environment variable. Must satisfy the CMS client-secret rules described in [IdentitySettings.ClientSecretValidation](#identitysettingsclientsecretvalidation). |
+| EncryptionKey         | Key used to encrypt and decrypt Configuration Service connection strings. Set via the `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` environment variable and must match CMS `DatabaseSettings:EncryptionKey`. Used by `provision-dms-schema.ps1` to decrypt protected CMS datastore connection strings. DMS requires only a non-empty value; CMS rejects its `DatabaseSettings:EncryptionKey` at startup unless the value is at least 32 characters, ASCII, and does not derive the same key as the former shipped `appsettings.json` default. See the note below for valid-value semantics. |
 | Scope                  | The authorization scope required for accessing the Configuration Service endpoints. Example: `edfi_admin_api/authMetadata_readonly_access`. With multi-tenancy enabled, use `edfi_admin_api/readonly_access`: DMS also reads `/v3/tenants`, which the limited scope does not grant (see [ROLES-SCOPES.md](ROLES-SCOPES.md)). |
 
 > [!NOTE]
 > **Shared key.** In the provided Docker Compose files, a single
-> `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` value feeds both the CMS
+> `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` value feeds both the CMS
 > `DatabaseSettings__EncryptionKey` and the DMS
 > `ConfigurationServiceSettings__EncryptionKey`. CMS encrypts datastore connection
 > strings with this key and DMS decrypts them with the same key (and
@@ -396,25 +396,25 @@ These settings configure the allowed client-secret length range used by CMS regi
 | MinimumLength   | Minimum allowed client-secret length. Default: `32`                                                                   |
 | MaximumLength   | Maximum allowed client-secret length. Default: `128`                                                                  |
 
-`IdentitySettings.ClientSecretValidation` controls the accepted size range used by CMS registration, generated secrets, and startup validation. CMS startup also requires configured client secrets to satisfy the same lowercase/uppercase/number/special-character complexity rules enforced by registration, where supported special characters are `!@#$%^&*()-_=+[]{}:;,.?`. The bounds are set from the `DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH` / `DMS_CONFIG_IDENTITY_CLIENT_SECRET_MAXIMUM_LENGTH` environment variables.
+`IdentitySettings.ClientSecretValidation` controls the accepted size range used by CMS registration, generated secrets, and startup validation. CMS startup also requires configured client secrets to satisfy the same lowercase/uppercase/number/special-character complexity rules enforced by registration, where supported special characters are `!@#$%^&*()-_=+[]{}:;,.?`. The bounds are set from the `CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH` / `CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET_MAXIMUM_LENGTH` environment variables.
 
 > [!IMPORTANT]
 > Two different secrets are validated on two different paths — do not conflate them:
 >
-> - **`DMS_CONFIG_IDENTITY_CLIENT_SECRET`** is the CMS's own client secret
+> - **`CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET`** is the CMS's own client secret
 >   (`IdentitySettings:ClientSecret`, client `DmsConfigurationService`). CMS validates it at
 >   **startup** via `IdentitySettingsValidator`; when it is invalid (for example, shorter than
 >   the configured minimum), `ReportInvalidConfiguration` in `Program.cs` returns true,
 >   `InitializeDatabase` is skipped, and the DbUp migrations that create the OpenIddict tables
 >   never run — causing `start-local-dms.ps1` to fail.
-> - **`CONFIG_SERVICE_CLIENT_SECRET`** is the DMS-to-CMS client secret
+> - **`DMS_CONFIGURATION_SERVICE_CLIENT_SECRET`** is the DMS-to-CMS client secret
 >   (`ConfigurationServiceSettings:ClientSecret`, client `CMSReadOnlyAccess`) that DMS uses at
 >   runtime to obtain CMS tokens. It is validated when that client is **registered** by the
 >   setup scripts, not by the CMS startup validator.
 >
 > Both secrets must satisfy the length and complexity rules above. During initial identity
 > provisioning the local startup scripts register each client from its env-file secret and pass
-> the env-file length bounds (`DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH` /
+> the env-file length bounds (`CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH` /
 > `_MAXIMUM_LENGTH`) to `setup-keycloak.ps1` / `setup-openiddict.ps1`, so a secret that is valid
 > for CMS is not rejected by the setup scripts' own default 32/128 bounds.
 >
@@ -893,7 +893,7 @@ relevant environment variables or appsettings to set `IdentityProvider` to
 | `IdentitySettings.TokenCleanupEnabled` | Enables the background sweep that deletes expired OpenIddict access tokens (self-contained only) | _(not used)_                                         | `true`              |
 | `IdentitySettings.TokenCleanupIntervalMinutes` | Interval, in minutes, between expired-token cleanup sweeps (self-contained only)           | _(not used)_                                         | `30`              |
 | `IdentitySettings.BearerTokenPerClientLimit` | Maximum number of active (unexpired, unrevoked) access tokens a limited client may hold (self-contained only; default `15`). Exemption requires no live `dmscs.ApiClient` row and a nonempty set of registered scopes consisting only of recognized CMS admin scopes. Ed-Fi API clients remain limited. A grant beyond the limit is rejected with HTTP 429 and a `Too Many Tokens` problem response of type `urn:ed-fi:api:security:authentication:too-many-tokens`; the client should reuse its existing token until it expires. Any value below 1, conventionally `-1`, disables enforcement globally. | _(not used)_ | `15` |
-| `IdentitySettings.ClientSecretHashingIterations` | Number of PBKDF2-SHA256 iterations used to hash and verify client secrets (self-contained only). Must be greater than zero; startup fails otherwise. Default: `210000`. Set in Docker Compose through `DMS_CONFIG_IDENTITY_HASHING_ITERATIONS`, which also sets the count `setup-openiddict.ps1` hashes bootstrap client secrets with. | _(not used)_ | `210000` |
+| `IdentitySettings.ClientSecretHashingIterations` | Number of PBKDF2-SHA256 iterations used to hash and verify client secrets (self-contained only). Must be greater than zero; startup fails otherwise. Default: `210000`. Set in Docker Compose through `CONFIGURATION_SERVICE_IDENTITY_HASHING_ITERATIONS`, which also sets the count `setup-openiddict.ps1` hashes bootstrap client secrets with. | _(not used)_ | `210000` |
 
 > **Before upgrading an existing deployment:** a positive limit takes effect immediately, so an Ed-Fi API client
 > already holding at least `BearerTokenPerClientLimit` active tokens starts receiving 429s on its
@@ -913,7 +913,7 @@ scopes consisting only of the recognized CMS admin scopes: `edfi_admin_api/full_
 operator values override the default; a value below 1 disables enforcement for every client.
 
 For self-contained deployments running the Ed-Fi Smoke Test Utility, temporarily set
-`DMS_CONFIG_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` in the stack's `.env` before
+`CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` in the stack's `.env` before
 starting or recreating it: the utility requests a new token for each resource GET and
 exceeds the default limit of 15. Restore the configured limit and recreate the stack
 after the smoke run. The tracked `.env.smoke` and `.env.smoke.ds61` profiles show 15;

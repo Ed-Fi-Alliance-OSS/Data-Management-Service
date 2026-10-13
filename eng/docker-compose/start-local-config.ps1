@@ -33,8 +33,9 @@ param (
 
 Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+Write-LegacyEnvironmentVariableWarning -EnvironmentFile $EnvironmentFile
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
-$datastore = if ($envValues["DMS_CONFIG_DATASTORE"]) { $envValues["DMS_CONFIG_DATASTORE"] } else { "postgresql" }
+$datastore = if ($envValues["CONFIGURATION_SERVICE_DATASTORE"]) { $envValues["CONFIGURATION_SERVICE_DATASTORE"] } else { "postgresql" }
 $databaseComposeFile = if ($datastore -eq "mssql") { "mssql.yml" } else { "postgresql.yml" }
 $useMssqlTmpfs = [string]::Equals(
     (Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_USE_TMPFS" -DefaultValue "false"),
@@ -51,12 +52,12 @@ if ($useMssqlTmpfs -and $datastore -eq "mssql") {
 # Opt-in isolation, read from the environment file. Unset, each resolves to the name this script has
 # always used, so the default stack is unchanged. A test-owned deployment sets them, together with an
 # overlay renaming the containers and network, to run beside another local stack.
-$composeProject = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CMS_COMPOSE_PROJECT" -DefaultValue "cs-local"
-$composeNetwork = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CMS_COMPOSE_NETWORK" -DefaultValue "dms"
-$postgresContainerName = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CMS_POSTGRES_CONTAINER" -DefaultValue "dms-postgresql"
-$mssqlContainerName = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CMS_MSSQL_CONTAINER" -DefaultValue "dms-mssql"
+$composeProject = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CONFIGURATION_SERVICE_COMPOSE_PROJECT" -DefaultValue "cs-local"
+$composeNetwork = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CONFIGURATION_SERVICE_COMPOSE_NETWORK" -DefaultValue "dms"
+$postgresContainerName = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CONFIGURATION_SERVICE_POSTGRES_CONTAINER" -DefaultValue "dms-postgresql"
+$mssqlContainerName = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CONFIGURATION_SERVICE_MSSQL_CONTAINER" -DefaultValue "dms-mssql"
 $overlayComposeFiles = @(
-    (Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CMS_COMPOSE_OVERLAY_FILES" -DefaultValue "") -split ";" |
+    (Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CONFIGURATION_SERVICE_COMPOSE_OVERLAY_FILES" -DefaultValue "") -split ";" |
         Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 )
 
@@ -81,11 +82,11 @@ foreach ($overlayComposeFile in $overlayComposeFiles) {
 }
 
 # Compose reads the claims mount from the process environment; the caller's value is restored below.
-$priorClaimsMountSource = $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE
+$priorClaimsMountSource = $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE
 try {
     if ($AddE2EClaimSets -and -not $d) {
-        $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = Initialize-E2EClaimsWorkspace
-        Write-Output "E2E claim sets staged for CMS at $(Format-LogSafePath $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE)"
+        $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = Initialize-E2EClaimsWorkspace
+        Write-Output "E2E claim sets staged for CMS at $(Format-LogSafePath $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE)"
     }
 
     if ($d) {
@@ -158,25 +159,25 @@ try {
 
         # Identity provider configuration
         $identityClientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues $envValues
-        $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
+        $env:CONFIGURATION_SERVICE_IDENTITY_PROVIDER=$IdentityProvider
         Write-Output "Identity Provider $IdentityProvider"
         if($IdentityProvider -eq "keycloak")
         {
             # A .env seeded before this key existed would otherwise hand the Configuration Service
-            # DMS's public issuer through the env file's DMS_CONFIG_IDENTITY_AUTHORITY fallback.
-            if ([string]::IsNullOrWhiteSpace($envValues.KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY)) {
-                throw "KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY is missing in '$EnvironmentFile'. Add KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY=http://dms-keycloak:8080/realms/edfi and set KEYCLOAK_DMS_JWT_AUTHORITY=http://localhost:8045/realms/edfi (see .env.example)."
+            # DMS's public issuer through the env file's CONFIGURATION_SERVICE_IDENTITY_AUTHORITY fallback.
+            if ([string]::IsNullOrWhiteSpace($envValues.KEYCLOAK_CONFIGURATION_SERVICE_IDENTITY_AUTHORITY)) {
+                throw "KEYCLOAK_CONFIGURATION_SERVICE_IDENTITY_AUTHORITY is missing in '$EnvironmentFile'. Add KEYCLOAK_CONFIGURATION_SERVICE_IDENTITY_AUTHORITY=http://dms-keycloak:8080/realms/edfi and set KEYCLOAK_DMS_JWT_AUTHORITY=http://localhost:8045/realms/edfi (see .env.example)."
             }
             $env:OAUTH_TOKEN_ENDPOINT = $envValues.KEYCLOAK_OAUTH_TOKEN_ENDPOINT
             $env:DMS_JWT_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
             $env:DMS_JWT_METADATA_ADDRESS = $envValues.KEYCLOAK_DMS_JWT_METADATA_ADDRESS
-            $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY
+            $env:CONFIGURATION_SERVICE_IDENTITY_AUTHORITY = $envValues.KEYCLOAK_CONFIGURATION_SERVICE_IDENTITY_AUTHORITY
         }
         elseif ($IdentityProvider -eq "self-contained") {
             $env:OAUTH_TOKEN_ENDPOINT = $envValues.SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT
             $env:DMS_JWT_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
             $env:DMS_JWT_METADATA_ADDRESS = $envValues.SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS
-            $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
+            $env:CONFIGURATION_SERVICE_IDENTITY_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
         }
 
         if ($datastore -eq "mssql") {
@@ -202,16 +203,16 @@ try {
         # This sleep covers Keycloak and config-service warmup before the setup scripts run.
         Start-Sleep 25
         # The two role names CMS enforces are supported overrides: local-config.yml maps
-        # IdentitySettings:ConfigServiceRole / :ClientRole from DMS_CONFIG_IDENTITY_SERVICE_ROLE /
-        # DMS_CONFIG_IDENTITY_CLIENT_ROLE, and BOTH identity setup scripts -- setup-keycloak.ps1 and
+        # IdentitySettings:ConfigServiceRole / :ClientRole from CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE /
+        # CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE, and BOTH identity setup scripts -- setup-keycloak.ps1 and
         # setup-openiddict.ps1 -InsertData -- fall back to their own cms-client / dms-client defaults when
         # the parameters are omitted. Resolved once, above the provider branch, so neither provider
         # registers clients against a role the configured CMS does not require: that registration
         # succeeds and tokens mint, and the failure surfaces later as DMS unable to read claim sets. The
         # defaults are the compose file's own fallbacks, so an unset override resolves exactly as before.
         $identityRoleParams = @{
-            ConfigServiceRole = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "DMS_CONFIG_IDENTITY_SERVICE_ROLE" -DefaultValue "cms-client"
-            DmsClientRole     = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "DMS_CONFIG_IDENTITY_CLIENT_ROLE" -DefaultValue "dms-client"
+            ConfigServiceRole = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE" -DefaultValue "cms-client"
+            DmsClientRole     = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE" -DefaultValue "dms-client"
         }
         if($IdentityProvider -eq "keycloak")
         {
@@ -250,9 +251,9 @@ try {
 }
 finally {
     if ($null -eq $priorClaimsMountSource) {
-        Remove-Item -LiteralPath Env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath Env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE -ErrorAction SilentlyContinue
     }
     else {
-        $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = $priorClaimsMountSource
+        $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = $priorClaimsMountSource
     }
 }

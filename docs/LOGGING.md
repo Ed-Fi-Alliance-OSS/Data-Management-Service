@@ -573,7 +573,7 @@ example `OtlpLogging__Enabled=true` and
 `eng/docker-compose` (and the azure-vm stack) forward the core keys from the
 `.env` file: `OTLP_LOGGING_ENABLED`, `OTLP_LOGGING_ENDPOINT`,
 `OTLP_LOGGING_PROTOCOL`, and `OTLP_LOGGING_DEPLOYMENT_ENVIRONMENT` for DMS,
-with `DMS_CONFIG_`-prefixed equivalents for CMS. The remaining keys are not
+with `CONFIGURATION_SERVICE_`-prefixed equivalents for CMS. The remaining keys are not
 forwarded from `.env` (the service identity keys have per-service defaults,
 and header names are arbitrary keys): to override them, add
 `OtlpLogging__<Key>` entries, such as `OtlpLogging__Headers__<Name>`, to the
@@ -611,7 +611,7 @@ and the trade-offs involved in doing so.
 The tracked Compose `.env` files (`.env.example`, `.env.multitenancy`, the
 active `.env.template*` files, E2E/smoke environment files, and the Azure VM
 `.env.example`) ship
-`LOG_LEVEL=Information` for DMS and `DMS_CONFIG_LOG_LEVEL=Information` for the
+`LOG_LEVEL=Information` for DMS and `CONFIGURATION_SERVICE_LOG_LEVEL=Information` for the
 Configuration Service. Neither service ships at `Debug` by default: `Debug`
 includes anonymized HTTP request payloads and additional service-call detail
 (see [Log Levels](#log-levels)), which is more
@@ -622,7 +622,7 @@ verbose and more expensive to store than most deployments need day to day.
 Both services read their log level from the Compose environment:
 
 * `LOG_LEVEL` controls the DMS application's minimum Serilog level.
-* `DMS_CONFIG_LOG_LEVEL` controls the Configuration Service's minimum
+* `CONFIGURATION_SERVICE_LOG_LEVEL` controls the Configuration Service's minimum
   Serilog level.
 
 Set either variable to `Information`, `Warning`, or `Debug` (see

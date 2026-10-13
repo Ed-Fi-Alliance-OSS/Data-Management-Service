@@ -114,6 +114,8 @@ if (-not (Test-Path $RepoDir)) {
 }
 $composeDir = Join-Path $RepoDir "compose"
 if (-not (Test-Path $composeDir)) { throw "compose dir not found at $composeDir" }
+# Resolved now: $RepoDir may be relative, and the steps below run from inside $composeDir.
+$envUtilityModule = (Resolve-Path -LiteralPath (Join-Path $RepoDir "../docker-compose/env-utility.psm1")).Path
 
 # docker group sanity check (cloud-init adds the user; needs a fresh login to take effect).
 docker info *> $null
@@ -179,11 +181,11 @@ try {
         Write-Output "Writing generated secrets to .env..."
         Set-EnvValue -File ".env" -Key "POSTGRES_PASSWORD" -Value (New-ComplexSecret)
         Set-EnvValue -File ".env" -Key "KEYCLOAK_ADMIN_PASSWORD" -Value (New-ComplexSecret)
-        Set-EnvValue -File ".env" -Key "DMS_CONFIG_IDENTITY_CLIENT_SECRET" -Value (New-ComplexSecret)
-        Set-EnvValue -File ".env" -Key "CONFIG_SERVICE_CLIENT_SECRET" -Value (New-ComplexSecret)
+        Set-EnvValue -File ".env" -Key "CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET" -Value (New-ComplexSecret)
+        Set-EnvValue -File ".env" -Key "DMS_CONFIGURATION_SERVICE_CLIENT_SECRET" -Value (New-ComplexSecret)
         Set-EnvValue -File ".env" -Key "BOOTSTRAP_ADMIN_CLIENT_SECRET" -Value (New-ComplexSecret)
         Set-EnvValue -File ".env" -Key "PGADMIN_DEFAULT_PASSWORD" -Value (New-ComplexSecret)
-        Set-EnvValue -File ".env" -Key "DMS_CONFIG_DATABASE_ENCRYPTION_KEY" -Value (New-Key32)
+        Set-EnvValue -File ".env" -Key "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" -Value (New-Key32)
     }
     else {
         Write-Output "Preserving existing secrets in .env (pass -RotateSecrets to regenerate)."
@@ -215,6 +217,11 @@ try {
         ./ssl/generate-certificate.sh $PublicHost
         if ($LASTEXITCODE -ne 0) { throw "generate-certificate.sh failed ($LASTEXITCODE)." }
     }
+
+    # Retired variable names are no longer read; name each one before Compose fails on a missing
+    # replacement.
+    Import-Module $envUtilityModule -Force
+    Write-LegacyEnvironmentVariableWarning -EnvironmentFile ".env"
 
     # Belt-and-suspenders: never start Compose with placeholder secrets. This script starts
     # Compose directly below (not via up.sh, which has its own guard), so re-assert here after

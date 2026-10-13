@@ -10,7 +10,7 @@
 # unchanged. start-local-config.ps1 has no setting that adds it: DMS_PLUGINS_COMPOSE_FILES is the
 # Data Management Service launchers' setting for DMS overlays, not a Configuration Service one.
 #
-# CMS_PLUGINS_MOUNT_SOURCE is declared with :? rather than a default. A deployment that composed
+# CONFIGURATION_SERVICE_PLUGINS_MOUNT_SOURCE is declared with :? rather than a default. A deployment that composed
 # this file in meant to supply a host path, and a silent default would make Docker materialize an
 # empty root-owned directory beside it, which is exactly what keeping the mount out of the base
 # files avoids.
@@ -21,4 +21,4 @@
 services:
   config:
     volumes:
-      - ${CMS_PLUGINS_MOUNT_SOURCE:?set the host path holding the plugin directories}:/app/plugins:ro
+      - ${CONFIGURATION_SERVICE_PLUGINS_MOUNT_SOURCE:?set the host path holding the plugin directories}:/app/plugins:ro

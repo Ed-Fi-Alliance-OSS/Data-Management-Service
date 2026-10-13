@@ -301,12 +301,12 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
             # lookup in the preflight while Compose leaves the real reference unset.
             $evaluation = Resolve-DotenvFileSequentially -Line @(
                 'postgres_db_name=typo_value'
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}'
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}'
             )
 
             $evaluation.Effective.ContainsKey('postgres_db_name') | Should -BeTrue
             $evaluation.Effective.ContainsKey('POSTGRES_DB_NAME') | Should -BeFalse -Because "the two spellings are distinct identifiers"
-            $evaluation.Effective['DMS_CONFIG_DATABASE_NAME'] | Should -BeExactly '' -Because "Compose leaves the uppercase reference unset"
+            $evaluation.Effective['CONFIGURATION_SERVICE_DATABASE_NAME'] | Should -BeExactly '' -Because "Compose leaves the uppercase reference unset"
         }
 
         It "keeps two case-variant declarations of the same-looking key separate" {
@@ -532,7 +532,7 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
 
             # ; ends a keyword, = separates a keyword from its value, either quote character opens a
             # quoted value, and whitespace around an unquoted value is trimmed. Every value that reaches
-            # the builder is configuration -- POSTGRES_USER and DMS_CONFIG_DATABASE_NAME are supported
+            # the builder is configuration -- POSTGRES_USER and CONFIGURATION_SERVICE_DATABASE_NAME are supported
             # overrides -- so each must read back exactly as it was written.
             $script:delimiterValue = @(
                 'nr;owner',
@@ -570,7 +570,7 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
         }
 
         It "PostgreSQL: ENV:-indirected values carrying delimiters resolve and survive" {
-            # The real -InitDb shape: DbName arrives as ENV:DMS_CONFIG_DATABASE_NAME and is resolved
+            # The real -InitDb shape: DbName arrives as ENV:CONFIGURATION_SERVICE_DATABASE_NAME and is resolved
             # inside Build-ConnectionString, so the resolved value takes the same quoting path. An
             # ambient value of either probe name would win over the env file (Compose precedence), so
             # both are cleared for the test and put back afterwards.
@@ -719,8 +719,8 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
                     '\$envValues\.POSTGRES_DB_NAME',
                     '\$envValues\.POSTGRES_USER',
                     '\$envValues\.POSTGRES_PASSWORD',
-                    '\$envValues\.CONFIG_SERVICE_TENANT',
-                    '\$envValues\.DMS_CONFIG_MULTI_TENANCY'
+                    '\$envValues\.DMS_CONFIGURATION_SERVICE_TENANT',
+                    '\$envValues\.CONFIGURATION_SERVICE_MULTI_TENANCY'
                 )) {
                 $script:startPublishedSource | Should -Not -Match $rawRead
             }

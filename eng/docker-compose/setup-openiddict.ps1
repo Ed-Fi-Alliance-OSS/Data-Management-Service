@@ -29,11 +29,11 @@ param (
     [string] $ClientScopeName = "edfi_admin_api/full_access",
     [string] $ClaimName = "namespacePrefixes",
     [string] $ClaimValue = "http://ed-fi.org",
-    [string] $EncryptionKey = "ENV:DMS_CONFIG_IDENTITY_ENCRYPTION_KEY",
+    [string] $EncryptionKey = "ENV:CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY",
     [int] $TokenLifespan = 1800,
     [switch] $InitDb = $false,
     [switch] $InsertData = $false,
-    [string] $HashIterations = "ENV:DMS_CONFIG_IDENTITY_HASHING_ITERATIONS"
+    [string] $HashIterations = "ENV:CONFIGURATION_SERVICE_IDENTITY_HASHING_ITERATIONS"
 )
 Import-Module ./env-utility.psm1
 # Shared Compose-equivalent resolver: ENV: indirections below resolve with Docker Compose
@@ -137,7 +137,7 @@ function New-OpenIddictRole {
     $roleId = [guid]::NewGuid().ToString()
     # Every PostgreSQL string literal below is built by ConvertTo-PostgresSqlLiteral rather than
     # pasted between bare quotes. The role name is a configured value - local-config.yml exposes it
-    # as DMS_CONFIG_IDENTITY_CLIENT_ROLE / DMS_CONFIG_IDENTITY_SERVICE_ROLE - and one carrying a
+    # as CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE / CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE - and one carrying a
     # single quote would close its literal, leaving psql to reject the whole statement. The helper
     # returns the surrounding quotes as part of its result, so the templates embed it bare.
     $roleIdLiteral = ConvertTo-PostgresSqlLiteral -Value $roleId
@@ -173,7 +173,7 @@ function New-OpenIddictScope {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper is invoked non-interactively against a local setup database.')]
     param([string]$ScopeName, [string]$Description)
     $scopeId = [guid]::NewGuid().ToString()
-    # The scope name is the configured CONFIG_SERVICE_CLIENT_SCOPE, quoted here for the reason given
+    # The scope name is the configured DMS_CONFIGURATION_SERVICE_CLIENT_SCOPE, quoted here for the reason given
     # in New-OpenIddictRole.
     $scopeIdLiteral = ConvertTo-PostgresSqlLiteral -Value $scopeId
     $scopeNameLiteral = ConvertTo-PostgresSqlLiteral -Value $ScopeName
@@ -212,7 +212,7 @@ function New-OpenIddictApplication {
     $iterations = [int32](Resolve-EnvValue $script:HashIterations)
     # Hash the client secret using ASP.NET password hashing
     $hashedSecret = New-AspNetPasswordHash -PlainTextSecret $ClientSecret -Iterations $iterations
-    # The client id is the configured CONFIG_SERVICE_CLIENT_ID, quoted here for the reason given in
+    # The client id is the configured DMS_CONFIGURATION_SERVICE_CLIENT_ID, quoted here for the reason given in
     # New-OpenIddictRole. The hash is base64 and cannot contain a quote, but it goes through the same
     # helper so no value in this statement is a bare-quoted exception someone has to reason about.
     $appIdLiteral = ConvertTo-PostgresSqlLiteral -Value $appId
@@ -379,7 +379,7 @@ WHERE Id = $appIdLiteral;
 
     # "Permissions" is varchar(100)[]. Building the array as text - '{...}' - would make the scope
     # subject to array-literal syntax on top of SQL literal syntax: a configured
-    # CONFIG_SERVICE_CLIENT_SCOPE containing a comma splits into two permissions, and one containing
+    # DMS_CONFIGURATION_SERVICE_CLIENT_SCOPE containing a comma splits into two permissions, and one containing
     # a brace, a double quote or a backslash is stored altered, in both cases silently rather than as
     # an error. An ARRAY constructor takes exactly one element whatever it contains, and the shared
     # helper handles the SQL literal layer as it does everywhere else in this script.
@@ -419,7 +419,7 @@ function Build-ConnectionString {
     $DbName = Resolve-EnvValue $DbName
     $DbUser = Resolve-EnvValue $DbUser
     # Composed by DbConnectionStringBuilder, not by string interpolation. Every value here is
-    # configuration -- POSTGRES_USER and DMS_CONFIG_DATABASE_NAME are supported overrides -- and a
+    # configuration -- POSTGRES_USER and CONFIGURATION_SERVICE_DATABASE_NAME are supported overrides -- and a
     # value carrying ; or = would otherwise end its own keyword or begin the next one, so a user such
     # as nr;owner reached psql as nr. The builder quotes exactly the values that need it, by the
     # ADO.NET rules Npgsql and SqlClient both parse, and Get-ConnectionStringValue reads the result

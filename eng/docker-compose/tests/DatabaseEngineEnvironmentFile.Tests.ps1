@@ -59,7 +59,7 @@ Describe "Resolve-DatabaseEngineEnvironmentFile" {
                 ForEach-Object { $_.Key }
         ) + @(
             # Topology seam and marker keys, plus the dependency names these tests author themselves.
-            'DMS_CONFIG_DATABASE_NAME', 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE',
+            'CONFIGURATION_SERVICE_DATABASE_NAME', 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE',
             'POSTGRES_DB_NAME', 'POSTGRES_PASSWORD', 'DATABASE_TEMPLATE_PACKAGE',
             'CMS_DATABASE_NAME', 'CMS_DB_OVERRIDE_XYZ', 'WHOLE_CONN', 'LATE_ONE'
         ) | Sort-Object -Unique
@@ -91,8 +91,8 @@ MSSQL_DB_NAME=edfi_datamanagementservice
 MSSQL_PORT=1435
 DMS_DATASTORE=mssql
 DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
-DMS_CONFIG_DATASTORE=mssql
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+CONFIGURATION_SERVICE_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 "@ -NoNewline
     }
 
@@ -126,7 +126,7 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB
         $values = ReadValuesFromEnvFile $result
         $values["DMS_DATASTORE"] | Should -Be "mssql"
         $values["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Be 'Server=dms-mssql;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
-        $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'Server=dms-mssql,1433;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+        $values["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Be 'Server=dms-mssql,1433;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
 
         # Unrelated base lines survive the composition.
         $values["POSTGRES_DB_NAME"] | Should -Be "edfi_datamanagementservice"
@@ -162,7 +162,7 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB
         $partialPath = Join-Path $script:work ".env.former-signal"
         Set-Content -LiteralPath $partialPath -Value @"
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATASTORE=mssql
 MSSQL_SA_PASSWORD=CustomSecret1!
 "@ -NoNewline
 
@@ -173,7 +173,7 @@ MSSQL_SA_PASSWORD=CustomSecret1!
         $values["MSSQL_DB_NAME"] | Should -Not -BeNullOrEmpty
         $values["MSSQL_PORT"] | Should -Not -BeNullOrEmpty
         $values["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Not -BeNullOrEmpty
-        $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Not -BeNullOrEmpty
+        $values["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Not -BeNullOrEmpty
         $values["MSSQL_SA_PASSWORD"] | Should -Be "CustomSecret1!" -Because "a valid caller override must survive completion"
     }
 
@@ -189,7 +189,7 @@ MSSQL_SA_PASSWORD=CustomSecret1!
         $result | Should -Not -Be $partialPath
         $values = ReadValuesFromEnvFile $result
         $values["DMS_DATASTORE"] | Should -Be "mssql"
-        $values["DMS_CONFIG_DATASTORE"] | Should -Be "mssql"
+        $values["CONFIGURATION_SERVICE_DATASTORE"] | Should -Be "mssql"
         $values["MSSQL_SA_PASSWORD"] | Should -Not -BeNullOrEmpty
     }
 
@@ -207,12 +207,12 @@ CUSTOM_KEY=preserved
         $values = ReadValuesFromEnvFile $result
 
         $values["DMS_DATASTORE"] | Should -Be "mssql"
-        $values["DMS_CONFIG_DATASTORE"] | Should -Be "mssql"
+        $values["CONFIGURATION_SERVICE_DATASTORE"] | Should -Be "mssql"
         $values["MSSQL_SA_PASSWORD"] | Should -Be "CustomSecret1!"
         $values["MSSQL_DB_NAME"] | Should -Be "custom_database"
         $values["MSSQL_PORT"] | Should -Be "1999"
         $values["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Not -BeNullOrEmpty
-        $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Not -BeNullOrEmpty
+        $values["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Not -BeNullOrEmpty
         $values["CUSTOM_KEY"] | Should -Be "preserved"
     }
 
@@ -226,11 +226,11 @@ CUSTOM_KEY=preserved
         $values = ReadValuesFromEnvFile $result
 
         $values["DMS_DATASTORE"] | Should -Be "mssql"
-        $values["DMS_CONFIG_DATASTORE"] | Should -Be "mssql"
+        $values["CONFIGURATION_SERVICE_DATASTORE"] | Should -Be "mssql"
         $values["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Match '^Server='
-        $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Match '^Server='
+        $values["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Match '^Server='
         $values["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Not -Match '(?i)(?:^|;)\s*host\s*='
-        $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Not -Match '(?i)(?:^|;)\s*host\s*='
+        $values["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Not -Match '(?i)(?:^|;)\s*host\s*='
     }
 
     It "does not short-circuit a fully populated MSSQL-marked file carrying PostgreSQL connection strings" {
@@ -251,7 +251,7 @@ CUSTOM_KEY=preserved
 
         $result | Should -Not -Be $contradictoryPath
         $values["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Match '^Server='
-        $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Match '^Server='
+        $values["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Match '^Server='
     }
 
     It "preserves valid caller-authored MSSQL connection strings while completing a partial file" {
@@ -261,25 +261,25 @@ CUSTOM_KEY=preserved
         # RAW text and therefore passed anyway; the resolved assertion below would not have.
         $partialPath = Join-Path $script:work ".env.partial-custom-connections"
         Set-Content -LiteralPath $partialPath -Value @"
-DMS_CONFIG_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATASTORE=mssql
 MSSQL_DB_NAME=custom_database
 CMS_DATABASE_NAME=custom_database
 DATABASE_CONNECTION_STRING_ADMIN=Data Source=custom-admin,1444;Initial Catalog=master;User Id=custom;Password=secret;
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DATABASE_NAME};User Id=custom;Password=secret;
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DATABASE_NAME};User Id=custom;Password=secret;
 "@ -NoNewline
 
         $result = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $partialPath -DockerComposeRoot $script:composeRoot
         $values = ReadValuesFromEnvFile $result
 
         $values["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Be "Data Source=custom-admin,1444;Initial Catalog=master;User Id=custom;Password=secret;"
-        $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'Server=custom-cms,1444;Database=${CMS_DATABASE_NAME};User Id=custom;Password=secret;'
+        $values["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Be 'Server=custom-cms,1444;Database=${CMS_DATABASE_NAME};User Id=custom;Password=secret;'
 
         # The written file must also RENDER one effective CMS declaration with the caller's host,
         # database, and credentials - the raw line alone does not prove that.
         $composed = Resolve-DotenvFileSequentially -Path $result
-        @($composed.Declarations | Where-Object { $_.Key -eq 'DMS_CONFIG_DATABASE_CONNECTION_STRING' }).Count |
+        @($composed.Declarations | Where-Object { $_.Key -eq 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING' }).Count |
             Should -Be 1 -Because "composition must leave exactly one declaration of the key"
-        $composed.Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+        $composed.Effective["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] |
             Should -BeExactly 'Server=custom-cms,1444;Database=custom_database;User Id=custom;Password=secret;'
     }
 
@@ -291,8 +291,8 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
         @{
             label = 'a preserved alias that depends on an overlay-only default'
             lines = @(
-                'DMS_CONFIG_DATABASE_NAME=${MSSQL_DB_NAME}'
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${MSSQL_DB_NAME}'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${CONFIGURATION_SERVICE_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             )
             expectedHost = 'dms-mssql,1433'
             expectedDatabase = 'edfi_datamanagementservice'
@@ -302,7 +302,7 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
             label = 'an export-spelled caller declaration (must not survive alongside the overlay''s)'
             lines = @(
                 'MSSQL_DB_NAME=edfi_datamanagementservice'
-                'export DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=edfi_datamanagementservice;User Id=custom;Password=secret;'
+                'export CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=edfi_datamanagementservice;User Id=custom;Password=secret;'
             )
             expectedHost = 'custom-cms,1444'
             expectedDatabase = 'edfi_datamanagementservice'
@@ -312,7 +312,7 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
             label = 'an outer-quoted caller value'
             lines = @(
                 'MSSQL_DB_NAME=edfi_datamanagementservice'
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING="Server=custom-cms,1444;Database=edfi_datamanagementservice;User Id=custom;Password=secret;"'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING="Server=custom-cms,1444;Database=edfi_datamanagementservice;User Id=custom;Password=secret;"'
             )
             expectedHost = 'custom-cms,1444'
             expectedDatabase = 'edfi_datamanagementservice'
@@ -323,7 +323,7 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
             lines = @(
                 'MSSQL_DB_NAME=edfi_datamanagementservice'
                 'WHOLE_CONN=Server=custom-cms,1444;Database=edfi_datamanagementservice;User Id=custom;Password=secret;'
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=${WHOLE_CONN}'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=${WHOLE_CONN}'
             )
             expectedHost = 'custom-cms,1444'
             expectedDatabase = 'edfi_datamanagementservice'
@@ -335,7 +335,7 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
             label = 'a PostgreSQL-shaped caller value, which the overlay default must replace'
             lines = @(
                 'MSSQL_DB_NAME=edfi_datamanagementservice'
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=pg;database=edfi_datamanagementservice;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=pg;database=edfi_datamanagementservice;'
             )
             expectedHost = 'dms-mssql,1433'
             expectedDatabase = 'edfi_datamanagementservice'
@@ -348,7 +348,7 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
         Set-Content -LiteralPath $path -Value ((@(
             'MSSQL_SA_PASSWORD=abcdefgh1!'
             'DMS_DATASTORE=mssql'
-            'DMS_CONFIG_DATASTORE=mssql'
+            'CONFIGURATION_SERVICE_DATASTORE=mssql'
         ) + $_.lines) -join "`n") -NoNewline
 
         $result = Resolve-DatabaseEngineEnvironmentFile `
@@ -357,11 +357,11 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
             -DockerComposeRoot $realComposeRoot
 
         $composed = Resolve-DotenvFileSequentially -Path $result
-        @($composed.Declarations | Where-Object { $_.Key -eq 'DMS_CONFIG_DATABASE_CONNECTION_STRING' }).Count |
+        @($composed.Declarations | Where-Object { $_.Key -eq 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING' }).Count |
             Should -Be 1 -Because "the written file must carry exactly one declaration of the key"
 
         $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
-        $builder.set_ConnectionString([string]$composed.Effective['DMS_CONFIG_DATABASE_CONNECTION_STRING'])
+        $builder.set_ConnectionString([string]$composed.Effective['CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING'])
         [string]$builder['Server'] | Should -BeExactly $_.expectedHost
         [string]$builder['Database'] | Should -BeExactly $_.expectedDatabase
         [string]$builder['Password'] | Should -BeExactly $_.expectedPassword
@@ -378,16 +378,16 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
                 'MSSQL_SA_PASSWORD=abcdefgh1!'
                 'MSSQL_DB_NAME=edfi_datamanagementservice'
                 'DMS_DATASTORE=mssql'
-                'DMS_CONFIG_DATASTORE=mssql'
+                'CONFIGURATION_SERVICE_DATASTORE=mssql'
                 'DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
-                'DMS_CONFIG_DATABASE_NAME=${MSSQL_DB_NAME}'
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${MSSQL_DB_NAME}'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${CONFIGURATION_SERVICE_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             )
         }
 
         It "fails clearly when the ambient environment supplies a non-MSSQL <_>" -ForEach @(
             'DATABASE_CONNECTION_STRING_ADMIN'
-            'DMS_CONFIG_DATABASE_CONNECTION_STRING'
+            'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING'
         ) {
             # Ambient wins over every declaration in the file being written, so excluding the file
             # declaration and re-composing changes nothing: the effective value stays PostgreSQL-shaped.
@@ -456,10 +456,10 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
                 'MSSQL_SA_PASSWORD=abcdefgh1!'
                 'MSSQL_DB_NAME=edfi_datamanagementservice'
                 'DMS_DATASTORE=mssql'
-                'DMS_CONFIG_DATASTORE=mssql'
+                'CONFIGURATION_SERVICE_DATASTORE=mssql'
                 # Both file-authored strings are PostgreSQL-shaped, so both are repaired from the overlay.
                 'DATABASE_CONNECTION_STRING_ADMIN=host=dms-postgresql;port=5432;username=postgres;password=pg;database=postgres;'
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=pg;database=edfi_datamanagementservice;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=pg;database=edfi_datamanagementservice;'
             ) -join "`n") -NoNewline
 
             $result = Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $path -DockerComposeRoot $realComposeRoot
@@ -484,14 +484,14 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
         @{
             label = 'valid MSSQL CMS with a PostgreSQL admin replaces only the admin'
             adminLine = 'DATABASE_CONNECTION_STRING_ADMIN=host=dms-postgresql;port=5432;username=postgres;password=pg;database=postgres;'
-            cmsLine = 'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+            cmsLine = 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
             expectedAdmin = 'Server=dms-mssql;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
             expectedCms = 'Server=custom-cms,1444;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
         }
         @{
             label = 'PostgreSQL CMS with a valid custom MSSQL admin keeps the admin customization'
             adminLine = 'DATABASE_CONNECTION_STRING_ADMIN=Server=custom-admin,1444;Database=master;User Id=custom;Password=secret;'
-            cmsLine = 'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=pg;database=edfi_datamanagementservice;'
+            cmsLine = 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=pg;database=edfi_datamanagementservice;'
             expectedAdmin = 'Server=custom-admin,1444;Database=master;User Id=custom;Password=secret;'
             expectedCms = 'Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
         }
@@ -502,7 +502,7 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
             'MSSQL_SA_PASSWORD=abcdefgh1!'
             'MSSQL_DB_NAME=edfi_datamanagementservice'
             'DMS_DATASTORE=mssql'
-            'DMS_CONFIG_DATASTORE=mssql'
+            'CONFIGURATION_SERVICE_DATASTORE=mssql'
             $_.adminLine
             $_.cmsLine
         )) -join "`n") -NoNewline
@@ -515,7 +515,7 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
         $composed = Resolve-DotenvFileSequentially -Path $result
         [string](Get-SequentialEffectiveValue -Evaluation $composed -Name 'DATABASE_CONNECTION_STRING_ADMIN') |
             Should -BeExactly $_.expectedAdmin
-        [string](Get-SequentialEffectiveValue -Evaluation $composed -Name 'DMS_CONFIG_DATABASE_CONNECTION_STRING') |
+        [string](Get-SequentialEffectiveValue -Evaluation $composed -Name 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING') |
             Should -BeExactly $_.expectedCms
     }
 
@@ -533,16 +533,16 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
             'MSSQL_PID=Developer'
             'MSSQL_MEMORY_LIMIT_MB=4096'
             'DMS_DATASTORE=mssql'
-            'DMS_CONFIG_DATASTORE=mssql'
+            'CONFIGURATION_SERVICE_DATASTORE=mssql'
             'DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
-            'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
-            'DMS_CONFIG_DATABASE_NAME=${MSSQL_DB_NAME}'
+            'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${CONFIGURATION_SERVICE_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            'CONFIGURATION_SERVICE_DATABASE_NAME=${MSSQL_DB_NAME}'
         ) -join "`n") -NoNewline
 
         # The original really is broken as authored.
         [string](Get-SequentialEffectiveValue `
             -Evaluation (Resolve-DotenvFileSequentially -Path $path) `
-            -Name 'DMS_CONFIG_DATABASE_CONNECTION_STRING') |
+            -Name 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING') |
             Should -BeLike '*Database=;*' -Because "the alias is declared after the string that references it"
 
         $result = Resolve-DatabaseEngineEnvironmentFile `
@@ -553,7 +553,7 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
         $result | Should -Not -Be $path -Because "an unchanged return would hand back the broken original"
         [string](Get-SequentialEffectiveValue `
             -Evaluation (Resolve-DotenvFileSequentially -Path $result) `
-            -Name 'DMS_CONFIG_DATABASE_CONNECTION_STRING') |
+            -Name 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING') |
             Should -BeExactly 'Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
     }
 
@@ -572,16 +572,16 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
             'MSSQL_PID=Developer'
             'MSSQL_MEMORY_LIMIT_MB=4096'
             'DMS_DATASTORE=mssql'
-            'DMS_CONFIG_DATASTORE=mssql'
-            'DMS_CONFIG_DATABASE_NAME=${MSSQL_DB_NAME}'
-            'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            'CONFIGURATION_SERVICE_DATASTORE=mssql'
+            'CONFIGURATION_SERVICE_DATABASE_NAME=${MSSQL_DB_NAME}'
+            'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${CONFIGURATION_SERVICE_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
         ) -join "`n") -NoNewline
 
         # The original is broken only in the ADMIN string; the CMS string is fine.
         $original = Resolve-DotenvFileSequentially -Path $path
         [string](Get-SequentialEffectiveValue -Evaluation $original -Name 'DATABASE_CONNECTION_STRING_ADMIN') |
             Should -BeLike '*Database=;*'
-        [string](Get-SequentialEffectiveValue -Evaluation $original -Name 'DMS_CONFIG_DATABASE_CONNECTION_STRING') |
+        [string](Get-SequentialEffectiveValue -Evaluation $original -Name 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING') |
             Should -BeLike '*Database=edfi_datamanagementservice;*'
 
         $result = Resolve-DatabaseEngineEnvironmentFile `
@@ -608,10 +608,10 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
             'MSSQL_PID=Developer'
             'MSSQL_MEMORY_LIMIT_MB=4096'
             'DMS_DATASTORE=mssql'
-            'DMS_CONFIG_DATASTORE=mssql'
+            'CONFIGURATION_SERVICE_DATASTORE=mssql'
             'DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
-            'DMS_CONFIG_DATABASE_NAME=${MSSQL_DB_NAME}'
-            'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            'CONFIGURATION_SERVICE_DATABASE_NAME=${MSSQL_DB_NAME}'
+            'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${CONFIGURATION_SERVICE_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
         ) -join "`n") -NoNewline
 
         Resolve-DatabaseEngineEnvironmentFile `
@@ -633,63 +633,63 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
         @{
             label = 'a caller-authored file naming a third CMS database'
             lines = @(
-                'DMS_CONFIG_DATASTORE=mssql'
+                'CONFIGURATION_SERVICE_DATASTORE=mssql'
                 'MSSQL_DB_NAME=shared_database'
                 'CMS_DATABASE_NAME=legacy_config'
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=${CMS_DATABASE_NAME};User Id=custom;Password=secret;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=${CMS_DATABASE_NAME};User Id=custom;Password=secret;'
             )
         }
         @{
             label = 'a separate-topology file (marker, seam, and reserved target all declared)'
             lines = @(
                 'DMS_DATASTORE=mssql'
-                'DMS_CONFIG_DATASTORE=mssql'
+                'CONFIGURATION_SERVICE_DATASTORE=mssql'
                 'MSSQL_SA_PASSWORD=abcdefgh1!'
                 'MSSQL_DB_NAME=edfi_datamanagementservice'
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true'
-                'DMS_CONFIG_DATABASE_NAME=edfi_configurationservice'
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_NAME=edfi_configurationservice'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             )
         }
         @{
             label = 'a markerless file targeting the reserved dedicated database via Database='
             lines = @(
                 'DMS_DATASTORE=mssql'
-                'DMS_CONFIG_DATASTORE=mssql'
+                'CONFIGURATION_SERVICE_DATASTORE=mssql'
                 'MSSQL_SA_PASSWORD=abcdefgh1!'
                 'MSSQL_DB_NAME=edfi_datamanagementservice'
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             )
         }
         @{
             label = 'a markerless file targeting the reserved dedicated database via Initial Catalog='
             lines = @(
                 'DMS_DATASTORE=mssql'
-                'DMS_CONFIG_DATASTORE=mssql'
+                'CONFIGURATION_SERVICE_DATASTORE=mssql'
                 'MSSQL_SA_PASSWORD=abcdefgh1!'
                 'MSSQL_DB_NAME=edfi_datamanagementservice'
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Initial Catalog=edfi_configurationservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Initial Catalog=edfi_configurationservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             )
         }
         @{
             label = 'a case-variant of the reserved dedicated database name (the superseded rule refused this)'
             lines = @(
                 'DMS_DATASTORE=mssql'
-                'DMS_CONFIG_DATASTORE=mssql'
+                'CONFIGURATION_SERVICE_DATASTORE=mssql'
                 'MSSQL_SA_PASSWORD=abcdefgh1!'
                 'MSSQL_DB_NAME=edfi_datamanagementservice'
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=EDFI_ConfigurationService;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=EDFI_ConfigurationService;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             )
         }
         @{
             label = 'a third-database target with an explicitly false marker (the superseded invariant refused this)'
             lines = @(
                 'DMS_DATASTORE=mssql'
-                'DMS_CONFIG_DATASTORE=mssql'
+                'CONFIGURATION_SERVICE_DATASTORE=mssql'
                 'MSSQL_SA_PASSWORD=abcdefgh1!'
                 'MSSQL_DB_NAME=edfi_datamanagementservice'
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             )
         }
     ) {
@@ -711,8 +711,8 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
         $mismatchedPath = Join-Path $script:work ".env.mismatched-cms-database"
         $mismatchedContent = (Get-Content -LiteralPath (Join-Path $script:composeRoot ".env.mssql") -Raw).
             Replace(
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             )
         Set-Content -LiteralPath $mismatchedPath -Value $mismatchedContent -NoNewline
 
@@ -730,8 +730,8 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
         $mismatchedPath = Join-Path $script:work ".env.db-only-mismatched-cms"
         $mismatchedContent = (Get-Content -LiteralPath (Join-Path $script:composeRoot ".env.mssql") -Raw).
             Replace(
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             )
         Set-Content -LiteralPath $mismatchedPath -Value $mismatchedContent -NoNewline
 
@@ -755,18 +755,18 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
             # is one, so composition relocates it below the reference, which freezes empty.
             label = 'a dependency the composition relocates'
             lines = @(
-                'DMS_CONFIG_DATASTORE=mssql'
+                'CONFIGURATION_SERVICE_DATASTORE=mssql'
                 'MSSQL_DB_NAME=custom_database'
                 'CMS_DATABASE_NAME=${MSSQL_DB_NAME}'
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${CMS_DATABASE_NAME};User Id=custom;Password=secret;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${CMS_DATABASE_NAME};User Id=custom;Password=secret;'
             )
         }
         @{
             label = 'a caller-authored CMS connection string with no database segment at all'
             lines = @(
-                'DMS_CONFIG_DATASTORE=mssql'
+                'CONFIGURATION_SERVICE_DATASTORE=mssql'
                 'MSSQL_DB_NAME=shared_database'
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;User Id=custom;Password=secret;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;User Id=custom;Password=secret;'
             )
         }
     ) {
@@ -815,18 +815,18 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-cms,1444;Database=`${CMS_DAT
             # would not hold: MSSQL_DB_NAME is an overlay-owned key, so composition moves it below this
             # base-block line, the alias freezes empty, and ':-' fires after all.
             label = 'a default that does NOT fire, because the alias is defined'
-            segment = 'Database=${DMS_CONFIG_DATABASE_NAME:-legacy_config}'
-            extra = 'DMS_CONFIG_DATABASE_NAME=edfi_datamanagementservice'
+            segment = 'Database=${CONFIGURATION_SERVICE_DATABASE_NAME:-legacy_config}'
+            extra = 'CONFIGURATION_SERVICE_DATABASE_NAME=edfi_datamanagementservice'
         }
     ) {
         $path = Join-Path $script:work ".env.operator-$([Guid]::NewGuid().ToString('N'))"
         Set-Content -LiteralPath $path -Value @"
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATASTORE=mssql
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=edfi_datamanagementservice
 $($_.extra)
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;$($_.segment);User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;$($_.segment);User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 "@ -NoNewline
 
         $resolved = Resolve-DatabaseEngineEnvironmentFile `
@@ -850,11 +850,11 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;$($_.segment);User I
         $path = Join-Path $script:work ".env.dependency-$([Guid]::NewGuid().ToString('N'))"
         Set-Content -LiteralPath $path -Value @"
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATASTORE=mssql
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=edfi_datamanagementservice
 $($_.declaration)
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_OVERRIDE_XYZ};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_OVERRIDE_XYZ};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 "@ -NoNewline
 
         $resolved = Resolve-DatabaseEngineEnvironmentFile `
@@ -872,31 +872,31 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_O
     It "sees a <_.label> connection string instead of skipping it" -ForEach @(
         @{
             label = 'outer-quoted'
-            lines = @('DMS_CONFIG_DATABASE_CONNECTION_STRING="Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"')
+            lines = @('CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING="Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"')
         }
         @{
             label = 'outer-quoted reserved-name'
-            lines = @('DMS_CONFIG_DATABASE_CONNECTION_STRING="Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"')
+            lines = @('CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING="Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"')
         }
         @{
             label = 'whole-string reference'
             lines = @(
                 'WHOLE_CONN=Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=${WHOLE_CONN}'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=${WHOLE_CONN}'
             )
         }
         @{
             label = 'whole-string reference to the reserved name'
             lines = @(
                 'WHOLE_CONN=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=${WHOLE_CONN}'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=${WHOLE_CONN}'
             )
         }
     ) {
         $path = Join-Path $script:work ".env.shape-$([Guid]::NewGuid().ToString('N'))"
         Set-Content -LiteralPath $path -Value ((@(
             'DMS_DATASTORE=mssql'
-            'DMS_CONFIG_DATASTORE=mssql'
+            'CONFIGURATION_SERVICE_DATASTORE=mssql'
             'MSSQL_SA_PASSWORD=abcdefgh1!'
             'MSSQL_DB_NAME=edfi_datamanagementservice'
         ) + $_.lines) -join "`n") -NoNewline
@@ -918,9 +918,9 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_O
         $path = Join-Path $script:work ".env.overlay-default"
         Set-Content -LiteralPath $path -Value @"
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATASTORE=mssql
 MSSQL_SA_PASSWORD=abcdefgh1!
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 "@ -NoNewline
 
         {
@@ -941,10 +941,10 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB
         $path = Join-Path $script:work ".env.export-$([Guid]::NewGuid().ToString('N'))"
         Set-Content -LiteralPath $path -Value @"
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATASTORE=mssql
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=edfi_datamanagementservice
-export DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$($_.database);User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+export CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$($_.database);User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 "@ -NoNewline
 
         $resolved = Resolve-DatabaseEngineEnvironmentFile `
@@ -957,7 +957,7 @@ export DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$($_
     }
 
     It "honors an ambient alias override when resolving the connection string's database segment" {
-        # Compose gives the shell precedence, so an ambient DMS_CONFIG_DATABASE_NAME genuinely
+        # Compose gives the shell precedence, so an ambient CONFIGURATION_SERVICE_DATABASE_NAME genuinely
         # moves where CMS points. The matched pair is the oracle: with the ambient value the
         # segment resolves and the chain passes structurally; without it the same reference
         # freezes empty and the chained structural discovery fails - so the ambient value is
@@ -965,13 +965,13 @@ export DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$($_
         $path = Join-Path $script:work ".env.ambient-alias"
         Set-Content -LiteralPath $path -Value @"
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATASTORE=mssql
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=edfi_datamanagementservice
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CONFIGURATION_SERVICE_DATABASE_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 "@ -NoNewline
 
-        [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_NAME", "edfi_configurationservice")
+        [System.Environment]::SetEnvironmentVariable("CONFIGURATION_SERVICE_DATABASE_NAME", "edfi_configurationservice")
         try {
             $resolved = Resolve-DatabaseEngineEnvironmentFile `
                 -DatabaseEngine "mssql" `
@@ -980,7 +980,7 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${DMS_CONF
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $resolved -DatabaseEngine "mssql" } |
                 Should -Not -Throw
         }
-        finally { Remove-Item Env:\DMS_CONFIG_DATABASE_NAME -ErrorAction SilentlyContinue }
+        finally { Remove-Item Env:\CONFIGURATION_SERVICE_DATABASE_NAME -ErrorAction SilentlyContinue }
 
         $resolvedWithout = Resolve-DatabaseEngineEnvironmentFile `
             -DatabaseEngine "mssql" `
@@ -998,10 +998,10 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${DMS_CONF
         $path = Join-Path $script:work ".env.reserved-mixed"
         Set-Content -LiteralPath $path -Value @"
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATASTORE=mssql
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=edfi_datamanagementservice
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;Initial Catalog=legacy_config;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;Initial Catalog=legacy_config;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 "@ -NoNewline
 
         $resolved = Resolve-DatabaseEngineEnvironmentFile `
@@ -1020,10 +1020,10 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
         $path = Join-Path $script:work ".env.ambient-marker"
         Set-Content -LiteralPath $path -Value @"
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATASTORE=mssql
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=edfi_datamanagementservice
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_config;User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 "@ -NoNewline
 
         $had = Test-Path Env:\DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE
@@ -1097,10 +1097,10 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=legacy_conf
             'MSSQL_PID=Developer'
             'MSSQL_MEMORY_LIMIT_MB=4096'
             'DMS_DATASTORE=mssql'
-            'DMS_CONFIG_DATASTORE=mssql'
+            'CONFIGURATION_SERVICE_DATASTORE=mssql'
             'DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
-            'DMS_CONFIG_DATABASE_NAME=${MSSQL_DB_NAME}'
-            'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            'CONFIGURATION_SERVICE_DATABASE_NAME=${MSSQL_DB_NAME}'
+            'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${CONFIGURATION_SERVICE_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
         ) -join "`n") -NoNewline
 
         Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine "mssql" -BaseEnvironmentFile $composedPath -DockerComposeRoot $altRoot |
@@ -1131,14 +1131,14 @@ Describe "The checked-in PostgreSQL-base profile files carry the CMS database to
         $path = Join-Path $script:dockerComposeRoot $_
         $values = ReadValuesFromEnvFile $path
 
-        $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be '${POSTGRES_DB_NAME}' -Because "shared mode aliases the seam to the datastore name"
-        $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -BeLike '*database=${DMS_CONFIG_DATABASE_NAME};*' -Because "the connection string must follow the seam, not POSTGRES_DB_NAME directly"
+        $values["CONFIGURATION_SERVICE_DATABASE_NAME"] | Should -Be '${POSTGRES_DB_NAME}' -Because "shared mode aliases the seam to the datastore name"
+        $values["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -BeLike '*database=${CONFIGURATION_SERVICE_DATABASE_NAME};*' -Because "the connection string must follow the seam, not POSTGRES_DB_NAME directly"
 
         # Docker Compose resolves --env-file references in file order, so the alias defined below its
         # consumer would resolve to empty and silently produce database= with no value.
         $lines = [System.IO.File]::ReadAllLines($path)
-        $aliasIndex = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -eq 'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}' })
-        $connectionIndex = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -like 'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=*' })
+        $aliasIndex = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -eq 'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}' })
+        $connectionIndex = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -like 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=*' })
         $aliasIndex | Should -BeGreaterOrEqual 0
         $aliasIndex | Should -BeLessThan $connectionIndex -Because "a forward reference resolves to empty under --env-file"
     }
@@ -1151,7 +1151,7 @@ Describe "The checked-in PostgreSQL-base profile files carry the CMS database to
         # scope for this seam - a stray migration here would repoint DMS itself at the CMS database.
         $values = ReadValuesFromEnvFile (Join-Path $script:dockerComposeRoot $_)
         if ($values.ContainsKey("DATABASE_CONNECTION_STRING_ADMIN")) {
-            $values["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Not -BeLike '*DMS_CONFIG_DATABASE_NAME*'
+            $values["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Not -BeLike '*CONFIGURATION_SERVICE_DATABASE_NAME*'
         }
     }
 }
@@ -1182,15 +1182,15 @@ Describe "The real .env.mssql overlay (DMS-1238)" {
     It "routes the Configuration Service to SQL Server (single-engine stack)" {
         # DMS-1243 delivered the CMS SQL Server backend, so -DatabaseEngine mssql runs the
         # whole stack on SQL Server: no PostgreSQL container exists to fall back to.
-        $script:overlayValues["DMS_CONFIG_DATASTORE"] | Should -Be "mssql"
-        $script:overlayValues["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
-            Should -Match '^Server=dms-mssql,1433;Database=\$\{DMS_CONFIG_DATABASE_NAME\};'
-        $script:overlayValues["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+        $script:overlayValues["CONFIGURATION_SERVICE_DATASTORE"] | Should -Be "mssql"
+        $script:overlayValues["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] |
+            Should -Match '^Server=dms-mssql,1433;Database=\$\{CONFIGURATION_SERVICE_DATABASE_NAME\};'
+        $script:overlayValues["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] |
             Should -Match '\$\{MSSQL_SA_PASSWORD\}'
     }
 
-    It "aliases DMS_CONFIG_DATABASE_NAME to MSSQL_DB_NAME (shared mode, the DMS-1270 CMS database topology seam)" {
-        $script:overlayValues["DMS_CONFIG_DATABASE_NAME"] | Should -Be '${MSSQL_DB_NAME}'
+    It "aliases CONFIGURATION_SERVICE_DATABASE_NAME to MSSQL_DB_NAME (shared mode, the DMS-1270 CMS database topology seam)" {
+        $script:overlayValues["CONFIGURATION_SERVICE_DATABASE_NAME"] | Should -Be '${MSSQL_DB_NAME}'
     }
 
     It "does not duplicate SCHEMA_PACKAGES or other keys already carried by the base environment file" {
@@ -1227,18 +1227,18 @@ Describe "The .env.example MSSQL hint block" {
         # The commented block carries its own paired alias line, so the connection string references
         # the topology seam rather than MSSQL_DB_NAME directly - matching the active PostgreSQL block
         # above it and the real .env.mssql overlay.
-        $script:exampleEnvironment | Should -Match '(?m)^# DMS_CONFIG_DATABASE_NAME=\$\{MSSQL_DB_NAME\}$'
-        $script:exampleEnvironment | Should -Match '(?m)^# DMS_CONFIG_DATABASE_CONNECTION_STRING=.*\$\{DMS_CONFIG_DATABASE_NAME\}.*\$\{MSSQL_SA_PASSWORD\}'
+        $script:exampleEnvironment | Should -Match '(?m)^# CONFIGURATION_SERVICE_DATABASE_NAME=\$\{MSSQL_DB_NAME\}$'
+        $script:exampleEnvironment | Should -Match '(?m)^# CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=.*\$\{CONFIGURATION_SERVICE_DATABASE_NAME\}.*\$\{MSSQL_SA_PASSWORD\}'
     }
 
     It "keeps the seam alias above the connection string that references it, in both blocks" {
         # Docker Compose resolves --env-file references in file order, so an alias defined below its
         # consumer resolves to empty. Pin the ordering rather than trusting it to survive edits.
         $lines = $script:exampleEnvironment -split "`r?`n"
-        $activeAlias = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -eq 'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}' })
-        $activeConnection = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -like 'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=*' })
-        $commentedAlias = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -eq '# DMS_CONFIG_DATABASE_NAME=${MSSQL_DB_NAME}' })
-        $commentedConnection = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -like '# DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=*' })
+        $activeAlias = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -eq 'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}' })
+        $activeConnection = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -like 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=*' })
+        $commentedAlias = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -eq '# CONFIGURATION_SERVICE_DATABASE_NAME=${MSSQL_DB_NAME}' })
+        $commentedConnection = [array]::FindIndex($lines, [Predicate[string]] { param($l) $l -like '# CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=*' })
 
         $activeAlias | Should -BeGreaterOrEqual 0
         $commentedAlias | Should -BeGreaterOrEqual 0
@@ -1267,26 +1267,26 @@ Describe "ReadValuesFromEnvFile normalizes the 'export KEY=value' spelling" {
     }
 
     It "reads <Label> back under the real key" -ForEach @(
-        @{ Label = 'an ordinary assignment'; Line = 'DMS_CONFIG_DATABASE_NAME=edfi_datamanagementservice' }
-        @{ Label = 'an exported assignment'; Line = 'export DMS_CONFIG_DATABASE_NAME=edfi_datamanagementservice' }
-        @{ Label = 'an exported assignment with a tab after export'; Line = "export`tDMS_CONFIG_DATABASE_NAME=edfi_datamanagementservice" }
-        @{ Label = 'an exported assignment with leading whitespace'; Line = '   export DMS_CONFIG_DATABASE_NAME=edfi_datamanagementservice' }
+        @{ Label = 'an ordinary assignment'; Line = 'CONFIGURATION_SERVICE_DATABASE_NAME=edfi_datamanagementservice' }
+        @{ Label = 'an exported assignment'; Line = 'export CONFIGURATION_SERVICE_DATABASE_NAME=edfi_datamanagementservice' }
+        @{ Label = 'an exported assignment with a tab after export'; Line = "export`tCONFIGURATION_SERVICE_DATABASE_NAME=edfi_datamanagementservice" }
+        @{ Label = 'an exported assignment with leading whitespace'; Line = '   export CONFIGURATION_SERVICE_DATABASE_NAME=edfi_datamanagementservice' }
     ) {
         $path = New-ExportSpellingEnvFile -Line @($Line)
         try {
             $values = ReadValuesFromEnvFile -EnvironmentFile $path
 
-            $values.ContainsKey('DMS_CONFIG_DATABASE_NAME') | Should -BeTrue
-            $values['DMS_CONFIG_DATABASE_NAME'] | Should -Be 'edfi_datamanagementservice'
-            $values.ContainsKey('export DMS_CONFIG_DATABASE_NAME') |
+            $values.ContainsKey('CONFIGURATION_SERVICE_DATABASE_NAME') | Should -BeTrue
+            $values['CONFIGURATION_SERVICE_DATABASE_NAME'] | Should -Be 'edfi_datamanagementservice'
+            $values.ContainsKey('export CONFIGURATION_SERVICE_DATABASE_NAME') |
                 Should -BeFalse -Because "the prefix is not part of the key"
         }
         finally { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
     }
 
     It "collapses exported and ordinary duplicates onto one key, last declaration winning: <Label>" -ForEach @(
-        @{ Label = 'exported then ordinary'; Line = @('export DMS_CONFIG_DATABASE_NAME=first', 'DMS_CONFIG_DATABASE_NAME=second'); Expected = 'second' }
-        @{ Label = 'ordinary then exported'; Line = @('DMS_CONFIG_DATABASE_NAME=first', 'export DMS_CONFIG_DATABASE_NAME=second'); Expected = 'second' }
+        @{ Label = 'exported then ordinary'; Line = @('export CONFIGURATION_SERVICE_DATABASE_NAME=first', 'CONFIGURATION_SERVICE_DATABASE_NAME=second'); Expected = 'second' }
+        @{ Label = 'ordinary then exported'; Line = @('CONFIGURATION_SERVICE_DATABASE_NAME=first', 'export CONFIGURATION_SERVICE_DATABASE_NAME=second'); Expected = 'second' }
     ) {
         # Both orders, because collapsing onto one key is only correct if the sequential
         # last-declaration-wins behavior survives it.
@@ -1294,15 +1294,15 @@ Describe "ReadValuesFromEnvFile normalizes the 'export KEY=value' spelling" {
         try {
             $values = ReadValuesFromEnvFile -EnvironmentFile $path
 
-            $values['DMS_CONFIG_DATABASE_NAME'] | Should -Be $Expected
-            @($values.Keys | Where-Object { $_ -like '*DMS_CONFIG_DATABASE_NAME*' }).Count |
+            $values['CONFIGURATION_SERVICE_DATABASE_NAME'] | Should -Be $Expected
+            @($values.Keys | Where-Object { $_ -like '*CONFIGURATION_SERVICE_DATABASE_NAME*' }).Count |
                 Should -Be 1 -Because "the two spellings name one variable"
         }
         finally { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
     }
 
     It "fixes the legacy reader rather than one variable: an exported password reads back too" {
-        # The non-seam control. If this passed only for DMS_CONFIG_DATABASE_NAME the fix would be a
+        # The non-seam control. If this passed only for CONFIGURATION_SERVICE_DATABASE_NAME the fix would be a
         # special case rather than a correction to the reader.
         $path = New-ExportSpellingEnvFile -Line @('export POSTGRES_PASSWORD=abcdefgh1!', 'POSTGRES_DB_NAME=edfi_datamanagementservice')
         try {
@@ -1334,14 +1334,14 @@ Describe "ReadValuesFromEnvFile normalizes the 'export KEY=value' spelling" {
         $path = New-ExportSpellingEnvFile -Line @(
             'POSTGRES_DB_NAME=edfi_datamanagementservice'
             'POSTGRES_PASSWORD=abcdefgh1!'
-            'export DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}'
-            'DMS_CONFIG_IDENTITY_PROVIDER=self-contained'
+            'export CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}'
+            'CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained'
         )
         try {
             $values = ReadValuesFromEnvFile -EnvironmentFile $path
 
             # Resolved exactly as the InitDb path resolves it, reference-following included.
-            Get-RequiredComposeResolvedEnvValue -EnvironmentValues $values -Name 'DMS_CONFIG_DATABASE_NAME' |
+            Get-RequiredComposeResolvedEnvValue -EnvironmentValues $values -Name 'CONFIGURATION_SERVICE_DATABASE_NAME' |
                 Should -Be 'edfi_datamanagementservice'
         }
         finally { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }

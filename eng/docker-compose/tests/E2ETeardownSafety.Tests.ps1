@@ -431,7 +431,7 @@ $env:DMS_TEARDOWN_CAPTURE_LOG = $LogPath
 
     It "keeps the standard E2E environment file on self-contained identity (precondition)" {
         Get-Content -LiteralPath $script:standardE2EEnvironmentFile |
-            Should -Contain "DMS_CONFIG_IDENTITY_PROVIDER=self-contained"
+            Should -Contain "CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained"
     }
 
     It "includes keycloak.yml in the <Project> down set even when the environment file selects self-contained identity" -ForEach @(

@@ -10,9 +10,9 @@ This test suite validates the claims management functionality of the DMS Configu
 The test environment must be configured with the following settings (from `.env.e2e`):
 
 ```bash
-DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true
-DMS_CONFIG_CLAIMS_SOURCE=Hybrid
-DMS_CONFIG_CLAIMS_DIRECTORY=/app/additional-claims
+CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true
+CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid
+CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/additional-claims
 ```
 
 ### Docker Setup
@@ -28,9 +28,9 @@ Ensure the following environment variables are set in the Docker configuration:
 
 ```yaml
 environment:
-  - DMS_CONFIG_CLAIMS_SOURCE=Hybrid
-  - DMS_CONFIG_CLAIMS_DIRECTORY=/app/additional-claims
-  - DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true
+  - CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid
+  - CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/additional-claims
+  - CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true
 ```
 
 ### Expected Fragment Files
@@ -112,11 +112,11 @@ The negative authorization behavior of the `/management/*` claims endpoints is c
 
 4. **404 responses from management endpoints**
    - Dynamic claims loading is not enabled
-   - Check `DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true`
+   - Check `CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true`
 
 5. **Claims not loading in hybrid mode**
-   - Verify `DMS_CONFIG_CLAIMS_SOURCE=Hybrid`
-   - Check `DMS_CONFIG_CLAIMS_DIRECTORY` points to correct path
+   - Verify `CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid`
+   - Check `CONFIGURATION_SERVICE_CLAIMS_DIRECTORY` points to correct path
    - Ensure fragment files are properly mounted
 
 ### Running Individual Tests
@@ -145,6 +145,6 @@ dotnet test --filter "FullyQualifiedName~ClaimsManagement" --filter "Name~scenar
 ### Migration Notes
 
 If working with older test configurations, update the following environment variables:
-- `DMS_CONFIG_USE_CLAIMS_PATH=true` + `DMS_CONFIG_USE_EMBEDDED_BASE_CLAIMS=true` → `DMS_CONFIG_CLAIMS_SOURCE=Hybrid`
-- `DMS_CONFIG_CLAIMS_PATH` → `DMS_CONFIG_CLAIMS_DIRECTORY`
-- `DMS_CONFIG_DANGEROUSLY_ENABLE_DYNAMIC_CLAIMS_LOADING` → `DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING`
+- `DMS_CONFIG_USE_CLAIMS_PATH=true` + `DMS_CONFIG_USE_EMBEDDED_BASE_CLAIMS=true` → `CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid`
+- `DMS_CONFIG_CLAIMS_PATH` → `CONFIGURATION_SERVICE_CLAIMS_DIRECTORY`
+- `DMS_CONFIG_DANGEROUSLY_ENABLE_DYNAMIC_CLAIMS_LOADING` → `CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING`

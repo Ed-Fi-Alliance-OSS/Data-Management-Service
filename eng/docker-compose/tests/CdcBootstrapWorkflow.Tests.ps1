@@ -39,6 +39,7 @@ function Resolve-DatabaseEngineEnvironmentFile { param($DatabaseEngine, $BaseEnv
 function Resolve-CmsDatabaseTopologyEnvironmentFile { param($BaseEnvironmentFile, $DatabaseEngine, $SeparateConfigDatabase, $DockerComposeRoot) return $BaseEnvironmentFile }
 function Confirm-CmsDatabaseTopologyAgreement { param($EnvironmentFile, $DatabaseEngine) }
 function Get-EnvValue { param($EnvValues, $Name) return $EnvValues[$Name] }
+function Write-LegacyEnvironmentVariableWarning { param($EnvironmentFile) }
 function ReadValuesFromEnvFile { param($EnvironmentFile)
     $values = @{}
     foreach ($line in Get-Content $EnvironmentFile) {
@@ -227,7 +228,7 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
         }
         Get-Module -All | Where-Object { $_.Path -and $_.Path.StartsWith($script:sandbox + [IO.Path]::DirectorySeparatorChar) } | Remove-Module -Force
         Copy-Item (Join-Path $script:sandbox 'cdc-lifecycle-stub.txt') (Join-Path $script:sandbox 'cdc-lifecycle.psm1') -Force
-        'DMS_CONFIG_IDENTITY_PROVIDER=self-contained' | Set-Content (Join-Path $script:sandbox '.env')
+        'CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained' | Set-Content (Join-Path $script:sandbox '.env')
         $script:arguments = @{
             EnableKafkaCdc = $true; CdcSettingsPath = 'explicit.json'; CdcBindingStatePath = (Join-Path $TestDrive 'custom-state')
             SeparateConfigDatabase = $true; DataStoreDatabaseName = 'dedicated_cdc'; LoadSeedData = $true; EnableKafkaUI = $true
@@ -373,7 +374,7 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
     ) {
         Copy-Item (Join-Path $script:composeRoot 'cdc-lifecycle.psm1') (Join-Path $script:sandbox 'cdc-lifecycle.psm1') -Force
         '' | Set-Content (Join-Path $script:sandbox 'real-lifecycle')
-        "DMS_CONFIG_IDENTITY_PROVIDER=$environment" | Set-Content (Join-Path $script:sandbox '.env')
+        "CONFIGURATION_SERVICE_IDENTITY_PROVIDER=$environment" | Set-Content (Join-Path $script:sandbox '.env')
         $entryPoint = Join-Path $script:sandbox "bootstrap-$wrapper-dms.ps1"
         & $entryPoint @script:arguments -IdentityProvider $identity
         $inventoryPath = Join-Path $script:sandbox ".cdc-deployments/dms-$wrapper.json"

@@ -61,6 +61,9 @@ if ($Insecure) {
 
 # --- Parse .env -------------------------------------------------------------
 if (-not (Test-Path $EnvFile)) { throw "Env file not found: $EnvFile (copy .env.example to .env)." }
+# Retired variable names are no longer read; name each one before a missing replacement fails below.
+Import-Module "$PSScriptRoot/../../../docker-compose/env-utility.psm1" -Force
+Write-LegacyEnvironmentVariableWarning -EnvironmentFile $EnvFile
 $envValues = @{}
 foreach ($line in Get-Content $EnvFile) {
     $trimmed = $line.Trim()
@@ -119,9 +122,9 @@ $adminClientSecret = EnvVal "BOOTSTRAP_ADMIN_CLIENT_SECRET"
 # The service client ids/scope MUST be the ones the compose services request: read them from
 # the same .env keys (with the same defaults) the compose file consumes, so a customized value
 # yields the same client on both sides instead of an authentication mismatch.
-$cmsClientId   = EnvVal "DMS_CONFIG_IDENTITY_CLIENT_ID" "DmsConfigurationService"
-$roClientId    = EnvVal "CONFIG_SERVICE_CLIENT_ID" "CMSReadOnlyAccess"
-$roClientScope = EnvVal "CONFIG_SERVICE_CLIENT_SCOPE" "edfi_admin_api/readonly_access"
+$cmsClientId   = EnvVal "CONFIGURATION_SERVICE_IDENTITY_CLIENT_ID" "DmsConfigurationService"
+$roClientId    = EnvVal "DMS_CONFIGURATION_SERVICE_CLIENT_ID" "CMSReadOnlyAccess"
+$roClientScope = EnvVal "DMS_CONFIGURATION_SERVICE_CLIENT_SCOPE" "edfi_admin_api/readonly_access"
 
 # Grand Bend sample-data education organizations (district LEA 255901 + sample schools).
 $grandBendEdOrgIds = @([long]255901, [long]255901001, [long]255901107)
@@ -162,16 +165,16 @@ if (-not $SkipKeycloak) {
 
     & "$PSScriptRoot/../../../docker-compose/setup-keycloak.ps1" -KeycloakServer $kc -Realm $realm -AdminUsername $kcAdmin -AdminPassword $kcAdminPw `
         -NewClientId $cmsClientId -NewClientName "DMS Configuration Service" `
-        -ClientScopeName "edfi_admin_api/full_access" -NewClientSecret (EnvVal "DMS_CONFIG_IDENTITY_CLIENT_SECRET")
+        -ClientScopeName "edfi_admin_api/full_access" -NewClientSecret (EnvVal "CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET")
 
     # -SkipRealmAdmin: the read-only client only reads config from the CMS Admin API and must
     # never be a Keycloak realm administrator. Pass it explicitly rather than relying on
     # setup-keycloak.ps1's built-in client-id name check -- otherwise a customized
-    # CONFIG_SERVICE_CLIENT_ID (documented as changeable) would stop matching that literal and
+    # DMS_CONFIGURATION_SERVICE_CLIENT_ID (documented as changeable) would stop matching that literal and
     # the read-only client would be granted realm-admin.
     & "$PSScriptRoot/../../../docker-compose/setup-keycloak.ps1" -KeycloakServer $kc -Realm $realm -AdminUsername $kcAdmin -AdminPassword $kcAdminPw `
         -NewClientId $roClientId -NewClientName "CMS ReadOnly Access" `
-        -ClientScopeName $roClientScope -NewClientSecret (EnvVal "CONFIG_SERVICE_CLIENT_SECRET") -SkipRealmAdmin
+        -ClientScopeName $roClientScope -NewClientSecret (EnvVal "DMS_CONFIGURATION_SERVICE_CLIENT_SECRET") -SkipRealmAdmin
 
     # Bootstrap admin client -- created directly in Keycloak (full_access scope + cms-client role)
     # so we never rely on the CMS public self-registration endpoint (/connect/register), which is

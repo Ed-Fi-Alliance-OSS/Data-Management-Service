@@ -117,7 +117,7 @@ ls ~/dms-src/eng/azure-vm/compose/.bootstrap/ApiSchema/*.json   # sanity: should
 > ```bash
 > cd ~/dms-src/eng/azure-vm/compose
 > cp .env.example .env
-> sed -i -e 's/^DMS_CONFIG_DATA_STANDARD_VERSION=.*/DMS_CONFIG_DATA_STANDARD_VERSION=6.1/' \
+> sed -i -e 's/^CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=.*/CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=6.1/' \
 >   -e 's/^DATABASE_TEMPLATE_PACKAGE_ID=.*/DATABASE_TEMPLATE_PACKAGE_ID=EdFi.Api.Populated.Template.PostgreSql.6.1.0/' .env
 > ```
 

@@ -1550,7 +1550,7 @@ Describe "Northridge PostgreSQL restore recipe identity handoff" {
         $invocation | Should -Match '-DmsClientRole "\$DMSROLE"'
         $invocation | Should -Match '-DbUser "\$DBUSER"'
         $invocation | Should -Match '-DbName "\$CMSDB"' -Because "the insert must target the database the DELETE cleared, as the same literal"
-        $invocation | Should -Not -Match 'ENV:DMS_CONFIG_DATABASE_NAME' -Because "an indirection the script resolves on its own could name a database other than the one the DELETE ran against"
+        $invocation | Should -Not -Match 'ENV:CONFIGURATION_SERVICE_DATABASE_NAME' -Because "an indirection the script resolves on its own could name a database other than the one the DELETE ran against"
         $invocation | Should -Match '-ClientSecretMinimumLength "\$CLIENT_SECRET_MIN"'
         $invocation | Should -Match '-ClientSecretMaximumLength "\$CLIENT_SECRET_MAX"'
     }
@@ -1623,7 +1623,7 @@ Describe "Northridge PostgreSQL restore recipe identity handoff" {
     }
     It "deletes and recreates the DMS-to-CMS client in the one database the running Configuration Service reads" {
         # The false pass: the DELETE ran against $DB while the insert was pointed at
-        # ENV:DMS_CONFIG_DATABASE_NAME, which setup-openiddict.ps1 resolves on its own. With that
+        # ENV:CONFIGURATION_SERVICE_DATABASE_NAME, which setup-openiddict.ps1 resolves on its own. With that
         # override set, the delete cleared one database and the insert skipped the producer's row in
         # the other, and only step 11 would have noticed.
         $step10 = [regex]::Match($script:recipe, '(?ms)^# 10\. REQUIRED: recreate the client DMS uses.*?(?=^# 11\. )').Value
@@ -1636,14 +1636,14 @@ Describe "Northridge PostgreSQL restore recipe identity handoff" {
         $script:activeRecipe.IndexOf('CMSDB=$(') | Should -BeLessThan $script:activeRecipe.IndexOf($delete.Value) -Because "the name is resolved, in step 7, before it is used here"
         $invocation = & $script:SetupOpenIddictInvocation
         $invocation | Should -Match '-DbName "\$CMSDB"' -Because "the insert targets the same database, as the same literal"
-        $invocation | Should -Not -Match 'ENV:DMS_CONFIG_DATABASE_NAME'
+        $invocation | Should -Not -Match 'ENV:CONFIGURATION_SERVICE_DATABASE_NAME'
         $invocation | Should -Not -Match '-DbName "\$DB"'
     }
 
     It "resolves the CMS database once, in step 7, before the signing key is read or replaced" {
         # The false pass: step 10 resolved the database the running Configuration Service reads and
         # recreated the DMS-to-CMS client there, while step 7 had replaced the signing key in $DB. With
-        # DMS_CONFIG_DATABASE_NAME set, the key went into the restored data store and CMS kept minting
+        # CONFIGURATION_SERVICE_DATABASE_NAME set, the key went into the restored data store and CMS kept minting
         # tokens from the producer's key in its own database, and only the step 9 token check noticed.
         $step7 = [regex]::Match($script:recipe, '(?ms)^# 7\. REQUIRED: install your own OpenIddict signing key\..*?(?=^# 8\. )').Value
         $active7 = (($step7 -split "\r?\n") | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"

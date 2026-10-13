@@ -198,13 +198,13 @@ not to the CMS database. For M-conn:
 
 ### Recomposing the resource profile
 
-The E1/E2 stacks were composed with `.env.e2e` and `DMS_CONFIG_LOG_LEVEL=Debug`; confirm
+The E1/E2 stacks were composed with `.env.e2e` and `CONFIGURATION_SERVICE_LOG_LEVEL=Debug`; confirm
 with `docker compose … config --hash config,db` against the running containers' labels
 before recreating. P-runner-approx:
 
 ```powershell
 cd eng/docker-compose
-$env:DMS_CONFIG_LOG_LEVEL = 'Debug'
+$env:CONFIGURATION_SERVICE_LOG_LEVEL = 'Debug'
 docker compose -f postgresql.yml -f local-config.yml -f local-config-diagnostics.yml `
   -f local-postgresql-diagnostics.yml -f local-resource-runner-approx.yml `
   --env-file .env.e2e -p dms-local up -d --no-deps db config

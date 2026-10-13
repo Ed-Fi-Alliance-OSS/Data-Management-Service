@@ -9,6 +9,11 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
+# Name any retired variable before Compose fails on its missing replacement.
+# shellcheck source=legacy-env-warning.sh
+source ./legacy-env-warning.sh
+warn_legacy_env_names .env
+
 # Guard the destructive `down -v`: it permanently wipes every app/database volume and the Keycloak
 # realm. Require explicit confirmation so a stray ./reset.sh cannot nuke deployment state --
 # type 'reset' at the interactive prompt, or pass -y/--force (e.g. for automation).

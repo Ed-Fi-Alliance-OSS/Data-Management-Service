@@ -6,7 +6,7 @@ can touch and under which authorization strategy.
 
 ## Built-in (embedded) claim sets
 
-Available out of the box (`DMS_CONFIG_CLAIMS_SOURCE=Embedded`). Confirm the live list with
+Available out of the box (`CONFIGURATION_SERVICE_CLAIMS_SOURCE=Embedded`). Confirm the live list with
 `GET /<config>/v3/claimSets`:
 
 | Claim set | Authorization |
@@ -43,7 +43,7 @@ Two ways:
    `export` an existing claim set as a template, edit, then `import`/`POST` it. Use a CMS
    admin token (see `http/multi-tenant.http`).
 
-2. **File-based:** set `DMS_CONFIG_CLAIMS_SOURCE=Hybrid` in `.env` and drop custom claim set
+2. **File-based:** set `CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid` in `.env` and drop custom claim set
    fragments in this directory (mounted into both Config Services at `/app/additional-claims`).
    Each file must be named `*-claimset.json` and hold `{ "name": "<ClaimSetName>",
    "resourceClaims": [ ... ] }` — see the "A fragment that defines a claim set" example in

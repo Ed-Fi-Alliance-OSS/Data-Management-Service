@@ -44,7 +44,7 @@ Edit `.env.multitenancy` and configure these key settings:
 DMS_MULTI_TENANCY=true
 
 # Enable multi-tenancy in Configuration Service
-DMS_CONFIG_MULTI_TENANCY=true
+CONFIGURATION_SERVICE_MULTI_TENANCY=true
 ```
 
 ### Route Qualifier Settings (Optional)
@@ -96,8 +96,8 @@ is included in the repository.
 > `schoolYear` route contexts (as of DMS-1153 this flag lives on the configure
 > phase command, not `start-local-dms.ps1`).
 > `-SchoolYearRange` and `-NoDataStore` are mutually exclusive.
-> If `DMS_CONFIG_MULTI_TENANCY=true`, then `-SchoolYearRange` also requires
-> `CONFIG_SERVICE_TENANT` in the environment file so the script can send the
+> If `CONFIGURATION_SERVICE_MULTI_TENANCY=true`, then `-SchoolYearRange` also requires
+> `DMS_CONFIGURATION_SERVICE_TENANT` in the environment file so the script can send the
 > required `Tenant` header.
 > Avoid mixing `-SchoolYearRange` with manual instance creation in the same
 > environment, because manually named instances can duplicate its route
@@ -218,7 +218,7 @@ script never creates them) and want explicit school year routing (for example,
 Prerequisites:
 
 - `ROUTE_QUALIFIER_SEGMENTS=schoolYear` in your environment file.
-- If `DMS_CONFIG_MULTI_TENANCY=true`, include `Tenant: {tenant-name}` on all
+- If `CONFIGURATION_SERVICE_MULTI_TENANCY=true`, include `Tenant: {tenant-name}` on all
   tenant-scoped Configuration Service calls.
 - Choose the target PostgreSQL database names first (Step 3). Provision them
   after creating the CMS data stores and route contexts.
@@ -283,18 +283,18 @@ the tenant databases before restarting DMS.
 
 Notes:
 
-- If `DMS_CONFIG_MULTI_TENANCY=true`, include `Tenant: {tenant-name}` on all tenant-scoped Configuration Service requests.
+- If `CONFIGURATION_SERVICE_MULTI_TENANCY=true`, include `Tenant: {tenant-name}` on all tenant-scoped Configuration Service requests.
 - Each instance needs route context entries that match `ROUTE_QUALIFIER_SEGMENTS`.
 
 ## Step 5: Provision Schemas and Restart DMS
 
 After creating all instances and route contexts, provision the tenant
 databases. `provision-dms-schema.ps1` reads data stores from Configuration
-Service for the tenant named by `CONFIG_SERVICE_TENANT` in the environment
+Service for the tenant named by `DMS_CONFIGURATION_SERVICE_TENANT` in the environment
 file, translates Docker-internal PostgreSQL connection strings to host-side
 targets, creates missing databases, and invokes `api-schema-tools ddl provision`.
 
-For the two-tenant example, set `CONFIG_SERVICE_TENANT` to `DistrictA` in
+For the two-tenant example, set `DMS_CONFIGURATION_SERVICE_TENANT` to `DistrictA` in
 `.env.multitenancy`, provision, then repeat with `DistrictB`:
 
 ```powershell
@@ -386,7 +386,7 @@ docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2025 \
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `DMS_MULTI_TENANCY` | Enable multi-tenancy in DMS | `false` |
-| `DMS_CONFIG_MULTI_TENANCY` | Enable multi-tenancy in Configuration Service | `false` |
+| `CONFIGURATION_SERVICE_MULTI_TENANCY` | Enable multi-tenancy in Configuration Service | `false` |
 | `ROUTE_QUALIFIER_SEGMENTS` | Comma-separated route qualifiers (e.g., `schoolYear` or `districtId,schoolYear`) | (empty) |
 
 ### API Endpoints

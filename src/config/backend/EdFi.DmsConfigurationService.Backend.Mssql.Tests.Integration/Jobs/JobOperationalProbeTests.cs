@@ -27,7 +27,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.Jobs;
 /// <c>ConnectionStrings__MssqlAdmin</c> (the fixtures are ignored when it is unset); the probe database
 /// <c>edfi_cms_job_probe</c> is created on that server when absent, with server defaults (READ COMMITTED, no
 /// READ_COMMITTED_SNAPSHOT), as DbUp's <c>EnsureDatabase</c> creates the CMS database. Set
-/// <c>CMS_JOB_PROBE_RESULTS</c> to a file path to append every measurement as a tab-separated line.
+/// <c>CONFIGURATION_SERVICE_JOB_PROBE_RESULTS</c> to a file path to append every measurement as a tab-separated line.
 /// </para>
 /// <para>
 /// Absolute latencies are hardware-dependent evidence. The assertions are the spec §6.2 acceptance thresholds and
@@ -345,7 +345,10 @@ public abstract class JobOperationalProbeBase
         string text = Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
         TestContext.Progress.WriteLine($"PROBE mssql {probe} {metric} {text}");
 
-        if (Environment.GetEnvironmentVariable("CMS_JOB_PROBE_RESULTS") is { Length: > 0 } path)
+        if (
+            Environment.GetEnvironmentVariable("CONFIGURATION_SERVICE_JOB_PROBE_RESULTS") is
+            { Length: > 0 } path
+        )
         {
             lock (_resultsFileLock)
             {

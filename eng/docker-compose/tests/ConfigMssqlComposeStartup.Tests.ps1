@@ -51,8 +51,8 @@ Describe "Config MSSQL Compose startup hardening" {
         $scriptContent = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot "start-local-config.ps1") -Raw
 
         # The project and container names are opt-in overridable; unset, they keep the stock names.
-        $scriptContent | Should -Match '\$composeProject\s*=\s*Get-ComposeResolvedEnvValue\s+-EnvironmentValues\s+\$envValues\s+-Name\s+"CMS_COMPOSE_PROJECT"\s+-DefaultValue\s+"cs-local"'
-        $scriptContent | Should -Match '\$mssqlContainerName\s*=\s*Get-ComposeResolvedEnvValue\s+-EnvironmentValues\s+\$envValues\s+-Name\s+"CMS_MSSQL_CONTAINER"\s+-DefaultValue\s+"dms-mssql"'
+        $scriptContent | Should -Match '\$composeProject\s*=\s*Get-ComposeResolvedEnvValue\s+-EnvironmentValues\s+\$envValues\s+-Name\s+"CONFIGURATION_SERVICE_COMPOSE_PROJECT"\s+-DefaultValue\s+"cs-local"'
+        $scriptContent | Should -Match '\$mssqlContainerName\s*=\s*Get-ComposeResolvedEnvValue\s+-EnvironmentValues\s+\$envValues\s+-Name\s+"CONFIGURATION_SERVICE_MSSQL_CONTAINER"\s+-DefaultValue\s+"dms-mssql"'
 
         $dbStartIndex = $scriptContent.IndexOf('docker compose $files --env-file $EnvironmentFile -p $composeProject up $upArgs db')
         $waitIndex = $scriptContent.IndexOf('Wait-MssqlReady -ContainerName $mssqlContainerName -Password $mssqlSaPassword')

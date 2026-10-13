@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Ed-Fi DMS Configuration Service supports three distinct modes for loading and managing claims authorization data based on the `DMS_CONFIG_CLAIMS_SOURCE` configuration. This guide covers the deployment, configuration, and management of all claims loading modes, from embedded defaults to dynamic fragment composition and direct API uploads.
+The Ed-Fi DMS Configuration Service supports three distinct modes for loading and managing claims authorization data based on the `CONFIGURATION_SERVICE_CLAIMS_SOURCE` configuration. This guide covers the deployment, configuration, and management of all claims loading modes, from embedded defaults to dynamic fragment composition and direct API uploads.
 
 ### Claims System Architecture
 
@@ -132,7 +132,7 @@ The Claims.json file contains two main sections and is used as:
 The embedded base `Claims.json` is stored per Data Standard version under
 `Claims/Standards/ds<NN>/Claims.json` (`ds52`, `ds61`, ...). `ClaimsProvider`
 selects the version's resource at startup from `ClaimsOptions:DataStandardVersion`
-(environment variable `DMS_CONFIG_DATA_STANDARD_VERSION`, default `5.2`), and fails
+(environment variable `CONFIGURATION_SERVICE_DATA_STANDARD_VERSION`, default `5.2`), and fails
 fast if the requested version's resource is absent. This selection applies to the
 **Embedded** and **Hybrid** modes below (both load the embedded base); **Filesystem**
 mode reads its base from disk instead. See
@@ -147,7 +147,7 @@ The most secure mode for production deployments. Uses only the built-in Claims.j
 **Configuration:**
 ```bash
 # Set claims source to embedded mode
-DMS_CONFIG_CLAIMS_SOURCE=Embedded
+CONFIGURATION_SERVICE_CLAIMS_SOURCE=Embedded
 ```
 
 **Characteristics:**
@@ -162,10 +162,10 @@ Starts with embedded Claims.json and applies fragment transformations to extend 
 **Configuration:**
 ```bash
 # Set claims source to hybrid mode
-DMS_CONFIG_CLAIMS_SOURCE=Hybrid
+CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid
 
 # Path to fragment files directory
-DMS_CONFIG_CLAIMS_DIRECTORY=/app/claims-fragments
+CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/claims-fragments
 ```
 
 **Characteristics:**
@@ -179,10 +179,10 @@ Loads claims entirely from external filesystem sources without embedded base cla
 **Configuration:**
 ```bash
 # Set claims source to filesystem mode
-DMS_CONFIG_CLAIMS_SOURCE=Filesystem
+CONFIGURATION_SERVICE_CLAIMS_SOURCE=Filesystem
 
 # Path to claims files directory
-DMS_CONFIG_CLAIMS_DIRECTORY=/app/claims-files
+CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/claims-files
 ```
 
 ### Mode 4: Direct Upload (Dynamic Management)
@@ -192,11 +192,11 @@ Complete replacement of claims via the management API. The uploaded structure mu
 **Configuration:**
 ```bash
 # Required for management endpoints
-DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true
+CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true
 
 # Optional: Can be combined with any base mode
-DMS_CONFIG_CLAIMS_SOURCE=Embedded  # or Hybrid, or Filesystem
-DMS_CONFIG_CLAIMS_DIRECTORY=/app/claims-fragments  # if using Hybrid or Filesystem
+CONFIGURATION_SERVICE_CLAIMS_SOURCE=Embedded  # or Hybrid, or Filesystem
+CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/claims-fragments  # if using Hybrid or Filesystem
 ```
 
 **Characteristics:**
@@ -425,7 +425,7 @@ No additional configuration needed.
 
 ### Configuration Mode Summary
 
-| Mode | DMS_CONFIG_CLAIMS_SOURCE | DMS_CONFIG_CLAIMS_DIRECTORY | Use Case |
+| Mode | CONFIGURATION_SERVICE_CLAIMS_SOURCE | CONFIGURATION_SERVICE_CLAIMS_DIRECTORY | Use Case |
 |------|--------------------------|----------------------------|----------|
 | Embedded | `Embedded` | Not used | Production default, highest security |
 | Hybrid | `Hybrid` | Required | Development with fragment extensions |
@@ -494,7 +494,7 @@ that is not in the configured claims source.
 
 ### Security Warnings
 
-⚠️ **CRITICAL**: The `DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING` flag should **NEVER** be enabled in production environments.
+⚠️ **CRITICAL**: The `CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING` flag should **NEVER** be enabled in production environments.
 
 This flag enables:
 - Runtime modification of security policies
@@ -523,15 +523,15 @@ The `Authorization: Bearer $TOKEN` header shown in the examples above is enforce
 ### Common Configuration Issues
 
 1. **Claims not loading from filesystem**
-   - Verify `DMS_CONFIG_CLAIMS_SOURCE` is set to `Hybrid` or `Filesystem`
-   - Check that `DMS_CONFIG_CLAIMS_DIRECTORY` points to the correct directory
+   - Verify `CONFIGURATION_SERVICE_CLAIMS_SOURCE` is set to `Hybrid` or `Filesystem`
+   - Check that `CONFIGURATION_SERVICE_CLAIMS_DIRECTORY` points to the correct directory
    - Ensure fragment files follow the `*-claimset.json` naming pattern
 
 2. **Management endpoints returning 404**
-   - Verify `DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true` is set
+   - Verify `CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true` is set
    - Check that the service is running with the correct environment variables
 
 3. **Fragment files not being discovered**
-   - Confirm files are in the directory specified by `DMS_CONFIG_CLAIMS_DIRECTORY`
+   - Confirm files are in the directory specified by `CONFIGURATION_SERVICE_CLAIMS_DIRECTORY`
    - Verify file permissions allow the service to read the files
    - Check service logs for fragment discovery messages

@@ -189,8 +189,8 @@ Two different things are on record about this recipe, and they must not be read 
 text **as it stood at publication** -- eleven steps, branch head `b303450ab5fd689526696cb088a76a90b7ef6c14`,
 recorded unchanged in `a0eecb58a5e4051730f82ec4c12288a443307250`: no step 5b, no step 5c, and DMS started
 as its step 10 -- was executed from a clean slate on 2026-08-19, on a stack deliberately configured with
-a non-default PostgreSQL password, a non-default `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` and a non-default
-`DMS_CONFIG_IDENTITY_ENCRYPTION_KEY`, so that nothing could pass by sharing a default with the machine
+a non-default PostgreSQL password, a non-default `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` and a non-default
+`CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY`, so that nothing could pass by sharing a default with the machine
 that produced the artifact. The fourteen-step text below is that recipe plus the review hardening added
 after publication -- steps 5b and 5c, the fail-closed status checks, the bounded waits, the in-memory
 secret handling and the recovery helper -- and the current text has **not** been executed end to end
@@ -684,13 +684,13 @@ echo "reference database $REF dropped"
 
 # 7. REQUIRED: install your own OpenIddict signing key.
 #    The artifact carries the producer's dmscs."OpenIddictKey" row, whose private key is encrypted
-#    with the PRODUCER's DMS_CONFIG_IDENTITY_ENCRYPTION_KEY. Yours differs, so CMS cannot decrypt it
+#    with the PRODUCER's CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY. Yours differs, so CMS cannot decrypt it
 #    and POST /connect/token answers 500 with "No active private key or key id found". Without a
 #    token no CMS API call succeeds, so step 9 becomes impossible -- this step must precede it.
 #
 #    The key is replaced in the CMS database: CMS mints tokens from the dmscs."OpenIddictKey" row of
 #    the database it reads its dmscs rows from, taken from the running Configuration Service rather
-#    than assumed to be $DB -- DMS_CONFIG_DATABASE_NAME is a supported override, and local-config.yml
+#    than assumed to be $DB -- CONFIGURATION_SERVICE_DATABASE_NAME is a supported override, and local-config.yml
 #    builds the CMS connection string from it -- so a key replaced anywhere else leaves CMS reading
 #    the producer's. The rule for the rest of the recipe: dmscs operations target $CMSDB (step 10
 #    reuses this value), dms data-store operations target $DB. The connection string carries the
@@ -709,7 +709,7 @@ unset CMSCS
 test -n "$CMSDB" || \
   { echo "could not read the database name from the Configuration Service connection string; nothing was changed"; exit 1; }
 
-#    Note this is a DIFFERENT key from DMS_CONFIG_DATABASE_ENCRYPTION_KEY, which protects the data
+#    Note this is a DIFFERENT key from CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY, which protects the data
 #    store connection string in step 9. The two are configured separately and both matter here.
 #    Read the key with `docker inspect`, not `docker exec`: the CMS container is stopped at this
 #    point in the recipe and `docker exec` refuses a stopped container.
@@ -781,12 +781,12 @@ echo "SourceIdentity rotated to $NEW_SOURCE_ID"
 #    The local PostgreSQL stack is single-database, so the artifact carries dmscs.* alongside dms.*.
 #    The restored dmscs rows are PRODUCER-LOCAL: the stored DataStore.ConnectionString describes the
 #    machine that produced the artifact and is encrypted with that machine's
-#    DMS_CONFIG_DATABASE_ENCRYPTION_KEY. Re-saving re-encrypts it with yours. The restore also
+#    CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY. Re-saving re-encrypts it with yours. The restore also
 #    replaced dmscs.OpenIddict*, so register the admin client AFTER the restore, not before.
 #    Skip this and DMS restart-loops with "Failed to decrypt the connection string".
 #
 #    The ports are read from the containers, not assumed. local-config.yml and local-dms.yml set each
-#    container's ASPNETCORE_HTTP_PORTS from DMS_CONFIG_ASPNETCORE_HTTP_PORTS and DMS_HTTP_PORTS
+#    container's ASPNETCORE_HTTP_PORTS from CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS and DMS_HTTP_PORTS
 #    respectively and publish that same number on 127.0.0.1, so the value inside the container is the
 #    host port -- the same two overrides eng/docker-compose/env-utility.psm1 resolves in
 #    Resolve-CmsBaseUrl and Resolve-DockerLocalDmsBaseUrl. A stack on other ports would otherwise meet
@@ -951,7 +951,7 @@ echo "data store re-saved -> HTTP 204"
 #     Registering `restore-admin` above is not this step. DMS authenticates to CMS as its own client,
 #     `CMSReadOnlyAccess` by default, and the restore replaced `dmscs.OpenIddict*` with the PRODUCER's
 #     rows -- so the `CMSReadOnlyAccess` row now in the database stores a hash of the producer's
-#     secret, which is not published. DMS presents your `CONFIG_SERVICE_CLIENT_SECRET` on every call
+#     secret, which is not published. DMS presents your `DMS_CONFIGURATION_SERVICE_CLIENT_SECRET` on every call
 #     to CMS, so unless your secret is byte-identical to one you have never seen, CMS answers 401 and
 #     DMS cannot read claim sets or authorization metadata. There is no way to check whether you got
 #     lucky, so this step is unconditional.
@@ -968,7 +968,7 @@ test -n "$CID" -a -n "$CSEC" -a -n "$CSCOPE" || \
 #     The two role names are read as well, and from CMS rather than from DMS, because CMS is the side
 #     that enforces them: its service policy requires the presented token to carry
 #     IdentitySettings:ConfigServiceRole. Both are supported overrides -- local-config.yml sets them
-#     from DMS_CONFIG_IDENTITY_SERVICE_ROLE and DMS_CONFIG_IDENTITY_CLIENT_ROLE -- and left unpassed,
+#     from CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE and CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE -- and left unpassed,
 #     setup-openiddict.ps1 falls back to its own cms-client/dms-client defaults and grants a role your
 #     CMS does not require. The token check below would still pass, because minting a token does not
 #     exercise the role; the failure would surface in step 11 as DMS unable to read claim sets.

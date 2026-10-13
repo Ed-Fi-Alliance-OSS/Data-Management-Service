@@ -585,7 +585,7 @@ stops it before it serves a request, and the reason is on standard error; see
 #### Recipe 1 for the Configuration Service: a pre-populated plugin root
 
 `plugins-config.yml` is the Configuration Service counterpart of `plugins-dms.yml`.
-`CMS_PLUGINS_MOUNT_SOURCE` is the one required value: the host path that holds the
+`CONFIGURATION_SERVICE_PLUGINS_MOUNT_SOURCE` is the one required value: the host path that holds the
 Configuration Service's plugin directories. Add the file with its own `-f` after
 `local-config.yml` or `published-config.yml`, followed by a deployment-owned
 override that sets `Plugins__Allowed` on the `config` service, because this overlay
@@ -607,7 +607,7 @@ removes them from the environment; see
 # unchanged. start-local-config.ps1 has no setting that adds it: DMS_PLUGINS_COMPOSE_FILES is the
 # Data Management Service launchers' setting for DMS overlays, not a Configuration Service one.
 #
-# CMS_PLUGINS_MOUNT_SOURCE is declared with :? rather than a default. A deployment that composed
+# CONFIGURATION_SERVICE_PLUGINS_MOUNT_SOURCE is declared with :? rather than a default. A deployment that composed
 # this file in meant to supply a host path, and a silent default would make Docker materialize an
 # empty root-owned directory beside it, which is exactly what keeping the mount out of the base
 # files avoids.
@@ -618,7 +618,7 @@ removes them from the environment; see
 services:
   config:
     volumes:
-      - ${CMS_PLUGINS_MOUNT_SOURCE:?set the host path holding the plugin directories}:/app/plugins:ro
+      - ${CONFIGURATION_SERVICE_PLUGINS_MOUNT_SOURCE:?set the host path holding the plugin directories}:/app/plugins:ro
 ```
 
 `DMS_PLUGINS_COMPOSE_FILES` is the DMS launchers' setting and does not add this
@@ -634,7 +634,7 @@ the target directory, and extract the plugin directory. Only where the result is
 mounted differs. Either of two forms does it:
 
 - **Into the host path Recipe 1 mounts.** Run the four commands as a deployment step
-  that extracts into the directory `CMS_PLUGINS_MOUNT_SOURCE` names, then compose
+  that extracts into the directory `CONFIGURATION_SERVICE_PLUGINS_MOUNT_SOURCE` names, then compose
   `plugins-config.yml` exactly as in Recipe 1. Nothing about the overlay changes.
 - **Into a volume, as `plugins-fetch-dms.yml` does for DMS.** Copy that file into the
   deployment and point its last service block at `config` instead of `dms`. When DMS
@@ -700,7 +700,7 @@ services:
 List only the keys the vault actually serves. Keep the matching `.env` variables
 set: the reset already keeps their values out of the containers, and the local
 launch scripts read them directly to register identity clients and provision
-databases. `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` feeds both
+databases. `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` feeds both
 `DatabaseSettings__EncryptionKey` on `config` and
 `ConfigurationServiceSettings__EncryptionKey` on `dms`, so clearing it for one host
 would blank the key the other still reads from the environment. Do not reset

@@ -33,7 +33,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
         # name any fixture in this Describe declares is therefore snapshotted and cleared too.
         $script:ambientKeys = @(
             "POSTGRES_DB_NAME", "MSSQL_DB_NAME", "POSTGRES_PASSWORD", "MSSQL_SA_PASSWORD",
-            "DMS_CONFIG_DATABASE_NAME", "DMS_CONFIG_DATABASE_CONNECTION_STRING", "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE",
+            "CONFIGURATION_SERVICE_DATABASE_NAME", "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING", "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE",
             "FEATURE", "PASSWORD", "UNRELATED", "SET_ABOVE"
         )
 
@@ -85,13 +85,13 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
     }
 
     Context "shared mode (switch omitted)" {
-        It "returns the base file unchanged when DMS_CONFIG_DATABASE_NAME already aliases the datastore name" {
+        It "returns the base file unchanged when CONFIGURATION_SERVICE_DATABASE_NAME already aliases the datastore name" {
             $basePath = Join-Path $script:work ".env.base"
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};'
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};'
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
@@ -99,25 +99,25 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $result | Should -Be $basePath -Because "nothing needs to change: the alias already resolves to the effective shared-mode name"
         }
 
-        It "materializes DMS_CONFIG_DATABASE_NAME into a derived file for an old .env that never defined it" {
+        It "materializes CONFIGURATION_SERVICE_DATABASE_NAME into a derived file for an old .env that never defined it" {
             # This is the fix for the old-file gap: a pre-existing developer .env predating this
-            # story's template update has no DMS_CONFIG_DATABASE_NAME line at all.
+            # story's template update has no CONFIGURATION_SERVICE_DATABASE_NAME line at all.
             $basePath = Join-Path $script:work ".env.base"
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
 
             $result | Should -Not -Be $basePath
             $values = ReadValuesFromEnvFile $result
-            $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_datamanagementservice"
+            $values["CONFIGURATION_SERVICE_DATABASE_NAME"] | Should -Be "edfi_datamanagementservice"
             $values["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "false"
         }
 
-        It "reflects an ambient POSTGRES_DB_NAME override in the materialized DMS_CONFIG_DATABASE_NAME" {
+        It "reflects an ambient POSTGRES_DB_NAME override in the materialized CONFIGURATION_SERVICE_DATABASE_NAME" {
             # Round 8 Blocker 1: the write side must resolve the datastore name the same
             # Compose-precedence-aware way Confirm-CmsDatabaseTopologyAgreement does, since an
             # ambient override genuinely moves the running database container.
@@ -130,11 +130,11 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
 
-            (ReadValuesFromEnvFile $result)["DMS_CONFIG_DATABASE_NAME"] | Should -Be "ambient_override_db"
+            (ReadValuesFromEnvFile $result)["CONFIGURATION_SERVICE_DATABASE_NAME"] | Should -Be "ambient_override_db"
         }
 
         It "recognizes an already-aliased file as unchanged even while an ambient override is active" {
-            # The idempotency comparison must resolve the CURRENT DMS_CONFIG_DATABASE_NAME the same
+            # The idempotency comparison must resolve the CURRENT CONFIGURATION_SERVICE_DATABASE_NAME the same
             # ambient-aware way, or an active override would make an already-correct alias look
             # "changed" on every call, needlessly freezing a live alias into a derived file.
             [System.Environment]::SetEnvironmentVariable("POSTGRES_DB_NAME", "ambient_override_db")
@@ -142,8 +142,8 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=file_named_db',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};'
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};'
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
@@ -155,15 +155,15 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
     Context "declaration order (Compose resolves --env-file references in file order)" {
         # This function's hashtable-based resolution is order-blind, so a value can look correct here
         # and still render empty for Compose: verified against a real `docker compose config` render,
-        # DMS_CONFIG_DATABASE_NAME=`${POSTGRES_DB_NAME} declared ABOVE POSTGRES_DB_NAME produced
+        # CONFIGURATION_SERVICE_DATABASE_NAME=`${POSTGRES_DB_NAME} declared ABOVE POSTGRES_DB_NAME produced
         # database= (empty). A disordered file therefore must not take the unchanged early return; the
         # derived-write path heals it, because the writer serializes the alias as the resolved literal
         # and the post-write reorder keeps the alias ahead of the connection string.
         It "does not early-return a shared-mode file whose alias is declared before the datastore name" {
             $basePath = Join-Path $script:work ".env.disordered"
             Set-Content -LiteralPath $basePath -Value (@(
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};',
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
@@ -176,10 +176,10 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             # The healed file must be order-viable: the alias is a resolved literal (nothing left to
             # forward-reference) and still precedes the connection string that references it.
             $derivedLines = [System.IO.File]::ReadAllLines($result)
-            $aliasLine = @($derivedLines | Where-Object { $_ -like 'DMS_CONFIG_DATABASE_NAME=*' })[0]
-            $aliasLine | Should -Be 'DMS_CONFIG_DATABASE_NAME=edfi_datamanagementservice'
+            $aliasLine = @($derivedLines | Where-Object { $_ -like 'CONFIGURATION_SERVICE_DATABASE_NAME=*' })[0]
+            $aliasLine | Should -Be 'CONFIGURATION_SERVICE_DATABASE_NAME=edfi_datamanagementservice'
             $aliasIndex = [Array]::IndexOf($derivedLines, $aliasLine)
-            $connIndex = [Array]::IndexOf($derivedLines, @($derivedLines | Where-Object { $_ -like 'DMS_CONFIG_DATABASE_CONNECTION_STRING=*' })[0])
+            $connIndex = [Array]::IndexOf($derivedLines, @($derivedLines | Where-Object { $_ -like 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=*' })[0])
             $aliasIndex | Should -BeLessThan $connIndex
         }
 
@@ -188,8 +188,8 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
             ) -join "`n") -NoNewline
 
@@ -197,8 +197,8 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
 
             $result | Should -Not -Be $basePath
             $derivedLines = [System.IO.File]::ReadAllLines($result)
-            $aliasIndex = [Array]::IndexOf($derivedLines, @($derivedLines | Where-Object { $_ -like 'DMS_CONFIG_DATABASE_NAME=*' })[0])
-            $connIndex = [Array]::IndexOf($derivedLines, @($derivedLines | Where-Object { $_ -like 'DMS_CONFIG_DATABASE_CONNECTION_STRING=*' })[0])
+            $aliasIndex = [Array]::IndexOf($derivedLines, @($derivedLines | Where-Object { $_ -like 'CONFIGURATION_SERVICE_DATABASE_NAME=*' })[0])
+            $connIndex = [Array]::IndexOf($derivedLines, @($derivedLines | Where-Object { $_ -like 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=*' })[0])
             $aliasIndex | Should -BeLessThan $connIndex
         }
 
@@ -209,8 +209,8 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
             ) -join "`n") -NoNewline
 
@@ -219,7 +219,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
         }
 
         # Post-PR review: the order check must cover EVERY variable the connection string references,
-        # not only the DMS_CONFIG_DATABASE_NAME alias. A shared-mode connection string legitimately
+        # not only the CONFIGURATION_SERVICE_DATABASE_NAME alias. A shared-mode connection string legitimately
         # keeps its ${POSTGRES_DB_NAME} / ${MSSQL_DB_NAME} and credential references, and any of them
         # declared below the connection string renders that segment empty. Verified live: the
         # disordered file below rendered "password=;database=;" through a real `docker compose config`,
@@ -231,10 +231,10 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $basePath = Join-Path $script:work ".env.forward-$($_.Name)"
             $datastoreKey = $_.Name
             Set-Content -LiteralPath $basePath -Value (@(
-                "DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=`${POSTGRES_PASSWORD};database=`${$datastoreKey};",
+                "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=`${POSTGRES_PASSWORD};database=`${$datastoreKey};",
                 "$datastoreKey=$($_.DatastoreName)",
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                "DMS_CONFIG_DATABASE_NAME=`${$datastoreKey}",
+                "CONFIGURATION_SERVICE_DATABASE_NAME=`${$datastoreKey}",
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
             ) -join "`n") -NoNewline
 
@@ -244,7 +244,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
 
             # Every key the connection string references must now be declared above it.
             $derivedLines = [System.IO.File]::ReadAllLines($result)
-            $connIndex = [Array]::IndexOf($derivedLines, @($derivedLines | Where-Object { $_ -like 'DMS_CONFIG_DATABASE_CONNECTION_STRING=*' })[0])
+            $connIndex = [Array]::IndexOf($derivedLines, @($derivedLines | Where-Object { $_ -like 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=*' })[0])
             foreach ($referencedKey in @($datastoreKey, 'POSTGRES_PASSWORD')) {
                 $keyIndex = [Array]::IndexOf($derivedLines, @($derivedLines | Where-Object { $_ -like "$referencedKey=*" })[0])
                 $keyIndex | Should -BeGreaterThan -1 -Because "$referencedKey must survive the rewrite"
@@ -259,8 +259,8 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
             ) -join "`n") -NoNewline
 
@@ -275,8 +275,8 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $basePath = Join-Path $script:work ".env.ambient-ref"
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
             ) -join "`n") -NoNewline
 
@@ -289,12 +289,12 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             # unsupported shape fails loudly with the manual fix rather than rendering empty.
             $basePath = Join-Path $script:work ".env.forward-chained"
             Set-Content -LiteralPath $basePath -Value (@(
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CHAINED_DB_NAME};',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CHAINED_DB_NAME};',
                 'BASE_DB_NAME=edfi_datamanagementservice',
                 'CHAINED_DB_NAME=${BASE_DB_NAME}',
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
             ) -join "`n") -NoNewline
 
@@ -327,8 +327,8 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $basePath = Join-Path $script:work ".env.unsafe-lazy"
             $sourceLines = @(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=db;password=${PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=db;password=${PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};',
                 'FEATURE=${PASSWORD:-disabled}',
                 'PASSWORD=secret',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
@@ -359,8 +359,8 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $basePath = Join-Path $script:work ".env.unsafe-dash"
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=db;password=${PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=db;password=${PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};',
                 'FEATURE=${PASSWORD-fallback}',
                 'PASSWORD=secret',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
@@ -370,7 +370,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
                 Should -Throw "*renders for 'FEATURE'*"
         }
 
-        It "fails closed for an unsafe DMS_CONFIG_DATABASE_NAME move, not only for a credential key" {
+        It "fails closed for an unsafe CONFIGURATION_SERVICE_DATABASE_NAME move, not only for a credential key" {
             # The topology alias is moved by the same function and gets the same proof. Covering only
             # PASSWORD would leave the alias move - the one this design performs on every migrated file -
             # unproven.
@@ -378,15 +378,15 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
-                'FEATURE=${DMS_CONFIG_DATABASE_NAME:-disabled}',
-                'DMS_CONFIG_DATABASE_NAME=edfi_datamanagementservice'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};',
+                'FEATURE=${CONFIGURATION_SERVICE_DATABASE_NAME:-disabled}',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=edfi_datamanagementservice'
             ) -join "`n") -NoNewline
 
             $thrown = { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
                 Should -Throw -PassThru
 
-            $thrown.Exception.Message | Should -BeLike "*reordering 'DMS_CONFIG_DATABASE_NAME' above 'DMS_CONFIG_DATABASE_CONNECTION_STRING'*"
+            $thrown.Exception.Message | Should -BeLike "*reordering 'CONFIGURATION_SERVICE_DATABASE_NAME' above 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING'*"
             $thrown.Exception.Message | Should -BeLike "*renders for 'FEATURE'*"
             Get-DerivedArtifactName | Should -BeNullOrEmpty
         }
@@ -397,8 +397,8 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $basePath = Join-Path $script:work ".env.safe-hop"
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};',
                 'UNRELATED=constant',
                 'POSTGRES_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
@@ -407,7 +407,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
 
             $derived = Resolve-DotenvFileSequentially -Path $result
-            $derived.Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+            $derived.Effective["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] |
                 Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;'
             $derived.Effective["UNRELATED"] | Should -BeExactly 'constant'
         }
@@ -419,8 +419,8 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $basePath = Join-Path $script:work ".env.escaped-decoy"
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};',
                 'FEATURE=$${POSTGRES_PASSWORD}',
                 'POSTGRES_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
@@ -430,7 +430,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
 
             $derived = Resolve-DotenvFileSequentially -Path $result
             $derived.Effective["FEATURE"] | Should -BeExactly '${POSTGRES_PASSWORD}' -Because "the escape is a literal in both orderings"
-            $derived.Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+            $derived.Effective["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] |
                 Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;'
         }
 
@@ -442,8 +442,8 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'SET_ABOVE=already-set',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};',
                 'FEATURE=${SET_ABOVE:-${POSTGRES_PASSWORD}}',
                 'POSTGRES_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
@@ -453,7 +453,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
 
             $derived = Resolve-DotenvFileSequentially -Path $result
             $derived.Effective["FEATURE"] | Should -BeExactly 'already-set'
-            $derived.Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+            $derived.Effective["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] |
                 Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;'
         }
 
@@ -465,8 +465,8 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             # value that never reaches the container.
             $sharedLines = @(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};',
                 'FEATURE=${PASSWORD:-disabled}',
                 'PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
@@ -484,7 +484,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
 
             $derived = Resolve-DotenvFileSequentially -Path $result
             $derived.Effective["FEATURE"] | Should -BeExactly 'ambient-stable' -Because "ambient wins in both orderings, so what Compose renders for FEATURE did not change"
-            $derived.Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+            $derived.Effective["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] |
                 Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;'
         }
 
@@ -495,8 +495,8 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $basePath = Join-Path $script:work ".env.ambient-empty"
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};',
                 'FEATURE=${PASSWORD:-disabled}',
                 'PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
@@ -523,8 +523,8 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
         BeforeAll {
             $script:unsafeReorderLines = @(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=db;password=${PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=db;password=${PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};',
                 'FEATURE=${PASSWORD:-disabled}',
                 'PASSWORD=secret',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
@@ -652,7 +652,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
     # `docker compose config` render of the same file before the behavior was implemented.
     Context "sequential evaluation classes (DMS-1270)" {
         BeforeAll {
-            $script:seamConnectionString = 'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};'
+            $script:seamConnectionString = 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};'
         }
 
         It "rejects a duplicated seam dependency instead of silently approving it" {
@@ -665,7 +665,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
                 $script:seamConnectionString,
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false',
                 'POSTGRES_DB_NAME=some_other_db'
@@ -680,7 +680,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=first_db',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
                 $script:seamConnectionString,
                 'POSTGRES_DB_NAME=second_db'
             ) -join "`n") -NoNewline
@@ -697,14 +697,14 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_PASSWORD=${LATE_PW}',
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
                 $script:seamConnectionString,
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false',
                 'LATE_PW=abcdefgh1!'
             ) -join "`n") -NoNewline
 
             { Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work } |
-                Should -Throw "*DMS_CONFIG_DATABASE_CONNECTION_STRING -> POSTGRES_PASSWORD -> LATE_PW*"
+                Should -Throw "*CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING -> POSTGRES_PASSWORD -> LATE_PW*"
         }
 
         It "repairs a simple forward reference written as '<_>'" -ForEach @(
@@ -718,7 +718,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $basePath = Join-Path $script:work ".env.simple-$([Guid]::NewGuid().ToString('N'))"
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
                 $script:seamConnectionString,
                 $_,
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
@@ -730,7 +730,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             # The repaired file must RENDER correctly, not merely contain the right lines: the password
             # key has to precede the connection string that references it.
             $repaired = Resolve-DotenvFileSequentially -Path $result
-            $repaired.Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+            $repaired.Effective["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] |
                 Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;'
         }
 
@@ -740,7 +740,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $basePath = Join-Path $script:work ".env.literal-dollar"
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
                 $script:seamConnectionString,
                 'POSTGRES_PASSWORD=pa$$word',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
@@ -748,7 +748,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
 
-            (Resolve-DotenvFileSequentially -Path $result).Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+            (Resolve-DotenvFileSequentially -Path $result).Effective["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] |
                 Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=pa$word;database=edfi_datamanagementservice;'
         }
 
@@ -759,7 +759,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
                 $script:seamConnectionString,
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false',
                 'POSTGRES_DB_NAME=some_other_db'
@@ -782,19 +782,19 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
         It "accepts the seam keys spelled with an export prefix, and still migrates the legacy token" {
             # The raw connection string and marker are read through the shared assignment model, not the
             # legacy parser. Sourced from ReadValuesFromEnvFile, an export-spelled connection string was
-            # stored under the key "export DMS_CONFIG_..." and was therefore invisible to separate
+            # stored under the key "export CONFIGURATION_SERVICE_..." and was therefore invisible to separate
             # mode's legacy-token migration - the run failed later instead of taking the repair path.
             $basePath = Join-Path $script:work ".env.export-seam"
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'export DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
-                'export DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
+                'export CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'export CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
 
-            (Resolve-DotenvFileSequentially -Path $result).Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+            (Resolve-DotenvFileSequentially -Path $result).Effective["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] |
                 Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_configurationservice;'
         }
 
@@ -807,7 +807,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'export DMS_CONFIG_DATABASE_CONNECTION_STRING = "host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};" # cms'
+                'export CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING = "host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};" # cms'
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
@@ -817,11 +817,11 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             # trailing comment - survives byte for byte. Wildcards would pass even if surrounding bytes
             # moved. (The `export ` prefix is dropped because Write-DerivedEnvFile rewrites the line
             # under the canonical key, which Compose treats identically.)
-            $derivedLine = @([System.IO.File]::ReadAllLines($result) | Where-Object { $_ -like '*DMS_CONFIG_DATABASE_CONNECTION_STRING*' })[0]
-            $derivedLine | Should -BeExactly 'DMS_CONFIG_DATABASE_CONNECTION_STRING= "host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};" # cms'
+            $derivedLine = @([System.IO.File]::ReadAllLines($result) | Where-Object { $_ -like '*CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING*' })[0]
+            $derivedLine | Should -BeExactly 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING= "host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};" # cms'
 
             # And it must RENDER against the dedicated database with the real password intact.
-            (Resolve-DotenvFileSequentially -Path $result).Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+            (Resolve-DotenvFileSequentially -Path $result).Effective["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] |
                 Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_configurationservice;'
         }
 
@@ -831,7 +831,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $basePath = Join-Path $script:work ".env.move-decoy"
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
                 $script:seamConnectionString,
                 'postgres_password=DECOY',
                 'POSTGRES_PASSWORD=abcdefgh1!'
@@ -839,20 +839,20 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
 
-            (Resolve-DotenvFileSequentially -Path $result).Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+            (Resolve-DotenvFileSequentially -Path $result).Effective["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] |
                 Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;'
         }
 
         It "does not treat a case-variant of the seam alias as the seam alias itself" {
-            # Only the exact DMS_CONFIG_DATABASE_NAME identifier is healed structurally. A case-variant
+            # Only the exact CONFIGURATION_SERVICE_DATABASE_NAME identifier is healed structurally. A case-variant
             # is an ordinary dependency, so a forward-referencing one must be reported as a chain rather
             # than silently assumed to be repaired by the alias literalization.
             $basePath = Join-Path $script:work ".env.alias-case-variant"
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${dms_config_database_name};',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${dms_config_database_name};',
                 'dms_config_database_name=${LATE_ONE}',
                 'LATE_ONE=late'
             ) -join "`n") -NoNewline
@@ -872,14 +872,14 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${dms_config_database_name};',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${dms_config_database_name};',
                 'dms_config_database_name=lowercase_target_db'
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
 
-            (Resolve-DotenvFileSequentially -Path $result).Effective["DMS_CONFIG_DATABASE_CONNECTION_STRING"] |
+            (Resolve-DotenvFileSequentially -Path $result).Effective["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] |
                 Should -BeExactly 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=lowercase_target_db;'
         }
 
@@ -890,7 +890,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'postgres_db_name=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
                 $script:seamConnectionString
             ) -join "`n") -NoNewline
 
@@ -905,11 +905,11 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
     # what Compose will actually use.
     Context "ambient overrides during classification and repair (DMS-1270)" {
         BeforeAll {
-            $script:ambientSeamConnectionString = 'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};'
+            $script:ambientSeamConnectionString = 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};'
             $script:ambientDuplicateLines = @(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
                 $script:ambientSeamConnectionString,
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false',
                 'POSTGRES_DB_NAME=some_other_db'
@@ -940,7 +940,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $lines = @(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=first-pw',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
                 $script:ambientSeamConnectionString,
                 'POSTGRES_PASSWORD=second-pw'
             )
@@ -966,7 +966,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $lines = @(
                 'POSTGRES_PASSWORD=${LATE_PW}',
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
                 $script:ambientSeamConnectionString,
                 'LATE_PW=file-pw'
             )
@@ -992,7 +992,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $lines = @(
                 'POSTGRES_PASSWORD=${LATE_PW}',
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
                 $script:ambientSeamConnectionString,
                 'LATE_PW=first',
                 'LATE_PW=second'
@@ -1016,19 +1016,19 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
                 $script:ambientSeamConnectionString,
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false'
             ) -join "`n") -NoNewline
 
             [System.Environment]::SetEnvironmentVariable(
-                "DMS_CONFIG_DATABASE_CONNECTION_STRING",
+                "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING",
                 'host=dms-postgresql;port=5432;username=postgres;password=ambient-pw;database=edfi_configurationservice;')
             try {
                 $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
                 $result | Should -Not -Be $basePath
             }
-            finally { Remove-Item Env:\DMS_CONFIG_DATABASE_CONNECTION_STRING -ErrorAction SilentlyContinue }
+            finally { Remove-Item Env:\CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING -ErrorAction SilentlyContinue }
         }
     }
 
@@ -1038,7 +1038,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
     # reject it as shared mode.
     Context "the marker is read identically by the resolver and the validator (DMS-1270)" {
         BeforeAll {
-            $script:markerConnectionString = 'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};'
+            $script:markerConnectionString = 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};'
         }
 
         It "early-returns an already-correct separate file whose marker is spelled '<_>', then passes validation" -ForEach @(
@@ -1052,7 +1052,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
                 $_,
-                'DMS_CONFIG_DATABASE_NAME=edfi_configurationservice',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=edfi_configurationservice',
                 $script:markerConnectionString
             ) -join "`n") -NoNewline
 
@@ -1074,7 +1074,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=TRUE',
-                'DMS_CONFIG_DATABASE_NAME=edfi_configurationservice',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=edfi_configurationservice',
                 $script:markerConnectionString
             ) -join "`n") -NoNewline
 
@@ -1091,7 +1091,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=false',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
                 $script:markerConnectionString
             ) -join "`n") -NoNewline
 
@@ -1124,8 +1124,8 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
                         "MSSQL_DB_NAME=$datastoreName",
                         'MSSQL_SA_PASSWORD=abcdefgh1!',
                         "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=$(if ($Separate) { 'true' } else { 'false' })",
-                        "DMS_CONFIG_DATABASE_NAME=$configName",
-                        "DMS_CONFIG_DATABASE_CONNECTION_STRING=$ConnectionString"
+                        "CONFIGURATION_SERVICE_DATABASE_NAME=$configName",
+                        "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=$ConnectionString"
                     )
                 }
                 else {
@@ -1133,8 +1133,8 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
                         "POSTGRES_DB_NAME=$datastoreName",
                         'POSTGRES_PASSWORD=abcdefgh1!',
                         "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=$(if ($Separate) { 'true' } else { 'false' })",
-                        "DMS_CONFIG_DATABASE_NAME=$configName",
-                        "DMS_CONFIG_DATABASE_CONNECTION_STRING=$ConnectionString"
+                        "CONFIGURATION_SERVICE_DATABASE_NAME=$configName",
+                        "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=$ConnectionString"
                     )
                 }
 
@@ -1361,18 +1361,18 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
     }
 
     Context "separate mode" {
-        It "sets DMS_CONFIG_DATABASE_NAME to the fixed edfi_configurationservice literal" {
+        It "sets CONFIGURATION_SERVICE_DATABASE_NAME to the fixed edfi_configurationservice literal" {
             $basePath = Join-Path $script:work ".env.base"
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
 
             $values = ReadValuesFromEnvFile $result
-            $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
+            $values["CONFIGURATION_SERVICE_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
             $values["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "true"
         }
 
@@ -1381,13 +1381,13 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
 
             $values = ReadValuesFromEnvFile $result
-            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};'
+            $values["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Be 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};'
         }
 
         It "migrates the MSSQL legacy token (not the PostgreSQL one) for an mssql base file" {
@@ -1395,30 +1395,30 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "mssql" -SeparateConfigDatabase -DockerComposeRoot $script:work
 
             $values = ReadValuesFromEnvFile $result
-            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'Server=dms-mssql,1433;Database=${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            $values["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Be 'Server=dms-mssql,1433;Database=${CONFIGURATION_SERVICE_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
         }
 
-        It "guarantees DMS_CONFIG_DATABASE_NAME precedes DMS_CONFIG_DATABASE_CONNECTION_STRING in the derived file" {
+        It "guarantees CONFIGURATION_SERVICE_DATABASE_NAME precedes CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING in the derived file" {
             # Empirically confirmed against a real Docker Compose invocation (DMS-1270 Phase 1a Round 9
             # spike): --env-file interpolation is order-dependent, like shell `source` semantics - a
             # ${VAR} reference resolves only against variables defined EARLIER in the same file. A
             # forward reference (the referenced key's own definition appears later) resolves to empty.
             # Write-DerivedEnvFile appends a genuinely new key after whatever the base file already
-            # contains, so introducing DMS_CONFIG_DATABASE_NAME into a base file that already defines
-            # DMS_CONFIG_DATABASE_CONNECTION_STRING - exactly today's checked-in templates' shape -
-            # would otherwise leave the migrated ${DMS_CONFIG_DATABASE_NAME} reference resolving to
+            # contains, so introducing CONFIGURATION_SERVICE_DATABASE_NAME into a base file that already defines
+            # CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING - exactly today's checked-in templates' shape -
+            # would otherwise leave the migrated ${CONFIGURATION_SERVICE_DATABASE_NAME} reference resolving to
             # empty at real Compose render time. See Move-EnvFileKeyBeforeAnotherKey.
             $basePath = Join-Path $script:work ".env.base"
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
@@ -1427,8 +1427,8 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $nameIndex = -1
             $connectionStringIndex = -1
             for ($i = 0; $i -lt $lines.Count; $i++) {
-                if ($nameIndex -lt 0 -and $lines[$i] -match '^DMS_CONFIG_DATABASE_NAME=') { $nameIndex = $i }
-                if ($connectionStringIndex -lt 0 -and $lines[$i] -match '^DMS_CONFIG_DATABASE_CONNECTION_STRING=') { $connectionStringIndex = $i }
+                if ($nameIndex -lt 0 -and $lines[$i] -match '^CONFIGURATION_SERVICE_DATABASE_NAME=') { $nameIndex = $i }
+                if ($connectionStringIndex -lt 0 -and $lines[$i] -match '^CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=') { $connectionStringIndex = $i }
             }
 
             $nameIndex | Should -BeGreaterThan -1
@@ -1445,13 +1445,13 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING="host=dms-postgresql;database=${POSTGRES_DB_NAME};"'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING="host=dms-postgresql;database=${POSTGRES_DB_NAME};"'
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
 
             $values = ReadValuesFromEnvFile $result
-            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be '"host=dms-postgresql;database=${DMS_CONFIG_DATABASE_NAME};"' -Because "only the token changes; the outer double quotes are preserved exactly as authored"
+            $values["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Be '"host=dms-postgresql;database=${CONFIGURATION_SERVICE_DATABASE_NAME};"' -Because "only the token changes; the outer double quotes are preserved exactly as authored"
         }
 
         It "migrates the token inside an outer single-quoted dotenv connection string, preserving the outer quotes" {
@@ -1459,13 +1459,13 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                "DMS_CONFIG_DATABASE_CONNECTION_STRING='host=dms-postgresql;database=`${POSTGRES_DB_NAME};'"
+                "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING='host=dms-postgresql;database=`${POSTGRES_DB_NAME};'"
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
 
             $values = ReadValuesFromEnvFile $result
-            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be "'host=dms-postgresql;database=`${DMS_CONFIG_DATABASE_NAME};'"
+            $values["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Be "'host=dms-postgresql;database=`${CONFIGURATION_SERVICE_DATABASE_NAME};'"
         }
 
         It "migrates the token inside an outer double-quoted dotenv value carrying a trailing inline comment, preserving both" {
@@ -1477,13 +1477,13 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING="host=dms-postgresql;database=${POSTGRES_DB_NAME};" # keep'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING="host=dms-postgresql;database=${POSTGRES_DB_NAME};" # keep'
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
 
             $values = ReadValuesFromEnvFile $result
-            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be '"host=dms-postgresql;database=${DMS_CONFIG_DATABASE_NAME};" # keep' -Because "the outer quotes and the trailing comment are both preserved byte-for-byte; only the inner token changes"
+            $values["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Be '"host=dms-postgresql;database=${CONFIGURATION_SERVICE_DATABASE_NAME};" # keep' -Because "the outer quotes and the trailing comment are both preserved byte-for-byte; only the inner token changes"
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $result -DatabaseEngine "postgresql" } | Should -Not -Throw -Because "the migrated file must validate cleanly end to end through the validator"
         }
@@ -1498,13 +1498,13 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;password=p$&q$0r;database=${POSTGRES_DB_NAME};'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;password=p$&q$0r;database=${POSTGRES_DB_NAME};'
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
 
             $values = ReadValuesFromEnvFile $result
-            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'host=dms-postgresql;password=p$&q$0r;database=${DMS_CONFIG_DATABASE_NAME};' -Because "the password must survive verbatim; only the database segment's token changes"
+            $values["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Be 'host=dms-postgresql;password=p$&q$0r;database=${CONFIGURATION_SERVICE_DATABASE_NAME};' -Because "the password must survive verbatim; only the database segment's token changes"
         }
 
         It "does NOT rewrite the legacy token when it appears outside the database segment" {
@@ -1516,13 +1516,13 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_DB_NAME};database=custom;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_DB_NAME};database=custom;'
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
 
             $values = ReadValuesFromEnvFile $result
-            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_DB_NAME};database=custom;' -Because "the token is not in a recognized database-name key's value, so it must be left untouched"
+            $values["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Be 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_DB_NAME};database=custom;' -Because "the token is not in a recognized database-name key's value, so it must be left untouched"
         }
 
         It "does NOT rewrite the legacy token when it appears inside a quoted, unrelated segment" {
@@ -1533,13 +1533,13 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Password="keep;Database=${POSTGRES_DB_NAME};inside-password";Database=custom;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Password="keep;Database=${POSTGRES_DB_NAME};inside-password";Database=custom;'
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
 
             $values = ReadValuesFromEnvFile $result
-            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'Password="keep;Database=${POSTGRES_DB_NAME};inside-password";Database=custom;' -Because "the token is inside a quoted password value, not a real Database= segment, and the real Database=custom segment does not match the legacy token either"
+            $values["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Be 'Password="keep;Database=${POSTGRES_DB_NAME};inside-password";Database=custom;' -Because "the token is inside a quoted password value, not a real Database= segment, and the real Database=custom segment does not match the legacy token either"
         }
 
         It "does NOT rewrite a genuinely custom reference that currently resolves to the same value as the datastore name" {
@@ -1551,13 +1551,13 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'CUSTOM_DATABASE=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CUSTOM_DATABASE};'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CUSTOM_DATABASE};'
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
 
             $values = ReadValuesFromEnvFile $result
-            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CUSTOM_DATABASE};' -Because "only the exact legacy token is a migration signature, never a resolved-value coincidence"
+            $values["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Be 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CUSTOM_DATABASE};' -Because "only the exact legacy token is a migration signature, never a resolved-value coincidence"
         }
 
         It "never wraps the migrated connection string in single quotes, which would freeze the new reference as a literal" {
@@ -1565,12 +1565,12 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
 
-            (Get-Content -LiteralPath $result -Raw) | Should -Not -Match "DMS_CONFIG_DATABASE_CONNECTION_STRING='"
+            (Get-Content -LiteralPath $result -Raw) | Should -Not -Match "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING='"
         }
 
         It "migrates a PostgreSQL DB= segment, the provider's other database-name synonym" {
@@ -1581,13 +1581,13 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};DB=${POSTGRES_DB_NAME};'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};DB=${POSTGRES_DB_NAME};'
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
 
             $values = ReadValuesFromEnvFile $result
-            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};DB=${DMS_CONFIG_DATABASE_NAME};' -Because "only the DB segment's token changes; every other segment is preserved byte for byte"
+            $values["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Be 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};DB=${CONFIGURATION_SERVICE_DATABASE_NAME};' -Because "only the DB segment's token changes; every other segment is preserved byte for byte"
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $result -DatabaseEngine "postgresql" } | Should -Not -Throw
         }
 
@@ -1596,13 +1596,13 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Initial Catalog=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Initial Catalog=${MSSQL_DB_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "mssql" -SeparateConfigDatabase -DockerComposeRoot $script:work
 
             $values = ReadValuesFromEnvFile $result
-            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be 'Server=dms-mssql,1433;Initial Catalog=${DMS_CONFIG_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+            $values["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Be 'Server=dms-mssql,1433;Initial Catalog=${CONFIGURATION_SERVICE_DATABASE_NAME};User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $result -DatabaseEngine "mssql" } | Should -Not -Throw
         }
 
@@ -1639,13 +1639,13 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
         ) {
             $basePath = Join-Path $script:work ".env.base"
             Set-Content -LiteralPath $basePath -Value (@(
-                $Lines + "DMS_CONFIG_DATABASE_CONNECTION_STRING=$ConnectionString"
+                $Lines + "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=$ConnectionString"
             ) -join "`n") -NoNewline
 
             $result = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine $Engine -SeparateConfigDatabase -DockerComposeRoot $script:work
 
             $values = ReadValuesFromEnvFile $result
-            $values["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Be $ConnectionString -Because "the authored string is preserved exactly; no token was rewritten"
+            $values["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Be $ConnectionString -Because "the authored string is preserved exactly; no token was rewritten"
         }
     }
 
@@ -1655,7 +1655,7 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
             ) -join "`n") -NoNewline
 
             $first = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
@@ -1665,21 +1665,21 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             $second | Should -Not -Match '\.topology\.topology'
         }
 
-        It "reverts DMS_CONFIG_DATABASE_NAME to the shared alias when a later call omits the switch (shared -> separate -> shared)" {
+        It "reverts CONFIGURATION_SERVICE_DATABASE_NAME to the shared alias when a later call omits the switch (shared -> separate -> shared)" {
             $basePath = Join-Path $script:work ".env.base"
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};'
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};'
             ) -join "`n") -NoNewline
 
             $separate = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
-            (ReadValuesFromEnvFile $separate)["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
+            (ReadValuesFromEnvFile $separate)["CONFIGURATION_SERVICE_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
 
             $revertedToShared = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $separate -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
             $revertedToShared | Should -Be $separate -Because "the same deterministic derived path is reused, not a new one"
-            (ReadValuesFromEnvFile $revertedToShared)["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_datamanagementservice"
+            (ReadValuesFromEnvFile $revertedToShared)["CONFIGURATION_SERVICE_DATABASE_NAME"] | Should -Be "edfi_datamanagementservice"
             (ReadValuesFromEnvFile $revertedToShared)["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "false"
         }
 
@@ -1692,16 +1692,16 @@ Describe "Resolve-CmsDatabaseTopologyEnvironmentFile" {
             Set-Content -LiteralPath $basePath -Value (@(
                 "POSTGRES_DB_NAME='tenant`$db'",
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME};'
+                'CONFIGURATION_SERVICE_DATABASE_NAME=${POSTGRES_DB_NAME}',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME};'
             ) -join "`n") -NoNewline
 
             $separate = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $script:work
             $revertedToShared = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $separate -DatabaseEngine "postgresql" -DockerComposeRoot $script:work
 
             $revertedValues = ReadValuesFromEnvFile $revertedToShared
-            $revertedValues["DMS_CONFIG_DATABASE_NAME"] | Should -Be "'tenant`$db'" -Because "the written value itself must be quoted"
-            (Get-ComposeResolvedEnvValue -EnvironmentValues $revertedValues -Name "DMS_CONFIG_DATABASE_NAME") | Should -Be 'tenant$db' -Because "re-reading it must not lose the literal `$db suffix to interpolation"
+            $revertedValues["CONFIGURATION_SERVICE_DATABASE_NAME"] | Should -Be "'tenant`$db'" -Because "the written value itself must be quoted"
+            (Get-ComposeResolvedEnvValue -EnvironmentValues $revertedValues -Name "CONFIGURATION_SERVICE_DATABASE_NAME") | Should -Be 'tenant$db' -Because "re-reading it must not lose the literal `$db suffix to interpolation"
         }
     }
 }
@@ -2541,11 +2541,11 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
         Import-Module (Join-Path $script:dockerComposeRoot "database-safety.psm1") -Force
 
         # Round 8 Blocker 8: snapshot/clear/restore every ambient variable either function consumes,
-        # not just DMS_CONFIG_DATABASE_NAME - a leftover shell value for a datastore name, password,
+        # not just CONFIGURATION_SERVICE_DATABASE_NAME - a leftover shell value for a datastore name, password,
         # or the whole connection string can otherwise silently alter this suite's outcome.
         $script:ambientKeys = @(
             "POSTGRES_DB_NAME", "MSSQL_DB_NAME", "POSTGRES_PASSWORD", "MSSQL_SA_PASSWORD",
-            "DMS_CONFIG_DATABASE_NAME", "DMS_CONFIG_DATABASE_CONNECTION_STRING", "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"
+            "CONFIGURATION_SERVICE_DATABASE_NAME", "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING", "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"
         )
     }
 
@@ -2580,7 +2580,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Not -Throw
@@ -2591,7 +2591,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=some_other_db;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=some_other_db;'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Throw "*some_other_db*"
@@ -2605,7 +2605,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=9999;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=9999;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Throw "*9999*"
@@ -2616,7 +2616,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=file_named_db',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=ambient_named_db;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=ambient_named_db;'
             ) -join "`n") -NoNewline
 
             [System.Environment]::SetEnvironmentVariable("POSTGRES_DB_NAME", "ambient_named_db")
@@ -2641,7 +2641,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Not -Throw
@@ -2653,7 +2653,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_datamanagementservice;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_datamanagementservice;'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Throw "*edfi_configurationservice*"
@@ -2668,7 +2668,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 'POSTGRES_DB_NAME=edfi_configurationservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_configurationservice;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_configurationservice;'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
@@ -2693,7 +2693,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 $KeyLine,
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } |
@@ -2709,7 +2709,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;'
             ) -join "`n") -NoNewline
 
             [System.Environment]::SetEnvironmentVariable("MSSQL_DB_NAME", "EDFI_ConfigurationService ")
@@ -2729,7 +2729,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 'POSTGRES_DB_NAME=EDFI_ConfigurationService',
                 'POSTGRES_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
@@ -2746,7 +2746,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 "POSTGRES_DB_NAME='EDFI_ConfigurationService '",
                 'POSTGRES_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
@@ -2762,7 +2762,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
             ) -join "`n") -NoNewline
 
             [System.Environment]::SetEnvironmentVariable("POSTGRES_DB_NAME", "EDFI_ConfigurationService ")
@@ -2780,7 +2780,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=EDFI_ConfigurationService;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=EDFI_ConfigurationService;'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
@@ -2796,7 +2796,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
             ) -join "`n") -NoNewline
 
             [System.Environment]::SetEnvironmentVariable("POSTGRES_DB_NAME", "EDFI_ConfigurationService")
@@ -2812,7 +2812,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
             ) -join "`n") -NoNewline
 
             [System.Environment]::SetEnvironmentVariable("POSTGRES_DB_NAME", "edfi_configurationservice")
@@ -2821,16 +2821,16 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
         }
 
         It "accepts a caller-authored connection string built on Compose default-value interpolation" {
-            # database=${DMS_CONFIG_DATABASE_NAME:-${POSTGRES_DB_NAME}} is exactly what the checked-in
+            # database=${CONFIGURATION_SERVICE_DATABASE_NAME:-${POSTGRES_DB_NAME}} is exactly what the checked-in
             # Compose fallback renders; Compose documents the operator, so validation must resolve it
             # rather than reject a working configuration as a literal mismatch.
             $path = Join-Path $script:work ".env"
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_NAME=edfi_configurationservice',
+                'CONFIGURATION_SERVICE_DATABASE_NAME=edfi_configurationservice',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME:-${POSTGRES_DB_NAME}};'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME:-${POSTGRES_DB_NAME}};'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Not -Throw
@@ -2841,41 +2841,41 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME:-${POSTGRES_DB_NAME}};'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME:-${POSTGRES_DB_NAME}};'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Not -Throw
         }
     }
 
-    Context "ambient DMS_CONFIG_DATABASE_NAME conflict (never a resolved read-back)" {
-        It "accepts an ambient DMS_CONFIG_DATABASE_NAME that agrees with the effective (separate-mode) contract" {
+    Context "ambient CONFIGURATION_SERVICE_DATABASE_NAME conflict (never a resolved read-back)" {
+        It "accepts an ambient CONFIGURATION_SERVICE_DATABASE_NAME that agrees with the effective (separate-mode) contract" {
             $path = Join-Path $script:work ".env"
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
             ) -join "`n") -NoNewline
 
-            [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_NAME", "edfi_configurationservice")
+            [System.Environment]::SetEnvironmentVariable("CONFIGURATION_SERVICE_DATABASE_NAME", "edfi_configurationservice")
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Not -Throw
         }
 
-        It "rejects an ambient DMS_CONFIG_DATABASE_NAME that disagrees with the effective contract" {
+        It "rejects an ambient CONFIGURATION_SERVICE_DATABASE_NAME that disagrees with the effective contract" {
             $path = Join-Path $script:work ".env"
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;'
             ) -join "`n") -NoNewline
 
-            [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_NAME", "some_conflicting_value")
+            [System.Environment]::SetEnvironmentVariable("CONFIGURATION_SERVICE_DATABASE_NAME", "some_conflicting_value")
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Throw "*some_conflicting_value*"
         }
 
-        It "fails deterministically for an ambient DMS_CONFIG_DATABASE_NAME supplied as <Label> on <Engine>, withholding the value" -ForEach @(
+        It "fails deterministically for an ambient CONFIGURATION_SERVICE_DATABASE_NAME supplied as <Label> on <Engine>, withholding the value" -ForEach @(
             @{ Label = 'a single space'; Value = ' '; Engine = 'postgresql' }
             @{ Label = 'a tab'; Value = "`t"; Engine = 'postgresql' }
             @{ Label = 'the empty string'; Value = ''; Engine = 'postgresql' }
@@ -2892,28 +2892,28 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                     @(
                         'MSSQL_DB_NAME=edfi_datamanagementservice',
                         'MSSQL_SA_PASSWORD=abcdefgh1!',
-                        'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                        'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
                     )
                 }
                 else {
                     @(
                         'POSTGRES_DB_NAME=edfi_datamanagementservice',
                         'POSTGRES_PASSWORD=abcdefgh1!',
-                        'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_datamanagementservice;'
+                        'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_datamanagementservice;'
                     )
                 }
             $path = Join-Path $script:work ".env"
             Set-Content -LiteralPath $path -Value ($lines -join "`n") -NoNewline
 
-            [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_NAME", $Value)
-            if ($null -eq [System.Environment]::GetEnvironmentVariable("DMS_CONFIG_DATABASE_NAME")) {
+            [System.Environment]::SetEnvironmentVariable("CONFIGURATION_SERVICE_DATABASE_NAME", $Value)
+            if ($null -eq [System.Environment]::GetEnvironmentVariable("CONFIGURATION_SERVICE_DATABASE_NAME")) {
                 Set-ItResult -Skipped -Because "this platform cannot represent a present-but-blank ambient environment variable"
                 return
             }
 
             $thrown = { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine $Engine } |
                 Should -Throw "*empty or whitespace-only value*" -PassThru
-            $thrown.Exception.Message | Should -BeLike "*'DMS_CONFIG_DATABASE_NAME'*"
+            $thrown.Exception.Message | Should -BeLike "*'CONFIGURATION_SERVICE_DATABASE_NAME'*"
             $thrown.Exception.Message | Should -BeLike "*withheld*"
         }
     }
@@ -2923,24 +2923,24 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             @{ Label = 'a case-different shared-mode CMS target'; Lines = @(
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=EDFI_DATAMANAGEMENTSERVICE;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=EDFI_DATAMANAGEMENTSERVICE;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             ) }
             @{ Label = 'an uppercase reserved target in separate mode'; Lines = @(
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=EDFI_CONFIGURATIONSERVICE;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=EDFI_CONFIGURATIONSERVICE;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             ) }
             @{ Label = 'a dual-segment string whose second synonym is a case variant'; Lines = @(
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;Initial Catalog=EDFI_CONFIGURATIONSERVICE;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;Initial Catalog=EDFI_CONFIGURATIONSERVICE;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             ) }
             @{ Label = 'a name unrelated to the datastore in shared mode'; Lines = @(
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=some_other_db;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=some_other_db;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             ) }
         ) {
             # The regression the decision table pins BOTH ways: the superseded ordinal-exact rule
@@ -2959,7 +2959,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 Should -Not -Throw
         }
 
-        It "renders no MSSQL name verdict for an ambient DMS_CONFIG_DATABASE_NAME spelling variant either" {
+        It "renders no MSSQL name verdict for an ambient CONFIGURATION_SERVICE_DATABASE_NAME spelling variant either" {
             # A supplied nonblank ambient seam IS the effective CMS target under Compose
             # precedence; whether its spelling denotes the reserved database is the running
             # instance's call, so no offline verdict is rendered here.
@@ -2968,10 +2968,10 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
                 'DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE=true',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             ) -join "`n") -NoNewline
 
-            [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_NAME", "EDFI_CONFIGURATIONSERVICE")
+            [System.Environment]::SetEnvironmentVariable("CONFIGURATION_SERVICE_DATABASE_NAME", "EDFI_CONFIGURATIONSERVICE")
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } |
                 Should -Not -Throw
         }
@@ -2985,7 +2985,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             [System.IO.File]::WriteAllText($path, (@(
                 "MSSQL_DB_NAME=$unicodeName",
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
-                "DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$unicodeName;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
+                "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$unicodeName;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
             ) -join "`n"), [System.Text.UTF8Encoding]::new($false))
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } | Should -Not -Throw
@@ -2998,7 +2998,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             [System.IO.File]::WriteAllText($path, (@(
                 "MSSQL_DB_NAME=$expectedName",
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
-                "DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$actualName;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
+                "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$actualName;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
             ) -join "`n"), [System.Text.UTF8Encoding]::new($false))
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } |
@@ -3012,7 +3012,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             Set-Content -LiteralPath $path -Value (@(
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=DMS-MSSQL,1433;Database=edfi_datamanagementservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=DMS-MSSQL,1433;Database=edfi_datamanagementservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } | Should -Not -Throw
@@ -3023,7 +3023,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             Set-Content -LiteralPath $path -Value (@(
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,9999;Database=edfi_datamanagementservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,9999;Database=edfi_datamanagementservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } | Should -Throw "*9999*"
@@ -3036,7 +3036,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             Set-Content -LiteralPath $path -Value (@(
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql;Port=9999;Database=edfi_datamanagementservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql;Port=9999;Database=edfi_datamanagementservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } | Should -Not -Throw -Because "the standalone Port= key is not a real MSSQL keyword and must be ignored, defaulting to the expected port 1433"
@@ -3060,17 +3060,17 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             Set-Content -LiteralPath $path -Value (@(
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             ) -join "`n") -NoNewline
 
-            [System.Environment]::SetEnvironmentVariable("DMS_CONFIG_DATABASE_CONNECTION_STRING", "")
+            [System.Environment]::SetEnvironmentVariable("CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING", "")
 
             # A present-but-blank ambient value is only representable on Windows: on Unix, .NET
             # deletes the variable when it is set to an empty string, so the scenario under test
             # cannot be established and the file value (a valid connection string) would be used
             # instead. Assert the precondition rather than letting the platform silently decide
             # whether this test means anything.
-            if ($null -eq [System.Environment]::GetEnvironmentVariable("DMS_CONFIG_DATABASE_CONNECTION_STRING")) {
+            if ($null -eq [System.Environment]::GetEnvironmentVariable("CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING")) {
                 Set-ItResult -Skipped -Because "this platform cannot represent a present-but-blank ambient environment variable"
                 return
             }
@@ -3083,7 +3083,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             Set-Content -LiteralPath $path -Value (@(
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Host=dms-mssql;Database=edfi_datamanagementservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Host=dms-mssql;Database=edfi_datamanagementservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } | Should -Throw "*host*"
@@ -3096,7 +3096,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=EDFI_DATAMANAGEMENTSERVICE;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=EDFI_DATAMANAGEMENTSERVICE;'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Throw "*EDFI_DATAMANAGEMENTSERVICE*"
@@ -3109,7 +3109,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Address=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_datamanagementservice;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Address=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_datamanagementservice;'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Throw "*host*"
@@ -3131,7 +3131,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Host=dms-postgresql,5432;Port=9999;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_datamanagementservice;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Host=dms-postgresql,5432;Port=9999;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_datamanagementservice;'
             ) -join "`n") -NoNewline
 
             $thrown = { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
@@ -3149,7 +3149,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Database=edfi_datamanagementservice;Username=postgres;Password=abcdefgh1!;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Database=edfi_datamanagementservice;Username=postgres;Password=abcdefgh1!;'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Throw "*host*"
@@ -3160,7 +3160,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;database=edfi_datamanagementservice;username=postgres;password=abcdefgh1!;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;database=edfi_datamanagementservice;username=postgres;password=abcdefgh1!;'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Not -Throw
@@ -3171,7 +3171,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             Set-Content -LiteralPath $path -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=some-other-host;port=5432;database=edfi_datamanagementservice;username=postgres;password=abcdefgh1!;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=some-other-host;port=5432;database=edfi_datamanagementservice;username=postgres;password=abcdefgh1!;'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Throw "*some-other-host*"
@@ -3188,10 +3188,10 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             $script:hostCases = @(
                 @{ Engine = 'postgresql'; ServiceAlias = 'db'; ContainerAlias = 'dms-postgresql'
                    Lines = @('POSTGRES_DB_NAME=edfi_datamanagementservice', 'POSTGRES_PASSWORD=abcdefgh1!')
-                   Template = 'DMS_CONFIG_DATABASE_CONNECTION_STRING=host={0};port=5432;database=edfi_datamanagementservice;username=postgres;password=abcdefgh1!;' },
+                   Template = 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host={0};port=5432;database=edfi_datamanagementservice;username=postgres;password=abcdefgh1!;' },
                 @{ Engine = 'mssql'; ServiceAlias = 'db'; ContainerAlias = 'dms-mssql'
                    Lines = @('MSSQL_DB_NAME=edfi_datamanagementservice', 'MSSQL_SA_PASSWORD=abcdefgh1!')
-                   Template = 'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server={0},1433;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;' }
+                   Template = 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server={0},1433;Database=edfi_datamanagementservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;' }
             )
         }
 
@@ -3234,7 +3234,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             Set-Content -LiteralPath $path -NoNewline -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=db;port=9999;database=edfi_datamanagementservice;username=postgres;password=abcdefgh1!;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=db;port=9999;database=edfi_datamanagementservice;username=postgres;password=abcdefgh1!;'
             ) -join "`n")
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } |
@@ -3247,7 +3247,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             Set-Content -LiteralPath $path -NoNewline -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=someone-elses-database;port=5432;database=edfi_datamanagementservice;username=postgres;password=abcdefgh1!;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=someone-elses-database;port=5432;database=edfi_datamanagementservice;username=postgres;password=abcdefgh1!;'
             ) -join "`n")
 
             $message = $null
@@ -3606,7 +3606,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             Set-Content -LiteralPath $path -Value (@(
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_datamanagementservice;Initial Catalog=edfi_datamanagementservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_datamanagementservice;Initial Catalog=edfi_datamanagementservice;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } | Should -Not -Throw
@@ -3621,7 +3621,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
             Set-Content -LiteralPath $path -Value (@(
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_datamanagementservice;Initial Catalog=a_different_database;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_datamanagementservice;Initial Catalog=a_different_database;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true;'
             ) -join "`n") -NoNewline
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "mssql" } | Should -Not -Throw
@@ -3994,7 +3994,7 @@ Describe "Compose-rendering oracle (empirical parity with local-config.yml / pub
         # nested Compose fallback with a real Docker Compose invocation:
         #   docker compose -f postgresql.yml -f local-config.yml --env-file <fixture> config
         # where the fixture env file defined only POSTGRES_DB_NAME=edfi_datamanagementservice and
-        # POSTGRES_PASSWORD=abcdefgh1! (DMS_CONFIG_DATABASE_CONNECTION_STRING left entirely absent,
+        # POSTGRES_PASSWORD=abcdefgh1! (CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING left entirely absent,
         # matching an old .env predating that key). Docker Compose v5.1.3 rendered
         # DatabaseSettings__DatabaseConnection as the string below, verbatim. This is a frozen
         # empirical fixture, not a live Docker dependency of this suite -- re-capture it manually
@@ -4004,12 +4004,12 @@ Describe "Compose-rendering oracle (empirical parity with local-config.yml / pub
         # Captured empirically (DMS-1270 Phase 1a Round 9 spike) by running the production
         # Resolve-CmsDatabaseTopologyEnvironmentFile function (separate mode, against a base file
         # shaped exactly like today's checked-in templates - connection string present,
-        # DMS_CONFIG_DATABASE_NAME absent) and feeding the ACTUAL resulting derived file to a real
+        # CONFIGURATION_SERVICE_DATABASE_NAME absent) and feeding the ACTUAL resulting derived file to a real
         # Docker Compose invocation:
         #   docker compose -f postgresql.yml -f local-config.yml --env-file <derived file> config
         # This uncovered a genuine bug, since fixed (Move-EnvFileKeyBeforeAnotherKey): Docker
         # Compose's --env-file interpolation is order-dependent, like shell `source` semantics - a
-        # forward reference (DMS_CONFIG_DATABASE_NAME's line appearing after the connection string
+        # forward reference (CONFIGURATION_SERVICE_DATABASE_NAME's line appearing after the connection string
         # that references it) rendered database= as EMPTY, not the intended database name. After the
         # fix, Docker Compose v5.1.3 rendered DatabaseSettings__DatabaseConnection as the string below.
         $script:composeRenderedMigratedSeparateMode = 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_configurationservice;'
@@ -4023,7 +4023,7 @@ Describe "Compose-rendering oracle (empirical parity with local-config.yml / pub
         # other two Describe blocks.
         $script:ambientKeys = @(
             "POSTGRES_DB_NAME", "MSSQL_DB_NAME", "POSTGRES_PASSWORD", "MSSQL_SA_PASSWORD",
-            "DMS_CONFIG_DATABASE_NAME", "DMS_CONFIG_DATABASE_CONNECTION_STRING", "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"
+            "CONFIGURATION_SERVICE_DATABASE_NAME", "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING", "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"
         )
         $script:ambientSnapshot = @{}
         foreach ($key in $script:ambientKeys) {
@@ -4047,12 +4047,12 @@ Describe "Compose-rendering oracle (empirical parity with local-config.yml / pub
         # Guards against silent drift: if either file's nested default is ever edited without
         # re-running the live oracle capture, this fails loudly instead of the fixture going stale.
         # The database segment is itself a nested default so the fallback honors the topology seam:
-        # DMS_CONFIG_DATABASE_NAME when set, POSTGRES_DB_NAME otherwise. Re-captured live against
+        # CONFIGURATION_SERVICE_DATABASE_NAME when set, POSTGRES_DB_NAME otherwise. Re-captured live against
         # Docker Compose for all three shapes (explicit key, seam set, seam absent) when this form
         # was introduced; both frozen oracle strings below matched the render unchanged.
         $localConfig = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot "local-config.yml") -Raw
         $publishedConfig = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot "published-config.yml") -Raw
-        $expectedNestedSyntax = 'DMS_CONFIG_DATABASE_CONNECTION_STRING:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${DMS_CONFIG_DATABASE_NAME:-${POSTGRES_DB_NAME}};'
+        $expectedNestedSyntax = 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME:-${POSTGRES_DB_NAME}};'
 
         $localConfig | Should -Match ([regex]::Escape($expectedNestedSyntax))
         $publishedConfig | Should -Match ([regex]::Escape($expectedNestedSyntax))
@@ -4060,13 +4060,13 @@ Describe "Compose-rendering oracle (empirical parity with local-config.yml / pub
 
     It "the nested fallback resolves the seam for separate mode and the datastore name otherwise" {
         # Both captured oracle strings come from the same nested fallback, differing only in whether
-        # DMS_CONFIG_DATABASE_NAME was set - which is precisely the behavior the nesting exists for.
+        # CONFIGURATION_SERVICE_DATABASE_NAME was set - which is precisely the behavior the nesting exists for.
         # Asserting the resolver agrees with both renders pins the seam's two outcomes together.
         $sharedValues = @{ POSTGRES_DB_NAME = 'edfi_datamanagementservice'; POSTGRES_PASSWORD = 'abcdefgh1!' }
-        $separateValues = @{ POSTGRES_DB_NAME = 'edfi_datamanagementservice'; POSTGRES_PASSWORD = 'abcdefgh1!'; DMS_CONFIG_DATABASE_NAME = 'edfi_configurationservice' }
+        $separateValues = @{ POSTGRES_DB_NAME = 'edfi_datamanagementservice'; POSTGRES_PASSWORD = 'abcdefgh1!'; CONFIGURATION_SERVICE_DATABASE_NAME = 'edfi_configurationservice' }
 
-        $sharedName = Get-ComposeResolvedEnvValue -EnvironmentValues $sharedValues -Name "DMS_CONFIG_DATABASE_NAME" -DefaultValue $sharedValues.POSTGRES_DB_NAME
-        $separateName = Get-ComposeResolvedEnvValue -EnvironmentValues $separateValues -Name "DMS_CONFIG_DATABASE_NAME" -DefaultValue $separateValues.POSTGRES_DB_NAME
+        $sharedName = Get-ComposeResolvedEnvValue -EnvironmentValues $sharedValues -Name "CONFIGURATION_SERVICE_DATABASE_NAME" -DefaultValue $sharedValues.POSTGRES_DB_NAME
+        $separateName = Get-ComposeResolvedEnvValue -EnvironmentValues $separateValues -Name "CONFIGURATION_SERVICE_DATABASE_NAME" -DefaultValue $separateValues.POSTGRES_DB_NAME
 
         (Get-CmsDatabaseTopologyDefaultConnectionString -ExpectedHost "dms-postgresql" -ExpectedPort "5432" -ExpectedDatabaseName $sharedName -PostgresPassword 'abcdefgh1!') |
             Should -BeExactly $script:composeRenderedDefault
@@ -4093,7 +4093,7 @@ Describe "Compose-rendering oracle (empirical parity with local-config.yml / pub
                 'POSTGRES_PASSWORD=abcdefgh1!'
             ) -join "`n") -NoNewline
 
-            # DMS_CONFIG_DATABASE_CONNECTION_STRING is absent, so the production function must
+            # CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING is absent, so the production function must
             # construct the same default Compose renders and validate cleanly against it.
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $path -DatabaseEngine "postgresql" } | Should -Not -Throw
         }
@@ -4125,14 +4125,14 @@ Describe "Compose-rendering oracle (empirical parity with local-config.yml / pub
             Set-Content -LiteralPath $basePath -Value (@(
                 'POSTGRES_DB_NAME=edfi_datamanagementservice',
                 'POSTGRES_PASSWORD=abcdefgh1!',
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};'
             ) -join "`n") -NoNewline
 
             $derived = Resolve-CmsDatabaseTopologyEnvironmentFile -BaseEnvironmentFile $basePath -DatabaseEngine "postgresql" -SeparateConfigDatabase -DockerComposeRoot $work
 
             { Confirm-CmsDatabaseTopologyAgreement -EnvironmentFile $derived -DatabaseEngine "postgresql" } | Should -Not -Throw -Because "the migrated file must validate against its own now-separate-mode target"
 
-            $migratedConnectionString = Get-ComposeResolvedEnvValue -EnvironmentValues (ReadValuesFromEnvFile $derived) -Name "DMS_CONFIG_DATABASE_CONNECTION_STRING"
+            $migratedConnectionString = Get-ComposeResolvedEnvValue -EnvironmentValues (ReadValuesFromEnvFile $derived) -Name "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"
             $migratedConnectionString | Should -BeExactly $script:composeRenderedMigratedSeparateMode -Because "this is the exact value a real Docker Compose invocation rendered for this same derived file"
         }
         finally {
@@ -4190,13 +4190,13 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
 
             # The invoked start scripts write these five identity variables into the process environment
             # and nothing restores them - Get-BootstrapEnvSnapshot covers only the seven claims/schema
-            # names. Measured: without this, running this Describe left DMS_CONFIG_IDENTITY_PROVIDER set
+            # names. Measured: without this, running this Describe left CONFIGURATION_SERVICE_IDENTITY_PROVIDER set
             # for every later test in the session, which is the order-dependence the ownership harness
             # below exists to eliminate. Presence is captured separately from value, because "absent" and
             # "present and empty" are different states.
             $identityEnvironmentName = @(
-                'DMS_CONFIG_IDENTITY_PROVIDER', 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY',
-                'DMS_JWT_METADATA_ADDRESS', 'DMS_CONFIG_IDENTITY_AUTHORITY'
+                'CONFIGURATION_SERVICE_IDENTITY_PROVIDER', 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY',
+                'DMS_JWT_METADATA_ADDRESS', 'CONFIGURATION_SERVICE_IDENTITY_AUTHORITY'
             )
             $identityEnvironmentState = @{}
             foreach ($name in $identityEnvironmentName) {
@@ -4291,9 +4291,9 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $lines = @(
                 'POSTGRES_PASSWORD=abcdefgh1!',
                 "POSTGRES_DB_NAME=$PostgresDbName",
-                'DMS_CONFIG_IDENTITY_PROVIDER=self-contained',
+                'CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained',
                 # Keycloak starts refuse an env file without it.
-                'KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY=http://dms-keycloak:8080/realms/edfi'
+                'KEYCLOAK_CONFIGURATION_SERVICE_IDENTITY_AUTHORITY=http://dms-keycloak:8080/realms/edfi'
             ) + $AdditionalLines
             Set-Content -LiteralPath $path -NoNewline -Value ($lines -join "`n")
             return $path
@@ -4308,8 +4308,8 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
                 'MSSQL_SA_PASSWORD=abcdefgh1!',
                 'MSSQL_DB_NAME=edfi_datamanagementservice',
                 'DMS_DATASTORE=mssql',
-                'DMS_CONFIG_DATASTORE=mssql',
-                "DMS_CONFIG_DATABASE_CONNECTION_STRING=$CmsConnectionString"
+                'CONFIGURATION_SERVICE_DATASTORE=mssql',
+                "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=$CmsConnectionString"
             )
         }
     }
@@ -4334,14 +4334,14 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
         # Remove-Item for the absent case: SetEnvironmentVariable(name, $null) leaves a present-but-blank
         # variable in this environment rather than removing it.
         #
-        # DMS_CONFIG_IDENTITY_PROVIDER appears here as a name the fixtures declare. Invoke-StartScript
+        # CONFIGURATION_SERVICE_IDENTITY_PROVIDER appears here as a name the fixtures declare. Invoke-StartScript
         # separately snapshots it (with four siblings) because the start scripts WRITE it; the two compose
         # cleanly - the inner restore returns it to whatever it was when the script was invoked, and this
         # outer restore returns it to the developer's own value.
         $script:wiringAmbientKeys = @(
             "POSTGRES_DB_NAME", "POSTGRES_PASSWORD", "MSSQL_DB_NAME", "MSSQL_SA_PASSWORD",
-            "DMS_DATASTORE", "DMS_CONFIG_DATASTORE", "DMS_CONFIG_IDENTITY_PROVIDER",
-            "DMS_CONFIG_DATABASE_NAME", "DMS_CONFIG_DATABASE_CONNECTION_STRING",
+            "DMS_DATASTORE", "CONFIGURATION_SERVICE_DATASTORE", "CONFIGURATION_SERVICE_IDENTITY_PROVIDER",
+            "CONFIGURATION_SERVICE_DATABASE_NAME", "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING",
             "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE",
             "CMS_MOVE_PROOF_FEATURE", "CMS_MOVE_PROOF_PW"
         )
@@ -4392,7 +4392,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
     # are covered by duplicated Context blocks (below) rather than a loop over their names.
 
     Context "start-local-dms.ps1" {
-        It "postgresql separate mode: migrates DMS_CONFIG_DATABASE_NAME and reaches the docker boundary" {
+        It "postgresql separate mode: migrates CONFIGURATION_SERVICE_DATABASE_NAME and reaches the docker boundary" {
             # PostgreSQL is at parity with SQL Server: the same topology-write sequence runs, so
             # -SeparateConfigDatabase is accepted rather than rejected by an engine guard.
             $envFile = New-WiringEnvFile
@@ -4405,7 +4405,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $run.TopologyFile | Should -Not -BeNullOrEmpty -Because "separate mode must write a topology-derived file on PostgreSQL too"
 
             $values = ReadDerivedTopologyFile -Name $run.TopologyFile
-            $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
+            $values["CONFIGURATION_SERVICE_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
             $values["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "true"
 
             $run.ComposeCommand | Should -BeLike "*--env-file *$($run.TopologyFile)*"
@@ -4420,13 +4420,13 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
 
             $run.TopologyFile | Should -Not -BeNullOrEmpty -Because "the seam is written unconditionally so old .env files predating the key still resolve"
             $values = ReadDerivedTopologyFile -Name $run.TopologyFile
-            $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_datamanagementservice"
+            $values["CONFIGURATION_SERVICE_DATABASE_NAME"] | Should -Be "edfi_datamanagementservice"
             $values["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "false"
 
             $run.ComposeCommand | Should -Not -BeNullOrEmpty
         }
 
-        It "shared mode (switch omitted): does not migrate DMS_CONFIG_DATABASE_NAME away from its .env.mssql alias" {
+        It "shared mode (switch omitted): does not migrate CONFIGURATION_SERVICE_DATABASE_NAME away from its .env.mssql alias" {
             $envFile = New-WiringEnvFile
 
             $run = Invoke-StartScript {
@@ -4434,7 +4434,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             }
 
             # Only the engine-overlay composition (<leaf>.mssql) is expected: the checked-in
-            # .env.mssql already aliases DMS_CONFIG_DATABASE_NAME to MSSQL_DB_NAME, so the topology
+            # .env.mssql already aliases CONFIGURATION_SERVICE_DATABASE_NAME to MSSQL_DB_NAME, so the topology
             # function correctly recognizes shared mode as already-correct and writes nothing
             # further - no additional ".topology" derived file.
             $run.NewDerivedFiles | Should -HaveCount 1
@@ -4447,7 +4447,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $run.ErrorMessage | Should -BeLike "*Failed to start SQL Server. Exit code 1*"
         }
 
-        It "separate mode (-SeparateConfigDatabase): migrates DMS_CONFIG_DATABASE_NAME to edfi_configurationservice" {
+        It "separate mode (-SeparateConfigDatabase): migrates CONFIGURATION_SERVICE_DATABASE_NAME to edfi_configurationservice" {
             $envFile = New-WiringEnvFile
 
             $run = Invoke-StartScript {
@@ -4457,7 +4457,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $run.TopologyFile | Should -Not -BeNullOrEmpty -Because "separate mode must write a further-derived file on top of the engine overlay"
 
             $values = ReadDerivedTopologyFile -Name $run.TopologyFile
-            $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
+            $values["CONFIGURATION_SERVICE_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
             $values["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "true"
 
             # The derived topology file must be the one actually handed to Compose, not merely
@@ -4510,7 +4510,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
     }
 
     Context "start-published-dms.ps1" {
-        It "postgresql separate mode: migrates DMS_CONFIG_DATABASE_NAME and reaches the docker boundary" {
+        It "postgresql separate mode: migrates CONFIGURATION_SERVICE_DATABASE_NAME and reaches the docker boundary" {
             $envFile = New-WiringEnvFile
 
             $run = Invoke-StartScript {
@@ -4521,7 +4521,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $run.TopologyFile | Should -Not -BeNullOrEmpty -Because "separate mode must write a topology-derived file on PostgreSQL too"
 
             $values = ReadDerivedTopologyFile -Name $run.TopologyFile
-            $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
+            $values["CONFIGURATION_SERVICE_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
             $values["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "true"
 
             $run.ComposeCommand | Should -BeLike "*--env-file *$($run.TopologyFile)*"
@@ -4532,7 +4532,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             # a variable the seam does not own must never reach a compose invocation, and the
             # half-repaired artifact produced on the way must not be left behind for a later run.
             $envFile = New-WiringEnvFile -AdditionalLines @(
-                'DMS_CONFIG_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${CMS_MOVE_PROOF_PW};database=${POSTGRES_DB_NAME};',
+                'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=host=dms-postgresql;port=5432;username=postgres;password=${CMS_MOVE_PROOF_PW};database=${POSTGRES_DB_NAME};',
                 'CMS_MOVE_PROOF_FEATURE=${CMS_MOVE_PROOF_PW:-disabled}',
                 'CMS_MOVE_PROOF_PW=abcdefgh1!'
             )
@@ -4556,13 +4556,13 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
 
             $run.TopologyFile | Should -Not -BeNullOrEmpty
             $values = ReadDerivedTopologyFile -Name $run.TopologyFile
-            $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_datamanagementservice"
+            $values["CONFIGURATION_SERVICE_DATABASE_NAME"] | Should -Be "edfi_datamanagementservice"
             $values["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "false"
 
             $run.ComposeCommand | Should -Not -BeNullOrEmpty
         }
 
-        It "shared mode (switch omitted): does not migrate DMS_CONFIG_DATABASE_NAME away from its .env.mssql alias" {
+        It "shared mode (switch omitted): does not migrate CONFIGURATION_SERVICE_DATABASE_NAME away from its .env.mssql alias" {
             $envFile = New-WiringEnvFile
 
             $run = Invoke-StartScript {
@@ -4577,7 +4577,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $run.ErrorMessage | Should -BeLike "*Failed to start SQL Server. Exit code 1*"
         }
 
-        It "separate mode (-SeparateConfigDatabase): migrates DMS_CONFIG_DATABASE_NAME to edfi_configurationservice" {
+        It "separate mode (-SeparateConfigDatabase): migrates CONFIGURATION_SERVICE_DATABASE_NAME to edfi_configurationservice" {
             $envFile = New-WiringEnvFile
 
             $run = Invoke-StartScript {
@@ -4587,7 +4587,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $run.TopologyFile | Should -Not -BeNullOrEmpty -Because "separate mode must write a further-derived file on top of the engine overlay"
 
             $values = ReadDerivedTopologyFile -Name $run.TopologyFile
-            $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
+            $values["CONFIGURATION_SERVICE_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
             $values["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "true"
 
             $run.ComposeCommand | Should -BeLike "*--env-file *$($run.TopologyFile)*"
@@ -4696,7 +4696,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $run.TopologyFile | Should -Not -BeNullOrEmpty -Because "this is a real separate-mode run, so the guard was on the executed path"
 
             $values = ReadDerivedTopologyFile -Name $run.TopologyFile
-            $values["DMS_CONFIG_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
+            $values["CONFIGURATION_SERVICE_DATABASE_NAME"] | Should -Be "edfi_configurationservice"
             $values["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "true"
         }
 
@@ -5071,9 +5071,9 @@ Add-Content -LiteralPath (Join-Path $PSScriptRoot 'sibling-observations.jsonl') 
         # are restored by the start script's own finally, and are inventoried anyway so a cell cannot
         # leak them if that finally is ever skipped.
         $script:ownershipEnvironmentVariable = @(
-            'DMS_CONFIG_IDENTITY_PROVIDER', 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY',
-            'DMS_JWT_METADATA_ADDRESS', 'DMS_CONFIG_IDENTITY_AUTHORITY',
-            'DMS_CONFIG_CLAIMS_SOURCE', 'DMS_CONFIG_CLAIMS_DIRECTORY', 'DMS_CONFIG_CLAIMS_MOUNT_SOURCE',
+            'CONFIGURATION_SERVICE_IDENTITY_PROVIDER', 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY',
+            'DMS_JWT_METADATA_ADDRESS', 'CONFIGURATION_SERVICE_IDENTITY_AUTHORITY',
+            'CONFIGURATION_SERVICE_CLAIMS_SOURCE', 'CONFIGURATION_SERVICE_CLAIMS_DIRECTORY', 'CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE',
             'USE_API_SCHEMA_PATH', 'API_SCHEMA_PATH', 'DMS_API_SCHEMA_MOUNT_SOURCE', 'SCHEMA_PACKAGES'
         )
 
@@ -5301,8 +5301,10 @@ foreach ($name in $InterceptedCommand) {
                 # fails and restoration can be proven unconditional.
                 [switch]$CorruptObservation,
                 # Writes the env file an older .env.example seeded: no
-                # KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY.
+                # KEYCLOAK_CONFIGURATION_SERVICE_IDENTITY_AUTHORITY.
                 [switch]$OmitConfigIdentityAuthority,
+                # Writes the retired KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY name instead of the current one.
+                [switch]$LegacyConfigIdentityAuthority,
                 # Runs the script's teardown shape (-d) instead of a bring-up.
                 [switch]$Teardown
             )
@@ -5316,9 +5318,10 @@ foreach ($name in $InterceptedCommand) {
             $stage = Join-Path ([System.IO.Path]::GetTempPath()) ("dms-ownership-" + [Guid]::NewGuid().ToString('N'))
 
             $recorded = [System.Collections.Generic.List[string]]::new()
-            # DMS_CONFIG_IDENTITY_AUTHORITY as each compose bring-up saw it: the value the
+            # CONFIGURATION_SERVICE_IDENTITY_AUTHORITY as each compose bring-up saw it: the value the
             # Configuration Service container receives.
             $configAuthorityAtUp = [System.Collections.Generic.List[string]]::new()
+            $warnings = [System.Collections.Generic.List[string]]::new()
             $caught = $null
             $restore = $null
             $observationFailure = $null
@@ -5346,14 +5349,17 @@ foreach ($name in $InterceptedCommand) {
                 $envLines = @(
                     'POSTGRES_PASSWORD=abcdefgh1!',
                     'POSTGRES_DB_NAME=edfi_datamanagementservice',
-                    "DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider",
+                    "CONFIGURATION_SERVICE_IDENTITY_PROVIDER=$IdentityProvider",
                     # Distinct from the backchannel value below, so a mapping that reads the wrong key
                     # is observable.
                     "KEYCLOAK_DMS_JWT_AUTHORITY=$script:ownershipKeycloakIssuer"
                 )
-                if (-not $OmitConfigIdentityAuthority) {
-                    # Keycloak starts refuse an env file without it.
+                if ($LegacyConfigIdentityAuthority) {
                     $envLines += "KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY=$script:ownershipKeycloakBackchannel"
+                }
+                elseif (-not $OmitConfigIdentityAuthority) {
+                    # Keycloak starts refuse an env file without it.
+                    $envLines += "KEYCLOAK_CONFIGURATION_SERVICE_IDENTITY_AUTHORITY=$script:ownershipKeycloakBackchannel"
                 }
                 Set-Content -LiteralPath $envFile -NoNewline -Value ($envLines -join "`n")
 
@@ -5367,7 +5373,7 @@ foreach ($name in $InterceptedCommand) {
                     $flattened = @($args | ForEach-Object { $_ })
                     $recorded.Add(($flattened -join ' '))
                     if ($flattened -contains 'up') {
-                        $configAuthorityAtUp.Add([string]$env:DMS_CONFIG_IDENTITY_AUTHORITY)
+                        $configAuthorityAtUp.Add([string]$env:CONFIGURATION_SERVICE_IDENTITY_AUTHORITY)
                     }
                     if ($flattened -contains 'up' -and -not ($flattened -contains 'db' -or $flattened -contains 'keycloak')) {
                         $global:LASTEXITCODE = 1
@@ -5394,7 +5400,11 @@ foreach ($name in $InterceptedCommand) {
                     Add-Content -LiteralPath (Join-Path $stage 'sibling-observations.jsonl') -Value '{ this is not valid json'
                 }
 
-                & (Join-Path $stage $StartScript) @scriptArgs *>$null
+                # Warnings are kept as they arrive, so those written before a refusal survive it.
+                & (Join-Path $stage $StartScript) @scriptArgs 3>&1 2>$null 4>$null 5>$null 6>$null |
+                    ForEach-Object {
+                        if ($_ -is [System.Management.Automation.WarningRecord]) { $warnings.Add($_.Message) }
+                    }
             }
             catch { $caught = $_ }
             finally {
@@ -5435,6 +5445,7 @@ foreach ($name in $InterceptedCommand) {
                 Observation        = $observation
                 DockerCommand      = @($recorded)
                 ConfigAuthorityAtUp = @($configAuthorityAtUp)
+                Warnings           = @($warnings)
                 # The execution failure is preserved as-is; an observation failure is reported alongside it
                 # rather than replacing it, so a malformed file cannot hide why the run actually stopped.
                 ErrorMessage       = if ($null -ne $caught) { $caught.Exception.Message } else { $null }
@@ -5570,7 +5581,7 @@ foreach ($name in $InterceptedCommand) {
         }
     }
 
-    It "hands the Configuration Service KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY, not DMS's issuer: <_>" -ForEach @(
+    It "hands the Configuration Service KEYCLOAK_CONFIGURATION_SERVICE_IDENTITY_AUTHORITY, not DMS's issuer: <_>" -ForEach @(
         'start-local-dms.ps1', 'start-published-dms.ps1'
     ) {
         $cell = Invoke-CreationOwnershipCell -StartScript $_ -IdentityProvider 'keycloak'
@@ -5581,18 +5592,33 @@ foreach ($name in $InterceptedCommand) {
         $cell.ConfigAuthorityAtUp | Should -Be (@($script:ownershipKeycloakBackchannel) * $cell.ConfigAuthorityAtUp.Count) -Because "the Configuration Service calls Keycloak in-network; DMS's public issuer does not resolve inside its container"
     }
 
-    It "refuses a keycloak start whose env file lacks KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY, before any docker call: <_>" -ForEach @(
+    It "refuses a keycloak start whose env file lacks KEYCLOAK_CONFIGURATION_SERVICE_IDENTITY_AUTHORITY, before any docker call: <_>" -ForEach @(
         'start-local-dms.ps1', 'start-published-dms.ps1'
     ) {
         $cell = Invoke-CreationOwnershipCell -StartScript $_ -IdentityProvider 'keycloak' -OmitConfigIdentityAuthority
 
         $cell.RestoreFailure | Should -BeNullOrEmpty -Because "every process-global resource must be restored"
         $cell.Imbalance | Should -BeNullOrEmpty -Because "the location stack must come back balanced"
-        $cell.ErrorMessage | Should -BeLike "KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY is missing in *"
+        $cell.ErrorMessage | Should -BeLike "KEYCLOAK_CONFIGURATION_SERVICE_IDENTITY_AUTHORITY is missing in *"
         $cell.DockerCommand | Should -BeNullOrEmpty -Because "a stale env file must be refused before anything starts"
     }
 
-    It "still tears down a keycloak stack whose env file lacks KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY: <_>" -ForEach @(
+    It "names the replacement for a retired KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY before refusing the start: <_>" -ForEach @(
+        'start-local-dms.ps1', 'start-published-dms.ps1'
+    ) {
+        $cell = Invoke-CreationOwnershipCell -StartScript $_ -IdentityProvider 'keycloak' -LegacyConfigIdentityAuthority
+
+        $cell.RestoreFailure | Should -BeNullOrEmpty -Because "every process-global resource must be restored"
+        $cell.Imbalance | Should -BeNullOrEmpty -Because "the location stack must come back balanced"
+        $cell.ErrorMessage | Should -BeLike "KEYCLOAK_CONFIGURATION_SERVICE_IDENTITY_AUTHORITY is missing in *" -Because "the retired name is not read as a fallback"
+        @($cell.Warnings | Where-Object {
+                $_ -like "Environment variable 'KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY' in '*' is no longer read. Rename it to 'KEYCLOAK_CONFIGURATION_SERVICE_IDENTITY_AUTHORITY'."
+            }).Count | Should -Be 1 -Because "the operator must learn the new name before the refusal stops the start"
+        ($cell.Warnings -join "`n") | Should -Not -BeLike "*$script:ownershipKeycloakBackchannel*" -Because "a warning names the variable, never its value"
+        $cell.DockerCommand | Should -BeNullOrEmpty -Because "a stale env file must be refused before anything starts"
+    }
+
+    It "still tears down a keycloak stack whose env file lacks KEYCLOAK_CONFIGURATION_SERVICE_IDENTITY_AUTHORITY: <_>" -ForEach @(
         'start-local-dms.ps1', 'start-published-dms.ps1'
     ) {
         $cell = Invoke-CreationOwnershipCell -StartScript $_ -IdentityProvider 'keycloak' -OmitConfigIdentityAuthority -Teardown
@@ -5763,8 +5789,8 @@ foreach ($name in $InterceptedCommand) {
         It "restores every inventoried environment variable across present, empty, and absent states" {
             # Presence is tracked separately from value because "absent" and "present and empty" are
             # different states, and collapsing them is how a restore silently changes the session.
-            $present = 'DMS_CONFIG_IDENTITY_PROVIDER'
-            $bootstrapManaged = 'DMS_CONFIG_CLAIMS_SOURCE'
+            $present = 'CONFIGURATION_SERVICE_IDENTITY_PROVIDER'
+            $bootstrapManaged = 'CONFIGURATION_SERVICE_CLAIMS_SOURCE'
             $absent = 'DMS_JWT_METADATA_ADDRESS'
             $emptyCandidate = 'OAUTH_TOKEN_ENDPOINT'
             $saved = @{}
@@ -6039,8 +6065,8 @@ if (`$itemAfter.Definition -eq `$definitionBefore -and `$itemAfter.Options -eq `
             # unconditional with respect to the read, and the read failure must be reported rather than
             # swallowed or allowed to replace the run's own error.
             $sentinelIdentity = 'sentinel-malformed-observation'
-            [System.Environment]::SetEnvironmentVariable('DMS_CONFIG_IDENTITY_PROVIDER', $sentinelIdentity)
-            [System.Environment]::SetEnvironmentVariable('DMS_CONFIG_CLAIMS_SOURCE', 'sentinel-claims')
+            [System.Environment]::SetEnvironmentVariable('CONFIGURATION_SERVICE_IDENTITY_PROVIDER', $sentinelIdentity)
+            [System.Environment]::SetEnvironmentVariable('CONFIGURATION_SERVICE_CLAIMS_SOURCE', 'sentinel-claims')
             Set-Variable -Name LASTEXITCODE -Scope Global -Value 63
             function global:docker { 'sentinel-observation-docker' }
             $dockerDefinitionBefore = (Get-Item Function:\docker).Definition
@@ -6065,8 +6091,8 @@ if (`$itemAfter.Definition -eq `$definitionBefore -and `$itemAfter.Options -eq `
             # Every resource in the inventory, restored despite the parse failure.
             $cell.RestoreFailure | Should -BeNullOrEmpty
             $cell.Imbalance | Should -BeNullOrEmpty
-            [System.Environment]::GetEnvironmentVariable('DMS_CONFIG_IDENTITY_PROVIDER') | Should -Be $sentinelIdentity
-            [System.Environment]::GetEnvironmentVariable('DMS_CONFIG_CLAIMS_SOURCE') | Should -Be 'sentinel-claims'
+            [System.Environment]::GetEnvironmentVariable('CONFIGURATION_SERVICE_IDENTITY_PROVIDER') | Should -Be $sentinelIdentity
+            [System.Environment]::GetEnvironmentVariable('CONFIGURATION_SERVICE_CLAIMS_SOURCE') | Should -Be 'sentinel-claims'
             $global:LASTEXITCODE | Should -Be 63
             (Get-Item -LiteralPath Function:\docker -ErrorAction SilentlyContinue).Definition | Should -Be $dockerDefinitionBefore
             (Get-Location).Path | Should -Be $locationBefore
@@ -6107,7 +6133,7 @@ if (`$itemAfter.Definition -eq `$definitionBefore -and `$itemAfter.Options -eq `
     It "keeps CMS the Keycloak-mode database-creation owner: both config compose files enable the startup deploy" {
         foreach ($composeFile in @('local-config.yml', 'published-config.yml')) {
             $content = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot $composeFile) -Raw
-            $content | Should -Match 'AppSettings__DeployDatabaseOnStartup:\s*\$\{DMS_CONFIG_DEPLOY_DATABASE:-true\}' -Because "$composeFile must default CMS's own EnsureDatabase deploy on, so Keycloak-mode creation needs no script-side bootstrap"
+            $content | Should -Match 'AppSettings__DeployDatabaseOnStartup:\s*\$\{CONFIGURATION_SERVICE_DEPLOY_DATABASE:-true\}' -Because "$composeFile must default CMS's own EnsureDatabase deploy on, so Keycloak-mode creation needs no script-side bootstrap"
         }
     }
 
@@ -6118,7 +6144,7 @@ if (`$itemAfter.Definition -eq `$definitionBefore -and `$itemAfter.Options -eq `
 
         $content | Should -Match 'createdb'
         $content | Should -Not -Match 'configurationservice' -Because "the CMS database is never a container-init concern"
-        $content | Should -Not -Match 'DMS_CONFIG_DATABASE_NAME' -Because "the topology seam must not leak into container initialization"
+        $content | Should -Not -Match 'CONFIGURATION_SERVICE_DATABASE_NAME' -Because "the topology seam must not leak into container initialization"
     }
 
     It "postgresql-init.sh never interpolates the datastore name into SQL text" {

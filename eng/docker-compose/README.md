@@ -33,7 +33,7 @@ deployment wants when the Ed-Fi API and the Configuration Service are released
 under the same tag. It cannot express a digest: a digest identifies an image
 within one repository, so the same value cannot be correct for both.
 
-`DMS_CONFIG_DOCKER_IMAGE` therefore overrides the Configuration Service's whole
+`CONFIGURATION_SERVICE_DOCKER_IMAGE` therefore overrides the Configuration Service's whole
 image reference, the same name and meaning `local-config.yml` already gives it.
 Left unset it expands to `edfialliance/ed-fi-api-configuration-service:${DMS_IMAGE_TAG:-pre}`,
 so the shipped behaviour is unchanged. Set it to pin that service by digest
@@ -202,7 +202,7 @@ entry points or `start-local-dms.ps1` (they seed `.env` from `.env.example` when
 
 `mssql.yml` runs `mcr.microsoft.com/mssql/server:2025-latest` (Developer Edition), the same
 image used in CI, publishing host port `1435`. `-DatabaseEngine mssql` composes the `.env.mssql`
-overlay (`DMS_DATASTORE=mssql`, `DMS_CONFIG_DATASTORE=mssql`, the `MSSQL_*` keys, and the SQL
+overlay (`DMS_DATASTORE=mssql`, `CONFIGURATION_SERVICE_DATASTORE=mssql`, the `MSSQL_*` keys, and the SQL
 Server connection strings) onto the base environment file automatically — the same composition
 mechanism used by `-DataStandardVersion` (see "Selecting a Data Standard version" below), so
 every phase (configure, provision, and the DMS container itself) sees a consistent engine
@@ -283,7 +283,7 @@ A few things are specific to the MSSQL path:
   either engine. This section documents the CI build/publish/verify pipeline only; no local
   bootstrap flow currently restores these packages.
 
-For a self-contained smoke run, set `DMS_CONFIG_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1`
+For a self-contained smoke run, set `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1`
 in your `.env` before starting or recreating the stack: the Smoke Test Utility requests
 a new token for each resource GET and otherwise exceeds the default limit of 15.
 Restore the configured limit and recreate the stack after the smoke run.
@@ -344,22 +344,22 @@ separate-topology `-InfraOnly` start prints both commands with the switch alread
 
 ### How the selection travels
 
-The seam is the `DMS_CONFIG_DATABASE_NAME` environment variable, which
-`DMS_CONFIG_DATABASE_CONNECTION_STRING`'s `database=` segment references. The checked-in
+The seam is the `CONFIGURATION_SERVICE_DATABASE_NAME` environment variable, which
+`CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING`'s `database=` segment references. The checked-in
 environment files alias it to the datastore name (shared mode); a `-SeparateConfigDatabase` start
 writes a derived environment file under `.derived/` that redirects it to
 `edfi_configurationservice` — your source `-EnvironmentFile` is never edited. The derived file
 also carries an internal `DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE` marker recording the selection.
 When the connection string is entirely absent on PostgreSQL, the Compose fallback in
 `local-config.yml` / `published-config.yml` resolves the same seam
-(`${DMS_CONFIG_DATABASE_NAME:-${POSTGRES_DB_NAME}}`). That fallback is PostgreSQL-shaped — Compose
+(`${CONFIGURATION_SERVICE_DATABASE_NAME:-${POSTGRES_DB_NAME}}`). That fallback is PostgreSQL-shaped — Compose
 interpolation cannot branch on the engine — so MSSQL always requires an explicit
-`DMS_CONFIG_DATABASE_CONNECTION_STRING` (the `.env.mssql` overlay supplies it), and an MSSQL run
+`CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING` (the `.env.mssql` overlay supplies it), and an MSSQL run
 with the key entirely absent fails clearly rather than starting CMS against an unusable fallback.
 
 CMS-starting invocations validate the result before any container starts: the resolved connection
 string's database, host, and port must agree with the selected topology, and a hand-edited
-`DMS_CONFIG_DATABASE_CONNECTION_STRING` that disagrees fails fast with a
+`CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING` that disagrees fails fast with a
 `CMS database topology mismatch` error rather than silently starting CMS against the wrong
 database. In separate mode the datastore database must also be genuinely distinct from
 `edfi_configurationservice`, so a datastore name (or `-DataStoreDatabaseName`) that would land in it
@@ -393,7 +393,7 @@ is the SQL Server that will host these databases, so *every* SQL Server start th
 Configuration Service verifies its database names against the running instance itself: after the
 database container starts and reports ready, and before OpenIddict, CMS, DMS, or the data-store
 registration touch it, the names are checked on the server. In shared mode the check is that the
-Configuration Service's target — the `DMS_CONFIG_DATABASE_NAME` seam and every `Database` /
+Configuration Service's target — the `CONFIGURATION_SERVICE_DATABASE_NAME` seam and every `Database` /
 `Initial Catalog` segment of its connection string — really is the DMS datastore database. In
 separate mode the same targets must be the dedicated `edfi_configurationservice`, and the datastore
 name — plus any `-DataStoreDatabaseName`, as the value the provider actually receives — must be
@@ -696,7 +696,7 @@ The artifact includes:
 | `ConfigurationServiceSettings:ClientId` | `CMSReadOnlyAccess` (created by identity setup) |
 | `ConfigurationServiceSettings:ClientSecret` | `<local-cms-readonly-secret>` (replace with the `CMSReadOnlyAccess` client secret; local-dev default `ValidClientSecret1234567890!Abcd`) |
 | `ConfigurationServiceSettings:Scope` | `edfi_admin_api/readonly_access` |
-| `ConfigurationServiceSettings:EncryptionKey` | `<dms-config-database-encryption-key>` (replace with value of `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` from `.env`; `.env.example` default `secret!_32_chars_xxxxxxxxxxxxxxx`) |
+| `ConfigurationServiceSettings:EncryptionKey` | `<dms-config-database-encryption-key>` (replace with value of `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` from `.env`; `.env.example` default `secret!_32_chars_xxxxxxxxxxxxxxx`) |
 | `AppSettings:UseApiSchemaPath` | `true` (use staged bootstrap workspace schema; see activation note below) |
 | `AppSettings:ApiSchemaPath` | `<repo-root>/eng/docker-compose/.bootstrap/ApiSchema` (replace `<repo-root>` with your absolute path) |
 | `AppSettings:AuthenticationService` | `http://localhost:8081/connect/token` |
@@ -709,7 +709,7 @@ Replace `<local-cms-readonly-secret>` with the `CMSReadOnlyAccess` client secret
 (`setup-keycloak.ps1` / `setup-openiddict.ps1`) creates the client with the local-dev default
 `ValidClientSecret1234567890!Abcd` and does not print the value; if you override the secret at
 client creation, use your override here. Replace `<dms-config-database-encryption-key>`
-with the value of `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` from your `.env` file (`.env.example`
+with the value of `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` from your `.env` file (`.env.example`
 default `secret!_32_chars_xxxxxxxxxxxxxxx`). Replace `<repo-root>` with the absolute path
 to the repository root on your machine.
 
@@ -751,7 +751,7 @@ cd eng/docker-compose
 ./bootstrap-local-dms.ps1 -InfraOnly -EnableConfig -IdentityProvider self-contained -EnvironmentFile ./.env.ide
 ```
 
-The wrapper prints IDE next-step guidance (staged schema path and, when `CONFIG_SERVICE_CLIENT_*`
+The wrapper prints IDE next-step guidance (staged schema path and, when `DMS_CONFIGURATION_SERVICE_CLIENT_*`
 keys are set in the env file, `CMSReadOnlyAccess` client id and scope — never the secret value)
 after provisioning completes.
 
@@ -1164,8 +1164,8 @@ services:
 
 ```powershell
 cd eng/docker-compose
-# CMS_PLUGINS_MOUNT_SOURCE is required by plugins-config.yml; set it here or in the env file.
-$env:CMS_PLUGINS_MOUNT_SOURCE = "C:/cms-plugins"
+# CONFIGURATION_SERVICE_PLUGINS_MOUNT_SOURCE is required by plugins-config.yml; set it here or in the env file.
+$env:CONFIGURATION_SERVICE_PLUGINS_MOUNT_SOURCE = "C:/cms-plugins"
 docker compose -f postgresql.yml -f local-config.yml -f keycloak.yml `
   -f plugins-config.yml -f my-plugins-allowed-config.yml `
   --env-file .env -p cs-local up -d config
@@ -1178,7 +1178,7 @@ identity clients the Configuration Service needs, which no overlay does.
 
 | Variable | Overlay | Meaning |
 | -------- | ------- | ------- |
-| `CMS_PLUGINS_MOUNT_SOURCE` | `plugins-config.yml` | Host path holding the Configuration Service's plugin directories. Declared with `:?`, and listed commented out in `.env.example`. |
+| `CONFIGURATION_SERVICE_PLUGINS_MOUNT_SOURCE` | `plugins-config.yml` | Host path holding the Configuration Service's plugin directories. Declared with `:?`, and listed commented out in `.env.example`. |
 
 See [Configuration Service plugins](../../docs/CONFIGURATION.md#configuration-service-plugins)
 for the Configuration Service's configuration surface.
@@ -1321,8 +1321,8 @@ equivalent setting, because Keycloak owns its own token housekeeping.
 
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
-| `DMS_CONFIG_IDENTITY_TOKEN_CLEANUP_ENABLED` | `true` | Enables the expired-token cleanup sweep. |
-| `DMS_CONFIG_IDENTITY_TOKEN_CLEANUP_INTERVAL_MINUTES` | `30` | Interval, in minutes, between cleanup sweeps. |
+| `CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_ENABLED` | `true` | Enables the expired-token cleanup sweep. |
+| `CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_INTERVAL_MINUTES` | `30` | Interval, in minutes, between cleanup sweeps. |
 
 These map to `IdentitySettings__TokenCleanupEnabled` and
 `IdentitySettings__TokenCleanupIntervalMinutes` in `local-config.yml` and `published-config.yml`.
