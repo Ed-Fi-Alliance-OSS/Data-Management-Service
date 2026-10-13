@@ -622,9 +622,17 @@ metadata/content. The leading check is necessary under SQL Server locking `READ 
 `READ_COMMITTED_SNAPSHOT OFF`: the metadata join alone can observe an old owner timestamp and a new
 document version across a committed write. A matching joined and final version does not bracket
 acquisition of the owner timestamp. RCSI remains optional for relational-only reads. GET-by-id uses the hydrated metadata, not stale pre-hydration lookup stamps.
-Descriptor body and timestamp are selected together; candidate-to-rehydration paths use the
-reread row's metadata. These rules apply to meaningful writes and representation restamps.
-Session-scoped write hydration retains its existing transactional locking contract.
+These rules apply to meaningful writes and representation restamps. Session-scoped write
+hydration retains its existing transactional locking contract.
+
+Descriptor GET-by-id, query pages, cache candidate selection, and selected-page fallback use the
+same three-attempt acquisition policy: document-only versions precede the joined descriptor
+metadata/body projection and follow it. Leading, joined, and trailing versions must agree before
+serving rows; a plain joined SELECT is insufficient under SQL Server locking READ COMMITTED.
+Each page attempt materializes its authorized DocumentId keyset once, retaining selection-time
+continuation anchors, and batches both version checks over those same IDs. Concurrent deletion
+retries acquisition; a stable document with missing owner fields remains an invariant failure after
+the trailing check. The existing selected-page fallback reselects when its candidates have changed.
 
 Representation restamping first allocates document versions, then groups owners by mapped root
 or descriptor table and updates them by `DocumentId` in the same transaction. PostgreSQL captures

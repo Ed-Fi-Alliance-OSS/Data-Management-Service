@@ -186,7 +186,7 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
             etag.Should().Be(returned["_etag"]!.GetValue<string>());
         }
         // The expected side is fixed by the boundary, never inferred from post-race database contents.
-        JsonObject expected = descriptor && !selectedDescriptorFallback ? before : after;
+        JsonObject expected = descriptor && !selectedDescriptorFallback && !beforeMetadata ? before : after;
         JsonNode
             .DeepEquals(returned, expected)
             .Should()
@@ -376,7 +376,7 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
             return decorated;
         }
 
-        private static async Task<List<DataTable>> BufferAsync(DbCommand command, CancellationToken ct)
+        public static async Task<List<DataTable>> BufferAsync(DbCommand command, CancellationToken ct)
         {
             List<DataTable> tables = [];
             await using DbDataReader reader = await command.ExecuteReaderAsync(ct);
@@ -403,7 +403,7 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
         }
     }
 
-    // The disabled-cache HTTP path selects full descriptor rows atomically. Supplemental cases
+    // The disabled-cache HTTP path brackets full descriptor rows with version checks. Supplemental cases
     // invoke the handler's real selection/fallback callbacks directly to cover its separate candidate
     // boundary, still without cache lookup, publication, or materialization. Ordinary cases use the
     // exact same fallback callback as the production disabled coordinator.
@@ -457,6 +457,7 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
         : IRelationalCommandExecutor
     {
         public SqlDialect Dialect => inner.Dialect;
+        private bool _awaitingRetry;
 
         public async Task<TResult> ExecuteReaderAsync<TResult>(
             RelationalCommand command,
@@ -464,6 +465,72 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
             CancellationToken cancellationToken = default
         )
         {
+            if (
+                boundary.Descriptor
+                && boundary.BeforeMetadata
+                && command.CommandText.Contains("-- Descriptor acquisition:", StringComparison.Ordinal)
+            )
+            {
+                // Count only attempts from this request, excluding verification reads made while held.
+                bool claimed = boundary.Claim("leading descriptor versions acquired before owner rows");
+                if (claimed)
+                {
+                    boundary.RetriedAttempts = 1;
+                    await using DbConnection connection = boundary.Postgresql
+                        ? new NpgsqlConnection(boundary.ConnectionString)
+                        : new SqlConnection(boundary.ConnectionString);
+                    await connection.OpenAsync(cancellationToken);
+                    await using DbTransaction transaction = await connection.BeginTransactionAsync(
+                        IsolationLevel.ReadCommitted,
+                        cancellationToken
+                    );
+                    await using DbCommand dbCommand = connection.CreateCommand();
+                    dbCommand.Transaction = transaction;
+                    foreach (var parameter in command.Parameters)
+                    {
+                        var dbParameter = dbCommand.CreateParameter();
+                        dbParameter.ParameterName = parameter.Name;
+                        dbParameter.Value = parameter.Value ?? DBNull.Value;
+                        parameter.ConfigureParameter?.Invoke(dbParameter);
+                        dbCommand.Parameters.Add(dbParameter);
+                    }
+                    int split = command.CommandText.IndexOf(
+                        "-- Descriptor acquisition: owner rows",
+                        StringComparison.Ordinal
+                    );
+                    dbCommand.CommandText = command.CommandText[..split];
+                    if (
+                        !boundary.Postgresql
+                        && dbCommand.CommandText.Contains("CREATE TABLE", StringComparison.Ordinal)
+                    )
+                    {
+                        int create = dbCommand.CommandText.IndexOf("CREATE TABLE", StringComparison.Ordinal);
+                        int preludeEnd = dbCommand.CommandText.IndexOf(';', create) + 1;
+                        await using DbCommand prelude = connection.CreateCommand();
+                        prelude.Transaction = transaction;
+                        prelude.CommandText = dbCommand.CommandText[..preludeEnd];
+                        await prelude.ExecuteNonQueryAsync(cancellationToken);
+                        dbCommand.CommandText = dbCommand.CommandText[preludeEnd..];
+                    }
+                    List<DataTable> tables = await BoundaryHydrator.BufferAsync(dbCommand, cancellationToken);
+                    await boundary.Gate.WaitIfArmedAsync();
+                    dbCommand.CommandText = command.CommandText[split..];
+                    tables.AddRange(await BoundaryHydrator.BufferAsync(dbCommand, cancellationToken));
+                    await transaction.CommitAsync(cancellationToken);
+                    await using var reader = new DbRelationalCommandReader(
+                        new DataTableReader(tables.ToArray())
+                    );
+                    TResult splitResult = await readAsync(reader, cancellationToken);
+                    // The next attempt occurs only after the held attempt has finished.
+                    _awaitingRetry = true;
+                    return splitResult;
+                }
+                if (_awaitingRetry)
+                {
+                    boundary.RetriedAttempts++;
+                    _awaitingRetry = false;
+                }
+            }
             TResult result = await inner.ExecuteReaderAsync(command, readAsync, cancellationToken);
             // Uncached descriptors select their body and metadata together. Hold the captured row(s),
             // then commit the competing write before authorization/materialization continues.

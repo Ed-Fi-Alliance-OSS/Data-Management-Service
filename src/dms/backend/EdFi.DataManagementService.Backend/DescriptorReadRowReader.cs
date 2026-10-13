@@ -33,10 +33,11 @@ internal interface IDescriptorReadCandidateMetadata
     /// committed row. <see cref="ContentVersion"/> is the canonical <c>dms.Document</c> value and is
     /// what the response body, the served ETag, and the cache-admission comparison are built from.
     /// This one is the root <c>dms.Descriptor</c> mirror that page selection actually ordered, bounded,
-    /// and indexed on, and it is the only one that can anchor a continuation: the two are read from
-    /// different tables in one statement, so under a provider that admits intra-statement read skew a
-    /// concurrent update can make the document value the larger of the pair — and a continuation
-    /// anchored on it would start the next page past rows this one never returned.
+    /// and indexed on, and it is the only one that can anchor a continuation. Page selection is
+    /// materialized before the leading document-version fence. A concurrent update can advance the
+    /// document value between selection and acquisition, even when the acquired version, timestamp,
+    /// and body pass both fences. A continuation anchored on that newer document value could start
+    /// the next page past rows this one never returned.
     /// </remarks>
     long? SelectedAnchor { get; }
 }

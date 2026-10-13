@@ -43,6 +43,35 @@ public sealed class Given_Mssql_AuthoritativeTimestampReadConsistency(bool readC
     [TestCase(false, true)]
     [TestCase(true, false)]
     [TestCase(true, true)]
+    public Task It_retries_descriptor_candidates_after_leading_versions(bool page, bool restamp) =>
+        AuthoritativeTimestampReadConsistencyScenario.RunAsync(
+            Harness,
+            true,
+            page,
+            restamp,
+            false,
+            selectedDescriptorFallback: true,
+            beforeMetadata: true
+        );
+
+    [TestCase(false, false)]
+    [TestCase(false, true)]
+    [TestCase(true, false)]
+    [TestCase(true, true)]
+    public Task It_retries_a_descriptor_commit_after_leading_versions(bool page, bool restamp) =>
+        AuthoritativeTimestampReadConsistencyScenario.RunAsync(
+            Harness,
+            true,
+            page,
+            restamp,
+            false,
+            beforeMetadata: true
+        );
+
+    [TestCase(false, false)]
+    [TestCase(false, true)]
+    [TestCase(true, false)]
+    [TestCase(true, true)]
     public Task It_retries_a_commit_between_leading_versions_and_owner_metadata(bool page, bool restamp) =>
         AuthoritativeTimestampReadConsistencyScenario.RunAsync(
             Harness,
