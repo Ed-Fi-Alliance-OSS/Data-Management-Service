@@ -1,0 +1,170 @@
+{
+  "task": "T22",
+  "story": "reference/design/backend-redesign/epics/21-storage-reduction/16-drop-document-content-last-modified-at.md",
+  "workflow": ".github/workflows/EdFi.Api.Populated.Template.PostgreSQL.yml",
+  "publish_package": false,
+  "run_conclusion": "success",
+  "producing_ref": "DMS-1401",
+  "remaining_matrix_tasks": [
+    "T23"
+  ],
+  "artifacts": [
+    {
+      "producing_commit": "b0d04812293b415188333fc2e46e79ed5fd0277d",
+      "build_run": "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38345459901",
+      "build_attempt": "1",
+      "database_engine": "postgresql",
+      "engine_image": "postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0 sha256:f6f169e2a44a95459901b65287658f324fba4efa94fc6afbc6ec02c42dc62ae3",
+      "standard_version": "5.2.0",
+      "environment_file": "./.env.template",
+      "package_id": "EdFi.Api.Populated.Template.PostgreSql.5.2.0",
+      "package_version": "8.1.0-beta.0.1.35",
+      "package_file": "EdFi.Api.Populated.Template.PostgreSql.5.2.0.8.1.0-beta.0.1.35.nupkg",
+      "package_sha256": "3dfc5576b5150cba3ced6327999cca2f7a8ece38cbe8b4fafb52f14105301c50",
+      "manifest_file": "schema/relational-model.pgsql.manifest.json",
+      "manifest_sha256": "4df1452c5d77329daed2fe0fac73458041e24f904a7d5fd4d2c8da16148277f8",
+      "require_populated_data": true,
+      "verification": "passed",
+      "results": [
+        "Source timestamp and compact-descriptor catalog assertions passed: edfi_datamanagementservice_template",
+        "Restored timestamp and compact-descriptor catalog assertions passed: template_restore_verification",
+        "Restored schemas match: auth, dms, edfi, tpdm, tracked_changes_edfi, tracked_changes_tpdm",
+        "Data assertions passed: EffectiveSchema=1, Document=104798, Descriptor=3327",
+        "Populated data assertions passed: PopulatedDocuments=101424, Schools=3",
+        "Serveability probe passed: 19 academicSubjectDescriptors served from the restored database.",
+        "Populated serveability probe passed: 3 schools served from the restored database.",
+        "Template restore verification succeeded."
+      ],
+      "ordinary_root_count": 153,
+      "descriptor_type_count": 229,
+      "schema_inputs": [
+        {
+          "package_id": "EdFi.DataStandard52.ApiSchema",
+          "version": "1.0.335",
+          "sha256": "1051c5c3d1b2a3e488460a08a82f65a22fc49802b361df66dff8195b5aac5e73"
+        },
+        {
+          "package_id": "EdFi.DataStandard52.TPDM.ApiSchema",
+          "version": "1.0.335",
+          "sha256": "38b62d1ba7a3e310601f99e3b439752785c45e8c763f058d581f9dbc15855565"
+        }
+      ],
+      "checks": {
+        "downloaded_package_sha256": "passed",
+        "nuspec_identity_and_sql_payload": "passed",
+        "generated_document_columns": "passed",
+        "exact_reviewed_T18_manifest": "passed",
+        "authoritative_root_metadata": "passed",
+        "catalog_checks_before_api": "passed",
+        "populated_source_restore_counts_and_authenticated_probe": "passed",
+        "packaged_document_columns": "passed",
+        "provenance_subject_commit_and_inputs": "passed"
+      },
+      "provenance_sha256": "ef6045e06e4cd01dc346ccfb8d4bd98cabf2df2fabb826d2ffa458437d7e62f0",
+      "artifacts": [
+        {
+          "name": "populated.template.intoto.jsonl",
+          "id": 11789515099,
+          "url": "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38345459901/artifacts/11789515099",
+          "expires_at": "2026-10-18T04:23:20Z"
+        },
+        {
+          "name": "EdFi.Api.Populated.Template.PostgreSql.5.2.0-NuGet",
+          "id": 11788663878,
+          "url": "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38345459901/artifacts/11788663878",
+          "expires_at": "2026-11-12T04:21:21Z"
+        },
+        {
+          "name": "EdFi.Api.Populated.Template.PostgreSql.5.2.0-Verification",
+          "id": 11788574306,
+          "url": "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38345459901/artifacts/11788574306",
+          "expires_at": "2026-11-12T04:21:20Z"
+        },
+        {
+          "name": "EdFi.Api.Populated.Template.PostgreSql.5.2.0-SBOM",
+          "id": 11788379611,
+          "url": "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38345459901/artifacts/11788379611",
+          "expires_at": "2026-11-12T04:21:54Z"
+        }
+      ],
+      "relational_mapping_version": "v3",
+      "effective_schema_hash": "6f7cac1476c6ede6140762df73f04c9b71f3af95f57b0ed03e0e6fa44a799d78"
+    },
+    {
+      "producing_commit": "b0d04812293b415188333fc2e46e79ed5fd0277d",
+      "build_run": "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38345459901",
+      "build_attempt": "1",
+      "database_engine": "postgresql",
+      "engine_image": "postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0 sha256:f6f169e2a44a95459901b65287658f324fba4efa94fc6afbc6ec02c42dc62ae3",
+      "standard_version": "6.1.0",
+      "environment_file": "./.env.template.ds61",
+      "package_id": "EdFi.Api.Populated.Template.PostgreSql.6.1.0",
+      "package_version": "8.1.0-beta.0.1.35",
+      "package_file": "EdFi.Api.Populated.Template.PostgreSql.6.1.0.8.1.0-beta.0.1.35.nupkg",
+      "package_sha256": "91baabeccdee577c00487abc0c7fa78a8f43c55ebecf573a3567409e72787ded",
+      "manifest_file": "schema/relational-model.pgsql.manifest.json",
+      "manifest_sha256": "e35c8b5dfbec94402cc6283c18146853551a6de9e0ff46a1decf2642df5aa798",
+      "require_populated_data": true,
+      "verification": "passed",
+      "results": [
+        "Source timestamp and compact-descriptor catalog assertions passed: edfi_datamanagementservice_template_61",
+        "Restored timestamp and compact-descriptor catalog assertions passed: template_restore_verification",
+        "Restored schemas match: auth, dms, edfi, tracked_changes_edfi",
+        "Data assertions passed: EffectiveSchema=1, Document=104554, Descriptor=4012",
+        "Populated data assertions passed: PopulatedDocuments=100495, Schools=3",
+        "Serveability probe passed: 21 academicSubjectDescriptors served from the restored database.",
+        "Populated serveability probe passed: 3 schools served from the restored database.",
+        "Template restore verification succeeded."
+      ],
+      "ordinary_root_count": 192,
+      "descriptor_type_count": 280,
+      "schema_inputs": [
+        {
+          "package_id": "EdFi.DataStandard61.ApiSchema",
+          "version": "1.0.335",
+          "sha256": "01fb6050cbdf0bbff18f99dbdecaea4bbbd963b3b591d10c6f5c275482d46a65"
+        }
+      ],
+      "checks": {
+        "downloaded_package_sha256": "passed",
+        "nuspec_identity_and_sql_payload": "passed",
+        "generated_document_columns": "passed",
+        "exact_reviewed_T18_manifest": "passed",
+        "authoritative_root_metadata": "passed",
+        "catalog_checks_before_api": "passed",
+        "populated_source_restore_counts_and_authenticated_probe": "passed",
+        "packaged_document_columns": "passed",
+        "provenance_subject_commit_and_inputs": "passed"
+      },
+      "provenance_sha256": "6483f7b05352066f3082ffbb8b76aac9fcf8f18272bfe2c8bba4af456cbc6012",
+      "artifacts": [
+        {
+          "name": "populated.template.6.1.0.intoto.jsonl",
+          "id": 11789730271,
+          "url": "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38345459901/artifacts/11789730271",
+          "expires_at": "2026-10-18T04:27:13Z"
+        },
+        {
+          "name": "EdFi.Api.Populated.Template.PostgreSql.6.1.0-SBOM",
+          "id": 11789695040,
+          "url": "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38345459901/artifacts/11789695040",
+          "expires_at": "2026-11-12T04:25:40Z"
+        },
+        {
+          "name": "EdFi.Api.Populated.Template.PostgreSql.6.1.0-NuGet",
+          "id": 11789325309,
+          "url": "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38345459901/artifacts/11789325309",
+          "expires_at": "2026-11-12T04:25:04Z"
+        },
+        {
+          "name": "EdFi.Api.Populated.Template.PostgreSql.6.1.0-Verification",
+          "id": 11788751414,
+          "url": "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38345459901/artifacts/11788751414",
+          "expires_at": "2026-11-12T04:25:02Z"
+        }
+      ],
+      "relational_mapping_version": "v3",
+      "effective_schema_hash": "d7662d02379c6b987e0ef6a68fb0942e2bcf34478c1188c430c079b224f72efc"
+    }
+  ]
+}
