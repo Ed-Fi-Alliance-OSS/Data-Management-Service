@@ -26,6 +26,9 @@ public class ApplicationRepository(
 
     private long? TenantId => TenantContext is TenantContext.Multitenant mt ? mt.TenantId : null;
 
+    private const string DuplicateClientIdConstraint = "UX_ApiClient_ClientId";
+    private const string DuplicateClientUuidConstraint = "UX_ApiClient_ClientUuid";
+
     /// <summary>
     /// SQL condition constraining an Application row to the current tenant through its owning Vendor.
     /// </summary>
@@ -262,6 +265,24 @@ public class ApplicationRepository(
             );
             await transaction.RollbackAsync();
             return new ApplicationInsertResult.FailureDuplicateApplication(command.ApplicationName);
+        }
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == DuplicateClientIdConstraint
+            )
+        {
+            logger.LogWarning(ex, "API client key is already in use");
+            await transaction.RollbackAsync();
+            return new ApplicationInsertResult.FailureDuplicateClientId();
+        }
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == DuplicateClientUuidConstraint
+            )
+        {
+            logger.LogWarning(ex, "Identity provider client is already associated with another API client");
+            await transaction.RollbackAsync();
+            return new ApplicationInsertResult.FailureDuplicateClientUuid();
         }
         catch (Exception ex)
         {
@@ -628,6 +649,15 @@ public class ApplicationRepository(
             await RollbackSafelyAsync(transaction);
             return new ApplicationUpdateResult.FailureDuplicateApplication(command.ApplicationName);
         }
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == DuplicateClientUuidConstraint
+            )
+        {
+            logger.LogWarning(ex, "Identity provider client is already associated with another API client");
+            await RollbackSafelyAsync(transaction);
+            return new ApplicationUpdateResult.FailureDuplicateClientUuid();
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Update application failure");
@@ -869,6 +899,18 @@ public class ApplicationRepository(
 
             await transaction.CommitAsync();
             return new ApiClientUuidSyncResult.Success();
+        }
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == DuplicateClientUuidConstraint
+            )
+        {
+            logger.LogWarning(
+                ex,
+                "The new identity provider client UUID is already referenced by another API client; nothing was written"
+            );
+            await RollbackSafelyAsync(transaction);
+            return new ApiClientUuidSyncResult.FailureNewUuidInUse();
         }
         catch (Exception ex)
         {

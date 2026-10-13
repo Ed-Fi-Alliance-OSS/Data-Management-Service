@@ -1093,3 +1093,96 @@ public class Given_a_uuid_referenced_only_by_a_foreign_tenant : ForeignTenantOpe
     public void It_reports_the_foreign_uuid_as_referenced() =>
         _referenceResult.Should().BeOfType<ApiClientUuidReferenceResult.Referenced>();
 }
+
+/// <summary>
+/// DMS-1529: the target row exists and matches the expected UUID, but the new UUID already belongs to
+/// another API client of the same tenant. The sync is a classified failure that writes nothing, so the
+/// caller knows the provider client behind the new UUID is not its own to delete.
+/// </summary>
+[TestFixture]
+public class Given_a_sync_to_a_uuid_another_api_client_holds : ConsistencyOperationTestBase
+{
+    private ApiClientUuidSyncResult _apiClientSyncResult = null!;
+    private ApiClientUuidSyncResult _applicationSyncResult = null!;
+    private Guid _secondStoredUuid;
+    private Guid _firstStoredUuid;
+
+    [SetUp]
+    public async Task Act()
+    {
+        _apiClientSyncResult = await _apiClientRepository.SyncApiClientUuid(
+            _secondClientRowId,
+            _secondClientUuid,
+            _clientUuid
+        );
+        _applicationSyncResult = await _applicationRepository.SyncApplicationApiClientUuid(
+            _applicationId,
+            _secondClientId,
+            _secondClientUuid,
+            _clientUuid
+        );
+        _secondStoredUuid = await ReadStoredClientUuidAsync(_secondClientId);
+        _firstStoredUuid = await ReadStoredClientUuidAsync(_clientId);
+    }
+
+    [Test]
+    public void It_classifies_the_api_client_sync_as_a_uuid_in_use() =>
+        _apiClientSyncResult.Should().BeOfType<ApiClientUuidSyncResult.FailureNewUuidInUse>();
+
+    [Test]
+    public void It_classifies_the_application_sync_as_a_uuid_in_use() =>
+        _applicationSyncResult.Should().BeOfType<ApiClientUuidSyncResult.FailureNewUuidInUse>();
+
+    [Test]
+    public void It_leaves_both_rows_unchanged()
+    {
+        _secondStoredUuid.Should().Be(_secondClientUuid);
+        _firstStoredUuid.Should().Be(_clientUuid);
+    }
+}
+
+/// <summary>
+/// DMS-1529: the same collision against a UUID held only by another tenant's client. The constraint is
+/// global, so the sync is rejected the same way, and neither tenant's row changes.
+/// </summary>
+[TestFixture]
+public class Given_a_sync_to_a_uuid_held_by_a_foreign_tenant : ForeignTenantOperationTestBase
+{
+    private ApiClientUuidSyncResult _apiClientSyncResult = null!;
+    private ApiClientUuidSyncResult _applicationSyncResult = null!;
+    private Guid _secondStoredUuid;
+    private Guid _foreignStoredUuid;
+
+    [SetUp]
+    public async Task Act()
+    {
+        _apiClientSyncResult = await _apiClientRepository.SyncApiClientUuid(
+            _secondClientRowId,
+            _secondClientUuid,
+            _foreignClientUuid
+        );
+        _applicationSyncResult = await _applicationRepository.SyncApplicationApiClientUuid(
+            _applicationId,
+            _secondClientId,
+            _secondClientUuid,
+            _foreignClientUuid
+        );
+        _secondStoredUuid = await ReadStoredClientUuidAsync(_secondClientId);
+        _foreignStoredUuid = await ReadStoredClientUuidAsync(_foreignClientId);
+    }
+
+    [Test]
+    public void It_classifies_the_api_client_sync_as_a_uuid_in_use() =>
+        _apiClientSyncResult.Should().BeOfType<ApiClientUuidSyncResult.FailureNewUuidInUse>();
+
+    [Test]
+    public void It_classifies_the_application_sync_as_a_uuid_in_use() =>
+        _applicationSyncResult.Should().BeOfType<ApiClientUuidSyncResult.FailureNewUuidInUse>();
+
+    [Test]
+    public void It_leaves_both_tenants_rows_unchanged()
+    {
+        _secondStoredUuid.Should().Be(_secondClientUuid);
+        _foreignStoredUuid.Should().Be(_foreignClientUuid);
+    }
+}

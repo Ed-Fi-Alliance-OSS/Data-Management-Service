@@ -1900,4 +1900,170 @@ public class ApplicationTests : DatabaseTest
                 );
         }
     }
+
+    /// <summary>
+    /// DMS-1529: the application's initial client is inserted inside the aggregate transaction, so a
+    /// repeated key or UUID is a classified failure that rolls the whole aggregate back.
+    /// </summary>
+    [TestFixture]
+    public class Given_application_inserts_whose_initial_client_repeats_an_identifier : ApplicationTests
+    {
+        private const string RepeatKeyApplicationName = "DMS1529 Repeat Key Application";
+        private const string RepeatUuidApplicationName = "DMS1529 Repeat Uuid Application";
+
+        private readonly string _takenClientId = Guid.NewGuid().ToString();
+        private readonly Guid _takenClientUuid = Guid.NewGuid();
+        private readonly string _secondClientId = Guid.NewGuid().ToString();
+        private readonly Guid _secondClientUuid = Guid.NewGuid();
+        private int _identifierVendorId;
+        private int _secondApplicationId;
+        private int _duplicateAttemptDataStoreId;
+        private ApplicationInsertResult _repeatKeyInsert = null!;
+        private ApplicationInsertResult _repeatUuidInsert = null!;
+        private ApplicationUpdateResult _updateOntoTakenUuid = null!;
+        private Guid _secondClientUuidAfterRejectedUpdate;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var vendorResult = await new VendorRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            ).InsertVendor(
+                new VendorInsertCommand
+                {
+                    Company = $"DMS1529 Vendor {Guid.NewGuid()}",
+                    ContactEmailAddress = "identifiers@test.com",
+                    ContactName = "Identifiers Tester",
+                    NamespacePrefixes = "uri://identifiers-test.example",
+                }
+            );
+            _identifierVendorId = ((VendorInsertResult.Success)vendorResult).Id;
+            _duplicateAttemptDataStoreId = await Connection!.ExecuteScalarAsync<int>(
+                """
+                INSERT INTO "dmscs"."DataStore" ("DataStoreType", "Name")
+                VALUES ('Production', @Name) RETURNING "Id";
+                """,
+                new { Name = $"DMS1529 Data Store {Guid.NewGuid()}" }
+            );
+
+            (await InsertApplication("DMS1529 Taken Application", _takenClientId, _takenClientUuid, []))
+                .Should()
+                .BeOfType<ApplicationInsertResult.Success>();
+            var secondInsert = await InsertApplication(
+                "DMS1529 Second Application",
+                _secondClientId,
+                _secondClientUuid,
+                []
+            );
+            _secondApplicationId = ((ApplicationInsertResult.Success)secondInsert).Id;
+
+            _repeatKeyInsert = await InsertApplication(
+                RepeatKeyApplicationName,
+                _takenClientId,
+                Guid.NewGuid(),
+                [_duplicateAttemptDataStoreId]
+            );
+            _repeatUuidInsert = await InsertApplication(
+                RepeatUuidApplicationName,
+                Guid.NewGuid().ToString(),
+                _takenClientUuid,
+                [_duplicateAttemptDataStoreId]
+            );
+
+            _updateOntoTakenUuid = await _applicationRepository.UpdateApplication(
+                new ApplicationUpdateCommand
+                {
+                    Id = _secondApplicationId,
+                    ApplicationName = "DMS1529 Second Application",
+                    VendorId = _identifierVendorId,
+                    ClaimSetName = "TestClaimSet",
+                    EducationOrganizationIds = [1, 2],
+                    ProfileIds = [],
+                },
+                new ApiClientCommand { ClientId = _secondClientId, ClientUuid = _takenClientUuid }
+            );
+            _secondClientUuidAfterRejectedUpdate = await Connection!.ExecuteScalarAsync<Guid>(
+                """SELECT "ClientUuid" FROM "dmscs"."ApiClient" WHERE "ClientId" = @ClientId;""",
+                new { ClientId = _secondClientId }
+            );
+        }
+
+        private Task<ApplicationInsertResult> InsertApplication(
+            string name,
+            string clientId,
+            Guid clientUuid,
+            int[] dataStoreIds
+        ) =>
+            _applicationRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = name,
+                    VendorId = _identifierVendorId,
+                    ClaimSetName = "TestClaimSet",
+                    EducationOrganizationIds = [1, 2],
+                    DataStoreIds = dataStoreIds,
+                },
+                new ApiClientCommand { ClientId = clientId, ClientUuid = clientUuid }
+            );
+
+        [Test]
+        public void It_rejects_an_initial_client_whose_key_is_taken() =>
+            _repeatKeyInsert.Should().BeOfType<ApplicationInsertResult.FailureDuplicateClientId>();
+
+        [Test]
+        public void It_rejects_an_initial_client_whose_uuid_is_taken() =>
+            _repeatUuidInsert.Should().BeOfType<ApplicationInsertResult.FailureDuplicateClientUuid>();
+
+        [Test]
+        public async Task It_rolls_back_the_application_rows()
+        {
+            var applications = await Connection!.QueryAsync<string>(
+                """SELECT "ApplicationName" FROM "dmscs"."Application" WHERE "VendorId" = @VendorId ORDER BY 1;""",
+                new { VendorId = _identifierVendorId }
+            );
+            applications.Should().Equal("DMS1529 Second Application", "DMS1529 Taken Application");
+        }
+
+        [Test]
+        public async Task It_rolls_back_the_education_organization_rows() => (
+                await Connection!.ExecuteScalarAsync<int>(
+                    """
+                    SELECT count(*) FROM "dmscs"."ApplicationEducationOrganization" aeo
+                    WHERE NOT EXISTS (SELECT 1 FROM "dmscs"."Application" a WHERE a."Id" = aeo."ApplicationId");
+                    """
+                )
+            ).Should().Be(0);
+
+        [Test]
+        public async Task It_rolls_back_the_initial_client_and_its_data_store_assignment()
+        {
+            (
+                await Connection!.ExecuteScalarAsync<int>(
+                    """SELECT count(*) FROM "dmscs"."ApiClient" WHERE "Name" = ANY(@Names);""",
+                    new { Names = new[] { RepeatKeyApplicationName, RepeatUuidApplicationName } }
+                )
+            )
+                .Should()
+                .Be(0);
+            (
+                await Connection!.ExecuteScalarAsync<int>(
+                    """SELECT count(*) FROM "dmscs"."ApiClientDataStore" WHERE "DataStoreId" = @DataStoreId;""",
+                    new { DataStoreId = _duplicateAttemptDataStoreId }
+                )
+            )
+                .Should()
+                .Be(0);
+        }
+
+        [Test]
+        public void It_rejects_an_update_that_stores_a_uuid_another_client_holds() =>
+            _updateOntoTakenUuid.Should().BeOfType<ApplicationUpdateResult.FailureDuplicateClientUuid>();
+
+        [Test]
+        public void It_leaves_the_client_unchanged_after_the_rejected_update() =>
+            _secondClientUuidAfterRejectedUpdate.Should().Be(_secondClientUuid);
+    }
 }

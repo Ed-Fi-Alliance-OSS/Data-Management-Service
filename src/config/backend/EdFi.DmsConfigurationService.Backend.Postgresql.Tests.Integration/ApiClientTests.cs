@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using Dapper;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
@@ -884,5 +885,320 @@ public class ApiClientTests : DatabaseTest
         [Test]
         public void It_should_accept_an_update_that_keeps_its_own_name() =>
             _updateKeepingOwnName.Should().BeOfType<ApiClientUpdateResult.Success>();
+    }
+
+    /// <summary>
+    /// DMS-1529: a client key and an identity-provider UUID are unique across every application and
+    /// tenant, so a repeat through the repository is a classified failure that writes nothing.
+    /// </summary>
+    [TestFixture]
+    public class Given_api_client_inserts_that_repeat_an_identifier : ApiClientTests
+    {
+        private readonly string _takenClientId = Guid.NewGuid().ToString();
+        private readonly Guid _takenClientUuid = Guid.NewGuid();
+        private int _applicationAId;
+        private int _applicationBId;
+        private int _otherClientRowId;
+        private Guid _otherClientUuid;
+        private int _duplicateAttemptDataStoreId;
+        private ApiClientInsertResult _repeatKeySameApplication = null!;
+        private ApiClientInsertResult _repeatUuidSameApplication = null!;
+        private ApiClientInsertResult _repeatKeyOtherApplication = null!;
+        private ApiClientInsertResult _repeatBothOtherApplication = null!;
+        private ApiClientInsertResult _repeatKeyOtherTenant = null!;
+        private ApiClientInsertResult _losingConcurrentInsert = null!;
+        private ApiClientUpdateResult _updateOntoTakenUuid = null!;
+        private Guid _otherClientUuidAfterRejectedUpdate;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            int vendorId = await InsertVendor(new TenantContextProvider());
+            _applicationAId = await InsertApplication(
+                _applicationRepository,
+                vendorId,
+                "DMS1529 Application A"
+            );
+            _applicationBId = await InsertApplication(
+                _applicationRepository,
+                vendorId,
+                "DMS1529 Application B"
+            );
+            _duplicateAttemptDataStoreId = await InsertDataStore();
+
+            (await InsertApiClient(_applicationAId, "Taken Client", _takenClientId, _takenClientUuid, []))
+                .Should()
+                .BeOfType<ApiClientInsertResult.Success>();
+
+            _otherClientUuid = Guid.NewGuid();
+            var otherInsert = await InsertApiClient(
+                _applicationAId,
+                "Other Client",
+                Guid.NewGuid().ToString(),
+                _otherClientUuid,
+                []
+            );
+            _otherClientRowId = ((ApiClientInsertResult.Success)otherInsert).Id;
+
+            _repeatKeySameApplication = await InsertApiClient(
+                _applicationAId,
+                "Repeat Key",
+                _takenClientId,
+                Guid.NewGuid(),
+                [_duplicateAttemptDataStoreId]
+            );
+            _repeatUuidSameApplication = await InsertApiClient(
+                _applicationAId,
+                "Repeat Uuid",
+                Guid.NewGuid().ToString(),
+                _takenClientUuid,
+                [_duplicateAttemptDataStoreId]
+            );
+            _repeatKeyOtherApplication = await InsertApiClient(
+                _applicationBId,
+                "Repeat Key Elsewhere",
+                _takenClientId,
+                Guid.NewGuid(),
+                []
+            );
+            _repeatBothOtherApplication = await InsertApiClient(
+                _applicationBId,
+                "Repeat Both",
+                _takenClientId,
+                _takenClientUuid,
+                []
+            );
+
+            _repeatKeyOtherTenant = await InsertApiClientInAnotherTenant(_takenClientId);
+            _losingConcurrentInsert = await RunLosingConcurrentInsert();
+
+            _updateOntoTakenUuid = await _apiClientRepository.UpdateApiClient(
+                new ApiClientUpdateCommand
+                {
+                    Id = _otherClientRowId,
+                    ApplicationId = _applicationAId,
+                    Name = "Other Client",
+                    IsApproved = true,
+                    DataStoreIds = [],
+                    ClientUuid = _takenClientUuid,
+                }
+            );
+            _otherClientUuidAfterRejectedUpdate = await Connection!.ExecuteScalarAsync<Guid>(
+                """SELECT "ClientUuid" FROM "dmscs"."ApiClient" WHERE "Id" = @Id;""",
+                new { Id = _otherClientRowId }
+            );
+        }
+
+        private static async Task<int> InsertVendor(TenantContextProvider tenantContextProvider)
+        {
+            var vendorResult = await new VendorRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext(),
+                tenantContextProvider
+            ).InsertVendor(
+                new VendorInsertCommand
+                {
+                    Company = $"DMS1529 Vendor {Guid.NewGuid()}",
+                    ContactEmailAddress = "identifiers@test.com",
+                    ContactName = "Identifiers Tester",
+                    NamespacePrefixes = "uri://identifiers-test.example",
+                }
+            );
+            return ((VendorInsertResult.Success)vendorResult).Id;
+        }
+
+        private static async Task<int> InsertApplication(
+            IApplicationRepository applicationRepository,
+            int vendorId,
+            string name
+        )
+        {
+            var result = await applicationRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = name,
+                    VendorId = vendorId,
+                    ClaimSetName = "TestClaimSet",
+                    EducationOrganizationIds = [],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            result.Should().BeOfType<ApplicationInsertResult.Success>();
+            return ((ApplicationInsertResult.Success)result).Id;
+        }
+
+        private async Task<int> InsertDataStore() =>
+            await Connection!.ExecuteScalarAsync<int>(
+                """
+                INSERT INTO "dmscs"."DataStore" ("DataStoreType", "Name")
+                VALUES ('Production', @Name) RETURNING "Id";
+                """,
+                new { Name = $"DMS1529 Data Store {Guid.NewGuid()}" }
+            );
+
+        private Task<ApiClientInsertResult> InsertApiClient(
+            int applicationId,
+            string name,
+            string clientId,
+            Guid clientUuid,
+            int[] dataStoreIds
+        ) =>
+            _apiClientRepository.InsertApiClient(
+                new ApiClientInsertCommand
+                {
+                    ApplicationId = applicationId,
+                    Name = name,
+                    IsApproved = true,
+                    DataStoreIds = dataStoreIds,
+                },
+                new ApiClientCommand { ClientId = clientId, ClientUuid = clientUuid }
+            );
+
+        /// <summary>
+        /// A second tenant with its own vendor and application. The taken key lives under an
+        /// application of no tenant, so the rejection shows the constraint ignores tenancy.
+        /// </summary>
+        private async Task<ApiClientInsertResult> InsertApiClientInAnotherTenant(string clientId)
+        {
+            long tenantId = await Connection!.ExecuteScalarAsync<long>(
+                """INSERT INTO "dmscs"."Tenant" ("Name") VALUES (@Name) RETURNING "Id";""",
+                new { Name = $"dms1529-tenant-{Guid.NewGuid():N}" }
+            );
+            var tenantProvider = new TenantContextProvider
+            {
+                Context = new TenantContext.Multitenant(tenantId, "dms1529-tenant"),
+            };
+            int vendorId = await InsertVendor(tenantProvider);
+            int applicationId = await InsertApplication(
+                new ApplicationRepository(
+                    Configuration.DatabaseOptions,
+                    NullLogger<ApplicationRepository>.Instance,
+                    new TestAuditContext(),
+                    tenantProvider
+                ),
+                vendorId,
+                "DMS1529 Tenant Application"
+            );
+
+            return await new ApiClientRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<ApiClientRepository>.Instance,
+                new TestAuditContext(),
+                tenantProvider
+            ).InsertApiClient(
+                new ApiClientInsertCommand
+                {
+                    ApplicationId = applicationId,
+                    Name = "Tenant Client",
+                    IsApproved = true,
+                    DataStoreIds = [],
+                },
+                new ApiClientCommand { ClientId = clientId, ClientUuid = Guid.NewGuid() }
+            );
+        }
+
+        /// <summary>
+        /// Another session inserts a fresh key and holds its transaction open; the repository insert
+        /// of the same key is started, then the session commits. Whether the repository insert waited
+        /// on the uncommitted row or ran after the commit, its outcome is the same classified
+        /// failure, so the assertion holds for every interleaving without a fixed delay.
+        /// </summary>
+        private async Task<ApiClientInsertResult> RunLosingConcurrentInsert()
+        {
+            string contestedClientId = Guid.NewGuid().ToString();
+
+            await using var winner = await DataSource!.OpenConnectionAsync();
+            await using var winnerTransaction = await winner.BeginTransactionAsync();
+            await winner.ExecuteAsync(
+                """
+                INSERT INTO "dmscs"."ApiClient" ("ApplicationId", "Name", "ClientId", "ClientUuid")
+                VALUES (@ApplicationId, 'Winner', @ClientId, @ClientUuid);
+                """,
+                new
+                {
+                    ApplicationId = _applicationBId,
+                    ClientId = contestedClientId,
+                    ClientUuid = Guid.NewGuid(),
+                },
+                winnerTransaction
+            );
+
+            Task<ApiClientInsertResult> loser = InsertApiClient(
+                _applicationBId,
+                "Loser",
+                contestedClientId,
+                Guid.NewGuid(),
+                []
+            );
+
+            await winnerTransaction.CommitAsync();
+            return await loser;
+        }
+
+        [Test]
+        public void It_rejects_a_repeat_key_within_the_application() =>
+            _repeatKeySameApplication.Should().BeOfType<ApiClientInsertResult.FailureDuplicateClientId>();
+
+        [Test]
+        public void It_rejects_a_repeat_uuid_within_the_application() =>
+            _repeatUuidSameApplication.Should().BeOfType<ApiClientInsertResult.FailureDuplicateClientUuid>();
+
+        [Test]
+        public void It_rejects_a_repeat_key_under_another_application() =>
+            _repeatKeyOtherApplication.Should().BeOfType<ApiClientInsertResult.FailureDuplicateClientId>();
+
+        [Test]
+        public void It_rejects_a_row_repeating_both_identifiers_as_one_of_the_two_conflicts() =>
+            _repeatBothOtherApplication
+                .Should()
+                .Match<ApiClientInsertResult>(result =>
+                    result is ApiClientInsertResult.FailureDuplicateClientId
+                    || result is ApiClientInsertResult.FailureDuplicateClientUuid
+                );
+
+        [Test]
+        public void It_rejects_a_repeat_key_under_another_tenant() =>
+            _repeatKeyOtherTenant.Should().BeOfType<ApiClientInsertResult.FailureDuplicateClientId>();
+
+        [Test]
+        public void It_classifies_the_losing_write_of_a_concurrent_insert() =>
+            _losingConcurrentInsert.Should().BeOfType<ApiClientInsertResult.FailureDuplicateClientId>();
+
+        [Test]
+        public async Task It_writes_no_row_for_a_rejected_insert() =>
+            (
+                await Connection!.QueryAsync<string>(
+                    """SELECT "Name" FROM "dmscs"."ApiClient" WHERE "ApplicationId" = ANY(@ApplicationIds) ORDER BY "Name";""",
+                    new { ApplicationIds = new[] { _applicationAId, _applicationBId } }
+                )
+            )
+                .Should()
+                .BeEquivalentTo(
+                    "DMS1529 Application A",
+                    "DMS1529 Application B",
+                    "Other Client",
+                    "Taken Client",
+                    "Winner"
+                );
+
+        [Test]
+        public async Task It_writes_no_data_store_assignment_for_a_rejected_insert() =>
+            (
+                await Connection!.ExecuteScalarAsync<int>(
+                    """SELECT count(*) FROM "dmscs"."ApiClientDataStore" WHERE "DataStoreId" = @DataStoreId;""",
+                    new { DataStoreId = _duplicateAttemptDataStoreId }
+                )
+            )
+                .Should()
+                .Be(0);
+
+        [Test]
+        public void It_rejects_an_update_that_stores_a_uuid_another_client_holds() =>
+            _updateOntoTakenUuid.Should().BeOfType<ApiClientUpdateResult.FailureDuplicateClientUuid>();
+
+        [Test]
+        public void It_leaves_the_client_unchanged_after_the_rejected_update() =>
+            _otherClientUuidAfterRejectedUpdate.Should().Be(_otherClientUuid);
     }
 }
