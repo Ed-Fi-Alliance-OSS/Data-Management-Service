@@ -239,6 +239,28 @@ public class DeployTests : DatabaseTestBase
         backingIndexIsUnique.Should().BeTrue();
     }
 
+    [Test]
+    public async Task It_creates_the_ApiClient_client_id_unique_constraint_over_the_key_column()
+    {
+        (string[] keyColumns, bool backingIndexIsUnique) = await UniqueConstraintShapeAsync(
+            "UX_ApiClient_ClientId"
+        );
+
+        keyColumns.Should().Equal("ClientId");
+        backingIndexIsUnique.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_creates_the_ApiClient_client_uuid_unique_constraint_over_the_uuid_column()
+    {
+        (string[] keyColumns, bool backingIndexIsUnique) = await UniqueConstraintShapeAsync(
+            "UX_ApiClient_ClientUuid"
+        );
+
+        keyColumns.Should().Equal("ClientUuid");
+        backingIndexIsUnique.Should().BeTrue();
+    }
+
     private async Task<(string[] KeyColumns, bool BackingIndexIsUnique)> UniqueConstraintShapeAsync(
         string constraintName
     )

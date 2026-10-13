@@ -1166,19 +1166,25 @@ public class ApplicationTests : DatabaseTest
                 }
             );
 
-            // InsertApplication auto-creates an ApiClient with IsApproved = true using _clientId.
-            // Adding a second client with IsApproved = false AND THE SAME ClientId makes BOOL_AND return false.
-            var clientResult = await _apiClientRepository.InsertApiClient(
-                new ApiClientInsertCommand
+            // InsertApplication auto-creates an approved ApiClient keyed by _clientId. The OpenIddict
+            // approval gate reads that row's IsApproved (aggregated over the rows sharing the key, of
+            // which UX_ApiClient_ClientId allows exactly one), so the row is disapproved in place.
+            var queryResult = await _apiClientRepository.QueryApiClient(
+                new ApiClientQuery { ApplicationId = applicationId }
+            );
+            var autoCreatedClient = ((ApiClientQueryResult.Success)queryResult).ApiClientResponses.Single();
+
+            var updateResult = await _apiClientRepository.UpdateApiClient(
+                new ApiClientUpdateCommand
                 {
+                    Id = autoCreatedClient.Id,
                     ApplicationId = applicationId,
-                    Name = "Unapproved OpenIddict Client",
+                    Name = autoCreatedClient.Name,
                     IsApproved = false,
                     DataStoreIds = [],
-                },
-                new ApiClientCommand { ClientId = _clientId, ClientUuid = Guid.NewGuid() }
+                }
             );
-            clientResult.Should().BeOfType<ApiClientInsertResult.Success>();
+            updateResult.Should().BeOfType<ApiClientUpdateResult.Success>();
         }
 
         [Test]
