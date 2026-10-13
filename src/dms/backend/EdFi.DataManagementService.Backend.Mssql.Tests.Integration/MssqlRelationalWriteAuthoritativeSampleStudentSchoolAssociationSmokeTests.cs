@@ -1353,9 +1353,12 @@ public class Given_A_Mssql_Relational_Write_Then_Read_Smoke_With_The_Authoritati
             INSERT INTO [edfi].[EducationOrganizationIdentity] (
                 [DocumentId],
                 [EducationOrganizationId],
+                [ResourceKeyId],
                 [Discriminator]
             )
-            VALUES (@documentId, @educationOrganizationId, @discriminator);
+            SELECT d.[DocumentId], @educationOrganizationId, d.[ResourceKeyId], @discriminator
+            FROM [dms].[Document] d
+            WHERE d.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@educationOrganizationId", educationOrganizationId),

@@ -496,6 +496,17 @@ public sealed class CoreDdlEmitter
             _dialect.AddUniqueConstraint(_documentTable, "UX_Document_DocumentUuid", [Col("DocumentUuid")])
         );
         writer.AppendLine();
+
+        // Candidate key referenced by each abstract identity table's FK_<T>_DocumentResourceKey, so the
+        // database enforces that an abstract identity row's ResourceKeyId matches its owning document.
+        writer.AppendLine(
+            _dialect.AddUniqueConstraint(
+                _documentTable,
+                "UX_Document_DocumentId_ResourceKeyId",
+                [Col("DocumentId"), Col("ResourceKeyId")]
+            )
+        );
+        writer.AppendLine();
     }
 
     /// <summary>

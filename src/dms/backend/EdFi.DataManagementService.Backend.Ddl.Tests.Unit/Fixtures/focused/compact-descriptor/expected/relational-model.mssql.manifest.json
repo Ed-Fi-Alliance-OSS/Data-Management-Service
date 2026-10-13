@@ -86,6 +86,18 @@
             }
           },
           {
+            "name": "ResourceKeyId",
+            "kind": "Scalar",
+            "type": {
+              "kind": "Int16"
+            },
+            "is_nullable": false,
+            "source_path": null,
+            "storage": {
+              "kind": "Stored"
+            }
+          },
+          {
             "name": "Discriminator",
             "kind": "Scalar",
             "type": {
@@ -125,16 +137,18 @@
           },
           {
             "kind": "ForeignKey",
-            "name": "FK_DescriptorSubjectIdentity_Document",
+            "name": "FK_DescriptorSubjectIdentity_DocumentResourceKey",
             "columns": [
-              "DocumentId"
+              "DocumentId",
+              "ResourceKeyId"
             ],
             "target_table": {
               "schema": "dms",
               "name": "Document"
             },
             "target_columns": [
-              "DocumentId"
+              "DocumentId",
+              "ResourceKeyId"
             ],
             "on_delete": "Cascade",
             "on_update": "NoAction"
@@ -175,6 +189,14 @@
           "is_descriptor_reference": true
         },
         {
+          "column_name": "ResourceKeyId",
+          "type": {
+            "kind": "Int16"
+          },
+          "source_path": null,
+          "target_resource": null
+        },
+        {
           "column_name": "Discriminator",
           "type": {
             "kind": "String",
@@ -202,6 +224,10 @@
             {
               "kind": "SourceColumn",
               "column_name": "SchoolTypeDescriptor_DescriptorId"
+            },
+            {
+              "kind": "Int16Literal",
+              "value": 4
             },
             {
               "kind": "StringLiteral",
@@ -665,6 +691,7 @@
           "target_column": "SchoolTypeDescriptor_DescriptorId"
         }
       ],
+      "resource_key_id_value": 4,
       "discriminator_value": "Ed-Fi:Student"
     },
     {

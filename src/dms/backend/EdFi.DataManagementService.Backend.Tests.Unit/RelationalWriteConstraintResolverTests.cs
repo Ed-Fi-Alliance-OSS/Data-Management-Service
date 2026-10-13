@@ -714,6 +714,15 @@ public class Given_Relational_Write_Constraint_Resolver
                     new ColumnStorage.Stored()
                 ),
                 new DbColumnModel(
+                    new DbColumnName("ResourceKeyId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int16),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
                     new DbColumnName("Discriminator"),
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.String, 256),
@@ -737,10 +746,10 @@ public class Given_Relational_Write_Constraint_Resolver
                     ]
                 ),
                 new TableConstraint.ForeignKey(
-                    "FK_CompositeIdentity_Document",
-                    [new DbColumnName("DocumentId")],
+                    "FK_CompositeIdentity_DocumentResourceKey",
+                    [new DbColumnName("DocumentId"), new DbColumnName("ResourceKeyId")],
                     new DbTableName(new DbSchemaName("dms"), "Document"),
-                    [new DbColumnName("DocumentId")],
+                    [new DbColumnName("DocumentId"), new DbColumnName("ResourceKeyId")],
                     OnDelete: ReferentialAction.Cascade
                 ),
             ]
@@ -793,6 +802,15 @@ public class Given_Relational_Write_Constraint_Resolver
                     new ColumnStorage.Stored()
                 ),
                 new DbColumnModel(
+                    new DbColumnName("ResourceKeyId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int16),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
                     new DbColumnName("Discriminator"),
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.String, 256),
@@ -816,10 +834,10 @@ public class Given_Relational_Write_Constraint_Resolver
                     ]
                 ),
                 new TableConstraint.ForeignKey(
-                    "FK_ReferenceBackedIdentity_Document",
-                    [new DbColumnName("DocumentId")],
+                    "FK_ReferenceBackedIdentity_DocumentResourceKey",
+                    [new DbColumnName("DocumentId"), new DbColumnName("ResourceKeyId")],
                     new DbTableName(new DbSchemaName("dms"), "Document"),
-                    [new DbColumnName("DocumentId")],
+                    [new DbColumnName("DocumentId"), new DbColumnName("ResourceKeyId")],
                     OnDelete: ReferentialAction.Cascade
                 ),
             ]

@@ -147,6 +147,15 @@ internal static class AbstractIdentitySchoolTestData
                     new ColumnStorage.Stored()
                 ),
                 new DbColumnModel(
+                    new DbColumnName("ResourceKeyId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int16),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
                     new DbColumnName("Discriminator"),
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.String, 256),
@@ -166,10 +175,10 @@ internal static class AbstractIdentitySchoolTestData
                     [new DbColumnName("EducationOrganizationId"), new DbColumnName("DocumentId")]
                 ),
                 new TableConstraint.ForeignKey(
-                    "FK_EducationOrganizationIdentity_Document",
-                    [new DbColumnName("DocumentId")],
+                    "FK_EducationOrganizationIdentity_DocumentResourceKey",
+                    [new DbColumnName("DocumentId"), new DbColumnName("ResourceKeyId")],
                     new DbTableName(new DbSchemaName("dms"), "Document"),
-                    [new DbColumnName("DocumentId")],
+                    [new DbColumnName("DocumentId"), new DbColumnName("ResourceKeyId")],
                     OnDelete: ReferentialAction.Cascade
                 ),
             ]
@@ -256,6 +265,15 @@ internal static class AbstractIdentitySchoolTestData
                     new ColumnStorage.Stored()
                 ),
                 new DbColumnModel(
+                    new DbColumnName("ResourceKeyId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int16),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
                     new DbColumnName("Discriminator"),
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.String, 256),
@@ -275,10 +293,10 @@ internal static class AbstractIdentitySchoolTestData
                     [new DbColumnName("Program_EducationOrganizationId"), new DbColumnName("DocumentId")]
                 ),
                 new TableConstraint.ForeignKey(
-                    "FK_GeneralStudentProgramAssociationIdentity_Document",
-                    [new DbColumnName("DocumentId")],
+                    "FK_GeneralStudentProgramAssociationIdentity_DocumentResourceKey",
+                    [new DbColumnName("DocumentId"), new DbColumnName("ResourceKeyId")],
                     new DbTableName(new DbSchemaName("dms"), "Document"),
-                    [new DbColumnName("DocumentId")],
+                    [new DbColumnName("DocumentId"), new DbColumnName("ResourceKeyId")],
                     OnDelete: ReferentialAction.Cascade
                 ),
             ]

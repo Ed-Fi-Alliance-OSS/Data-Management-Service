@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationIdentity"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganizationId" integer NOT NULL,
+    "ResourceKeyId" smallint NOT NULL,
     "Discriminator" varchar(50) NOT NULL,
     CONSTRAINT "PK_EducationOrganizationIdentity" PRIMARY KEY ("DocumentId")
 );
@@ -60,24 +61,24 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationIdentity_Document'
+        WHERE conname = 'FK_EducationOrganizationIdentity_DocumentResourceKey'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationIdentity"')
     )
     THEN
         ALTER TABLE "edfi"."EducationOrganizationIdentity"
-        ADD CONSTRAINT "FK_EducationOrganizationIdentity_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
+        ADD CONSTRAINT "FK_EducationOrganizationIdentity_DocumentResourceKey"
+        FOREIGN KEY ("DocumentId", "ResourceKeyId")
+        REFERENCES "dms"."Document" ("DocumentId", "ResourceKeyId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
 END $$;
 
 CREATE OR REPLACE VIEW "edfi"."EducationOrganization_View" AS
-SELECT "DocumentId" AS "DocumentId", "EducationOrganizationId" AS "EducationOrganizationId", 'Ed-Fi:School'::varchar(50) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "EducationOrganizationId" AS "EducationOrganizationId", 2::smallint AS "ResourceKeyId", 'Ed-Fi:School'::varchar(50) AS "Discriminator"
 FROM "edfi"."School"
 UNION ALL
-SELECT "DocumentId" AS "DocumentId", "EducationOrganizationId" AS "EducationOrganizationId", 'Ed-Fi:LocalEducationAgency'::varchar(50) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "EducationOrganizationId" AS "EducationOrganizationId", 3::smallint AS "ResourceKeyId", 'Ed-Fi:LocalEducationAgency'::varchar(50) AS "Discriminator"
 FROM "edfi"."LocalEducationAgency"
 ;
 
@@ -85,8 +86,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AbstractIdentity"(
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganizationId") THEN
-        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."EducationOrganizationId", 'Ed-Fi:LocalEducationAgency')
+        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."EducationOrganizationId", 3, 'Ed-Fi:LocalEducationAgency')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
     END IF;
@@ -166,8 +167,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganizationId") THEN
-        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."EducationOrganizationId", 'Ed-Fi:School')
+        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."EducationOrganizationId", 2, 'Ed-Fi:School')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
     END IF;

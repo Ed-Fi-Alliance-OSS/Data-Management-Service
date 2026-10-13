@@ -273,6 +273,13 @@ IF NOT EXISTS (
 ALTER TABLE [dms].[Document]
 ADD CONSTRAINT [UX_Document_DocumentUuid] UNIQUE ([DocumentUuid]);
 
+IF NOT EXISTS (
+    SELECT 1 FROM sys.key_constraints
+    WHERE name = N'UX_Document_DocumentId_ResourceKeyId' AND type = 'UQ' AND parent_object_id = OBJECT_ID(N'dms.Document')
+)
+ALTER TABLE [dms].[Document]
+ADD CONSTRAINT [UX_Document_DocumentId_ResourceKeyId] UNIQUE ([DocumentId], [ResourceKeyId]);
+
 IF OBJECT_ID(N'dms.DocumentCache', N'U') IS NULL
 CREATE TABLE [dms].[DocumentCache]
 (
@@ -12932,6 +12939,7 @@ CREATE TABLE [edfi].[EducationOrganizationIdentity]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganizationId] bigint NOT NULL,
+    [ResourceKeyId] smallint NOT NULL,
     [Discriminator] nvarchar(256) NOT NULL,
     CONSTRAINT [PK_EducationOrganizationIdentity] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_EducationOrganizationIdentity_NK] UNIQUE ([EducationOrganizationId]),
@@ -12948,6 +12956,7 @@ CREATE TABLE [edfi].[GeneralStudentProgramAssociationIdentity]
     [Program_ProgramName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     [Program_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [ResourceKeyId] smallint NOT NULL,
     [Discriminator] nvarchar(256) NOT NULL,
     CONSTRAINT [PK_GeneralStudentProgramAssociationIdentity] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_GeneralStudentProgramAssociationIdentity_NK] UNIQUE ([BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId]),
@@ -29951,23 +29960,23 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_EducationOrganizationIdentity_Document' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationIdentity')
+    WHERE name = N'FK_EducationOrganizationIdentity_DocumentResourceKey' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationIdentity')
 )
 ALTER TABLE [edfi].[EducationOrganizationIdentity]
-ADD CONSTRAINT [FK_EducationOrganizationIdentity_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
+ADD CONSTRAINT [FK_EducationOrganizationIdentity_DocumentResourceKey]
+FOREIGN KEY ([DocumentId], [ResourceKeyId])
+REFERENCES [dms].[Document] ([DocumentId], [ResourceKeyId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_GeneralStudentProgramAssociationIdentity_Document' AND parent_object_id = OBJECT_ID(N'edfi.GeneralStudentProgramAssociationIdentity')
+    WHERE name = N'FK_GeneralStudentProgramAssociationIdentity_DocumentResourceKey' AND parent_object_id = OBJECT_ID(N'edfi.GeneralStudentProgramAssociationIdentity')
 )
 ALTER TABLE [edfi].[GeneralStudentProgramAssociationIdentity]
-ADD CONSTRAINT [FK_GeneralStudentProgramAssociationIdentity_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
+ADD CONSTRAINT [FK_GeneralStudentProgramAssociationIdentity_DocumentResourceKey]
+FOREIGN KEY ([DocumentId], [ResourceKeyId])
+REFERENCES [dms].[Document] ([DocumentId], [ResourceKeyId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
@@ -40965,64 +40974,64 @@ CREATE INDEX [IX_Descriptor_ResourceKeyId_ChangeVersion] ON [tracked_changes_edf
 
 GO
 CREATE OR ALTER VIEW [edfi].[EducationOrganization_View] AS
-SELECT [DocumentId] AS [DocumentId], [CommunityOrganizationId] AS [EducationOrganizationId], CAST(N'Ed-Fi:CommunityOrganization' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [CommunityOrganizationId] AS [EducationOrganizationId], CAST(50 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:CommunityOrganization' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[CommunityOrganization]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [CommunityProviderId] AS [EducationOrganizationId], CAST(N'Ed-Fi:CommunityProvider' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [CommunityProviderId] AS [EducationOrganizationId], CAST(51 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:CommunityProvider' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[CommunityProvider]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [EducationOrganizationNetworkId] AS [EducationOrganizationId], CAST(N'Ed-Fi:EducationOrganizationNetwork' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [EducationOrganizationNetworkId] AS [EducationOrganizationId], CAST(100 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:EducationOrganizationNetwork' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[EducationOrganizationNetwork]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [EducationServiceCenterId] AS [EducationOrganizationId], CAST(N'Ed-Fi:EducationServiceCenter' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [EducationServiceCenterId] AS [EducationOrganizationId], CAST(104 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:EducationServiceCenter' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[EducationServiceCenter]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [LocalEducationAgencyId] AS [EducationOrganizationId], CAST(N'Ed-Fi:LocalEducationAgency' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [LocalEducationAgencyId] AS [EducationOrganizationId], CAST(168 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:LocalEducationAgency' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[LocalEducationAgency]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [OrganizationDepartmentId] AS [EducationOrganizationId], CAST(N'Ed-Fi:OrganizationDepartment' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [OrganizationDepartmentId] AS [EducationOrganizationId], CAST(189 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:OrganizationDepartment' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[OrganizationDepartment]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [PostSecondaryInstitutionId] AS [EducationOrganizationId], CAST(N'Ed-Fi:PostSecondaryInstitution' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [PostSecondaryInstitutionId] AS [EducationOrganizationId], CAST(201 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:PostSecondaryInstitution' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[PostSecondaryInstitution]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [SchoolId] AS [EducationOrganizationId], CAST(N'Ed-Fi:School' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [SchoolId] AS [EducationOrganizationId], CAST(244 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:School' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[School]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [StateEducationAgencyId] AS [EducationOrganizationId], CAST(N'Ed-Fi:StateEducationAgency' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [StateEducationAgencyId] AS [EducationOrganizationId], CAST(281 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StateEducationAgency' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StateEducationAgency]
 ;
 
 GO
 CREATE OR ALTER VIEW [edfi].[GeneralStudentProgramAssociation_View] AS
-SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(N'Ed-Fi:StudentCTEProgramAssociation' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(288 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StudentCTEProgramAssociation' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StudentCTEProgramAssociation]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(N'Ed-Fi:StudentHomelessProgramAssociation' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(300 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StudentHomelessProgramAssociation' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StudentHomelessProgramAssociation]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(N'Ed-Fi:StudentLanguageInstructionProgramAssociation' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(304 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StudentLanguageInstructionProgramAssociation' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StudentLanguageInstructionProgramAssociation]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(N'Ed-Fi:StudentMigrantEducationProgramAssociation' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(305 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StudentMigrantEducationProgramAssociation' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StudentMigrantEducationProgramAssociation]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(N'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(306 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StudentNeglectedOrDelinquentProgramAssociation]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(N'Ed-Fi:StudentProgramAssociation' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(307 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StudentProgramAssociation' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StudentProgramAssociation]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(N'Ed-Fi:StudentSchoolFoodServiceProgramAssociation' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(312 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StudentSchoolFoodServiceProgramAssociation' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StudentSchoolFoodServiceProgramAssociation]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(N'Ed-Fi:StudentSection504ProgramAssociation' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(313 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StudentSection504ProgramAssociation' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StudentSection504ProgramAssociation]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(N'Ed-Fi:StudentSpecialEducationProgramAssociation' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(316 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StudentSpecialEducationProgramAssociation' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StudentSpecialEducationProgramAssociation]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(N'Ed-Fi:StudentTitleIPartAProgramAssociation' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(318 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StudentTitleIPartAProgramAssociation' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StudentTitleIPartAProgramAssociation]
 ;
 
@@ -44202,8 +44211,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[CommunityOrganizationId], N'Ed-Fi:CommunityOrganization'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[CommunityOrganizationId], 50, N'Ed-Fi:CommunityOrganization'
         FROM inserted s
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -44222,8 +44231,8 @@ BEGIN
             FROM [edfi].[EducationOrganizationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            SELECT s.[DocumentId], s.[CommunityOrganizationId], N'Ed-Fi:CommunityOrganization'
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[CommunityOrganizationId], 50, N'Ed-Fi:CommunityOrganization'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -44683,8 +44692,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[CommunityProviderId], N'Ed-Fi:CommunityProvider'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[CommunityProviderId], 51, N'Ed-Fi:CommunityProvider'
         FROM inserted s
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -44703,8 +44712,8 @@ BEGIN
             FROM [edfi].[EducationOrganizationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            SELECT s.[DocumentId], s.[CommunityProviderId], N'Ed-Fi:CommunityProvider'
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[CommunityProviderId], 51, N'Ed-Fi:CommunityProvider'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -48682,8 +48691,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[EducationOrganizationNetworkId], N'Ed-Fi:EducationOrganizationNetwork'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[EducationOrganizationNetworkId], 100, N'Ed-Fi:EducationOrganizationNetwork'
         FROM inserted s
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -48702,8 +48711,8 @@ BEGIN
             FROM [edfi].[EducationOrganizationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            SELECT s.[DocumentId], s.[EducationOrganizationNetworkId], N'Ed-Fi:EducationOrganizationNetwork'
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[EducationOrganizationNetworkId], 100, N'Ed-Fi:EducationOrganizationNetwork'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -49421,8 +49430,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[EducationServiceCenterId], N'Ed-Fi:EducationServiceCenter'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[EducationServiceCenterId], 104, N'Ed-Fi:EducationServiceCenter'
         FROM inserted s
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -49441,8 +49450,8 @@ BEGIN
             FROM [edfi].[EducationOrganizationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            SELECT s.[DocumentId], s.[EducationServiceCenterId], N'Ed-Fi:EducationServiceCenter'
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[EducationServiceCenterId], 104, N'Ed-Fi:EducationServiceCenter'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -53971,8 +53980,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[LocalEducationAgencyId], N'Ed-Fi:LocalEducationAgency'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[LocalEducationAgencyId], 168, N'Ed-Fi:LocalEducationAgency'
         FROM inserted s
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -53991,8 +54000,8 @@ BEGIN
             FROM [edfi].[EducationOrganizationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            SELECT s.[DocumentId], s.[LocalEducationAgencyId], N'Ed-Fi:LocalEducationAgency'
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[LocalEducationAgencyId], 168, N'Ed-Fi:LocalEducationAgency'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -55983,8 +55992,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[OrganizationDepartmentId], N'Ed-Fi:OrganizationDepartment'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[OrganizationDepartmentId], 189, N'Ed-Fi:OrganizationDepartment'
         FROM inserted s
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -56003,8 +56012,8 @@ BEGIN
             FROM [edfi].[EducationOrganizationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            SELECT s.[DocumentId], s.[OrganizationDepartmentId], N'Ed-Fi:OrganizationDepartment'
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[OrganizationDepartmentId], 189, N'Ed-Fi:OrganizationDepartment'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -56870,8 +56879,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[PostSecondaryInstitutionId], N'Ed-Fi:PostSecondaryInstitution'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[PostSecondaryInstitutionId], 201, N'Ed-Fi:PostSecondaryInstitution'
         FROM inserted s
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -56890,8 +56899,8 @@ BEGIN
             FROM [edfi].[EducationOrganizationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            SELECT s.[DocumentId], s.[PostSecondaryInstitutionId], N'Ed-Fi:PostSecondaryInstitution'
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[PostSecondaryInstitutionId], 201, N'Ed-Fi:PostSecondaryInstitution'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -59152,8 +59161,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[SchoolId], N'Ed-Fi:School'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[SchoolId], 244, N'Ed-Fi:School'
         FROM inserted s
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -59172,8 +59181,8 @@ BEGIN
             FROM [edfi].[EducationOrganizationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            SELECT s.[DocumentId], s.[SchoolId], N'Ed-Fi:School'
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[SchoolId], 244, N'Ed-Fi:School'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -63326,8 +63335,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[StateEducationAgencyId], N'Ed-Fi:StateEducationAgency'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[StateEducationAgencyId], 281, N'Ed-Fi:StateEducationAgency'
         FROM inserted s
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -63346,8 +63355,8 @@ BEGIN
             FROM [edfi].[EducationOrganizationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            SELECT s.[DocumentId], s.[StateEducationAgencyId], N'Ed-Fi:StateEducationAgency'
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[StateEducationAgencyId], 281, N'Ed-Fi:StateEducationAgency'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -65392,8 +65401,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentCTEProgramAssociation'
+        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 288, N'Ed-Fi:StudentCTEProgramAssociation'
         FROM inserted s
         LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -65412,8 +65421,8 @@ BEGIN
             FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentCTEProgramAssociation'
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 288, N'Ed-Fi:StudentCTEProgramAssociation'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -68284,8 +68293,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentHomelessProgramAssociation'
+        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 300, N'Ed-Fi:StudentHomelessProgramAssociation'
         FROM inserted s
         LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -68304,8 +68313,8 @@ BEGIN
             FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentHomelessProgramAssociation'
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 300, N'Ed-Fi:StudentHomelessProgramAssociation'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -68912,8 +68921,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentLanguageInstructionProgramAssociation'
+        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 304, N'Ed-Fi:StudentLanguageInstructionProgramAssociation'
         FROM inserted s
         LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -68932,8 +68941,8 @@ BEGIN
             FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentLanguageInstructionProgramAssociation'
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 304, N'Ed-Fi:StudentLanguageInstructionProgramAssociation'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -69193,8 +69202,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentMigrantEducationProgramAssociation'
+        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 305, N'Ed-Fi:StudentMigrantEducationProgramAssociation'
         FROM inserted s
         LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -69213,8 +69222,8 @@ BEGIN
             FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentMigrantEducationProgramAssociation'
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 305, N'Ed-Fi:StudentMigrantEducationProgramAssociation'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -69436,8 +69445,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation'
+        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 306, N'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation'
         FROM inserted s
         LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -69456,8 +69465,8 @@ BEGIN
             FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation'
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 306, N'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -69755,8 +69764,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentProgramAssociation'
+        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 307, N'Ed-Fi:StudentProgramAssociation'
         FROM inserted s
         LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -69775,8 +69784,8 @@ BEGIN
             FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentProgramAssociation'
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 307, N'Ed-Fi:StudentProgramAssociation'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -70890,8 +70899,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSchoolFoodServiceProgramAssociation'
+        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 312, N'Ed-Fi:StudentSchoolFoodServiceProgramAssociation'
         FROM inserted s
         LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -70910,8 +70919,8 @@ BEGIN
             FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSchoolFoodServiceProgramAssociation'
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 312, N'Ed-Fi:StudentSchoolFoodServiceProgramAssociation'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -71133,8 +71142,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSection504ProgramAssociation'
+        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 313, N'Ed-Fi:StudentSection504ProgramAssociation'
         FROM inserted s
         LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -71153,8 +71162,8 @@ BEGIN
             FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSection504ProgramAssociation'
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 313, N'Ed-Fi:StudentSection504ProgramAssociation'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -71765,8 +71774,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSpecialEducationProgramAssociation'
+        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 316, N'Ed-Fi:StudentSpecialEducationProgramAssociation'
         FROM inserted s
         LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -71785,8 +71794,8 @@ BEGIN
             FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSpecialEducationProgramAssociation'
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 316, N'Ed-Fi:StudentSpecialEducationProgramAssociation'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -72331,8 +72340,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentTitleIPartAProgramAssociation'
+        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 318, N'Ed-Fi:StudentTitleIPartAProgramAssociation'
         FROM inserted s
         LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -72351,8 +72360,8 @@ BEGIN
             FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentTitleIPartAProgramAssociation'
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 318, N'Ed-Fi:StudentTitleIPartAProgramAssociation'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;

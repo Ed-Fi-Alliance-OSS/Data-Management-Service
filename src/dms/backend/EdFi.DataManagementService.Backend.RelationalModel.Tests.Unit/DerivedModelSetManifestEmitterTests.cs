@@ -1109,3 +1109,134 @@ internal static class IdentityCollationManifestTestHelpers
         }
     }
 }
+
+[TestFixture]
+public class Given_An_Abstract_Identity_Trigger_And_View_When_Emitting_Manifest
+{
+    private const short ResourceKeyIdValue = 4242;
+
+    private JsonObject _manifest = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new DbSchemaName("edfi");
+        var abstractResourceKey = new ResourceKeyEntry(
+            1,
+            new QualifiedResourceName("Ed-Fi", "EducationOrganization"),
+            "1.0.0",
+            true
+        );
+        var schoolResourceKey = new ResourceKeyEntry(
+            ResourceKeyIdValue,
+            new QualifiedResourceName("Ed-Fi", "School"),
+            "1.0.0",
+            false
+        );
+        var schoolTable = new DbTableName(schema, "School");
+        var identityTable = new DbTableName(schema, "EducationOrganizationIdentity");
+        var organizationIdColumn = new DbColumnName("EducationOrganizationId");
+
+        var view = new AbstractUnionViewInfo(
+            abstractResourceKey,
+            new DbTableName(schema, "EducationOrganization_View"),
+            [
+                new AbstractUnionViewOutputColumn(
+                    new DbColumnName("ResourceKeyId"),
+                    new RelationalScalarType(ScalarKind.Int16),
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            [
+                new AbstractUnionViewArm(
+                    schoolResourceKey,
+                    schoolTable,
+                    [new AbstractUnionViewProjectionExpression.Int16Literal(ResourceKeyIdValue)]
+                ),
+            ]
+        );
+
+        var trigger = new DbTriggerInfo(
+            new DbTriggerName("TR_School_AbstractIdentity"),
+            schoolTable,
+            [new DbColumnName("DocumentId")],
+            [organizationIdColumn],
+            new TriggerKindParameters.AbstractIdentityMaintenance(
+                identityTable,
+                [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
+                ResourceKeyIdValue,
+                "Ed-Fi:School"
+            )
+        );
+
+        var effectiveSchema = new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: "1.0.0",
+            RelationalMappingVersion: "1.0.0",
+            EffectiveSchemaHash: "hash",
+            ResourceKeyCount: 2,
+            ResourceKeySeedHash: new byte[32],
+            SchemaComponentsInEndpointOrder:
+            [
+                new SchemaComponentInfo(
+                    ProjectEndpointName: "ed-fi",
+                    ProjectName: "Ed-Fi",
+                    ProjectVersion: "1.0.0",
+                    IsExtensionProject: false,
+                    ProjectHash: "hash"
+                ),
+            ],
+            ResourceKeysInIdOrder: [abstractResourceKey, schoolResourceKey]
+        );
+
+        var derivedSet = new DerivedRelationalModelSet(
+            effectiveSchema,
+            SqlDialect.Pgsql,
+            ProjectSchemasInEndpointOrder:
+            [
+                new ProjectSchemaInfo(
+                    ProjectEndpointName: "ed-fi",
+                    ProjectName: "Ed-Fi",
+                    ProjectVersion: "1.0.0",
+                    IsExtensionProject: false,
+                    PhysicalSchema: schema
+                ),
+            ],
+            ConcreteResourcesInNameOrder: [],
+            AbstractIdentityTablesInNameOrder: [],
+            AbstractUnionViewsInNameOrder: [view],
+            IndexesInCreateOrder: [],
+            TriggersInCreateOrder: [trigger]
+        );
+
+        _manifest =
+            JsonNode.Parse(DerivedModelSetManifestEmitter.Emit(derivedSet)) as JsonObject
+            ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
+    }
+
+    [Test]
+    public void It_writes_the_trigger_resource_key_id_value()
+    {
+        var trigger = _manifest["triggers"]!.AsArray().OfType<JsonObject>().Single();
+
+        trigger["resource_key_id_value"]!.GetValue<short>().Should().Be(ResourceKeyIdValue);
+        trigger["discriminator_value"]!.GetValue<string>().Should().Be("Ed-Fi:School");
+    }
+
+    [Test]
+    public void It_writes_Int16_literal_projections()
+    {
+        var projection = _manifest["abstract_union_views"]!.AsArray().OfType<JsonObject>().Single()[
+            "union_arms"
+        ]!
+            .AsArray()
+            .OfType<JsonObject>()
+            .Single()["projection_expressions"]!
+            .AsArray()
+            .OfType<JsonObject>()
+            .Single();
+
+        projection["kind"]!.GetValue<string>().Should().Be("Int16Literal");
+        projection["value"]!.GetValue<short>().Should().Be(ResourceKeyIdValue);
+    }
+}
