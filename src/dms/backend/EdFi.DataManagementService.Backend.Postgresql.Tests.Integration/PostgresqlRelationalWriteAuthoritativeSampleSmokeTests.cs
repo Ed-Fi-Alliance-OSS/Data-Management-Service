@@ -1492,9 +1492,11 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "ContentLastModifiedAt"
-            FROM "dms"."Document"
-            WHERE "DocumentUuid" = @documentUuid;
+            SELECT owner."ContentLastModifiedAt"
+            FROM "dms"."Document" document
+            INNER JOIN "edfi"."StudentEducationOrganizationAssociation" owner
+                ON owner."DocumentId" = document."DocumentId"
+            WHERE document."DocumentUuid" = @documentUuid;
             """,
             new NpgsqlParameter("documentUuid", documentUuid)
         );
