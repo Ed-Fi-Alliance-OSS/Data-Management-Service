@@ -28,6 +28,12 @@ public class TokenRequestCredentialsTests
         {
             _rendered.Should().NotContain("my-client-secret");
         }
+
+        [Test]
+        public void It_does_not_render_the_client_id()
+        {
+            _rendered.Should().NotContain("my-client-id");
+        }
     }
 
     [TestFixture(null, null, false)]

@@ -1106,6 +1106,84 @@ public class OAuthManagerTests
         }
     }
 
+    private const string ExpectedMalformedAuthorizationDetail = "Malformed Authorization header";
+
+    /// <summary>
+    /// A header that passes the lenient "contains basic" test but that <c>HttpHeaders.Add</c>
+    /// cannot parse, such as two Authorization headers the frontend joined with a comma. Adding it
+    /// throws a FormatException whose message quotes the whole header, so the request is answered
+    /// 400 before anything is sent, and neither the header nor the exception may reach the log.
+    /// </summary>
+    [TestFixture("Basicxyz:s3cr3t-sentinel")]
+    [TestFixture("Basic abc,Basic s3cr3t-sentinel")]
+    [TestFixture("Basic abc,s3cr3t-sentinel")]
+    [TestFixture("Basic \"s3cr3t-sentinel")]
+    [TestFixture("Basic abc\ns3cr3t-sentinel")]
+    [Parallelizable]
+    public class Given_An_Unparseable_Basic_Authorization_Header(string authHeader)
+    {
+        private const string Sentinel = "s3cr3t-sentinel";
+
+        private RecordingLogger<OAuthManager> _logger = default!;
+        private IHttpClientWrapper _httpClient = default!;
+        private HttpResponseMessage _response = default!;
+        private Exception? _thrown;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new RecordingLogger<OAuthManager>();
+            _httpClient = A.Fake<IHttpClientWrapper>();
+
+            try
+            {
+                _response = await new OAuthManager(_logger).GetAccessTokenAsync(
+                    _httpClient,
+                    "client_credentials",
+                    authHeader,
+                    TokenRequestCredentials.None,
+                    "http://example.com/oauth/token",
+                    new TraceId(CorrelationId)
+                );
+            }
+            catch (Exception ex)
+            {
+                _thrown = ex;
+            }
+        }
+
+        [Test]
+        public void It_does_not_throw()
+        {
+            _thrown.Should().BeNull();
+        }
+
+        [Test]
+        public async Task It_responds_400_with_the_malformed_header_detail()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!;
+            body["detail"]!.GetValue<string>().Should().Be(ExpectedMalformedAuthorizationDetail);
+            body.ToJsonString().Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public void It_sends_nothing_upstream()
+        {
+            A.CallTo(() => _httpClient.SendAsync(A<HttpRequestMessage>._)).MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_never_logs_the_header_or_an_exception()
+        {
+            foreach (LogRecord record in _logger.Records)
+            {
+                record.Message.Should().NotContain(Sentinel);
+                record.Exception.Should().BeNull();
+            }
+        }
+    }
+
     /// <summary>
     /// FR-LOG-6 regression guard for the upstream-error (non-200, non-401) branch. OAuthManager
     /// produces a 502's log record and its response body from separate expressions in two

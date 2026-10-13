@@ -238,6 +238,10 @@ wrong secret in the body gets the same `401` as a wrong secret in a Basic header
   `The Authorization header must not be empty` instead of `Malformed Authorization header`.
 - A JSON body with `"grant_type": null` used to get a `500`. It now gets
   `400 Unsupported grant type`.
+- A header that contains `basic` but isn't a valid `Authorization` value, such as
+  `Basicxyz:secret` or two `Authorization` headers joined as `Basic X,Basic Y`, used to get a
+  `500`, and the error log quoted the whole header. It now gets
+  `400 Malformed Authorization header`, and the header isn't logged.
 - `scope` handling hasn't changed.
 - Callers that use a Basic header see no change in what reaches the upstream.
 
@@ -260,10 +264,13 @@ such as `Digest username="a", realm="b", nonce="c"`, which always has several pa
 fails on the ODS/API fails on DMS too, with a different status. DMS follows the ticket's rule that
 a non-Basic header gets `401 invalid_client`.
 
-A JSON body whose `client_id`, `client_secret`, or `grant_type` has the wrong JSON type, such as a
-number or an object, is rejected by the framework's request binding with an empty `400` before the
-handler runs. In the `Development` environment the binder throws instead, and DMS answers `500`.
-That was already true of `grant_type` before this decision, and the new fields only widen it.
+DMS parses the JSON body itself instead of leaving it to the framework's request binding. A body
+that cannot be parsed or has the wrong JSON type, such as a number or an object in `client_id`,
+`client_secret`, or `grant_type`, or that is empty or the literal `null`, gets an empty `400` in
+every environment. DMS never logs the parse error, because System.Text.Json quotes part of the
+body in its message, which can include the secret. Left to the framework, that text reached the
+`Debug` log in production and the `Error` log, with a `500`, in `Development`. What the `400`
+should carry, and whether it should match the ODS/API, is still open.
 
 ## Tests
 
@@ -278,7 +285,9 @@ That was already true of `grant_type` before this decision, and the new fields o
   case-insensitive names in both form and JSON, duplicate form parameters (including ones that
   differ only in letter case, and one with a `Bearer` header, which pins rule 1 before rule 3), the
   header-only request types, an empty header reaching the manager as distinct from no header, and
-  JSON `null` credential and grant type fields through the real `OAuthManager`.
+  JSON `null` credential and grant type fields through the real `OAuthManager`. It also covers
+  malformed, mistyped, empty, and `null` JSON bodies in `Production` and `Development`: an empty
+  `400`, no manager call, and no body content in any log entry at `Trace` level.
 - `Features/Security/TokenEndpoint.feature` (E2E) runs the three request types above and the JSON
   with Basic request type. It also runs the no-credentials, partial-credentials, `Bearer`,
   mixed-mechanism, and `null` grant type rejections, and the wrong-secret `401`, against a running

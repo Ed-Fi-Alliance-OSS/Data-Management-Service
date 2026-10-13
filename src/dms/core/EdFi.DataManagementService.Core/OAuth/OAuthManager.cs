@@ -194,6 +194,8 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
 
     private const string EmptyAuthorizationDetail = "The Authorization header must not be empty";
 
+    private const string MalformedAuthorizationDetail = "Malformed Authorization header";
+
     private const string MixedMechanismsDetail = "Only one client authentication mechanism may be used";
 
     /// <summary>
@@ -335,7 +337,21 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         }
 
         HttpRequestMessage upstreamRequest = new(HttpMethod.Post, upstreamUri);
-        upstreamRequest.Headers.Add("Authorization", upstreamAuthorization);
+        try
+        {
+            upstreamRequest.Headers.Add("Authorization", upstreamAuthorization);
+        }
+        catch (FormatException)
+        {
+            // A caller-supplied header that passed the lenient Basic test above but is not a valid
+            // Authorization value, such as "Basicxyz:secret" or two headers joined with a comma.
+            // The exception's message quotes the whole header, so it is neither logged nor passed
+            // on; the ODS/API answers such a header 400 as well.
+            return GenerateProblemDetailResponse(
+                HttpStatusCode.BadRequest,
+                FailureResponse.ForBadRequest(MalformedAuthorizationDetail, traceId, [], [])
+            );
+        }
 
         // Only grant_type goes in the body. Body credentials travel upstream in the Basic header
         // built above and never as form fields, so the upstream sees one contract whichever way

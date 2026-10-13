@@ -3,12 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
+using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
@@ -108,13 +110,35 @@ public class TokenEndpointModule : IEndpointModule
 
     internal static async Task HandleJsonData(
         HttpContext httpContext,
-        TokenRequest tokenRequest,
         IOptions<AppSettings> appSettings,
+        IOptions<JsonOptions> jsonOptions,
         IOAuthManager oAuthManager,
         ILogger<TokenEndpointModule> logger,
         IHttpClientFactory httpClientFactory
     )
     {
+        // Manually read the JSON body so the framework's binder never sees it: its parse errors
+        // quote the body, and the framework logs them (or throws them into the error log).
+        TokenRequest? tokenRequest = null;
+        try
+        {
+            tokenRequest = await httpContext.Request.ReadFromJsonAsync<TokenRequest>(
+                jsonOptions.Value.SerializerOptions
+            );
+        }
+        catch (JsonException)
+        {
+            // Deliberately not logged or passed on: the exception message can contain body content.
+        }
+
+        if (tokenRequest is null)
+        {
+            var traceId = AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings);
+            logger.LogDebug("Token request body is not valid JSON - {TraceId}", traceId.Value);
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
         await GenerateToken(httpContext, tokenRequest, appSettings, oAuthManager, logger, httpClientFactory);
     }
 

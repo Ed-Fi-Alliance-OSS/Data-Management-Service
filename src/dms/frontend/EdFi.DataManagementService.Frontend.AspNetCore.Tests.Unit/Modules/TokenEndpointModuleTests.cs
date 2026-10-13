@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -17,7 +18,9 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 #pragma warning disable S1128
 using Microsoft.Extensions.Options;
@@ -636,9 +639,13 @@ public class TokenEndpointModuleTests
     /// <summary>
     /// Sends <paramref name="request"/> through the real endpoint with <see cref="IOAuthManager"/>
     /// faked to answer 200, and returns the response together with every call the manager received.
+    /// When <paramref name="loggerProvider"/> is given it receives every log entry from every category,
+    /// framework categories included, at Trace level.
     /// </summary>
     private static (HttpResponseMessage Response, List<ManagerCall> Calls) SendCapturingManagerCalls(
-        HttpRequestMessage request
+        HttpRequestMessage request,
+        string environment = "Test",
+        ILoggerProvider? loggerProvider = null
     )
     {
         List<ManagerCall> calls = [];
@@ -672,7 +679,35 @@ public class TokenEndpointModuleTests
 
         using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            builder.UseEnvironment("Test");
+            builder.UseEnvironment(environment);
+            // Only appsettings.Test.json carries the settings that startup validation requires, so
+            // the Production and Development hosts are given the same ones.
+            builder.ConfigureAppConfiguration(
+                (_, configuration) =>
+                    configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["AppSettings:AuthenticationService"] = "http://dev-test-auth-service",
+                            ["AppSettings:UseApiSchemaPath"] = "false",
+                            ["AppSettings:BypassAuthorization"] = "true",
+                            ["JwtAuthentication:MetadataAddress"] =
+                                "http://test-idp/.well-known/openid-configuration",
+                            ["JwtAuthentication:RequireHttpsMetadata"] = "false",
+                            ["ConfigurationServiceSettings:ClientSecret"] = "test-client-secret",
+                            ["ConfigurationServiceSettings:EncryptionKey"] =
+                                "TestEncryptionKey123456789012345678901234567890",
+                        }
+                    )
+            );
+            if (loggerProvider is not null)
+            {
+                builder.ConfigureLogging(logging =>
+                {
+                    logging.SetMinimumLevel(LogLevel.Trace);
+                    logging.AddFilter(null, LogLevel.Trace);
+                    logging.AddProvider(loggerProvider);
+                });
+            }
             builder.ConfigureServices(collection =>
             {
                 TestMockHelper.AddEssentialMocks(collection);
@@ -682,6 +717,146 @@ public class TokenEndpointModuleTests
         using var client = factory.CreateClient();
 
         return (client.SendAsync(request).GetAwaiter().GetResult(), calls);
+    }
+
+    /// <summary>
+    /// Records the formatted message and the full exception text of every log entry it is given.
+    /// </summary>
+    private sealed class RecordingLoggerProvider : ILoggerProvider
+    {
+        private readonly ConcurrentQueue<string> _entries = new();
+
+        public IReadOnlyCollection<string> Entries => _entries;
+
+        public ILogger CreateLogger(string categoryName) => new RecordingLogger(_entries);
+
+        public void Dispose() { }
+
+        private sealed class RecordingLogger(ConcurrentQueue<string> entries) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            ) => entries.Enqueue($"{formatter(state, exception)} {exception}");
+        }
+    }
+
+    /// <summary>
+    /// The unquoted value starts with <c>t</c>, so System.Text.Json reports it as an invalid literal
+    /// and quotes the rest of the value in its exception message.
+    /// </summary>
+    private const string LeakSentinel = "topSECRETvalue";
+
+    [TestFixture("Production")]
+    [TestFixture("Development")]
+    public class Given_A_Malformed_Json_Body_With_An_Unquoted_Secret(string environment)
+        : TokenEndpointModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+        private List<ManagerCall> _calls = null!;
+        private RecordingLoggerProvider _logs = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _logs = new RecordingLoggerProvider();
+            (_response, _calls) = SendCapturingManagerCalls(
+                UnauthenticatedRequest(
+                    $$"""{"grant_type":"client_credentials","client_id":"x","client_secret": {{LeakSentinel}}}""",
+                    "application/json"
+                ),
+                environment,
+                _logs
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+            _logs.Dispose();
+        }
+
+        [Test]
+        public void It_responds_with_bad_request()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public void It_does_not_call_the_manager()
+        {
+            _calls.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_does_not_log_any_of_the_body()
+        {
+            _logs.Entries.Should().NotBeEmpty("the recording provider must have seen the request");
+            _logs.Entries.Should().NotContain(entry => entry.Contains(LeakSentinel));
+        }
+    }
+
+    [TestFixture("""{"grant_type":"client_credentials","client_id":12345}""", "Production")]
+    [TestFixture("""{"grant_type":"client_credentials","client_id":12345}""", "Development")]
+    [TestFixture("", "Production")]
+    [TestFixture("", "Development")]
+    [TestFixture("null", "Production")]
+    [TestFixture("null", "Development")]
+    public class Given_A_Json_Body_That_Is_Not_A_Token_Request(string requestContent, string environment)
+        : TokenEndpointModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+        private List<ManagerCall> _calls = null!;
+        private string _responseBody = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            (_response, _calls) = SendCapturingManagerCalls(
+                UnauthenticatedRequest(requestContent, "application/json"),
+                environment
+            );
+            _responseBody = _response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _response.Dispose();
+        }
+
+        [Test]
+        public void It_responds_with_bad_request()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public void It_responds_with_an_empty_body()
+        {
+            _responseBody.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_declares_no_content_type()
+        {
+            _response.Content.Headers.ContentType.Should().BeNull();
+        }
+
+        [Test]
+        public void It_does_not_call_the_manager()
+        {
+            _calls.Should().BeEmpty();
+        }
     }
 
     /// <summary>

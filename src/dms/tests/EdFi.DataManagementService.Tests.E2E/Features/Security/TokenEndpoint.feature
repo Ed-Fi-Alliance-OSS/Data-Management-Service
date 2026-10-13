@@ -129,6 +129,26 @@ Feature: Client credentials at the token endpoint
         }
         """
 
+    @DMS-1604
+    @e2e-ci-shard-1
+    Scenario: 12 An empty Authorization header is rejected even with credentials in the body
+      When a token request is made with Authorization header "", content type "application/x-www-form-urlencoded" and body
+        """
+        grant_type=client_credentials&client_id={clientId}&client_secret={clientSecret}
+        """
+      Then it should respond with 400
+      And the response body is
+        """
+        {
+          "detail": "The Authorization header must not be empty",
+          "type": "urn:ed-fi:api:bad-request",
+          "title": "Bad Request",
+          "status": 400,
+          "validationErrors": {},
+          "errors": []
+        }
+        """
+
   Rule: Requests with two mechanisms are rejected
 
     @DMS-1604
