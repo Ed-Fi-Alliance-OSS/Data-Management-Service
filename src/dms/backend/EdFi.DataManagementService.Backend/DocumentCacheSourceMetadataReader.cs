@@ -217,15 +217,7 @@ internal sealed class DocumentCacheSourceMetadataReader(
             return DocumentCacheSourceMetadataReadResult.MissingSource.Instance;
         }
 
-        var mapped = ResolveMetadata(request, source);
-        if (mapped is not DocumentCacheSourceMetadataReadResult.OwnerMissing)
-        {
-            return mapped;
-        }
-
-        var timestamp = await ReadOwnerTimestampAsync(request, source, cancellationToken)
-            .ConfigureAwait(false);
-        return ResolveMetadata(request, source with { ContentLastModifiedAt = timestamp });
+        return await ReadResolvedMetadataAsync(request, source, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<DocumentCacheCurrentSourceMetadataReadResult> ReadCurrentAsync(
@@ -306,15 +298,22 @@ internal sealed class DocumentCacheSourceMetadataReader(
             return null;
         }
 
-        return await _materializationDataStore
-            .ExecuteReaderAsync(
-                request,
-                BuildOwnerReadCommand(mappingSet.Key.Dialect, ownerTable.Value, source.DocumentId),
-                ReadOwnerTimestampRowAsync,
-                cancellationToken
-            )
+        return await ReadOwnerTimestampAsync(request, source.DocumentId, ownerTable.Value, cancellationToken)
             .ConfigureAwait(false);
     }
+
+    private Task<DateTimeOffset?> ReadOwnerTimestampAsync(
+        DocumentCacheMaterializationRequest request,
+        long documentId,
+        DbTableName ownerTable,
+        CancellationToken cancellationToken
+    ) =>
+        _materializationDataStore.ExecuteReaderAsync(
+            request,
+            BuildOwnerReadCommand(request.TargetContext.MappingSet.Key.Dialect, ownerTable, documentId),
+            ReadOwnerTimestampRowAsync,
+            cancellationToken
+        );
 
     private static async Task<DocumentCacheCurrentSourceMetadata?> ReadSingleOrDefaultAsync(
         IRelationalCommandReader reader,
@@ -381,9 +380,10 @@ internal sealed class DocumentCacheSourceMetadataReader(
         };
     }
 
-    private static DocumentCacheSourceMetadataReadResult ResolveMetadata(
+    private async Task<DocumentCacheSourceMetadataReadResult> ReadResolvedMetadataAsync(
         DocumentCacheMaterializationRequest request,
-        DocumentCacheCurrentSourceMetadata source
+        DocumentCacheCurrentSourceMetadata source,
+        CancellationToken cancellationToken
     )
     {
         var targetContext = request.TargetContext;
@@ -432,42 +432,54 @@ internal sealed class DocumentCacheSourceMetadataReader(
             );
         }
 
-        return concreteResourceModel.StorageKind switch
+        switch (concreteResourceModel.StorageKind)
         {
-            ResourceStorageKind.RelationalTables => ResolveOrdinaryResourceMetadata(
-                request,
-                source,
-                resourceKey,
-                concreteResourceModel
-            ),
-            ResourceStorageKind.SharedDescriptorTable => source.ContentLastModifiedAt
-                is { } descriptorTimestamp
-                ? new DocumentCacheSourceMetadataReadResult.Found(
-                    new DocumentCacheResolvedSourceMetadata.DescriptorResource(
-                        source.DocumentId,
-                        source.DocumentUuid,
-                        source.ResourceKeyId,
+            case ResourceStorageKind.RelationalTables:
+                return await ReadOrdinaryResourceMetadataAsync(
+                        request,
+                        source,
                         resourceKey,
                         concreteResourceModel,
-                        source.ContentVersion,
-                        descriptorTimestamp
+                        cancellationToken
                     )
-                )
-                : new DocumentCacheSourceMetadataReadResult.OwnerMissing(source),
-            _ => throw BuildTargetMappingException(
-                request,
-                source,
-                DocumentCacheTargetMappingFailureReason.UnsupportedResourceStorageKind,
-                resourceKey
-            ),
-        };
+                    .ConfigureAwait(false);
+            case ResourceStorageKind.SharedDescriptorTable:
+                var timestamp = await ReadOwnerTimestampAsync(
+                        request,
+                        source.DocumentId,
+                        new DbTableName(new DbSchemaName("dms"), "Descriptor"),
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                return timestamp is { } descriptorTimestamp
+                    ? new DocumentCacheSourceMetadataReadResult.Found(
+                        new DocumentCacheResolvedSourceMetadata.DescriptorResource(
+                            source.DocumentId,
+                            source.DocumentUuid,
+                            source.ResourceKeyId,
+                            resourceKey,
+                            concreteResourceModel,
+                            source.ContentVersion,
+                            descriptorTimestamp
+                        )
+                    )
+                    : new DocumentCacheSourceMetadataReadResult.OwnerMissing(source);
+            default:
+                throw BuildTargetMappingException(
+                    request,
+                    source,
+                    DocumentCacheTargetMappingFailureReason.UnsupportedResourceStorageKind,
+                    resourceKey
+                );
+        }
     }
 
-    private static DocumentCacheSourceMetadataReadResult ResolveOrdinaryResourceMetadata(
+    private async Task<DocumentCacheSourceMetadataReadResult> ReadOrdinaryResourceMetadataAsync(
         DocumentCacheMaterializationRequest request,
         DocumentCacheCurrentSourceMetadata source,
         ResourceKeyEntry resourceKey,
-        ConcreteResourceModel concreteResourceModel
+        ConcreteResourceModel concreteResourceModel,
+        CancellationToken cancellationToken
     )
     {
         var mappingSet = request.TargetContext.MappingSet;
@@ -492,7 +504,14 @@ internal sealed class DocumentCacheSourceMetadataReader(
             );
         }
 
-        if (source.ContentLastModifiedAt is not { } timestamp)
+        var ownerTimestamp = await ReadOwnerTimestampAsync(
+                request,
+                source.DocumentId,
+                concreteResourceModel.RelationalModel.Root.Table,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        if (ownerTimestamp is not { } timestamp)
         {
             return new DocumentCacheSourceMetadataReadResult.OwnerMissing(source);
         }
