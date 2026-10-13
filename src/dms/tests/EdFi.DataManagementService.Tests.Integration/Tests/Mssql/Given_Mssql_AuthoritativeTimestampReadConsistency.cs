@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using EdFi.DataManagementService.Tests.Integration.Mssql;
 using EdFi.DataManagementService.Tests.Integration.Scenarios;
@@ -25,6 +26,14 @@ public sealed class Given_Mssql_AuthoritativeTimestampReadConsistency(bool readC
     [Test]
     public Task It_returns_not_found_when_the_uuid_lookup_owner_disappears_during_canonical_delete() =>
         AuthoritativeTimestampReadConsistencyScenario.RunLookupDeletionAsync(Harness);
+
+    [TestCase(PageOrderingMode.DocumentId)]
+    [TestCase(PageOrderingMode.ContentVersion)]
+    public Task It_continues_after_all_selected_descriptor_rows_are_deleted(PageOrderingMode ordering) =>
+        AuthoritativeTimestampReadConsistencyScenario.RunDescriptorPageSelectionDeletionAsync(
+            Harness,
+            ordering
+        );
 
     protected override async Task<string> LeaseDatabaseAsync(FixtureContext fixture)
     {

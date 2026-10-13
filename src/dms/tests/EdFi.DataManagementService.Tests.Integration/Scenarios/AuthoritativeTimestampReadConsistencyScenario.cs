@@ -12,6 +12,8 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using FakeItEasy;
 using FluentAssertions;
@@ -241,6 +243,86 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
         boundary.Hits.Should().Be(1);
     }
 
+    public static async Task RunDescriptorPageSelectionDeletionAsync(
+        ApiIntegrationHarness harness,
+        PageOrderingMode ordering
+    )
+    {
+        Resource deleted = await CreateAsync(harness, descriptor: true);
+        Resource later = await CreateAsync(harness, descriptor: true);
+        Stamp deletedStamp = await ReadStampAsync(harness, deleted);
+        Stamp laterStamp = await ReadStampAsync(harness, later);
+        deletedStamp.Version.Should().BeLessThan(laterStamp.Version);
+        string entryToken = PageTokenCodec.Encode(CursorRange.From(1), ordering);
+        string window =
+            ordering is PageOrderingMode.ContentVersion
+                ? $"&minChangeVersion=1&maxChangeVersion={laterStamp.Version}"
+                : string.Empty;
+        string requestUri =
+            $"{deleted.Endpoint}?pageToken={Uri.EscapeDataString(entryToken)}&pageSize=1{window}";
+        ReadBoundary boundary = harness.Services.GetRequiredService<ReadBoundary>();
+        boundary.Descriptor = true;
+        boundary.DeleteDuringDescriptorPageSelection = true;
+        boundary.Armed = true;
+        boundary.Gate.Arm();
+        using CancellationTokenSource cancellation = new(Watchdog);
+        Task<HttpResponseMessage> pending = harness.HttpClient.GetAsync(requestUri, cancellation.Token);
+        try
+        {
+            Task reached = await Task.WhenAny(boundary.Gate.Arrived, pending).WaitAsync(cancellation.Token);
+            reached
+                .Should()
+                .BeSameAs(
+                    boundary.Gate.Arrived,
+                    $"the descriptor keyset must be selected; {boundary.Failure}"
+                );
+            using HttpResponseMessage response = await harness.HttpClient.DeleteAsync(
+                deleted.Path,
+                cancellation.Token
+            );
+            response
+                .StatusCode.Should()
+                .Be(HttpStatusCode.NoContent, await response.Content.ReadAsStringAsync());
+        }
+        finally
+        {
+            boundary.Gate.Release();
+            try
+            {
+                await pending.WaitAsync(Watchdog);
+            }
+            catch
+            {
+                await cancellation.CancelAsync();
+            }
+        }
+
+        using HttpResponseMessage first = await pending;
+        first.StatusCode.Should().Be(HttpStatusCode.OK, await first.Content.ReadAsStringAsync());
+        JsonNode.Parse(await first.Content.ReadAsStringAsync())!.AsArray().Should().BeEmpty();
+        first.Headers.TryGetValues("Next-Page-Token", out var tokens).Should().BeTrue();
+        string nextToken = tokens!.Single();
+        PageTokenCodec.TryDecode(nextToken, out var range, out var decodedOrdering).Should().BeTrue();
+        decodedOrdering.Should().Be(ordering);
+        long expectedBoundary =
+            ordering is PageOrderingMode.DocumentId ? deletedStamp.DocumentId : deletedStamp.Version;
+        range!.InclusiveMinimum.Should().Be(expectedBoundary + 1);
+        boundary.Hits.Should().Be(1);
+
+        using HttpResponseMessage second = await harness.HttpClient.GetAsync(
+            $"{later.Endpoint}?pageToken={Uri.EscapeDataString(nextToken)}&pageSize=1{window}"
+        );
+        second.StatusCode.Should().Be(HttpStatusCode.OK, await second.Content.ReadAsStringAsync());
+        JsonNode
+            .Parse(await second.Content.ReadAsStringAsync())!
+            .AsArray()
+            .Select(item => item!["id"]!.GetValue<string>())
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(later.Uuid.ToString());
+    }
+
     private static async Task<JsonObject> ReadAsync(ApiIntegrationHarness harness, string path)
     {
         using HttpResponseMessage response = await harness.HttpClient.GetAsync(path);
@@ -267,6 +349,7 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
         public bool BetweenMetadataAndContent { get; set; }
         public bool BeforeMetadata { get; set; }
         public bool DeleteDuringUuidLookup { get; set; }
+        public bool DeleteDuringDescriptorPageSelection { get; set; }
         public bool SplitHydration => BetweenMetadataAndContent || BeforeMetadata;
         public int RetriedAttempts { get; set; }
         public string Checkpoint { get; private set; } = "";
@@ -546,12 +629,16 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
 
             if (
                 boundary.Descriptor
-                && boundary.BeforeMetadata
+                && (boundary.BeforeMetadata || boundary.DeleteDuringDescriptorPageSelection)
                 && command.CommandText.Contains("-- Descriptor acquisition:", StringComparison.Ordinal)
             )
             {
                 // Count only attempts from this request, excluding verification reads made while held.
-                bool claimed = boundary.Claim("leading descriptor versions acquired before owner rows");
+                bool claimed = boundary.Claim(
+                    boundary.DeleteDuringDescriptorPageSelection
+                        ? "descriptor keyset selected before leading versions"
+                        : "leading descriptor versions acquired before owner rows"
+                );
                 if (claimed)
                 {
                     boundary.RetriedAttempts = 1;
@@ -574,7 +661,9 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
                         dbCommand.Parameters.Add(dbParameter);
                     }
                     int split = command.CommandText.IndexOf(
-                        "-- Descriptor acquisition: owner rows",
+                        boundary.DeleteDuringDescriptorPageSelection
+                            ? "-- Descriptor acquisition: leading document versions"
+                            : "-- Descriptor acquisition: owner rows",
                         StringComparison.Ordinal
                     );
                     dbCommand.CommandText = command.CommandText[..split];

@@ -20,11 +20,16 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend;
 
-internal sealed record DescriptorQueryRowsPage(long? TotalCount, IReadOnlyList<DescriptorReadRow> Rows);
+internal sealed record DescriptorQueryRowsPage(
+    long? TotalCount,
+    IReadOnlyList<DescriptorReadRow> Rows,
+    long? HighestSelectedAnchor
+);
 
 internal sealed record DescriptorQueryCandidatePage(
     long? TotalCount,
-    IReadOnlyList<DescriptorReadCandidateRow> Rows
+    IReadOnlyList<DescriptorReadCandidateRow> Rows,
+    long? HighestSelectedAnchor
 );
 
 internal sealed class DescriptorReadHandler(
@@ -627,8 +632,7 @@ internal sealed class DescriptorReadHandler(
             DescriptorQueryNoCacheReadResult.Complete complete => complete.Result,
             DescriptorQueryNoCacheReadResult.RowsPage rowsPage => MaterializeDescriptorQuerySuccess(
                 request,
-                rowsPage.Page,
-                SelectedMaximumOf(rowsPage.Page.Rows, request.PageOrderingMode)
+                rowsPage.Page
             ),
             _ => throw new InvalidOperationException(
                 $"Unsupported descriptor query no-cache read result '{noCacheReadResult.GetType().Name}'."
@@ -657,7 +661,7 @@ internal sealed class DescriptorReadHandler(
         // Built ahead of the empty check so both branches report the same boundary. A selection that
         // returned nothing is still a selection that ran, and deciding the boundary in only the
         // non-empty branch would answer the same request differently from the regular-resource path.
-        var highestSelectedAnchor = SelectedMaximumOf(rowsPage.Page.Rows, request.PageOrderingMode);
+        var highestSelectedAnchor = rowsPage.Page.HighestSelectedAnchor;
 
         if (rowsPage.Page.Rows.Count == 0)
         {
@@ -788,8 +792,7 @@ internal sealed class DescriptorReadHandler(
         {
             return MaterializeDescriptorQuerySuccess(
                 request,
-                new DescriptorQueryRowsPage(candidatePage.TotalCount, []),
-                candidatePage.HighestSelectedAnchor
+                new DescriptorQueryRowsPage(candidatePage.TotalCount, [], candidatePage.HighestSelectedAnchor)
             );
         }
 
@@ -871,13 +874,15 @@ internal sealed class DescriptorReadHandler(
             return await HandleQueryNoCacheResultAsync(request, cancellationToken).ConfigureAwait(false);
         }
 
+        // The boundary selection took survives fallback hydration: these rows came from a retrieval
+        // statement over document ids, not the original page-selection relation.
         return MaterializeDescriptorQuerySuccess(
             request,
-            new DescriptorQueryRowsPage(candidatePage.TotalCount, orderedRows),
-            // The boundary selection took, carried through rather than re-derived: these rows came from
-            // the retrieval statement, which ranges over dms.Document by id and never touches the
-            // page-selection relation the anchor belongs to.
-            candidatePage.HighestSelectedAnchor
+            new DescriptorQueryRowsPage(
+                candidatePage.TotalCount,
+                orderedRows,
+                candidatePage.HighestSelectedAnchor
+            )
         );
     }
 
@@ -1411,65 +1416,6 @@ internal sealed class DescriptorReadHandler(
     }
 
     /// <summary>
-    /// The maximum continuation-anchor value among the selected descriptor rows, or
-    /// <see langword="null"/> when the page selected none.
-    /// </summary>
-    /// <remarks>
-    /// The units follow the anchor the request resolved, exactly as they do for a regular resource, and
-    /// under either anchor the value read is the one page selection itself produced: <c>DocumentId</c>
-    /// comes out of the page-selection relation, and so does
-    /// <see cref="IDescriptorReadCandidateMetadata.SelectedAnchor" />. The row's plain
-    /// <c>ContentVersion</c> is deliberately not used — it is <c>dms.Document</c>'s copy of the same
-    /// value, read through a different join, and a continuation anchored on it can name a version this
-    /// page never selected.
-    /// <para>
-    /// Taken across every row rather than from the last one: the page query orders ascending today, but
-    /// a boundary that depended on that could not survive an ordering change, and the maximum costs the
-    /// same either way.
-    /// </para>
-    /// </remarks>
-    private static long? SelectedMaximumOf(
-        IReadOnlyList<IDescriptorReadCandidateMetadata> descriptorRows,
-        PageOrderingMode orderingMode
-    )
-    {
-        if (descriptorRows.Count == 0)
-        {
-            return null;
-        }
-
-        if (orderingMode is not PageOrderingMode.ContentVersion)
-        {
-            return descriptorRows.Max(static descriptorRow => descriptorRow.DocumentId);
-        }
-
-        long? selectedMaximum = null;
-
-        foreach (IDescriptorReadCandidateMetadata descriptorRow in descriptorRows)
-        {
-            // Absent means the statement that produced these rows projected no anchor while the request
-            // resolved one, which is a defect in this handler rather than anything a client did. Falling
-            // back to the document's ContentVersion would hand out a continuation that looks right and
-            // silently skips rows, so it fails instead.
-            if (descriptorRow.SelectedAnchor is not { } selectedAnchor)
-            {
-                throw new InvalidOperationException(
-                    "Expected a ContentVersion-anchored descriptor page to carry the anchor page "
-                        + "selection ordered it by, but the selected rows carry none. The page-rows SQL "
-                        + "and this boundary disagree about the request's anchor."
-                );
-            }
-
-            if (selectedMaximum is null || selectedAnchor > selectedMaximum)
-            {
-                selectedMaximum = selectedAnchor;
-            }
-        }
-
-        return selectedMaximum;
-    }
-
-    /// <summary>
     /// Plans the single-record custom-view checks descriptor GET-by-id executes, or reports the
     /// security-configuration failure that stops the read.
     /// </summary>
@@ -1775,10 +1721,11 @@ internal sealed class DescriptorReadHandler(
                 (reader, ct) =>
                     DescriptorReadRowReader.ReadAllAsync(reader, CarriesSelectedAnchor(plannedQuery), ct),
                 plannedQuery.Plan.TotalCountSql is not null,
-                cancellationToken
+                cancellationToken,
+                hasSelectedBoundary: true
             )
             .ConfigureAwait(false);
-        return new(acquisition.TotalCount, acquisition.Rows);
+        return new(acquisition.TotalCount, acquisition.Rows, acquisition.HighestSelectedAnchor);
     }
 
     private async Task<DescriptorQueryCandidatePage> ReadQueryCandidateRowsAsync(
@@ -1800,20 +1747,26 @@ internal sealed class DescriptorReadHandler(
                         ct
                     ),
                 plannedQuery.Plan.TotalCountSql is not null,
-                cancellationToken
+                cancellationToken,
+                hasSelectedBoundary: true
             )
             .ConfigureAwait(false);
-        return new(acquisition.TotalCount, acquisition.Rows);
+        return new(acquisition.TotalCount, acquisition.Rows, acquisition.HighestSelectedAnchor);
     }
 
     // A join alone is not a snapshot under locking READ COMMITTED. Bracket the entire owner
     // acquisition with document-only versions, including candidate reads and selected-page fallback.
     // The batch selects a page only once per attempt; every projection uses those same keys.
-    private async Task<(long? TotalCount, IReadOnlyList<TRow> Rows)> AcquireDescriptorRowsAsync<TRow>(
+    private async Task<(
+        long? TotalCount,
+        IReadOnlyList<TRow> Rows,
+        long? HighestSelectedAnchor
+    )> AcquireDescriptorRowsAsync<TRow>(
         RelationalCommand command,
         Func<IRelationalCommandReader, CancellationToken, Task<IReadOnlyList<TRow>>> readRows,
         bool hasTotalCount,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool hasSelectedBoundary = false
     )
         where TRow : IDescriptorReadCandidateMetadata
     {
@@ -1829,6 +1782,13 @@ internal sealed class DescriptorReadHandler(
                         if (hasTotalCount)
                         {
                             totalCount = await ReadTotalCountAsync(reader, ct).ConfigureAwait(false);
+                            await NextAcquisitionResultAsync(reader, ct).ConfigureAwait(false);
+                        }
+                        long? highestSelectedAnchor = null;
+                        if (hasSelectedBoundary)
+                        {
+                            highestSelectedAnchor = await ReadSelectedBoundaryAsync(reader, ct)
+                                .ConfigureAwait(false);
                             await NextAcquisitionResultAsync(reader, ct).ConfigureAwait(false);
                         }
                         var leading = await ReadDescriptorVersionsAsync(reader, ct).ConfigureAwait(false);
@@ -1863,14 +1823,19 @@ internal sealed class DescriptorReadHandler(
                                 leading.TryGetValue(row.DocumentId, out long version)
                                 && version == row.ContentVersion
                             );
-                        return (Stable: stable, TotalCount: totalCount, Rows: rows);
+                        return (
+                            Stable: stable,
+                            TotalCount: totalCount,
+                            Rows: rows,
+                            HighestSelectedAnchor: highestSelectedAnchor
+                        );
                     },
                     cancellationToken
                 )
                 .ConfigureAwait(false);
             if (acquisition.Stable)
             {
-                return (acquisition.TotalCount, acquisition.Rows);
+                return (acquisition.TotalCount, acquisition.Rows, acquisition.HighestSelectedAnchor);
             }
         }
         throw new InvalidOperationException(
@@ -1920,23 +1885,15 @@ internal sealed class DescriptorReadHandler(
     /// Builds the descriptor query response, including the selected-keyset boundary a cursor walk
     /// continues from.
     /// </summary>
-    /// <param name="highestSelectedAnchor">
-    /// The boundary, supplied by whichever path selected the page rather than re-derived here.
-    /// </param>
     /// <remarks>
-    /// The two read paths reach the boundary differently, which is why it arrives as an argument.
-    /// Uncached selection retrieves rows in the same statement that selects them, so those rows carry
-    /// the anchor and their maximum is the boundary. The cache-accelerated path selects candidates and
-    /// retrieves rows in two statements: only the first ranges over the page-selection relation, so the
-    /// boundary is the one taken at selection and the retrieved rows carry no anchor to re-derive it
-    /// from. That path admits a page only when every selected candidate is still present and unchanged,
-    /// and otherwise re-reads through the uncached path, so passing the selection-time boundary through
-    /// cannot overstate what the response body holds.
+    /// Both page-selection paths read the boundary from the materialized keyset before the version
+    /// fences. The selected-page fallback reuses that boundary because its retrieval statement ranges
+    /// over selected document ids, not the original page-selection relation. A canonical delete can
+    /// remove selected documents before acquisition, so surviving rows cannot define the boundary.
     /// </remarks>
     private QueryResult.QuerySuccess MaterializeDescriptorQuerySuccess(
         DescriptorQueryRequest request,
-        DescriptorQueryRowsPage queryRowsPage,
-        long? highestSelectedAnchor
+        DescriptorQueryRowsPage queryRowsPage
     )
     {
         return new QueryResult.QuerySuccess(
@@ -1948,7 +1905,7 @@ internal sealed class DescriptorReadHandler(
                     "descriptor query"
                 )
                 : null,
-            highestSelectedAnchor
+            queryRowsPage.HighestSelectedAnchor
         );
     }
 
@@ -2123,8 +2080,11 @@ internal sealed class DescriptorReadHandler(
             ? ""
             : PlanSqlStatementText.AsTerminatedStatement(plannedQuery.Plan.TotalCountSql)
                 + Environment.NewLine;
+        string boundaryColumn = QuoteIdentifier(dialect, anchor ? "ContentVersion" : "DocumentId");
+        string boundarySql =
+            $"-- Descriptor page selection boundary\nSELECT MAX({boundaryColumn}) AS {QuoteIdentifier(dialect, "HighestSelectedAnchor")} FROM {quotedTable};\n";
         return new RelationalCommand(
-            prelude + countSql + BuildAcquisitionSql(versionSql, pageRowsSql),
+            prelude + countSql + boundarySql + BuildAcquisitionSql(versionSql, pageRowsSql),
             BuildQueryParameters(plannedQuery)
         );
     }
@@ -2180,6 +2140,25 @@ internal sealed class DescriptorReadHandler(
         }
 
         return Convert.ToInt64(totalCountValue, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<long?> ReadSelectedBoundaryAsync(
+        IRelationalCommandReader reader,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("Expected a descriptor page boundary result row.");
+        }
+
+        int ordinal = reader.GetOrdinal("HighestSelectedAnchor");
+        long? boundary = reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<long>(ordinal);
+        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("Descriptor page boundary returned multiple rows.");
+        }
+        return boundary;
     }
 
     /// <param name="includeSelectedAnchor">

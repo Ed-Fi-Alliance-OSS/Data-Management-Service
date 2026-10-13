@@ -722,29 +722,32 @@ public partial class Given_DescriptorReadHandler
         success.HighestSelectedAnchor.Should().Be(77L);
     }
 
-    // The guard behind the assertion above. A request that resolved a ContentVersion anchor whose rows
-    // carry none means the page-rows statement and this boundary disagree about the request's anchor.
-    // Falling back to the document's ContentVersion would hand out a continuation that looks right and
-    // starts the next page past rows this one never returned, so the disagreement fails loudly instead.
+    // The boundary comes from the materialized keyset even when the acquired rows carry no anchor.
     [Test]
-    public async Task It_refuses_a_windowed_descriptor_page_whose_rows_carry_no_selected_anchor()
+    public async Task It_uses_the_keyset_boundary_when_descriptor_rows_carry_no_selected_anchor()
     {
         var sut = CreateHandler(
-            CreateQueryRowsExecutor(
-                CreateDescriptorRow(Guid.NewGuid(), documentId: 205L, codeValue: "Charter")
+            new DescriptorReadCommandExecutor(
+                [
+                    new InMemoryRelationalCommandExecution([
+                        InMemoryRelationalResultSet.Create(
+                            CreateDescriptorRow(Guid.NewGuid(), documentId: 205L, codeValue: "Charter")
+                        ),
+                    ]),
+                ],
+                selectedBoundaries: [77L]
             )
         );
 
-        var act = async () =>
-            await sut.HandleQueryAsync(
-                CreateQueryRequest(
-                    SqlDialect.Pgsql,
-                    changeVersionRange: new ChangeVersionRange(null, 900L),
-                    pageOrderingMode: PageOrderingMode.ContentVersion
-                )
-            );
+        var result = await sut.HandleQueryAsync(
+            CreateQueryRequest(
+                SqlDialect.Pgsql,
+                changeVersionRange: new ChangeVersionRange(null, 900L),
+                pageOrderingMode: PageOrderingMode.ContentVersion
+            )
+        );
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*anchor*");
+        result.Should().BeOfType<QueryResult.QuerySuccess>().Which.HighestSelectedAnchor.Should().Be(77L);
     }
 
     // A DocumentId-anchored descriptor page reports its DocumentId and needs no projected anchor, which
@@ -902,7 +905,12 @@ public partial class Given_DescriptorReadHandler
                         Func<
                             IRelationalCommandReader,
                             CancellationToken,
-                            Task<(bool Stable, long? TotalCount, IReadOnlyList<DescriptorReadRow> Rows)>
+                            Task<(
+                                bool Stable,
+                                long? TotalCount,
+                                IReadOnlyList<DescriptorReadRow> Rows,
+                                long? HighestSelectedAnchor
+                            )>
                         >
                     >._,
                     A<CancellationToken>._
@@ -2456,7 +2464,8 @@ public partial class Given_DescriptorReadHandler
                             Task<(
                                 bool Stable,
                                 long? TotalCount,
-                                IReadOnlyList<DescriptorReadCandidateRow> Rows
+                                IReadOnlyList<DescriptorReadCandidateRow> Rows,
+                                long? HighestSelectedAnchor
                             )>
                         >
                     >._,
@@ -2469,12 +2478,20 @@ public partial class Given_DescriptorReadHandler
                     Func<
                         IRelationalCommandReader,
                         CancellationToken,
-                        Task<(bool Stable, long? TotalCount, IReadOnlyList<DescriptorReadCandidateRow> Rows)>
+                        Task<(
+                            bool Stable,
+                            long? TotalCount,
+                            IReadOnlyList<DescriptorReadCandidateRow> Rows,
+                            long? HighestSelectedAnchor
+                        )>
                     > readAsync,
                     CancellationToken cancellationToken
                 ) =>
                     readAsync(
                         new InMemoryRelationalCommandReader([
+                            InMemoryRelationalResultSet.Create(
+                                RelationalAccessTestData.CreateRow(("HighestSelectedAnchor", 101L))
+                            ),
                             VersionRows(42),
                             InMemoryRelationalResultSet.Create(
                                 CreateDescriptorRow(documentUuid, documentId: 101L)
@@ -2491,7 +2508,12 @@ public partial class Given_DescriptorReadHandler
                         Func<
                             IRelationalCommandReader,
                             CancellationToken,
-                            Task<(bool Stable, long? TotalCount, IReadOnlyList<DescriptorReadRow> Rows)>
+                            Task<(
+                                bool Stable,
+                                long? TotalCount,
+                                IReadOnlyList<DescriptorReadRow> Rows,
+                                long? HighestSelectedAnchor
+                            )>
                         >
                     >._,
                     A<CancellationToken>._
@@ -2548,7 +2570,12 @@ public partial class Given_DescriptorReadHandler
                         Func<
                             IRelationalCommandReader,
                             CancellationToken,
-                            Task<(bool Stable, long? TotalCount, IReadOnlyList<DescriptorReadRow> Rows)>
+                            Task<(
+                                bool Stable,
+                                long? TotalCount,
+                                IReadOnlyList<DescriptorReadRow> Rows,
+                                long? HighestSelectedAnchor
+                            )>
                         >
                     >._,
                     A<CancellationToken>._
@@ -2568,47 +2595,52 @@ public partial class Given_DescriptorReadHandler
         var secondDocumentUuid = Guid.Parse("bbbbbbbb-1111-2222-3333-343434343434");
         var newlyMatchingDocumentUuid = Guid.Parse("cccccccc-1111-2222-3333-343434343434");
         var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
-        var commandExecutor = new DescriptorReadCommandExecutor([
-            new InMemoryRelationalCommandExecution([
-                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 7))),
-                InMemoryRelationalResultSet.Create(
-                    CreateDescriptorRow(
-                        firstDocumentUuid,
-                        documentId: 101L,
-                        shortDescription: "First before fallback",
-                        contentVersion: 42L
+        // The keyset also selected DocumentId 300, which disappeared before acquisition. The fallback
+        // must retain that boundary even though it hydrates only the two surviving candidates.
+        var commandExecutor = new DescriptorReadCommandExecutor(
+            [
+                new InMemoryRelationalCommandExecution([
+                    InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 7))),
+                    InMemoryRelationalResultSet.Create(
+                        CreateDescriptorRow(
+                            firstDocumentUuid,
+                            documentId: 101L,
+                            shortDescription: "First before fallback",
+                            contentVersion: 42L
+                        ),
+                        CreateDescriptorRow(
+                            secondDocumentUuid,
+                            documentId: 205L,
+                            shortDescription: "Second before fallback",
+                            contentVersion: 43L
+                        )
                     ),
-                    CreateDescriptorRow(
-                        secondDocumentUuid,
-                        documentId: 205L,
-                        shortDescription: "Second before fallback",
-                        contentVersion: 43L
-                    )
-                ),
-            ]),
-            new InMemoryRelationalCommandExecution([
-                InMemoryRelationalResultSet.Create(
-                    CreateDescriptorRow(
-                        secondDocumentUuid,
-                        documentId: 205L,
-                        shortDescription: "Second after fallback",
-                        contentVersion: 43L
+                ]),
+                new InMemoryRelationalCommandExecution([
+                    InMemoryRelationalResultSet.Create(
+                        CreateDescriptorRow(
+                            secondDocumentUuid,
+                            documentId: 205L,
+                            shortDescription: "Second after fallback",
+                            contentVersion: 43L
+                        ),
+                        CreateDescriptorRow(
+                            newlyMatchingDocumentUuid,
+                            documentId: 999L,
+                            shortDescription: "Newly matching row",
+                            contentVersion: 999L
+                        ),
+                        CreateDescriptorRow(
+                            firstDocumentUuid,
+                            documentId: 101L,
+                            shortDescription: "First after fallback",
+                            contentVersion: 42L
+                        )
                     ),
-                    CreateDescriptorRow(
-                        newlyMatchingDocumentUuid,
-                        documentId: 999L,
-                        shortDescription: "Newly matching row",
-                        contentVersion: 999L
-                    ),
-                    CreateDescriptorRow(
-                        firstDocumentUuid,
-                        documentId: 101L,
-                        shortDescription: "First after fallback",
-                        contentVersion: 42L
-                    )
-                ),
-            ]),
-        ]);
+                ]),
+            ],
+            selectedBoundaries: [300L]
+        );
         A.CallTo(() =>
                 readAccelerationCoordinator.QueryAsync(
                     A<DocumentCacheReadAccelerationQueryRequest>._,
@@ -2628,6 +2660,7 @@ public partial class Given_DescriptorReadHandler
                     .Subject;
                 candidateSelection.AuthorizedCandidatePage.IncludesTotalCount.Should().BeTrue();
                 candidateSelection.AuthorizedCandidatePage.TotalCount.Should().Be(7);
+                candidateSelection.AuthorizedCandidatePage.HighestSelectedAnchor.Should().Be(300L);
 
                 return await candidateSelection.RelationalFallback(cancellationToken).ConfigureAwait(false);
             });
@@ -2638,6 +2671,7 @@ public partial class Given_DescriptorReadHandler
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
         success.TotalCount.Should().Be(7);
+        success.HighestSelectedAnchor.Should().Be(300L);
         success.EdfiDocs.Should().HaveCount(2);
         success
             .EdfiDocs.Select(document => document!["id"]!.GetValue<string>())

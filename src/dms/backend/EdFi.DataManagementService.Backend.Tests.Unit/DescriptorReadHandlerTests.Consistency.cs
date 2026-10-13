@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using FakeItEasy;
 using FluentAssertions;
 using NUnit.Framework;
@@ -192,6 +193,130 @@ public partial class Given_DescriptorReadHandler
             }
         }
         executor.Commands.Should().HaveCount(deleted ? 2 : 1);
+    }
+
+    [Test]
+    public async Task It_retains_the_selected_boundary_after_descriptor_rows_are_deleted(
+        [Values(SqlDialect.Pgsql, SqlDialect.Mssql)] SqlDialect dialect,
+        [Values(PageOrderingMode.DocumentId, PageOrderingMode.ContentVersion)] PageOrderingMode ordering,
+        [Values(false, true)] bool lowerRowSurvives,
+        [Values(false, true)] bool totalCount
+    )
+    {
+        long boundary = ordering is PageOrderingMode.DocumentId ? 205L : 77L;
+        long? survivingSelectedAnchor = ordering is PageOrderingMode.ContentVersion ? 50L : null;
+        var remainingRows = lowerRowSurvives
+            ? InMemoryRelationalResultSet.Create(
+                CreateDescriptorRow(
+                    _consistentDescriptorUuid,
+                    documentId: 101L,
+                    contentVersion: 42L,
+                    selectedAnchor: survivingSelectedAnchor
+                )
+            )
+            : InMemoryRelationalResultSet.Create();
+        var resultSets = new List<InMemoryRelationalResultSet>();
+        if (totalCount)
+        {
+            resultSets.Add(
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("TotalCount", 3L)))
+            );
+        }
+        resultSets.Add(lowerRowSurvives ? VersionRows(42L) : VersionRows(null));
+        resultSets.Add(remainingRows);
+        resultSets.Add(lowerRowSurvives ? VersionRows(42L) : VersionRows(null));
+        var executor = new DescriptorReadCommandExecutor(
+            [new InMemoryRelationalCommandExecution(resultSets)],
+            dialect,
+            stableVersions: false,
+            selectedBoundaries: [boundary]
+        );
+
+        var result = await CreateHandler(executor)
+            .HandleQueryAsync(
+                CreateQueryRequest(dialect, totalCount: totalCount, pageOrderingMode: ordering)
+            );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.HighestSelectedAnchor.Should().Be(boundary);
+        success.EdfiDocs.Should().HaveCount(lowerRowSurvives ? 1 : 0);
+        success.TotalCount.Should().Be(totalCount ? 3 : (int?)null);
+        executor.Commands.Should().ContainSingle();
+        string sql = executor.Commands[0].CommandText;
+        string column = ordering is PageOrderingMode.DocumentId ? "DocumentId" : "ContentVersion";
+        string quoted = dialect is SqlDialect.Pgsql ? $"\"{column}\"" : $"[{column}]";
+        sql.Should().Contain($"SELECT MAX({quoted}) AS");
+        int boundaryQuery = sql.IndexOf("-- Descriptor page selection boundary", StringComparison.Ordinal);
+        int leading = sql.IndexOf("-- Descriptor acquisition: leading", StringComparison.Ordinal);
+        boundaryQuery.Should().BeGreaterThan(sql.IndexOf("INSERT INTO", StringComparison.Ordinal));
+        boundaryQuery.Should().BeLessThan(leading);
+        sql[boundaryQuery..leading].Should().NotContain("JOIN");
+    }
+
+    [Test]
+    public async Task It_uses_only_the_accepted_descriptor_page_boundary_after_a_retry(
+        [Values(SqlDialect.Pgsql, SqlDialect.Mssql)] SqlDialect dialect
+    )
+    {
+        var mixed = DescriptorAttempt(10, 11, 11, oldBody: true);
+        var accepted = DescriptorAttempt(11, 11, 11);
+        var executor = new DescriptorReadCommandExecutor(
+            [mixed, accepted],
+            dialect,
+            stableVersions: false,
+            selectedBoundaries: [900L, 101L]
+        );
+
+        var result = await CreateHandler(executor).HandleQueryAsync(CreateQueryRequest(dialect));
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>().Which.HighestSelectedAnchor.Should().Be(101L);
+        executor.Commands.Should().HaveCount(2);
+    }
+
+    [Test]
+    public async Task It_retains_the_selected_boundary_on_an_empty_descriptor_candidate_page(
+        [Values(SqlDialect.Pgsql, SqlDialect.Mssql)] SqlDialect dialect,
+        [Values(PageOrderingMode.DocumentId, PageOrderingMode.ContentVersion)] PageOrderingMode ordering
+    )
+    {
+        long boundary = ordering is PageOrderingMode.DocumentId ? 205L : 77L;
+        var executor = new DescriptorReadCommandExecutor(
+            [
+                new InMemoryRelationalCommandExecution([
+                    VersionRows(null),
+                    InMemoryRelationalResultSet.Create(),
+                    VersionRows(null),
+                ]),
+            ],
+            dialect,
+            stableVersions: false,
+            selectedBoundaries: [boundary]
+        );
+        var coordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
+        QueryResult.QuerySuccess selection = null!;
+        A.CallTo(() =>
+                coordinator.QueryAsync(A<DocumentCacheReadAccelerationQueryRequest>._, A<CancellationToken>._)
+            )
+            .ReturnsLazily(async call =>
+            {
+                var request = call.GetArgument<DocumentCacheReadAccelerationQueryRequest>(0)!;
+                var selected = await request.SelectAuthorizedCandidatePage(
+                    call.GetArgument<CancellationToken>(1)
+                );
+                selection = selected
+                    .Should()
+                    .BeOfType<DocumentCacheReadAccelerationQuerySelectionResult.Complete>()
+                    .Subject.Result.Should()
+                    .BeOfType<QueryResult.QuerySuccess>()
+                    .Subject;
+                return selection;
+            });
+
+        await CreateHandler(executor, coordinator)
+            .HandleQueryAsync(CreateQueryRequest(dialect, pageOrderingMode: ordering));
+
+        selection.HighestSelectedAnchor.Should().Be(boundary);
+        selection.EdfiDocs.Should().BeEmpty();
     }
 
     private static InMemoryRelationalResultSet VersionRows(long? version) =>
