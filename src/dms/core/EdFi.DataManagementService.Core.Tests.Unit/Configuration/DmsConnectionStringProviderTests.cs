@@ -163,7 +163,7 @@ public class DmsConnectionStringProviderTests
                 _dataStoreProvider,
                 NullLogger<DmsConnectionStringProvider>.Instance
             );
-            _defaultConnectionString = _connectionStringProvider.GetHealthCheckConnectionString();
+            _defaultConnectionString = _connectionStringProvider.GetHealthCheckTarget().ConnectionString;
         }
 
         [Test]
@@ -199,7 +199,7 @@ public class DmsConnectionStringProviderTests
                 _dataStoreProvider,
                 NullLogger<DmsConnectionStringProvider>.Instance
             );
-            _defaultConnectionString = _connectionStringProvider.GetHealthCheckConnectionString();
+            _defaultConnectionString = _connectionStringProvider.GetHealthCheckTarget().ConnectionString;
         }
 
         [Test]
@@ -231,11 +231,11 @@ public class DmsConnectionStringProviderTests
         }
 
         [Test]
-        public void It_should_return_null()
+        public void It_should_report_no_data_stores_loaded()
         {
-            var result = _connectionStringProvider!.GetHealthCheckConnectionString();
+            var result = _connectionStringProvider!.GetHealthCheckTarget();
 
-            result.Should().BeNull();
+            result.Should().Be(HealthCheckTarget.NoDataStoresLoaded);
         }
     }
 
@@ -263,11 +263,11 @@ public class DmsConnectionStringProviderTests
         }
 
         [Test]
-        public void It_should_return_null()
+        public void It_should_report_one_data_store_without_a_connection_string()
         {
-            var result = _connectionStringProvider!.GetHealthCheckConnectionString();
+            var result = _connectionStringProvider!.GetHealthCheckTarget();
 
-            result.Should().BeNull();
+            result.Should().Be(HealthCheckTarget.NoConnectionString(1));
         }
     }
 
@@ -290,11 +290,11 @@ public class DmsConnectionStringProviderTests
         }
 
         [Test]
-        public void It_should_return_null()
+        public void It_should_report_no_data_stores_loaded()
         {
-            var result = _connectionStringProvider!.GetHealthCheckConnectionString();
+            var result = _connectionStringProvider!.GetHealthCheckTarget();
 
-            result.Should().BeNull();
+            result.Should().Be(HealthCheckTarget.NoDataStoresLoaded);
         }
     }
 
@@ -323,7 +323,7 @@ public class DmsConnectionStringProviderTests
     public class Given_A_Loaded_Tenant_With_No_DataStores
     {
         private readonly LevelRecordingLogger _logger = new();
-        private string? _result;
+        private HealthCheckTarget? _result;
 
         [SetUp]
         public void Setup()
@@ -333,16 +333,13 @@ public class DmsConnectionStringProviderTests
                 .Returns(new List<string> { "tenant1" }.AsReadOnly());
             A.CallTo(() => dataStoreProvider.GetAll(A<string?>.Ignored)).Returns(new List<DataStore>());
 
-            _result = new DmsConnectionStringProvider(
-                dataStoreProvider,
-                _logger
-            ).GetHealthCheckConnectionString();
+            _result = new DmsConnectionStringProvider(dataStoreProvider, _logger).GetHealthCheckTarget();
         }
 
         [Test]
-        public void It_should_return_null()
+        public void It_should_report_no_data_stores_loaded()
         {
-            _result.Should().BeNull();
+            _result.Should().Be(HealthCheckTarget.NoDataStoresLoaded);
         }
 
         [Test]
@@ -360,7 +357,7 @@ public class DmsConnectionStringProviderTests
     public class Given_DataStores_None_Of_Which_Has_A_ConnectionString
     {
         private readonly LevelRecordingLogger _logger = new();
-        private string? _result;
+        private HealthCheckTarget? _result;
 
         [SetUp]
         public void Setup()
@@ -371,16 +368,13 @@ public class DmsConnectionStringProviderTests
             A.CallTo(() => dataStoreProvider.GetAll(A<string?>.Ignored))
                 .Returns(new List<DataStore> { new(1, "SchoolYear", "No Connection", null, []) });
 
-            _result = new DmsConnectionStringProvider(
-                dataStoreProvider,
-                _logger
-            ).GetHealthCheckConnectionString();
+            _result = new DmsConnectionStringProvider(dataStoreProvider, _logger).GetHealthCheckTarget();
         }
 
         [Test]
-        public void It_should_return_null()
+        public void It_should_report_one_data_store_without_a_connection_string()
         {
-            _result.Should().BeNull();
+            _result.Should().Be(HealthCheckTarget.NoConnectionString(1));
         }
 
         [Test]
@@ -395,7 +389,7 @@ public class DmsConnectionStringProviderTests
     [TestFixture]
     public class Given_The_Lowest_Id_DataStore_Has_No_ConnectionString
     {
-        private string? _result;
+        private HealthCheckTarget? _result;
 
         [SetUp]
         public void Setup()
@@ -415,13 +409,13 @@ public class DmsConnectionStringProviderTests
             _result = new DmsConnectionStringProvider(
                 dataStoreProvider,
                 NullLogger<DmsConnectionStringProvider>.Instance
-            ).GetHealthCheckConnectionString();
+            ).GetHealthCheckTarget();
         }
 
         [Test]
         public void It_should_return_the_next_data_store_with_a_connection_string()
         {
-            _result.Should().Be("host=second;database=db2;");
+            _result.Should().Be(HealthCheckTarget.Available("host=second;database=db2;"));
         }
     }
 }

@@ -40,7 +40,9 @@ public class ApplicationHealthCheck(ILogger<ApplicationHealthCheck> logger) : IH
 /// With no data store to probe the result is <see cref="HealthStatus.Degraded"/>, not Healthy: the
 /// state is expected at multi-tenant startup, but a cache refresh can also replace a working
 /// tenant's data stores with an empty list, and that must stay visible in the report. Degraded maps
-/// to HTTP 200, so it does not fail probes.
+/// to HTTP 200, so it does not fail probes. Data stores that are loaded but have no connection string
+/// are a misconfiguration, not a wait, so that state is <see cref="HealthStatus.Unhealthy"/> with
+/// its own description.
 /// </remarks>
 public class DbHealthCheck(
     IConnectionStringProvider connectionStringProvider,
@@ -50,6 +52,10 @@ public class DbHealthCheck(
 {
     internal const string NoDataStoresDescription =
         "No data stores are loaded yet, so there is no database to check.";
+
+    internal static string NoConnectionStringDescription(int dataStoreCount) =>
+        $"{dataStoreCount} data store(s) are loaded, but none has a connection string. "
+        + "Check the data store configuration in the Configuration Service.";
 
     private readonly IConnectionStringProvider _connectionStringProvider =
         connectionStringProvider ?? throw new ArgumentNullException(nameof(connectionStringProvider));
@@ -65,23 +71,28 @@ public class DbHealthCheck(
         CancellationToken cancellationToken = default
     )
     {
-        string? connectionString = _connectionStringProvider.GetHealthCheckConnectionString();
+        HealthCheckTarget target = _connectionStringProvider.GetHealthCheckTarget();
 
-        // Multi-tenant startup with zero tenants is a supported state, not a database fault:
-        // data stores load when tenants are created and requests arrive.
-        if (string.IsNullOrWhiteSpace(connectionString))
+        switch (target.Status)
         {
-            return HealthCheckResult.Degraded(NoDataStoresDescription);
+            // Multi-tenant startup with zero tenants is a supported state, not a database fault:
+            // data stores load when tenants are created and requests arrive.
+            case HealthCheckTargetStatus.NoDataStoresLoaded:
+                return HealthCheckResult.Degraded(NoDataStoresDescription);
+            case HealthCheckTargetStatus.NoConnectionString:
+                return HealthCheckResult.Unhealthy(NoConnectionStringDescription(target.DataStoreCount));
         }
+
+        string connectionString = target.ConnectionString!;
 
         try
         {
             await using var connection = CreateConnection(_providerName, connectionString);
-            _logger.LogInformation("Attempting to open a connection to the database.");
+            _logger.LogDebug("Attempting to open a connection to the database.");
 
             await connection.OpenAsync(cancellationToken);
 
-            _logger.LogInformation("Database connection established successfully.");
+            _logger.LogDebug("Database connection established successfully.");
 
             return HealthCheckResult.Healthy("Database connection is healthy.");
         }

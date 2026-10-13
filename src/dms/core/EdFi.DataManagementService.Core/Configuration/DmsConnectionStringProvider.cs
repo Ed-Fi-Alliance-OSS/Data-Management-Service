@@ -56,7 +56,7 @@ public class DmsConnectionStringProvider(
     }
 
     /// <inheritdoc />
-    public string? GetHealthCheckConnectionString()
+    public HealthCheckTarget GetHealthCheckTarget()
     {
         logger.LogDebug("Retrieving connection string for health check purposes");
 
@@ -90,7 +90,7 @@ public class DmsConnectionStringProvider(
                         instances.Count
                     );
 
-                    return instance.ConnectionString;
+                    return HealthCheckTarget.Available(instance.ConnectionString);
                 }
 
                 logger.LogDebug(
@@ -108,7 +108,7 @@ public class DmsConnectionStringProvider(
                 loadedTenants.Count
             );
 
-            return null;
+            return HealthCheckTarget.NoDataStoresLoaded;
         }
 
         logger.LogWarning(
@@ -117,6 +117,6 @@ public class DmsConnectionStringProvider(
             loadedTenants.Count
         );
 
-        return null;
+        return HealthCheckTarget.NoConnectionString(instancesSeen);
     }
 }

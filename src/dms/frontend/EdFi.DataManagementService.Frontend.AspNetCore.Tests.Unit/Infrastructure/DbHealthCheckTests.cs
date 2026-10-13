@@ -40,7 +40,8 @@ public class Given_A_DbHealthCheck_With_No_Data_Store_Loaded
     public async Task Setup()
     {
         var connectionStringProvider = A.Fake<IConnectionStringProvider>();
-        A.CallTo(() => connectionStringProvider.GetHealthCheckConnectionString()).Returns(null);
+        A.CallTo(() => connectionStringProvider.GetHealthCheckTarget())
+            .Returns(HealthCheckTarget.NoDataStoresLoaded);
 
         var check = DbHealthCheckTestSupport.CreateCheck(connectionStringProvider);
         _result = await check.CheckHealthAsync(DbHealthCheckTestSupport.CreateContext(check));
@@ -67,6 +68,49 @@ public class Given_A_DbHealthCheck_With_No_Data_Store_Loaded
     }
 }
 
+// Data stores that are loaded but have no connection string are a misconfiguration, not a wait. The
+// check must say so instead of reporting the zero-tenant "nothing loaded yet" state.
+[TestFixture]
+[Parallelizable]
+public class Given_A_DbHealthCheck_Whose_Loaded_Data_Stores_Have_No_Connection_String
+{
+    private HealthCheckResult _result;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        var connectionStringProvider = A.Fake<IConnectionStringProvider>();
+        A.CallTo(() => connectionStringProvider.GetHealthCheckTarget())
+            .Returns(HealthCheckTarget.NoConnectionString(3));
+
+        var check = DbHealthCheckTestSupport.CreateCheck(connectionStringProvider);
+        _result = await check.CheckHealthAsync(DbHealthCheckTestSupport.CreateContext(check));
+    }
+
+    [Test]
+    public void It_reports_unhealthy()
+    {
+        _result.Status.Should().Be(HealthStatus.Unhealthy);
+    }
+
+    [Test]
+    public void It_says_the_data_store_configuration_needs_fixing()
+    {
+        _result
+            .Description.Should()
+            .Be(
+                "3 data store(s) are loaded, but none has a connection string. "
+                    + "Check the data store configuration in the Configuration Service."
+            );
+    }
+
+    [Test]
+    public void It_does_not_attach_an_exception()
+    {
+        _result.Exception.Should().BeNull();
+    }
+}
+
 // The regression this guards: the check is a singleton, so resolving the connection string once at
 // construction froze the zero-tenant answer from the first probe for the life of the pod. A data
 // store loaded afterwards must be the one the next check connects to.
@@ -82,8 +126,11 @@ public class Given_A_DbHealthCheck_Whose_Data_Store_Loads_After_The_First_Check
     public async Task Setup()
     {
         _connectionStringProvider = A.Fake<IConnectionStringProvider>();
-        A.CallTo(() => _connectionStringProvider.GetHealthCheckConnectionString())
-            .ReturnsNextFromSequence(null, DbHealthCheckTestSupport.UnreachableConnectionString);
+        A.CallTo(() => _connectionStringProvider.GetHealthCheckTarget())
+            .ReturnsNextFromSequence(
+                HealthCheckTarget.NoDataStoresLoaded,
+                HealthCheckTarget.Available(DbHealthCheckTestSupport.UnreachableConnectionString)
+            );
 
         var check = DbHealthCheckTestSupport.CreateCheck(_connectionStringProvider);
         HealthCheckContext context = DbHealthCheckTestSupport.CreateContext(check);
@@ -102,8 +149,7 @@ public class Given_A_DbHealthCheck_Whose_Data_Store_Loads_After_The_First_Check
     [Test]
     public void It_resolves_the_connection_string_on_every_check()
     {
-        A.CallTo(() => _connectionStringProvider.GetHealthCheckConnectionString())
-            .MustHaveHappenedTwiceExactly();
+        A.CallTo(() => _connectionStringProvider.GetHealthCheckTarget()).MustHaveHappenedTwiceExactly();
     }
 
     [Test]
