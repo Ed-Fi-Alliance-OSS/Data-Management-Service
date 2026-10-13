@@ -34,6 +34,10 @@ Import-Module (Join-Path $PSScriptRoot "env-utility.psm1")
 
 $script:RestoreWorkspaceRoot = Join-Path $PSScriptRoot ".bootstrap-restore"
 
+# The lowest server_version_num DMS supports (PostgreSQL 18.0); the same floor as
+# PgsqlDatabaseProvisioner.MinimumServerVersionNum in SchemaTools (DMS-1447).
+$script:RestorePostgresqlMinimumServerVersionNum = 180000
+
 # Default NuGet v3 service index for template packages, matching the feed the template CI
 # workflows publish to (and the feed .env.example's SCHEMA_PACKAGES entries use). Overridden
 # by the DATABASE_TEMPLATE_FEED_URL environment key, which also accepts a local directory
@@ -1440,6 +1444,15 @@ function Invoke-RestoreCatalogQuery {
     return @($output)
 }
 
+function Get-RestorePostgresqlPlatformQuerySql {
+    <#
+    .SYNOPSIS
+    One-row PostgreSQL platform fact for the restore gate: '<server_version_num>|<template1
+    encoding>' (the encoding is empty when template1 cannot be read, which fails closed).
+    #>
+    return "SELECT current_setting('server_version_num') || '|' || COALESCE((SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname = 'template1'), '');"
+}
+
 function Get-RestoreEngineMajorVersion {
     <#
     .SYNOPSIS
@@ -1471,8 +1484,10 @@ function Assert-RestoreTargetSafety {
     database can hide behind a non-reserved NAME), the running-service check (only the db
     container of either compose project may be up), the live-server engine major check (the
     live major must be >= the manifest's - a newer artifact never replays onto an older
-    server), and the CDC-binding refusal (a CDC-bound target needs the governed new-generation
-    recovery workflow, not an in-place replace). Every indeterminate answer fails closed.
+    server), the PostgreSQL platform floor (PostgreSQL 18+ with a UTF-8 template1, the
+    contract SchemaTools provisioning enforces), and the CDC-binding refusal (a CDC-bound
+    target needs the governed new-generation recovery workflow, not an in-place replace).
+    Every indeterminate answer fails closed.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to Invoke-RestoreCatalogQuery, whose sqlcmd transport carries the password via SQLCMDPASSWORD on docker exec; the MSSQL account is always "sa", and -PostgresUser names a PostgreSQL account that has no password here (psql authenticates over the container socket), so a PSCredential adds no protection across that boundary.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'Forwarded to Invoke-RestoreCatalogQuery; SecureString adds no protection across the docker exec boundary.')]
@@ -1582,6 +1597,32 @@ function Assert-RestoreTargetSafety {
     $manifestMajor = Get-RestoreEngineMajorVersion -EngineVersion ([string]$Manifest.engineVersion) -SourceDescription "the restore manifest's"
     if ($liveMajor -lt $manifestMajor) {
         throw "The live server major version $liveMajor is older than the restore manifest's engine major version $manifestMajor ('$($Manifest.engineVersion)'); a template from a newer engine never replays onto an older server."
+    }
+
+    # 4b) PostgreSQL platform floor, the contract SchemaTools provisioning enforces (DMS-1447):
+    #     server_version_num >= 180000 and a UTF-8 creation encoding. Restore bypasses that
+    #     provisioner and creates the scratch and target databases with a plain CREATE DATABASE,
+    #     which inherits template1's encoding, so template1 is what must be UTF-8.
+    if ($DatabaseEngine -eq "postgresql") {
+        $platformRows = @(Invoke-RestoreCatalogQuery @catalogQueryArguments `
+                -Query (Get-RestorePostgresqlPlatformQuerySql) `
+                -FailureMessage "PostgreSQL platform check failed for restore target '$TargetDatabaseName'.")
+        $platformRow = $platformRows | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -First 1
+        $platformText = if ($null -eq $platformRow) { "" } else { ([string]$platformRow).Trim() }
+        $platformMatch = [System.Text.RegularExpressions.Regex]::Match($platformText, '^(?<version>\d+)\|(?<encoding>[A-Za-z0-9_]*)$')
+        if (-not $platformMatch.Success) {
+            throw "PostgreSQL platform check returned an unreadable answer '$platformText' for restore target '$TargetDatabaseName'; refusing on an indeterminate answer."
+        }
+        $serverVersionNum = [int]$platformMatch.Groups["version"].Value
+        $creationEncoding = $platformMatch.Groups["encoding"].Value
+        $requirement = "DMS requires PostgreSQL $($script:RestorePostgresqlMinimumServerVersionNum / 10000) or later with a UTF-8 database encoding; restore creates its scratch and target databases from the server's template1, which must be UTF-8."
+        if ($serverVersionNum -lt $script:RestorePostgresqlMinimumServerVersionNum) {
+            throw "$requirement Detected: server_version_num $serverVersionNum."
+        }
+        if ($creationEncoding -cne "UTF8") {
+            $detectedEncoding = if ([string]::IsNullOrEmpty($creationEncoding)) { "unavailable" } else { $creationEncoding }
+            throw "$requirement Detected: template1 encoding $detectedEncoding."
+        }
     }
 
     # 5) CDC-binding refusal: a CDC-bound target must go through the governed new-generation
@@ -2803,9 +2844,10 @@ function Invoke-RestoreTargetReplacement {
     $adminDatabaseName = if ($DatabaseEngine -eq "mssql") { "master" } else { "postgres" }
 
     # The full non-destructive gate: name safety, live reserved catalog, running services, live
-    # engine major, CDC bindings. It runs here, so a target that is already unsafe never receives
-    # the transfer, and again after the transfer is verified, immediately before the first
-    # statement that touches the target: CMS or DMS can start while the artifact is copied.
+    # engine major, PostgreSQL platform floor, CDC bindings. It runs here, so a target that is
+    # already unsafe never receives the transfer, and again after the transfer is verified,
+    # immediately before the first statement that touches the target: CMS or DMS can start
+    # while the artifact is copied.
     $targetSafetyArguments = @{
         DatabaseEngine              = $DatabaseEngine
         TargetDatabaseName          = $TargetDatabaseName
@@ -2968,6 +3010,7 @@ Export-ModuleMember -Function `
     New-RestorePreflightEnvironment, `
     Invoke-RestoreCatalogQuery, `
     Get-RestoreEngineMajorVersion, `
+    Get-RestorePostgresqlPlatformQuerySql, `
     Assert-RestoreTargetSafety, `
     Get-RestoreDatabaseCatalogFact, `
     Invoke-RestoreScratchValidation, `

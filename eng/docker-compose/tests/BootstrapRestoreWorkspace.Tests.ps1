@@ -1215,21 +1215,24 @@ Describe "Assert-RestoreTargetSafety" {
     }
 
     BeforeEach {
-        # Safe defaults: only the db service is running, every catalog answer is benign, and
-        # the live version satisfies the manifest below. Tests override per scenario.
+        # Safe defaults: only the db service is running, every catalog answer is benign, the
+        # live version satisfies the manifest below, and the PostgreSQL platform is supported
+        # (18.6, UTF-8 template1). Tests override per scenario.
         Mock docker { $global:LASTEXITCODE = 0; "dms-local-db-1|db" } -ModuleName bootstrap-restore
         Mock Invoke-RestoreCatalogQuery {
-            if ($Query -like "*server_version*") { return "16.8" }
+            if ($Query -like "*server_version_num*") { return "180006|UTF8" }
+            if ($Query -like "*server_version*") { return "18.6" }
             if ($Query -like "*ProductVersion*") { return "17.0.900.7" }
             return @()
         } -ModuleName bootstrap-restore
-        $script:pgManifest = [pscustomobject]@{ engineVersion = "16.8" }
+        $script:pgManifest = [pscustomobject]@{ engineVersion = "18.6" }
         $script:mssqlManifest = [pscustomobject]@{ engineVersion = "17.0.900.7" }
     }
 
     It "PostgreSQL: every live check, including the in-target publication query, connects as the caller's administrator" {
         Mock Invoke-RestoreCatalogQuery {
-            if ($Query -like "*server_version*") { return "16.8" }
+            if ($Query -like "*server_version_num*") { return "180006|UTF8" }
+            if ($Query -like "*server_version*") { return "18.6" }
             if ($Query -like "SELECT 1 FROM pg_database*") { return "1" }
             return @()
         } -ModuleName bootstrap-restore
@@ -1246,9 +1249,9 @@ Describe "Assert-RestoreTargetSafety" {
         { Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $script:pgManifest } |
             Should -Not -Throw
 
-        # reserved-catalog + engine-version + replication-slots + target-existence; the
-        # in-target publication query must not run against an absent database.
-        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 4 -Exactly
+        # reserved-catalog + engine-version + platform + replication-slots + target-existence;
+        # the in-target publication query must not run against an absent database.
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 5 -Exactly
         Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*pg_publication*" }
     }
 
@@ -1304,10 +1307,85 @@ Describe "Assert-RestoreTargetSafety" {
     }
 
     It "refuses when the live server major is older than the manifest's engine major" {
-        $newerManifest = [pscustomobject]@{ engineVersion = "17.2" }
+        $newerManifest = [pscustomobject]@{ engineVersion = "19.2" }
 
         { Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $newerManifest } |
-            Should -Throw "*live server major version 16 is older than the restore manifest's engine major version 17*"
+            Should -Throw "*live server major version 18 is older than the restore manifest's engine major version 19*"
+    }
+
+    It "PostgreSQL: reads the platform floor once, from the admin database, as the caller's administrator" {
+        Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $script:pgManifest -PostgresUser "dmsadmin"
+
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter {
+            $Query -ceq "SELECT current_setting('server_version_num') || '|' || COALESCE((SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname = 'template1'), '');" -and
+            $DatabaseName -ceq "postgres" -and $PostgresUser -ceq "dmsadmin"
+        }
+    }
+
+    It "PostgreSQL: accepts a supported platform (<Answer>), including an older-major package on it" -ForEach @(
+        @{ Answer = "180000|UTF8" }
+        @{ Answer = "180006|UTF8" }
+        @{ Answer = "190002|UTF8" }
+    ) {
+        Mock Invoke-RestoreCatalogQuery { $Answer } -ModuleName bootstrap-restore -ParameterFilter { $Query -like "*server_version_num*" }
+        $olderPackage = [pscustomobject]@{ engineVersion = "16.8" }
+
+        { Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $olderPackage } |
+            Should -Not -Throw
+    }
+
+    It "PostgreSQL: refuses a server older than PostgreSQL 18 (<Answer>), even for a package from an older engine" -ForEach @(
+        @{ Answer = "170005|UTF8"; Version = "17.5"; Detected = "server_version_num 170005" }
+        @{ Answer = "160008|UTF8"; Version = "16.8"; Detected = "server_version_num 160008" }
+        @{ Answer = "179999|UTF8"; Version = "17.99"; Detected = "server_version_num 179999" }
+    ) {
+        # The engine-major check alone admits these: the live major is not older than the package's.
+        Mock Invoke-RestoreCatalogQuery { $Answer } -ModuleName bootstrap-restore -ParameterFilter { $Query -like "*server_version_num*" }
+        Mock Invoke-RestoreCatalogQuery { $Version } -ModuleName bootstrap-restore -ParameterFilter { $Query -like "*server_version')*" }
+        $olderPackage = [pscustomobject]@{ engineVersion = "16.8" }
+
+        { Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $olderPackage } |
+            Should -Throw "DMS requires PostgreSQL 18 or later with a UTF-8 database encoding*Detected: $Detected."
+        # Refused before the remaining live checks.
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*pg_replication_slots*" }
+    }
+
+    It "PostgreSQL: refuses a non-UTF-8 database-creation encoding (template1 <Encoding>)" -ForEach @(
+        @{ Encoding = "SQL_ASCII" }
+        @{ Encoding = "LATIN1" }
+        @{ Encoding = "WIN1252" }
+        @{ Encoding = "utf8" }
+    ) {
+        Mock Invoke-RestoreCatalogQuery { "180006|$Encoding" } -ModuleName bootstrap-restore -ParameterFilter { $Query -like "*server_version_num*" }
+
+        { Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $script:pgManifest } |
+            Should -Throw "DMS requires PostgreSQL 18 or later with a UTF-8 database encoding*template1*Detected: template1 encoding $Encoding."
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*pg_replication_slots*" }
+    }
+
+    It "PostgreSQL: fails closed when template1's encoding cannot be read" {
+        Mock Invoke-RestoreCatalogQuery { "180006|" } -ModuleName bootstrap-restore -ParameterFilter { $Query -like "*server_version_num*" }
+
+        { Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $script:pgManifest } |
+            Should -Throw "*Detected: template1 encoding unavailable."
+    }
+
+    It "PostgreSQL: fails closed on an unreadable or missing platform answer (<Case>)" -ForEach @(
+        @{ Case = "no row"; Rows = @() }
+        @{ Case = "blank row"; Rows = @("  ") }
+        @{ Case = "no separator"; Rows = @("180006") }
+        @{ Case = "non-numeric version"; Rows = @("eighteen|UTF8") }
+    ) {
+        Mock Invoke-RestoreCatalogQuery { $Rows } -ModuleName bootstrap-restore -ParameterFilter { $Query -like "*server_version_num*" }
+
+        { Assert-RestoreTargetSafety -DatabaseEngine postgresql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $script:pgManifest } |
+            Should -Throw "*PostgreSQL platform check returned an unreadable answer*refusing on an indeterminate answer*"
+    }
+
+    It "SQL Server: does not run the PostgreSQL platform check" {
+        Assert-RestoreTargetSafety -DatabaseEngine mssql -TargetDatabaseName "edfi_datamanagementservice" -Manifest $script:mssqlManifest
+
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $Query -like "*server_version_num*" }
     }
 
     It "fails closed on an unparsable or missing live engine version" {
@@ -2341,6 +2419,7 @@ Describe "Invoke-RestoreTargetReplacement target-safety recheck after the transf
         $global:CorruptContainerCopy = $false
         $global:DmsStartedDuringTransfer = $false
         $global:RecheckQueries = [System.Collections.Generic.List[string]]::new()
+        $global:PlatformChangedDuringTransfer = $false
         Mock docker {
             $global:LASTEXITCODE = 0
             if ($args[0] -eq "ps") {
@@ -2359,7 +2438,11 @@ Describe "Invoke-RestoreTargetReplacement target-safety recheck after the transf
         } -ModuleName bootstrap-restore
         Mock Invoke-RestoreCatalogQuery {
             $global:RecheckQueries.Add($Query)
-            if ($Query -like "*server_version*") { return "16.8" }
+            if ($Query -like "*server_version_num*") {
+                if ($global:PlatformChangedDuringTransfer) { return "180006|SQL_ASCII" }
+                return "180006|UTF8"
+            }
+            if ($Query -like "*server_version*") { return "18.6" }
             if ($Query -like "*ProductVersion*") { return "17.0.900.7" }
             return @()
         } -ModuleName bootstrap-restore
@@ -2373,6 +2456,7 @@ Describe "Invoke-RestoreTargetReplacement target-safety recheck after the transf
         Remove-Variable -Name CorruptContainerCopy -Scope Global -ErrorAction SilentlyContinue
         Remove-Variable -Name DmsStartedDuringTransfer -Scope Global -ErrorAction SilentlyContinue
         Remove-Variable -Name RecheckQueries -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name PlatformChangedDuringTransfer -Scope Global -ErrorAction SilentlyContinue
     }
 
     It "<Engine>: a service that starts during the transfer stops the restore before any statement touches the target" -ForEach @(
@@ -2395,6 +2479,41 @@ Describe "Invoke-RestoreTargetReplacement target-safety recheck after the transf
         Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $args[0] -eq "exec" -and $args[2] -notin @("sha256sum", "rm") }
         # The transient in-container copy is still removed.
         Should -Invoke docker -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { ($args -join " ") -like "exec $Container rm -f *" }
+    }
+
+    It "postgresql: an unsupported platform is refused before the transfer, and nothing reaches the target" {
+        Mock Invoke-RestoreCatalogQuery {
+            $global:RecheckQueries.Add($Query)
+            if ($Query -like "*server_version_num*") { return "170005|UTF8" }
+            if ($Query -like "*server_version*") { return "17.5" }
+            return @()
+        } -ModuleName bootstrap-restore
+        $stage = New-ScratchStage -Directory $script:recheckRoot -DatabaseEngine postgresql
+
+        { Invoke-RestoreTargetReplacement -Stage $stage -TargetDatabaseName "edfi_datamanagementservice" -PackageSourceIdentity "11111111-1111-1111-1111-111111111111" -DatabaseEngine postgresql } |
+            Should -Throw "DMS requires PostgreSQL 18 or later*Detected: server_version_num 170005."
+
+        Should -Invoke Invoke-RestoreDockerInputCommand -ModuleName bootstrap-restore -Times 0 -Exactly
+        @($global:RecheckQueries | Where-Object { $_ -match 'DROP DATABASE|CREATE DATABASE|pg_terminate_backend' }) | Should -BeNullOrEmpty
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $args[0] -eq "exec" }
+    }
+
+    It "postgresql: the post-transfer recheck repeats the platform check before any statement touches the target" {
+        Mock Invoke-RestoreDockerInputCommand {
+            $writerResult = Invoke-TestContainerInputDocker -ArgumentList $ArgumentList -InputWriter $InputWriter
+            $global:PlatformChangedDuringTransfer = $true
+            return $writerResult
+        } -ModuleName bootstrap-restore
+        $stage = New-ScratchStage -Directory $script:recheckRoot -DatabaseEngine postgresql
+
+        { Invoke-RestoreTargetReplacement -Stage $stage -TargetDatabaseName "edfi_datamanagementservice" -PackageSourceIdentity "11111111-1111-1111-1111-111111111111" -DatabaseEngine postgresql } |
+            Should -Throw "DMS requires PostgreSQL 18 or later*Detected: template1 encoding SQL_ASCII."
+
+        # The gate ran on both sides of the transfer.
+        @($global:RecheckQueries | Where-Object { $_ -like "*server_version_num*" }).Count | Should -Be 2
+        Should -Invoke Invoke-RestoreDockerInputCommand -ModuleName bootstrap-restore -Times 1 -Exactly
+        @($global:RecheckQueries | Where-Object { $_ -match 'DROP DATABASE|CREATE DATABASE|pg_terminate_backend|restore_global' }) | Should -BeNullOrEmpty
+        Should -Invoke docker -ModuleName bootstrap-restore -Times 0 -Exactly -ParameterFilter { $args[0] -eq "exec" -and $args[2] -notin @("sha256sum", "rm") }
     }
 }
 
