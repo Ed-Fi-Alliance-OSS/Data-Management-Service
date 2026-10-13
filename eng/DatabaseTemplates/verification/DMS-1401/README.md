@@ -62,9 +62,19 @@ have the expiration times recorded in the evidence. Local downloads and check
 records are retained at `/tmp/t20-results/` (PostgreSQL Minimal), `/tmp/t21-results/`
 (SQL Server Minimal), `/tmp/t22-results/` (PostgreSQL Populated), and
 `/tmp/t23-results/` (SQL Server Populated); copy them before cleaning those
-directories if needed for the later publication task. T23 also rechecked the
+directories if needed for later release work. T23 also rechecked the
 retained T20–T22 package hashes against their records when reconciling this matrix.
 
-T20–T23 qualify all eight required matrix entries. Verified prerelease publication
-and affected consumer pins remain T24.
-No story closure or release promotion is claimed here.
+T20–T23 qualify all eight required matrix entries. [T24's consumer inventory](consumers.json)
+found no affected fixed repository package-version pins. Compose/bootstrap uses
+generated DDL and API seed delivery; smoke consumes artifacts built in the same
+run. The retained manual loader and Azure VM examples select versions dynamically
+or from operator input. Package-ID Data Standard suffixes are unchanged.
+
+T24 therefore applies its explicit no-pins exception: no new pins or package
+publication, feed downloads, or additional consumer restores. All eight retained
+package hashes were rechecked against the records above. Dynamic `latest` selection
+is not certified as compatible with this branch; changed-runtime deployments still
+need databases freshly provisioned from the changed DDL or compatible packages verified through the release
+workflow. Actual deployment updates, stable publication and release-view promotion
+remain release responsibilities. All implementation-loop tasks are complete.

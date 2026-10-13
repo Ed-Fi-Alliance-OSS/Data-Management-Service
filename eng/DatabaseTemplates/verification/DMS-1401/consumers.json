@@ -1,0 +1,258 @@
+{
+  "task": "T24",
+  "story": "reference/design/backend-redesign/epics/21-storage-reduction/16-drop-document-content-last-modified-at.md",
+  "audited_commit": "3f1bd4dd71c5b2d22a586fd5d2fbde5c4893bd99",
+  "producing_commit": "b0d04812293b415188333fc2e46e79ed5fd0277d",
+  "affected_fixed_consumer_pins": [],
+  "decision": "No affected fixed repository template package-version pins exist. Apply the T24 no-pins exception: do not introduce pins or publish packages solely for this task.",
+  "search": {
+    "required_command": "rg -n --hidden 'DATABASE_TEMPLATE|EdFi\\.Api\\.(Minimal|Populated)\\.Template|template.*[Vv]ersion' eng .github src",
+    "additional_scope": "Repository-wide template selection search, tracked environment assignments, package download helpers, bootstrap provisioning, smoke workflow restore steps, and Azure VM deployment examples; distinguished Data Standard suffixes from package versions.",
+    "local_evidence": "/tmp/t24-results"
+  },
+  "consumers": [
+    {
+      "kind": "compose/bootstrap/E2E",
+      "selection": "Tracked environment files contain package IDs only; 5.2.0/6.1.0 suffixes select Data Standards, not package versions.",
+      "environments": [
+        {
+          "path": "eng/docker-compose/.env.bootstrap.ds52",
+          "package_id": "EdFi.Api.Populated.Template.PostgreSql.5.2.0"
+        },
+        {
+          "path": "eng/docker-compose/.env.bootstrap.ds61",
+          "package_id": "EdFi.Api.Populated.Template.PostgreSql.6.1.0"
+        },
+        {
+          "path": "eng/docker-compose/.env.cursorpartitions.e2e",
+          "package_id": "EdFi.Api.Populated.Template.PostgreSql.5.2.0"
+        },
+        {
+          "path": "eng/docker-compose/.env.ds52",
+          "package_id": "EdFi.Api.Populated.Template.PostgreSql.5.2.0"
+        },
+        {
+          "path": "eng/docker-compose/.env.ds61",
+          "package_id": "EdFi.Api.Populated.Template.PostgreSql.6.1.0"
+        },
+        {
+          "path": "eng/docker-compose/.env.e2e",
+          "package_id": "EdFi.Api.Populated.Template.PostgreSql.5.2.0"
+        },
+        {
+          "path": "eng/docker-compose/.env.example",
+          "package_id": "EdFi.Api.Populated.Template.PostgreSql.5.2.0"
+        },
+        {
+          "path": "eng/docker-compose/.env.multitenancy",
+          "package_id": "EdFi.Api.Populated.Template.PostgreSql.5.2.0"
+        },
+        {
+          "path": "eng/docker-compose/.env.routeContext.e2e",
+          "package_id": "EdFi.Api.Populated.Template.PostgreSql.5.2.0"
+        },
+        {
+          "path": "eng/docker-compose/.env.smoke",
+          "package_id": "EdFi.Api.Smoke.Template.PostgreSql.5.2.0"
+        },
+        {
+          "path": "eng/docker-compose/.env.smoke.ds61",
+          "package_id": "EdFi.Api.Smoke.Template.PostgreSql.6.1.0"
+        },
+        {
+          "path": "eng/docker-compose/.env.template",
+          "package_id": "EdFi.Api.Populated.Template.PostgreSql.5.2.0"
+        },
+        {
+          "path": "eng/docker-compose/.env.template.ds61",
+          "package_id": "EdFi.Api.Populated.Template.PostgreSql.6.1.0"
+        }
+      ],
+      "runtime_path": [
+        "eng/docker-compose/bootstrap-wrapper.psm1",
+        "eng/docker-compose/provision-dms-schema.ps1",
+        "eng/docker-compose/load-dms-seed-data.ps1",
+        "build-dms.ps1"
+      ],
+      "behavior": "Bootstrap provisions generated DDL; seed delivery uses the API-based BulkLoadClient. Existing databases must be deliberately reprovisioned for this physical change; v3 equality is insufficient.",
+      "action": "No fixed template package-version pin to update; package IDs and provider rewriting unchanged."
+    },
+    {
+      "kind": "scheduled/PR smoke",
+      "paths": [
+        ".github/workflows/scheduled-smoke-test.yml",
+        "eng/DatabaseTemplates/Select-SmokeTestLegs.ps1"
+      ],
+      "selection": "Builds engine/Data Standard-specific Smoke template artifacts in the same run with publish_package=false, verify_restore=true and require_populated_data=true; downloads the matrix package artifact and passes its directory to Restore-TemplatePackage.",
+      "action": "No feed version pin. Smoke schemas include test extensions and are distinct from the eight product packages; do not substitute product package IDs."
+    },
+    {
+      "kind": "template producers",
+      "paths": [
+        ".github/workflows/EdFi.Api.Minimal.Template.PostgreSQL.yml",
+        ".github/workflows/EdFi.Api.Minimal.Template.MsSql.yml",
+        ".github/workflows/EdFi.Api.Populated.Template.PostgreSQL.yml",
+        ".github/workflows/EdFi.Api.Populated.Template.MsSql.yml",
+        ".github/workflows/build-minimal-template.yml",
+        ".github/workflows/build-populated-template.yml"
+      ],
+      "selection": "Core/extension and provider selection comes from the matrix. Package version comes from the build dms-version output, not a fixed consumer pin.",
+      "action": "Existing publication/release workflow unchanged."
+    },
+    {
+      "kind": "retained manual template loader",
+      "paths": [
+        "eng/docker-compose/setup-database-template.psm1",
+        "eng/Package-Management.psm1"
+      ],
+      "selection": "LoadSeedData passes ambient $Version to Get-NugetPackage -PreRelease; absent version resolves dynamically. No fixed version assignment or automated bootstrap caller.",
+      "configured_feed": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
+      "action": "No pin introduced. This audit does not certify a dynamically selected feed artifact for the changed runtime."
+    },
+    {
+      "kind": "Azure VM deployment examples",
+      "paths": [
+        "eng/azure-vm/compose/.env.example",
+        "eng/azure-vm/compose/seed/grandbend.sh",
+        "eng/azure-vm/provision/UPDATE.md",
+        "eng/azure-vm/provision/REDEPLOY.md",
+        "eng/azure-vm/docs/infrastructure.md",
+        "eng/azure-vm/TROUBLESHOOTING.md"
+      ],
+      "selection": "DATABASE_TEMPLATE_PACKAGE_VERSION=latest; grandbend.sh uses that value or an operator-supplied version. UPDATE.md derives $VERSION from the deployed image label. Neither is a fixed repository version.",
+      "configured_feed": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3",
+      "action": "Actual deployment pins remain in release/deployment workflow; no remote deployment changed. Dynamic latest is not evidence of compatibility with this branch."
+    },
+    {
+      "kind": "excluded numeric examples",
+      "paths": [
+        "eng/docker-compose/tests/AzureVmDeployment.Tests.ps1",
+        "eng/azure-vm/compose/seed/check-ods-parity.py",
+        "eng/azure-vm/provision/UPDATE.md"
+      ],
+      "selection": "1.0.0 is a temporary test fixture. 7.3.20067 selects the separate EdFi.Suite3.Ods.Populated.Template.PostgreSQL.Standard.6.1.0 comparison dataset, not a DMS database restore. ApiSchema, SDK, BulkLoadClient and smoke utility versions are separate package families.",
+      "action": "Unrelated versions unchanged."
+    }
+  ],
+  "qualified_artifacts": [
+    {
+      "package_id": "EdFi.Api.Minimal.Template.PostgreSql.5.2.0",
+      "package_version": "8.1.0-beta.0.1.35",
+      "package_sha256": "0fed6d4d60eae9cd75231e234b11e5603556816084c528119f169c5136d3bae6",
+      "producing_commit": "b0d04812293b415188333fc2e46e79ed5fd0277d",
+      "build_run": "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38343258018",
+      "evidence": "minimal-postgresql.json",
+      "retained_package_sha256_rechecked": true
+    },
+    {
+      "package_id": "EdFi.Api.Minimal.Template.PostgreSql.6.1.0",
+      "package_version": "8.1.0-beta.0.1.35",
+      "package_sha256": "7e0caf50a7f8f45ef6f1000715a4f29d6dfbbf68e01ff4c417d5d17c48d988cd",
+      "producing_commit": "b0d04812293b415188333fc2e46e79ed5fd0277d",
+      "build_run": "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38343258018",
+      "evidence": "minimal-postgresql.json",
+      "retained_package_sha256_rechecked": true
+    },
+    {
+      "package_id": "EdFi.Api.Minimal.Template.MsSql.5.2.0",
+      "package_version": "8.1.0-beta.0.1.35",
+      "package_sha256": "17394574ce9a5c33385bb31d9c9aee7e0ad46fab46201999c434cd028ae1caa3",
+      "producing_commit": "b0d04812293b415188333fc2e46e79ed5fd0277d",
+      "build_run": "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38344308663",
+      "evidence": "minimal-mssql.json",
+      "retained_package_sha256_rechecked": true
+    },
+    {
+      "package_id": "EdFi.Api.Minimal.Template.MsSql.6.1.0",
+      "package_version": "8.1.0-beta.0.1.35",
+      "package_sha256": "d628297ee3d9f7fee592c923c32eb7fac8f5db983cf23023c95bf864ad53de54",
+      "producing_commit": "b0d04812293b415188333fc2e46e79ed5fd0277d",
+      "build_run": "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38344308663",
+      "evidence": "minimal-mssql.json",
+      "retained_package_sha256_rechecked": true
+    },
+    {
+      "package_id": "EdFi.Api.Populated.Template.PostgreSql.5.2.0",
+      "package_version": "8.1.0-beta.0.1.35",
+      "package_sha256": "3dfc5576b5150cba3ced6327999cca2f7a8ece38cbe8b4fafb52f14105301c50",
+      "producing_commit": "b0d04812293b415188333fc2e46e79ed5fd0277d",
+      "build_run": "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38345459901",
+      "evidence": "populated-postgresql.json",
+      "retained_package_sha256_rechecked": true
+    },
+    {
+      "package_id": "EdFi.Api.Populated.Template.PostgreSql.6.1.0",
+      "package_version": "8.1.0-beta.0.1.35",
+      "package_sha256": "91baabeccdee577c00487abc0c7fa78a8f43c55ebecf573a3567409e72787ded",
+      "producing_commit": "b0d04812293b415188333fc2e46e79ed5fd0277d",
+      "build_run": "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38345459901",
+      "evidence": "populated-postgresql.json",
+      "retained_package_sha256_rechecked": true
+    },
+    {
+      "package_id": "EdFi.Api.Populated.Template.MsSql.5.2.0",
+      "package_version": "8.1.0-beta.0.1.35",
+      "package_sha256": "596b899c6cfe172ec7d241edc61b717c75c747299cd9ba29d81070a786f5e901",
+      "producing_commit": "b0d04812293b415188333fc2e46e79ed5fd0277d",
+      "build_run": "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38346684522",
+      "evidence": "populated-mssql.json",
+      "retained_package_sha256_rechecked": true
+    },
+    {
+      "package_id": "EdFi.Api.Populated.Template.MsSql.6.1.0",
+      "package_version": "8.1.0-beta.0.1.35",
+      "package_sha256": "3a7b3702f0609453db817d3e4a587c5e8c7bb7a9ec01d418244fae90850b9a54",
+      "producing_commit": "b0d04812293b415188333fc2e46e79ed5fd0277d",
+      "build_run": "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/38346684522",
+      "evidence": "populated-mssql.json",
+      "retained_package_sha256_rechecked": true
+    }
+  ],
+  "publication": {
+    "required_packages": [],
+    "published_packages": [],
+    "feed_downloads": [],
+    "fresh_consumer_restores": [],
+    "reason": "Not applicable under the explicit no-affected-fixed-pins exception. No selected exact consumer versions require publication, feed download or additional consumer restoration. T20-T23 retain the fresh-source/fresh-restore catalog, data and authenticated API evidence for all eight product artifacts.",
+    "release_view_promotion": false
+  },
+  "relational_mapping_version": "v3",
+  "validation": {
+    "release_solution_build": {
+      "command": "dotnet build src/dms/EdFi.DataManagementService.sln -c Release",
+      "result": "passed",
+      "warnings": 0,
+      "errors": 0
+    },
+    "pester": {
+      "files": [
+        "eng/docker-compose/tests/BootstrapPackageResolver.Tests.ps1",
+        "eng/docker-compose/tests/BootstrapStandardSchemaSelection.Tests.ps1",
+        "eng/docker-compose/tests/BootstrapSeedDelivery.Tests.ps1",
+        "eng/docker-compose/tests/DataStandardEnvironmentFile.Tests.ps1",
+        "eng/docker-compose/tests/DatabaseEngineEnvironmentFile.Tests.ps1",
+        "eng/docker-compose/tests/AzureVmDeployment.Tests.ps1",
+        "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1",
+        "eng/DatabaseTemplates/tests/Template-WorkflowInputs.Tests.ps1",
+        "eng/DatabaseTemplates/tests/Template-WorkflowManifest.Tests.ps1",
+        "eng/DatabaseTemplates/tests/Template-Schema.Tests.ps1",
+        "eng/DatabaseTemplates/tests/Compact-Descriptor.Tests.ps1",
+        "eng/DatabaseTemplates/tests/Smoke-LegSelection.Tests.ps1"
+      ],
+      "summary": {
+        "TotalCount": 532,
+        "PassedCount": 531,
+        "FailedCount": 0,
+        "SkippedCount": 1,
+        "NotRunCount": 0
+      },
+      "skip": "Opt-in real BulkLoadClient DLL package check (DMS_BOOTSTRAP_RUN_PACKAGE_TESTS); unrelated to template version resolution.",
+      "runner": "PowerShell 7.6.6 native pwsh executable from the installed package",
+      "initial_run_resolution": "Initial dotnet-tool shim exposed dotnet as ProcessPath, failing three child-process checks. Reexecuting all 532 cases through the native pwsh apphost passed all enabled cases without repository changes.",
+      "result_sha256": "a832eb8989328bc667b61eb1b04f00d06c01ce6d068099f09506bff99fc84a5e"
+    },
+    "artifact_hash_rechecks": 8,
+    "consumer_paths_and_artifact_correlations": "passed",
+    "diff_check": "passed"
+  }
+}
