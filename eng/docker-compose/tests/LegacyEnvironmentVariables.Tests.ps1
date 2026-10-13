@@ -143,6 +143,28 @@ Describe 'Legacy Configuration Service environment variable names' {
                 Should -BeExactly "Environment variable 'DMS_CONFIG_ENABLE_CLAIMS_RELOAD' in '$file' is no longer read. Rename it to 'CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING'."
         }
 
+        It 'reports a name passed as an additional removed variable as removable instead of renamed' {
+            $file = Write-TestEnvironmentFile -Name 'keycloak-only.env' -Lines @(
+                "DMS_CONFIG_IDENTITY_ENCRYPTION_KEY=$script:sentinel"
+                "DMS_CONFIG_DATABASE_ENCRYPTION_KEY=$script:sentinel"
+            )
+
+            $warnings = @()
+            Write-LegacyEnvironmentVariableWarning -EnvironmentFile $file -AdditionalRemovedVariable 'DMS_CONFIG_IDENTITY_ENCRYPTION_KEY' -WarningVariable warnings -WarningAction SilentlyContinue
+            $warnings = @($warnings | ForEach-Object { [string]$_ })
+
+            $warnings | Should -HaveCount 2
+            $warnings | Should -Contain "Environment variable 'DMS_CONFIG_IDENTITY_ENCRYPTION_KEY' in '$file' is no longer read and can be removed."
+            $warnings | Should -Contain "Environment variable 'DMS_CONFIG_DATABASE_ENCRYPTION_KEY' in '$file' is no longer read. Rename it to 'CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY'."
+        }
+
+        It 'names the replacement for the identity encryption key when no additional removed variable is passed' {
+            $file = Write-TestEnvironmentFile -Name 'self-contained.env' -Lines @("DMS_CONFIG_IDENTITY_ENCRYPTION_KEY=$script:sentinel")
+
+            Invoke-LegacyWarning -EnvironmentFile $file |
+                Should -BeExactly "Environment variable 'DMS_CONFIG_IDENTITY_ENCRYPTION_KEY' in '$file' is no longer read. Rename it to 'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY'."
+        }
+
         It 'warns about a legacy name set only in the process environment' {
             $file = Write-TestEnvironmentFile -Name 'clean.env' -Lines @('CONFIGURATION_SERVICE_LOG_LEVEL=Information')
             $env:DMS_CONFIG_LOG_LEVEL = $script:sentinel
@@ -186,13 +208,13 @@ Describe 'Legacy Configuration Service environment variable names' {
             # Without -InitDb or -InsertData the script only resolves its inputs, so these runs touch no
             # database.
             function Invoke-SetupOpenIddict {
-                param([string]$EnvironmentFile)
+                param([string]$EnvironmentFile, [switch]$SkipLegacyEnvironmentVariableWarning)
                 $warnings = [System.Collections.Generic.List[string]]::new()
                 $failure = $null
                 Push-Location $script:composeRoot
                 try {
                     # Warnings are kept as they arrive, so those written before a failure survive it.
-                    & ./setup-openiddict.ps1 -EnvironmentFile $EnvironmentFile 3>&1 2>$null 4>$null 5>$null 6>$null |
+                    & ./setup-openiddict.ps1 -EnvironmentFile $EnvironmentFile -SkipLegacyEnvironmentVariableWarning:$SkipLegacyEnvironmentVariableWarning 3>&1 2>$null 4>$null 5>$null 6>$null |
                         ForEach-Object {
                             if ($_ -is [System.Management.Automation.WarningRecord]) { $warnings.Add($_.Message) }
                         }
@@ -237,6 +259,18 @@ Describe 'Legacy Configuration Service environment variable names' {
             $result.Warnings | Should -BeNullOrEmpty
         }
 
+        It 'writes no warning when its caller has already warned' {
+            $file = Write-TestEnvironmentFile -Name 'openiddict-nested.env' -Lines @(
+                "DMS_CONFIG_IDENTITY_ENCRYPTION_KEY=$script:sentinel"
+            )
+            $env:DMS_CONFIG_IDENTITY_HASHING_ITERATIONS = $script:sentinel
+
+            $result = Invoke-SetupOpenIddict -EnvironmentFile $file -SkipLegacyEnvironmentVariableWarning
+
+            $result.Failure | Should -BeNullOrEmpty
+            $result.Warnings | Should -BeNullOrEmpty
+        }
+
         It 'warns before it reads the environment file' {
             $env:DMS_CONFIG_IDENTITY_HASHING_ITERATIONS = $script:sentinel
 
@@ -266,17 +300,20 @@ Describe 'Legacy Configuration Service environment variable names' {
                 "CONFIG_SERVICE_CLIENT_SECRET=$script:sentinel"
                 'DMS_CONFIG_ENABLE_CLAIMS_RELOAD=false'
                 'DMS_CONFIG_CLAIMS_PATH=/claims'
+                "DMS_CONFIG_IDENTITY_ENCRYPTION_KEY=$script:sentinel"
                 'CONFIGURATION_SERVICE_LOG_LEVEL=Information'
             )
             $env:DMS_CONFIG_LOG_LEVEL = $script:sentinel
 
             $warnings = Invoke-AzureLegacyWarning -EnvironmentFile $file
 
-            $warnings | Should -HaveCount 5
+            $warnings | Should -HaveCount 6
             $warnings | Should -Contain "WARNING: Environment variable 'DMS_CONFIG_DATABASE_ENCRYPTION_KEY' in '$file' is no longer read. Rename it to 'CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY'."
             $warnings | Should -Contain "WARNING: Environment variable 'CONFIG_SERVICE_CLIENT_SECRET' in '$file' is no longer read. Rename it to 'DMS_CONFIGURATION_SERVICE_CLIENT_SECRET'."
             $warnings | Should -Contain "WARNING: Environment variable 'DMS_CONFIG_ENABLE_CLAIMS_RELOAD' in '$file' is no longer read. Rename it to 'CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING'."
             $warnings | Should -Contain "WARNING: Environment variable 'DMS_CONFIG_CLAIMS_PATH' in '$file' is no longer read and can be removed."
+            # The one deliberate difference from env-utility.psm1: this Keycloak-only stack never reads the replacement.
+            $warnings | Should -Contain "WARNING: Environment variable 'DMS_CONFIG_IDENTITY_ENCRYPTION_KEY' in '$file' is no longer read and can be removed."
             $warnings | Should -Contain "WARNING: Environment variable 'DMS_CONFIG_LOG_LEVEL' in the process environment is no longer read. Rename it to 'CONFIGURATION_SERVICE_LOG_LEVEL'."
             ($warnings -join "`n") | Should -Not -Match $script:sentinel
         }
@@ -285,6 +322,53 @@ Describe 'Legacy Configuration Service environment variable names' {
             $file = Write-TestEnvironmentFile -Name 'azure-current.env' -Lines @('CONFIGURATION_SERVICE_LOG_LEVEL=Information')
 
             Invoke-AzureLegacyWarning -EnvironmentFile $file | Should -BeNullOrEmpty
+        }
+    }
+
+    Describe 'Azure VM entry points' {
+        BeforeAll {
+            $script:azureRoot = [IO.Path]::GetFullPath((Join-Path $script:composeRoot '../azure-vm'))
+            $script:psRemovedNames = @(& (Get-Module env-utility) { $script:RemovedLegacyVariables } | Sort-Object)
+            $script:azureRemovedNames = @($script:psRemovedNames + 'DMS_CONFIG_IDENTITY_ENCRYPTION_KEY' | Sort-Object)
+        }
+
+        It 'reports the same removed names in legacy-env-warning.sh as env-utility.psm1, plus the identity encryption key' {
+            $helper = Get-Content -LiteralPath (Join-Path $script:azureRoot 'compose/legacy-env-warning.sh') -Raw
+            $removedBranch = [regex]::Match($helper, '(?s)case "\$1" in\s+(?<names>.*?)\)\s*;;').Groups['names'].Value
+
+            @([regex]::Matches($removedBranch, 'DMS_CONFIG_[A-Z0-9_]+') | ForEach-Object Value | Sort-Object) |
+                Should -Be $script:azureRemovedNames
+        }
+
+        It 'deletes every removed name in the UPDATE.md rename recipe before renaming the rest' {
+            $update = Get-Content -LiteralPath (Join-Path $script:azureRoot 'provision/UPDATE.md') -Raw
+            $delete = [regex]::Match($update, "-e '/\^\[\[:space:\]\]\*\(export\[\[:space:\]\]\+\)\?DMS_CONFIG_\((?<names>[A-Z0-9_|]+)\)\[\[:space:\]\]\*=/d'")
+
+            $delete.Success | Should -BeTrue -Because 'the recipe must delete removed names instead of renaming them'
+            @($delete.Groups['names'].Value -split '\|' | ForEach-Object { "DMS_CONFIG_$_" } | Sort-Object) |
+                Should -Be $script:azureRemovedNames
+            $delete.Index | Should -BeLessThan $update.IndexOf("CONFIGURATION_SERVICE_\3/'") -Because 'sed applies its expressions in order'
+        }
+
+        It '<Script> reports the identity encryption key as removed' -ForEach @(
+            @{ Script = 'provision/setup-env.ps1' }
+            @{ Script = 'compose/bootstrap/bootstrap.ps1' }
+        ) {
+            $content = Get-Content -LiteralPath (Join-Path $script:azureRoot $Script) -Raw
+
+            $calls = @([regex]::Matches($content, '(?m)^\s*Write-LegacyEnvironmentVariableWarning\b.*$') | ForEach-Object Value)
+            $calls | Should -HaveCount 1
+            $calls[0] | Should -Match "-AdditionalRemovedVariable 'DMS_CONFIG_IDENTITY_ENCRYPTION_KEY'"
+        }
+
+        It 'setup-env.ps1 warns before it deletes the identity encryption key from .env' {
+            $content = Get-Content -LiteralPath (Join-Path $script:azureRoot 'provision/setup-env.ps1') -Raw
+
+            $warning = $content.IndexOf('Write-LegacyEnvironmentVariableWarning -EnvironmentFile')
+            $removal = $content.IndexOf('Remove-EnvValue -File ".env" -Key "DMS_CONFIG_IDENTITY_ENCRYPTION_KEY"')
+            $warning | Should -BeGreaterThan -1
+            $removal | Should -BeGreaterThan -1
+            $warning | Should -BeLessThan $removal
         }
     }
 }

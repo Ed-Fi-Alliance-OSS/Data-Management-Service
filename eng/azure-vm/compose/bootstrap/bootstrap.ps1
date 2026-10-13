@@ -30,7 +30,9 @@ param(
     # public-IP hairpin issues.
     [string]$BaseUrl = "",
     [switch]$SkipKeycloak,
-    [switch]$Insecure
+    [switch]$Insecure,
+    # Set by a caller that has already warned about retired variable names in the same .env.
+    [switch]$SkipLegacyEnvironmentVariableWarning
 )
 
 $ErrorActionPreference = "Stop"
@@ -62,8 +64,12 @@ if ($Insecure) {
 # --- Parse .env -------------------------------------------------------------
 if (-not (Test-Path $EnvFile)) { throw "Env file not found: $EnvFile (copy .env.example to .env)." }
 # Retired variable names are no longer read; name each one before a missing replacement fails below.
-Import-Module "$PSScriptRoot/../../../docker-compose/env-utility.psm1" -Force
-Write-LegacyEnvironmentVariableWarning -EnvironmentFile $EnvFile
+# This Keycloak-only stack never reads CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY, so the old
+# encryption key name is reported as removed rather than renamed, as legacy-env-warning.sh does.
+if (-not $SkipLegacyEnvironmentVariableWarning) {
+    Import-Module "$PSScriptRoot/../../../docker-compose/env-utility.psm1" -Force
+    Write-LegacyEnvironmentVariableWarning -EnvironmentFile $EnvFile -AdditionalRemovedVariable 'DMS_CONFIG_IDENTITY_ENCRYPTION_KEY'
+}
 $envValues = @{}
 foreach ($line in Get-Content $EnvFile) {
     $trimmed = $line.Trim()

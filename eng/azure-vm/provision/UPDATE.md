@@ -109,12 +109,13 @@ cd ~/dms-src && git status --short --untracked-files=no | grep -v 'packages\.loc
 A `.env` created before the Configuration Service variable rename still uses `DMS_CONFIG_*` and `CONFIG_SERVICE_*` names, which Compose no longer reads.
 `update.sh` names each one it finds, but rename them before running it below, or the stack fails to start (see [Migrating from the earlier variable names](../../../docs/CONFIGURATION.md#migrating-from-the-earlier-variable-names)).
 This renames each assignment in place, including `export` and indented spellings, and changes only the name before `=`: every value stays as it is, including the database encryption key and the client secrets.
+It first deletes the assignments of settings this stack has no replacement for, so the rename cannot turn them into names nothing reads: the claims, reset-endpoint, and scope settings the Configuration Service no longer reads, and `DMS_CONFIG_IDENTITY_ENCRYPTION_KEY`, whose replacement only self-contained OpenIddict reads.
 The `grep` should print nothing; any line it prints is an assignment or a `$` reference the rename did not cover, so fix that line by hand before updating:
 
 ```bash
 cd ~/dms-src/eng/azure-vm/compose && cp -p .env .env.before-rename &&
   sed -i -E \
-    -e '/^[[:space:]]*(export[[:space:]]+)?DMS_CONFIG_IDENTITY_ENCRYPTION_KEY[[:space:]]*=/d' \
+    -e '/^[[:space:]]*(export[[:space:]]+)?DMS_CONFIG_(IDENTITY_ENCRYPTION_KEY|USE_EMBEDDED_BASE_CLAIMS|CLAIMS_PATH|USE_CLAIMS_PATH|DANGEROUSLY_ENABLE_DYNAMIC_CLAIMS_LOADING|ENABLE_APPLICATION_RESET_ENDPOINT|IDENTITY_SCOPE)[[:space:]]*=/d' \
     -e 's/^([[:space:]]*(export[[:space:]]+)?)DMS_CONFIG_ENABLE_CLAIMS_RELOAD([[:space:]]*=)/\1CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING\3/' \
     -e 's/^([[:space:]]*(export[[:space:]]+)?)DMS_CONFIG_([A-Za-z0-9_]+[[:space:]]*=)/\1CONFIGURATION_SERVICE_\3/' \
     -e 's/^([[:space:]]*(export[[:space:]]+)?)CONFIG_SERVICE_([A-Za-z0-9_]+[[:space:]]*=)/\1DMS_CONFIGURATION_SERVICE_\3/' \

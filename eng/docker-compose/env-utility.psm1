@@ -526,10 +526,16 @@ function Write-LegacyEnvironmentVariableWarning {
     Old names are not read as fallbacks: a deployment must rename them. Call this before any
     check that fails on a missing new name, so the operator sees why the new name is missing.
     Only variable names and file paths are written; values are never read.
+
+    .PARAMETER AdditionalRemovedVariable
+    Names reported as removed rather than renamed, for a deployment that never reads the usual
+    replacement. The Keycloak-only Azure VM stack passes DMS_CONFIG_IDENTITY_ENCRYPTION_KEY, whose
+    replacement only self-contained OpenIddict reads.
     #>
     [CmdletBinding()]
     param(
-        [string[]]$EnvironmentFile = @()
+        [string[]]$EnvironmentFile = @(),
+        [string[]]$AdditionalRemovedVariable = @()
     )
 
     $sources = [System.Collections.Generic.List[object]]::new()
@@ -555,7 +561,7 @@ function Write-LegacyEnvironmentVariableWarning {
             if ($null -eq $replacement) {
                 continue
             }
-            if ($replacement -eq '') {
+            if ($replacement -eq '' -or $AdditionalRemovedVariable -ccontains $name) {
                 Write-Warning "Environment variable '$name' in $($source.Label) is no longer read and can be removed."
             }
             else {

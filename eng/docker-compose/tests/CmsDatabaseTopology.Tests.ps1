@@ -5049,7 +5049,8 @@ param(
     [string]$ClientSecretMinimumLength,
     [string]$ClientSecretMaximumLength,
     [string]$ConfigServiceRole,
-    [string]$DmsClientRole
+    [string]$DmsClientRole,
+    [switch]$SkipLegacyEnvironmentVariableWarning
 )
 
 $record = [ordered]@{

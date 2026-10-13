@@ -33,7 +33,9 @@ param (
     [int] $TokenLifespan = 1800,
     [switch] $InitDb = $false,
     [switch] $InsertData = $false,
-    [string] $HashIterations = "ENV:CONFIGURATION_SERVICE_IDENTITY_HASHING_ITERATIONS"
+    [string] $HashIterations = "ENV:CONFIGURATION_SERVICE_IDENTITY_HASHING_ITERATIONS",
+    # Set by a caller that has already warned about retired variable names in the same environment.
+    [switch] $SkipLegacyEnvironmentVariableWarning = $false
 )
 Import-Module ./env-utility.psm1
 # Shared Compose-equivalent resolver: ENV: indirections below resolve with Docker Compose
@@ -71,7 +73,9 @@ if ($PSBoundParameters.ContainsKey("NewClientSecretEnvironmentVariable")) {
 Write-Verbose "TokenLifespan is not applied by setup-openiddict.ps1; OpenIddict token lifetime is configured by the service. Requested value: $TokenLifespan"
 
 # Warn about retired variable names before an ENV: indirection below can fail on a missing replacement.
-Write-LegacyEnvironmentVariableWarning -EnvironmentFile $EnvironmentFile
+if (-not $SkipLegacyEnvironmentVariableWarning) {
+    Write-LegacyEnvironmentVariableWarning -EnvironmentFile $EnvironmentFile
+}
 
 $envValues = $null
 if ($EnvironmentFile) {

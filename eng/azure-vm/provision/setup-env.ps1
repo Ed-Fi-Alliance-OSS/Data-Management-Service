@@ -140,6 +140,12 @@ try {
     Write-Output "Writing .env host values..."
     Set-EnvValue -File ".env" -Key "PUBLIC_BASE_URL" -Value "https://$PublicHost"
     Set-EnvValue -File ".env" -Key "PUBLIC_HOST" -Value $PublicHost
+    # Retired variable names are no longer read; name each one before Compose fails on a missing
+    # replacement, and before the removal below deletes one from .env. This Keycloak-only stack never
+    # reads CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY, so the old name is reported as removed.
+    Import-Module $envUtilityModule -Force
+    Write-LegacyEnvironmentVariableWarning -EnvironmentFile ".env" -AdditionalRemovedVariable 'DMS_CONFIG_IDENTITY_ENCRYPTION_KEY'
+
     # Removed from this Keycloak-only stack: it was consumed only by self-contained OpenIddict.
     # Clean legacy .env files too, particularly ones that still carry a CHANGEME placeholder.
     Remove-EnvValue -File ".env" -Key "DMS_CONFIG_IDENTITY_ENCRYPTION_KEY"
@@ -217,11 +223,6 @@ try {
         ./ssl/generate-certificate.sh $PublicHost
         if ($LASTEXITCODE -ne 0) { throw "generate-certificate.sh failed ($LASTEXITCODE)." }
     }
-
-    # Retired variable names are no longer read; name each one before Compose fails on a missing
-    # replacement.
-    Import-Module $envUtilityModule -Force
-    Write-LegacyEnvironmentVariableWarning -EnvironmentFile ".env"
 
     # Belt-and-suspenders: never start Compose with placeholder secrets. This script starts
     # Compose directly below (not via up.sh, which has its own guard), so re-assert here after
@@ -318,7 +319,7 @@ try {
         }
         else {
             Write-Output "Running bootstrap (over loopback)..."
-            & "$composeDir/bootstrap/bootstrap.ps1" -BaseUrl "https://localhost" -Insecure
+            & "$composeDir/bootstrap/bootstrap.ps1" -BaseUrl "https://localhost" -Insecure -SkipLegacyEnvironmentVariableWarning
         }
     }
 
