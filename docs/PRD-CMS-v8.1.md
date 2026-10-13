@@ -49,10 +49,11 @@ in CMS v8.0.
 
 ### 2.1 API Versioning and Discovery
 
-- **FR-VERSION-4**: CMS discovery/metadata endpoints SHOULD report whether the
-  deployment is running in multi-tenant mode. In v8.0, the discovery model
-  contains version, application name, build, OpenAPI metadata URL, and
-  specification version only.
+- **FR-VERSION-4**: The CMS discovery endpoint SHOULD advertise the tenant
+  discovery URL (`urls.tenancy`) so clients can determine available tenants.
+  In v8.0, the discovery model contains version, application name,
+  informational version, build, OpenAPI metadata URL, and specification
+  version only.
 - **FR-VERSION-5**: CMS SHOULD expose an anonymous, unauthenticated endpoint
   that lists the names of configured tenants (an empty list when
   multi-tenancy is disabled), so a client can discover valid tenant names
@@ -111,10 +112,12 @@ in CMS v8.0.
 
 - **FR-ERROR-6**: Every non-success CMS response — including framework-level
   errors, authentication/authorization failures, tenant-resolution middleware
-  failures, dynamic claims-management endpoints, and OAuth/OIDC error
-  responses — SHOULD return a JSON body conforming to the Ed-Fi Error
+  failures, dynamic claims-management endpoints, and and `/connect/token`
+  errors — SHOULD return a JSON body conforming to the Ed-Fi Error
   Response Knowledge Base contract: `detail`, `type`, `title`, `status`,
-  `correlationId`, `validationErrors`, and `errors`.
+  `correlationId`, `validationErrors`, and `errors`. `/connect/revoke`
+  returns the RFC 6749/7009 `{error, error_description}` shape as a deliberate
+  exception.
 - **FR-ERROR-7**: CMS SHOULD NOT return bare framework results (for example,
   `NotFound()` or `Forbid()`) or ad hoc `{ error, message }` shapes from any
   endpoint or middleware.
@@ -131,10 +134,10 @@ in CMS v8.0.
   asynchronously via a background job after a create or delete request is
   accepted, including tenant-aware scheduling in multi-tenant deployments.
 - **FR-DBINST-3**: CMS SHOULD expose granular lifecycle status values for a
-  data store's creation and deletion (for example, `PendingCreate`,
-  `CreateInProgress`, `CreateFailed`, `PendingDelete`, `DeleteInProgress`,
-  `Deleted`, `DeleteFailed`), so administrators can track provisioning
-  progress.
+  data store's creation and deletion (`PendingCreate`, `CreateInProgress`,
+  `Created`, `CreateFailed`, `CreateError`, `PendingDelete`,
+  `DeleteInProgress`, `Deleted`, `DeleteFailed`, `DeleteError`), so
+  administrators can track provisioning progress.
 - **FR-DBINST-4**: Deleting a provisioned data store SHOULD mark it
   `PendingDelete` (soft delete) rather than removing it immediately, and SHOULD
   reject the request with a descriptive error if the instance is in a status
@@ -171,10 +174,11 @@ in CMS v8.0.
 
 ### 2.11 Multi-Tenancy and Tenant Partitioning
 
-- **FR-TENANT-7**: In multi-tenant deployments, vendor, claim set, and
-  profile configuration SHOULD be partitioned by tenant, including
-  tenant-scoped uniqueness and rejection of cross-tenant associations, so one
-  tenant's configuration can neither block nor leak into another's.
+- **FR-TENANT-7**: In multi-tenant deployments, vendor and profile
+  configuration SHOULD be partitioned by tenant, including tenant-scoped name
+  uniqueness and rejection of cross-tenant associations, so one tenant's
+  configuration can neither block nor leak into another's. Claim set names
+  remain unique across all tenants, and system-reserved claim sets are shared.
 
 ### 2.12 Extensibility and Secret Management
 
@@ -244,13 +248,10 @@ in CMS v8.0.
   education-organization synchronization are CMS responsibilities (see
   FR-DBINST-1..4 and FR-EDORG-1..2) rather than remaining host-run
   operational tooling.
-- Requiring one or more data-store IDs on API client creation (v8.0
-  FR-CLIENT-2) and supporting direct application-level enabled/disabled
-  writes were both evaluated and explicitly not carried forward: CMS instead
-  allows zero data-store assignments on API clients (FR-APP-7, extending the
-  zero-assignment support v8.0 FR-APP-2 already allowed at the application
-  level) and continues to manage enabled/approved state at the API-client
-  level.
+- v8.0 FR-CLIENT-2 (one or more data-store IDs required on API client
+  creation) is superseded by FR-APP-7, which allows zero data-store
+  assignments. Direct application-level enabled/disabled writes were evaluated
+  and not adopted; enabled/approved state remains at the API-client level.
 - A published Identity API surface and host-pluggable identity
   implementation are being delivered on the Data Management Service (DMS),
   not the Configuration Management Service, and are out of scope for this

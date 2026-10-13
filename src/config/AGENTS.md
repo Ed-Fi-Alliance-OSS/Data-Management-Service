@@ -1,12 +1,12 @@
 ## Authorization Model
 
-Use the `MapSecured*` helpers in
-`Infrastructure/Authorization/EndpointBuilderExtensions.cs` for endpoints. They
-compose the service-role and scope policies; do not map protected endpoints directly
-with `MapGet`/`MapPost` and authorization calls.
+CMS has no fallback authorization policy: any plain `MapGet`/`MapPost` endpoint is
+anonymous. Map protected endpoints with the `MapSecured*` or `MapLimitedAccess` helpers
+in `Infrastructure/Authorization/EndpointBuilderExtensions.cs`; they compose the
+service-role and scope policies. Use `MapLimitedAccess` only for reads DMS performs.
 
-`MapPublic` is anonymous and should be limited to public documents. The OAuth `/connect`
-endpoints are intentionally anonymous so clients can obtain credentials.
+Anonymous endpoints (`/health`, `/`, `/tenancy`, metadata, `/.well-known/*`, and the
+OAuth `/connect/*` endpoints) are intentional. Prefer `MapPublic` for new ones.
 
 ## Tenancy Is Not Authorization
 
@@ -38,8 +38,12 @@ differ. Preserve behavior across both paths when changing authentication.
 These settings affect whether endpoints are available. Verify the behavior is enforced
 when changing them; do not add configuration flags that are not read by runtime code.
 
-- `IdentitySettings:AllowRegistration` controls `/connect/register`.
-- `AppSettings:EnableApplicationResetEndpoint` controls mapping of the application
+- `AppSettings:IdentityProvider`: JWKS and `openid-configuration` are mapped only in
+  `self-contained` mode.
+- `AppSettings:MultiTenancy`: `TenantModule` (`/v3/tenants`) is mapped only when enabled.
+- `AppSettings:EnableApplicationResetEndpoint`: controls mapping of the application
   credential-reset endpoint.
-- `ClaimsOptions:DangerouslyEnableUnrestrictedClaimsLoading` controls the
-  `/management/*` claims endpoints.
+- `IdentitySettings:AllowRegistration`: `/connect/register` is always mapped and
+  returns 403 when disabled.
+- `ClaimsOptions:DangerouslyEnableUnrestrictedClaimsLoading`: the `/management/*`
+  claims endpoints are always mapped and return 404 when disabled.

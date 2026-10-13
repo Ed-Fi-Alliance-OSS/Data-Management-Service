@@ -10,7 +10,7 @@
 
 Early draft of potential 8.2 requirements.
 
-## 2.  Functional Requirements
+## 2. Functional Requirements
 
 ### 2.1 Application Management
 
@@ -24,22 +24,26 @@ Early draft of potential 8.2 requirements.
   remain `400 Bad Request` validation failures or move to `409 Conflict` for
   closer ODS Admin API parity, and apply that decision consistently across
   CMS endpoints.
-- **FR-ERROR-10**: Accept a client-provided correlation ID, with the same
-  limitations found in [DMS 8.1](./PRD-DMS-v8.1.md).
+- **FR-ERROR-10**: CMS SHOULD accept a client-supplied correlation ID through a
+  configurable request header, applying the same character allowlist, maximum
+  length, and invalid-value handling as the DMS resource API (DMS v8.1
+  FR-LOG-3 through FR-LOG-5), and SHOULD use it as the `correlationId` in
+  error responses and log entries. Supersedes v8.0 NFR-OBS-4.
 
 ## 3. Non-Functional Requirements
 
 ### 3.1 Security and Privacy
 
-- **NFR-SEC-4**: Swagger/OpenAPI generation SHOULD be independently
+- **NFR-SEC-9**: Swagger/OpenAPI generation SHOULD be independently
   controllable so it can be disabled in production deployments that do not
-  want to expose API metadata.
+  want to expose API metadata. (Supersedes v8.0 NFR-SEC-4)
 
 ### 3.2 Reliability and Operations
 
 - **NFR-REL-7**: CMS SHOULD expose a health endpoint reflecting the status of
   its own dependencies, at minimum the configuration database, extending the
-  basic anonymous liveness endpoint v8.0.0 already provides (NFR-REL-1).
+  basic anonymous liveness endpoint v8.0 already provides (NFR-REL-1) without
+  breaking the existing `/health` liveness contract.
 
 ## 4. Open Questions and Decision Log
 

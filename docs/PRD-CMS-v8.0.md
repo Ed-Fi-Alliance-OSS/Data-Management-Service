@@ -347,23 +347,25 @@ External systems and dependencies:
   through `POST /connect/token`. In self-contained mode, this endpoint SHALL
   additionally accept client credentials via HTTP Basic authentication, not
   only in the form body.
-- **FR-AUTH-3**: CMS SHALL expose a token introspection endpoint
-  (`POST /connect/introspect`, RFC 7662) and a token revocation endpoint
-  (`POST /connect/revoke`, RFC 7009).
-- **FR-AUTH-4**: CMS SHALL expose self-contained client registration through
-  `POST /connect/register`, gated by a configurable allow-registration
-  setting; when registration is disabled, the endpoint SHALL return `403
-  Forbidden`.
+- **FR-AUTH-3**: In self-contained mode, CMS SHALL expose a token
+  introspection endpoint (`POST /connect/introspect`, RFC 7662) and a token
+  revocation endpoint (`POST /connect/revoke`, RFC 7009). In Keycloak mode both
+  routes are mapped but are not functional: introspection always reports
+  `active: false` and revocation is a no-op.
+- **FR-AUTH-4**: CMS SHALL expose client registration through
+  `POST /connect/register`, gated by `IdentitySettings:AllowRegistration` 
+  (default `false`); when registration is disabled, the endpoint SHALL return `403 Forbidden`.
 - **FR-AUTH-5**: A client registered through `POST /connect/register` SHALL
-  be assigned the `edfi_admin_api/full_access` scope and the deployment's
-  configured administrative role by default.
-- **FR-AUTH-6**: CMS SHALL support at least three scopes: full read/write
+  always be assigned the `edfi_admin_api/full_access` scope and the configured
+  `IdentitySettings:ConfigServiceRole` role.
+-  **FR-AUTH-6**: CMS SHALL support at least three scopes: full read/write
   access to all endpoints (`edfi_admin_api/full_access`), read-only access to
   all `GET` endpoints (`edfi_admin_api/readonly_access`), and limited read-only
   access for DMS/internal metadata lookups
-  (`edfi_admin_api/authMetadata_readonly_access`). The read-only
-  scope SHALL be accepted by the authorization-metadata endpoint, claim-set list
-  endpoint, and API-client list/lookup endpoints.
+  (`edfi_admin_api/authMetadata_readonly_access`). The metadata-only scope
+  SHALL be accepted by the authorization-metadata endpoint, the claim-set list
+  endpoint, the API-client list/lookup endpoints, and the data store, data
+  store context, and data store derivative list/retrieve endpoints.
 - **FR-AUTH-7**: CMS SHALL serve as the OAuth 2.0 identity provider for both
   (a) its own administrative/automation clients and (b) the vendor/API
   clients that call the DMS resource API. A DMS API client's `client_id` and
@@ -430,10 +432,11 @@ External systems and dependencies:
   referenced application ID and data store IDs exist.
 - **FR-CLIENT-4**: Resetting an API client's credentials SHALL preserve the
   existing `client_id` and generate a new secret.
-- **FR-CLIENT-5**: Each ApiClient SHALL carry a globally unique client
-  identifier (`ClientUuid`) in addition to its administrative primary key, so
-  API clients can be referenced independently of the CMS database's internal
-  IDs.
+- **FR-CLIENT-5**: Each ApiClient SHALL carry a generated `client_id`, which is
+  the stable external identifier for the credential, and SHALL record the
+  identity provider's internal client identifier (`ClientUuid`). `ClientUuid`
+  may change when the client is updated in Keycloak mode and SHOULD NOT be used
+  as a durable reference.
 
 ### 3.6 Data Store, Context, and Derivative Management
 
@@ -457,9 +460,7 @@ External systems and dependencies:
   derivatives — alternate connections associated with a parent data store,
   such as read replicas or point-in-time snapshots.
 - **FR-DATASTORE-7**: A data store derivative's type SHALL be restricted to a
-  fixed set of supported values (at minimum, "ReadReplica" and "Snapshot"),
-  and uniqueness SHALL be enforced on the combination of data store ID and
-  derivative type, so a data store has at most one derivative of each type.
+  fixed set of supported values (at minimum, "ReadReplica" and "Snapshot").
 - **FR-DATASTORE-8**: Deleting a data store SHALL cascade-delete its
   associated data store contexts and derivatives.
 - **FR-DATASTORE-9**: An API client SHALL be associable with one or more data
@@ -488,9 +489,11 @@ External systems and dependencies:
   host-defined ones.
 - **FR-CLAIM-3**: CMS SHALL reject requests to create, copy, edit, or import
   a claim set whose name contains whitespace.
-- **FR-CLAIM-4**: CMS SHALL allow authorized clients to add, update, and
-  delete resource-claim-action associations (including per-action
-  authorization-strategy overrides) on a claim set.
+- **FR-CLAIM-4**: CMS SHALL allow authorized clients to change a claim set's
+  resource-claim-action associations (including per-action
+  authorization-strategy overrides) by importing a claim set
+  (FR-CLAIM-6). `PUT /v3/claimSets/{id}` updates only the claim set name;
+  granular association endpoints are delivered in v8.1.
 - **FR-CLAIM-5**: `GET /v3/claimSets/{id}` and `GET
   /v3/claimSets/{id}/export` SHALL return the same payload: a flat list of
   configured resource-claim nodes (not the full expanded leaf hierarchy),
@@ -588,7 +591,13 @@ External systems and dependencies:
   provider internals from the main credential-management flows; identity
   provider errors during application/API-client creation and token exchange
   SHALL be mapped to safe client-facing responses.
-- **FR-ERROR-5**: Duplicate identifying values SHALL return `409 Conflict`.
+- **FR-ERROR-5**: Duplicate claim set names SHALL return `409 Conflict`
+  (`urn:ed-fi:api:conflict:non-unique-identity`). In v8.0, other duplicate
+  natural keys (application name per vendor, profile, tenant, data store
+  context, registered client ID) return `400 Bad Request` validation errors,
+  `POST /v3/vendors` with an existing company name updates that vendor
+  (`200 OK`), and renaming a vendor to an existing company name returns
+  `500` (known defect). See v8.2 FR-ERROR-9.
 
 ### 3.12 DMS Integration
 
@@ -770,9 +779,12 @@ asynchronous job tracking, and rate limiting are deferred to
 - **OUT-2**: CMS does not provision or mutate DMS operational/resource data;
   it manages administrative and security configuration only.
 - **OUT-3**: Resource claims, resource claim actions, and default
-  authorization-strategy assignments are exposed read-only (FR-CLAIM-7). CMS
-  does not provide endpoints to create, seed, or maintain this metadata;
-  seeding is a deployment/bootstrap concern outside this API surface.
+  authorization-strategy assignments are exposed read-only (FR-CLAIM-7). 
+  Replacing this metadata is a deployment/bootstrap concern; 
+  the `/management/reload-claims` and `/management/upload-claims`
+  endpoints that do so return `404` unless
+  `ClaimsOptions:DangerouslyEnableUnrestrictedClaimsLoading` is enabled
+  (default `false`), and are intended for development and testing only.
 - **OUT-4**: A richer, database-instance-provisioning workflow with
   templates and asynchronous job tracking, an education-organization
   synchronization cache, request rate limiting, dependency-aware health
@@ -784,8 +796,8 @@ asynchronous job tracking, and rate limiting are deferred to
   in a design spike but are not implemented; today, secret rotation is a
   manual reset (`FR-CLIENT-4`) with no expiration date tracked or enforced.
 - **OUT-6**: Tenant `/details` and other tenant-summary projections available
-  in the ODS Admin API are not implemented in CMS; only tenant list/create
-  are current CMS behavior (FR-TENANT-5).
+  in the ODS Admin API are not implemented in CMS; only tenant list, retrieve,
+  and create are current CMS behavior (FR-TENANT-5).
 - **OUT-7**: Client-supplied Correlation IDs, supported on the DMS resource
   API, are not supported on CMS (NFR-OBS-4).
 - **OUT-8**: A built-in administrative UI is not part of CMS; CMS is

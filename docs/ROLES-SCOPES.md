@@ -48,8 +48,9 @@ In a multi-tenant deployment, the tenant a request operates on is selected by th
 `Tenant` request header. CMS access tokens carry no tenant claim, and the header is
 not validated against the caller's identity. A client holding
 `edfi_admin_api/full_access` therefore has full administrative access to **every**
-tenant in the deployment, and a client holding `edfi_admin_api/readonly_access` can
-read every tenant's configuration.
+tenant in the deployment, and a client holding `edfi_admin_api/readonly_access` or 
+`edfi_admin_api/authMetadata_readonly_access` can read every tenant's configuration 
+within that scope's endpoints.
 
 This is deliberate: the tenant partition is a data routing mechanism, not a security
 boundary. Issue CMS credentials accordingly — treat every one as platform-wide.
