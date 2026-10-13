@@ -12,7 +12,7 @@ Describe 'Legacy Configuration Service environment variable names' {
         $script:composeRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
         Import-Module (Join-Path $script:composeRoot 'env-utility.psm1') -Force
         $script:sentinel = 'SENTINEL-DO-NOT-LEAK'
-        $script:legacyProcessNames = @('DMS_CONFIG_LOG_LEVEL', 'CONFIG_SERVICE_TENANT', 'DMS_CONFIG_CLAIMS_PATH')
+        $script:legacyProcessNames = @('DMS_CONFIG_LOG_LEVEL', 'CONFIG_SERVICE_TENANT', 'DMS_CONFIG_CLAIMS_PATH', 'DMS_CONFIG_IDENTITY_HASHING_ITERATIONS')
 
         # A developer shell or CI runner may already carry a legacy name; set those aside so each test
         # sees only the process variables it sets.
@@ -178,6 +178,73 @@ Describe 'Legacy Configuration Service environment variable names' {
 
             $warnings | Should -HaveCount 4
             ($warnings -join "`n") | Should -Not -Match $script:sentinel
+        }
+    }
+
+    Describe 'setup-openiddict.ps1 direct invocation' {
+        BeforeAll {
+            # Without -InitDb or -InsertData the script only resolves its inputs, so these runs touch no
+            # database.
+            function Invoke-SetupOpenIddict {
+                param([string]$EnvironmentFile)
+                $warnings = [System.Collections.Generic.List[string]]::new()
+                $failure = $null
+                Push-Location $script:composeRoot
+                try {
+                    # Warnings are kept as they arrive, so those written before a failure survive it.
+                    & ./setup-openiddict.ps1 -EnvironmentFile $EnvironmentFile 3>&1 2>$null 4>$null 5>$null 6>$null |
+                        ForEach-Object {
+                            if ($_ -is [System.Management.Automation.WarningRecord]) { $warnings.Add($_.Message) }
+                        }
+                }
+                catch { $failure = $_.Exception.Message }
+                finally { Pop-Location }
+                return [pscustomobject]@{ Warnings = @($warnings); Failure = $failure }
+            }
+        }
+
+        It 'names the replacement for a legacy name in its environment file' {
+            $file = Write-TestEnvironmentFile -Name 'openiddict-legacy.env' -Lines @(
+                "DMS_CONFIG_IDENTITY_ENCRYPTION_KEY=$script:sentinel"
+            )
+
+            $result = Invoke-SetupOpenIddict -EnvironmentFile $file
+
+            $result.Failure | Should -BeNullOrEmpty
+            $result.Warnings | Should -BeExactly "Environment variable 'DMS_CONFIG_IDENTITY_ENCRYPTION_KEY' in '$file' is no longer read. Rename it to 'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY'."
+            ($result.Warnings -join "`n") | Should -Not -Match $script:sentinel
+        }
+
+        It 'names the replacement for a legacy name set only in the process environment' {
+            $env:DMS_CONFIG_IDENTITY_HASHING_ITERATIONS = $script:sentinel
+
+            $result = Invoke-SetupOpenIddict -EnvironmentFile ''
+
+            $result.Failure | Should -BeNullOrEmpty
+            $result.Warnings | Should -BeExactly "Environment variable 'DMS_CONFIG_IDENTITY_HASHING_ITERATIONS' in the process environment is no longer read. Rename it to 'CONFIGURATION_SERVICE_IDENTITY_HASHING_ITERATIONS'."
+            ($result.Warnings -join "`n") | Should -Not -Match $script:sentinel
+        }
+
+        It 'writes no warning when only current names are set' {
+            $file = Write-TestEnvironmentFile -Name 'openiddict-current.env' -Lines @(
+                'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY=current-key'
+                'CONFIGURATION_SERVICE_IDENTITY_HASHING_ITERATIONS=210000'
+            )
+
+            $result = Invoke-SetupOpenIddict -EnvironmentFile $file
+
+            $result.Failure | Should -BeNullOrEmpty
+            $result.Warnings | Should -BeNullOrEmpty
+        }
+
+        It 'warns before it reads the environment file' {
+            $env:DMS_CONFIG_IDENTITY_HASHING_ITERATIONS = $script:sentinel
+
+            # Reading a missing file throws, so a warning in the result can only come from before the read.
+            $result = Invoke-SetupOpenIddict -EnvironmentFile (Join-Path $TestDrive 'missing.env')
+
+            $result.Failure | Should -BeLike 'Environment file not found*'
+            $result.Warnings | Should -Contain "Environment variable 'DMS_CONFIG_IDENTITY_HASHING_ITERATIONS' in the process environment is no longer read. Rename it to 'CONFIGURATION_SERVICE_IDENTITY_HASHING_ITERATIONS'."
         }
     }
 

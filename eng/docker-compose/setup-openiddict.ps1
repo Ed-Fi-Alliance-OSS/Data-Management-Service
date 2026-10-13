@@ -70,6 +70,9 @@ if ($PSBoundParameters.ContainsKey("NewClientSecretEnvironmentVariable")) {
 
 Write-Verbose "TokenLifespan is not applied by setup-openiddict.ps1; OpenIddict token lifetime is configured by the service. Requested value: $TokenLifespan"
 
+# Warn about retired variable names before an ENV: indirection below can fail on a missing replacement.
+Write-LegacyEnvironmentVariableWarning -EnvironmentFile $EnvironmentFile
+
 $envValues = $null
 if ($EnvironmentFile) {
     $envValues = ReadValuesFromEnvFile $EnvironmentFile

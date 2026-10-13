@@ -67,11 +67,11 @@ deletes it.
 The setup scripts warn about each earlier name they find in the environment file or in the
 process environment, and name its replacement. They print variable names only, never values.
 The scripts that warn are `start-local-dms.ps1`, `start-published-dms.ps1`,
-`start-local-config.ps1`, `configure-local-data-store.ps1`, `provision-dms-schema.ps1`, and
-`load-dms-seed-data.ps1` in `eng/docker-compose/`, and `up.sh`, `update.sh`, `reset.sh`,
-`provision/setup-env.ps1`, and `compose/bootstrap/bootstrap.ps1` for the Azure VM stack. A
-warning does not make the earlier name work, and a deployment that runs `docker compose`
-directly gets no warning.
+`start-local-config.ps1`, `configure-local-data-store.ps1`, `provision-dms-schema.ps1`,
+`load-dms-seed-data.ps1`, and `setup-openiddict.ps1` in `eng/docker-compose/`, and `up.sh`,
+`update.sh`, `reset.sh`, `provision/setup-env.ps1`, and `compose/bootstrap/bootstrap.ps1` for
+the Azure VM stack. A warning does not make the earlier name work, and a deployment that runs
+`docker compose` directly gets no warning.
 
 Test tooling moved to the same prefix. Test harness variables that started with `CMS_`, such
 as `CMS_E2E_API_URL`, `CMS_COMPOSE_PROJECT`, and `CMS_POSTGRES_CONTAINER`, now start with
