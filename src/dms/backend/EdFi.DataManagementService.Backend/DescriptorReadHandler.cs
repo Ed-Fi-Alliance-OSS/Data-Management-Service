@@ -824,8 +824,7 @@ internal sealed class DescriptorReadHandler(
                     // No anchor to carry: this statement ranges over dms.Document by id and never
                     // touches the page-selection relation, so the boundary is the one selection took
                     // and is passed through below rather than re-read from these rows.
-                    (rowReader, ct) =>
-                        DescriptorReadRowReader.ReadAllAsync(rowReader, carriesSelectedAnchor: false, ct),
+                    (rowReader, ct) => DescriptorReadRowReader.ReadAllAsync(rowReader, ct),
                     hasTotalCount: false,
                     cancellationToken
                 )
@@ -1718,8 +1717,7 @@ internal sealed class DescriptorReadHandler(
                     plannedQuery,
                     DescriptorRowProjection.FullRow
                 ),
-                (reader, ct) =>
-                    DescriptorReadRowReader.ReadAllAsync(reader, CarriesSelectedAnchor(plannedQuery), ct),
+                (reader, ct) => DescriptorReadRowReader.ReadAllAsync(reader, ct),
                 plannedQuery.Plan.TotalCountSql is not null,
                 cancellationToken,
                 hasSelectedBoundary: true
@@ -1740,12 +1738,7 @@ internal sealed class DescriptorReadHandler(
                     plannedQuery,
                     DescriptorRowProjection.CandidateMetadata
                 ),
-                (reader, ct) =>
-                    DescriptorReadRowReader.ReadAllCandidatesAsync(
-                        reader,
-                        CarriesSelectedAnchor(plannedQuery),
-                        ct
-                    ),
+                (reader, ct) => DescriptorReadRowReader.ReadAllCandidatesAsync(reader, ct),
                 plannedQuery.Plan.TotalCountSql is not null,
                 cancellationToken,
                 hasSelectedBoundary: true
@@ -2029,21 +2022,6 @@ internal sealed class DescriptorReadHandler(
             request.ResponseContentCoding
         );
 
-    /// <summary>
-    /// Whether the statements built for this keyset project the page-selection anchor beside the
-    /// descriptor columns.
-    /// </summary>
-    /// <remarks>
-    /// Read off the planned keyset rather than off the request, so the answer describes the column the
-    /// embedded page-selection SQL was actually compiled to project. Both the projection that emits the
-    /// column and the reader that consumes it ask here, which is the descriptor twin of
-    /// <see cref="HydrationBatchBuilder.CarriesSelectedAnchor" />: a reader that probed the result set
-    /// for the column instead would be a second decision able to drift from the one that emitted it,
-    /// and it would pay for the probe on every row of every page that has no anchor at all.
-    /// </remarks>
-    private static bool CarriesSelectedAnchor(PageKeysetSpec.Query plannedQuery) =>
-        plannedQuery.OrderingMode is PageOrderingMode.ContentVersion;
-
     private static RelationalCommand BuildQueryCommand(
         SqlDialect dialect,
         PageKeysetSpec.Query plannedQuery,
@@ -2052,7 +2030,7 @@ internal sealed class DescriptorReadHandler(
     {
         ArgumentNullException.ThrowIfNull(plannedQuery);
 
-        bool anchor = CarriesSelectedAnchor(plannedQuery);
+        bool anchor = plannedQuery.OrderingMode is PageOrderingMode.ContentVersion;
         string table = dialect == SqlDialect.Pgsql ? "descriptor_page" : "#descriptor_page";
         string quotedTable = QuoteIdentifier(dialect, table);
         string columns =
@@ -2069,13 +2047,8 @@ internal sealed class DescriptorReadHandler(
 
             """;
         string pageSql = $"SELECT * FROM {quotedTable}";
-        string versionSql = BuildPageRowsSql(
-            dialect,
-            pageSql,
-            DescriptorRowProjection.DocumentVersions,
-            false
-        );
-        string pageRowsSql = BuildPageRowsSql(dialect, pageSql, projection, anchor);
+        string versionSql = BuildPageRowsSql(dialect, pageSql, DescriptorRowProjection.DocumentVersions);
+        string pageRowsSql = BuildPageRowsSql(dialect, pageSql, projection);
         string countSql = plannedQuery.Plan.TotalCountSql is null
             ? ""
             : PlanSqlStatementText.AsTerminatedStatement(plannedQuery.Plan.TotalCountSql)
@@ -2161,26 +2134,14 @@ internal sealed class DescriptorReadHandler(
         return boundary;
     }
 
-    /// <param name="includeSelectedAnchor">
-    /// Projects the page-selection anchor out of the embedded relation, for a
-    /// <c>ContentVersion</c>-anchored page only. That relation projects the anchor beside its ids under
-    /// that anchor, and carrying it out here is what keeps the continuation expressed in the value
-    /// selection ordered by rather than in the <c>dms.Document</c> copy this statement joins to.
-    /// </param>
     private static string BuildPageRowsSql(
         SqlDialect dialect,
         string pageDocumentIdSql,
-        DescriptorRowProjection projection,
-        bool includeSelectedAnchor
+        DescriptorRowProjection projection
     )
     {
         var pageDocumentIdSqlBody = PlanSqlStatementText.AsEmbeddableBody(pageDocumentIdSql);
-        var projectionSql = BuildDescriptorProjectionSql(
-            dialect,
-            "page_document_ids",
-            projection,
-            selectedAnchorSourceAlias: includeSelectedAnchor ? "page_document_ids" : null
-        );
+        var projectionSql = BuildDescriptorProjectionSql(dialect, "page_document_ids", projection);
 
         // The shared page compiler returns a DocumentId keyset, widened to carry the anchor beside it
         // when the page is ContentVersion-anchored. Descriptor queries root on dms.Descriptor, so this
@@ -2225,18 +2186,10 @@ internal sealed class DescriptorReadHandler(
         };
     }
 
-    /// <param name="selectedAnchorSourceAlias">
-    /// The relation to project the page-selection anchor from, or <see langword="null"/> when this
-    /// statement has none. Supplied only for a <c>ContentVersion</c>-anchored page, where it is the
-    /// page-selection relation itself — the anchor has to be the value selection ordered and bounded
-    /// on, and the <c>ContentVersion</c> column above is <c>dms.Document</c>'s, read through a
-    /// different join in the same statement.
-    /// </param>
     private static string BuildDescriptorProjectionSql(
         SqlDialect dialect,
         string documentIdSourceAlias,
-        DescriptorRowProjection projection,
-        string? selectedAnchorSourceAlias = null
+        DescriptorRowProjection projection
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(documentIdSourceAlias);
@@ -2280,16 +2233,6 @@ internal sealed class DescriptorReadHandler(
         IEnumerable<string> projectedColumns = columns.Select(column =>
             $"    {column.SourceAlias}.{QuoteIdentifier(dialect, column.ColumnName)} AS {QuoteIdentifier(dialect, column.ColumnName)}"
         );
-
-        // Aliased away from its own column name, because ContentVersion is already projected above from
-        // dms.Document and the reader has to be able to tell the two apart.
-        if (selectedAnchorSourceAlias is not null)
-        {
-            projectedColumns = projectedColumns.Append(
-                $"    {selectedAnchorSourceAlias}.{QuoteIdentifier(dialect, "ContentVersion")} "
-                    + $"AS {QuoteIdentifier(dialect, DescriptorReadRowReader.SelectedAnchorColumnName)}"
-            );
-        }
 
         return string.Join($",{Environment.NewLine}", projectedColumns);
     }

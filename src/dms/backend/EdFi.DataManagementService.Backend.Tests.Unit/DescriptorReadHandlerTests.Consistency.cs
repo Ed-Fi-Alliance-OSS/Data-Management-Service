@@ -204,15 +204,9 @@ public partial class Given_DescriptorReadHandler
     )
     {
         long boundary = ordering is PageOrderingMode.DocumentId ? 205L : 77L;
-        long? survivingSelectedAnchor = ordering is PageOrderingMode.ContentVersion ? 50L : null;
         var remainingRows = lowerRowSurvives
             ? InMemoryRelationalResultSet.Create(
-                CreateDescriptorRow(
-                    _consistentDescriptorUuid,
-                    documentId: 101L,
-                    contentVersion: 42L,
-                    selectedAnchor: survivingSelectedAnchor
-                )
+                CreateDescriptorRow(_consistentDescriptorUuid, documentId: 101L, contentVersion: 42L)
             )
             : InMemoryRelationalResultSet.Create();
         var resultSets = new List<InMemoryRelationalResultSet>();

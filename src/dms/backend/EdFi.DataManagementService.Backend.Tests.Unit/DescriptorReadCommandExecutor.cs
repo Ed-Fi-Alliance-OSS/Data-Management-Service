@@ -79,7 +79,7 @@ internal sealed class DescriptorReadCommandExecutor(
         string column =
             commandText.Contains("MAX(\"ContentVersion\")", StringComparison.Ordinal)
             || commandText.Contains("MAX([ContentVersion])", StringComparison.Ordinal)
-                ? "SelectedAnchor"
+                ? "ContentVersion"
                 : "DocumentId";
         int ordinal = rows.GetOrdinal(column);
         return Enumerable
