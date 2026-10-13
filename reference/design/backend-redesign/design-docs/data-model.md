@@ -137,7 +137,7 @@ Notes:
   resolution use RI; the generated natural-key probes described in
   [natural-key-resolution.md](natural-key-resolution.md) belong to later stories.
 - `ResourceKeyId` identifies the document’s concrete resource type; use `dms.ResourceKey` for `(ProjectName, ResourceName)` when needed (diagnostics, CDC metadata).
-- `dms.Document` deliberately carries no `(ResourceKeyId, DocumentId)` resource-type scan index. Descriptor paging roots on `dms.Descriptor` via its denormalized `ResourceKeyId` (see §2), while document UUID probes retain their existing path. Descriptor document/type agreement is trigger-enforced in the current RI baseline; the composite document/resource candidate-key proposal belongs to the later natural-key workstream. `FK_Document_ResourceKey` needs no referencing-side index because resource-key seeds are immutable at runtime.
+- `dms.Document` deliberately carries no `(ResourceKeyId, DocumentId)` resource-type scan index. Descriptor paging roots on `dms.Descriptor` via its denormalized `ResourceKeyId` (see §2), while document UUID probes retain their existing path. Descriptor document/type agreement is trigger-enforced in the current RI baseline. `FK_Document_ResourceKey` needs no referencing-side index because resource-key seeds are immutable at runtime.
 - `dms.Document` has no `(ContentVersion, DocumentId)` projector-discovery index. Durable
   projection work is paged through `dms.DocumentProjectionWork`; explicit baseline,
   rebuild, and scrub scans use the `DocumentId` primary-key order.
@@ -1326,7 +1326,7 @@ Object names are deterministic and derived from the owning table plus purpose to
 - Foreign keys: `FK_{TableName}_{Token}`, where `Token` is:
   - `Document` for single-column `(DocumentId)` FKs to `dms.Document`
   - `DocumentResourceKey` for composite `(DocumentId, ResourceKeyId)` FKs to
-    `dms.Document(DocumentId, ResourceKeyId)` (later abstract identity invariant proposal; current descriptors use separate document/catalog FKs and trigger validation)
+    `dms.Document(DocumentId, ResourceKeyId)` (current descriptors use separate document/catalog FKs and trigger validation)
   - `{DescriptorBaseName}` for descriptor FKs (no `_DescriptorId` suffix)
   - `{ReferenceBaseName}` for single-column reference FKs
   - `{ReferenceBaseName}_RefKey` for composite reference FKs (storage identity columns + document id; canonicalized under key unification)

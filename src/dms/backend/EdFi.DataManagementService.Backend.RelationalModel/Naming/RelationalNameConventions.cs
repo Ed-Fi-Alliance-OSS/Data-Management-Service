@@ -26,6 +26,19 @@ public static class RelationalNameConventions
     public static DbColumnName DocumentIdColumnName { get; } = new("DocumentId");
 
     /// <summary>
+    /// The <c>ResourceKeyId</c> column of <c>dms.Document</c>, also carried as a payload column by abstract
+    /// identity tables and union views.
+    /// </summary>
+    public static DbColumnName ResourceKeyIdColumnName { get; } = new("ResourceKeyId");
+
+    /// <summary>
+    /// The <c>(DocumentId, ResourceKeyId)</c> key of <c>dms.Document</c> that abstract identity tables reference
+    /// to enforce the document/resource invariant.
+    /// </summary>
+    public static IReadOnlyList<DbColumnName> DocumentResourceKeyColumns { get; } =
+    [DocumentIdColumnName, ResourceKeyIdColumnName];
+
+    /// <summary>
     /// The independently allocated Int32 primary key of <c>dms.Descriptor</c>.
     /// </summary>
     public static DbColumnName DescriptorKeyColumnName { get; } = new("DescriptorId");

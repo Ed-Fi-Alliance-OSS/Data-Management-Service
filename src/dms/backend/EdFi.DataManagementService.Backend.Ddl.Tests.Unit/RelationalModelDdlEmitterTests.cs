@@ -393,6 +393,12 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Ta
         // Discriminator column must be NOT NULL to ensure every row identifies its concrete type.
         _ddl.Should().MatchRegex(@"""Discriminator""\s+\w+.*NOT NULL");
     }
+
+    [Test]
+    public void It_should_include_ResourceKeyId_as_a_non_null_smallint()
+    {
+        _ddl.Should().Contain("\"ResourceKeyId\" smallint NOT NULL");
+    }
 }
 
 [TestFixture]
@@ -435,6 +441,12 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Ta
     {
         // Discriminator column must be NOT NULL to ensure every row identifies its concrete type.
         _ddl.Should().MatchRegex(@"\[Discriminator\]\s+\w+.*NOT NULL");
+    }
+
+    [Test]
+    public void It_should_include_ResourceKeyId_as_a_non_null_smallint()
+    {
+        _ddl.Should().Contain("[ResourceKeyId] smallint NOT NULL");
     }
 }
 
@@ -493,6 +505,17 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Union_View
     {
         _ddl.Should().Contain("'School'::varchar");
     }
+
+    [Test]
+    public void It_should_emit_each_arms_resource_key_as_a_smallint_literal_ahead_of_the_discriminator()
+    {
+        _ddl.Should()
+            .Contain("42::smallint AS \"ResourceKeyId\", 'School'::varchar(50) AS \"Discriminator\"");
+        _ddl.Should()
+            .Contain(
+                "43::smallint AS \"ResourceKeyId\", 'LocalEducationAgency'::varchar(50) AS \"Discriminator\""
+            );
+    }
 }
 
 [TestFixture]
@@ -534,6 +557,19 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Union_View
     public void It_should_emit_discriminator_literal_with_sql_server_cast()
     {
         _ddl.Should().Contain("CAST(N'School' AS nvarchar(");
+    }
+
+    [Test]
+    public void It_should_emit_each_arms_resource_key_as_a_smallint_literal_ahead_of_the_discriminator()
+    {
+        _ddl.Should()
+            .Contain(
+                "CAST(42 AS smallint) AS [ResourceKeyId], CAST(N'School' AS nvarchar(50)) AS [Discriminator]"
+            );
+        _ddl.Should()
+            .Contain(
+                "CAST(43 AS smallint) AS [ResourceKeyId], CAST(N'LocalEducationAgency' AS nvarchar(50)) AS [Discriminator]"
+            );
     }
 
     [Test]
@@ -594,8 +630,23 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Ta
     public void It_should_emit_fk_from_abstract_identity_table_to_dms_document()
     {
         // Design requirement: abstract identity tables must have FK to dms.Document
-        _ddl.Should().Contain("FK_TestIdentity_Document");
+        _ddl.Should().Contain("FK_TestIdentity_DocumentResourceKey");
         _ddl.Should().Contain("REFERENCES \"dms\".\"Document\"");
+    }
+
+    [Test]
+    public void It_should_reference_the_document_resource_candidate_key()
+    {
+        _ddl.Should()
+            .MatchRegex(
+                @"FOREIGN KEY \(""DocumentId"", ""ResourceKeyId""\)\s+REFERENCES ""dms"".""Document"" \(""DocumentId"", ""ResourceKeyId""\)"
+            );
+    }
+
+    [Test]
+    public void It_should_not_emit_the_DocumentId_only_document_fk()
+    {
+        _ddl.Should().NotMatchRegex(@"FK_TestIdentity_Document(?!ResourceKey)");
     }
 
     [Test]
@@ -603,7 +654,7 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Ta
     {
         // FK emission for abstract identity tables should come after table creation
         var tableIndex = _ddl.IndexOf("CREATE TABLE IF NOT EXISTS \"edfi\".\"TestIdentity\"");
-        var fkIndex = _ddl.IndexOf("FK_TestIdentity_Document");
+        var fkIndex = _ddl.IndexOf("FK_TestIdentity_DocumentResourceKey");
 
         tableIndex.Should().BeGreaterOrEqualTo(0, "expected identity table CREATE TABLE in DDL");
         fkIndex.Should().BeGreaterOrEqualTo(0, "expected identity table FK in DDL");
@@ -622,7 +673,7 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Ta
     public void It_should_follow_fk_naming_convention()
     {
         // FK constraint should follow FK_{TableName}_{TargetTableName} convention.
-        _ddl.Should().MatchRegex(@"CONSTRAINT\s+""FK_TestIdentity_Document""");
+        _ddl.Should().MatchRegex(@"CONSTRAINT\s+""FK_TestIdentity_DocumentResourceKey""");
     }
 }
 
@@ -645,8 +696,23 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Ta
     public void It_should_emit_fk_from_abstract_identity_table_to_dms_document()
     {
         // Design requirement: abstract identity tables must have FK to dms.Document
-        _ddl.Should().Contain("FK_TestIdentity_Document");
+        _ddl.Should().Contain("FK_TestIdentity_DocumentResourceKey");
         _ddl.Should().Contain("REFERENCES [dms].[Document]");
+    }
+
+    [Test]
+    public void It_should_reference_the_document_resource_candidate_key()
+    {
+        _ddl.Should()
+            .MatchRegex(
+                @"FOREIGN KEY \(\[DocumentId\], \[ResourceKeyId\]\)\s+REFERENCES \[dms\]\.\[Document\] \(\[DocumentId\], \[ResourceKeyId\]\)"
+            );
+    }
+
+    [Test]
+    public void It_should_not_emit_the_DocumentId_only_document_fk()
+    {
+        _ddl.Should().NotMatchRegex(@"FK_TestIdentity_Document(?!ResourceKey)");
     }
 
     [Test]
@@ -654,7 +720,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Ta
     {
         // FK emission for abstract identity tables should come after table creation
         var tableIndex = _ddl.IndexOf("CREATE TABLE [edfi].[TestIdentity]");
-        var fkIndex = _ddl.IndexOf("FK_TestIdentity_Document");
+        var fkIndex = _ddl.IndexOf("FK_TestIdentity_DocumentResourceKey");
 
         tableIndex.Should().BeGreaterOrEqualTo(0, "expected identity table CREATE TABLE in DDL");
         fkIndex.Should().BeGreaterOrEqualTo(0, "expected identity table FK in DDL");
@@ -673,7 +739,83 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Ta
     public void It_should_follow_fk_naming_convention()
     {
         // FK constraint should follow FK_{TableName}_{TargetTableName} convention.
-        _ddl.Should().MatchRegex(@"CONSTRAINT\s+\[FK_TestIdentity_Document\]");
+        _ddl.Should().MatchRegex(@"CONSTRAINT\s+\[FK_TestIdentity_DocumentResourceKey\]");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Abstract Identity Trigger Tests
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Trigger
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = AbstractIdentityTriggerFixture.Build(dialect.Rules.Dialect);
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_insert_the_resource_key_id_value_before_the_discriminator()
+    {
+        _ddl.Should()
+            .Contain(
+                "INSERT INTO \"edfi\".\"EducationOrganizationIdentity\" (\"DocumentId\", \"EducationOrganizationId\", \"ResourceKeyId\", \"Discriminator\")"
+            );
+        _ddl.Should().Contain("VALUES (NEW.\"DocumentId\", NEW.\"SchoolId\", 4242, 'Ed-Fi:School')");
+    }
+
+    [Test]
+    public void It_should_update_only_identity_columns_on_conflict()
+    {
+        _ddl.Should()
+            .Contain("DO UPDATE SET \"EducationOrganizationId\" = EXCLUDED.\"EducationOrganizationId\";");
+    }
+}
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Trigger
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = AbstractIdentityTriggerFixture.Build(dialect.Rules.Dialect);
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_insert_the_resource_key_id_value_before_the_discriminator()
+    {
+        _ddl.Should()
+            .Contain(
+                "INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])"
+            );
+        _ddl.Should().Contain("SELECT s.[DocumentId], s.[SchoolId], 4242, N'Ed-Fi:School'");
+    }
+
+    [Test]
+    public void It_should_update_only_identity_columns()
+    {
+        var setLines = _ddl.Split('\n')
+            .Select(line => line.Trim())
+            .Where(line => line.StartsWith("SET ", StringComparison.Ordinal) && line.Contains(" = "))
+            .ToArray();
+
+        setLines.Should().NotBeEmpty();
+        setLines.Should().AllSatisfy(line => line.Should().Contain("[EducationOrganizationId]"));
+        setLines.Should().AllSatisfy(line => line.Should().NotContainAny("ResourceKeyId", "Discriminator"));
     }
 }
 
@@ -2372,6 +2514,7 @@ internal static class AbstractIdentityTableFixture
         var schema = new DbSchemaName("edfi");
         var identityTableName = new DbTableName(schema, "EducationOrganizationIdentity");
         var documentIdColumn = new DbColumnName("DocumentId");
+        var resourceKeyIdColumn = new DbColumnName("ResourceKeyId");
         var discriminatorColumn = new DbColumnName("Discriminator");
         var resource = new QualifiedResourceName("Ed-Fi", "EducationOrganization");
         var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", true); // Abstract
@@ -2388,6 +2531,14 @@ internal static class AbstractIdentityTableFixture
                     documentIdColumn,
                     ColumnKind.ParentKeyPart,
                     new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    resourceKeyIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int16),
                     IsNullable: false,
                     SourceJsonPath: null,
                     TargetResource: null
@@ -2444,18 +2595,20 @@ internal static class AbstractUnionViewFixture
         var districtTableName = new DbTableName(schema, "LocalEducationAgency");
         var viewName = new DbTableName(schema, "EducationOrganization");
         var documentIdColumn = new DbColumnName("DocumentId");
+        var resourceKeyIdColumn = new DbColumnName("ResourceKeyId");
         var discriminatorColumn = new DbColumnName("Discriminator");
 
         var abstractResource = new QualifiedResourceName("Ed-Fi", "EducationOrganization");
         var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
         var districtResource = new QualifiedResourceName("Ed-Fi", "LocalEducationAgency");
         var abstractResourceKey = new ResourceKeyEntry(1, abstractResource, "1.0.0", true);
-        var schoolResourceKey = new ResourceKeyEntry(2, schoolResource, "1.0.0", false);
-        var districtResourceKey = new ResourceKeyEntry(3, districtResource, "1.0.0", false);
+        var schoolResourceKey = new ResourceKeyEntry(42, schoolResource, "1.0.0", false);
+        var districtResourceKey = new ResourceKeyEntry(43, districtResource, "1.0.0", false);
 
         List<AbstractUnionViewOutputColumn> outputColumns =
         [
             new(documentIdColumn, new RelationalScalarType(ScalarKind.Int64), null, null),
+            new(resourceKeyIdColumn, new RelationalScalarType(ScalarKind.Int16), null, null),
             new(discriminatorColumn, new RelationalScalarType(ScalarKind.String, MaxLength: 50), null, null),
         ];
 
@@ -2464,6 +2617,7 @@ internal static class AbstractUnionViewFixture
             schoolTableName,
             [
                 new AbstractUnionViewProjectionExpression.SourceColumn(documentIdColumn),
+                new AbstractUnionViewProjectionExpression.Int16Literal(schoolResourceKey.ResourceKeyId),
                 new AbstractUnionViewProjectionExpression.StringLiteral("School"),
             ]
         );
@@ -2473,6 +2627,7 @@ internal static class AbstractUnionViewFixture
             districtTableName,
             [
                 new AbstractUnionViewProjectionExpression.SourceColumn(documentIdColumn),
+                new AbstractUnionViewProjectionExpression.Int16Literal(districtResourceKey.ResourceKeyId),
                 new AbstractUnionViewProjectionExpression.StringLiteral("LocalEducationAgency"),
             ]
         );
@@ -2497,6 +2652,14 @@ internal static class AbstractUnionViewFixture
                     documentIdColumn,
                     ColumnKind.ParentKeyPart,
                     new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    resourceKeyIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int16),
                     IsNullable: false,
                     SourceJsonPath: null,
                     TargetResource: null
@@ -3605,6 +3768,7 @@ internal static class AbstractIdentityTableFkFixture
         var dmsSchema = new DbSchemaName("dms");
         var documentIdColumn = new DbColumnName("DocumentId");
         var testIdColumn = new DbColumnName("TestId");
+        var resourceKeyIdColumn = new DbColumnName("ResourceKeyId");
         var discriminatorColumn = new DbColumnName("Discriminator");
 
         var abstractResource = new QualifiedResourceName("Ed-Fi", "Test");
@@ -3639,6 +3803,14 @@ internal static class AbstractIdentityTableFkFixture
                         TargetResource: null
                     ),
                     new DbColumnModel(
+                        resourceKeyIdColumn,
+                        ColumnKind.Scalar,
+                        new RelationalScalarType(ScalarKind.Int16),
+                        IsNullable: false,
+                        SourceJsonPath: null,
+                        TargetResource: null
+                    ),
+                    new DbColumnModel(
                         discriminatorColumn,
                         ColumnKind.Scalar,
                         new RelationalScalarType(ScalarKind.String, MaxLength: 50),
@@ -3650,10 +3822,10 @@ internal static class AbstractIdentityTableFkFixture
                 [
                     // FK from abstract identity table to dms.Document (as created by BuildIdentityTableConstraints)
                     new TableConstraint.ForeignKey(
-                        "FK_TestIdentity_Document",
-                        [documentIdColumn],
+                        "FK_TestIdentity_DocumentResourceKey",
+                        [documentIdColumn, resourceKeyIdColumn],
                         new DbTableName(dmsSchema, "Document"),
-                        [documentIdColumn],
+                        [documentIdColumn, resourceKeyIdColumn],
                         ReferentialAction.Cascade,
                         ReferentialAction.NoAction
                     ),
@@ -3686,6 +3858,169 @@ internal static class AbstractIdentityTableFkFixture
             [],
             [],
             []
+        );
+    }
+}
+
+internal static class AbstractIdentityTriggerFixture
+{
+    // Deliberately unrelated to the discriminator and to the member's resource key entry, so an emitter that
+    // derives the key from either cannot produce it.
+    internal const short ResourceKeyIdValue = 4242;
+
+    internal static DerivedRelationalModelSet Build(SqlDialect dialect)
+    {
+        var schema = new DbSchemaName("edfi");
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var schoolIdColumn = new DbColumnName("SchoolId");
+        var organizationIdColumn = new DbColumnName("EducationOrganizationId");
+        var resourceKeyIdColumn = new DbColumnName("ResourceKeyId");
+        var discriminatorColumn = new DbColumnName("Discriminator");
+
+        var abstractResourceKey = new ResourceKeyEntry(
+            1,
+            new QualifiedResourceName("Ed-Fi", "EducationOrganization"),
+            "1.0.0",
+            true
+        );
+        var schoolResourceKey = new ResourceKeyEntry(
+            2,
+            new QualifiedResourceName("Ed-Fi", "School"),
+            "1.0.0",
+            false
+        );
+
+        var identityTableName = new DbTableName(schema, "EducationOrganizationIdentity");
+        var identityTable = new DbTableModel(
+            identityTableName,
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_EducationOrganizationIdentity",
+                [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    organizationIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression("$.educationOrganizationId", []),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    resourceKeyIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int16),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    discriminatorColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 256),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            [
+                new TableConstraint.ForeignKey(
+                    "FK_EducationOrganizationIdentity_DocumentResourceKey",
+                    [documentIdColumn, resourceKeyIdColumn],
+                    new DbTableName(new DbSchemaName("dms"), "Document"),
+                    [documentIdColumn, resourceKeyIdColumn],
+                    ReferentialAction.Cascade,
+                    ReferentialAction.NoAction
+                ),
+            ]
+        );
+
+        var schoolTableName = new DbTableName(schema, "School");
+        var schoolTable = new DbTableModel(
+            schoolTableName,
+            new JsonPathExpression("$", []),
+            new TableKey("PK_School", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    schoolIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression("$.schoolId", []),
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        var schoolModel = new RelationalResourceModel(
+            schoolResourceKey.Resource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            schoolTable,
+            [schoolTable],
+            [],
+            []
+        );
+
+        IReadOnlyList<DbTriggerInfo> triggers =
+        [
+            new(
+                new DbTriggerName("TR_School_AbstractIdentity"),
+                schoolTableName,
+                [documentIdColumn],
+                [schoolIdColumn],
+                new TriggerKindParameters.AbstractIdentityMaintenance(
+                    identityTableName,
+                    [new TriggerColumnMapping(schoolIdColumn, organizationIdColumn)],
+                    ResourceKeyIdValue,
+                    "Ed-Fi:School"
+                )
+            ),
+        ];
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                2,
+                [0x01, 0x02],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [abstractResourceKey, schoolResourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
+            [new ConcreteResourceModel(schoolResourceKey, ResourceStorageKind.RelationalTables, schoolModel)],
+            [new AbstractIdentityTableInfo(abstractResourceKey, identityTable)],
+            [],
+            [],
+            triggers
         );
     }
 }

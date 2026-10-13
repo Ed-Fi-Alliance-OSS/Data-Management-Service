@@ -234,6 +234,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                             new TriggerKindParameters.AbstractIdentityMaintenance(
                                 abstractTable.TableModel.Table,
                                 targetColumnMappings,
+                                resourceKeyEntry.ResourceKeyId,
                                 $"{resource.ProjectName}:{resource.ResourceName}"
                             )
                         )
