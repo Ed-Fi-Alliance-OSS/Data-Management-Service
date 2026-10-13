@@ -3415,8 +3415,15 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            VALUES (@documentId, @educationOrganizationId, @discriminator);
+            INSERT INTO [edfi].[EducationOrganizationIdentity] (
+                [DocumentId],
+                [EducationOrganizationId],
+                [ResourceKeyId],
+                [Discriminator]
+            )
+            SELECT d.[DocumentId], @educationOrganizationId, d.[ResourceKeyId], @discriminator
+            FROM [dms].[Document] d
+            WHERE d.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@educationOrganizationId", educationOrganizationId),

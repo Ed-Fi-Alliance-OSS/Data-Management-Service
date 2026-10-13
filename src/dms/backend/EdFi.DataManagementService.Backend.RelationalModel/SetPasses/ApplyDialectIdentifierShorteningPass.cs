@@ -1207,6 +1207,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                 };
             }
             case AbstractUnionViewProjectionExpression.StringLiteral:
+            case AbstractUnionViewProjectionExpression.Int16Literal:
                 changed = false;
                 return expression;
             default:

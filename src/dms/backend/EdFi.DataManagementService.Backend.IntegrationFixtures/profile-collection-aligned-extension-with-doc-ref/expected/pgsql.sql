@@ -293,6 +293,19 @@ BEGIN
     END IF;
 END $$;
 
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'UX_Document_DocumentId_ResourceKeyId'
+        AND conrelid = to_regclass('"dms"."Document"')
+    )
+    THEN
+        ALTER TABLE "dms"."Document"
+        ADD CONSTRAINT "UX_Document_DocumentId_ResourceKeyId" UNIQUE ("DocumentId", "ResourceKeyId");
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS "dms"."DocumentCache"
 (
     "DocumentId" bigint NOT NULL,

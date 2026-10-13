@@ -2354,6 +2354,18 @@
             }
           },
           {
+            "name": "ResourceKeyId",
+            "kind": "Scalar",
+            "type": {
+              "kind": "Int16"
+            },
+            "is_nullable": false,
+            "source_path": null,
+            "storage": {
+              "kind": "Stored"
+            }
+          },
+          {
             "name": "Discriminator",
             "kind": "Scalar",
             "type": {
@@ -2393,16 +2405,18 @@
           },
           {
             "kind": "ForeignKey",
-            "name": "FK_EducationOrganizationIdentity_Document",
+            "name": "FK_EducationOrganizationIdentity_DocumentResourceKey",
             "columns": [
-              "DocumentId"
+              "DocumentId",
+              "ResourceKeyId"
             ],
             "target_table": {
               "schema": "dms",
               "name": "Document"
             },
             "target_columns": [
-              "DocumentId"
+              "DocumentId",
+              "ResourceKeyId"
             ],
             "on_delete": "Cascade",
             "on_update": "NoAction"
@@ -2513,6 +2527,18 @@
             }
           },
           {
+            "name": "ResourceKeyId",
+            "kind": "Scalar",
+            "type": {
+              "kind": "Int16"
+            },
+            "is_nullable": false,
+            "source_path": null,
+            "storage": {
+              "kind": "Stored"
+            }
+          },
+          {
             "name": "Discriminator",
             "kind": "Scalar",
             "type": {
@@ -2562,16 +2588,18 @@
           },
           {
             "kind": "ForeignKey",
-            "name": "FK_GeneralStudentProgramAssociationIdentity_Document",
+            "name": "FK_GeneralStudentProgramAssociationIdentity_DocumentResourceKey",
             "columns": [
-              "DocumentId"
+              "DocumentId",
+              "ResourceKeyId"
             ],
             "target_table": {
               "schema": "dms",
               "name": "Document"
             },
             "target_columns": [
-              "DocumentId"
+              "DocumentId",
+              "ResourceKeyId"
             ],
             "on_delete": "Cascade",
             "on_update": "NoAction"
@@ -2608,6 +2636,14 @@
           "target_resource": null
         },
         {
+          "column_name": "ResourceKeyId",
+          "type": {
+            "kind": "Int16"
+          },
+          "source_path": null,
+          "target_resource": null
+        },
+        {
           "column_name": "Discriminator",
           "type": {
             "kind": "String",
@@ -2637,6 +2673,10 @@
               "column_name": "CommunityOrganizationId"
             },
             {
+              "kind": "Int16Literal",
+              "value": 50
+            },
+            {
               "kind": "StringLiteral",
               "value": "Ed-Fi:CommunityOrganization"
             }
@@ -2659,6 +2699,10 @@
             {
               "kind": "SourceColumn",
               "column_name": "CommunityProviderId"
+            },
+            {
+              "kind": "Int16Literal",
+              "value": 51
             },
             {
               "kind": "StringLiteral",
@@ -2685,6 +2729,10 @@
               "column_name": "EducationOrganizationNetworkId"
             },
             {
+              "kind": "Int16Literal",
+              "value": 100
+            },
+            {
               "kind": "StringLiteral",
               "value": "Ed-Fi:EducationOrganizationNetwork"
             }
@@ -2707,6 +2755,10 @@
             {
               "kind": "SourceColumn",
               "column_name": "EducationServiceCenterId"
+            },
+            {
+              "kind": "Int16Literal",
+              "value": 104
             },
             {
               "kind": "StringLiteral",
@@ -2733,6 +2785,10 @@
               "column_name": "LocalEducationAgencyId"
             },
             {
+              "kind": "Int16Literal",
+              "value": 168
+            },
+            {
               "kind": "StringLiteral",
               "value": "Ed-Fi:LocalEducationAgency"
             }
@@ -2755,6 +2811,10 @@
             {
               "kind": "SourceColumn",
               "column_name": "OrganizationDepartmentId"
+            },
+            {
+              "kind": "Int16Literal",
+              "value": 189
             },
             {
               "kind": "StringLiteral",
@@ -2781,6 +2841,10 @@
               "column_name": "PostSecondaryInstitutionId"
             },
             {
+              "kind": "Int16Literal",
+              "value": 201
+            },
+            {
               "kind": "StringLiteral",
               "value": "Ed-Fi:PostSecondaryInstitution"
             }
@@ -2805,6 +2869,10 @@
               "column_name": "SchoolId"
             },
             {
+              "kind": "Int16Literal",
+              "value": 244
+            },
+            {
               "kind": "StringLiteral",
               "value": "Ed-Fi:School"
             }
@@ -2827,6 +2895,10 @@
             {
               "kind": "SourceColumn",
               "column_name": "StateEducationAgencyId"
+            },
+            {
+              "kind": "Int16Literal",
+              "value": 281
             },
             {
               "kind": "StringLiteral",
@@ -2909,6 +2981,14 @@
           "target_resource": null
         },
         {
+          "column_name": "ResourceKeyId",
+          "type": {
+            "kind": "Int16"
+          },
+          "source_path": null,
+          "target_resource": null
+        },
+        {
           "column_name": "Discriminator",
           "type": {
             "kind": "String",
@@ -2958,6 +3038,10 @@
               "column_name": "Student_StudentUniqueId"
             },
             {
+              "kind": "Int16Literal",
+              "value": 288
+            },
+            {
               "kind": "StringLiteral",
               "value": "Ed-Fi:StudentCTEProgramAssociation"
             }
@@ -3000,6 +3084,10 @@
             {
               "kind": "SourceColumn",
               "column_name": "Student_StudentUniqueId"
+            },
+            {
+              "kind": "Int16Literal",
+              "value": 300
             },
             {
               "kind": "StringLiteral",
@@ -3046,6 +3134,10 @@
               "column_name": "Student_StudentUniqueId"
             },
             {
+              "kind": "Int16Literal",
+              "value": 304
+            },
+            {
               "kind": "StringLiteral",
               "value": "Ed-Fi:StudentLanguageInstructionProgramAssociation"
             }
@@ -3088,6 +3180,10 @@
             {
               "kind": "SourceColumn",
               "column_name": "Student_StudentUniqueId"
+            },
+            {
+              "kind": "Int16Literal",
+              "value": 305
             },
             {
               "kind": "StringLiteral",
@@ -3134,6 +3230,10 @@
               "column_name": "Student_StudentUniqueId"
             },
             {
+              "kind": "Int16Literal",
+              "value": 306
+            },
+            {
               "kind": "StringLiteral",
               "value": "Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation"
             }
@@ -3176,6 +3276,10 @@
             {
               "kind": "SourceColumn",
               "column_name": "Student_StudentUniqueId"
+            },
+            {
+              "kind": "Int16Literal",
+              "value": 307
             },
             {
               "kind": "StringLiteral",
@@ -3222,6 +3326,10 @@
               "column_name": "Student_StudentUniqueId"
             },
             {
+              "kind": "Int16Literal",
+              "value": 312
+            },
+            {
               "kind": "StringLiteral",
               "value": "Ed-Fi:StudentSchoolFoodServiceProgramAssociation"
             }
@@ -3264,6 +3372,10 @@
             {
               "kind": "SourceColumn",
               "column_name": "Student_StudentUniqueId"
+            },
+            {
+              "kind": "Int16Literal",
+              "value": 313
             },
             {
               "kind": "StringLiteral",
@@ -3310,6 +3422,10 @@
               "column_name": "Student_StudentUniqueId"
             },
             {
+              "kind": "Int16Literal",
+              "value": 316
+            },
+            {
               "kind": "StringLiteral",
               "value": "Ed-Fi:StudentSpecialEducationProgramAssociation"
             }
@@ -3352,6 +3468,10 @@
             {
               "kind": "SourceColumn",
               "column_name": "Student_StudentUniqueId"
+            },
+            {
+              "kind": "Int16Literal",
+              "value": 318
             },
             {
               "kind": "StringLiteral",
@@ -41426,6 +41546,7 @@
           "target_column": "EducationOrganizationId"
         }
       ],
+      "resource_key_id_value": 50,
       "discriminator_value": "Ed-Fi:CommunityOrganization"
     },
     {
@@ -41665,6 +41786,7 @@
           "target_column": "EducationOrganizationId"
         }
       ],
+      "resource_key_id_value": 51,
       "discriminator_value": "Ed-Fi:CommunityProvider"
     },
     {
@@ -43359,6 +43481,7 @@
           "target_column": "EducationOrganizationId"
         }
       ],
+      "resource_key_id_value": 100,
       "discriminator_value": "Ed-Fi:EducationOrganizationNetwork"
     },
     {
@@ -43704,6 +43827,7 @@
           "target_column": "EducationOrganizationId"
         }
       ],
+      "resource_key_id_value": 104,
       "discriminator_value": "Ed-Fi:EducationServiceCenter"
     },
     {
@@ -45681,6 +45805,7 @@
           "target_column": "EducationOrganizationId"
         }
       ],
+      "resource_key_id_value": 168,
       "discriminator_value": "Ed-Fi:LocalEducationAgency"
     },
     {
@@ -46531,6 +46656,7 @@
           "target_column": "EducationOrganizationId"
         }
       ],
+      "resource_key_id_value": 189,
       "discriminator_value": "Ed-Fi:OrganizationDepartment"
     },
     {
@@ -46910,6 +47036,7 @@
           "target_column": "EducationOrganizationId"
         }
       ],
+      "resource_key_id_value": 201,
       "discriminator_value": "Ed-Fi:PostSecondaryInstitution"
     },
     {
@@ -47928,6 +48055,7 @@
           "target_column": "EducationOrganizationId"
         }
       ],
+      "resource_key_id_value": 244,
       "discriminator_value": "Ed-Fi:School"
     },
     {
@@ -49723,6 +49851,7 @@
           "target_column": "EducationOrganizationId"
         }
       ],
+      "resource_key_id_value": 281,
       "discriminator_value": "Ed-Fi:StateEducationAgency"
     },
     {
@@ -50683,6 +50812,7 @@
           "target_column": "Student_StudentUniqueId"
         }
       ],
+      "resource_key_id_value": 288,
       "discriminator_value": "Ed-Fi:StudentCTEProgramAssociation"
     },
     {
@@ -51973,6 +52103,7 @@
           "target_column": "Student_StudentUniqueId"
         }
       ],
+      "resource_key_id_value": 300,
       "discriminator_value": "Ed-Fi:StudentHomelessProgramAssociation"
     },
     {
@@ -52328,6 +52459,7 @@
           "target_column": "Student_StudentUniqueId"
         }
       ],
+      "resource_key_id_value": 304,
       "discriminator_value": "Ed-Fi:StudentLanguageInstructionProgramAssociation"
     },
     {
@@ -52536,6 +52668,7 @@
           "target_column": "Student_StudentUniqueId"
         }
       ],
+      "resource_key_id_value": 305,
       "discriminator_value": "Ed-Fi:StudentMigrantEducationProgramAssociation"
     },
     {
@@ -52728,6 +52861,7 @@
           "target_column": "Student_StudentUniqueId"
         }
       ],
+      "resource_key_id_value": 306,
       "discriminator_value": "Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation"
     },
     {
@@ -52952,6 +53086,7 @@
           "target_column": "Student_StudentUniqueId"
         }
       ],
+      "resource_key_id_value": 307,
       "discriminator_value": "Ed-Fi:StudentProgramAssociation"
     },
     {
@@ -53542,6 +53677,7 @@
           "target_column": "Student_StudentUniqueId"
         }
       ],
+      "resource_key_id_value": 312,
       "discriminator_value": "Ed-Fi:StudentSchoolFoodServiceProgramAssociation"
     },
     {
@@ -53734,6 +53870,7 @@
           "target_column": "Student_StudentUniqueId"
         }
       ],
+      "resource_key_id_value": 313,
       "discriminator_value": "Ed-Fi:StudentSection504ProgramAssociation"
     },
     {
@@ -54115,6 +54252,7 @@
           "target_column": "Student_StudentUniqueId"
         }
       ],
+      "resource_key_id_value": 316,
       "discriminator_value": "Ed-Fi:StudentSpecialEducationProgramAssociation"
     },
     {
@@ -54449,6 +54587,7 @@
           "target_column": "Student_StudentUniqueId"
         }
       ],
+      "resource_key_id_value": 318,
       "discriminator_value": "Ed-Fi:StudentTitleIPartAProgramAssociation"
     },
     {

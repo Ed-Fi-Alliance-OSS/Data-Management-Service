@@ -655,7 +655,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             // Dispatch by dialect enum rather than pattern abstraction for trigger generation.
             // Adding a new dialect requires updating this site and: EmitDocumentStampingBody,
             // EmitReferentialIdentityBody, EmitAbstractIdentityBody, FormatNullOrTrueCheck,
-            // EmitStringLiteralWithCast.
+            // EmitStringLiteralWithCast, EmitInt16LiteralWithCast.
             if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
             {
                 EmitPgsqlTrigger(writer, trigger, tableModelsByTableName, trackedChangeTablesByName);
@@ -2394,6 +2394,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 trigger.IdentityProjectionColumns,
                 abstractId.TargetTable,
                 abstractId.TargetColumnMappings,
+                abstractId.ResourceKeyIdValue,
                 abstractId.DiscriminatorValue
             );
         }
@@ -2405,6 +2406,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 trigger.IdentityProjectionColumns,
                 abstractId.TargetTable,
                 abstractId.TargetColumnMappings,
+                abstractId.ResourceKeyIdValue,
                 abstractId.DiscriminatorValue
             );
         }
@@ -2415,6 +2417,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         IReadOnlyList<DbColumnName> identityProjectionColumns,
         DbTableName targetTableName,
         IReadOnlyList<TriggerColumnMapping> mappings,
+        short resourceKeyIdValue,
         string discriminatorValue
     )
     {
@@ -2438,6 +2441,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.Append(Quote(mapping.TargetColumn));
             }
             writer.Append(", ");
+            writer.Append(Quote(ResourceKeyIdColumn));
+            writer.Append(", ");
             writer.Append(Quote(DiscriminatorColumn));
             writer.AppendLine(")");
 
@@ -2448,6 +2453,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.Append(", NEW.");
                 writer.Append(Quote(mapping.SourceColumn));
             }
+            // ResourceKeyId is the compile-time member key, never derived from the discriminator or the row.
+            writer.Append(", ");
+            writer.Append(_dialect.RenderSmallintLiteral(resourceKeyIdValue));
             writer.Append(", '");
             writer.Append(SqlDialectBase.EscapeSingleQuote(discriminatorValue));
             writer.AppendLine("')");
@@ -2479,6 +2487,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         IReadOnlyList<DbColumnName> identityProjectionColumns,
         DbTableName targetTableName,
         IReadOnlyList<TriggerColumnMapping> mappings,
+        short resourceKeyIdValue,
         string discriminatorValue
     )
     {
@@ -2491,6 +2500,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                     writer,
                     targetTableName,
                     mappings,
+                    resourceKeyIdValue,
                     discriminatorValue,
                     isInsert
                 )
@@ -2559,6 +2569,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         SqlWriter writer,
         DbTableName targetTableName,
         IReadOnlyList<TriggerColumnMapping> mappings,
+        short resourceKeyIdValue,
         string discriminatorValue,
         bool isInsert
     )
@@ -2610,6 +2621,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append(Quote(mapping.TargetColumn));
         }
         writer.Append(", ");
+        writer.Append(Quote(ResourceKeyIdColumn));
+        writer.Append(", ");
         writer.Append(Quote(DiscriminatorColumn));
         writer.AppendLine(")");
         writer.Append("SELECT s.");
@@ -2619,6 +2632,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append(", s.");
             writer.Append(Quote(mapping.SourceColumn));
         }
+        // ResourceKeyId is the compile-time member key, never derived from the discriminator or the row.
+        writer.Append(", ");
+        writer.Append(_dialect.RenderSmallintLiteral(resourceKeyIdValue));
         writer.Append(", N'");
         writer.Append(SqlDialectBase.EscapeSingleQuote(discriminatorValue));
         writer.AppendLine("'");
@@ -3047,6 +3063,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 EmitStringLiteralWithCast(writer, literal.Value, targetType);
                 break;
 
+            case AbstractUnionViewProjectionExpression.Int16Literal literal:
+                EmitInt16LiteralWithCast(writer, literal.Value, targetType);
+                break;
+
             default:
                 throw new ArgumentOutOfRangeException(
                     nameof(expr),
@@ -3249,6 +3269,32 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append("CAST(N'");
             writer.Append(SqlDialectBase.EscapeSingleQuote(value));
             writer.Append("' AS ");
+            writer.Append(sqlType);
+            writer.Append(")");
+        }
+    }
+
+    /// <summary>
+    /// Emits a 16-bit integer literal with dialect-specific CAST expression.
+    /// </summary>
+    private void EmitInt16LiteralWithCast(SqlWriter writer, short value, RelationalScalarType targetType)
+    {
+        var sqlType = _dialect.RenderColumnType(targetType);
+        var literal = _dialect.RenderSmallintLiteral(value);
+
+        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
+        {
+            // PostgreSQL: literal::type
+            writer.Append(literal);
+            writer.Append("::");
+            writer.Append(sqlType);
+        }
+        else
+        {
+            // SQL Server: CAST(literal AS type)
+            writer.Append("CAST(");
+            writer.Append(literal);
+            writer.Append(" AS ");
             writer.Append(sqlType);
             writer.Append(")");
         }

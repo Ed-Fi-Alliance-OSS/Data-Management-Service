@@ -274,6 +274,13 @@ IF NOT EXISTS (
 ALTER TABLE [dms].[Document]
 ADD CONSTRAINT [UX_Document_DocumentUuid] UNIQUE ([DocumentUuid]);
 
+IF NOT EXISTS (
+    SELECT 1 FROM sys.key_constraints
+    WHERE name = N'UX_Document_DocumentId_ResourceKeyId' AND type = 'UQ' AND parent_object_id = OBJECT_ID(N'dms.Document')
+)
+ALTER TABLE [dms].[Document]
+ADD CONSTRAINT [UX_Document_DocumentId_ResourceKeyId] UNIQUE ([DocumentId], [ResourceKeyId]);
+
 IF OBJECT_ID(N'dms.DocumentCache', N'U') IS NULL
 CREATE TABLE [dms].[DocumentCache]
 (
@@ -874,6 +881,7 @@ CREATE TABLE [edfi].[DescriptorSubjectIdentity]
 (
     [DocumentId] bigint NOT NULL,
     [SchoolTypeDescriptor_DescriptorId] int NOT NULL,
+    [ResourceKeyId] smallint NOT NULL,
     [Discriminator] nvarchar(256) NOT NULL,
     CONSTRAINT [PK_DescriptorSubjectIdentity] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_DescriptorSubjectIdentity_NK] UNIQUE ([SchoolTypeDescriptor_DescriptorId]),
@@ -1014,12 +1022,12 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_DescriptorSubjectIdentity_Document' AND parent_object_id = OBJECT_ID(N'edfi.DescriptorSubjectIdentity')
+    WHERE name = N'FK_DescriptorSubjectIdentity_DocumentResourceKey' AND parent_object_id = OBJECT_ID(N'edfi.DescriptorSubjectIdentity')
 )
 ALTER TABLE [edfi].[DescriptorSubjectIdentity]
-ADD CONSTRAINT [FK_DescriptorSubjectIdentity_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
+ADD CONSTRAINT [FK_DescriptorSubjectIdentity_DocumentResourceKey]
+FOREIGN KEY ([DocumentId], [ResourceKeyId])
+REFERENCES [dms].[Document] ([DocumentId], [ResourceKeyId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
@@ -1121,7 +1129,7 @@ CREATE INDEX [IX_Descriptor_ResourceKeyId_ChangeVersion] ON [tracked_changes_edf
 
 GO
 CREATE OR ALTER VIEW [edfi].[DescriptorSubject_View] AS
-SELECT [DocumentId] AS [DocumentId], [SchoolTypeDescriptor_DescriptorId] AS [SchoolTypeDescriptor_DescriptorId], CAST(N'Ed-Fi:Student' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [SchoolTypeDescriptor_DescriptorId] AS [SchoolTypeDescriptor_DescriptorId], CAST(4 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:Student' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[Student]
 ;
 
@@ -1341,8 +1349,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[DescriptorSubjectIdentity] ([DocumentId], [SchoolTypeDescriptor_DescriptorId], [Discriminator])
-        SELECT s.[DocumentId], s.[SchoolTypeDescriptor_DescriptorId], N'Ed-Fi:Student'
+        INSERT INTO [edfi].[DescriptorSubjectIdentity] ([DocumentId], [SchoolTypeDescriptor_DescriptorId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[SchoolTypeDescriptor_DescriptorId], 4, N'Ed-Fi:Student'
         FROM inserted s
         LEFT JOIN [edfi].[DescriptorSubjectIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -1361,8 +1369,8 @@ BEGIN
             FROM [edfi].[DescriptorSubjectIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[DescriptorSubjectIdentity] ([DocumentId], [SchoolTypeDescriptor_DescriptorId], [Discriminator])
-            SELECT s.[DocumentId], s.[SchoolTypeDescriptor_DescriptorId], N'Ed-Fi:Student'
+            INSERT INTO [edfi].[DescriptorSubjectIdentity] ([DocumentId], [SchoolTypeDescriptor_DescriptorId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[SchoolTypeDescriptor_DescriptorId], 4, N'Ed-Fi:Student'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[DescriptorSubjectIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;

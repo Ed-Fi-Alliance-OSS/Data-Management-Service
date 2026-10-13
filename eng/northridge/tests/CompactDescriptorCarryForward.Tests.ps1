@@ -85,7 +85,7 @@ INSERT INTO dms."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceK
 ('00000000-0000-0000-0000-000000000009', 5000000103, 2);
 INSERT INTO edfi."Student" ("DocumentId", "SchoolTypeDescriptor_DescriptorId", "FirstName", "StudentUniqueId", "ContentVersion", "ContentLastModifiedAt") VALUES
 (5000000100, 5000000042, 'Test', 'student-100', 103, '2026-01-04Z');
-INSERT INTO edfi."DescriptorSubjectIdentity" ("DocumentId", "SchoolTypeDescriptor_DescriptorId", "Discriminator") VALUES (5000000100, 5000000042, 'Ed-Fi:Student');
+INSERT INTO edfi."DescriptorSubjectIdentity" ("DocumentId", "SchoolTypeDescriptor_DescriptorId", "ResourceKeyId", "Discriminator") VALUES (5000000100, 5000000042, 4, 'Ed-Fi:Student');
 INSERT INTO edfi."ProfileRootOnlyMergeItem" ("DocumentId", "ProfileRootOnlyMergeItemId", "PrimarySchoolTypeDescriptor_DescriptorId_Present", "PrimarySchoolTypeDescriptor_Unified_DescriptorId", "StudentReference_DocumentId", "StudentReference_StudentUniqueId", "StudentReference_SchoolTypeDescriptor_DescriptorId", "ContentVersion", "ContentLastModifiedAt") VALUES
 (5000000200, 200, true, 5000000042, 5000000100, 'student-100', 5000000042, 104, '2026-01-05Z'),
 (5000000101, 101, true, 5000000042, 5000000100, 'student-100', 5000000042, 107, '2026-01-03Z'),

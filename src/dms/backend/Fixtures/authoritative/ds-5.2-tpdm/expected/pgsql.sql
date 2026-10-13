@@ -293,6 +293,19 @@ BEGIN
     END IF;
 END $$;
 
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'UX_Document_DocumentId_ResourceKeyId'
+        AND conrelid = to_regclass('"dms"."Document"')
+    )
+    THEN
+        ALTER TABLE "dms"."Document"
+        ADD CONSTRAINT "UX_Document_DocumentId_ResourceKeyId" UNIQUE ("DocumentId", "ResourceKeyId");
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS "dms"."DocumentCache"
 (
     "DocumentId" bigint NOT NULL,
@@ -12570,6 +12583,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationIdentity"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganizationId" bigint NOT NULL,
+    "ResourceKeyId" smallint NOT NULL,
     "Discriminator" varchar(256) NOT NULL,
     CONSTRAINT "PK_EducationOrganizationIdentity" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_EducationOrganizationIdentity_NK" UNIQUE ("EducationOrganizationId"),
@@ -12585,6 +12599,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GeneralStudentProgramAssociationIdentity"
     "Program_ProgramName" varchar(60) NOT NULL,
     "Program_ProgramTypeDescriptor_DescriptorId" integer NOT NULL,
     "Student_StudentUniqueId" varchar(32) NOT NULL,
+    "ResourceKeyId" smallint NOT NULL,
     "Discriminator" varchar(256) NOT NULL,
     CONSTRAINT "PK_GeneralStudentProgramAssociationIdentity" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_GeneralStudentProgramAssociationIdentity_NK" UNIQUE ("BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId"),
@@ -38860,14 +38875,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationIdentity_Document'
+        WHERE conname = 'FK_EducationOrganizationIdentity_DocumentResourceKey'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationIdentity"')
     )
     THEN
         ALTER TABLE "edfi"."EducationOrganizationIdentity"
-        ADD CONSTRAINT "FK_EducationOrganizationIdentity_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
+        ADD CONSTRAINT "FK_EducationOrganizationIdentity_DocumentResourceKey"
+        FOREIGN KEY ("DocumentId", "ResourceKeyId")
+        REFERENCES "dms"."Document" ("DocumentId", "ResourceKeyId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -38877,14 +38892,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_GeneralStudentProgramAssociationIdentity_Document'
+        WHERE conname = 'FK_GeneralStudentProgramAssociationIdentity_DocumentResourceKey'
         AND conrelid = to_regclass('"edfi"."GeneralStudentProgramAssociationIdentity"')
     )
     THEN
         ALTER TABLE "edfi"."GeneralStudentProgramAssociationIdentity"
-        ADD CONSTRAINT "FK_GeneralStudentProgramAssociationIdentity_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
+        ADD CONSTRAINT "FK_GeneralStudentProgramAssociationIdentity_DocumentResourceKey"
+        FOREIGN KEY ("DocumentId", "ResourceKeyId")
+        REFERENCES "dms"."Document" ("DocumentId", "ResourceKeyId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -41639,63 +41654,63 @@ CREATE INDEX IF NOT EXISTS "IX_SurveySectionResponsePersonTargetAssociation_Pers
 CREATE INDEX IF NOT EXISTS "IX_Descriptor_ResourceKeyId_ChangeVersion" ON "tracked_changes_edfi"."Descriptor" ("ResourceKeyId", "ChangeVersion");
 
 CREATE OR REPLACE VIEW "edfi"."EducationOrganization_View" AS
-SELECT "DocumentId" AS "DocumentId", "CommunityOrganizationId" AS "EducationOrganizationId", 'Ed-Fi:CommunityOrganization'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "CommunityOrganizationId" AS "EducationOrganizationId", 50::smallint AS "ResourceKeyId", 'Ed-Fi:CommunityOrganization'::varchar(256) AS "Discriminator"
 FROM "edfi"."CommunityOrganization"
 UNION ALL
-SELECT "DocumentId" AS "DocumentId", "CommunityProviderId" AS "EducationOrganizationId", 'Ed-Fi:CommunityProvider'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "CommunityProviderId" AS "EducationOrganizationId", 51::smallint AS "ResourceKeyId", 'Ed-Fi:CommunityProvider'::varchar(256) AS "Discriminator"
 FROM "edfi"."CommunityProvider"
 UNION ALL
-SELECT "DocumentId" AS "DocumentId", "EducationOrganizationNetworkId" AS "EducationOrganizationId", 'Ed-Fi:EducationOrganizationNetwork'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "EducationOrganizationNetworkId" AS "EducationOrganizationId", 100::smallint AS "ResourceKeyId", 'Ed-Fi:EducationOrganizationNetwork'::varchar(256) AS "Discriminator"
 FROM "edfi"."EducationOrganizationNetwork"
 UNION ALL
-SELECT "DocumentId" AS "DocumentId", "EducationServiceCenterId" AS "EducationOrganizationId", 'Ed-Fi:EducationServiceCenter'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "EducationServiceCenterId" AS "EducationOrganizationId", 104::smallint AS "ResourceKeyId", 'Ed-Fi:EducationServiceCenter'::varchar(256) AS "Discriminator"
 FROM "edfi"."EducationServiceCenter"
 UNION ALL
-SELECT "DocumentId" AS "DocumentId", "LocalEducationAgencyId" AS "EducationOrganizationId", 'Ed-Fi:LocalEducationAgency'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "LocalEducationAgencyId" AS "EducationOrganizationId", 168::smallint AS "ResourceKeyId", 'Ed-Fi:LocalEducationAgency'::varchar(256) AS "Discriminator"
 FROM "edfi"."LocalEducationAgency"
 UNION ALL
-SELECT "DocumentId" AS "DocumentId", "OrganizationDepartmentId" AS "EducationOrganizationId", 'Ed-Fi:OrganizationDepartment'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "OrganizationDepartmentId" AS "EducationOrganizationId", 189::smallint AS "ResourceKeyId", 'Ed-Fi:OrganizationDepartment'::varchar(256) AS "Discriminator"
 FROM "edfi"."OrganizationDepartment"
 UNION ALL
-SELECT "DocumentId" AS "DocumentId", "PostSecondaryInstitutionId" AS "EducationOrganizationId", 'Ed-Fi:PostSecondaryInstitution'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "PostSecondaryInstitutionId" AS "EducationOrganizationId", 201::smallint AS "ResourceKeyId", 'Ed-Fi:PostSecondaryInstitution'::varchar(256) AS "Discriminator"
 FROM "edfi"."PostSecondaryInstitution"
 UNION ALL
-SELECT "DocumentId" AS "DocumentId", "SchoolId" AS "EducationOrganizationId", 'Ed-Fi:School'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "SchoolId" AS "EducationOrganizationId", 244::smallint AS "ResourceKeyId", 'Ed-Fi:School'::varchar(256) AS "Discriminator"
 FROM "edfi"."School"
 UNION ALL
-SELECT "DocumentId" AS "DocumentId", "StateEducationAgencyId" AS "EducationOrganizationId", 'Ed-Fi:StateEducationAgency'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "StateEducationAgencyId" AS "EducationOrganizationId", 281::smallint AS "ResourceKeyId", 'Ed-Fi:StateEducationAgency'::varchar(256) AS "Discriminator"
 FROM "edfi"."StateEducationAgency"
 ;
 
 CREATE OR REPLACE VIEW "edfi"."GeneralStudentProgramAssociation_View" AS
-SELECT "DocumentId" AS "DocumentId", "BeginDate" AS "BeginDate", "EducationOrganization_EducationOrganizationId" AS "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId" AS "Program_EducationOrganizationId", "ProgramProgram_ProgramName" AS "Program_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId" AS "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" AS "Student_StudentUniqueId", 'Ed-Fi:StudentCTEProgramAssociation'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "BeginDate" AS "BeginDate", "EducationOrganization_EducationOrganizationId" AS "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId" AS "Program_EducationOrganizationId", "ProgramProgram_ProgramName" AS "Program_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId" AS "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" AS "Student_StudentUniqueId", 288::smallint AS "ResourceKeyId", 'Ed-Fi:StudentCTEProgramAssociation'::varchar(256) AS "Discriminator"
 FROM "edfi"."StudentCTEProgramAssociation"
 UNION ALL
-SELECT "DocumentId" AS "DocumentId", "BeginDate" AS "BeginDate", "EducationOrganization_EducationOrganizationId" AS "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId" AS "Program_EducationOrganizationId", "ProgramProgram_ProgramName" AS "Program_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId" AS "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" AS "Student_StudentUniqueId", 'Ed-Fi:StudentHomelessProgramAssociation'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "BeginDate" AS "BeginDate", "EducationOrganization_EducationOrganizationId" AS "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId" AS "Program_EducationOrganizationId", "ProgramProgram_ProgramName" AS "Program_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId" AS "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" AS "Student_StudentUniqueId", 300::smallint AS "ResourceKeyId", 'Ed-Fi:StudentHomelessProgramAssociation'::varchar(256) AS "Discriminator"
 FROM "edfi"."StudentHomelessProgramAssociation"
 UNION ALL
-SELECT "DocumentId" AS "DocumentId", "BeginDate" AS "BeginDate", "EducationOrganization_EducationOrganizationId" AS "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId" AS "Program_EducationOrganizationId", "ProgramProgram_ProgramName" AS "Program_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId" AS "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" AS "Student_StudentUniqueId", 'Ed-Fi:StudentLanguageInstructionProgramAssociation'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "BeginDate" AS "BeginDate", "EducationOrganization_EducationOrganizationId" AS "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId" AS "Program_EducationOrganizationId", "ProgramProgram_ProgramName" AS "Program_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId" AS "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" AS "Student_StudentUniqueId", 304::smallint AS "ResourceKeyId", 'Ed-Fi:StudentLanguageInstructionProgramAssociation'::varchar(256) AS "Discriminator"
 FROM "edfi"."StudentLanguageInstructionProgramAssociation"
 UNION ALL
-SELECT "DocumentId" AS "DocumentId", "BeginDate" AS "BeginDate", "EducationOrganization_EducationOrganizationId" AS "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId" AS "Program_EducationOrganizationId", "ProgramProgram_ProgramName" AS "Program_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId" AS "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" AS "Student_StudentUniqueId", 'Ed-Fi:StudentMigrantEducationProgramAssociation'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "BeginDate" AS "BeginDate", "EducationOrganization_EducationOrganizationId" AS "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId" AS "Program_EducationOrganizationId", "ProgramProgram_ProgramName" AS "Program_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId" AS "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" AS "Student_StudentUniqueId", 305::smallint AS "ResourceKeyId", 'Ed-Fi:StudentMigrantEducationProgramAssociation'::varchar(256) AS "Discriminator"
 FROM "edfi"."StudentMigrantEducationProgramAssociation"
 UNION ALL
-SELECT "DocumentId" AS "DocumentId", "BeginDate" AS "BeginDate", "EducationOrganization_EducationOrganizationId" AS "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId" AS "Program_EducationOrganizationId", "ProgramProgram_ProgramName" AS "Program_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId" AS "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" AS "Student_StudentUniqueId", 'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "BeginDate" AS "BeginDate", "EducationOrganization_EducationOrganizationId" AS "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId" AS "Program_EducationOrganizationId", "ProgramProgram_ProgramName" AS "Program_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId" AS "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" AS "Student_StudentUniqueId", 306::smallint AS "ResourceKeyId", 'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation'::varchar(256) AS "Discriminator"
 FROM "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
 UNION ALL
-SELECT "DocumentId" AS "DocumentId", "BeginDate" AS "BeginDate", "EducationOrganization_EducationOrganizationId" AS "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId" AS "Program_EducationOrganizationId", "ProgramProgram_ProgramName" AS "Program_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId" AS "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" AS "Student_StudentUniqueId", 'Ed-Fi:StudentProgramAssociation'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "BeginDate" AS "BeginDate", "EducationOrganization_EducationOrganizationId" AS "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId" AS "Program_EducationOrganizationId", "ProgramProgram_ProgramName" AS "Program_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId" AS "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" AS "Student_StudentUniqueId", 307::smallint AS "ResourceKeyId", 'Ed-Fi:StudentProgramAssociation'::varchar(256) AS "Discriminator"
 FROM "edfi"."StudentProgramAssociation"
 UNION ALL
-SELECT "DocumentId" AS "DocumentId", "BeginDate" AS "BeginDate", "EducationOrganization_EducationOrganizationId" AS "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId" AS "Program_EducationOrganizationId", "ProgramProgram_ProgramName" AS "Program_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId" AS "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" AS "Student_StudentUniqueId", 'Ed-Fi:StudentSchoolFoodServiceProgramAssociation'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "BeginDate" AS "BeginDate", "EducationOrganization_EducationOrganizationId" AS "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId" AS "Program_EducationOrganizationId", "ProgramProgram_ProgramName" AS "Program_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId" AS "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" AS "Student_StudentUniqueId", 312::smallint AS "ResourceKeyId", 'Ed-Fi:StudentSchoolFoodServiceProgramAssociation'::varchar(256) AS "Discriminator"
 FROM "edfi"."StudentSchoolFoodServiceProgramAssociation"
 UNION ALL
-SELECT "DocumentId" AS "DocumentId", "BeginDate" AS "BeginDate", "EducationOrganization_EducationOrganizationId" AS "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId" AS "Program_EducationOrganizationId", "ProgramProgram_ProgramName" AS "Program_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId" AS "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" AS "Student_StudentUniqueId", 'Ed-Fi:StudentSection504ProgramAssociation'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "BeginDate" AS "BeginDate", "EducationOrganization_EducationOrganizationId" AS "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId" AS "Program_EducationOrganizationId", "ProgramProgram_ProgramName" AS "Program_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId" AS "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" AS "Student_StudentUniqueId", 313::smallint AS "ResourceKeyId", 'Ed-Fi:StudentSection504ProgramAssociation'::varchar(256) AS "Discriminator"
 FROM "edfi"."StudentSection504ProgramAssociation"
 UNION ALL
-SELECT "DocumentId" AS "DocumentId", "BeginDate" AS "BeginDate", "EducationOrganization_EducationOrganizationId" AS "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId" AS "Program_EducationOrganizationId", "ProgramProgram_ProgramName" AS "Program_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId" AS "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" AS "Student_StudentUniqueId", 'Ed-Fi:StudentSpecialEducationProgramAssociation'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "BeginDate" AS "BeginDate", "EducationOrganization_EducationOrganizationId" AS "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId" AS "Program_EducationOrganizationId", "ProgramProgram_ProgramName" AS "Program_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId" AS "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" AS "Student_StudentUniqueId", 316::smallint AS "ResourceKeyId", 'Ed-Fi:StudentSpecialEducationProgramAssociation'::varchar(256) AS "Discriminator"
 FROM "edfi"."StudentSpecialEducationProgramAssociation"
 UNION ALL
-SELECT "DocumentId" AS "DocumentId", "BeginDate" AS "BeginDate", "EducationOrganization_EducationOrganizationId" AS "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId" AS "Program_EducationOrganizationId", "ProgramProgram_ProgramName" AS "Program_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId" AS "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" AS "Student_StudentUniqueId", 'Ed-Fi:StudentTitleIPartAProgramAssociation'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "BeginDate" AS "BeginDate", "EducationOrganization_EducationOrganizationId" AS "EducationOrganization_EducationOrganizationId", "ProgramProgram_EducationOrganizationId" AS "Program_EducationOrganizationId", "ProgramProgram_ProgramName" AS "Program_ProgramName", "ProgramProgram_ProgramTypeDescriptor_DescriptorId" AS "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" AS "Student_StudentUniqueId", 318::smallint AS "ResourceKeyId", 'Ed-Fi:StudentTitleIPartAProgramAssociation'::varchar(256) AS "Discriminator"
 FROM "edfi"."StudentTitleIPartAProgramAssociation"
 ;
 
@@ -45949,8 +45964,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityOrganization_AbstractIdentity"
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."CommunityOrganizationId" IS DISTINCT FROM NEW."CommunityOrganizationId") THEN
-        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."CommunityOrganizationId", 'Ed-Fi:CommunityOrganization')
+        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."CommunityOrganizationId", 50, 'Ed-Fi:CommunityOrganization')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
     END IF;
@@ -46857,8 +46872,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityProvider_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."CommunityProviderId" IS DISTINCT FROM NEW."CommunityProviderId") THEN
-        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."CommunityProviderId", 'Ed-Fi:CommunityProvider')
+        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."CommunityProviderId", 51, 'Ed-Fi:CommunityProvider')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
     END IF;
@@ -53319,8 +53334,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationNetwork_AbstractId
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."EducationOrganizationNetworkId" IS DISTINCT FROM NEW."EducationOrganizationNetworkId") THEN
-        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."EducationOrganizationNetworkId", 'Ed-Fi:EducationOrganizationNetwork')
+        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."EducationOrganizationNetworkId", 100, 'Ed-Fi:EducationOrganizationNetwork')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
     END IF;
@@ -54415,8 +54430,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationServiceCenter_AbstractIdentity
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."EducationServiceCenterId" IS DISTINCT FROM NEW."EducationServiceCenterId") THEN
-        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."EducationServiceCenterId", 'Ed-Fi:EducationServiceCenter')
+        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."EducationServiceCenterId", 104, 'Ed-Fi:EducationServiceCenter')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
     END IF;
@@ -61168,8 +61183,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AbstractIdentity"(
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."LocalEducationAgencyId" IS DISTINCT FROM NEW."LocalEducationAgencyId") THEN
-        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."LocalEducationAgencyId", 'Ed-Fi:LocalEducationAgency')
+        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."LocalEducationAgencyId", 168, 'Ed-Fi:LocalEducationAgency')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
     END IF;
@@ -63913,8 +63928,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OrganizationDepartment_AbstractIdentity
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."OrganizationDepartmentId" IS DISTINCT FROM NEW."OrganizationDepartmentId") THEN
-        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."OrganizationDepartmentId", 'Ed-Fi:OrganizationDepartment')
+        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."OrganizationDepartmentId", 189, 'Ed-Fi:OrganizationDepartment')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
     END IF;
@@ -65128,8 +65143,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_PostSecondaryInstitution_AbstractIdenti
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."PostSecondaryInstitutionId" IS DISTINCT FROM NEW."PostSecondaryInstitutionId") THEN
-        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."PostSecondaryInstitutionId", 'Ed-Fi:PostSecondaryInstitution')
+        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."PostSecondaryInstitutionId", 201, 'Ed-Fi:PostSecondaryInstitution')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
     END IF;
@@ -68397,8 +68412,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
-        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."SchoolId", 'Ed-Fi:School')
+        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."SchoolId", 244, 'Ed-Fi:School')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
     END IF;
@@ -74329,8 +74344,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StateEducationAgency_AbstractIdentity"(
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."StateEducationAgencyId" IS DISTINCT FROM NEW."StateEducationAgencyId") THEN
-        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."StateEducationAgencyId", 'Ed-Fi:StateEducationAgency')
+        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."StateEducationAgencyId", 281, 'Ed-Fi:StateEducationAgency')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
     END IF;
@@ -77632,8 +77647,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentCTEProgramAssociation_AbstractId
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Ed-Fi:StudentCTEProgramAssociation')
+        INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 288, 'Ed-Fi:StudentCTEProgramAssociation')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "BeginDate" = EXCLUDED."BeginDate", "EducationOrganization_EducationOrganizationId" = EXCLUDED."EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId" = EXCLUDED."Program_EducationOrganizationId", "Program_ProgramName" = EXCLUDED."Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId" = EXCLUDED."Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" = EXCLUDED."Student_StudentUniqueId";
     END IF;
@@ -82037,8 +82052,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentHomelessProgramAssociation_Abstr
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Ed-Fi:StudentHomelessProgramAssociation')
+        INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 300, 'Ed-Fi:StudentHomelessProgramAssociation')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "BeginDate" = EXCLUDED."BeginDate", "EducationOrganization_EducationOrganizationId" = EXCLUDED."EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId" = EXCLUDED."Program_EducationOrganizationId", "Program_ProgramName" = EXCLUDED."Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId" = EXCLUDED."Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" = EXCLUDED."Student_StudentUniqueId";
     END IF;
@@ -82778,8 +82793,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentLanguageInstructionProgramAssoci
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Ed-Fi:StudentLanguageInstructionProgramAssociation')
+        INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 304, 'Ed-Fi:StudentLanguageInstructionProgramAssociation')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "BeginDate" = EXCLUDED."BeginDate", "EducationOrganization_EducationOrganizationId" = EXCLUDED."EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId" = EXCLUDED."Program_EducationOrganizationId", "Program_ProgramName" = EXCLUDED."Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId" = EXCLUDED."Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" = EXCLUDED."Student_StudentUniqueId";
     END IF;
@@ -83182,8 +83197,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentMigrantEducationProgramAssociati
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Ed-Fi:StudentMigrantEducationProgramAssociation')
+        INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 305, 'Ed-Fi:StudentMigrantEducationProgramAssociation')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "BeginDate" = EXCLUDED."BeginDate", "EducationOrganization_EducationOrganizationId" = EXCLUDED."EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId" = EXCLUDED."Program_EducationOrganizationId", "Program_ProgramName" = EXCLUDED."Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId" = EXCLUDED."Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" = EXCLUDED."Student_StudentUniqueId";
     END IF;
@@ -83488,8 +83503,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentNeglectedOrDelinquentProgramAsso
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation')
+        INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 306, 'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "BeginDate" = EXCLUDED."BeginDate", "EducationOrganization_EducationOrganizationId" = EXCLUDED."EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId" = EXCLUDED."Program_EducationOrganizationId", "Program_ProgramName" = EXCLUDED."Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId" = EXCLUDED."Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" = EXCLUDED."Student_StudentUniqueId";
     END IF;
@@ -83990,8 +84005,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentProgramAssociation_AbstractIdent
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Ed-Fi:StudentProgramAssociation')
+        INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 307, 'Ed-Fi:StudentProgramAssociation')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "BeginDate" = EXCLUDED."BeginDate", "EducationOrganization_EducationOrganizationId" = EXCLUDED."EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId" = EXCLUDED."Program_EducationOrganizationId", "Program_ProgramName" = EXCLUDED."Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId" = EXCLUDED."Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" = EXCLUDED."Student_StudentUniqueId";
     END IF;
@@ -85348,8 +85363,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSchoolFoodServiceProgramAssociat
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Ed-Fi:StudentSchoolFoodServiceProgramAssociation')
+        INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 312, 'Ed-Fi:StudentSchoolFoodServiceProgramAssociation')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "BeginDate" = EXCLUDED."BeginDate", "EducationOrganization_EducationOrganizationId" = EXCLUDED."EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId" = EXCLUDED."Program_EducationOrganizationId", "Program_ProgramName" = EXCLUDED."Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId" = EXCLUDED."Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" = EXCLUDED."Student_StudentUniqueId";
     END IF;
@@ -85654,8 +85669,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSection504ProgramAssociation_Abs
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Ed-Fi:StudentSection504ProgramAssociation')
+        INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 313, 'Ed-Fi:StudentSection504ProgramAssociation')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "BeginDate" = EXCLUDED."BeginDate", "EducationOrganization_EducationOrganizationId" = EXCLUDED."EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId" = EXCLUDED."Program_EducationOrganizationId", "Program_ProgramName" = EXCLUDED."Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId" = EXCLUDED."Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" = EXCLUDED."Student_StudentUniqueId";
     END IF;
@@ -86339,8 +86354,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSpecialEducationProgramAssociati
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Ed-Fi:StudentSpecialEducationProgramAssociation')
+        INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 316, 'Ed-Fi:StudentSpecialEducationProgramAssociation')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "BeginDate" = EXCLUDED."BeginDate", "EducationOrganization_EducationOrganizationId" = EXCLUDED."EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId" = EXCLUDED."Program_EducationOrganizationId", "Program_ProgramName" = EXCLUDED."Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId" = EXCLUDED."Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" = EXCLUDED."Student_StudentUniqueId";
     END IF;
@@ -87173,8 +87188,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentTitleIPartAProgramAssociation_Ab
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
-        INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 'Ed-Fi:StudentTitleIPartAProgramAssociation')
+        INSERT INTO "edfi"."GeneralStudentProgramAssociationIdentity" ("DocumentId", "BeginDate", "EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId", "Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."BeginDate", NEW."EducationOrganization_EducationOrganizationId", NEW."ProgramProgram_EducationOrganizationId", NEW."ProgramProgram_ProgramName", NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId", NEW."Student_StudentUniqueId", 318, 'Ed-Fi:StudentTitleIPartAProgramAssociation')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "BeginDate" = EXCLUDED."BeginDate", "EducationOrganization_EducationOrganizationId" = EXCLUDED."EducationOrganization_EducationOrganizationId", "Program_EducationOrganizationId" = EXCLUDED."Program_EducationOrganizationId", "Program_ProgramName" = EXCLUDED."Program_ProgramName", "Program_ProgramTypeDescriptor_DescriptorId" = EXCLUDED."Program_ProgramTypeDescriptor_DescriptorId", "Student_StudentUniqueId" = EXCLUDED."Student_StudentUniqueId";
     END IF;

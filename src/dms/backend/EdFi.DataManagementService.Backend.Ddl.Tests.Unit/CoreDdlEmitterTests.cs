@@ -645,6 +645,19 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_emits_the_document_resource_candidate_key()
+    {
+        _ddl.Should()
+            .MatchRegex(
+                @"conname = 'UX_Document_DocumentId_ResourceKeyId'\s+AND conrelid = to_regclass\('""dms"".""Document""'\)"
+            );
+        _ddl.Should()
+            .MatchRegex(
+                @"ALTER TABLE ""dms"".""Document""\s+ADD CONSTRAINT ""UX_Document_DocumentId_ResourceKeyId"" UNIQUE \(""DocumentId"", ""ResourceKeyId""\);"
+            );
+    }
+
+    [Test]
     public void It_should_not_have_unique_on_document_cache_uuid()
     {
         _ddl.Should().NotContain("\"UX_DocumentCache_DocumentUuid\"");
@@ -1882,6 +1895,19 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     {
         _ddl.Should()
             .Contain("CONSTRAINT [PK_ReferentialIdentity] PRIMARY KEY NONCLUSTERED ([ReferentialId])");
+    }
+
+    [Test]
+    public void It_emits_the_document_resource_candidate_key()
+    {
+        _ddl.Should()
+            .Contain(
+                "WHERE name = N'UX_Document_DocumentId_ResourceKeyId' AND type = 'UQ' AND parent_object_id = OBJECT_ID(N'dms.Document')"
+            );
+        _ddl.Should()
+            .MatchRegex(
+                @"ALTER TABLE \[dms\]\.\[Document\]\s+ADD CONSTRAINT \[UX_Document_DocumentId_ResourceKeyId\] UNIQUE \(\[DocumentId\], \[ResourceKeyId\]\);"
+            );
     }
 
     [Test]

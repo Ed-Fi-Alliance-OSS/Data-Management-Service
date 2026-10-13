@@ -177,6 +177,25 @@ public class Given_MssqlDialect_Rendering_Unbounded_String_Type
 }
 
 [TestFixture]
+public class Given_MssqlDialect_Rendering_Int16_Type
+{
+    private string _rendered = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new MssqlDialect(new MssqlDialectRules());
+        _rendered = dialect.RenderColumnType(new RelationalScalarType(ScalarKind.Int16));
+    }
+
+    [Test]
+    public void It_renders_Int16_as_smallint()
+    {
+        _rendered.Should().Be("smallint");
+    }
+}
+
+[TestFixture]
 public class Given_MssqlDialect_Rendering_Int32_Type
 {
     private string _rendered = default!;

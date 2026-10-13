@@ -126,7 +126,8 @@ public sealed class DeriveAuthHierarchyPass : IRelationalModelSetPass
             edOrgUnionView.UnionArmsInOrder.Select(arm => arm.ConcreteMemberResourceKey.Resource)
         );
 
-        // Step 3: Determine the abstract identity column (for the union view projection).
+        // Step 3: Determine the abstract identity column (for the union view projection). Identity columns
+        // are the ones bound to a JSON path; the ResourceKeyId and Discriminator payload columns have none.
         var abstractIdentityTable =
             context.AbstractIdentityTablesInNameOrder.Find(t =>
                 t.AbstractResourceKey.Resource == abstractEdOrgResource
@@ -136,9 +137,7 @@ public sealed class DeriveAuthHierarchyPass : IRelationalModelSetPass
             );
 
         var abstractIdentityColumn = (
-            abstractIdentityTable.TableModel.Columns.FirstOrDefault(c =>
-                c.Kind == ColumnKind.Scalar && c.ColumnName.Value != "Discriminator"
-            )
+            abstractIdentityTable.TableModel.Columns.FirstOrDefault(c => c.SourceJsonPath is not null)
             ?? throw new InvalidOperationException(
                 $"No scalar identity column found on abstract identity table for '{abstractEdOrgResource.ResourceName}'."
             )
