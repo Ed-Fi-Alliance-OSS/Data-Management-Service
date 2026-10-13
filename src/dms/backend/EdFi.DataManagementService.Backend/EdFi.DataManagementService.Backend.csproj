@@ -35,6 +35,7 @@
         <InternalsVisibleTo Include="dms-document-cache" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc.Tests.Unit" />
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc.Tests.Integration" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit" />
