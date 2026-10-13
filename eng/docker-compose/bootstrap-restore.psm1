@@ -662,10 +662,14 @@ function Resolve-RestoreTargetDatabaseName {
     defaults configure-local-data-store.ps1 registers (POSTGRES_DB_NAME / MSSQL_DB_NAME,
     default edfi_datamanagementservice), so the restored database and the registered data
     store can never diverge.
+
+    The env file is evaluated the way Compose and the topology validation evaluate it:
+    sequentially, with case-sensitive keys and ambient precedence. A case-insensitive table
+    would merge RESTORE_DB and restore_db and could select a database Compose does not.
     #>
     param (
         [Parameter(Mandatory = $true)]
-        [hashtable]$EnvironmentValues,
+        [string]$EnvironmentFile,
 
         [Parameter(Mandatory = $true)]
         [ValidateSet("postgresql", "mssql")]
@@ -673,7 +677,8 @@ function Resolve-RestoreTargetDatabaseName {
     )
 
     $keyName = if ($DatabaseEngine -eq "mssql") { "MSSQL_DB_NAME" } else { "POSTGRES_DB_NAME" }
-    $targetDatabaseName = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvironmentValues -Name $keyName -DefaultValue "edfi_datamanagementservice"
+    $evaluation = Resolve-DotenvFileSequentially -Path $EnvironmentFile
+    $targetDatabaseName = Get-SequentialEffectiveValue -Evaluation $evaluation -Name $keyName -DefaultValue "edfi_datamanagementservice"
 
     return $targetDatabaseName.Trim()
 }
@@ -2358,8 +2363,9 @@ function Invoke-RestoreScratchValidation {
     the manifest<->candidate schema agreement, the project set against the validated partition,
     the Populated-kind non-descriptor data predicate, and the capture of the package's
     dms.DataStoreIdentity.SourceIdentity for the post-restore reseed verification. The scratch
-    database and the transient in-container artifact copy are dropped in finally on every path,
-    best-effort with a loud warning when cleanup itself fails.
+    database and the transient in-container artifact copy are dropped in finally on every path.
+    When validation passed, a cleanup failure throws and no proof is returned; when validation
+    failed, its error stays the error and the cleanup failure is a loud warning.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Restore-internal validation step against a generated throwaway database; the restore flow does not expose -WhatIf end to end.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to the sqlcmd transport, which carries the password via SQLCMDPASSWORD on docker exec; the account is always "sa" and a PSCredential adds no protection across that boundary.')]
@@ -2406,6 +2412,7 @@ function Invoke-RestoreScratchValidation {
         MssqlPassword  = $MssqlPassword
     }
     $containerArtifactPath = $null
+    $scratchProof = $null
 
     try {
         if ($DatabaseEngine -eq "postgresql") {
@@ -2560,7 +2567,7 @@ function Invoke-RestoreScratchValidation {
         }
         $packageSourceIdentity = ([string]$identityRows[0]).Trim()
 
-        return [pscustomobject]@{
+        $scratchProof = [pscustomobject]@{
             PackageSourceIdentity = $packageSourceIdentity
             ScratchFacts          = $scratchFacts
             ProjectSchemaNames    = [string[]]$scratchProjects
@@ -2580,9 +2587,18 @@ function Invoke-RestoreScratchValidation {
             }
         }
         catch {
-            Write-Warning "Scratch cleanup did not complete: $(($_.Exception.Message | Out-String).Trim()) Remove scratch database '$scratchDatabaseName' and '$containerArtifactPath' in container '$ContainerName' manually if they remain."
+            $cleanupFailure = "$(($_.Exception.Message | Out-String).Trim()) Remove scratch database '$scratchDatabaseName' and '$containerArtifactPath' in container '$ContainerName' manually if they remain."
+            # A proof only exists when validation passed. Then the cleanup failure is the error,
+            # so no proof reaches the workspace commit or the target replacement. Otherwise the
+            # validation failure already propagating stays the error and this is reported.
+            if ($null -ne $scratchProof) {
+                throw "Scratch validation passed, but its cleanup did not complete: $cleanupFailure"
+            }
+            Write-Warning "Scratch cleanup did not complete: $cleanupFailure"
         }
     }
+
+    return $scratchProof
 }
 
 
@@ -2591,8 +2607,8 @@ function Remove-RestoreScratchDatabase {
     .SYNOPSIS
     Drops one generated restore scratch database. The name must match the scratch generator's
     exact shape - this helper can never be pointed at a real database. Throws on failure so
-    the caller decides whether cleanup failures are fatal (scratch validation demotes them to
-    a loud warning).
+    the caller decides whether cleanup failures are fatal (scratch validation throws after a
+    passed validation and warns after a failed one).
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Drops only generator-shaped throwaway scratch databases; the restore flow does not expose -WhatIf end to end.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'Forwarded to the sqlcmd transport, which carries the password via SQLCMDPASSWORD on docker exec; the account is always "sa" and a PSCredential adds no protection across that boundary.')]
@@ -2642,9 +2658,11 @@ function Remove-RestorePreflightDatabase {
     .SYNOPSIS
     Drops the generated PostgreSQL preflight database, best-effort: a failure warns loudly and
     never throws, because this cleanup runs on failure paths where the server may already be
-    unreachable, and the generated name cannot collide with a real database. SQL Server creates
-    no preflight database (a blank name is the documented no-op). The name must match the
-    preflight generator's exact shape - this helper can never be pointed at a real database.
+    unreachable, and the generated name cannot collide with a real database. With -Required
+    the failure throws instead, so a successful preflight cannot proceed to the workspace
+    commit while the database may remain. SQL Server creates no preflight database (a blank
+    name is the documented no-op). The name must match the preflight generator's exact
+    shape - this helper can never be pointed at a real database.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Drops only generator-shaped throwaway preflight databases; the restore flow does not expose -WhatIf end to end.')]
     param (
@@ -2654,7 +2672,9 @@ function Remove-RestorePreflightDatabase {
 
         [string]$PreflightDatabaseName = "",
 
-        [string]$ContainerName = ""
+        [string]$ContainerName = "",
+
+        [switch]$Required
     )
 
     if ($DatabaseEngine -eq "mssql" -or [string]::IsNullOrWhiteSpace($PreflightDatabaseName)) {
@@ -2684,7 +2704,11 @@ function Remove-RestorePreflightDatabase {
             -FailureMessage "Failed to drop preflight database '$PreflightDatabaseName'."
     }
     catch {
-        Write-Warning "Preflight database cleanup did not complete: $(($_.Exception.Message | Out-String).Trim()) Drop '$PreflightDatabaseName' in container '$ContainerName' manually if it remains."
+        $cleanupFailure = "Preflight database cleanup did not complete: $(($_.Exception.Message | Out-String).Trim()) Drop '$PreflightDatabaseName' in container '$ContainerName' manually if it remains."
+        if ($Required) {
+            throw $cleanupFailure
+        }
+        Write-Warning $cleanupFailure
     }
 }
 

@@ -954,12 +954,14 @@ function Invoke-BootstrapWrapper {
                 $composeProjectName = if ($StartScriptName -eq "start-published-dms.ps1") { "dms-published" } else { "dms-local" }
                 $restoreEnvironmentValues = ReadValuesFromEnvFile -EnvironmentFile $effectiveEnvFile
                 $restoreTargetDatabaseName = Resolve-RestoreTargetDatabaseName `
-                    -EnvironmentValues $restoreEnvironmentValues `
+                    -EnvironmentFile $effectiveEnvFile `
                     -DatabaseEngine $DatabaseEngine
                 $effectiveConfigDatabaseName = ""
                 if ($SeparateConfigDatabase) {
-                    $effectiveConfigDatabaseName = Get-ComposeResolvedEnvValue `
-                        -EnvironmentValues $restoreEnvironmentValues `
+                    # Same sequential, case-sensitive evaluation as the target and the topology
+                    # validation: a case-variant key must not stand in for the CMS database.
+                    $effectiveConfigDatabaseName = Get-SequentialEffectiveValue `
+                        -Evaluation (Resolve-DotenvFileSequentially -Path $effectiveEnvFile) `
                         -Name "DMS_CONFIG_DATABASE_NAME" `
                         -DefaultValue "edfi_configurationservice"
                 }
@@ -1072,8 +1074,9 @@ function Invoke-BootstrapWrapper {
                         -MssqlPassword $restoreMssqlPassword
 
                     # Drop the preflight database, stop the db-only slice, and re-prove the stop
-                    # before the whole-tree workspace commit (D10 precondition).
-                    Remove-RestorePreflightDatabase -DatabaseEngine $DatabaseEngine -PreflightDatabaseName $restorePreflightDatabaseName
+                    # before the whole-tree workspace commit (D10 precondition). The drop is
+                    # required: a failure stops here, before the commit and the replacement.
+                    Remove-RestorePreflightDatabase -DatabaseEngine $DatabaseEngine -PreflightDatabaseName $restorePreflightDatabaseName -Required
                     # Stopped with the SAME compose shape that started the slice (database-only
                     # compose files + the preflight env file + this run's project), never a bare
                     # "docker compose -p <project> stop db", and never "down"/-v: nothing is removed.
@@ -1321,6 +1324,12 @@ function Invoke-BootstrapWrapper {
             # replaced the database holding the CMS rows, so it registers as usual.
             if ($restoreTemplateSupplied -and $SeparateConfigDatabase) {
                 $configureArgs.RestoreTargetDatabaseName = $restoreTargetDatabaseName
+            }
+            # Every restore, in both topologies, registers the database it replaced. Configure's
+            # own env read is case-insensitive and could name another database; an explicit
+            # -DataStoreDatabaseName was already proven equal to this target before the restore.
+            if ($restoreTemplateSupplied) {
+                $configureArgs.DataStoreDatabaseName = $restoreTargetDatabaseName
             }
 
             # configure-local-data-store.ps1 throws on failure (no exit code); clear any stale native exit code first.

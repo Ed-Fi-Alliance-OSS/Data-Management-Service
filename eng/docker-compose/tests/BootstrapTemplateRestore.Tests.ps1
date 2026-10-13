@@ -890,11 +890,63 @@ Describe "Retained artifact transfer" {
 }
 
 Describe "Resolve-RestoreTargetDatabaseName" {
+    BeforeAll {
+        function script:New-TargetEnvironmentFile {
+            param([string[]]$Line)
+            $path = Join-Path (New-TestWorkspace) ".env"
+            [System.IO.File]::WriteAllLines($path, $Line)
+            return $path
+        }
+    }
+
+    BeforeEach {
+        # Ambient values win over the file, so the cases control them explicitly.
+        $script:callerTargetValues = @{}
+        foreach ($name in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME")) {
+            $script:callerTargetValues[$name] = [System.Environment]::GetEnvironmentVariable($name)
+            Remove-Item -LiteralPath "Env:\$name" -ErrorAction SilentlyContinue
+        }
+    }
+
+    AfterEach {
+        foreach ($name in @($script:callerTargetValues.Keys)) {
+            if ($null -eq $script:callerTargetValues[$name]) {
+                Remove-Item -LiteralPath "Env:\$name" -ErrorAction SilentlyContinue
+            }
+            else {
+                [System.Environment]::SetEnvironmentVariable($name, $script:callerTargetValues[$name])
+            }
+        }
+    }
+
     It "resolves the same keys and defaults the configure phase registers" {
-        Resolve-RestoreTargetDatabaseName -EnvironmentValues @{ POSTGRES_DB_NAME = "custom_pg" } -DatabaseEngine postgresql | Should -Be "custom_pg"
-        Resolve-RestoreTargetDatabaseName -EnvironmentValues @{ MSSQL_DB_NAME = "custom_ms" } -DatabaseEngine mssql | Should -Be "custom_ms"
-        Resolve-RestoreTargetDatabaseName -EnvironmentValues @{} -DatabaseEngine postgresql | Should -Be "edfi_datamanagementservice"
-        Resolve-RestoreTargetDatabaseName -EnvironmentValues @{} -DatabaseEngine mssql | Should -Be "edfi_datamanagementservice"
+        Resolve-RestoreTargetDatabaseName -EnvironmentFile (New-TargetEnvironmentFile -Line "POSTGRES_DB_NAME=custom_pg") -DatabaseEngine postgresql | Should -Be "custom_pg"
+        Resolve-RestoreTargetDatabaseName -EnvironmentFile (New-TargetEnvironmentFile -Line "MSSQL_DB_NAME=custom_ms") -DatabaseEngine mssql | Should -Be "custom_ms"
+        Resolve-RestoreTargetDatabaseName -EnvironmentFile (New-TargetEnvironmentFile -Line "OTHER=1") -DatabaseEngine postgresql | Should -Be "edfi_datamanagementservice"
+        Resolve-RestoreTargetDatabaseName -EnvironmentFile (New-TargetEnvironmentFile -Line "OTHER=1") -DatabaseEngine mssql | Should -Be "edfi_datamanagementservice"
+        Resolve-RestoreTargetDatabaseName -EnvironmentFile (New-TargetEnvironmentFile -Line "POSTGRES_DB_NAME=") -DatabaseEngine postgresql | Should -Be "edfi_datamanagementservice"
+    }
+
+    It "<Engine>: selects the database Compose selects when a case-distinct alias follows the referenced key" -ForEach @(
+        @{ Engine = "postgresql"; Key = "POSTGRES_DB_NAME" }
+        @{ Engine = "mssql"; Key = "MSSQL_DB_NAME" }
+    ) {
+        # RESTORE_DB and restore_db are distinct dotenv identifiers, and Compose resolves the
+        # reference against the declarations before it. A case-insensitive table merges the two
+        # and lets the later alias redirect the restore to 'unrelated'.
+        $environmentFile = New-TargetEnvironmentFile -Line @("RESTORE_DB=chosen", "restore_db=unrelated", "$Key=`${RESTORE_DB}")
+
+        Resolve-RestoreTargetDatabaseName -EnvironmentFile $environmentFile -DatabaseEngine $Engine | Should -BeExactly "chosen"
+    }
+
+    It "<Engine>: an ambient value of the target key wins over the file" -ForEach @(
+        @{ Engine = "postgresql"; Key = "POSTGRES_DB_NAME" }
+        @{ Engine = "mssql"; Key = "MSSQL_DB_NAME" }
+    ) {
+        $environmentFile = New-TargetEnvironmentFile -Line "$Key=from_file"
+        [System.Environment]::SetEnvironmentVariable($Key, "from_ambient")
+
+        Resolve-RestoreTargetDatabaseName -EnvironmentFile $environmentFile -DatabaseEngine $Engine | Should -BeExactly "from_ambient"
     }
 }
 

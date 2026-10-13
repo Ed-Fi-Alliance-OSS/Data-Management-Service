@@ -453,7 +453,7 @@ $failureStatement
             $stubThrow = { param($name) if ($throwSet -contains $name) { throw "injected $name failure" } }.GetNewClosure()
 
             Set-Item function:global:Resolve-RestoreTargetDatabaseName {
-                param($EnvironmentValues, $DatabaseEngine)
+                param($EnvironmentFile, $DatabaseEngine)
                 Add-Content -LiteralPath $log -Value "restore:resolve-target engine=$DatabaseEngine"
                 & $stubThrow "Resolve-RestoreTargetDatabaseName"
                 "edfi_datamanagementservice"
@@ -2054,11 +2054,14 @@ Add-Content -LiteralPath '$log' -Value "candidate-prepare-claims override=[`$env
                     }
                 }.GetNewClosure()
                 Set-Item function:global:Resolve-RestoreTargetDatabaseName {
-                    param($EnvironmentValues, $DatabaseEngine)
+                    param($EnvironmentFile, $DatabaseEngine)
+                    # Forwards exactly what the wrapper passed, so the trace records the real
+                    # resolver's answer to the wrapper's own input.
+                    $resolverArguments = $PSBoundParameters
                     $target = & $realModule {
-                        param($values, $engine)
-                        Resolve-RestoreTargetDatabaseName -EnvironmentValues $values -DatabaseEngine $engine
-                    } $EnvironmentValues $DatabaseEngine
+                        param($arguments)
+                        Resolve-RestoreTargetDatabaseName @arguments
+                    } $resolverArguments
                     Add-Content -LiteralPath $log -Value "restore:resolve-target engine=$DatabaseEngine target=$target"
                     $target
                 }.GetNewClosure()
@@ -2373,6 +2376,136 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
             }
         }
 
+        It "replaces and registers the database Compose selects when a case-distinct alias would redirect a case-insensitive read" {
+            # RESTORE_DB and restore_db are distinct dotenv identifiers, and Compose resolves
+            # POSTGRES_DB_NAME=${RESTORE_DB} against the declarations before it: 'chosen'. A
+            # case-insensitive table merges the two and selects 'unrelated'. The env file goes
+            # through the real effective-env pipeline and the real resolver. Shared topology:
+            # configure's own env read is case-insensitive, so it must be handed the target.
+            @"
+param(
+    [string] `$DataStoreDatabaseName,
+    [string] `$RestoreTargetDatabaseName,
+    [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
+)
+Add-Content -LiteralPath '$script:restoreLog' -Value "configure dataStore=[`$DataStoreDatabaseName] restoreTarget=[`$RestoreTargetDatabaseName]"
+[pscustomobject]@{ DataStoreIds = [long[]] @(42); SelectedDataStoreIds = [long[]] @(42); RouteContexts = @(); Tenant = ''; SchoolYears = [int[]] @(); HasRouteQualifiedDataStores = `$false }
+"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "configure-local-data-store.ps1") -Encoding utf8
+            $aliasEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.case-alias"
+            $aliasLines = foreach ($line in @(Get-Content -LiteralPath $script:repo.EnvFile)) {
+                if ($line -match '^POSTGRES_DB_NAME=') {
+                    "RESTORE_DB=chosen"
+                    "restore_db=unrelated"
+                    'POSTGRES_DB_NAME=${RESTORE_DB}'
+                }
+                else {
+                    $line
+                }
+            }
+            $aliasLines | Set-Content -LiteralPath $aliasEnvFile -Encoding utf8
+            New-OverrideRecordingStartScriptStub -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreLog
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
+            $realModule = Install-RealRestoreCandidateAndTarget -LogPath $script:restoreLog -DockerComposeRoot $script:repo.DockerComposeRoot
+            try {
+                & $script:repo.WrapperScript -EnvironmentFile $aliasEnvFile -RestoreTemplate Minimal
+
+                $lines = @(Get-Content -LiteralPath $script:restoreLog)
+                @($lines | Where-Object { $_ -like "restore:resolve-target*" }) |
+                    Should -Be @("restore:resolve-target engine=postgresql target=chosen")
+                @($lines | Where-Object { $_ -like "restore:name-safety*" }) |
+                    Should -Be @("restore:name-safety target=chosen")
+                @($lines | Where-Object { $_ -like "restore:replacement*" }) |
+                    Should -Be @("restore:replacement target=chosen package-identity=11111111-1111-1111-1111-111111111111") -Because "the destructive step must replace the database Compose selects"
+                @($lines | Where-Object { $_ -like "configure *" }) |
+                    Should -Be @("configure dataStore=[chosen] restoreTarget=[]") -Because "the data store must be registered against the database the restore replaced"
+                @($lines | Where-Object { $_ -like "*unrelated*" }) | Should -BeNullOrEmpty
+            }
+            finally {
+                Remove-Module -ModuleInfo $realModule -Force -ErrorAction SilentlyContinue
+                Remove-Item Env:\DMS_BOOTSTRAP_ROOT_OVERRIDE -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "separate topology: the CMS exclusion receives the Configuration Service database Compose selects, not a case-variant key" {
+            # Separate topology rewrites the declared DMS_CONFIG_DATABASE_NAME (the .env.example
+            # shape) to edfi_configurationservice in place. The later lowercase
+            # dms_config_database_name is a different dotenv key that survives that pipeline; a
+            # case-insensitive table would hand it to the exclusion.
+            $cmsAliasEnvFile = Join-Path $script:repo.DockerComposeRoot ".env.cms-case-alias"
+            @(Get-Content -LiteralPath $script:repo.EnvFile) + @('DMS_CONFIG_DATABASE_NAME=${POSTGRES_DB_NAME}', "dms_config_database_name=unrelated_cms") |
+                Set-Content -LiteralPath $cmsAliasEnvFile -Encoding utf8
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
+            $log = $script:restoreLog
+            Set-Item function:global:Assert-RestoreTargetDatabaseNameSafe {
+                param($DatabaseEngine, $TargetDatabaseName, [switch]$SeparateConfigDatabase, $EffectiveConfigDatabaseName)
+                Add-Content -LiteralPath $log -Value "restore:name-safety separate=$($SeparateConfigDatabase.IsPresent) cms=[$EffectiveConfigDatabaseName]"
+            }.GetNewClosure()
+            Set-Item function:global:Assert-RestoreTargetSafety {
+                param($DatabaseEngine, $TargetDatabaseName, $Manifest, $ContainerName, [switch]$SeparateConfigDatabase, $EffectiveConfigDatabaseName, $MssqlPassword)
+                Add-Content -LiteralPath $log -Value "restore:target-safety separate=$($SeparateConfigDatabase.IsPresent) cms=[$EffectiveConfigDatabaseName]"
+            }.GetNewClosure()
+            Set-Item function:global:Invoke-RestoreTargetReplacement {
+                param($Stage, $TargetDatabaseName, $PackageSourceIdentity, $DatabaseEngine, $ContainerName, [switch]$SeparateConfigDatabase, $EffectiveConfigDatabaseName, $MssqlPassword)
+                Add-Content -LiteralPath $log -Value "restore:replacement separate=$($SeparateConfigDatabase.IsPresent) cms=[$EffectiveConfigDatabaseName]"
+                [pscustomobject]@{ TargetDatabaseName = $TargetDatabaseName; RestoredSourceIdentity = "33333333-3333-3333-3333-333333333333" }
+            }.GetNewClosure()
+
+            & $script:repo.WrapperScript -EnvironmentFile $cmsAliasEnvFile -SeparateConfigDatabase -RestoreTemplate Minimal
+
+            $lines = @(Get-Content -LiteralPath $script:restoreLog)
+            $cmsLines = @($lines | Where-Object { $_ -like "*cms=*" })
+            $cmsLines | Should -Be @(
+                "restore:name-safety separate=True cms=[edfi_configurationservice]"
+                "restore:target-safety separate=True cms=[edfi_configurationservice]"
+                "restore:replacement separate=True cms=[edfi_configurationservice]"
+            )
+        }
+
+        It "PostgreSQL: the preflight drop before the commit is required, the later drops are not (<Case>)" -ForEach @(
+            @{ Case = "drop succeeds"; FailRequired = $false }
+            @{ Case = "required drop fails"; FailRequired = $true }
+        ) {
+            Install-RestoreSequencingStub -LogPath $script:restoreLog -FixtureRoot $script:repo.RepoRoot -DockerComposeRoot $script:repo.DockerComposeRoot
+            $log = $script:restoreLog
+            $failRequired = $FailRequired
+            Set-Item function:global:Remove-RestorePreflightDatabase {
+                param($DatabaseEngine, $PreflightDatabaseName, $ContainerName, [switch]$Required)
+                Add-Content -LiteralPath $log -Value "restore:preflight-drop name=[$PreflightDatabaseName] required=$($Required.IsPresent)"
+                if ($Required -and $failRequired) { throw "injected required preflight cleanup failure" }
+            }.GetNewClosure()
+
+            $run = { & $script:repo.WrapperScript -EnvironmentFile $script:repo.EnvFile -RestoreTemplate Minimal }
+            if ($FailRequired) {
+                $run | Should -Throw "*injected required preflight cleanup failure*"
+            }
+            else {
+                & $run
+            }
+
+            $lines = @(Get-Content -LiteralPath $script:restoreLog)
+            $dropLines = @($lines | Where-Object { $_ -like "restore:preflight-drop*" })
+            $preflightName = "edfi_dms_restore_preflight_0123456789ab"
+            if ($FailRequired) {
+                # The scratch proof passed, but its required cleanup did not: nothing stops the
+                # slice, publishes the candidate, replaces the target, or starts CMS. The finally
+                # repeats the drop best-effort.
+                $dropLines | Should -Be @("restore:preflight-drop name=[$preflightName] required=True", "restore:preflight-drop name=[$preflightName] required=False")
+                Get-RestoreLogIndex -Log $lines -Pattern "restore:preflight-drop*" | Should -BeGreaterThan (Get-RestoreLogIndex -Log $lines -Pattern "restore:scratch template=Minimal")
+                @($lines | Where-Object { $_ -like "restore:stop-db*" }) | Should -BeNullOrEmpty
+                $lines | Should -Not -Contain "restore:publish"
+                @($lines | Where-Object { $_ -like "restore:replacement*" }) | Should -BeNullOrEmpty
+                @($lines | Where-Object { $_ -like "start-infra*" }) | Should -BeNullOrEmpty
+                $lines | Should -Contain "restore:remove-stage"
+            }
+            else {
+                # Required before the commit; after the replacement the database is already gone,
+                # so that repeat stays best-effort, and the finally has nothing left to drop.
+                $dropLines | Should -Be @("restore:preflight-drop name=[$preflightName] required=True", "restore:preflight-drop name=[$preflightName] required=False")
+                Get-RestoreLogIndex -Log $lines -Pattern "restore:publish" | Should -BeGreaterThan (Get-RestoreLogIndex -Log $lines -Pattern "restore:preflight-drop*")
+                Get-RestoreLogIndex -Log $lines -Pattern "restore:preflight-drop*" -Occurrence 2 | Should -BeGreaterThan (Get-RestoreLogIndex -Log $lines -Pattern "restore:replacement*")
+            }
+        }
+
         It "targets the dms-published compose project for the published wrapper" {
             Copy-DockerComposeFile -FileName "bootstrap-published-dms.ps1" -Destination $script:repo.DockerComposeRoot
             New-RestoreStartScriptStub -Directory $script:repo.DockerComposeRoot -CallLogPath $script:restoreLog -StartScriptName "start-published-dms.ps1" | Out-Null
@@ -2655,10 +2788,10 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "`$label ambient=[`$env:POS
         It "<Topology> topology: <Case>" -ForEach @(
             @{ Topology = "shared"; Case = "a different -DataStoreDatabaseName is refused before any package, workspace, or Docker activity"; Separate = $false; Name = "other_db"; Refused = $true; Expected = "" }
             @{ Topology = "shared"; Case = "the same -DataStoreDatabaseName restores and registers that target"; Separate = $false; Name = "edfi_datamanagementservice"; Refused = $false; Expected = "configure dataStore=[[]edfi_datamanagementservice] restoreTarget=[[]]" }
-            @{ Topology = "shared"; Case = "no -DataStoreDatabaseName restores and registers the environment target"; Separate = $false; Name = ""; Refused = $false; Expected = "configure dataStore=[[]] restoreTarget=[[]]" }
+            @{ Topology = "shared"; Case = "no -DataStoreDatabaseName restores and registers the environment target"; Separate = $false; Name = ""; Refused = $false; Expected = "configure dataStore=[[]edfi_datamanagementservice] restoreTarget=[[]]" }
             @{ Topology = "separate"; Case = "a different -DataStoreDatabaseName is refused before any package, workspace, or Docker activity"; Separate = $true; Name = "other_db"; Refused = $true; Expected = "" }
             @{ Topology = "separate"; Case = "the same -DataStoreDatabaseName restores and hands configure that target"; Separate = $true; Name = "edfi_datamanagementservice"; Refused = $false; Expected = "configure dataStore=[[]edfi_datamanagementservice] restoreTarget=[[]edfi_datamanagementservice]" }
-            @{ Topology = "separate"; Case = "no -DataStoreDatabaseName restores and hands configure the environment target"; Separate = $true; Name = ""; Refused = $false; Expected = "configure dataStore=[[]] restoreTarget=[[]edfi_datamanagementservice]" }
+            @{ Topology = "separate"; Case = "no -DataStoreDatabaseName restores and hands configure the environment target"; Separate = $true; Name = ""; Refused = $false; Expected = "configure dataStore=[[]edfi_datamanagementservice] restoreTarget=[[]edfi_datamanagementservice]" }
         ) {
             @"
 param(

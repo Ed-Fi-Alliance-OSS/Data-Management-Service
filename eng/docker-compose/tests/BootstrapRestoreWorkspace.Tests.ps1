@@ -1657,6 +1657,54 @@ Describe "Invoke-RestoreScratchValidation" {
         }
     }
 
+    It "<Engine>: a successful validation whose <Step> fails returns no proof, so nothing can commit" -ForEach @(
+        @{ Engine = "postgresql"; Step = "scratch drop"; Container = "dms-postgresql" }
+        @{ Engine = "mssql"; Step = "scratch drop"; Container = "dms-mssql" }
+        @{ Engine = "postgresql"; Step = "in-container artifact removal"; Container = "dms-postgresql" }
+        @{ Engine = "mssql"; Step = "in-container artifact removal"; Container = "dms-mssql" }
+    ) {
+        $stage = New-ScratchStage -Directory $script:scratchRoot -DatabaseEngine $Engine
+        $global:ScratchFactToReturn = New-ScratchCatalogFact -DatabaseEngine $Engine
+        if ($Step -eq "scratch drop") {
+            Mock Invoke-RestoreCatalogQuery { throw "drop refused" } -ModuleName bootstrap-restore -ParameterFilter { $FailureMessage -like "Failed to drop scratch database *" }
+        }
+        else {
+            Mock docker { $global:LASTEXITCODE = 1; "rm refused" } -ModuleName bootstrap-restore -ParameterFilter { ($args -join " ") -like "exec * rm -f *" }
+        }
+
+        $script:scratchProof = $null
+        { $script:scratchProof = Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine $Engine } |
+            Should -Throw "*Scratch validation passed, but its cleanup did not complete:*refused*Remove scratch database 'edfi_dms_restore_scratch_*' and '*restore-scratch-*' in container '$Container'*"
+
+        $script:scratchProof | Should -BeNullOrEmpty -Because "a proof must never reach the caller while scratch state remains"
+        # Every validation step ran and passed, through the SourceIdentity capture.
+        Should -Invoke Invoke-RestoreCatalogQuery -ModuleName bootstrap-restore -Times 1 -Exactly -ParameterFilter { $Query -like "*SourceIdentity*" }
+    }
+
+    It "<Engine>: a validation failure stays the error when the scratch cleanup also fails, and the cleanup failure is still reported" -ForEach @(
+        @{ Engine = "postgresql" }
+        @{ Engine = "mssql" }
+    ) {
+        $stage = New-ScratchStage -Directory $script:scratchRoot -DatabaseEngine $Engine
+        $global:ScratchFactToReturn = New-ScratchCatalogFact -DatabaseEngine $Engine
+        $global:ScratchFactToReturn.EffectiveSchemaHash = ("cd" * 32)
+        Mock Invoke-RestoreCatalogQuery { throw "drop refused" } -ModuleName bootstrap-restore -ParameterFilter { $FailureMessage -like "Failed to drop scratch database *" }
+
+        $caught = $null
+        $cleanupWarnings = @()
+        try {
+            Invoke-RestoreScratchValidation -Stage $stage -CandidateFact $script:candidateFact -RestoreTemplate Minimal -DatabaseEngine $Engine -WarningVariable cleanupWarnings 3>$null | Out-Null
+        }
+        catch {
+            $caught = $_
+        }
+
+        $caught | Should -Not -BeNullOrEmpty
+        $caught.Exception.Message | Should -BeLike "*does not match the restore manifest*effectiveSchemaHash*"
+        $caught.Exception.Message | Should -Not -BeLike "*drop refused*"
+        @($cleanupWarnings | Where-Object { ([string]$_) -like "*Scratch cleanup did not complete*drop refused*" }) | Should -HaveCount 1
+    }
+
     It "fails when the manifest and the candidate workspace disagree" {
         $stage = New-ScratchStage -Directory $script:scratchRoot
         $script:candidateFact.EffectiveSchemaHash = ("ef" * 32)
@@ -2294,5 +2342,12 @@ Describe "Remove-RestorePreflightDatabase and Remove-RestoreScratchDatabase" {
 
         @($warnings) | Should -Not -BeNullOrEmpty
         ([string]$warnings[0]) | Should -BeLike "*Preflight database cleanup did not complete*server gone*"
+    }
+
+    It "required preflight cleanup throws instead of warning, so the caller stops before the next stage" {
+        Mock Invoke-RestoreCatalogQuery { throw "server gone" } -ModuleName bootstrap-restore
+
+        { Remove-RestorePreflightDatabase -DatabaseEngine postgresql -PreflightDatabaseName "edfi_dms_restore_preflight_0123456789ab" -Required } |
+            Should -Throw "*Preflight database cleanup did not complete*server gone*Drop 'edfi_dms_restore_preflight_0123456789ab' in container 'dms-postgresql' manually*"
     }
 }
