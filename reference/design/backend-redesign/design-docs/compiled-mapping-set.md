@@ -196,6 +196,7 @@ public abstract record AbstractUnionViewProjectionExpression
 {
     public sealed record SourceColumn(DbColumnName ColumnName) : AbstractUnionViewProjectionExpression;
     public sealed record StringLiteral(string Value) : AbstractUnionViewProjectionExpression;
+    public sealed record Int16Literal(short Value) : AbstractUnionViewProjectionExpression;
 }
 
 public enum TrackedChangeTableKind
