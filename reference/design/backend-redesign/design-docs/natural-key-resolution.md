@@ -391,13 +391,16 @@ The probe metadata (`NaturalKeyProbeTargets`, `OwnNaturalKeyProbesByResource`,
 `DescriptorProbeTarget` on the compiled `MappingSet`) will be compiled from the relational model
 itself — never from trigger metadata, never by parsing constraint names (dialect identifier
 shortening hash-truncates names), and never by converting abstract discriminator strings to resource
-keys at runtime. It will be storage-resolved, so key-unified identity parts will bind their canonical
-stored columns and abstract probes will bind the stored concrete `ResourceKeyId`. Each probe key entry
-will also carry its command-binding metadata: scalar keys carry `RelationalScalarType`; descriptor-valued
-identity parts carry the descriptor resource whose compile-time `ResourceKeyId` drives the inline
-descriptor join; own-natural-key document-reference parts carry the
-`ResourceWritePlan.Model.DocumentReferenceBindings` index for the reference site that supplies the
-stored `..._DocumentId` key value. That document-reference binding will be valid only for
+keys at runtime. Reference-target and abstract probes will be storage-resolved, so key-unified identity
+parts will bind their canonical stored columns (matching `UX_<R>_RefKey`) and abstract probes will bind
+the stored concrete `ResourceKeyId`. Own-key probes will instead bind the `UX_<R>_NK` column contract as
+emitted: reference-sourced parts bind the reference's `..._DocumentId` and other parts bind their path
+column, which for an unconditional key-unification alias is the alias, not the canonical column.
+Each probe key entry will also carry its command-binding metadata: scalar keys carry
+`RelationalScalarType`; descriptor-valued identity parts carry the descriptor resource whose
+compile-time `ResourceKeyId` drives the inline descriptor join; own-natural-key document-reference
+parts carry the `ResourceWritePlan.Model.DocumentReferenceBindings` index for the reference site that
+supplies the stored `..._DocumentId` key value. That document-reference binding will be valid only for
 `OwnNaturalKeyProbe.KeyColumns`; normal target probes will still consume a fully flattened
 `DocumentIdentity` and therefore need only scalar/descriptor binding metadata.
 
@@ -1159,8 +1162,9 @@ invariants had an explicit relational owner tied to the document's real concrete
 Deliberately lost will be: the `dms.ReferentialIdentity` corruption canary (the RI hash row drifting
 from the root row it summarizes), and a redundant second uniqueness net (the RI PK). Mitigations for
 the redundancy loss: the probe compiler will carry an empty-identity guard (a resource whose
-compiled identity has zero parts will fail compilation loudly), a compile-time parity guard will
-prove the compiled probes reproduce the legacy trigger derivation resource-by-resource for as long
+compiled identity has zero parts will fail compilation loudly), a parity guard in the
+probe-compilation unit tests, which compiles every resource and compares it with the live derivation,
+will prove the compiled probes reproduce the legacy trigger derivation resource-by-resource for as long
 as both exist, generated natural-key probes will fail on duplicate candidates instead of silently
 choosing one, and golden DDL fixtures will continue to pin the schema.
 

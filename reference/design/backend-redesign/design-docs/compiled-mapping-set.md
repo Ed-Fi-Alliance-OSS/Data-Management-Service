@@ -493,7 +493,9 @@ public abstract record NaturalKeyProbeKeyBinding
     public sealed record DocumentReference(int DocumentReferenceBindingIndex) : NaturalKeyProbeKeyBinding;
 }
 
+// One entry per identity JSON path, in semantic identity order; key-unified paths may share a column.
 public sealed record NaturalKeyProbeKeyColumn(
+    JsonPathExpression IdentityJsonPath,
     DbColumnName Column,
     NaturalKeyProbeKeyBinding Binding
 );
@@ -513,7 +515,9 @@ public sealed record NaturalKeyProbeTarget(
 public sealed record OwnNaturalKeyProbe(
     QualifiedResourceName Resource,
     DbTableName RootTable,
-    // Storage-resolved semantic natural-key order. DocumentReference bindings are valid here
+    // Semantic natural-key order over the emitted UX_<R>_NK columns: reference-sourced parts bind the
+    // reference's ..._DocumentId and other parts bind their path column, not a storage-resolved
+    // canonical column. DocumentReference bindings are valid here
     // because POST capture runs before the normal bulk reference resolver.
     IReadOnlyList<NaturalKeyProbeKeyColumn> KeyColumns,
     DbColumnName DocumentIdColumn
