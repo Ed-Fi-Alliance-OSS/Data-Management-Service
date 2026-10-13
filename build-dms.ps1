@@ -1738,13 +1738,6 @@ function Register-InstanceE2EFixture {
         -ClientId $bootstrapAdmin.ClientId `
         -ClientSecret $bootstrapAdmin.ClientSecret
 
-    # Resolved with Compose precedence for consistency with the registration connection strings;
-    # Add-DataStore ignores this credential whenever an explicit -ConnectionString is supplied, so
-    # this only matters if a future caller registers without one.
-    $postgresUser = Get-ComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "POSTGRES_USER" -DefaultValue "postgres"
-    $postgresPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "POSTGRES_PASSWORD" -DefaultValue "abcdefgh1!"
-    $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $postgresPassword
-
     # Canonical fixture routes: three data stores under two tenants (255901/2024 and 255901/2025 under
     # Tenant_255901; 255902/2024 under Tenant_255902). Index maps to the resolved database/registration
     # string in $InstanceE2ESettings.
@@ -1781,7 +1774,6 @@ function Register-InstanceE2EFixture {
                         -Tenant $tenantName `
                         -DataStoreType "District" `
                         -Name "Instance E2E $($route.DistrictId)/$($route.SchoolYear)" `
-                        -PostgresCredential $postgresCredential `
                         -ConnectionString $InstanceE2ESettings.RegistrationConnectionStrings[$route.Index] `
                         -DatabaseEngine $InstanceE2ESettings.DatabaseEngine
 

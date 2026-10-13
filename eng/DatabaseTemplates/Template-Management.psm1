@@ -1162,10 +1162,11 @@ function Add-TemplateDataStore {
         Registers the template build's target data store when the Configuration Service has none.
 
     .DESCRIPTION
-        Add-DataStore needs a PostgreSQL credential only when it builds the connection string
-        itself. This helper supplies one for the PostgreSQL path and, for MSSQL, passes a complete
-        SQL Server connection string, so an MSSQL template build registers an MSSQL connection
-        string instead of silently falling back to the PostgreSQL defaults.
+        For PostgreSQL, Add-DataStore builds the connection string from a credential made from
+        -PostgresPassword. For MSSQL, this helper passes a complete SQL Server connection string
+        made from -MssqlPassword, so an MSSQL template build registers an MSSQL connection string
+        instead of silently falling back to the PostgreSQL defaults. Each password is required
+        only for its own engine.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingUsernameAndPasswordParams', '', Justification = 'The database passwords are handed to the engine-specific data-store connection string where they must be plaintext; SecureString adds no protection across that boundary.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The database passwords are handed to the engine-specific data-store connection string where they must be plaintext; SecureString adds no protection across that boundary.')]
@@ -1182,25 +1183,28 @@ function Add-TemplateDataStore {
         [ValidateSet("postgresql", "mssql")]
         [string]$DatabaseEngine = "postgresql",
 
-        [Parameter(Mandatory)]
         [string]$PostgresPassword,
 
-        [Parameter(Mandatory)]
         [string]$MssqlPassword
     )
 
-    # The real credential on the PostgreSQL path; on the MSSQL path -ConnectionString supplies
-    # the target and Add-DataStore does not read it.
-    $postgresCredential = ConvertTo-PostgresCredential -UserName "postgres" -Secret $PostgresPassword
     $dataStoreParameters = @{
-        CmsUrl              = $CmsUrl
-        AccessToken         = $AccessToken
-        PostgresCredential  = $postgresCredential
-        PostgresDbName      = $DatabaseName
-        DatabaseEngine      = $DatabaseEngine
+        CmsUrl         = $CmsUrl
+        AccessToken    = $AccessToken
+        PostgresDbName = $DatabaseName
+        DatabaseEngine = $DatabaseEngine
     }
 
-    if ($DatabaseEngine -eq "mssql") {
+    if ($DatabaseEngine -eq "postgresql") {
+        if ([string]::IsNullOrEmpty($PostgresPassword)) {
+            throw "-PostgresPassword is required when -DatabaseEngine is 'postgresql'."
+        }
+        $dataStoreParameters.PostgresCredential = ConvertTo-PostgresCredential -UserName "postgres" -Secret $PostgresPassword
+    }
+    else {
+        if ([string]::IsNullOrEmpty($MssqlPassword)) {
+            throw "-MssqlPassword is required when -DatabaseEngine is 'mssql'."
+        }
         $dataStoreParameters.ConnectionString = New-DataStoreConnectionString `
             -DatabaseEngine "mssql" `
             -DbHost "dms-mssql" `
