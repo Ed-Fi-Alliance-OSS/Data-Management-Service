@@ -248,17 +248,27 @@ public class Given_Pgsql_Identifier_Shortening
         var abstractView = _scenario.Result.AbstractUnionViewsInNameOrder.Single();
         abstractView.ViewName.Schema.Value.Should().Be(expectedSchema);
         abstractView.ViewName.Name.Should().Be(expectedView);
-        abstractView.OutputColumnsInSelectOrder.Single().ColumnName.Value.Should().Be(expectedViewColumn);
+        abstractView
+            .OutputColumnsInSelectOrder.Select(c => c.ColumnName.Value)
+            .Should()
+            .Equal(expectedViewColumn, ShorteningScenario.ResourceKeyIdViewColumnName);
 
         var arm = abstractView.UnionArmsInOrder.Single();
         arm.FromTable.Schema.Value.Should().Be(expectedSchema);
         arm.FromTable.Name.Should().Be(expectedTable);
         var sourceColumnProjection = arm
-            .ProjectionExpressionsInSelectOrder.Single()
-            .Should()
-            .BeOfType<AbstractUnionViewProjectionExpression.SourceColumn>()
-            .Subject;
+            .ProjectionExpressionsInSelectOrder.OfType<AbstractUnionViewProjectionExpression.SourceColumn>()
+            .Single();
         sourceColumnProjection.ColumnName.Value.Should().Be(expectedKey);
+    }
+
+    /// <summary>
+    /// It should leave Int16 literal projections unchanged.
+    /// </summary>
+    [Test]
+    public void It_leaves_Int16_literal_projections_unchanged()
+    {
+        IdentifierShorteningAssertions.AssertInt16LiteralProjectionUnchanged(_scenario);
     }
 }
 
@@ -463,17 +473,27 @@ public class Given_Mssql_Identifier_Shortening
         var abstractView = _scenario.Result.AbstractUnionViewsInNameOrder.Single();
         abstractView.ViewName.Schema.Value.Should().Be(expectedSchema);
         abstractView.ViewName.Name.Should().Be(expectedView);
-        abstractView.OutputColumnsInSelectOrder.Single().ColumnName.Value.Should().Be(expectedViewColumn);
+        abstractView
+            .OutputColumnsInSelectOrder.Select(c => c.ColumnName.Value)
+            .Should()
+            .Equal(expectedViewColumn, ShorteningScenario.ResourceKeyIdViewColumnName);
 
         var arm = abstractView.UnionArmsInOrder.Single();
         arm.FromTable.Schema.Value.Should().Be(expectedSchema);
         arm.FromTable.Name.Should().Be(expectedTable);
         var sourceColumnProjection = arm
-            .ProjectionExpressionsInSelectOrder.Single()
-            .Should()
-            .BeOfType<AbstractUnionViewProjectionExpression.SourceColumn>()
-            .Subject;
+            .ProjectionExpressionsInSelectOrder.OfType<AbstractUnionViewProjectionExpression.SourceColumn>()
+            .Single();
         sourceColumnProjection.ColumnName.Value.Should().Be(expectedKey);
+    }
+
+    /// <summary>
+    /// It should leave Int16 literal projections unchanged.
+    /// </summary>
+    [Test]
+    public void It_leaves_Int16_literal_projections_unchanged()
+    {
+        IdentifierShorteningAssertions.AssertInt16LiteralProjectionUnchanged(_scenario);
     }
 }
 
@@ -639,6 +659,19 @@ public class Given_Trigger_Parameter_Column_Shortening
     }
 
     [Test]
+    public void It_preserves_the_resource_key_id_value()
+    {
+        var parameters = _result
+            .TriggersInCreateOrder.Select(t => t.Parameters)
+            .OfType<TriggerKindParameters.AbstractIdentityMaintenance>()
+            .Single();
+
+        parameters
+            .ResourceKeyIdValue.Should()
+            .Be(TriggerParameterColumnIdentifiers.AbstractIdentityResourceKeyIdValue);
+    }
+
+    [Test]
     public void It_should_shorten_referential_identity_maintenance_identity_elements()
     {
         var trigger = _result.TriggersInCreateOrder.Single(t =>
@@ -673,6 +706,8 @@ internal sealed record TriggerParameterColumnIdentifiers(
     string AliasColumn
 )
 {
+    public const short AbstractIdentityResourceKeyIdValue = 4242;
+
     public static TriggerParameterColumnIdentifiers Create(int length)
     {
         return new TriggerParameterColumnIdentifiers(
@@ -717,6 +752,7 @@ file sealed class TriggerParameterColumnFixturePass(TriggerParameterColumnIdenti
                             new DbColumnName(identifiers.TargetColumn)
                         ),
                     ],
+                    TriggerParameterColumnIdentifiers.AbstractIdentityResourceKeyIdValue,
                     "School"
                 )
             )
@@ -770,6 +806,8 @@ internal sealed record ShorteningScenario(
     internal const string CoreProjectEndpointName = "ed-fi";
     internal static readonly QualifiedResourceName Resource = new("Ed-Fi", "School");
     internal static readonly QualifiedResourceName AbstractResource = new("Ed-Fi", "SchoolTypeDescriptor");
+    internal const string ResourceKeyIdViewColumnName = "ResourceKeyId";
+    internal const short ArmResourceKeyIdLiteral = 4242;
 
     /// <summary>
     /// Builds a test scenario by injecting long identifiers into a derived model set, then running the dialect
@@ -865,6 +903,19 @@ internal sealed record ShorteningIdentifiers(
 /// </summary>
 internal static class IdentifierShorteningAssertions
 {
+    /// <summary>
+    /// Asserts that the arm's Int16 literal projection survives shortening with its value intact.
+    /// </summary>
+    public static void AssertInt16LiteralProjectionUnchanged(ShorteningScenario scenario)
+    {
+        var arm = scenario.Result.AbstractUnionViewsInNameOrder.Single().UnionArmsInOrder.Single();
+
+        arm.ProjectionExpressionsInSelectOrder.OfType<AbstractUnionViewProjectionExpression.Int16Literal>()
+            .Single()
+            .Value.Should()
+            .Be(ShorteningScenario.ArmResourceKeyIdLiteral);
+    }
+
     /// <summary>
     /// Asserts that all relevant identifiers in the derived model set are shortened as expected for the dialect.
     /// </summary>
@@ -965,16 +1016,17 @@ internal static class IdentifierShorteningAssertions
         var abstractView = result.AbstractUnionViewsInNameOrder.Single();
         abstractView.ViewName.Schema.Value.Should().Be(expectedSchema);
         abstractView.ViewName.Name.Should().Be(expectedView);
-        abstractView.OutputColumnsInSelectOrder.Single().ColumnName.Value.Should().Be(expectedViewColumn);
+        abstractView
+            .OutputColumnsInSelectOrder.Select(c => c.ColumnName.Value)
+            .Should()
+            .Equal(expectedViewColumn, ShorteningScenario.ResourceKeyIdViewColumnName);
 
         var arm = abstractView.UnionArmsInOrder.Single();
         arm.FromTable.Schema.Value.Should().Be(expectedSchema);
         arm.FromTable.Name.Should().Be(expectedTable);
         var sourceColumnProjection = arm
-            .ProjectionExpressionsInSelectOrder.Single()
-            .Should()
-            .BeOfType<AbstractUnionViewProjectionExpression.SourceColumn>()
-            .Subject;
+            .ProjectionExpressionsInSelectOrder.OfType<AbstractUnionViewProjectionExpression.SourceColumn>()
+            .Single();
         sourceColumnProjection.ColumnName.Value.Should().Be(expectedKey);
     }
 }
@@ -1189,6 +1241,12 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
                     SourceJsonPath: null,
                     TargetResource: null
                 ),
+                new AbstractUnionViewOutputColumn(
+                    new DbColumnName(ShorteningScenario.ResourceKeyIdViewColumnName),
+                    new RelationalScalarType(ScalarKind.Int16),
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
             ],
             [
                 new AbstractUnionViewArm(
@@ -1197,6 +1255,9 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
                     [
                         new AbstractUnionViewProjectionExpression.SourceColumn(
                             new DbColumnName(_identifiers.KeyColumnName)
+                        ),
+                        new AbstractUnionViewProjectionExpression.Int16Literal(
+                            ShorteningScenario.ArmResourceKeyIdLiteral
                         ),
                     ]
                 ),

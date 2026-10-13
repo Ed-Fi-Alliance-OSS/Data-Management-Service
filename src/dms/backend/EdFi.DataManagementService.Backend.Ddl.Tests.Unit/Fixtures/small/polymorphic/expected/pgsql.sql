@@ -292,6 +292,19 @@ BEGIN
     END IF;
 END $$;
 
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'UX_Document_DocumentId_ResourceKeyId'
+        AND conrelid = to_regclass('"dms"."Document"')
+    )
+    THEN
+        ALTER TABLE "dms"."Document"
+        ADD CONSTRAINT "UX_Document_DocumentId_ResourceKeyId" UNIQUE ("DocumentId", "ResourceKeyId");
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS "dms"."DocumentCache"
 (
     "DocumentId" bigint NOT NULL,
@@ -1096,6 +1109,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationIdentity"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganizationId" integer NOT NULL,
+    "ResourceKeyId" smallint NOT NULL,
     "Discriminator" varchar(256) NOT NULL,
     CONSTRAINT "PK_EducationOrganizationIdentity" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_EducationOrganizationIdentity_NK" UNIQUE ("EducationOrganizationId"),
@@ -1140,14 +1154,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationIdentity_Document'
+        WHERE conname = 'FK_EducationOrganizationIdentity_DocumentResourceKey'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationIdentity"')
     )
     THEN
         ALTER TABLE "edfi"."EducationOrganizationIdentity"
-        ADD CONSTRAINT "FK_EducationOrganizationIdentity_Document"
-        FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId")
+        ADD CONSTRAINT "FK_EducationOrganizationIdentity_DocumentResourceKey"
+        FOREIGN KEY ("DocumentId", "ResourceKeyId")
+        REFERENCES "dms"."Document" ("DocumentId", "ResourceKeyId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -1160,10 +1174,10 @@ CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgency_ContentVersion" ON "edfi"."L
 CREATE INDEX IF NOT EXISTS "IX_School_ContentVersion" ON "edfi"."School" ("ContentVersion");
 
 CREATE OR REPLACE VIEW "edfi"."EducationOrganization_View" AS
-SELECT "DocumentId" AS "DocumentId", "LocalEducationAgencyId" AS "EducationOrganizationId", 'Ed-Fi:LocalEducationAgency'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "LocalEducationAgencyId" AS "EducationOrganizationId", 2::smallint AS "ResourceKeyId", 'Ed-Fi:LocalEducationAgency'::varchar(256) AS "Discriminator"
 FROM "edfi"."LocalEducationAgency"
 UNION ALL
-SELECT "DocumentId" AS "DocumentId", "SchoolId" AS "EducationOrganizationId", 'Ed-Fi:School'::varchar(256) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "SchoolId" AS "EducationOrganizationId", 3::smallint AS "ResourceKeyId", 'Ed-Fi:School'::varchar(256) AS "Discriminator"
 FROM "edfi"."School"
 ;
 
@@ -1171,8 +1185,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AbstractIdentity"(
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."LocalEducationAgencyId" IS DISTINCT FROM NEW."LocalEducationAgencyId") THEN
-        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."LocalEducationAgencyId", 'Ed-Fi:LocalEducationAgency')
+        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."LocalEducationAgencyId", 2, 'Ed-Fi:LocalEducationAgency')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
     END IF;
@@ -1295,8 +1309,8 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_AbstractIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'INSERT' OR (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
-        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
-        VALUES (NEW."DocumentId", NEW."SchoolId", 'Ed-Fi:School')
+        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "ResourceKeyId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."SchoolId", 3, 'Ed-Fi:School')
         ON CONFLICT ("DocumentId")
         DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
     END IF;

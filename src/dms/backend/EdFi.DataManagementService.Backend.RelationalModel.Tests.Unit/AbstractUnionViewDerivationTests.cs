@@ -17,6 +17,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 public class Given_Abstract_Union_View_Derivation
 {
     private AbstractUnionViewInfo _abstractUnionView = default!;
+    private IReadOnlyList<ResourceKeyEntry> _resourceKeys = default!;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -45,6 +46,7 @@ public class Given_Abstract_Union_View_Derivation
         _abstractUnionView = result.AbstractUnionViewsInNameOrder.Single(view =>
             view.AbstractResourceKey.Resource.ResourceName == "EducationOrganization"
         );
+        _resourceKeys = result.EffectiveSchema.ResourceKeysInIdOrder;
     }
 
     /// <summary>
@@ -56,7 +58,13 @@ public class Given_Abstract_Union_View_Derivation
         _abstractUnionView
             .OutputColumnsInSelectOrder.Select(column => column.ColumnName.Value)
             .Should()
-            .Equal("DocumentId", "EducationOrganizationId", "OrganizationName", "Discriminator");
+            .Equal(
+                "DocumentId",
+                "EducationOrganizationId",
+                "OrganizationName",
+                "ResourceKeyId",
+                "Discriminator"
+            );
 
         _abstractUnionView
             .OutputColumnsInSelectOrder.Select(column => column.ScalarType)
@@ -65,8 +73,37 @@ public class Given_Abstract_Union_View_Derivation
                 new RelationalScalarType(ScalarKind.Int64),
                 new RelationalScalarType(ScalarKind.Int64),
                 new RelationalScalarType(ScalarKind.String, 60),
+                new RelationalScalarType(ScalarKind.Int16),
                 new RelationalScalarType(ScalarKind.String, 256)
             );
+        _abstractUnionView
+            .OutputColumnsInSelectOrder.Single(column => column.ColumnName.Value == "ResourceKeyId")
+            .SourceJsonPath.Should()
+            .BeNull();
+    }
+
+    [Test]
+    public void It_projects_each_members_resource_key_as_an_Int16_literal()
+    {
+        var resourceKeyIdIndex = _abstractUnionView
+            .OutputColumnsInSelectOrder.Select(column => column.ColumnName.Value)
+            .ToList()
+            .IndexOf("ResourceKeyId");
+
+        foreach (var memberName in new[] { "LocalEducationAgency", "School" })
+        {
+            var arm = _abstractUnionView.UnionArmsInOrder.Single(arm =>
+                arm.ConcreteMemberResourceKey.Resource.ResourceName == memberName
+            );
+            var memberKey = _resourceKeys.Single(entry =>
+                entry.Resource == new QualifiedResourceName("Ed-Fi", memberName)
+            );
+
+            arm.ProjectionExpressionsInSelectOrder[resourceKeyIdIndex]
+                .Should()
+                .Be(new AbstractUnionViewProjectionExpression.Int16Literal(memberKey.ResourceKeyId));
+            arm.ConcreteMemberResourceKey.ResourceKeyId.Should().Be(memberKey.ResourceKeyId);
+        }
     }
 
     /// <summary>
@@ -294,7 +331,7 @@ public class Given_Association_Subclass_With_Superclass_Identity_Rename_Mapping
         _abstractUnionView
             .OutputColumnsInSelectOrder.Select(column => column.ColumnName.Value)
             .Should()
-            .Equal("DocumentId", "EducationOrganizationId", "Discriminator");
+            .Equal("DocumentId", "EducationOrganizationId", "ResourceKeyId", "Discriminator");
 
         _abstractUnionView.UnionArmsInOrder.Should().HaveCount(1);
 
