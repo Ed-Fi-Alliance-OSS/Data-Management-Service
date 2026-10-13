@@ -196,6 +196,12 @@ public abstract record AbstractUnionViewProjectionExpression
     /// </summary>
     /// <param name="Value">The literal string value.</param>
     public sealed record StringLiteral(string Value) : AbstractUnionViewProjectionExpression;
+
+    /// <summary>
+    /// Projects a 16-bit integer literal, such as the arm's compile-time <c>ResourceKeyId</c>.
+    /// </summary>
+    /// <param name="Value">The literal value.</param>
+    public sealed record Int16Literal(short Value) : AbstractUnionViewProjectionExpression;
 }
 
 /// <summary>
@@ -302,10 +308,15 @@ public abstract record TriggerKindParameters
     /// </summary>
     /// <param name="TargetTable">The abstract identity table being maintained.</param>
     /// <param name="TargetColumnMappings">Column mappings from the source table to the target table.</param>
+    /// <param name="ResourceKeyIdValue">
+    /// The concrete member's compile-time <c>dms.ResourceKey</c> id written to the abstract identity
+    /// table's <c>ResourceKeyId</c> payload column. Never derived from the discriminator or the source row.
+    /// </param>
     /// <param name="DiscriminatorValue">The discriminator value written to the abstract identity table.</param>
     public sealed record AbstractIdentityMaintenance(
         DbTableName TargetTable,
         IReadOnlyList<TriggerColumnMapping> TargetColumnMappings,
+        short ResourceKeyIdValue,
         string DiscriminatorValue
     ) : TriggerKindParameters;
 
