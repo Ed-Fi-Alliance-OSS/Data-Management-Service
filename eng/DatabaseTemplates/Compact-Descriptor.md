@@ -4,9 +4,12 @@ version `v3` do not identify the physical descriptor schema. The verifier reads 
 from the inspected database, and expected metadata only from the manifest and the compact schema
 contract in these assertion assets. It never adapts expectations to an older source or restore.
 
-Generate the manifest with `DerivedModelSetManifestEmitter`, including every concrete resource in
-`resource_details`. `EdFi.DataManagementService.Backend.Ddl.Tests.Unit/FixtureRunner` supplies that
-complete selection. The focused integration baseline is:
+For template builds, use the existing SchemaTools `ddl emit` path (which calls
+`DerivedModelSetManifestEmitter`), including every concrete resource in `resource_details`.
+The Minimal/Populated workflows emit this manifest from the exact ordered ApiSchema inputs
+used for fresh provisioning: DS `5.2.0` core + TPDM or DS `6.1.0` core. Review the matching
+provider manifest before using it as the expected baseline. For fixture regeneration,
+`EdFi.DataManagementService.Backend.Ddl.Tests.Unit/FixtureRunner` supplies that complete selection. The focused integration baseline is:
 
 ```
 src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/compact-descriptor/expected/relational-model.pgsql.manifest.json
@@ -66,6 +69,16 @@ extension resource roots, and requires its stored non-null authoritative timesta
 Missing tables and columns fail explicitly. The same invocation then runs all existing compact
 assertions above through `Read-CompactDescriptorInventory`; package features never select the
 expectations. The standalone compact assertions remain independent of timestamp ownership.
+
+Retain the emitted manifest and hash, rendered catalog assertions, verification results and
+package provenance together for each leg. The closure matrix is Minimal/Populated ×
+PostgreSQL/SQL Server × DS `5.2.0` core + TPDM / DS `6.1.0` core (eight legs), built from one
+reviewed combined commit. Use fresh source and restore databases, retain `RequirePopulatedData`
+for Populated legs and run authenticated API probes only after both catalog gates pass.
+`publish_package: false` build artifacts satisfy build/restore evidence; affected fixed consumer
+pins must still resolve verified post-change prereleases with unchanged Data Standard package-id
+suffixes before closure. Final stable publication, release promotion, cache replacement and
+reprovisioning follow the [developer deployment instructions](../../docs/RELATIONAL-BACKEND.md#descriptor-catalog-checks-and-template-handoff).
 
 Render or execute the combined assertions with `Assert-TemplateSchema.ps1`, using the same
 parameters as `Assert-CompactDescriptor.ps1`. To run the real focused package restore regressions,

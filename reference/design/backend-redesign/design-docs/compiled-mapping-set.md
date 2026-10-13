@@ -60,7 +60,7 @@ selected, `relational-model.{pgsql|mssql}.manifest.json` emits each descriptor r
 It records `key_columns`, `identity_metadata.physical_row_identity_columns = [DescriptorId]`,
 `root_scope_locator_columns = [DocumentId]`, compact types and the unique document association.
 Core DDL additionally owns `ResourceKeyId`, its catalog FK and trigger-enforced agreement
-with the owning document, mirrors, native allocation, and reconstructed-URI index. Do not
+with the owning document, version mirror, authoritative timestamp, native allocation, and reconstructed-URI index. Do not
 infer the physical PK from a document-oriented root locator or expect every fixed core
 column in this SQL-free shared model.
 
@@ -75,8 +75,8 @@ Current resolver results carry both `int DescriptorId` and `long DocumentId` thr
 existing RI join. Flattening, descriptor-valued filters and hydration bind the compact key;
 RI, UUIDs, locking, metadata, cache work and restamping bind the document key. URI consumers
 reconstruct the whole `Namespace + '#' + CodeValue`, retaining existing transformations.
-Both `dms.Document` stamp columns remain authoritative; DMS-1401 owns the later timestamp
-change. Mapping version `v3` and hash equality do not prove physical-schema compatibility;
+`dms.Document.ContentVersion` remains authoritative for concurrency and enqueueing; the
+root/descriptor owns `ContentLastModifiedAt` in the combined DMS-1401 schema. Mapping version `v3` and hash equality do not prove physical-schema compatibility;
 see the [reprovisioning and template handoff](../../../../docs/RELATIONAL-BACKEND.md#descriptor-catalog-checks-and-template-handoff).
 
 ### 2.1 Keys and effective schema summary
@@ -380,11 +380,11 @@ public sealed record DbTriggerInfo(
     IReadOnlyList<DbColumnName> KeyColumns,
     IReadOnlyList<DbColumnName> IdentityProjectionColumns,
     TriggerKindParameters Parameters,
-    // The concrete root table (or `dms.Descriptor`) whose mirrored `ContentVersion` /
-    // `ContentLastModifiedAt` columns this trigger updates after stamping `dms.Document`.
+    // The concrete root table (or `dms.Descriptor`) whose `ContentVersion` mirror and
+    // authoritative `ContentLastModifiedAt` this trigger updates with the document version.
     // Required (non-null) for every `Parameters is DocumentStamping` entry; null for other kinds.
-    // See `change-queries.md` §"Concrete-resource ContentVersion / ContentLastModifiedAt mirror".
-    DbTableName? MirrorStampTargetTable = null
+    // See `change-queries.md` §"Concrete-resource version mirror and authoritative timestamp".
+    DbTableName? StampTargetTable = null
 );
 
 public sealed record DerivedRelationalModelSet(
@@ -412,7 +412,7 @@ Notes:
     `DiscriminatorValue`. They must not derive the concrete resource key from the discriminator
     string or re-infer it from the source table.
   - `DocumentStamping.ChangeTracking` is valid only on `TriggerKindParameters.DocumentStamping` entries and is attached when Change Queries requires that trigger to also write key-change and tombstone rows. The tracked-change table metadata tells emitters where and how to write tracked-change rows; the owning `DbTriggerInfo.IdentityProjectionColumns` remains the single key-change predicate source.
-  - `MirrorStampTargetTable` is required (non-null) for every `TriggerKindParameters.DocumentStamping` entry and null for all other trigger kinds. The derivation pass assigns it by rule: the same table as `Table` for root-table stamping triggers, the resource's root table for child / `_ext` stamping triggers, and `dms.Descriptor` for the descriptor stamping trigger. Dialect emitters render the mirror UPDATE (the second UPDATE in the trigger body, after the `dms.Document` stamp UPDATE) against `MirrorStampTargetTable` and MUST NOT re-derive the target from `Table`. See `change-queries.md` §"Concrete-resource ContentVersion / ContentLastModifiedAt mirror".
+  - `StampTargetTable` is required (non-null) for every `TriggerKindParameters.DocumentStamping` entry and null for all other trigger kinds. The derivation pass assigns it by rule: the same table as `Table` for root-table stamping triggers, the resource's root table for child / `_ext` stamping triggers, and `dms.Descriptor` for the descriptor stamping trigger. Dialect emitters render the owner stamp UPDATE (the second UPDATE in the trigger body, after the `dms.Document` stamp UPDATE) against `StampTargetTable` and MUST NOT re-derive the target from `Table`. See `change-queries.md` §"Concrete-resource version mirror and authoritative timestamp".
   - For key-change rows, dialect emitters use the owning trigger's `IdentityProjectionColumns` null-safe old/new value-diff workset. Under key unification, Change Queries key-change detection compares stored canonical columns, not presence-gated alias expressions; content-stamp worksets may be broader.
   - Scope: schema-derived project objects only (resource/extension/abstract-identity tables). This includes authorization-required indexes on resource tables derived from `securableElements` (see `auth.md`) and tracked-change tables/views derived from Change Query metadata (see `change-queries.md`). Core `dms.*` / `auth.*` objects (and their indexes/triggers) are owned by core DDL emission, with the following carve-outs:
     - authorization indexes for descriptor `Namespace` securable elements land on `dms.Descriptor` (e.g. `IX_Descriptor_Namespace_Auth`) because all descriptor resources share that base table; these are emitted by `DeriveAuthorizationIndexInventoryPass` alongside resource-table auth indexes rather than by core DDL, since their existence is driven by per-resource `securableElements` metadata.
@@ -723,7 +723,7 @@ For a read request targeting resource `R`:
      - Query: insert the output of the compiled “page DocumentId SQL” (which already applies filters + ordering + paging).
    - Execute one batched DB command that yields multiple result sets by concatenating:
      1) **keyset materialization SQL** (create/clear + insert `DocumentId`s),
-     2) a `SELECT` of `dms.Document` joined to the keyset (document UUID + `ContentVersion` / `ContentLastModifiedAt` stamps used to compose `_etag` / `_lastModifiedDate` + resource key id), and
+     2) a `SELECT` of `dms.Document` joined to the keyset and the compiled resource root by `DocumentId` (document UUID, document `ContentVersion`, authoritative root `ContentLastModifiedAt`, and resource key id used to compose response metadata), and
      3) one `SELECT` per `DbTableModel` in `ResourceReadPlan.Model.TablesInDependencyOrder`, using each table’s compiled `TableReadPlan.SelectByKeysetSql` (each `SELECT` joins the table to the keyset to return all rows for the page).
    - Read result sets in order using `DbDataReader.NextResult()` / `QueryMultiple`, mapping each result set to the corresponding table model in the same order used to build the batch.
    - Each `SelectByKeysetSql` must emit rows ordered by root document scope, then immediate parent scope where applicable, then `Ordinal`, so reconstitution can assemble arrays deterministically.

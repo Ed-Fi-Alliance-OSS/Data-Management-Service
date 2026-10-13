@@ -7,7 +7,7 @@ Draft.
 This document is the transactions/concurrency deep dive for `overview.md`, focusing on:
 - reference validation,
 - write-time identity propagation and derived maintenance (abstract identity tables and update-tracking stamps),
-- update-tracking stamping (`dms.Document`), and
+- update tracking (document versions and authoritative root/descriptor timestamps), and
 - operational caching patterns.
 
 - Overview: [overview.md](overview.md)
@@ -169,8 +169,9 @@ The current descriptor behavior on both providers is:
 - An unchanged POST returns HTTP 200 and an unchanged PUT returns HTTP 204; both preserve IDs,
   ETag, content stamps, and change-query state.
   Descriptive updates and stored/proposed authorization retain their existing rules.
-- `dms.Document.ContentVersion` and `ContentLastModifiedAt` remain authoritative. Descriptor
-  triggers update the owning `DocumentId` and mirror both stamps onto the compact descriptor row.
+- `dms.Document.ContentVersion` remains the concurrency authority. Descriptor triggers advance
+  that version through the owning `DocumentId`, mirror the version and generate the authoritative
+  `dms.Descriptor.ContentLastModifiedAt` in the same transaction.
   Representation restamping, cache work, and custom-view membership also retain `DocumentId`.
 
 These rules do not implement the later stored-wins descriptor proposal. Abstract identity
@@ -294,7 +295,7 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
      recompute).
    - Generated triggers maintain abstract identity tables on identity-projection value-diff changes.
      `DbTriggerInfo.IdentityProjectionColumns` are null-safe compare inputs, not `UPDATE(column)` gates.
-   - The `*_Stamp` triggers stamp `dms.Document.ContentVersion` / `ContentLastModifiedAt`, mirror `ContentVersion` / `ContentLastModifiedAt` onto the resource root (or `dms.Descriptor`) via `MirrorStampTargetTable`, and append tombstone / key-change rows to the corresponding `tracked_changes_*` table when applicable (see [update-tracking.md](update-tracking.md) for stamping rules and [change-queries.md](change-queries.md) for the mirror and tracked-change tables).
+   - The `*_Stamp` triggers advance `dms.Document.ContentVersion`, mirror that version and generate authoritative `ContentLastModifiedAt` on the resource root (or `dms.Descriptor`) via `StampTargetTable`, and append tombstone / key-change rows to the corresponding `tracked_changes_*` table when applicable (see [update-tracking.md](update-tracking.md) for stamping rules and [change-queries.md](change-queries.md) for the mirror and tracked-change tables).
    - The set-based `dms.Document` projection-enqueue trigger observes every insert and
      every real `ContentVersion` change. In lifecycle `Tracking`, `Resetting`, or
      `Rebuilding`, it inserts or advances the coalesced
@@ -395,7 +396,8 @@ identity rows and stamps), and is handled in the database:
   - Composite FK enforcement guarantees the canonical/storage identity-part values match the referenced target.
 
 - **Representation update tracking (`_etag/_lastModifiedDate`, `ChangeVersion`)**
-  - `_lastModifiedDate` and `ChangeVersion` are served from stored stamps on `dms.Document`. `_etag`
+  - `_lastModifiedDate` is served from the authoritative root/descriptor timestamp and
+    `ChangeVersion` from `dms.Document.ContentVersion`. `_etag`
     is composed as `"{ContentVersion}-{variantKey}"` (see `update-tracking.md`, "Serving API
     metadata") — a strong validator that is representation-sensitive, composed with no document
     hashing or representation readback (the write path does read the final scalar `ContentVersion` in
@@ -603,16 +605,37 @@ Invalidation approaches:
 
 ---
 
+## Authoritative response metadata
+
+GET UUID lookup left joins the compiled root or `dms.Descriptor` by `DocumentId`, retaining a
+wrong-resource document row so the existing resource check still returns 404. PUT version checks
+and descriptor delete-target lookup select document identity/version only; they do not join or
+query an owner just to satisfy a shared timestamp contract.
+
+Ordinary hydration obtains owner timestamps in the existing metadata SELECT for the full keyset.
+Standalone hydration finishes each batch with a document-only version fence and retries the whole
+acquisition on drift or disappearance, up to three attempts; exhaustion fails rather than serving
+mixed metadata/content. GET-by-id uses the hydrated metadata, not stale pre-hydration lookup stamps.
+Descriptor body and timestamp are selected together; candidate-to-rehydration paths use the
+reread row's metadata. These rules apply to meaningful writes and representation restamps.
+Session-scoped write hydration retains its existing transactional locking contract.
+
+Representation restamping first allocates document versions, then groups owners by mapped root
+or descriptor table and updates them by `DocumentId` in the same transaction. PostgreSQL captures
+persisted owner timestamps with `RETURNING`; SQL Server uses `OUTPUT INTO` for both updates so
+triggers remain enabled. Missing-owner/row-count failures roll back the page, including projection
+work. Normal no-op writes still preserve stamps; explicit restamping deliberately changes them
+without changing body, identity or tracked history.
+
 ## Optional Database Projection Behavior: `dms.DocumentCache`
 
 For descriptors, UUID resolution, cache keys, `DocumentProjectionWork`, and resource/UUID-scope
 representation restamps use the owning `bigint DocumentId`, never the compact key. For example,
 `DescriptorId = 42` with `DocumentId = 5000000042` materializes the row selected by its document
-association, reconstructs original-case URI/body fields, and reads both authoritative document
-stamps. Restamping document `5000000042` updates that descriptor's mirrored stamps and enqueues
-work for `5000000042`. The compact value `42` remains the resource-FK and expansion-lookup key.
-This is the pre-DMS-1401 baseline with both document stamp columns present; timestamp ownership
-changes belong to DMS-1401.
+association, reconstructs original-case URI/body fields, and reads the document version with
+the authoritative descriptor timestamp. Restamping document `5000000042` advances its version,
+updates that descriptor's version mirror and timestamp, and enqueues work for `5000000042` when
+projection is enabled. The compact value `42` remains the resource-FK and expansion-lookup key.
 
 The `dms.DocumentCache` table is always provisioned. Populating and reading its
 **materialized JSON projection** remain optional behaviors intended for:
