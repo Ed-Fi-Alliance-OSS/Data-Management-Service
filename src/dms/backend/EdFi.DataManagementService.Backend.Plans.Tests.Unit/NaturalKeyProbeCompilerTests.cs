@@ -655,3 +655,326 @@ public class Given_A_Resource_Without_Identity
             );
     }
 }
+
+/// <summary>
+/// The every-resource parity guard: compiled probes must reproduce the live referential-identity trigger,
+/// <c>UX_&lt;R&gt;_NK</c> and <c>UX_&lt;R&gt;_RefKey</c> derivations. Removed together with the RI triggers.
+/// </summary>
+[TestFixture("ds-5.2", SqlDialect.Pgsql)]
+[TestFixture("ds-5.2", SqlDialect.Mssql)]
+[TestFixture("ds-5.2-tpdm", SqlDialect.Pgsql)]
+[TestFixture("ds-5.2-tpdm", SqlDialect.Mssql)]
+[TestFixture("sample", SqlDialect.Pgsql)]
+[TestFixture("sample", SqlDialect.Mssql)]
+public class Given_Natural_Key_Probes_Match_Legacy_Derivations(string fixtureName, SqlDialect dialect)
+{
+    private const string Ds52InputPath =
+        "../Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json";
+    private const string TpdmInputPath =
+        "../Fixtures/authoritative/ds-5.2-tpdm/inputs/tpdm-api-schema-authoritative.json";
+    private const string SampleInputPath =
+        "../Fixtures/authoritative/sample/inputs/sample-api-schema-authoritative.json";
+
+    private DerivedRelationalModelSet _modelSet = null!;
+    private MappingSet _mappingSet = null!;
+    private ConcreteResourceModel[] _relationalResources = [];
+    private Dictionary<
+        QualifiedResourceName,
+        TriggerKindParameters.ReferentialIdentityMaintenance
+    > _riByResource = [];
+
+    [OneTimeSetUp]
+    public void Setup()
+    {
+        (string, bool)[] inputs = fixtureName switch
+        {
+            "ds-5.2" => [(Ds52InputPath, false)],
+            "ds-5.2-tpdm" => [(Ds52InputPath, false), (TpdmInputPath, true)],
+            "sample" => [(Ds52InputPath, false), (SampleInputPath, true)],
+            _ => throw new ArgumentOutOfRangeException(nameof(fixtureName), fixtureName, null),
+        };
+
+        _modelSet = RuntimePlanFixtureModelSetBuilder.Build(inputs, dialect);
+        _mappingSet = new MappingSetCompiler().Compile(_modelSet);
+        _relationalResources =
+        [
+            .. _modelSet.ConcreteResourcesInNameOrder.Where(resource =>
+                resource.StorageKind is ResourceStorageKind.RelationalTables
+            ),
+        ];
+        _riByResource = _modelSet
+            .TriggersInCreateOrder.Select(trigger => trigger.Parameters)
+            .OfType<TriggerKindParameters.ReferentialIdentityMaintenance>()
+            .ToDictionary(ri => new QualifiedResourceName(ri.ProjectName, ri.ResourceName));
+    }
+
+    [Test]
+    public void It_compiles_exactly_the_expected_probes()
+    {
+        List<string> violations = [];
+
+        foreach (var resource in _relationalResources)
+        {
+            var name = resource.RelationalModel.Resource;
+            var hasRefKey = resource
+                .RelationalModel.Root.Constraints.OfType<TableConstraint.Unique>()
+                .Any(unique => unique.Columns[^1] == RelationalNameConventions.DocumentIdColumnName);
+
+            if (!_mappingSet.OwnNaturalKeyProbesByResource.ContainsKey(name))
+            {
+                violations.Add($"{name}: no own-key probe");
+            }
+
+            if (_mappingSet.NaturalKeyProbeTargets.ContainsKey(name) != hasRefKey)
+            {
+                violations.Add($"{name}: target probe present = {!hasRefKey}, RefKey present = {hasRefKey}");
+            }
+        }
+
+        foreach (var abstractTable in _modelSet.AbstractIdentityTablesInNameOrder)
+        {
+            if (
+                !_mappingSet.NaturalKeyProbeTargets.TryGetValue(
+                    abstractTable.AbstractResourceKey.Resource,
+                    out var target
+                )
+                || target.Kind != NaturalKeyProbeTargetKind.Abstract
+            )
+            {
+                violations.Add($"{abstractTable.AbstractResourceKey.Resource}: no abstract probe");
+            }
+        }
+
+        _mappingSet.OwnNaturalKeyProbesByResource.Should().HaveCount(_relationalResources.Length);
+        violations.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_matches_the_referential_identity_trigger_elements()
+    {
+        List<string> violations = [];
+
+        foreach (var resource in _relationalResources)
+        {
+            var name = resource.RelationalModel.Resource;
+
+            if (!_riByResource.TryGetValue(name, out var ri))
+            {
+                violations.Add($"{name}: no referential-identity trigger");
+                continue;
+            }
+
+            var elements = ri.IdentityElements;
+            var ownKeys = _mappingSet.OwnNaturalKeyProbesByResource[name].KeyColumns;
+            CheckPaths(name, "own-key", ownKeys, elements, violations);
+
+            for (var index = 0; index < Math.Min(ownKeys.Count, elements.Count); index++)
+            {
+                CheckOwnKeyEntry(resource, ownKeys[index], elements[index], violations);
+            }
+
+            if (_mappingSet.NaturalKeyProbeTargets.TryGetValue(name, out var target))
+            {
+                CheckPaths(name, "target", target.KeyColumns, elements, violations);
+
+                for (var index = 0; index < Math.Min(target.KeyColumns.Count, elements.Count); index++)
+                {
+                    var key = target.KeyColumns[index];
+                    var element = elements[index];
+                    var storageColumn = StorageColumn(resource.RelationalModel.Root, element.Column);
+
+                    if (key.Column != storageColumn)
+                    {
+                        violations.Add(
+                            $"{name} target {element.IdentityJsonPath}: column {key.Column.Value}, "
+                                + $"storage-resolved element column {storageColumn.Value}"
+                        );
+                    }
+
+                    CheckValueBinding(name, "target", key, element, violations);
+                }
+            }
+        }
+
+        _riByResource.Should().NotBeEmpty();
+        violations.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_matches_each_own_key_probe_to_the_natural_key_constraint()
+    {
+        List<string> violations = [];
+
+        foreach (var resource in _relationalResources)
+        {
+            var name = resource.RelationalModel.Resource;
+            var columns = _mappingSet
+                .OwnNaturalKeyProbesByResource[name]
+                .KeyColumns.Select(key => key.Column)
+                .Distinct()
+                .ToArray();
+
+            if (
+                !resource
+                    .RelationalModel.Root.Constraints.OfType<TableConstraint.Unique>()
+                    .Any(unique => unique.Columns.SequenceEqual(columns))
+            )
+            {
+                violations.Add(
+                    $"{name}: no root unique constraint on ({string.Join(", ", columns.Select(column => column.Value))})"
+                );
+            }
+        }
+
+        violations.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_matches_each_superclass_alias_to_the_abstract_probe_paths()
+    {
+        List<string> violations = [];
+        var aliasesChecked = 0;
+
+        foreach (var ri in _riByResource.Values)
+        {
+            if (ri.SuperclassAlias is not { } alias)
+            {
+                continue;
+            }
+
+            var abstractResource = new QualifiedResourceName(alias.ProjectName, alias.ResourceName);
+
+            if (
+                !_mappingSet.NaturalKeyProbeTargets.TryGetValue(abstractResource, out var target)
+                || target.Kind != NaturalKeyProbeTargetKind.Abstract
+            )
+            {
+                continue;
+            }
+
+            aliasesChecked++;
+            string[] aliasPaths = [.. alias.IdentityElements.Select(element => element.IdentityJsonPath)];
+
+            if (!aliasPaths.SequenceEqual(NaturalKeyProbeTestSupport.Paths(target.KeyColumns)))
+            {
+                violations.Add(
+                    $"{ri.ProjectName}.{ri.ResourceName} alias of {abstractResource}: "
+                        + $"[{string.Join(", ", aliasPaths)}] vs "
+                        + $"[{string.Join(", ", NaturalKeyProbeTestSupport.Paths(target.KeyColumns))}]"
+                );
+            }
+        }
+
+        aliasesChecked.Should().BePositive();
+        violations.Should().BeEmpty();
+    }
+
+    private static void CheckPaths(
+        QualifiedResourceName name,
+        string probeKind,
+        IReadOnlyList<NaturalKeyProbeKeyColumn> keys,
+        IReadOnlyList<IdentityElementMapping> elements,
+        List<string> violations
+    )
+    {
+        string[] elementPaths = [.. elements.Select(element => element.IdentityJsonPath)];
+
+        if (!elementPaths.SequenceEqual(NaturalKeyProbeTestSupport.Paths(keys)))
+        {
+            violations.Add(
+                $"{name} {probeKind} paths [{string.Join(", ", NaturalKeyProbeTestSupport.Paths(keys))}] "
+                    + $"vs trigger [{string.Join(", ", elementPaths)}]"
+            );
+        }
+    }
+
+    /// <summary>
+    /// A document-reference entry is checked structurally: a descriptor-valued reference part, such as
+    /// the Grade grading-period descriptor, is correctly a document reference, so descriptor and
+    /// scalar-type parity apply only to value entries.
+    /// </summary>
+    private static void CheckOwnKeyEntry(
+        ConcreteResourceModel resource,
+        NaturalKeyProbeKeyColumn key,
+        IdentityElementMapping element,
+        List<string> violations
+    )
+    {
+        var name = resource.RelationalModel.Resource;
+
+        if (key.Binding is not NaturalKeyProbeKeyBinding.DocumentReference(var index))
+        {
+            if (key.Column != element.Column)
+            {
+                violations.Add(
+                    $"{name} own-key {element.IdentityJsonPath}: column {key.Column.Value}, "
+                        + $"element column {element.Column.Value}"
+                );
+            }
+
+            CheckValueBinding(name, "own-key", key, element, violations);
+            return;
+        }
+
+        var bindings = resource.RelationalModel.DocumentReferenceBindings;
+
+        if (index < 0 || index >= bindings.Count)
+        {
+            violations.Add($"{name} own-key {element.IdentityJsonPath}: binding index {index} out of range");
+            return;
+        }
+
+        var binding = bindings[index];
+
+        if (binding.FkColumn != key.Column)
+        {
+            violations.Add(
+                $"{name} own-key {element.IdentityJsonPath}: column {key.Column.Value}, "
+                    + $"binding FK column {binding.FkColumn.Value}"
+            );
+        }
+
+        if (
+            !binding.IdentityBindings.Any(identityBinding =>
+                identityBinding.ReferenceJsonPath.Canonical == element.IdentityJsonPath
+                && identityBinding.Column == element.Column
+            )
+        )
+        {
+            violations.Add(
+                $"{name} own-key {element.IdentityJsonPath}: binding {index} has no identity binding "
+                    + $"for column {element.Column.Value}"
+            );
+        }
+    }
+
+    private static void CheckValueBinding(
+        QualifiedResourceName name,
+        string probeKind,
+        NaturalKeyProbeKeyColumn key,
+        IdentityElementMapping element,
+        List<string> violations
+    )
+    {
+        var matches = key.Binding switch
+        {
+            NaturalKeyProbeKeyBinding.Descriptor => element.IsDescriptorReference,
+            NaturalKeyProbeKeyBinding.Scalar(var scalarType) => !element.IsDescriptorReference
+                && scalarType == element.ScalarType,
+            _ => false,
+        };
+
+        if (!matches)
+        {
+            violations.Add(
+                $"{name} {probeKind} {element.IdentityJsonPath}: binding {key.Binding}, element "
+                    + $"descriptor = {element.IsDescriptorReference}, scalar type = {element.ScalarType}"
+            );
+        }
+    }
+
+    private static DbColumnName StorageColumn(DbTableModel root, DbColumnName columnName) =>
+        NaturalKeyProbeTestSupport.Column(root, columnName.Value).Storage is ColumnStorage.UnifiedAlias alias
+            ? alias.CanonicalColumn
+            : columnName;
+}
