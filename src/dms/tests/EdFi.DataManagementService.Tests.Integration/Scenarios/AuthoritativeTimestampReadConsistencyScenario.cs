@@ -71,7 +71,8 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
         bool page,
         bool restamp,
         bool betweenMetadataAndContent,
-        bool selectedDescriptorFallback = false
+        bool selectedDescriptorFallback = false,
+        bool beforeMetadata = false
     )
     {
         Resource resource = await CreateAsync(harness, descriptor);
@@ -89,6 +90,7 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
         boundary.Descriptor = descriptor;
         boundary.SelectedDescriptorFallback = selectedDescriptorFallback;
         boundary.BetweenMetadataAndContent = betweenMetadataAndContent;
+        boundary.BeforeMetadata = beforeMetadata;
         boundary.Armed = true;
         boundary.Gate.Arm();
         using CancellationTokenSource cancellation = new(Watchdog);
@@ -192,6 +194,12 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
                 $"{boundary.Checkpoint} must return the complete {(ReferenceEquals(expected, before) ? "before" : "after")} state; expected {expected}; actual {returned}"
             );
         boundary.Hits.Should().Be(1);
+        if (boundary.SplitHydration)
+        {
+            boundary
+                .RetriedAttempts.Should()
+                .Be(2, "the leading/joined/trailing version mismatch must discard the first acquisition");
+        }
     }
 
     private static async Task<JsonObject> ReadAsync(ApiIntegrationHarness harness, string path)
@@ -218,6 +226,9 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
         public bool Descriptor { get; set; }
         public bool SelectedDescriptorFallback { get; set; }
         public bool BetweenMetadataAndContent { get; set; }
+        public bool BeforeMetadata { get; set; }
+        public bool SplitHydration => BetweenMetadataAndContent || BeforeMetadata;
+        public int RetriedAttempts { get; set; }
         public string Checkpoint { get; private set; } = "";
         public string Failure { get; set; } = "";
         public int Hits { get; private set; }
@@ -250,13 +261,13 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
         {
             if (
                 !boundary.Descriptor
-                && !boundary.BetweenMetadataAndContent
+                && !boundary.SplitHydration
                 && boundary.Claim("UUID lookup or page request before hydration")
             )
             {
                 await boundary.Gate.WaitIfArmedAsync();
             }
-            if (!boundary.BetweenMetadataAndContent)
+            if (!boundary.SplitHydration)
             {
                 return await inner.HydrateAsync(plan, keyset, executionOptions, ct);
             }
@@ -264,19 +275,26 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
                 ? new NpgsqlConnection(boundary.ConnectionString)
                 : new SqlConnection(boundary.ConnectionString);
             await connection.OpenAsync(ct);
-            DbConnection decorated = A.Fake<DbConnection>(options => options.Wrapping(connection));
-            A.CallTo(decorated)
-                .WithReturnType<DbCommand>()
-                .Where(call => call.Method.Name == "CreateDbCommand")
-                .ReturnsLazily(() => WrapCommand(connection.CreateCommand(), boundary));
-            return await ConsistentHydrationExecutor.ExecuteAsync(
-                decorated,
+            int attempts = 0;
+            HydratedPage page = await ConsistentHydrationExecutor.ExecuteAsync(
+                sql =>
+                {
+                    attempts++;
+                    DbCommand command = connection.CreateCommand();
+                    command.CommandText = sql;
+                    return WrapCommand(command, boundary);
+                },
                 plan,
                 keyset,
                 boundary.Postgresql ? SqlDialect.Pgsql : SqlDialect.Mssql,
                 executionOptions,
                 ct
             );
+            if (attempts > 1)
+            {
+                boundary.RetriedAttempts = attempts;
+            }
+            return page;
         }
 
         private static DbCommand WrapCommand(DbCommand command, ReadBoundary boundary)
@@ -291,14 +309,18 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
                     {
                         CancellationToken ct = call.GetArgument<CancellationToken>(1);
                         if (
-                            !boundary.BetweenMetadataAndContent
-                            || !boundary.Claim("metadata acquired before content statements")
+                            !boundary.SplitHydration
+                            || !boundary.Claim(
+                                boundary.BeforeMetadata
+                                    ? "leading versions acquired before owner metadata"
+                                    : "metadata acquired before content statements"
+                            )
                         )
                         {
                             return await command.ExecuteReaderAsync(ct);
                         }
 
-                        // Split only at the metadata SELECT's terminator. Execute the unmodified generated
+                        // Split at the leading version or metadata SELECT's terminator. Execute the unmodified generated
                         // statements on the same real connection/transaction, buffering their actual result
                         // sets. This prevents provider/server read-ahead from crossing the arranged boundary.
                         // PostgreSQL's batch has an implicit READ COMMITTED transaction: keep its
@@ -307,9 +329,16 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
                             await command.Connection!.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
                         command.Transaction = transaction;
                         string sql = command.CommandText;
-                        int metadata = sql.IndexOf("ContentLastModifiedAt", StringComparison.Ordinal);
-                        metadata.Should().BeGreaterThanOrEqualTo(0);
-                        int split = sql.IndexOf(';', metadata) + 1;
+                        int checkpoint = sql.IndexOf(
+                            boundary.BeforeMetadata ? "SELECT d." : "ContentLastModifiedAt",
+                            StringComparison.Ordinal
+                        );
+                        checkpoint.Should().BeGreaterThanOrEqualTo(0);
+                        int split = sql.IndexOf(';', checkpoint) + 1;
+                        if (boundary.BeforeMetadata)
+                        {
+                            sql[..split].Should().NotContain("ContentLastModifiedAt");
+                        }
                         split.Should().BeGreaterThan(0).And.BeLessThan(sql.Length);
                         command.CommandText = sql[..split];
                         if (

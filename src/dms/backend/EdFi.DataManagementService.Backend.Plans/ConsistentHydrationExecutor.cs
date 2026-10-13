@@ -4,14 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
-using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
 /// <summary>
-/// Hydrates standalone reads with a document-version fence after all representation queries.
+/// Hydrates standalone reads with document-version fences before metadata and after all representation queries.
 /// Session-scoped writes continue to use <see cref="HydrationExecutor"/> under their own transaction.
 /// </summary>
 public static class ConsistentHydrationExecutor
@@ -49,7 +48,7 @@ public static class ConsistentHydrationExecutor
 
     /// <summary>
     /// Executes through the same command-creation seam as ordinary hydration. Each attempt is one
-    /// batch, with one authoritative timestamp SELECT and one final document-only version SELECT.
+    /// batch, with one authoritative timestamp SELECT bracketed by document-only version SELECTs.
     /// </summary>
     public static async Task<HydratedPage> ExecuteAsync(
         Func<string, DbCommand> createCommand,
@@ -65,9 +64,7 @@ public static class ConsistentHydrationExecutor
         ArgumentNullException.ThrowIfNull(keyset);
         ArgumentNullException.ThrowIfNull(executionOptions);
 
-        string sql =
-            HydrationBatchBuilder.Build(plan, keyset, dialect, executionOptions)
-            + BuildVersionFence(plan.KeysetTable, keyset, dialect, executionOptions);
+        string sql = HydrationBatchBuilder.BuildConsistent(plan, keyset, dialect, executionOptions);
 
         for (int attempt = 0; attempt < MaximumAttempts; attempt++)
         {
@@ -75,11 +72,22 @@ public static class ConsistentHydrationExecutor
             await using DbCommand command = createCommand(sql);
             HydrationBatchBuilder.AddParameters(command, keyset);
             await using DbDataReader reader = await command.ExecuteReaderAsync(ct);
+            Dictionary<long, long> leadingVersions = [];
             HydratedPage page = await HydrationExecutor.ReadPageAsync(
                 reader,
                 plan,
                 keyset,
                 executionOptions,
+                async (leadingReader, token) =>
+                {
+                    leadingVersions = await ReadVersionsAsync(leadingReader, token);
+                    if (!await leadingReader.NextResultAsync(token))
+                    {
+                        throw new InvalidOperationException(
+                            "Expected document metadata after the leading hydration document-version fence result set."
+                        );
+                    }
+                },
                 ct
             );
             if (!await reader.NextResultAsync(ct))
@@ -88,19 +96,18 @@ public static class ConsistentHydrationExecutor
                     "Expected the hydration document-version fence result set."
                 );
             }
-            Dictionary<long, long> versions = [];
-            while (await reader.ReadAsync(ct))
-            {
-                versions.Add(reader.GetInt64(0), reader.GetInt64(1));
-            }
+            Dictionary<long, long> versions = await ReadVersionsAsync(reader, ct);
 
             // Every representation-affecting write, including child changes and restamps, advances
             // Document.ContentVersion transactionally with the authoritative owner stamp. Equality
-            // across the entire acquisition proves that metadata and content belong together. A
+            // across both boundaries and the joined metadata proves that stamps and content belong
+            // together, even when locking READ COMMITTED observes different commits within the join. A
             // disappeared document is also retried; extra ids without initial metadata are not served.
             if (
                 page.DocumentMetadata.All(metadata =>
-                    versions.TryGetValue(metadata.DocumentId, out long version)
+                    leadingVersions.TryGetValue(metadata.DocumentId, out long leadingVersion)
+                    && versions.TryGetValue(metadata.DocumentId, out long version)
+                    && leadingVersion == metadata.ContentVersion
                     && version == metadata.ContentVersion
                 )
             )
@@ -114,39 +121,16 @@ public static class ConsistentHydrationExecutor
         );
     }
 
-    private static string BuildVersionFence(
-        KeysetTableContract keysetTable,
-        PageKeysetSpec keyset,
-        SqlDialect dialect,
-        HydrationExecutionOptions executionOptions
+    private static async Task<Dictionary<long, long>> ReadVersionsAsync(
+        DbDataReader reader,
+        CancellationToken ct
     )
     {
-        SqlWriter writer = new(SqlDialectFactory.Create(dialect));
-        string id = writer.Dialect.QuoteIdentifier("DocumentId");
-        string version = writer.Dialect.QuoteIdentifier("ContentVersion");
-        writer
-            .AppendLine()
-            .Append($"SELECT d.{id}, d.{version} FROM ")
-            .AppendTable(new(new("dms"), "Document"))
-            .Append(" d");
-        if (
-            keyset is PageKeysetSpec.Single
-            && executionOptions.UseSingleDocumentFastPath
-            && PlanSqlDialectFactory.Create(dialect).SupportsSingleDocumentHydration
-        )
+        Dictionary<long, long> versions = [];
+        while (await reader.ReadAsync(ct))
         {
-            writer
-                .Append($" WHERE d.{id} = ")
-                .AppendParameter(HydrationSqlConventions.SingleDocumentIdParameterName);
+            versions.Add(reader.GetInt64(0), reader.GetInt64(1));
         }
-        else
-        {
-            writer
-                .Append(" INNER JOIN ")
-                .AppendRelation(keysetTable.Table)
-                .Append($" k ON d.{id} = k.")
-                .AppendQuoted(keysetTable.DocumentIdColumnName.Value);
-        }
-        return writer.AppendLine(";").ToString();
+        return versions;
     }
 }

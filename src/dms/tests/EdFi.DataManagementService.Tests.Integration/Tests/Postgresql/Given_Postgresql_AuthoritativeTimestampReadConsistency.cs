@@ -25,6 +25,20 @@ public sealed class Given_Postgresql_AuthoritativeTimestampReadConsistency : Pos
     [TestCase(false, true)]
     [TestCase(true, false)]
     [TestCase(true, true)]
+    public Task It_retries_a_commit_between_leading_versions_and_owner_metadata(bool page, bool restamp) =>
+        AuthoritativeTimestampReadConsistencyScenario.RunAsync(
+            Harness,
+            false,
+            page,
+            restamp,
+            false,
+            beforeMetadata: true
+        );
+
+    [TestCase(false, false)]
+    [TestCase(false, true)]
+    [TestCase(true, false)]
+    [TestCase(true, true)]
     public Task It_reads_a_committed_state_after_target_selection(bool page, bool restamp) =>
         AuthoritativeTimestampReadConsistencyScenario.RunAsync(Harness, false, page, restamp, false);
 

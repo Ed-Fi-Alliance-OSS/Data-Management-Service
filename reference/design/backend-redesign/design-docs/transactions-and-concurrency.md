@@ -613,9 +613,15 @@ and descriptor delete-target lookup select document identity/version only; they 
 query an owner just to satisfy a shared timestamp contract.
 
 Ordinary hydration obtains owner timestamps in the existing metadata SELECT for the full keyset.
-Standalone hydration finishes each batch with a document-only version fence and retries the whole
-acquisition on drift or disappearance, up to three attempts; exhaustion fails rather than serving
-mixed metadata/content. GET-by-id uses the hydrated metadata, not stale pre-hydration lookup stamps.
+Standalone hydration captures document-only baseline versions after keyset materialization and before
+any owner metadata or content SELECT, then captures document-only versions again after all representation
+queries. Baseline, joined metadata, and final versions must agree for every returned document; missing
+boundary versions or drift retry the whole acquisition, up to three attempts. Both checks stay inside
+the existing batch and share one version-select emitter. Exhaustion fails rather than serving mixed
+metadata/content. The leading check is necessary under SQL Server locking `READ COMMITTED` with
+`READ_COMMITTED_SNAPSHOT OFF`: the metadata join alone can observe an old owner timestamp and a new
+document version across a committed write. A matching joined and final version does not bracket
+acquisition of the owner timestamp. RCSI remains optional for relational-only reads. GET-by-id uses the hydrated metadata, not stale pre-hydration lookup stamps.
 Descriptor body and timestamp are selected together; candidate-to-rehydration paths use the
 reread row's metadata. These rules apply to meaningful writes and representation restamps.
 Session-scoped write hydration retains its existing transactional locking contract.

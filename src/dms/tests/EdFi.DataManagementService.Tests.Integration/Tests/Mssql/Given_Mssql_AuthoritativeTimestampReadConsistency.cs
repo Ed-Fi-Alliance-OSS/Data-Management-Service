@@ -3,18 +3,55 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using EdFi.DataManagementService.Tests.Integration.Mssql;
 using EdFi.DataManagementService.Tests.Integration.Scenarios;
+using FluentAssertions;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
 
-public sealed class Given_Mssql_AuthoritativeTimestampReadConsistency : MssqlApiIntegrationTestBase
+[TestFixture(true)]
+[TestFixture(false)]
+public sealed class Given_Mssql_AuthoritativeTimestampReadConsistency(bool readCommittedSnapshot)
+    : MssqlApiIntegrationTestBase
 {
     protected override FixtureKey Fixture => FixtureKey.CompactDescriptorResources;
     protected override bool EnableDocumentCacheReadAcceleration => false;
     protected override bool MatchProductionWriteIsolation => true;
+
+    protected override async Task<string> LeaseDatabaseAsync(FixtureContext fixture)
+    {
+        string connectionString = await base.LeaseDatabaseAsync(fixture);
+        string databaseName = new SqlConnectionStringBuilder(connectionString).InitialCatalog;
+        // The base fixture restores both isolation options before returning this lease to the pool.
+        await MssqlTestDatabaseHelper.ExecuteAdminNonQueryAsync(
+            $"ALTER DATABASE {MssqlTestDatabaseHelper.QuoteIdentifier(databaseName)} SET READ_COMMITTED_SNAPSHOT {(readCommittedSnapshot ? "ON" : "OFF")} WITH ROLLBACK IMMEDIATE;"
+        );
+        await using SqlConnection connection = new(connectionString);
+        await connection.OpenAsync();
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT is_read_committed_snapshot_on FROM sys.databases WHERE database_id = DB_ID();";
+        Convert.ToBoolean(await command.ExecuteScalarAsync()).Should().Be(readCommittedSnapshot);
+        return connectionString;
+    }
+
+    [TestCase(false, false)]
+    [TestCase(false, true)]
+    [TestCase(true, false)]
+    [TestCase(true, true)]
+    public Task It_retries_a_commit_between_leading_versions_and_owner_metadata(bool page, bool restamp) =>
+        AuthoritativeTimestampReadConsistencyScenario.RunAsync(
+            Harness,
+            false,
+            page,
+            restamp,
+            false,
+            beforeMetadata: true
+        );
 
     protected override void CustomizeServices(
         IServiceCollection services,

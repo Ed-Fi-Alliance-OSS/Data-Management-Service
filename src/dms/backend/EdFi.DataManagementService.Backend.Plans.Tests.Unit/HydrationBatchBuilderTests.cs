@@ -1583,6 +1583,45 @@ public class Given_HydrationBatchBuilder_With_Document_Reference_Lookup_Plan
             ),
         ];
 
+    [TestCase(SqlDialect.Pgsql, false)]
+    [TestCase(SqlDialect.Pgsql, true)]
+    [TestCase(SqlDialect.Mssql, false)]
+    [TestCase(SqlDialect.Mssql, true)]
+    public void It_should_bracket_all_representation_queries_with_document_versions(
+        SqlDialect dialect,
+        bool fastPath
+    )
+    {
+        var plan = BuildTestReadPlan(
+            dialect,
+            BuildDescriptorPlans()
+                .Select(projection =>
+                    projection with
+                    {
+                        SelectBySingleDocumentSql = projection.SelectByKeysetSql,
+                    }
+                )
+                .ToArray(),
+            BuildLookupPlan() with
+            {
+                SelectBySingleDocumentSql = LookupSqlMarker,
+            },
+            includeSingleDocumentSql: true
+        );
+        string batch = HydrationBatchBuilder.BuildConsistent(
+            plan,
+            new PageKeysetSpec.Single(42),
+            dialect,
+            new HydrationExecutionOptions(UseSingleDocumentFastPath: fastPath)
+        );
+        int leading = batch.IndexOf("SELECT d.", StringComparison.Ordinal);
+        int trailing = batch.LastIndexOf("SELECT d.", StringComparison.Ordinal);
+        leading.Should().BeLessThan(batch.IndexOf("ContentLastModifiedAt", StringComparison.Ordinal));
+        AssertAppearsInOrder(batch, FirstDescriptorSqlMarker, SecondDescriptorSqlMarker, LookupSqlMarker);
+        trailing.Should().BeGreaterThan(batch.IndexOf(LookupSqlMarker, StringComparison.Ordinal));
+        batch[leading..(batch.IndexOf(';', leading) + 1)].Should().Be(batch[trailing..].Trim());
+    }
+
     [Test]
     public void It_should_emit_lookup_sql_after_descriptor_projections_when_plan_carries_lookup()
     {

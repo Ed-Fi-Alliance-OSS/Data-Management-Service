@@ -51,17 +51,20 @@ public static class HydrationBatchBuilder
     private readonly record struct SingleDocumentBatchCacheKey(
         SqlDialect Dialect,
         bool IncludeDescriptorProjection,
-        bool IncludeDocumentReferenceLookup
+        bool IncludeDocumentReferenceLookup,
+        bool IncludeVersionFences
     )
     {
         public static SingleDocumentBatchCacheKey From(
             IPlanSqlDialect planDialect,
-            HydrationExecutionOptions executionOptions
+            HydrationExecutionOptions executionOptions,
+            bool includeVersionFences
         ) =>
             new(
                 planDialect.Dialect,
                 executionOptions.IncludeDescriptorProjection,
-                executionOptions.IncludeDocumentReferenceLookup
+                executionOptions.IncludeDocumentReferenceLookup,
+                includeVersionFences
             );
     }
 
@@ -88,6 +91,25 @@ public static class HydrationBatchBuilder
         PageKeysetSpec keyset,
         SqlDialect dialect,
         HydrationExecutionOptions executionOptions
+    ) => Build(plan, keyset, dialect, executionOptions, includeVersionFences: false);
+
+    /// <summary>
+    /// Builds standalone hydration with document-only version selects before owner metadata and
+    /// after all representation queries. Session-scoped write batches keep their existing shape.
+    /// </summary>
+    internal static string BuildConsistent(
+        ResourceReadPlan plan,
+        PageKeysetSpec keyset,
+        SqlDialect dialect,
+        HydrationExecutionOptions executionOptions
+    ) => Build(plan, keyset, dialect, executionOptions, includeVersionFences: true);
+
+    private static string Build(
+        ResourceReadPlan plan,
+        PageKeysetSpec keyset,
+        SqlDialect dialect,
+        HydrationExecutionOptions executionOptions,
+        bool includeVersionFences
     )
     {
         ArgumentNullException.ThrowIfNull(plan);
@@ -98,12 +120,25 @@ public static class HydrationBatchBuilder
 
         if (ShouldUseSingleDocumentBatch(keyset, planDialect, executionOptions))
         {
-            return GetOrBuildSingleDocumentBatch(plan, planDialect, sqlDialect, executionOptions);
+            return GetOrBuildSingleDocumentBatch(
+                plan,
+                planDialect,
+                sqlDialect,
+                executionOptions,
+                includeVersionFences
+            );
         }
 
         var writer = new SqlWriter(sqlDialect);
 
-        return BuildExistingKeysetBatch(plan, keyset, planDialect, writer, executionOptions);
+        return BuildExistingKeysetBatch(
+            plan,
+            keyset,
+            planDialect,
+            writer,
+            executionOptions,
+            includeVersionFences: includeVersionFences
+        );
     }
 
     /// <summary>
@@ -208,10 +243,11 @@ public static class HydrationBatchBuilder
         ResourceReadPlan plan,
         IPlanSqlDialect planDialect,
         ISqlDialect sqlDialect,
-        HydrationExecutionOptions executionOptions
+        HydrationExecutionOptions executionOptions,
+        bool includeVersionFences = false
     )
     {
-        var cacheKey = SingleDocumentBatchCacheKey.From(planDialect, executionOptions);
+        var cacheKey = SingleDocumentBatchCacheKey.From(planDialect, executionOptions, includeVersionFences);
         var cacheForPlan = _singleDocumentBatchCache.GetValue(
             plan,
             static _ => new ConcurrentDictionary<SingleDocumentBatchCacheKey, Lazy<string>>()
@@ -249,7 +285,8 @@ public static class HydrationBatchBuilder
         IPlanSqlDialect planDialect,
         SqlWriter writer,
         HydrationExecutionOptions executionOptions,
-        string? singleRowGuardPredicateSql = null
+        string? singleRowGuardPredicateSql = null,
+        bool includeVersionFences = false
     )
     {
         // 1. Create keyset temp table
@@ -272,6 +309,11 @@ public static class HydrationBatchBuilder
         {
             writer.AppendLine(PlanSqlStatementText.AsTerminatedStatement(queryWithCount.Plan.TotalCountSql));
             writer.AppendLine();
+        }
+
+        if (includeVersionFences)
+        {
+            AppendDocumentVersions(writer, plan.KeysetTable, singleDocument: false);
         }
 
         // 4. Document metadata select
@@ -310,6 +352,11 @@ public static class HydrationBatchBuilder
             writer.AppendLine();
         }
 
+        if (includeVersionFences)
+        {
+            AppendDocumentVersions(writer, plan.KeysetTable, singleDocument: false);
+        }
+
         return writer.ToString();
     }
 
@@ -320,6 +367,11 @@ public static class HydrationBatchBuilder
         SingleDocumentBatchCacheKey cacheKey
     )
     {
+        if (cacheKey.IncludeVersionFences)
+        {
+            AppendDocumentVersions(writer, plan.KeysetTable, singleDocument: true);
+        }
+
         // 1. Document metadata select
         planDialect.AppendSingleDocumentMetadataSelect(
             writer,
@@ -391,7 +443,42 @@ public static class HydrationBatchBuilder
             writer.AppendLine();
         }
 
+        if (cacheKey.IncludeVersionFences)
+        {
+            AppendDocumentVersions(writer, plan.KeysetTable, singleDocument: true);
+        }
+
         return writer.ToString();
+    }
+
+    private static void AppendDocumentVersions(
+        SqlWriter writer,
+        KeysetTableContract keysetTable,
+        bool singleDocument
+    )
+    {
+        string id = writer.Dialect.QuoteIdentifier("DocumentId");
+        string version = writer.Dialect.QuoteIdentifier("ContentVersion");
+        writer
+            .AppendLine()
+            .Append($"SELECT d.{id}, d.{version} FROM ")
+            .AppendTable(new(new("dms"), "Document"))
+            .Append(" d");
+        if (singleDocument)
+        {
+            writer
+                .Append($" WHERE d.{id} = ")
+                .AppendParameter(HydrationSqlConventions.SingleDocumentIdParameterName);
+        }
+        else
+        {
+            writer
+                .Append(" INNER JOIN ")
+                .AppendRelation(keysetTable.Table)
+                .Append($" k ON d.{id} = k.")
+                .AppendQuoted(keysetTable.DocumentIdColumnName.Value);
+        }
+        writer.AppendLine(";").AppendLine();
     }
 
     private static string RequireSingleDocumentSql(

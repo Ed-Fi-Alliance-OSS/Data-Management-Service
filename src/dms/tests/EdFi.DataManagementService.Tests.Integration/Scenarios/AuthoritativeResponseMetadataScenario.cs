@@ -280,12 +280,21 @@ internal static class AuthoritativeResponseMetadataScenario
             metadata.Should().Contain("r.ContentLastModifiedAt");
             metadata.Should().Contain("JOIN edfi.CompactDescriptorItem r ON r.DocumentId = d.DocumentId");
             metadata.Should().NotContain("d.ContentLastModifiedAt");
-            string fence = sql.Split(';')
-                .Single(statement =>
+            string[] fences = sql.Split(';')
+                .Where(statement =>
                     statement.Contains("FROM dms.Document d", StringComparison.Ordinal)
                     && !statement.Contains("ContentLastModifiedAt", StringComparison.Ordinal)
-                );
-            fence.Should().Contain("d.ContentVersion").And.NotContain("edfi.");
+                )
+                .Select(statement => statement.Trim())
+                .ToArray();
+            fences.Should().HaveCount(2);
+            fences[0].Should().Be(fences[1]).And.Contain("d.ContentVersion").And.NotContain("edfi.");
+            sql.IndexOf(fences[0], StringComparison.Ordinal)
+                .Should()
+                .BeLessThan(sql.IndexOf(metadata, StringComparison.Ordinal));
+            sql.LastIndexOf(fences[1], StringComparison.Ordinal)
+                .Should()
+                .BeGreaterThan(sql.IndexOf(metadata, StringComparison.Ordinal));
             for (int i = 0; i < size; i++)
             {
                 Stamp stamp = await ReadStampAsync(harness, resources[i]);
