@@ -21,7 +21,8 @@ internal static class DocumentCacheOwnerCoherenceScenario
         SqlDialect dialect,
         bool descriptor,
         bool initiallyMissing,
-        string finalState
+        string finalState,
+        bool afterDocumentRead = false
     )
     {
         string Q(string name) => dialect == SqlDialect.Pgsql ? $"\"{name}\"" : $"[{name}]";
@@ -69,8 +70,10 @@ internal static class DocumentCacheOwnerCoherenceScenario
         var mappingSet = descriptor
             ? DocumentCacheMaterializerDescriptorMappingSet.Create(dialect)
             : DocumentCacheMaterializerCoherenceMappingSet.Create(dialect);
-        var store = new AmbientDocumentCacheMaterializationDataStore(executor, new CapturedHydrator());
-        var gate = new RereadGate(new DocumentCacheSourceMetadataReader(store));
+        var store = new RereadDataStoreGate(
+            new AmbientDocumentCacheMaterializationDataStore(executor, new CapturedHydrator())
+        );
+        var gate = new RereadGate(new DocumentCacheSourceMetadataReader(store), store, afterDocumentRead);
         var materializer = new DocumentCacheMaterializer(
             gate,
             new DocumentCacheDescriptorHydrator(store),
@@ -99,20 +102,23 @@ internal static class DocumentCacheOwnerCoherenceScenario
                 await pending;
             }
             arrived.Should().BeSameAs(gate.Arrived.Task, "materialization must reach its coherence reread");
-            if (!initiallyMissing)
-            {
-                await Execute(deleteOwner);
-            }
-            if (finalState == "Deleted")
-            {
-                await Execute($"DELETE FROM {document} WHERE {Q("DocumentId")} = 980101;");
-            }
-            else if (finalState == "Changed")
-            {
-                await Execute(
-                    $"UPDATE {document} SET {Q("ContentVersion")} = 223 WHERE {Q("DocumentId")} = 980101;"
+            // Canonical deletion removes both rows atomically before the paused owner query resumes.
+            await using var transaction = await connection.BeginTransactionAsync(watchdog.Token);
+            await using var mutation = connection.CreateCommand();
+            mutation.Transaction = transaction;
+            mutation.CommandText =
+                deleteOwner
+                + (
+                    finalState switch
+                    {
+                        "Deleted" => $"DELETE FROM {document} WHERE {Q("DocumentId")} = 980101;",
+                        "Changed" =>
+                            $"UPDATE {document} SET {Q("ContentVersion")} = 223 WHERE {Q("DocumentId")} = 980101;",
+                        _ => "",
+                    }
                 );
-            }
+            await mutation.ExecuteNonQueryAsync(watchdog.Token);
+            await transaction.CommitAsync(watchdog.Token);
         }
         finally
         {
@@ -142,6 +148,11 @@ internal static class DocumentCacheOwnerCoherenceScenario
                 );
         }
 
+        if (afterDocumentRead)
+        {
+            store.DocumentReadCount.Should().Be(3, "only one document reread follows the missing owner");
+        }
+
         if (descriptor)
         {
             await using var command = connection.CreateCommand();
@@ -151,13 +162,14 @@ internal static class DocumentCacheOwnerCoherenceScenario
         }
     }
 
-    private sealed class RereadGate(IDocumentCacheSourceMetadataReader inner)
-        : IDocumentCacheSourceMetadataReader
+    private sealed class RereadGate(
+        IDocumentCacheSourceMetadataReader inner,
+        RereadDataStoreGate store,
+        bool afterDocumentRead
+    ) : IDocumentCacheSourceMetadataReader
     {
-        public TaskCompletionSource Arrived { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public TaskCompletionSource Release { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Arrived => store.Arrived;
+        public TaskCompletionSource Release => store.Release;
 
         public Task<DocumentCacheSourceMetadataReadResult> ReadAsync(
             DocumentCacheMaterializationRequest request,
@@ -169,10 +181,61 @@ internal static class DocumentCacheOwnerCoherenceScenario
             CancellationToken cancellationToken = default
         )
         {
-            Arrived.TrySetResult();
-            await Release.Task.WaitAsync(cancellationToken);
+            if (afterDocumentRead)
+            {
+                store.PauseAfterDocumentRead = true;
+            }
+            else
+            {
+                Arrived.TrySetResult();
+                await Release.Task.WaitAsync(cancellationToken);
+            }
             return await inner.ReadCurrentAsync(request, cancellationToken);
         }
+    }
+
+    private sealed class RereadDataStoreGate(IDocumentCacheMaterializationDataStore inner)
+        : IDocumentCacheMaterializationDataStore
+    {
+        public SqlDialect Dialect => inner.Dialect;
+        public bool PauseAfterDocumentRead { get; set; }
+        public int DocumentReadCount { get; private set; }
+        public TaskCompletionSource Arrived { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Release { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<TResult> ExecuteReaderAsync<TResult>(
+            DocumentCacheMaterializationRequest request,
+            RelationalCommand command,
+            Func<IRelationalCommandReader, CancellationToken, Task<TResult>> readAsync,
+            CancellationToken cancellationToken = default
+        )
+        {
+            var result = await inner.ExecuteReaderAsync(request, command, readAsync, cancellationToken);
+            if (
+                command.CommandText.Contains("DocumentUuid", StringComparison.Ordinal)
+                && !command.CommandText.Contains("ContentLastModifiedAt", StringComparison.Ordinal)
+            )
+            {
+                DocumentReadCount++;
+                if (PauseAfterDocumentRead)
+                {
+                    PauseAfterDocumentRead = false;
+                    Arrived.TrySetResult();
+                    await Release.Task.WaitAsync(cancellationToken);
+                }
+            }
+            return result;
+        }
+
+        public Task<HydratedPage> HydrateAsync(
+            DocumentCacheMaterializationRequest request,
+            ResourceReadPlan plan,
+            PageKeysetSpec keyset,
+            HydrationExecutionOptions executionOptions,
+            CancellationToken cancellationToken = default
+        ) => inner.HydrateAsync(request, plan, keyset, executionOptions, cancellationToken);
     }
 
     private sealed class CapturedHydrator : IDocumentHydrator

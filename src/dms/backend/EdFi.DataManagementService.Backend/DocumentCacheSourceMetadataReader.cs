@@ -244,6 +244,16 @@ internal sealed class DocumentCacheSourceMetadataReader(
 
         var timestamp = await ReadOwnerTimestampAsync(request, source, cancellationToken)
             .ConfigureAwait(false);
+        if (timestamp is null)
+        {
+            // A canonical delete may have committed after the document read but before the owner read.
+            // Refresh document metadata so coherence checks distinguish deletion or drift from an orphan.
+            var current = await ReadDocumentAsync(request, cancellationToken).ConfigureAwait(false);
+            return current is null
+                ? DocumentCacheCurrentSourceMetadataReadResult.MissingSource.Instance
+                : new DocumentCacheCurrentSourceMetadataReadResult.Found(current);
+        }
+
         return new DocumentCacheCurrentSourceMetadataReadResult.Found(
             source with
             {

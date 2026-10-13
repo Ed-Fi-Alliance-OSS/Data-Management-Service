@@ -148,10 +148,23 @@ public class Given_Postgresql_DocumentCacheMaterializer_Coherence
     [TestCase(true, true, "Stable")]
     [TestCase(true, true, "Deleted")]
     [TestCase(true, true, "Changed")]
+    [TestCase(false, false, "Stable", true)]
+    [TestCase(false, false, "Deleted", true)]
+    [TestCase(false, false, "Changed", true)]
+    [TestCase(false, true, "Stable", true)]
+    [TestCase(false, true, "Deleted", true)]
+    [TestCase(false, true, "Changed", true)]
+    [TestCase(true, false, "Stable", true)]
+    [TestCase(true, false, "Deleted", true)]
+    [TestCase(true, false, "Changed", true)]
+    [TestCase(true, true, "Stable", true)]
+    [TestCase(true, true, "Deleted", true)]
+    [TestCase(true, true, "Changed", true)]
     public async Task It_classifies_owner_absence_across_a_synchronized_reread(
         bool descriptor,
         bool initiallyMissing,
-        string finalState
+        string finalState,
+        bool afterDocumentRead = false
     )
     {
         await using var connection = await _dataSource.OpenConnectionAsync();
@@ -165,7 +178,8 @@ public class Given_Postgresql_DocumentCacheMaterializer_Coherence
             SqlDialect.Pgsql,
             descriptor,
             initiallyMissing,
-            finalState
+            finalState,
+            afterDocumentRead
         );
     }
 
