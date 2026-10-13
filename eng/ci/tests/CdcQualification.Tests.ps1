@@ -5,6 +5,46 @@
 
 #Requires -Version 7.5
 
+Describe 'CDC qualification PostgreSQL image selection' {
+    BeforeAll {
+        $script:postgresqlImageScript = Join-Path $PSScriptRoot '../Get-CdcQualificationPostgresqlImage.ps1'
+    }
+    It 'uses the checked-in Compose pin even when the process specifies a legacy image' {
+        $savedImage = $env:POSTGRES_IMAGE
+        try {
+            $env:POSTGRES_IMAGE = 'postgres:16'
+            $compose = Get-Content (Join-Path $PSScriptRoot '../../docker-compose/postgresql.yml') -Raw
+            $expected = [regex]::Match($compose, '\$\{POSTGRES_IMAGE:-([^}]+)\}').Groups[1].Value
+            $actual = & $script:postgresqlImageScript
+            $actual | Should -Be $expected
+            $pin = [regex]::Match($actual, '^postgres:(?<major>[0-9]+)[^@]*@sha256:[a-f0-9]{64}$')
+            $pin.Success | Should -BeTrue
+            [int]$pin.Groups['major'].Value | Should -BeGreaterOrEqual 18
+        } finally {
+            $env:POSTGRES_IMAGE = $savedImage
+        }
+    }
+    It 'rejects a <Fault> Compose default before any image pull' -ForEach @(
+        @{ Fault = 'legacy version'; Image = 'postgres:16@sha256:' + ('a' * 64) },
+        @{ Fault = 'version below the floor'; Image = 'postgres:17@sha256:' + ('a' * 64) },
+        @{ Fault = 'missing digest'; Image = 'postgres:18.6-alpine' },
+        @{ Fault = 'malformed digest'; Image = 'postgres:18.6-alpine@sha256:invalid' },
+        @{ Fault = 'unversioned tag'; Image = 'postgres:latest@sha256:' + ('a' * 64) }
+    ) {
+        $composePath = Join-Path $TestDrive 'postgresql.yml'
+        ('services:' + "`n  db:`n    image: " + '${POSTGRES_IMAGE:-' + $Image + '}') |
+            Set-Content -LiteralPath $composePath
+        { & $script:postgresqlImageScript -ComposeFile $composePath } |
+            Should -Throw '*requires a digest-pinned PostgreSQL 18 or later*'
+    }
+    It 'rejects a missing Compose default' {
+        $composePath = Join-Path $TestDrive 'postgresql.yml'
+        'services: {}' | Set-Content -LiteralPath $composePath
+        { & $script:postgresqlImageScript -ComposeFile $composePath } |
+            Should -Throw '*requires a digest-pinned PostgreSQL 18 or later*'
+    }
+}
+
 Describe 'CDC qualification image pulls' {
     BeforeAll {
         Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force
@@ -583,9 +623,10 @@ Describe 'CDC qualification CI scheduling' {
         $script:scheduledJob | Should -Match 'timeout-minutes: 130'
         $script:scheduledJob | Should -Match 'fail-fast: false'
         $script:scheduledJob | Should -Not -Match 'continue-on-error:'
-        foreach ($image in @('REDPANDA', 'POSTGRES', 'SQLSERVER_2025')) {
+        foreach ($image in @('REDPANDA', 'SQLSERVER_2025')) {
             $script:scheduledJob | Should -Match "CDC_CONNECTOR_TEMPLATE_$($image)_IMAGE:"
         }
+        $script:scheduledJob | Should -Match 'CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE=\$image'
         $script:scheduledJob | Should -Match 'Invoke-CdcQualification.ps1 -Lane.*-Suite.*-PullImages'
         $script:scheduledJob | Should -Match "Status = 'EnvironmentUnavailable'"
         $script:scheduledJob | Should -Match 'if: always\(\)'
@@ -606,6 +647,29 @@ Describe 'CDC qualification CI scheduling' {
             (Get-Content $env:GITHUB_ENV) | Should -Be "CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE=$($qualified.image)"
         }
         finally {
+            Pop-Location
+            $env:GITHUB_ENV = $savedGithubEnv
+        }
+    }
+    It 'configures the <Workflow> PostgreSQL image from the checked-in Compose pin' -ForEach @(
+        @{ Workflow = 'nightly-cdc-qualification.yml'; JobId = 'run-cdc-qualification'; BeforeOperation = 'Start packaged-history PostgreSQL' },
+        @{ Workflow = 'on-dms-pullrequest.yml'; JobId = 'run-backend-cdc-connector-template-smoke-tests'; BeforeOperation = 'Validate CDC Connector Template Smoke Settings' }
+    ) {
+        $workflow = Get-Content (Join-Path $PSScriptRoot "../../../.github/workflows/$Workflow") -Raw
+        $job = [regex]::Match($workflow, "(?ms)^  ${JobId}:.*?(?=^  [a-z][a-z0-9-]+:|\z)").Value
+        $job | Should -Not -Match 'vars.CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE'
+        $configure = [regex]::Match($job, '(?ms)^      - name: Configure PostgreSQL qualification image\r?\n        run: \|\r?\n(?<run>(?:          [^\r\n]*\r?\n)+)').Groups['run'].Value
+        $configure | Should -Not -BeNullOrEmpty
+        $job.IndexOf('Configure PostgreSQL qualification image') | Should -BeLessThan $job.IndexOf($BeforeOperation)
+        $savedGithubEnv = $env:GITHUB_ENV
+        try {
+            $env:GITHUB_ENV = Join-Path $TestDrive 'postgresql-github-env'
+            Remove-Item -LiteralPath $env:GITHUB_ENV -ErrorAction SilentlyContinue
+            Push-Location (Join-Path $PSScriptRoot '../../..')
+            $expected = ./eng/ci/Get-CdcQualificationPostgresqlImage.ps1
+            & ([scriptblock]::Create($configure))
+            (Get-Content $env:GITHUB_ENV) | Should -Be "CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE=$expected"
+        } finally {
             Pop-Location
             $env:GITHUB_ENV = $savedGithubEnv
         }

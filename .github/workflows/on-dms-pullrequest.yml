@@ -1690,7 +1690,6 @@ jobs:
       CDC_CONNECTOR_TEMPLATE_KEEP_CONTAINERS: "false"
       CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE }}
       CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE }}
-      CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE }}
       CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE }}
     steps:
       - name: Checkout the Repo
@@ -1706,6 +1705,11 @@ jobs:
         with:
           name: dms-integration-test-assemblies
           path: TestArtifacts/integration-test-assemblies
+
+      - name: Configure PostgreSQL qualification image
+        run: |
+          $image = ./eng/ci/Get-CdcQualificationPostgresqlImage.ps1
+          "CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE=$image" >> $env:GITHUB_ENV
 
       - name: Validate CDC Connector Template Smoke Settings
         run: |
