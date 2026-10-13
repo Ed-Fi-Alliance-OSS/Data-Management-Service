@@ -202,12 +202,63 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
                         ? Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(logs)))
                         : "",
                     Markers = markers
-                        .Where(marker => logs.Contains(marker, StringComparison.Ordinal))
+                        .Where(marker =>
+                            logs.Contains(
+                                marker is "OutOfMemoryError" ? "java.lang.OutOfMemoryError" : marker,
+                                StringComparison.Ordinal
+                            )
+                        )
                         .ToArray(),
+                    JvmMemoryFailureKinds = GetJvmMemoryFailureKinds(logs),
                 },
             },
             cancellationToken
         );
+    }
+
+    internal static string[] GetJvmMemoryFailureKinds(string logs)
+    {
+        // Classify only fixed JVM signals; never publish the rest of an exception/log line.
+        HashSet<string> kinds = [];
+        foreach (string line in logs.Split('\n'))
+        {
+            if (line.Contains("java.lang.OutOfMemoryError", StringComparison.Ordinal))
+            {
+                string kind = line switch
+                {
+                    _ when line.Contains("Java heap space", StringComparison.Ordinal) => "JavaHeapSpace",
+                    _ when line.Contains("GC overhead limit exceeded", StringComparison.Ordinal) =>
+                        "GcOverheadLimit",
+                    _ when line.Contains("Metaspace", StringComparison.Ordinal) => "Metaspace",
+                    _ when line.Contains("Compressed class space", StringComparison.Ordinal) =>
+                        "CompressedClassSpace",
+                    _ when line.Contains("Direct buffer memory", StringComparison.Ordinal)
+                            || line.Contains("bytes of direct buffer memory", StringComparison.Ordinal) =>
+                        "DirectBufferMemory",
+                    _ when line.Contains("unable to create native thread", StringComparison.Ordinal)
+                            || line.Contains(
+                                "unable to create new native thread",
+                                StringComparison.Ordinal
+                            ) => "NativeThreadCreation",
+                    _ when line.Contains("Requested array size exceeds VM limit", StringComparison.Ordinal) =>
+                        "ArraySizeLimit",
+                    _ => "UnclassifiedOutOfMemory",
+                };
+                kinds.Add(kind);
+            }
+            if (
+                line.Contains("Native memory allocation", StringComparison.Ordinal)
+                    && line.Contains("failed", StringComparison.Ordinal)
+                || line.Contains(
+                    "There is insufficient memory for the Java Runtime Environment",
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                kinds.Add("NativeAllocationFailure");
+            }
+        }
+        return kinds.Order(StringComparer.Ordinal).ToArray();
     }
 
     private static async Task WriteConnectEvidenceAsync<T>(T evidence, CancellationToken cancellationToken)

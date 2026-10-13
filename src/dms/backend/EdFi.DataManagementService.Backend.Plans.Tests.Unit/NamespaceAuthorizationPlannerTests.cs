@@ -339,6 +339,48 @@ public class Given_NamespaceAuthorizationPlanner
     }
 
     [Test]
+    public void It_marks_every_check_when_the_root_namespace_column_carries_the_identity_collation()
+    {
+        var resource = RootNamespaceResource();
+        var root = resource.RelationalModel.Root with
+        {
+            Columns =
+            [
+                resource.RelationalModel.Root.Columns.Single() with
+                {
+                    UsesSqlServerIdentityCollation = true,
+                },
+            ],
+        };
+        var flaggedResource = resource with
+        {
+            RelationalModel = resource.RelationalModel with { Root = root, TablesInDependencyOrder = [root] },
+        };
+
+        var outcome = NamespaceAuthorizationPlanner.Plan(
+            flaggedResource,
+            NamespaceAuthorizationOperation.Update,
+            TwoPrefixContext()
+        );
+
+        var plan = outcome.Should().BeOfType<NamespaceAuthorizationPlanOutcome.Plan>().Subject;
+        plan.Checks.Should().HaveCount(2).And.OnlyContain(c => c.NamespaceColumnUsesIdentityCollation);
+    }
+
+    [Test]
+    public void It_leaves_checks_unmarked_when_the_root_namespace_column_has_no_identity_collation()
+    {
+        var outcome = NamespaceAuthorizationPlanner.Plan(
+            RootNamespaceResource(),
+            NamespaceAuthorizationOperation.Update,
+            TwoPrefixContext()
+        );
+
+        var plan = outcome.Should().BeOfType<NamespaceAuthorizationPlanOutcome.Plan>().Subject;
+        plan.Checks.Should().HaveCount(2).And.OnlyContain(c => !c.NamespaceColumnUsesIdentityCollation);
+    }
+
+    [Test]
     public void It_emits_a_plan_when_unrelated_securable_metadata_is_unresolvable_alongside_a_valid_root_namespace()
     {
         // The resource declares a valid root Namespace path plus unrelated Student / Contact /
@@ -602,5 +644,59 @@ public class Given_NamespaceAuthorizationPlanner
         );
 
         outcome.Should().BeOfType<NamespaceAuthorizationPlanOutcome.NoUsableRootColumn>();
+    }
+}
+
+/// <summary>
+/// On the authoritative DS 5.2 SQL Server model, the namespace column the securable-element resolver picks
+/// for a relational resource must be the column the identity-collation pass flagged, or the proposed-value
+/// check loses its identity collation and disagrees with the stored-row check.
+/// </summary>
+[TestFixture]
+public class Given_NamespaceAuthorizationPlanner_On_The_Authoritative_Ds52_Mssql_Model
+{
+    private DerivedRelationalModelSet _modelSet = null!;
+
+    [OneTimeSetUp]
+    public void Setup()
+    {
+        (_modelSet, _) = Ds52FixtureHelper.BuildAndCompile(SqlDialect.Mssql);
+    }
+
+    [TestCase("Assessment")]
+    [TestCase("StudentAssessment")]
+    [TestCase("ObjectiveAssessment")]
+    public void It_marks_identity_namespace_checks(string resourceName)
+    {
+        PlanUpdate(resourceName)
+            .Checks.Should()
+            .HaveCount(2)
+            .And.OnlyContain(check => check.NamespaceColumnUsesIdentityCollation);
+    }
+
+    [Test]
+    public void It_leaves_payload_namespace_checks_unmarked()
+    {
+        PlanUpdate("Credential")
+            .Checks.Should()
+            .HaveCount(2)
+            .And.OnlyContain(check => !check.NamespaceColumnUsesIdentityCollation);
+    }
+
+    private NamespaceAuthorizationPlanOutcome.Plan PlanUpdate(string resourceName)
+    {
+        var resource = _modelSet.ConcreteResourcesInNameOrder.Single(model =>
+            model.RelationalModel.Resource == new QualifiedResourceName("Ed-Fi", resourceName)
+        );
+
+        return NamespaceAuthorizationPlanner
+            .Plan(
+                resource,
+                NamespaceAuthorizationOperation.Update,
+                new RelationalAuthorizationContext([], ["uri://ed-fi.org/"])
+            )
+            .Should()
+            .BeOfType<NamespaceAuthorizationPlanOutcome.Plan>()
+            .Subject;
     }
 }

@@ -54,7 +54,7 @@ env:
   MSSQL_TMPFS_SIZE: "4g"
   MSSQL_GENERATED_DDL_LEASE_STRATEGY: "backup-restore"
   MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY: ${{ github.event.inputs.mssql_generated_ddl_provision_max_concurrency || '2' }}
-  POSTGRES_INTEGRATION_IMAGE: "postgres:16.3-alpine"
+  POSTGRES_INTEGRATION_IMAGE: "postgres:18.6-alpine"
   POSTGRES_CONTAINER_MEMORY: "10g"
   POSTGRES_TMPFS_SIZE: "4g"
   POSTGRES_USE_TMPFS: "true"
@@ -1448,7 +1448,6 @@ jobs:
         uses: ./.github/actions/export-database-container-diagnostics
         with:
           container-name: dms-ci-postgresql
-          data-path: /var/lib/postgresql/data
 
       - name: Teardown PostgreSQL Container
         if: always()
@@ -1522,7 +1521,6 @@ jobs:
         uses: ./.github/actions/export-database-container-diagnostics
         with:
           container-name: dms-ci-postgresql
-          data-path: /var/lib/postgresql/data
 
       - name: Teardown PostgreSQL Container
         if: always()
@@ -1700,7 +1698,6 @@ jobs:
       CDC_CONNECTOR_TEMPLATE_KEEP_CONTAINERS: "false"
       CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE }}
       CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE }}
-      CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE }}
       CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE }}
     steps:
       - name: Checkout the Repo
@@ -1716,6 +1713,11 @@ jobs:
         with:
           name: dms-integration-test-assemblies
           path: TestArtifacts/integration-test-assemblies
+
+      - name: Configure PostgreSQL qualification image
+        run: |
+          $image = ./eng/ci/Get-CdcQualificationPostgresqlImage.ps1
+          "CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE=$image" >> $env:GITHUB_ENV
 
       - name: Validate CDC Connector Template Smoke Settings
         run: |
@@ -1940,8 +1942,21 @@ jobs:
           tmpfs-size: ${{ env.POSTGRES_TMPFS_SIZE }}
           image: ${{ env.POSTGRES_INTEGRATION_IMAGE }}
 
+      # The PostgreSQL platform-compatibility fixtures need a cluster whose template1 is not UTF-8.
+      - name: Start Non-UTF-8 PostgreSQL Container
+        uses: ./.github/actions/start-postgresql-test-container
+        with:
+          container-name: dms-ci-postgresql-latin1
+          container-memory: 2g
+          tmpfs-size: 1g
+          image: ${{ env.POSTGRES_INTEGRATION_IMAGE }}
+          host-port: "5433"
+          initdb-args: --encoding=LATIN1 --locale=C
+
       - name: Run SchemaTools PostgreSQL Integration Tests
         if: success()
+        env:
+          ConnectionStrings__PostgresNonUtf8Admin: "host=localhost;port=5433;username=postgres;database=postgres;pooling=false"
         run: |
           dotnet test ${{ env.SCHEMATOOLS_TEST_ASSEMBLY }} `
             -v normal `
@@ -1967,11 +1982,16 @@ jobs:
         uses: ./.github/actions/export-database-container-diagnostics
         with:
           container-name: dms-ci-postgresql
-          data-path: /var/lib/postgresql/data
 
-      - name: Teardown PostgreSQL Container
+      - name: Export Non-UTF-8 PostgreSQL Logs
+        if: failure()
+        uses: ./.github/actions/export-database-container-diagnostics
+        with:
+          container-name: dms-ci-postgresql-latin1
+
+      - name: Teardown PostgreSQL Containers
         if: always()
-        run: docker rm -f dms-ci-postgresql
+        run: docker rm -f dms-ci-postgresql dms-ci-postgresql-latin1
 
   run-schematools-mssql-integration-tests:
     name: Run SchemaTools MSSQL Integration Tests
@@ -2166,7 +2186,7 @@ jobs:
         id: e2e
         if: success()
         run: |
-          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-${{ matrix.shard }}'
+          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter '(Category=@e2e-ci-shard-${{ matrix.shard }})&(Category!=@MssqlOnly)'
 
       - name: Export DMS E2E Docker Logs
         if: always() && steps.e2e.outcome == 'failure'
@@ -2189,8 +2209,9 @@ jobs:
               if ($container -eq "dms-postgresql") {
                   $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
                   docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
-                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
-                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  $postgresDataPath = docker exec $container printenv PGDATA 2>$null
+                  docker exec $container df -h $postgresDataPath >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh $postgresDataPath >> $postgresDiagnosticsPath 2>&1
               }
           }
         shell: pwsh
@@ -2354,7 +2375,7 @@ jobs:
         env:
           KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
         run: |
-          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1'
+          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter '(Category=@StandardVersion-6_1)&(Category!=@MssqlOnly)'
 
       - name: Export DMS E2E Docker Logs
         if: always() && steps.e2e_ds61.outcome == 'failure'
@@ -2377,8 +2398,9 @@ jobs:
               if ($container -eq "dms-postgresql") {
                   $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
                   docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
-                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
-                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  $postgresDataPath = docker exec $container printenv PGDATA 2>$null
+                  docker exec $container df -h $postgresDataPath >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh $postgresDataPath >> $postgresDiagnosticsPath 2>&1
               }
           }
         shell: pwsh
@@ -2540,7 +2562,7 @@ jobs:
         env:
           KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
         run: |
-          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.cursorpartitions.e2e' -TestFilter 'Category=@CursorPartitionSizing'
+          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.cursorpartitions.e2e' -TestFilter '(Category=@CursorPartitionSizing)&(Category!=@MssqlOnly)'
 
       - name: Export DMS E2E Docker Logs
         if: always() && steps.e2e_partition_sizing.outcome == 'failure'
@@ -2563,8 +2585,9 @@ jobs:
               if ($container -eq "dms-postgresql") {
                   $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
                   docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
-                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
-                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  $postgresDataPath = docker exec $container printenv PGDATA 2>$null
+                  docker exec $container df -h $postgresDataPath >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh $postgresDataPath >> $postgresDiagnosticsPath 2>&1
               }
           }
         shell: pwsh
@@ -2612,8 +2635,9 @@ jobs:
   # SQL Server DMS E2E lane. Mirrors run-e2e-tests but targets the MSSQL datastore engine:
   # -DatabaseEngine mssql composes the .env.mssql overlay onto -EnvironmentFile and swaps mssql.yml
   # for postgresql.yml, so the stack is relational-only (no Kafka / OpenSearch). Rather than the full
-  # four-shard DS 5.2 sweep, this lane runs only the bounded @MssqlRepresentative cross-section across
-  # both identity providers. That filter carries no shard, so RunE2E writes the filtered TRX
+  # four-shard DS 5.2 sweep, this lane runs only the bounded @MssqlRepresentative cross-section plus
+  # the @MssqlOnly engine variants across both identity providers, excluding @PostgresqlOnly; the
+  # PostgreSQL lanes exclude @MssqlOnly. That filter carries no shard, so RunE2E writes the filtered TRX
   # (EdFi.DataManagementService.Tests.E2E.filtered.trx). An always()-guarded engine-correct teardown
   # runs regardless of outcome, and diagnostic artifacts are sanitized before any upload or report.
   run-e2e-tests-mssql:
@@ -2737,7 +2761,7 @@ jobs:
           $diagDir = "${{ github.workspace }}/logs/e2e-mssql-${{ matrix.identityprovider }}"
           New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
           $diagFile = Join-Path $diagDir 'build-dms-setup.log'
-          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category=@MssqlRepresentative' *> $diagFile
+          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter '(Category=@MssqlRepresentative|Category=@MssqlOnly)&(Category!=@PostgresqlOnly)' *> $diagFile
           $buildExitCode = $LASTEXITCODE
           if ($buildExitCode -ne 0) {
               throw "build-dms.ps1 E2ETest failed with exit code $buildExitCode. See the sanitized build-dms-setup.log artifact."
@@ -2958,7 +2982,7 @@ jobs:
           $diagDir = "${{ github.workspace }}/logs/e2e-mssql-ds61"
           New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
           $diagFile = Join-Path $diagDir 'build-dms-setup.log'
-          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1' *> $diagFile
+          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter '(Category=@StandardVersion-6_1)&(Category!=@PostgresqlOnly)' *> $diagFile
           $buildExitCode = $LASTEXITCODE
           if ($buildExitCode -ne 0) {
               throw "build-dms.ps1 E2ETest (DS 6.1) failed with exit code $buildExitCode. See the sanitized build-dms-setup.log artifact."
@@ -3225,8 +3249,9 @@ jobs:
               if ($container -eq "dms-postgresql") {
                   $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
                   docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
-                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
-                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  $postgresDataPath = docker exec $container printenv PGDATA 2>$null
+                  docker exec $container df -h $postgresDataPath >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh $postgresDataPath >> $postgresDiagnosticsPath 2>&1
               }
 
               # Also display DMS logs in the workflow output for easier debugging
@@ -3425,8 +3450,9 @@ jobs:
               if ($container -eq "dms-postgresql") {
                   $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
                   docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
-                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
-                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  $postgresDataPath = docker exec $container printenv PGDATA 2>$null
+                  docker exec $container df -h $postgresDataPath >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh $postgresDataPath >> $postgresDiagnosticsPath 2>&1
               }
 
               # Also display DMS logs in the workflow output for easier debugging
@@ -3927,8 +3953,9 @@ jobs:
             if ($container -eq "dms-postgresql") {
               $postgresDiagnosticsPath = Join-Path $diagnosticsDir "$container.storage.txt"
               docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
-              docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
-              docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+              $postgresDataPath = docker exec $container printenv PGDATA 2>$null
+              docker exec $container df -h $postgresDataPath >> $postgresDiagnosticsPath 2>&1
+              docker exec $container du -sh $postgresDataPath >> $postgresDiagnosticsPath 2>&1
             }
 
             if ($container -eq $dmsContainer) {

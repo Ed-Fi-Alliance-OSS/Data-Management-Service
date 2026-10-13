@@ -305,6 +305,55 @@ public class Given_Mssql_Provisioning_Against_A_Case_Sensitive_Utf8_Database_Col
         }
     }
 
+    /// <summary>
+    /// AC3: generated identity text columns are pinned to the DMS identity collation, independent of the
+    /// case-sensitive database default, while non-identity strings keep the database default.
+    /// </summary>
+    [Test]
+    public void It_pins_identity_columns_to_the_DMS_identity_collation()
+    {
+        AssertProvisionSucceeded();
+
+        const string IdentityCollation = "SQL_Latin1_General_CP1_CI_AS";
+        Dictionary<string, string> expectedCollations = new()
+        {
+            ["testproject.Gadget.GadgetCode"] = IdentityCollation,
+            ["dms.Descriptor.Namespace"] = IdentityCollation,
+            ["dms.Descriptor.CodeValue"] = IdentityCollation,
+            ["dms.Descriptor.Uri"] = IdentityCollation,
+            ["tracked_changes_testproject.Gadget.OldGadgetCode"] = IdentityCollation,
+            ["tracked_changes_testproject.Gadget.NewGadgetCode"] = IdentityCollation,
+            ["testproject.Gadget.Description"] = RepresentativeCollation,
+            ["dms.Descriptor.ShortDescription"] = RepresentativeCollation,
+        };
+
+        using var connection = new SqlConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT s.name + N'.' + t.name + N'.' + c.name, c.collation_name
+            FROM sys.columns c
+            INNER JOIN sys.tables t ON t.object_id = c.object_id
+            INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+            WHERE c.collation_name IS NOT NULL
+            """;
+
+        Dictionary<string, string> actualCollations = new(StringComparer.Ordinal);
+        using (var reader = command.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                actualCollations[reader.GetString(0)] = reader.GetString(1);
+            }
+        }
+
+        actualCollations
+            .Where(entry => expectedCollations.ContainsKey(entry.Key))
+            .Should()
+            .BeEquivalentTo(expectedCollations);
+    }
+
     [Test]
     public void It_rejects_lifecycle_values_under_the_representative_database_collation()
     {

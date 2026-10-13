@@ -130,9 +130,9 @@ internal static class ResultSamples
             ),
             PerfEnvironmentIdentity.Create(
                 PerfServerIdentity.Create(
-                    "PostgreSQL 16.8",
-                    "postgres:16.8-alpine",
-                    "sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+                    "PostgreSQL 18.6",
+                    "postgres:18.6-alpine",
+                    "sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
                     "local volume, not tmpfs",
                     "host=localhost;port=5435;username=postgres;password=REDACTED;"
                         + "database=perf;pooling=true;minimum pool size=10;maximum pool size=50",

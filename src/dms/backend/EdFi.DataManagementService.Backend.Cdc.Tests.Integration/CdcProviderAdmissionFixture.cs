@@ -1043,6 +1043,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         DdlPipelineEmission emission
     ) : ICdcManagedDatabaseProvisioner
     {
+        public void CheckPlatformPreconditions() { }
+
         public bool CreateDatabase()
         {
             using var db = new NpgsqlConnection(admin);

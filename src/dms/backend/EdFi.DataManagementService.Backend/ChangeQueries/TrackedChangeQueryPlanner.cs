@@ -470,7 +470,8 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
             request,
             field.OldColumn
         );
-        // Retain this history consumer's component comparisons under the provider's existing collation.
+        // This history consumer compares components under the column collation: the identity text
+        // collation on SQL Server, the database default on PostgreSQL.
         string descriptorJoinSql =
             $"LEFT JOIN {Quote(_descriptorTable)} {descriptorAlias} ON "
             + $"{descriptorAlias}.{Quote(_descriptorResourceKeyIdColumn)} = {resourceKeyIdParameterName} "

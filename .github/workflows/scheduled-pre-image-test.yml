@@ -72,8 +72,8 @@ jobs:
             # Partition sizing runs per PR in run-e2e-tests-partition-sizing using
             # .env.cursorpartitions.e2e: its MAXIMUM_PAGE_SIZE=2 lets a collection seeded over
             # HTTP span multiple partitions.
-            'postgresql' { '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)' }
-            'mssql' { 'Category=@MssqlRepresentative' }
+            'postgresql' { '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)&(Category!=@MssqlOnly)' }
+            'mssql' { '(Category=@MssqlRepresentative|Category=@MssqlOnly)&(Category!=@PostgresqlOnly)' }
             default { throw 'Unsupported E2E database engine.' }
           }
 

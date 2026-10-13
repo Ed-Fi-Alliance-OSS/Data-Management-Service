@@ -195,8 +195,13 @@ variants:
 
 ```
 build-dms.ps1 E2ETest … -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 \
-  -TestFilter 'Category=@StandardVersion-6_1'
+  -TestFilter '(Category=@StandardVersion-6_1)&(Category!=@MssqlOnly)'
 ```
+
+The SQL Server counterpart (`run-e2e-tests-mssql-ds61`) runs the same scenarios with
+`-DatabaseEngine mssql` and `-TestFilter '(Category=@StandardVersion-6_1)&(Category!=@PostgresqlOnly)'`.
+Every E2E lane excludes the other engine's `@MssqlOnly` / `@PostgresqlOnly` variants; see the
+[E2E README](../src/dms/tests/EdFi.DataManagementService.Tests.E2E/README.md).
 
 Those scenarios carry **no shard tag**, so the 5.2 shard lanes (which filter on a
 `@e2e-ci-shard-N` category) never pick them up, and the 6.1 lane never re-runs the
@@ -242,8 +247,9 @@ Adding a version is the same set of small edits regardless of which version:
    version-coupled features (`XSDMetadata.feature`, `DiscoveryAPI.feature`) — captured from a running
    stack of that version, not hand-written — and add a per-PR lane that runs them with
    `-DataStandardVersion <N.N>` and
-   `-TestFilter 'Category=@StandardVersion-<NN>'` (see *Per-PR E2E scope*
-   above). Give the variants **no** shard category so the default-version shard lanes skip them.
+   `-TestFilter '(Category=@StandardVersion-<NN>)&(Category!=@MssqlOnly)'` on PostgreSQL, or
+   `-TestFilter '(Category=@StandardVersion-<NN>)&(Category!=@PostgresqlOnly)'` on SQL Server
+   (see *Per-PR E2E scope* above). Give the variants **no** shard category so the default-version shard lanes skip them.
 
 Because Data Standard 5.2 is the default, none of these edits change 5.2 behavior:
 new folders, overlays, package entries, and matrix legs sit alongside the existing

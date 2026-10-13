@@ -206,6 +206,23 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# CI opts into fixed child-error metadata; ordinary wrapper behavior is unchanged.
+trap {
+    $failure = $_
+    if ($env:CDC_RUNBOOK_CHILD_FAILURE_PATH) {
+        try {
+            . (Join-Path $PSScriptRoot '../ci/cdc-runbook-diagnostics.ps1')
+            $phase = if ($env:CDC_RUNBOOK_CHILD_FAILURE_PHASE -cin @('Setup', 'Test', 'Teardown')) {
+                $env:CDC_RUNBOOK_CHILD_FAILURE_PHASE
+            } elseif ($d) { 'Teardown' } else { 'Setup' }
+            Write-CdcRunbookChildFailure -Records @($failure) -Phase $phase
+        } catch { # Diagnostic collection must not replace the original failure.
+            Write-Verbose 'CDC qualification child diagnostics could not be collected.'
+        }
+    }
+    throw $failure
+}
+
 if ($v -and -not $d) { throw '-v requires -d.' }
 if ((-not $EnableKafkaCdc -or $d) -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot '.cdc-deployments/dms-published.json'))) {
     Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')

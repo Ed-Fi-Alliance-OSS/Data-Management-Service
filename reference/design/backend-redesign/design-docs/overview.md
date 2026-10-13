@@ -62,9 +62,9 @@ this storage change.
   Every stored descriptor FK targets `DescriptorId`, including copied reference identities,
   collections, extensions and unified keys. Document/RI, UUID, locking, concurrency, cache,
   restamp and paging operations retain `DocumentId`.
-- Descriptor uniqueness uses `(ResourceKeyId, Namespace + '#' + CodeValue)` under the former
-  database-default provider collation: PostgreSQL expression index, SQL Server non-persisted
-  computed `Uri` index. Live descriptor discriminator storage is removed; shared history routes
+- Descriptor uniqueness uses `(ResourceKeyId, Namespace + '#' + CodeValue)`: a PostgreSQL
+  expression index under the database-default collation, and a SQL Server non-persisted computed
+  `Uri` index that inherits the `SQL_Latin1_General_CP1_CI_AS` identity collation of its components. Live descriptor discriminator storage is removed; shared history routes
   by `ResourceKeyId`. Abstract identity discriminators and union-view outputs remain unchanged.
 - Generated natural-key and lowered-URI probes are future work described in
   [natural-key-resolution.md](natural-key-resolution.md), rather than the current RI lookup path.

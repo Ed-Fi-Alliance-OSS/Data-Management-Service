@@ -268,11 +268,12 @@ CREATE INDEX [IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId]
 Both providers retain the single-column document FK with `RESTRICT` on PostgreSQL
 and `NO ACTION` on SQL Server, and the `NO ACTION` resource-key catalog FK. The descriptor stamping trigger rejects a type key that differs
 from the owning document on insert/update. The computed URI is
-non-persisted: its index holds the URI without duplicating it in the base row. Both
-providers preserve the former stored URI's database-default collation. Uniqueness compares
-the unlowered whole URI within `ResourceKeyId`, so distinct component pairs producing the
-same string cannot form separate identities. There is no component-wise unique key,
-`UriLowered`, `LOWER` in the unique expression, or new identity collation. SQL Server
+non-persisted: its index holds the URI without duplicating it in the base row. On SQL Server
+the stored `Namespace` and `CodeValue` carry the DMS identity collation
+(`SQL_Latin1_General_CP1_CI_AS`), which the computed URI inherits; PostgreSQL keeps the
+database-default collation. Uniqueness compares the unlowered whole URI within `ResourceKeyId`,
+so distinct component pairs producing the same string cannot form separate identities. There is
+no component-wise unique key, `UriLowered`, or `LOWER` in the unique expression. SQL Server
 provisioning and runtime writes need the effective indexed-computation SET options described
 in [ddl-generation.md](ddl-generation.md#descriptor-storage-and-runtime-session-options).
 
@@ -1375,17 +1376,14 @@ Alignment note:
 Rules:
 
 - Scalar strings should have `maxLength`. When `maxLength` is omitted, PostgreSQL emits `varchar` (unbounded) and SQL Server emits `nvarchar(max)`.
-- SQL Server `nvarchar(n)` / `nvarchar(max)` are base storage types. The later natural-key
-  workstream proposes the following identity-column overlay, which is not emitted by the
-  current DMS-1404 baseline. Its generated string identity columns would add:
-  `COLLATE SQL_Latin1_General_CP1_CI_AS`. This column-role overlay applies to canonical natural-key
+- SQL Server `nvarchar(n)` / `nvarchar(max)` are base storage types. Generated string identity
+  columns add an identity-column overlay: `COLLATE SQL_Latin1_General_CP1_CI_AS`. This column-role overlay applies to canonical natural-key
   string columns on resource roots, flattened `RefKey` string copies, abstract-identity string columns,
   descriptor identity source/copy columns, tracked-change old/new string copies whose origin includes
   identity, and local string identity members used by child or extension collection uniqueness. Ordinary
   non-identity scalar payload strings continue to inherit the database default unless another explicit
-  contract applies. Current descriptor components, reconstructed URI uniqueness and history
-  snapshots retain the former provider-default collation; that future overlay is not a
-  compact-storage requirement.
+  contract applies. The SQL Server computed descriptor `Uri`, and therefore its uniqueness index,
+  inherits the overlay from its `Namespace` and `CodeValue` components.
 - Decimals must have `(totalDigits, decimalPlaces)` from `decimalPropertyValidationInfos`; missing info is an error.
 - `date-time` values are treated as UTC instants at the application boundary. SQL Server storage uses `datetime2(7)` (no offset), so any incoming offset is normalized to UTC at write time.
 

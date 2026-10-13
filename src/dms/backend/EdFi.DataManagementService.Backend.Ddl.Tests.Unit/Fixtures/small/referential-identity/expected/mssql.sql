@@ -236,8 +236,8 @@ CREATE TABLE [dms].[Descriptor]
     [DescriptorId] int IDENTITY(1,1) NOT NULL,
     [DocumentId] bigint NOT NULL,
     [ResourceKeyId] smallint NOT NULL,
-    [Namespace] nvarchar(255) NOT NULL,
-    [CodeValue] nvarchar(50) NOT NULL,
+    [Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     [ShortDescription] nvarchar(75) NOT NULL,
     [Description] nvarchar(1024) NULL,
     [EffectiveBeginDate] date NULL,
@@ -768,7 +768,7 @@ CREATE TABLE [edfi].[DecimalRefResource]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_DecimalRefResource_ContentVersion] DEFAULT 0,
     [DecimalKeyReference_DocumentId] bigint NOT NULL,
     [DecimalKeyReference_DecimalKey] decimal(9,2) NOT NULL,
-    [RefResourceId] nvarchar(64) NOT NULL,
+    [RefResourceId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     CONSTRAINT [PK_DecimalRefResource] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_DecimalRefResource_NK] UNIQUE ([RefResourceId], [DecimalKeyReference_DocumentId]),
     CONSTRAINT [CK_DecimalRefResource_DecimalKeyReference_AllNone] CHECK (([DecimalKeyReference_DocumentId] IS NULL AND [DecimalKeyReference_DecimalKey] IS NULL) OR ([DecimalKeyReference_DocumentId] IS NOT NULL AND [DecimalKeyReference_DecimalKey] IS NOT NULL))
@@ -781,9 +781,9 @@ CREATE TABLE [edfi].[EdOrgDependentChildResource]
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EdOrgDependentChildResource_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EdOrgDependentChildResource_ContentVersion] DEFAULT 0,
     [EdOrgDependentResourceReference_DocumentId] bigint NOT NULL,
-    [EdOrgDependentResourceReference_EdOrgDependentResourceId] nvarchar(64) NOT NULL,
+    [EdOrgDependentResourceReference_EdOrgDependentResourceId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     [EdOrgDependentResourceReference_EducationOrganizationId] int NOT NULL,
-    [EdOrgDependentChildResourceId] nvarchar(64) NOT NULL,
+    [EdOrgDependentChildResourceId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     CONSTRAINT [PK_EdOrgDependentChildResource] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_EdOrgDependentChildResource_NK] UNIQUE ([EdOrgDependentChildResourceId], [EdOrgDependentResourceReference_DocumentId]),
     CONSTRAINT [CK_EdOrgDependentChildResource_EdOrgDependentResourceReference_AllNone] CHECK (([EdOrgDependentResourceReference_DocumentId] IS NULL AND [EdOrgDependentResourceReference_EdOrgDependentResourceId] IS NULL AND [EdOrgDependentResourceReference_EducationOrganizationId] IS NULL) OR ([EdOrgDependentResourceReference_DocumentId] IS NOT NULL AND [EdOrgDependentResourceReference_EdOrgDependentResourceId] IS NOT NULL AND [EdOrgDependentResourceReference_EducationOrganizationId] IS NOT NULL))
@@ -797,7 +797,7 @@ CREATE TABLE [edfi].[EdOrgDependentResource]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EdOrgDependentResource_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
     [EducationOrganization_EducationOrganizationId] int NOT NULL,
-    [EdOrgDependentResourceId] nvarchar(64) NOT NULL,
+    [EdOrgDependentResourceId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     CONSTRAINT [PK_EdOrgDependentResource] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_EdOrgDependentResource_NK] UNIQUE ([EdOrgDependentResourceId], [EducationOrganization_DocumentId]),
     CONSTRAINT [UX_EdOrgDependentResource_RefKey] UNIQUE ([EdOrgDependentResourceId], [EducationOrganization_EducationOrganizationId], [DocumentId]),
@@ -810,14 +810,14 @@ CREATE TABLE [edfi].[KeyUnifiedResource]
     [DocumentId] bigint NOT NULL,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_KeyUnifiedResource_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_KeyUnifiedResource_ContentVersion] DEFAULT 0,
-    [StudentUniqueId_Unified] nvarchar(32) NOT NULL,
+    [StudentUniqueId_Unified] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     [ResourceAReference_DocumentId] bigint NOT NULL,
-    [ResourceAReference_ResourceAId] nvarchar(64) NOT NULL,
+    [ResourceAReference_ResourceAId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     [ResourceAReference_StudentUniqueId] AS (CASE WHEN [ResourceAReference_DocumentId] IS NULL THEN NULL ELSE [StudentUniqueId_Unified] END) PERSISTED,
     [ResourceBReference_DocumentId] bigint NOT NULL,
-    [ResourceBReference_ResourceBId] nvarchar(64) NOT NULL,
+    [ResourceBReference_ResourceBId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     [ResourceBReference_StudentUniqueId] AS (CASE WHEN [ResourceBReference_DocumentId] IS NULL THEN NULL ELSE [StudentUniqueId_Unified] END) PERSISTED,
-    [KeyUnifiedResourceId] nvarchar(64) NOT NULL,
+    [KeyUnifiedResourceId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     CONSTRAINT [PK_KeyUnifiedResource] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_KeyUnifiedResource_NK] UNIQUE ([KeyUnifiedResourceId], [ResourceAReference_DocumentId], [ResourceBReference_DocumentId]),
     CONSTRAINT [CK_KeyUnifiedResource_ResourceAReference_AllNone] CHECK (([ResourceAReference_DocumentId] IS NULL AND [ResourceAReference_ResourceAId] IS NULL AND [ResourceAReference_StudentUniqueId] IS NULL) OR ([ResourceAReference_DocumentId] IS NOT NULL AND [ResourceAReference_ResourceAId] IS NOT NULL AND [ResourceAReference_StudentUniqueId] IS NOT NULL)),
@@ -831,8 +831,8 @@ CREATE TABLE [edfi].[ResourceA]
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ResourceA_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ResourceA_ContentVersion] DEFAULT 0,
     [StudentReference_DocumentId] bigint NOT NULL,
-    [StudentReference_StudentUniqueId] nvarchar(32) NOT NULL,
-    [ResourceAId] nvarchar(64) NOT NULL,
+    [StudentReference_StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [ResourceAId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     CONSTRAINT [PK_ResourceA] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_ResourceA_NK] UNIQUE ([ResourceAId], [StudentReference_DocumentId]),
     CONSTRAINT [UX_ResourceA_RefKey] UNIQUE ([ResourceAId], [StudentReference_StudentUniqueId], [DocumentId]),
@@ -846,8 +846,8 @@ CREATE TABLE [edfi].[ResourceB]
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ResourceB_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ResourceB_ContentVersion] DEFAULT 0,
     [StudentReference_DocumentId] bigint NOT NULL,
-    [StudentReference_StudentUniqueId] nvarchar(32) NOT NULL,
-    [ResourceBId] nvarchar(64) NOT NULL,
+    [StudentReference_StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [ResourceBId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     CONSTRAINT [PK_ResourceB] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_ResourceB_NK] UNIQUE ([ResourceBId], [StudentReference_DocumentId]),
     CONSTRAINT [UX_ResourceB_RefKey] UNIQUE ([ResourceBId], [StudentReference_StudentUniqueId], [DocumentId]),
@@ -875,7 +875,7 @@ CREATE TABLE [edfi].[Student]
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Student_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Student_ContentVersion] DEFAULT 0,
     [FirstName] nvarchar(75) NOT NULL,
-    [StudentUniqueId] nvarchar(32) NOT NULL,
+    [StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     CONSTRAINT [PK_Student] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_Student_NK] UNIQUE ([StudentUniqueId]),
     CONSTRAINT [UX_Student_RefKey] UNIQUE ([StudentUniqueId], [DocumentId])
@@ -889,7 +889,7 @@ CREATE TABLE [edfi].[StudentSchoolAssociation]
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentSchoolAssociation_ContentVersion] DEFAULT 0,
     [SchoolReference_DocumentId] bigint NOT NULL,
     [SchoolReference_SchoolId] int NOT NULL,
-    [StudentUniqueId] nvarchar(32) NOT NULL,
+    [StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     CONSTRAINT [PK_StudentSchoolAssociation] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_StudentSchoolAssociation_NK] UNIQUE ([StudentUniqueId], [SchoolReference_DocumentId]),
     CONSTRAINT [CK_StudentSchoolAssociation_SchoolReference_AllNone] CHECK (([SchoolReference_DocumentId] IS NULL AND [SchoolReference_SchoolId] IS NULL) OR ([SchoolReference_DocumentId] IS NOT NULL AND [SchoolReference_SchoolId] IS NOT NULL))
@@ -930,8 +930,8 @@ CREATE TABLE [tracked_changes_edfi].[DecimalKeyResource]
 IF OBJECT_ID(N'tracked_changes_edfi.DecimalRefResource', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[DecimalRefResource]
 (
-    [OldRefResourceId] nvarchar(64) NOT NULL,
-    [NewRefResourceId] nvarchar(64) NULL,
+    [OldRefResourceId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewRefResourceId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [OldDecimalKeyReference_DecimalKey] decimal(9,2) NOT NULL,
     [NewDecimalKeyReference_DecimalKey] decimal(9,2) NULL,
     [Id] uniqueidentifier NOT NULL,
@@ -944,10 +944,10 @@ CREATE TABLE [tracked_changes_edfi].[DecimalRefResource]
 IF OBJECT_ID(N'tracked_changes_edfi.EdOrgDependentChildResource', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[EdOrgDependentChildResource]
 (
-    [OldEdOrgDependentChildResourceId] nvarchar(64) NOT NULL,
-    [NewEdOrgDependentChildResourceId] nvarchar(64) NULL,
-    [OldEdOrgDependentResourceReference_EdOrgDependentResourceId] nvarchar(64) NOT NULL,
-    [NewEdOrgDependentResourceReference_EdOrgDependentResourceId] nvarchar(64) NULL,
+    [OldEdOrgDependentChildResourceId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewEdOrgDependentChildResourceId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldEdOrgDependentResourceReference_EdOrgDependentResourceId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewEdOrgDependentResourceReference_EdOrgDependentResourceId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [OldEdOrgDependentResourceReference_EducationOrganizationId] int NOT NULL,
     [NewEdOrgDependentResourceReference_EducationOrganizationId] int NULL,
     [Id] uniqueidentifier NOT NULL,
@@ -960,8 +960,8 @@ CREATE TABLE [tracked_changes_edfi].[EdOrgDependentChildResource]
 IF OBJECT_ID(N'tracked_changes_edfi.EdOrgDependentResource', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[EdOrgDependentResource]
 (
-    [OldEdOrgDependentResourceId] nvarchar(64) NOT NULL,
-    [NewEdOrgDependentResourceId] nvarchar(64) NULL,
+    [OldEdOrgDependentResourceId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewEdOrgDependentResourceId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [OldEducationOrganization_EducationOrganizationId] int NOT NULL,
     [NewEducationOrganization_EducationOrganizationId] int NULL,
     [Id] uniqueidentifier NOT NULL,
@@ -974,14 +974,14 @@ CREATE TABLE [tracked_changes_edfi].[EdOrgDependentResource]
 IF OBJECT_ID(N'tracked_changes_edfi.KeyUnifiedResource', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[KeyUnifiedResource]
 (
-    [OldKeyUnifiedResourceId] nvarchar(64) NOT NULL,
-    [NewKeyUnifiedResourceId] nvarchar(64) NULL,
-    [OldResourceAReference_ResourceAId] nvarchar(64) NOT NULL,
-    [NewResourceAReference_ResourceAId] nvarchar(64) NULL,
-    [OldStudentUniqueId_Unified] nvarchar(32) NOT NULL,
-    [NewStudentUniqueId_Unified] nvarchar(32) NULL,
-    [OldResourceBReference_ResourceBId] nvarchar(64) NOT NULL,
-    [NewResourceBReference_ResourceBId] nvarchar(64) NULL,
+    [OldKeyUnifiedResourceId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewKeyUnifiedResourceId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldResourceAReference_ResourceAId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewResourceAReference_ResourceAId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldStudentUniqueId_Unified] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewStudentUniqueId_Unified] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldResourceBReference_ResourceBId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewResourceBReference_ResourceBId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [DocumentId] bigint NOT NULL,
@@ -992,10 +992,10 @@ CREATE TABLE [tracked_changes_edfi].[KeyUnifiedResource]
 IF OBJECT_ID(N'tracked_changes_edfi.ResourceA', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[ResourceA]
 (
-    [OldResourceAId] nvarchar(64) NOT NULL,
-    [NewResourceAId] nvarchar(64) NULL,
-    [OldStudentReference_StudentUniqueId] nvarchar(32) NOT NULL,
-    [NewStudentReference_StudentUniqueId] nvarchar(32) NULL,
+    [OldResourceAId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewResourceAId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldStudentReference_StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewStudentReference_StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [DocumentId] bigint NOT NULL,
@@ -1006,10 +1006,10 @@ CREATE TABLE [tracked_changes_edfi].[ResourceA]
 IF OBJECT_ID(N'tracked_changes_edfi.ResourceB', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[ResourceB]
 (
-    [OldResourceBId] nvarchar(64) NOT NULL,
-    [NewResourceBId] nvarchar(64) NULL,
-    [OldStudentReference_StudentUniqueId] nvarchar(32) NOT NULL,
-    [NewStudentReference_StudentUniqueId] nvarchar(32) NULL,
+    [OldResourceBId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewResourceBId] nvarchar(64) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldStudentReference_StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewStudentReference_StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [DocumentId] bigint NOT NULL,
@@ -1032,8 +1032,8 @@ CREATE TABLE [tracked_changes_edfi].[School]
 IF OBJECT_ID(N'tracked_changes_edfi.Student', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[Student]
 (
-    [OldStudentUniqueId] nvarchar(32) NOT NULL,
-    [NewStudentUniqueId] nvarchar(32) NULL,
+    [OldStudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewStudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [DocumentId] bigint NOT NULL,
@@ -1044,8 +1044,8 @@ CREATE TABLE [tracked_changes_edfi].[Student]
 IF OBJECT_ID(N'tracked_changes_edfi.StudentSchoolAssociation', N'U') IS NULL
 CREATE TABLE [tracked_changes_edfi].[StudentSchoolAssociation]
 (
-    [OldStudentUniqueId] nvarchar(32) NOT NULL,
-    [NewStudentUniqueId] nvarchar(32) NULL,
+    [OldStudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewStudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [OldSchoolReference_SchoolId] int NOT NULL,
     [NewSchoolReference_SchoolId] int NULL,
     [Id] uniqueidentifier NOT NULL,

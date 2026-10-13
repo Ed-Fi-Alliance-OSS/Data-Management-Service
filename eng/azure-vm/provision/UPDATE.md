@@ -127,6 +127,16 @@ Keycloak: `keycloak.yml` pins the floating minor tag `26.7`.
 `update.sh` refuses a changed pin, because the H2 realm volume cannot cross minor versions, but it does apply a patch release published under the same tag.
 The 26.7.4 to 26.7.5 move has been rehearsed; Keycloak migrated the realm and every key kept working.
 
+PostgreSQL: builds from October 2026 run PostgreSQL 18, which keeps its cluster in a versioned directory inside the `dms-security-review_dms-sec-postgres` volume.
+A deployment created before that holds a PostgreSQL 16 cluster at the volume root, which PostgreSQL 18 does not read: it would start an empty cluster beside it, and the databases and API keys would not carry over.
+Part B cannot upgrade that layout in place.
+Before it refreshes the deployment images or recreates any container, `update.sh` reads the volume's root `PG_VERSION` through a read-only helper container, and stops when it finds the old layout or cannot read the volume; the volume is left unchanged.
+The helper container may download the configured PostgreSQL image.
+To move such a deployment to this build, back up every database (`edfi_st_config`, `edfi_mt_config`, `edfi_st`, `edfi_mt`, `edfi_mt_t2`) and the Keycloak volume as in Part A step 4, then either migrate the cluster to PostgreSQL 18 deliberately (`pg_upgrade`, or a dump restored into the new layout) or follow [`REDEPLOY.md`](REDEPLOY.md), which issues new API keys.
+Deleting the volume does not keep the keys.
+See [Database versions](../../../docs/OPERATIONS.md#database-versions) for the PostgreSQL requirements.
+Only `update.sh` makes this check: running `up.sh` or `docker compose up` directly against an old volume skips it.
+
 Verify with the existing keys once the DMS services report healthy (`update.sh` returns while they are still starting):
 
 ```bash

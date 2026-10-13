@@ -12,6 +12,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [TestFixture("healthy", false)]
 [TestFixture("recovered", false)]
 [TestFixture("recovered", true)]
+[TestFixture("jvm-flags", false)]
 [TestFixture("exhausted", false)]
 [TestFixture("unrelated", false)]
 [TestFixture("cancel", false)]
@@ -94,7 +95,12 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario, bo
     [Test]
     public void It_recreates_at_most_once_only_after_a_readiness_timeout()
     {
-        int starts = scenario is "recovered" or "exhausted" or "restart-failure" or "diagnostics-unavailable"
+        int starts = scenario
+            is "recovered"
+                or "jvm-flags"
+                or "exhausted"
+                or "restart-failure"
+                or "diagnostics-unavailable"
             ? 2
             : 1;
         _docker.Starts.Should().Be(starts);
@@ -102,7 +108,7 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario, bo
         _probes.Should().Be(scenario == "restart-failure" ? 1 : starts);
         switch (scenario)
         {
-            case "healthy" or "recovered" or "diagnostics-unavailable":
+            case "healthy" or "recovered" or "jvm-flags" or "diagnostics-unavailable":
                 _failure.Should().BeNull();
                 break;
             case "exhausted" or "keep-containers":
@@ -120,7 +126,7 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario, bo
     [Test]
     public void It_retains_failure_evidence_before_removal_and_rechecks_the_replacement_port()
     {
-        if (scenario is "recovered" or "exhausted" or "diagnostics-unavailable")
+        if (scenario is "recovered" or "jvm-flags" or "exhausted" or "diagnostics-unavailable")
         {
             _docker
                 .Events.Should()
@@ -132,6 +138,7 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario, bo
             .Be(
                 scenario
                     is "recovered"
+                        or "jvm-flags"
                         or "exhausted"
                         or "diagnostics-unavailable"
                         or "cleanup-failure"
@@ -159,7 +166,7 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario, bo
         int count = scenario switch
         {
             "healthy" or "unrelated" or "cancel" or "cancel-inspection" => 0,
-            "recovered" or "exhausted" or "diagnostics-unavailable" => 2,
+            "recovered" or "jvm-flags" or "exhausted" or "diagnostics-unavailable" => 2,
             _ => 1,
         };
         _evidence.Should().HaveCount(count);
@@ -177,7 +184,7 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario, bo
             if (outcome == "Recovered")
             {
                 attempt.Should().Be(2);
-                scenario.Should().BeOneOf("recovered", "diagnostics-unavailable");
+                scenario.Should().BeOneOf("recovered", "jvm-flags", "diagnostics-unavailable");
                 continue;
             }
             outcome.Should().Be("TimedOut");
@@ -197,13 +204,26 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario, bo
             if (scenario != "diagnostics-unavailable")
             {
                 evidence.GetProperty("Container").GetProperty("Status").GetString().Should().Be("running");
+                IEnumerable<string> expectedMarkers = scenario is "jvm-flags"
+                    ? ["TimeoutException", "ERROR"]
+                    : ["OutOfMemoryError", "TimeoutException", "ERROR"];
+                IEnumerable<string> expectedMemoryFailureKinds = scenario is "jvm-flags"
+                    ? []
+                    : ["JavaHeapSpace"];
                 evidence
                     .GetProperty("Logs")
                     .GetProperty("Markers")
                     .EnumerateArray()
                     .Select(x => x.GetString())
                     .Should()
-                    .Equal("TimeoutException", "ERROR");
+                    .Equal(expectedMarkers);
+                evidence
+                    .GetProperty("Logs")
+                    .GetProperty("JvmMemoryFailureKinds")
+                    .EnumerateArray()
+                    .Select(x => x.GetString())
+                    .Should()
+                    .Equal(expectedMemoryFailureKinds);
             }
         }
     }
@@ -322,18 +342,77 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario, bo
                 {
                     throw Unrelated;
                 }
-                return Task.FromResult(
-                    new DockerCommandResult(
-                        0,
-                        arguments[0] == "inspect"
-                            ? "{\"Status\":\"running\",\"ExitCode\":0,\"OOMKilled\":false,\"Error\":\"private-details\"}"
-                            : "ERROR TimeoutException private-details "
-                                + CdcConnectorTemplatePinnedImageFixture.ConnectorDatabasePassword,
-                        ""
-                    )
-                );
+                string output = arguments[0] switch
+                {
+                    "inspect" =>
+                        "{\"Status\":\"running\",\"ExitCode\":0,\"OOMKilled\":false,\"Error\":\"private-details\"}",
+                    _ when scenario is "jvm-flags" =>
+                        "KAFKA_OPTS=-XX:+ExitOnOutOfMemoryError -XX:+CrashOnOutOfMemoryError\nERROR TimeoutException private-details",
+                    _ =>
+                        "java.lang.OutOfMemoryError: Java heap space private-details\nERROR TimeoutException private-details "
+                            + CdcConnectorTemplatePinnedImageFixture.ConnectorDatabasePassword,
+                };
+                return Task.FromResult(new DockerCommandResult(0, output, ""));
             }
             return Task.FromResult(new DockerCommandResult(0, "", ""));
         }
+    }
+}
+
+[TestFixture]
+public sealed class Given_ConnectJvmMemoryFailureSignals
+{
+    [TestCase("java.lang.OutOfMemoryError: Java heap space", "JavaHeapSpace")]
+    [TestCase("java.lang.OutOfMemoryError: GC overhead limit exceeded", "GcOverheadLimit")]
+    [TestCase("java.lang.OutOfMemoryError: Metaspace", "Metaspace")]
+    [TestCase("java.lang.OutOfMemoryError: Compressed class space", "CompressedClassSpace")]
+    [TestCase("java.lang.OutOfMemoryError: Direct buffer memory", "DirectBufferMemory")]
+    [TestCase(
+        "java.lang.OutOfMemoryError: Cannot reserve 128 bytes of direct buffer memory",
+        "DirectBufferMemory"
+    )]
+    [TestCase("java.lang.OutOfMemoryError: unable to create native thread", "NativeThreadCreation")]
+    [TestCase("java.lang.OutOfMemoryError: unable to create new native thread", "NativeThreadCreation")]
+    [TestCase("java.lang.OutOfMemoryError: Requested array size exceeds VM limit", "ArraySizeLimit")]
+    [TestCase("java.lang.OutOfMemoryError: private unknown reason", "UnclassifiedOutOfMemory")]
+    [TestCase("Native memory allocation (malloc) failed to allocate 32 bytes", "NativeAllocationFailure")]
+    [TestCase(
+        "There is insufficient memory for the Java Runtime Environment to continue.",
+        "NativeAllocationFailure"
+    )]
+    public void It_classifies_memory_failures_without_retaining_private_log_text(
+        string signal,
+        string expected
+    )
+    {
+        CdcConnectorTemplatePinnedImageFixture
+            .GetJvmMemoryFailureKinds(signal + " password=private-secret")
+            .Should()
+            .Equal(expected);
+    }
+
+    [Test]
+    public void It_deduplicates_signals_and_does_not_classify_an_unrelated_heap_message()
+    {
+        CdcConnectorTemplatePinnedImageFixture
+            .GetJvmMemoryFailureKinds(
+                "Java heap space configuration\njava.lang.OutOfMemoryError: Metaspace\njava.lang.OutOfMemoryError: Metaspace\njava.lang.OutOfMemoryError: Java heap space"
+            )
+            .Should()
+            .Equal("JavaHeapSpace", "Metaspace");
+        CdcConnectorTemplatePinnedImageFixture
+            .GetJvmMemoryFailureKinds("Java heap space configuration")
+            .Should()
+            .BeEmpty();
+    }
+
+    [TestCase("-XX:+ExitOnOutOfMemoryError")]
+    [TestCase("-XX:+CrashOnOutOfMemoryError")]
+    public void It_does_not_classify_JVM_startup_flags_as_memory_failures(string flag)
+    {
+        CdcConnectorTemplatePinnedImageFixture
+            .GetJvmMemoryFailureKinds("KAFKA_OPTS=" + flag)
+            .Should()
+            .BeEmpty();
     }
 }
