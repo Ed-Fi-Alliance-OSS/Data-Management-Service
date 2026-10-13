@@ -451,6 +451,7 @@ public class Given_Natural_Key_Probe_Validation
     private Action _validateReorderedTarget = null!;
     private Action _validateEmptyTarget = null!;
     private Action _validateEmptyOwnKey = null!;
+    private Action _validateOwnKeyBoundToAnotherReferenceSite = null!;
 
     [OneTimeSetUp]
     public void Setup()
@@ -519,6 +520,39 @@ public class Given_Natural_Key_Probe_Validation
             [NaturalKeyProbeTestSupport.Session] = sessionOwnKey with { KeyColumns = [] },
         };
         _validateEmptyOwnKey = () => NaturalKeyProbeCompiler.Validate(modelSet, targets, emptyOwnKeys);
+
+        // Swap Session's two reference-site indexes: both stay in range, but each now names the
+        // other reference, whose FK column is not the key column.
+        var schoolKey = NaturalKeyProbeTestSupport.Key(
+            sessionOwnKey.KeyColumns,
+            "$.schoolReference.schoolId"
+        );
+        var schoolYearKey = NaturalKeyProbeTestSupport.Key(
+            sessionOwnKey.KeyColumns,
+            "$.schoolYearTypeReference.schoolYear"
+        );
+        Dictionary<QualifiedResourceName, OwnNaturalKeyProbe> swappedOwnKeys = new(ownKeys)
+        {
+            [NaturalKeyProbeTestSupport.Session] = sessionOwnKey with
+            {
+                KeyColumns =
+                [
+                    .. sessionOwnKey.KeyColumns.Select(key =>
+                        key.IdentityJsonPath.Canonical switch
+                        {
+                            "$.schoolReference.schoolId" => key with { Binding = schoolYearKey.Binding },
+                            "$.schoolYearTypeReference.schoolYear" => key with
+                            {
+                                Binding = schoolKey.Binding,
+                            },
+                            _ => key,
+                        }
+                    ),
+                ],
+            },
+        };
+        _validateOwnKeyBoundToAnotherReferenceSite = () =>
+            NaturalKeyProbeCompiler.Validate(modelSet, targets, swappedOwnKeys);
     }
 
     [Test]
@@ -570,6 +604,15 @@ public class Given_Natural_Key_Probe_Validation
             .Should()
             .Throw<InvalidOperationException>()
             .WithMessage("*own natural-key probe for resource 'Ed-Fi.Session' has no keys*");
+    }
+
+    [Test]
+    public void It_rejects_an_own_key_document_reference_bound_to_another_reference_site()
+    {
+        _validateOwnKeyBoundToAnotherReferenceSite
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*'Ed-Fi.Session'*does not supply column*");
     }
 
     private static Dictionary<QualifiedResourceName, NaturalKeyProbeTarget> WithTarget(

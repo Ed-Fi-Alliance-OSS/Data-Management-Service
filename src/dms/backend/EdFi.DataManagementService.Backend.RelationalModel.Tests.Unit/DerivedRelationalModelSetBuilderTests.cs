@@ -210,6 +210,19 @@ public class Given_A_Derived_Relational_Model_Set_With_A_Reference_Bearing_Ident
         var projectSchema = JsonNode.Parse(
             File.ReadAllText(Path.Combine(root, "ds-5.2", "inputs", "ds-5.2-api-schema-authoritative.json"))
         )!["projectSchema"]!.AsObject();
+
+        // Authoritative identityJsonPaths are already in ordinal order, so reverse Session's to prove
+        // schema order is carried rather than a sorted order.
+        var sessionSchema = projectSchema["resourceSchemas"]!["sessions"]!.AsObject();
+        JsonArray reversedIdentityPaths =
+        [
+            .. sessionSchema["identityJsonPaths"]!
+                .AsArray()
+                .Select(path => JsonValue.Create(path!.GetValue<string>()))
+                .Reverse(),
+        ];
+        sessionSchema["identityJsonPaths"] = reversedIdentityPaths;
+
         var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([
             EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(projectSchema, false),
         ]);
@@ -234,6 +247,6 @@ public class Given_A_Derived_Relational_Model_Set_With_A_Reference_Bearing_Ident
         _session
             .IdentityJsonPaths.Select(path => path.Canonical)
             .Should()
-            .Equal("$.schoolReference.schoolId", "$.schoolYearTypeReference.schoolYear", "$.sessionName");
+            .Equal("$.sessionName", "$.schoolYearTypeReference.schoolYear", "$.schoolReference.schoolId");
     }
 }
